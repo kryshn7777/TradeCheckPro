@@ -71,7 +71,7 @@ const HoloAudit = memo(() => {
         whileInView={{ opacity: 1, rotateY: -15, rotateX: 5 }}
         transition={{ duration: 1.2, ease: "easeOut" }}
         viewport={{ once: true }}
-        className="glass-holo p-8 md:p-12 holo-card-3d max-w-5xl mx-auto border-holo-accent/30 relative"
+        className="glass-holo p-6 md:p-12 holo-card-3d max-w-5xl mx-auto border-holo-accent/30 relative"
       >
         <div className="scanline-holo rounded-xl overflow-hidden" />
         
@@ -144,17 +144,17 @@ const HoloAudit = memo(() => {
           )}
         </div>
 
-        <div className="mt-12 grid grid-cols-2 lg:grid-cols-4 gap-8 relative z-20">
+        <div className="mt-8 md:mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 relative z-20">
            {[
              { label: "ENGINE_LATENCY", val: "0.002ms" },
              { label: "SYNC_STATUS", val: "ESTABLISHED" },
              { label: "CORE_TEMPERATURE", val: "32°C" },
              { label: "VERSION_NODE", val: "V4.PRO" }
            ].map((stat, i) => (
-             <div key={i} className="space-y-2">
-                <p className="text-[8px] font-mono text-white/30 tracking-widest uppercase">{stat.label}</p>
-                <p className="text-sm font-black font-mono text-white/80">{stat.val}</p>
-                <div className="w-full h-[1px] bg-white/5" />
+             <div key={i} className="space-y-1 md:space-y-2 p-3 md:p-0 border border-white/5 md:border-none rounded-lg md:rounded-none bg-white/[0.02] md:bg-transparent">
+                <p className="text-[7px] md:text-[8px] font-mono text-white/30 tracking-widest uppercase">{stat.label}</p>
+                <p className="text-xs md:text-sm font-black font-mono text-white/80">{stat.val}</p>
+                <div className="hidden md:block w-full h-[1px] bg-white/5" />
              </div>
            ))}
         </div>

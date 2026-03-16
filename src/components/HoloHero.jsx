@@ -20,7 +20,7 @@ const HoloHero = memo(() => {
           <div className="h-px w-12 bg-holo-accent/30" />
         </motion.div>
 
-        <h1 className="text-7xl md:text-[10vw] font-display font-black tracking-tighter leading-[0.8] uppercase flex flex-col items-center">
+        <h1 className="flex flex-col items-center">
           <motion.span 
             initial={{ opacity: 0, x: -100 }}
             animate={{ opacity: 1, x: 0 }}

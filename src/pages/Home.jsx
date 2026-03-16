@@ -72,13 +72,13 @@ const Home = () => {
         </Suspense>
 
         {/* Module Showcase */}
-        <section className="py-24 px-6 max-w-7xl mx-auto relative">
-           <div className="text-center mb-24">
-              <h2 className="text-4xl md:text-6xl font-black uppercase mb-4 tracking-tighter">PROTOCOL_MODULES.</h2>
-              <p className="text-white/40 font-mono text-[10px] tracking-[0.5em]">SYSTEM_VERSION_4.2.0</p>
+        <section id="features" className="py-16 md:py-24 px-4 md:px-6 max-w-7xl mx-auto relative">
+           <div className="text-center mb-16 md:mb-24">
+              <h2 className="text-3xl md:text-6xl font-black uppercase mb-4 tracking-tighter">PROTOCOL_MODULES.</h2>
+              <p className="text-white/40 font-mono text-[8px] md:text-[10px] tracking-[0.5em]">SYSTEM_VERSION_4.2.0</p>
            </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-10">
               {[
                 {
                   icon: Zap,
@@ -105,17 +105,17 @@ const Home = () => {
                   whileInView={{ opacity: 1, scale: 1 }}
                   transition={{ delay: i * 0.1, duration: 0.5 }}
                   viewport={{ once: true }}
-                  className="glass-holo p-10 relative overflow-hidden group border-white/5 hover:border-holo-accent/30 transition-colors"
+                  className="glass-holo p-8 md:p-10 relative overflow-hidden group border-white/5 hover:border-holo-accent/30 transition-colors"
                 >
-                  <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-30 transition-opacity">
-                     <module.icon className="w-16 h-16 text-holo-accent" />
+                  <div className="absolute top-0 right-0 p-4 md:p-6 opacity-10 group-hover:opacity-30 transition-opacity">
+                     <module.icon className="w-12 h-12 md:w-16 md:h-16 text-holo-accent" />
                   </div>
-                  <div className="flex items-center gap-3 mb-8">
+                  <div className="flex items-center gap-3 mb-6 md:mb-8">
                      <div className="w-1.5 h-1.5 bg-holo-accent rounded-full shadow-[0_0_10px_#06F9F9] animate-pulse" />
                      <span className="font-mono text-[8px] text-holo-accent tracking-widest">{module.status}</span>
                   </div>
-                  <h3 className="text-2xl font-black mb-6 uppercase tracking-tight">{module.title}</h3>
-                  <p className="text-white/50 text-sm leading-relaxed mb-10 h-20">
+                  <h3 className="text-xl md:text-2xl font-black mb-4 md:mb-6 uppercase tracking-tight">{module.title}</h3>
+                  <p className="text-white/50 text-xs md:text-sm leading-relaxed mb-8 md:mb-10 min-h-[4rem] md:h-20">
                     {module.desc}
                   </p>
                   <div className="flex items-center gap-2 text-white/30 text-[9px] font-mono group-hover:text-white transition-colors cursor-pointer">
@@ -129,31 +129,33 @@ const Home = () => {
 
         {/* Monolith Pricing */}
         <Suspense fallback={<LoadingFallback />}>
-          <MonolithPricing />
+          <div id="pricing" className="px-4 md:px-0">
+            <MonolithPricing />
+          </div>
         </Suspense>
 
         {/* Final Deployment Footer-CTA */}
-        <section className="py-60 px-6 text-center relative overflow-hidden">
+        <section className="py-32 md:py-60 px-4 md:px-6 text-center relative overflow-hidden">
            <motion.div
              initial={{ opacity: 0, scale: 0.9 }}
              whileInView={{ opacity: 1, scale: 1 }}
              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
              viewport={{ once: true }}
-             className="relative z-10 space-y-12"
+             className="relative z-10 space-y-8 md:space-y-12"
            >
-              <h2 className="text-7xl md:text-[12vw] font-black font-display tracking-tighter uppercase leading-none italic">
+              <h1 className="text-5xl md:text-[12vw] font-black font-display tracking-tighter uppercase leading-none italic">
                  ESTABLISH <br />
                  <span className="inst-text-gradient holo-glow-text">DOMINANCE.</span>
-              </h2>
+              </h1>
               <Magnetic strength={0.4}>
-                 <button className="px-20 py-10 bg-white text-holo-bg font-black text-2xl rounded-sm hover:bg-holo-accent hover:text-holo-bg transition-all active:scale-95 shadow-[0_40px_100px_rgba(255,255,255,0.15)] uppercase tracking-[0.2em]">
+                 <button className="px-10 py-6 md:px-20 md:py-10 bg-white text-holo-bg font-black text-lg md:text-2xl rounded-sm hover:bg-holo-accent hover:text-holo-bg transition-all active:scale-95 shadow-[0_40px_100px_rgba(255,255,255,0.15)] uppercase tracking-[0.2em] touch-manipulation">
                     DOWNLOAD_TCP_PRO
                  </button>
               </Magnetic>
            </motion.div>
            
            {/* Distant Grid Line */}
-           <div className="absolute bottom-40 left-0 w-full h-px bg-gradient-to-r from-transparent via-holo-accent/30 to-transparent shadow-[0_0_20px_#06F9F9/20]" />
+           <div className="absolute bottom-20 md:bottom-40 left-0 w-full h-px bg-gradient-to-r from-transparent via-holo-accent/30 to-transparent shadow-[0_0_20px_#06F9F9/20]" />
         </section>
       </div>
     </main>
