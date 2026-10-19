@@ -24,8 +24,8 @@ import os
 import random
 import sys
 
+import bpy  # must come first: with the `bpy` module, bmesh/mathutils load after it
 import bmesh
-import bpy
 from mathutils import Matrix, Vector
 
 # -----------------------------------------------------------------------------
@@ -53,8 +53,8 @@ LIMB_LOWER = 3.8
 # Irregular, front-weighted limb placement (segment index, side) — independent
 # limbs, not one pair per segment.
 LIMB_SLOTS = [(1, 1), (2, -1), (3, 1), (5, -1), (6, 1), (8, -1), (9, 1), (11, -1), (13, 1), (14, -1)]
-FRONDS = 8
-PITS = 4
+FRONDS = 10
+PITS = 5
 
 
 # -----------------------------------------------------------------------------
@@ -85,16 +85,16 @@ def principled(name, base, metallic=0.0, roughness=0.8, emission=None, strength=
 
 def make_materials():
     return {
-        "stone_dark": principled("Mason_StoneDark", (0.075, 0.074, 0.072), roughness=0.93),
-        "stone_mid": principled("Mason_StoneMid", (0.13, 0.125, 0.115), roughness=0.9),
-        "stone_pale": principled("Mason_StonePale", (0.24, 0.23, 0.21), roughness=0.88),
-        "rust": principled("Mason_Rust", (0.24, 0.11, 0.055), metallic=0.45, roughness=0.78),
+        "stone_dark": principled("Mason_StoneDark", (0.045, 0.044, 0.043), roughness=0.94),
+        "stone_mid": principled("Mason_StoneMid", (0.085, 0.082, 0.077), roughness=0.92),
+        "stone_pale": principled("Mason_StonePale", (0.15, 0.145, 0.13), roughness=0.9),
+        "rust": principled("Mason_Rust", (0.15, 0.07, 0.035), metallic=0.45, roughness=0.8),
         "iron": principled("Mason_Iron", (0.05, 0.05, 0.055), metallic=0.85, roughness=0.5),
         "verdigris": principled("Mason_Verdigris", (0.16, 0.30, 0.27), metallic=0.3, roughness=0.65),
         "frond": principled("Mason_Frond", (0.62, 0.66, 0.6), roughness=0.55,
                             emission=(0.45, 0.62, 0.57), strength=0.25),
         "glow": principled("Mason_SensoryGlow", (0.05, 0.08, 0.07), roughness=0.4,
-                           emission=(0.72, 0.94, 0.88), strength=12.0),
+                           emission=(0.72, 0.94, 0.88), strength=5.0),
     }
 
 
@@ -254,6 +254,9 @@ def build_segment(M, name, scale=1.0, variant=0):
         a = (k / 4 - 0.5) * 2.4
         pos = Vector((math.sin(a) * w * 0.54, l * 0.18 + l * 0.125, math.cos(a) * h * 0.5))
         p.add(cylinder(0.045 * scale, 0.05 * scale, 6), M["iron"], Matrix.Translation(pos) @ Matrix.Rotation(math.pi / 2, 4, "X"))
+    # Dorsal roof slab overlapping the next block toward the tail, like laid roof stones.
+    roof = box(w * 0.94, l * 0.62, h * 0.14, bevel=0.03 * scale)
+    p.add(roof, stone, Matrix.Translation((0, -l * 0.42, h * 0.5)) @ Matrix.Rotation(-0.12, 4, "X"))
     # Crenellated dorsal parapet (architectural silhouette, not chitin).
     merlons = 2 + (variant % 2)
     for k in range(merlons):
@@ -329,11 +332,11 @@ def build_frond(M, name, seed_offset=0):
 
 def build_pit(M, name):
     p = Part(name)
-    rim = cylinder(0.2, 0.16, 10, radius2=0.14)
+    rim = cylinder(0.13, 0.2, 8, radius2=0.09)
     p.add(rim, M["iron"], Matrix.Rotation(math.pi / 2, 4, "X"))
     orb = bmesh.new()
-    bmesh.ops.create_icosphere(orb, subdivisions=2, radius=0.12)
-    p.add(orb, M["glow"], Matrix.Translation((0, 0.04, 0)), smooth=True)
+    bmesh.ops.create_icosphere(orb, subdivisions=1, radius=0.055)
+    p.add(orb, M["glow"], Matrix.Translation((0, -0.03, 0)), smooth=True)
     return p
 
 
@@ -371,11 +374,36 @@ def build_hook(M, name):
 # Assembly (hero pose): crawling head-first down a wall, crown turned outward.
 # -----------------------------------------------------------------------------
 def spine_point(s):
-    """s = 0 at the head, 1 at the tail. Wall plane is y = -WALL_Y; body hangs in front of it."""
-    x = 2.6 * math.sin(s * math.pi * 1.35 + 0.4)
-    z = s * (SEGMENTS * SEG_LEN * 1.02)
-    y = -0.4 + 0.6 * math.sin(s * math.pi * 2.2)
+    """s = 0 at the head, 1 at the tail. The wall is the plane y = WALL_Y; the body arches off it."""
+    x = 2.4 * math.sin(s * math.pi * 1.55 + 0.35)
+    y = -0.6 + 1.6 * math.sin(s * math.pi) * (1.0 - 0.35 * s)
+    z = s * 19.0
     return Vector((x, y, z))
+
+
+_ARC = []
+
+
+def arc_point(length):
+    """Point / parameter at an arc length from the head (table built on first use)."""
+    if not _ARC:
+        prev = spine_point(0.0)
+        total = 0.0
+        _ARC.append((0.0, 0.0))
+        for k in range(1, 2001):
+            s = k / 2000
+            pt = spine_point(s)
+            total += (pt - prev).length
+            _ARC.append((total, s))
+            prev = pt
+    for k in range(1, len(_ARC)):
+        if _ARC[k][0] >= length:
+            l0, s0 = _ARC[k - 1]
+            l1, s1 = _ARC[k]
+            f = (length - l0) / max(l1 - l0, 1e-9)
+            s = s0 + (s1 - s0) * f
+            return spine_point(s), s
+    return spine_point(1.0), 1.0
 
 
 WALL_Y = -3.2
@@ -400,14 +428,17 @@ def place(obj, origin, rot):
 def assemble_hero(M, coll, kit):
     objs = []
     n = SEGMENTS
-    ds = 1.0 / n
+    seg_s = []
+    arc = SEG_LEN * 0.55
     for i in range(n):
-        s = (i + 0.5) * ds
-        pos = spine_point(s)
-        fwd = spine_point(s - 0.02) - spine_point(s + 0.02)
+        scale = 1.0 - 0.38 * (i / n) ** 1.6
+        arc += SEG_LEN * scale * 0.86 * 0.5
+        pos, s = arc_point(arc)
+        arc += SEG_LEN * scale * 0.86 * 0.5
+        seg_s.append(s)
+        fwd = spine_point(s - 0.01) - spine_point(s + 0.01)
         up = Vector((0, 1, 0))  # dorsal side faces away from the wall
         rot = frame(fwd, up)
-        scale = 1.0 - 0.38 * (i / n) ** 1.6
         src = kit["Mason_Tail"] if i == n - 1 else kit[f"Mason_Segment_{i % 3}"]
         ob = src.copy()
         ob.data = src.data
@@ -416,9 +447,9 @@ def assemble_hero(M, coll, kit):
         place(ob, pos, rot @ Matrix.Scale(scale if i < n - 1 else 1.0, 4))
         objs.append(ob)
     # Head + crown.
-    hpos = spine_point(0.0) + (spine_point(0.0) - spine_point(0.03)).normalized() * 1.1
     hfwd = (spine_point(0.0) - spine_point(0.04)).normalized()
-    hfwd = (hfwd + Vector((0.25, 0.9, 0))).normalized()  # turn the crown toward the viewer
+    hpos = spine_point(0.0) - hfwd * 0.25  # seated against the first block
+    hfwd = (hfwd + Vector((0.12, 0.42, 0))).normalized()  # crown lifts off the wall, toward the light
     hrot = frame(hfwd, Vector((0, 0, 1)))
     head = kit["Mason_Head"].copy()
     head.data = kit["Mason_Head"].data
@@ -441,17 +472,17 @@ def assemble_hero(M, coll, kit):
         place(fr, front + radial * 0.62, frame(out, hfwd.cross(radial).normalized().cross(out)))
         objs.append(fr)
     for k in range(PITS):
-        a = (k + 0.5) / PITS * math.tau
+        a = (k + 0.37) / PITS * math.tau + 0.2
         radial = right * math.cos(a) + up * math.sin(a)
         pit = kit["Mason_Pit"].copy()
         pit.data = kit["Mason_Pit"].data
         pit.name = f"Hero_Pit_{k}"
         coll.objects.link(pit)
-        place(pit, front + radial * 0.32 + hfwd * 0.05, frame(hfwd, up))
+        place(pit, front + radial * 0.78 - hfwd * 0.05, frame(hfwd, up))
         objs.append(pit)
     # Limbs: hips on the flanks, feet planted on the wall behind.
     for idx, (seg, side) in enumerate(LIMB_SLOTS):
-        s = (seg + 0.5) * ds
+        s = seg_s[seg]
         pos = spine_point(s)
         fwd = (spine_point(s - 0.02) - spine_point(s + 0.02)).normalized()
         rot = frame(fwd, Vector((0, 1, 0))).to_3x3()
@@ -460,7 +491,7 @@ def assemble_hero(M, coll, kit):
         hip = pos + right * side * SEG_W * 0.5 * scale
         reach = 3.4 + 0.5 * math.sin(idx * 1.7)
         foot = Vector((hip.x + side * right.x * reach + fwd.x * 1.2 * math.sin(idx), WALL_Y, hip.z + fwd.z * 1.6 + 0.8 * math.cos(idx * 2.1)))
-        pole = right * side + Vector((0, 1.2, 0))
+        pole = right * side * 0.6 + Vector((0, 2.4, 0))  # knees arch away from the wall
         knee = solve_two_bone(hip, foot, LIMB_UPPER, LIMB_LOWER, pole)
         for bone_name, a, b in (("Mason_LimbUpper", hip, knee), ("Mason_LimbLower", knee, foot)):
             src = kit[bone_name]
@@ -505,7 +536,7 @@ def preview_scene(scene, hero_objs):
         bg.inputs[0].default_value = (0.012, 0.016, 0.018, 1)
         bg.inputs[1].default_value = 1.0
     # Wall behind the creature.
-    bm = box(40, 0.6, 46)
+    bm = box(90, 0.6, 70)
     wall_mat = principled("Preview_Wall", (0.07, 0.07, 0.068), roughness=0.95)
     if args.rock and os.path.exists(args.rock):
         tex = wall_mat.node_tree.nodes.new("ShaderNodeTexImage")
@@ -531,7 +562,7 @@ def preview_scene(scene, hero_objs):
         ob.location = loc
         scene.collection.objects.link(ob)
         return ob
-    light("Lantern", "POINT", (3.0, 9.0, -2.0), 2600, (1.0, 0.68, 0.36), 0.3)
+    light("Lantern", "POINT", (6.0, 8.0, -1.5), 2400, (1.0, 0.68, 0.36), 0.3)
     light("ShaftLight", "AREA", (0.0, 2.0, 28.0), 9000, (0.5, 0.72, 0.85), 6.0)
     light("Fill", "POINT", (-8.0, 6.0, 8.0), 600, (0.4, 0.5, 0.6), 2.0)
     # Cameras: a close hero angle on the crown and a full-body overview.
@@ -543,8 +574,8 @@ def preview_scene(scene, hero_objs):
         ob.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
         scene.collection.objects.link(ob)
         return ob
-    cam = camera("CamHero", (7.5, 13.0, -4.5), (0.5, -0.8, 3.5), 30)
-    camera("CamFull", (14.0, 34.0, 6.0), (0.0, -1.5, 10.0), 32)
+    cam = camera("CamHero", (11.0, 10.5, -3.0), (0.5, -0.6, 3.2), 28)
+    camera("CamFull", (17.0, 17.5, 4.0), (0.0, -1.0, 8.5), 28)
     scene.camera = cam
     # Render settings.
     scene.render.engine = "CYCLES"
