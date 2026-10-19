@@ -1822,7 +1822,7 @@ export class Creature3D {
     this._scheduleBurst();
     this.stats.bursts++;
     this._setState(S.BURST);
-    this._emit('creature:burst', { x: this.x, y: this.y, z: this.z, distance: this.distance, commit: this.burstCommit, reason: this.burstReason });
+    this._emit('creature:burst', { x: this.x, y: this.y, z: this.z, distance: this.distance, commit: this.burstCommit, reason: this.burstReason, snap: this._snapping() ? this.k.snap : 0 });
   }
 
   /** Bursts that open with the crown snapping toward you (see DIFF_TUNE.snap). */
