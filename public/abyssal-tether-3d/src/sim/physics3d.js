@@ -22,6 +22,10 @@ import { CONFIG, U } from './config3d.js';
 const C = CONFIG;
 export const HANDS = ['left', 'right'];
 
+// Math.hypot is variadic and far slower than sqrt in V8's 240 Hz hot paths.
+const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
+const len2 = (x, z) => Math.sqrt(x * x + z * z);
+
 // =============================================================================
 // Player
 // =============================================================================
@@ -61,7 +65,7 @@ export class Player3D {
   }
 
   get speed() {
-    return Math.hypot(this.vx, this.vy, this.vz);
+    return len3(this.vx, this.vy, this.vz);
   }
   /** Any tether attached. */
   get tethered() {
@@ -105,7 +109,7 @@ export class Rope3D {
     const dx = p.x - this.anchor.x;
     const dy = p.y - this.anchor.y;
     const dz = p.z - this.anchor.z;
-    const d = Math.hypot(dx, dy, dz) || 1e-6;
+    const d = len3(dx, dy, dz) || 1e-6;
     this.d = d;
     this.nx = dx / d;
     this.ny = dy / d;
@@ -162,7 +166,7 @@ export class Rope3D {
     const dx = p.x - an.x;
     const dy = p.y - an.y;
     const dz = p.z - an.z;
-    const d = Math.hypot(dx, dy, dz);
+    const d = len3(dx, dy, dz);
     if (d <= L || d < 1e-6) {
       this.tension = 0;
       return 0;
@@ -257,7 +261,7 @@ export class TetherSystem {
     const range = this.diff.aimRange;
     const cone = this.diff.aimCone * this.assist();
     const assistR = this.diff.rayAssist * this.assist();
-    const dl = Math.hypot(aim.dx, aim.dy, aim.dz);
+    const dl = len3(aim.dx, aim.dy, aim.dz);
     if (dl < C.targeting.minAimLength) return null;
     const dx = aim.dx / dl;
     const dy = aim.dy / dl;
@@ -270,7 +274,7 @@ export class TetherSystem {
     for (let i = 0; i < list.length; i++) {
       const an = list[i];
       if (an.broken || an === other) continue;
-      const pd = Math.hypot(an.x - player.x, an.y - player.y, an.z - player.z);
+      const pd = len3(an.x - player.x, an.y - player.y, an.z - player.z);
       if (pd > range || pd < 0.3) continue;
       const ox = an.x - aim.ox;
       const oy = an.y - aim.oy;
@@ -280,7 +284,7 @@ export class TetherSystem {
       const px = ox - dx * t;
       const py = oy - dy * t;
       const pz = oz - dz * t;
-      const perp = Math.hypot(px, py, pz);
+      const perp = len3(px, py, pz);
       const ang = Math.atan2(perp, t);
       if (ang > cone && perp > assistR) continue;
       let score = (ang / cone) * 0.6 + (Math.min(perp, assistR * 3) / assistR) * 0.8 + (pd / range) * 0.2;
@@ -344,7 +348,7 @@ export class TetherSystem {
     const st = this.hands[hand];
     const a = aim || st.lastAim;
     if (a) {
-      const l = Math.hypot(a.dx, a.dy, a.dz) || 1;
+      const l = len3(a.dx, a.dy, a.dz) || 1;
       st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.diff.aimRange * 0.85, t: 0 };
     }
     st.buffer = C.rope.grappleBuffer;
@@ -355,7 +359,7 @@ export class TetherSystem {
   attach(player, hand, anchor) {
     const st = this.hands[hand];
     const prev = st.rope.anchor;
-    const d = Math.hypot(player.x - anchor.x, player.y - anchor.y, player.z - anchor.z);
+    const d = len3(player.x - anchor.x, player.y - anchor.y, player.z - anchor.z);
     st.rope.attach(anchor, d, this.maxRopeLength());
     st.extend = 0;
     st.attachTime = 0;
@@ -453,7 +457,7 @@ export class Physics3D {
     const control = player.stagger > 0 ? P.staggerControl : 1;
     let mx = intent.move ? intent.move.x || 0 : 0;
     let mz = intent.move ? intent.move.z || 0 : 0;
-    const ml = Math.hypot(mx, mz);
+    const ml = len2(mx, mz);
     if (ml > 1) {
       mx /= ml;
       mz /= ml;
@@ -501,7 +505,7 @@ export class Physics3D {
       } else if (moving) {
         const tx = mx * P.runMaxSpeed;
         const tz = mz * P.runMaxSpeed;
-        const hs = Math.hypot(player.vx, player.vz);
+        const hs = len2(player.vx, player.vz);
         if (hs > P.runMaxSpeed && player.vx * mx + player.vz * mz > 0) {
           player.vx = U.damp(player.vx, tx, P.overspeedFriction, dt);
           player.vz = U.damp(player.vz, tz, P.overspeedFriction, dt);
@@ -509,7 +513,7 @@ export class Physics3D {
           // Approach the target velocity along the difference vector.
           const ex = tx - player.vx;
           const ez = tz - player.vz;
-          const el = Math.hypot(ex, ez);
+          const el = len2(ex, ez);
           const step = P.runAccel * dt;
           if (el <= step) {
             player.vx = tx;
@@ -523,7 +527,7 @@ export class Physics3D {
         const k = Math.exp(-P.groundFriction * dt);
         player.vx *= k;
         player.vz *= k;
-        if (Math.hypot(player.vx, player.vz) < 0.05) {
+        if (len2(player.vx, player.vz) < 0.05) {
           player.vx = 0;
           player.vz = 0;
         }
@@ -532,7 +536,7 @@ export class Physics3D {
       // Air control: steer up to airMaxSpeed along the intent, never braking momentum.
       if (moving) {
         const along = player.vx * mx + player.vz * mz; // speed along intent (mx,mz may be < 1)
-        const im = Math.hypot(mx, mz) || 1;
+        const im = len2(mx, mz) || 1;
         if (along / im < P.airMaxSpeed) {
           player.vx += mx * P.airAccel * dt;
           player.vz += mz * P.airAccel * dt;
@@ -589,7 +593,7 @@ export class Physics3D {
         // constraints never fight and pump energy into the body.
         for (const h of HANDS) {
           const rope = tethers.hands[h].rope;
-          const d = Math.hypot(player.x - rope.anchor.x, player.y - rope.anchor.y, player.z - rope.anchor.z);
+          const d = len3(player.x - rope.anchor.x, player.y - rope.anchor.y, player.z - rope.anchor.z);
           if (d > rope.length + 0.02) rope.length = d;
         }
       }
