@@ -24,7 +24,12 @@ npx http-server . -p 8080      # or: python3 -m http.server 8080
 GitHub Pages — handy for playing on a phone).
 
 **On a phone:** open the deployed URL (or your machine's LAN address while serving locally), rotate to landscape for
-the best view (portrait works too), and tap **Begin descent**. Add it to your home screen for a full-screen experience.
+the best view (portrait works too), and tap **Begin descent**.
+
+**Install on Android (full-screen app):** open the deployed URL in Chrome, then menu **⋮ → Add to Home screen →
+Install**. The game ships a web app manifest, so it launches from its own icon full screen in landscape, with no
+browser bar. (Installing needs HTTPS — the GitHub Pages deployment provides it; a plain `http://` LAN address plays
+fine but cannot be installed.)
 
 ## Controls
 
