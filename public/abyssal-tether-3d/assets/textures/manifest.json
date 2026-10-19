@@ -1,0 +1,47 @@
+{
+  "rock": {
+    "albedo": "rock_albedo.jpg",
+    "normal": "rock_normal.jpg",
+    "orm": "rock_orm.jpg",
+    "tileMeters": 4.0,
+    "size": 1024,
+    "source": "baked:build_textures.py",
+    "description": "shaft rock: dark bedded stone, jointed blocks, faults, calcite veins, seeps"
+  },
+  "masonry": {
+    "albedo": "masonry_albedo.jpg",
+    "normal": "masonry_normal.jpg",
+    "orm": "masonry_orm.jpg",
+    "tileMeters": 4.0,
+    "size": 1024,
+    "source": "baked:build_textures.py",
+    "description": "Lanternwright ashlar: dressed courses + band course, worn chipped arrises, eroded joints"
+  },
+  "metal": {
+    "albedo": "metal_albedo.jpg",
+    "normal": "metal_normal.jpg",
+    "orm": "metal_orm.jpg",
+    "tileMeters": 2.0,
+    "size": 1024,
+    "source": "baked:build_textures.py",
+    "description": "corroded iron: blackened scale, flaking rust blooms and runs, pitting"
+  },
+  "rockFar": {
+    "albedo": "rockFar_albedo.jpg",
+    "normal": "rockFar_normal.jpg",
+    "orm": "rockFar_orm.jpg",
+    "tileMeters": 16.0,
+    "size": 1024,
+    "source": "baked:build_textures.py",
+    "description": "distant rock: darker massive beds, large joints, low fine detail"
+  },
+  "flesh": {
+    "albedo": "flesh_albedo.jpg",
+    "normal": "flesh_normal.jpg",
+    "orm": "flesh_orm.jpg",
+    "tileMeters": 1.5,
+    "size": 1024,
+    "source": "baked:build_textures.py",
+    "description": "dark wet sinew: fibre bundles, branching raised veins, capillaries, wet sheen"
+  }
+}
