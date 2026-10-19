@@ -1,0 +1,22 @@
+{
+  "id": "./",
+  "name": "Abyssal Tether",
+  "short_name": "Abyssal Tether",
+  "description": "Descend a colossal buried cathedral-machine on two grappling tethers while something vast follows you down. VR for Meta Quest.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#08090a",
+  "theme_color": "#08090a",
+  "categories": ["games"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,30 @@
+# Hosting headers DRAFT for the game origin (Cloudflare Pages / Netlify "_headers" syntax).
+# Rename to _headers in the deploy output root if you host there; for other hosts, translate.
+# __GAME_PATH__ is the game's path on the origin, e.g. "/" or "/abyssal-tether-3d/".
+# GitHub Pages cannot set custom headers: see RELEASE.md "Hosting and domain".
+
+# Digital Asset Links: must be at the ORIGIN ROOT, JSON, no redirect.
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Cache-Control: public, max-age=300
+  Access-Control-Allow-Origin: *
+
+# The service worker must always be revalidated, or updates stall for up to 24 h.
+__GAME_PATH__sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: __GAME_PATH__
+
+__GAME_PATH__manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: no-cache
+
+__GAME_PATH__index.html
+  Cache-Control: no-cache
+
+# Everything else is versioned by the service worker; keep HTTP caching short so a fresh
+# install never mixes builds through a stale CDN copy (the worker also fetches with cache: reload).
+__GAME_PATH__*
+  Cache-Control: public, max-age=600
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: xr-spatial-tracking=(self), payment=(self)

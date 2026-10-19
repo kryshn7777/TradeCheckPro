@@ -1,0 +1,57 @@
+{
+  "packageId": "__PACKAGE_ID__",
+  "applicationId": "__HORIZON_APP_ID__",
+  "host": "__DOMAIN__",
+  "name": "Abyssal Tether",
+  "launcherName": "Abyssal",
+  "display": "standalone",
+  "orientation": "default",
+  "themeColor": "#08090A",
+  "themeColorDark": "#08090A",
+  "navigationColor": "#08090A",
+  "navigationColorDark": "#08090A",
+  "navigationDividerColor": "#00000000",
+  "navigationDividerColorDark": "#00000000",
+  "backgroundColor": "#08090A",
+  "enableNotifications": true,
+  "enableMicrophone": false,
+  "enableXRScene": false,
+  "startUrl": "__GAME_PATH__index.html",
+  "iconUrl": "https://__DOMAIN____GAME_PATH__icons/icon-512.png",
+  "maskableIconUrl": "https://__DOMAIN____GAME_PATH__icons/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "__KEYSTORE_PATH__",
+    "alias": "__KEY_ALIAS__"
+  },
+  "appVersionCode": 1,
+  "appVersion": "1.0.0",
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://__DOMAIN____GAME_PATH__manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {
+    "horizonPlatformSDK": {
+      "enabled": true
+    },
+    "horizonBilling": {
+      "enabled": true,
+      "horizonOSAppMode": "immersive"
+    }
+  },
+  "alphaDependencies": {
+    "enabled": true
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": true,
+  "horizonOSAppMode": "immersive",
+  "fullScopeUrl": "https://__DOMAIN____GAME_PATH__",
+  "minSdkVersion": 23,
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "__SHA256_COLON_HEX__"
+    }
+  ]
+}
