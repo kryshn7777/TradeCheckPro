@@ -250,7 +250,8 @@ export class FallbackRenderer3D {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x07090a);
     this.scene.fog = new THREE.Fog(0x07090a, 5, 70);
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
+    this.baseFov = 70; // desktop fov; resize() restores it after an XR session
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 1, 0.05, 400);
     this.rig = new THREE.Group();
     this.rig.name = 'rig';
     this.rig.add(this.camera);
@@ -469,6 +470,9 @@ export class FallbackRenderer3D {
     const el = this.container;
     const w = Math.max(1, (el && el.clientWidth) || window.innerWidth || 800);
     const h = Math.max(1, (el && el.clientHeight) || window.innerHeight || 600);
+    // An XR session leaves its own fov/zoom on the user camera (WebXRManager.updateUserCamera).
+    this.camera.fov = this.baseFov;
+    this.camera.zoom = 1;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (!this.renderer.xr.isPresenting) this.renderer.setSize(w, h, true);
@@ -1317,7 +1321,8 @@ export class Game3D {
   /** Game-level fallback when the input module cannot start the session itself. */
   async _requestXRSession() {
     if (typeof navigator === 'undefined' || !navigator.xr) throw new Error('WebXR is not available in this browser.');
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
+    // No 'hand-tracking' (as xrInput.js): the game needs controllers (sticks, grips, A–B).
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
     const xr = this.renderer.renderer.xr;
     xr.setReferenceSpaceType('local-floor');
     await xr.setSession(session);
@@ -1477,6 +1482,13 @@ export class Game3D {
     if (this.state !== 'paused') return false;
     this._acc = 0;
     this._lastTs = null;
+    // A pause clears the input's held state (pointer-lock loss, an XR blur), while the
+    // tethers still think the button is down: their safety net would drop every
+    // attached rope on the first frame. Ropes stay attached until a fresh
+    // press / release on that hand (the same rule as debugAttach); a trigger held
+    // through a plain pause still lets go on its release edge.
+    const t = this.tethers;
+    if (t) for (let k = 0; k < 2; k++) t.hands[HANDS[k]].held = false;
     this._setState('playing');
     this._try('audio', () => this.audio.setPaused(false));
     this._try('ui', () => this.ui.show(null));
@@ -1507,6 +1519,9 @@ export class Game3D {
 
   _warp(i) {
     if (!this.level || !this.player) return false;
+    // Not during the victory gate slam: victoryT would keep counting and open the
+    // victory screen in the section warped to (respawn() refuses for the same reason).
+    if (this.victoryT >= 0) return false;
     if (this.state !== 'playing' && this.state !== 'paused' && this.state !== 'dead') return false;
     const lvl = this.level;
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
@@ -2148,7 +2163,7 @@ export class Game3D {
       label: this.diff.label,
       prompt: this.xrActive
         ? canRespawn
-          ? 'A (or point + trigger) to rise again · X to restart'
+          ? 'A (or point + trigger) to rise again · hold X to restart'
           : 'A (or point + trigger) to begin again'
         : canRespawn
           ? 'Click or Enter to rise again · R to restart'

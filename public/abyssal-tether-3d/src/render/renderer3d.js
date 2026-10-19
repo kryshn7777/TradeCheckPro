@@ -21,6 +21,7 @@
  *   applyTextures(textures) → Promise    precompile()  headPosition(out)  themeAt(y, out)
  *   .fx.burst(kind, x, y, z, opts)       kind: 'sparks' | 'puff' | 'chips' | 'debris'
  *   .stats {calls, triangles, points, programs, frameMs}   (after render())
+ *   envKit: Promise<boolean>              the environment kit (dressing parts, far colossi) loaded and applied
  * Reads from game: level, player (rx/ry/rz), tethers.hands, threat.value, diff
  * (aimRange, fragileTime, crumbleTime), fade, flash, state, input.handPose(h),
  * bus (FX + glyph pulses), settings.reducedEffects.
@@ -31,7 +32,7 @@
  */
 
 import * as THREE from 'three';
-import { MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
+import { KEY_DIR, MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
 import { LevelView } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
@@ -49,13 +50,17 @@ const ENV_LIGHTS = 2;
 const ENV_REASSIGN = 0.25; // seconds between nearest-light re-evaluations
 const ENV_GAIN = 1.6; // level.lights: candela = intensity × max(6, 0.06·range²) × gain (reaches ~range)
 const THEME_BLEND = 9; // metres either side of a section boundary
-const AMBIENT_SCALE = 3.2; // theme.ambient → hemisphere intensity
+const AMBIENT_SCALE = 2.7; // theme.ambient → hemisphere intensity
+const KEY_SCALE = 5; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
 const LANTERN_DECAY = 1.6; // gentler than physical so the lantern still grazes walls 10–20 m away
 const DEFAULT_TEXTURE_MANIFEST = 'assets/textures/manifest.json';
+/** The Underspire environment kit (tools/abyssal-tether-3d/build_env_kit.py), relative to this module. */
+const ENV_KIT_URL = new URL('../../assets/models/env/ch1_env_kit.glb', import.meta.url).href;
+const SKY_RADIUS = 330; // sky dome: inside camera.far (400), beyond every section's fog far (fully fogged)
 const DESKTOP_FOV = 70; // WebXR overwrites camera.fov with the headset's; resize() restores this
 // Material slots + uniform holders scanned by precompile() for textures to upload early.
 const TEX_SLOTS = ['map', 'normalMap', 'aoMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'lightMap', 'specularMap'];
@@ -144,9 +149,26 @@ export class Renderer3D {
     this.rig.add(this.camera);
     this.scene.add(this.rig);
 
+    // Sky dome: fully fogged, so it shows the graded fog colour (materials.js
+    // installRadialFog) — darker looking down into the abyss, a little light
+    // above — and fogged geometry dissolves into it seamlessly at any pitch.
+    this.sky = null;
+
     // Ambient fill (per-section).
     this.hemi = new THREE.HemisphereLight(0x6fa3b5, 0x141210, 0.5);
     this.scene.add(this.hemi);
+    // Key: the cold light still falling down the shaft from where you came in
+    // (per-section colour, no shadows). Every upward face catches it — cornices,
+    // ledge crowns, capitals, sills — so the carving reads as lines of light in
+    // the haze, and its slant splits pier, buttress and figure sides into lit
+    // and shade. Without it the ambient lights all vertical faces alike and
+    // relief vanishes into flat grey walls.
+    this.key = new THREE.DirectionalLight(0xffffff, 0);
+    this.key.name = 'ShaftKey';
+    this.key.castShadow = false;
+    this.key.position.copy(KEY_DIR); // toward the key (materials.KEY_DIR): from high above, slanted
+    this.keyScale = KEY_SCALE;
+    this.scene.add(this.key);
 
     // Lantern: one warm flickering PointLight carried by the player.
     this.lanternGroup = new THREE.Group();
@@ -176,7 +198,13 @@ export class Renderer3D {
     this._envScratch = [];
 
     this.materials = new MaterialLibrary(r);
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 12), this.materials.get('sky'));
+    this.sky.name = 'SkyDome';
+    this.sky.renderOrder = -1000;
+    this.sky.frustumCulled = false;
+    this.scene.add(this.sky);
     this.levelView = new LevelView(this.scene, this.materials);
+    this.envKit = this._loadEnvKit();
     this.ropeView = new RopeView(this.scene);
     this.fx = new FX(this.scene, this.camera);
     this.levelView.fx = this.fx;
@@ -231,6 +259,36 @@ export class Renderer3D {
     const bulb = options && typeof options.bulb === 'boolean' ? options.bulb : parent !== this.camera;
     this.lanternBulb.visible = bulb;
     this._lanternParent = parent;
+  }
+
+  /**
+   * Loads the environment kit once (GLTFLoader, dynamic import so a missing
+   * loader degrades to the procedural dressing only) and hands it to the
+   * LevelView, which draws the planned kit parts into its decor chunks.
+   */
+  _loadEnvKit() {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
+    return import('three/addons/loaders/GLTFLoader.js')
+      .then(
+        (M) =>
+          new Promise((resolve) => {
+            new M.GLTFLoader().load(
+              ENV_KIT_URL,
+              (gltf) => resolve(gltf),
+              undefined,
+              () => resolve(null),
+            );
+          }),
+      )
+      .then((gltf) => {
+        if (!gltf) return false;
+        this._envKitGltf = gltf;
+        return this.levelView.setKit(gltf);
+      })
+      .catch((err) => {
+        if (typeof console !== 'undefined') console.warn('[AT3D] environment kit unavailable, procedural dressing only', err);
+        return false;
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -525,6 +583,7 @@ export class Renderer3D {
     fog.near = Math.max(0.5, th.fogNear * (1 - tk * 0.3));
     fog.far = Math.max(fog.near + 4, th.fogFar * (1 - tk * 0.18));
     this.scene.background.copy(fog.color);
+    if (this.sky) this.sky.position.copy(head);
 
     // Ambient: hemisphere from the theme light (sky) over a dark ground.
     _tmpC.copy(th.light);
@@ -532,6 +591,10 @@ export class Renderer3D {
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
     this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * (1 - tk * 0.25);
+    // Key from above: the theme light, desaturated a little (a pale shaft of the
+    // surface's daylight), weaker with the threat.
+    this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * (1 - tk * 0.35);
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;
@@ -599,6 +662,7 @@ export class Renderer3D {
     this.materials.dispose();
     this.lanternBulb.geometry.dispose();
     this.lanternBulb.material.dispose();
+    if (this.sky) this.sky.geometry.dispose();
     this.renderer.setAnimationLoop(null);
     this.renderer.dispose();
     if (this.renderer.domElement.parentNode) this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);

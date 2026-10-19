@@ -108,6 +108,7 @@ const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus 
 const PARTIALS = [1, 2.32, 3.86, 5.41];
 const PARTIAL_AMP = [0.5, 0.3, 0.2, 0.12];
 const PARTIAL_TC = [0.11, 0.07, 0.05, 0.034];
+const GATE_DROP_S = 0.35; // LevelView drops the chamber gate 7.5 m at 120 m/s²: it lands this long after game:goal
 
 // Bell-ish ratios for distant resonant tones / chimes.
 const BELL = [1, 2.76, 5.4, 8.93];
@@ -2087,6 +2088,7 @@ export class AudioManager3D {
       'game:menu': this._onGameMenu,
       'game:respawn': this._onGameRespawn,
       'game:victory': this._onGameVictory,
+      'game:goal': this._onGameGoal,
       'ui:click': this._onUiClick,
       'settings:changed': this._onSettings,
       'xr:start': this._onXRStart,
@@ -2170,6 +2172,14 @@ export class AudioManager3D {
   _onGameVictory() {
     this._victory = true;
     this._sfxVictory();
+  }
+
+  /** The goal is reached: the chamber's portcullis drops behind the player. */
+  _onGameGoal() {
+    const lv = this._game && this._game.level;
+    const g = lv && lv.gate;
+    if (g && isFinite(g.minX)) this._sfxGateDrop((g.minX + g.maxX) / 2, (g.minY + g.maxY) / 2, (g.minZ + g.maxZ) / 2);
+    else this._sfxGateDrop(NaN, NaN, NaN);
   }
 
   _onSettings(p) {
@@ -3147,6 +3157,31 @@ export class AudioManager3D {
         o.connect(g);
         g.connect(v.out);
       }
+    }
+    this._commit(v);
+  }
+
+  /**
+   * The portcullis drops (game:goal): bars chattering faster in their guides as it
+   * falls, then its own deep clang as it bites the floor (GATE_DROP_S later, when
+   * LevelView lands it), lower than the creature's blows that follow (_sfxAttack gate).
+   * Its own voice name, so the 'attack' rate limit cannot swallow the first blow.
+   */
+  _sfxGateDrop(x, y, z) {
+    const sp = this._spatial(x, y, z, 6);
+    const v = this._begin('gate', 3, 1, GATE_DROP_S + 3, this.busAmbient, this._cMul(sp, 0.5), 0, Math.max(sp.send, 0.35), 0, this._cPos(sp), 'near');
+    if (!v) return;
+    const t = v.t0;
+    const ti = t + GATE_DROP_S;
+    this._tickTrain(v, t, 9, GATE_DROP_S * 0.9, 0.35, 1600, 5200, 5, 0.012, -0.8);
+    this._impactLayers(v, ti, 1.1);
+    const base = rand(84, 94);
+    for (let i = 0; i < PARTIALS.length; i++) {
+      const o = this._vOsc(v, 'sine', base * PARTIALS[i], ti);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, ti, PARTIAL_AMP[i], 0.002, PARTIAL_TC[i] * 4.5);
+      o.connect(g);
+      g.connect(v.out);
     }
     this._commit(v);
   }

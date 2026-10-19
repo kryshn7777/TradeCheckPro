@@ -48,6 +48,7 @@ const HUD_INTERVAL = 0.1; // s between DOM HUD text refreshes
 const WRIST_INTERVAL = 0.2; // s between wrist HUD redraws (only when the text changed)
 const SECTION_LABEL_TIME = 6; // s the HUD section label stays lit
 const TITLE_TIME = 4.7; // s a section title card stays up
+const TITLE_CUT = 1.0; // s: a title card still up when the S4 sighting starts fades out this fast
 const DEATH_FALLBACK = 1.4; // s after player:death before the UI shows the death screen itself
 const DEATH_ARM = 0.38; // s: stray clicks right as the death screen opens are ignored
 const CLICK_DEBOUNCE = 0.15; // s between two VR panel clicks
@@ -713,6 +714,8 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .section-card{position:absolute;z-index:15;top:19%;left:50%;display:flex;flex-direction:column;align-items:center;gap:.3em;width:min(36em,calc(100% - 32px));text-align:center;pointer-events:none;opacity:0;visibility:hidden;transform:translateX(-50%)}
 .at3d-ui .section-card.is-on{visibility:visible;animation:at3d-card ${TITLE_TIME - 0.1}s ease both}
 @keyframes at3d-card{0%{opacity:0;transform:translate(-50%,8px)}14%{opacity:1;transform:translate(-50%,0)}78%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-4px)}}
+.at3d-ui .section-card.is-on.is-cut{animation:at3d-card-cut ${TITLE_CUT}s ease both}
+@keyframes at3d-card-cut{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-4px)}}
 .at3d-ui .section-num{font:400 .82em var(--fd);letter-spacing:.5em;margin-right:-.5em;color:var(--amber)}
 .at3d-ui .section-name{font:700 clamp(1.6em,6vmin,3em)/1.1 var(--fd);letter-spacing:.12em;text-transform:uppercase;color:#d8cfbd;text-shadow:0 -1px 0 rgba(0,0,0,.9),0 1px 0 rgba(255,236,200,.12),0 8px 30px rgba(0,0,0,.95)}
 .at3d-ui .section-rule{width:5.5em;height:1px;margin:.25em 0;background:linear-gradient(90deg,transparent,rgba(224,160,80,.8),transparent)}
@@ -960,6 +963,14 @@ export class UI3D {
     on('section:enter', (p) => {
       if (!p.first || !p.section) return;
       this.showSectionTitle(p.section.name, p.section.subtitle, num(p.index, -1));
+    });
+    on('creature:sighting', () => {
+      // The first sight of the creature must not sit behind a title card ('IV The
+      // Listening Vault' is often still up on a fast route): fade it out quickly.
+      const t = this._title;
+      if (t.t <= TITLE_CUT) return;
+      t.t = TITLE_CUT; // VR: opacity follows t.t / 1 s from here
+      if (this.dom) this.dom.sectionCard.classList.add('is-cut');
     });
     on('checkpoint', () => this.showToast('Checkpoint', 2.2));
     on('hint', (p) => this.showHint(p.hint && typeof p.hint === 'object' ? p.hint : p.text || p, num(p.duration, num(p.seconds, 0))));
@@ -1610,6 +1621,7 @@ export class UI3D {
       d.sectionNum.textContent = t.num;
       d.sectionName.textContent = t.name;
       d.sectionSub.textContent = t.sub;
+      d.sectionCard.classList.remove('is-cut');
       restartAnimation(d.sectionCard, 'is-on');
     }
   }
@@ -2258,7 +2270,9 @@ export class UI3D {
       new THREE.BoxGeometry(0.0022, 0.0022, 1).translate(0, 0, -0.5),
       new THREE.MeshBasicMaterial({ color: 0xe8dcc0, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, fog: false, toneMapped: false }),
     );
-    vr.ray.renderOrder = RENDER_ORDER - 1;
+    // Over the panel up to the hit point (the panel writes no depth), still under the
+    // hands (HANDS_RENDER_ORDER_XR 960), so the launcher covers the start of the ray.
+    vr.ray.renderOrder = RENDER_ORDER + 4;
     vr.ray.visible = false;
     vr.ray.frustumCulled = false;
     vr.ray.name = 'UI3D.ray';
@@ -2283,7 +2297,9 @@ export class UI3D {
     // Mipmapped: ~1.6× minified at arm's length, the small text would shimmer otherwise
     // (it repaints at most every 0.2 s, so the mip rebuild is cheap).
     vr.wristC = mkCanvas(WRIST_CW, WRIST_CH, true);
-    vr.wrist = mkPlane(vr.wristC, WRIST_W, 10, { depthTest: true, depthWrite: true, transparent: true, alphaTest: 0.02 });
+    // Order 961: after the hands (960), so its 8 % see-through shows the bracer, not the
+    // world behind it, and after the fade sphere (900), like the hands it is not darkened.
+    vr.wrist = mkPlane(vr.wristC, WRIST_W, 961, { depthTest: true, depthWrite: true, transparent: true, alphaTest: 0.02 });
     vr.wrist.name = 'UI3D.wrist';
     vr.wristMount = new THREE.Group();
     vr.wristMount.name = 'UI3D.wristMount';

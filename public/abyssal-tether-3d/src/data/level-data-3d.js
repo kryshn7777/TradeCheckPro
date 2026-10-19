@@ -746,9 +746,21 @@ const sections = [
         text: 'Something is coming down after you. Keep moving.',
         desktop: 'Something is coming down after you. Keep moving.',
       },
+      {
+        // The S6 fork, briefed here on the first step while the creature is still
+        // ~50 m overhead on its slow intro: at the fork itself it has followed you
+        // down (a fear peak in nearly every timeline run), and the plaques there name
+        // both ways. Named by the plaques, not left / right: in VR you arrive facing any way.
+        y: -159, duration: 8,
+        text: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
+        desktop: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
+      },
     ],
     triggers: [
       { y: -152.5, name: 'rumble', data: { intensity: 0.6 } },
+      // Heard before it is seen: the creature (in play, on its slow intro) answers
+      // with its own cry from where it really is, far overhead.
+      { y: -153, name: 'call', data: { intensity: 0.7 } },
       { y: -170, name: 'debris', data: { x: -12, y: -151, z: 0, intensity: 0.6 } },
       { y: -190, name: 'call', data: { intensity: 0.8 } },
     ],
@@ -760,14 +772,7 @@ const sections = [
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#1b1918', '#5a7d86', '#9a4a2a', 5, 65, 0.18),
     creature: creature('hunt', true, 120),
-    hints: [
-      {
-        // Named by the plaques, not left / right: in VR you arrive facing any way.
-        y: -207, duration: 8,
-        text: 'Two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
-        desktop: 'Two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
-      },
-    ],
+    hints: [], // the fork is briefed in S5 (see its second hint)
     triggers: [
       { y: -209, name: 'call', data: { intensity: 0.9 } },
       { y: -240, name: 'debris', data: { x: 0, y: -212, z: 0, intensity: 0.7 } },

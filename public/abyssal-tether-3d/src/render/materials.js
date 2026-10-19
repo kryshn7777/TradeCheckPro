@@ -47,6 +47,16 @@ export const PALETTE = {
   still: 0xf4ead2,
 };
 
+/** The baked sinew set is red; the level's growth is graded to a dark matte brown (linear multiplier). */
+const FLESH_GRADE = new THREE.Color(2.3, 8.2, 6.5);
+const _white = new THREE.Color(1, 1, 1);
+
+/**
+ * Toward the shaft key light (Renderer3D's DirectionalLight: cold light from
+ * high above, slanted) — shared so unlit silhouettes shade the same way.
+ */
+export const KEY_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize();
+
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
 /** Fallback texture resolution (px) generated at boot, before the baked sets load. */
@@ -630,6 +640,9 @@ const UV_ASSIGN = UV_TARGETS.map((t) => `#ifdef USE_${t}\n\t${UV_VARY[t]} = atUv
  *  shapes: true  per-vertex aShape vs per-instance iShape.x selection (others collapse),
  *                aSplit × iShape.y lateral split, aGlow × iShape.z emissive inlay (glowColor),
  *                aPlate (1 wall-only / 2 chain-only part) vs iShape.w (1 = chain mount)
+ *  shade: true   unlit silhouettes take a cheap key-light term from their world
+ *                normal (KEY_DIR, the shaft key in Renderer3D): lit tops and
+ *                flanks, shaded undersides — colossi read as carved masses, not cut-outs
  *  fog: 'cap'    linear fog capped at fogCap (silhouettes survive)
  *       'fade'   additive materials: fade toward black instead of fog colour
  * Uniform objects live on material.userData.at so callers can drive them.
@@ -657,7 +670,8 @@ export function patchMaterial(mat, opts = {}) {
   const crack = !!opts.crack && uvMode;
   const macro = !!opts.macro && uvMode;
   const shaft = !!opts.shaft;
-  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|fog:${fog}`;
+  const shade = !!opts.shade;
+  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -760,6 +774,21 @@ ${UV_ASSIGN}
       );
     }
 
+    if (shade) {
+      vDecl += 'varying vec3 vAtWN;\n';
+      fDecl += 'varying vec3 vAtWN;\n';
+      vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vAtWN = normalize( mat3( modelMatrix ) * normal );');
+      const k = KEY_DIR;
+      fs = fs.replace(
+        '#include <opaque_fragment>',
+        `#include <opaque_fragment>
+  {
+    vec3 atN = normalize( vAtWN );
+    gl_FragColor.rgb *= 0.45 + 0.95 * max( dot( atN, vec3( ${k.x.toFixed(4)}, ${k.y.toFixed(4)}, ${k.z.toFixed(4)} ) ), 0.0 ) + 0.15 * atN.y;
+  }`,
+      );
+    }
+
     if (fog === 'cap' || fog === 'fade') {
       fDecl += 'uniform float uFogCap;\n';
       const body =
@@ -787,17 +816,27 @@ ${UV_ASSIGN}
 /**
  * Fog for VR, installed globally (ShaderChunk) so every module's materials agree:
  *  - radial (distance) fog instead of view depth: rotation-invariant, so
- *    looking around in the headset never changes what the fog hides
+ *    looking around in the headset never changes what fog hides
  *  - a front-loaded curve between fogNear and fogFar (1 − (1 − t)^2.5): mid
  *    distances turn to haze quickly (silhouettes, depth), and the far value
  *    still reaches exactly 1 so distance culling at fogFar is invisible
- * atFogFactor(d) is available to every fragment shader that uses fog.
+ *  - a vertical gradient on the fog colour by view direction (per fragment):
+ *    the haze above (where you came from) holds a little light, the abyss below
+ *    swallows it. `fogColor` is redefined to the graded colour after the
+ *    declarations, so every material's fog code (built-in chunks and custom
+ *    patches alike) fades to exactly the same colour as the sky dome
+ *    (Renderer3D) — distance culling stays invisible at any pitch.
+ * atFogFactor(d) and atFogColor() are available to every fragment shader that uses fog.
  */
+export const FOG_GRADIENT = { up: 0.55, down: 0.6 };
+
 export function installRadialFog() {
-  const vtx = '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n#endif\n';
+  const vpars = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif\n';
+  const vtx = '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n\tvFogView = mvPosition.xyz;\n#endif\n';
   const pars = `#ifdef USE_FOG
 	uniform vec3 fogColor;
 	varying float vFogDepth;
+	varying vec3 vFogView;
 	#ifdef FOG_EXP2
 		uniform float fogDensity;
 	#else
@@ -813,9 +852,18 @@ export function installRadialFog() {
 		return 1.0 - u * u * sqrt( u );
 	#endif
 	}
+	vec3 atFogColor() {
+		// world-space up of the view ray: viewMatrix[ 1 ].xyz is world +Y in view space
+		float k = dot( normalize( vFogView ), viewMatrix[ 1 ].xyz );
+		float up = smoothstep( 0.0, 1.0, k );
+		float dn = smoothstep( 0.0, 0.85, - k );
+		return fogColor * ( 1.0 + ${FOG_GRADIENT.up.toFixed(3)} * up - ${FOG_GRADIENT.down.toFixed(3)} * dn );
+	}
+	#define fogColor atFogColor()
 #endif
 `;
   const frag = '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, atFogFactor( vFogDepth ) );\n#endif\n';
+  if (THREE.ShaderChunk.fog_pars_vertex !== vpars) THREE.ShaderChunk.fog_pars_vertex = vpars;
   if (THREE.ShaderChunk.fog_vertex !== vtx) THREE.ShaderChunk.fog_vertex = vtx;
   if (THREE.ShaderChunk.fog_pars_fragment !== pars) THREE.ShaderChunk.fog_pars_fragment = pars;
   if (THREE.ShaderChunk.fog_fragment !== frag) THREE.ShaderChunk.fog_fragment = frag;
@@ -910,15 +958,20 @@ export class MaterialLibrary {
       side: THREE.DoubleSide,
     });
     patchMaterial(m.grate, { uv: 'box', tile: 4 });
-    // Merged decor (uv already in metres).
-    m.decorStone = this._std(S.masonry, {}, { uv: 'metric', ash: 0.3, macro, role: 'masonry' });
-    m.decorMetal = this._std(S.metal, {}, { uv: 'metric', ash: 0.15, macro, role: 'metal' });
-    m.decorRock = this._std(S.distant || S.rock, {}, { uv: 'metric', ash: 0.25, macro, role: 'distant' });
-    // Organic growth (the predator's ribs through the masonry): flesh set when baked, dark-red rock until then.
-    m.decorFlesh = this._std(S.flesh || S.rock, { color: S.flesh ? 0xffffff : 0x8a4a40 }, { uv: 'metric', macro, role: 'flesh' });
+    // Merged decor + environment dressing (uv already in metres; vertex colour =
+    // baked AO × the section grade).
+    m.decorStone = this._std(S.masonry, { vertexColors: true }, { uv: 'metric', ash: 0.3, macro, role: 'masonry' });
+    m.decorMetal = this._std(S.metal, { vertexColors: true }, { uv: 'metric', ash: 0.15, macro, role: 'metal' });
+    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true }, { uv: 'metric', ash: 0.25, macro, role: 'distant' });
+    // Organic growth (the predator's sinew through the masonry): the flesh set's
+    // relief, graded to a dark, MATTE bruise-brown (art bible: never wet red).
+    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh' });
+    m.decorFlesh.userData.matte = 0.82;
+    m.decorFlesh.roughnessMap = null;
+    m.decorFlesh.roughness = 0.82;
     // Emissive bits of decor (lamp bulbs, inlays, statue lanterns): vertex colours.
     m.decorGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
-    patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.7 });
+    patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.55 });
     // Volumetric light shafts: additive, fades to black in fog. forceSinglePass:
     // a transparent DoubleSide material otherwise draws twice per eye (back then
     // front) and re-resolves its program on every pass; additive with no depth
@@ -951,8 +1004,10 @@ export class MaterialLibrary {
     patchMaterial(m.hazard, { shapes: true, glowColor: 0x8a2c18 });
     // Colossal silhouettes: unlit, colour follows the fog, fog capped.
     m.colossal = new THREE.MeshBasicMaterial({ color: 0x0b0c0d, toneMapped: false });
-    patchMaterial(m.colossal, { fog: 'cap', fogCap: 0.5 });
+    patchMaterial(m.colossal, { fog: 'cap', fogCap: 0.5, shade: true });
     m.plaque = this._std(S.masonry, { emissive: new THREE.Color(PALETTE.phos), emissiveIntensity: 0.0 }, { uv: 'metric', role: 'masonry' });
+    // Sky dome (Renderer3D): fully fogged, so it shows exactly the graded fog colour.
+    m.sky = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: true });
   }
 
   get(name) {
@@ -975,7 +1030,7 @@ export class MaterialLibrary {
       if (!s || !s.map) continue;
       if (mat.map !== s.map) changed = true;
       mat.map = s.map;
-      if (role === 'flesh') mat.color.set(0xffffff);
+      if (role === 'flesh') mat.color.copy(mat.userData.matte ? FLESH_GRADE : _white);
       if (mat.normalMap && s.normalMap) {
         if (mat.normalMap !== s.normalMap) changed = true;
         mat.normalMap = s.normalMap;
@@ -983,7 +1038,7 @@ export class MaterialLibrary {
       if (mat.aoMap && s.ormMap) {
         if (mat.aoMap !== s.ormMap) changed = true;
         mat.aoMap = s.ormMap;
-        mat.roughnessMap = s.ormMap;
+        mat.roughnessMap = mat.userData.matte ? null : s.ormMap;
         mat.metalnessMap = s.ormMap;
       }
       if (mat.userData.at) mat.userData.at.uTexScale.value = 1 / (s.tileMeters || DEFAULT_TILE);
