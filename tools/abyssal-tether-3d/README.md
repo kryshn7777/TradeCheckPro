@@ -1,7 +1,15 @@
-# ABYSSAL TETHER 3D — asset pipeline
+# ABYSSAL TETHER 3D — asset pipeline and test tooling
 
 Source tooling for the full-3D / Meta Quest 3 (WebXR) version. Built assets go to
 `public/abyssal-tether-3d/assets/` so they deploy with the site over HTTPS (required for WebXR).
+
+Verification and tests (each folder has its own README):
+
+| Folder | Run | What |
+|---|---|---|
+| [`verify/`](verify/README.md) | `npm run verify:at3d -- --chapter ch1 --variant all` | the route-bot harness: integrity, every route on every variant, determinism, sim budget per system (ENGINE_EXTENSIONS E28 / E29 / §8) |
+| [`e2e/`](e2e/README.md) | `npm run e2e:at3d` | the real game in headless Chromium: desktop input, the whole descent with the creature live, persistence, mock WebXR |
+| [`tests/`](tests/README.md) | `npm run test:at3d` | Node unit tests (input, VR UX fixes, creature) and the creature pacing / perf tools |
 
 ## The Mason (predator)
 
