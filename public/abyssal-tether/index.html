@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b0c0d" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Abyssal Tether" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta
+      name="description"
+      content="Abyssal Tether: descend a colossal buried cathedral-machine on a grappling tether while something vast follows you down. Plays with touch, mouse and keyboard, or a gamepad."
+    />
+    <title>Abyssal Tether</title>
+    <!-- Original glyph: a phosphor anchor ring, a taut tether and the amber lantern below it. -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0c0d'/%3E%3Cpath d='M10 6v52M54 6v52' stroke='%232a2f31' stroke-width='4'/%3E%3Ccircle cx='32' cy='15' r='7.5' fill='none' stroke='%23e8dcc0' stroke-width='3.5'/%3E%3Cpath d='M32 22.5V40' stroke='%23e8dcc0' stroke-width='2.5'/%3E%3Cpath d='M32 38l8 8-8 8-8-8z' fill='%23e0a050'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="is-loading" data-screen="none">
+    <div id="app">
+      <canvas id="game-canvas" role="img" aria-label="Abyssal Tether: the game view"></canvas>
+
+      <div id="ui">
+        <!-- ================================================================ HUD -->
+        <div id="hud">
+          <div class="hud-tl">
+            <div class="hud-row">
+              <span id="hud-tether" class="hud-tether" data-state="idle" role="img" aria-label="Tether: idle">
+                <svg viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+                  <g class="t-idle">
+                    <circle cx="14" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="2.4 2.2" />
+                    <path d="M14 12.5v6.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.4 2.2" />
+                    <path d="M14 19.5l3.5 3.5-3.5 3.5-3.5-3.5z" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </g>
+                  <g class="t-target">
+                    <circle cx="14" cy="7" r="3.6" fill="none" stroke="currentColor" stroke-width="1.8" />
+                    <path d="M7.5 3.5V1h2.5M20.5 3.5V1H18M7.5 10.5V13H10M20.5 10.5V13H18" fill="none" stroke="currentColor" stroke-width="1.5" />
+                    <path d="M14 12.5v6.5" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.4 2.2" />
+                    <path d="M14 19.5l3.5 3.5-3.5 3.5-3.5-3.5z" fill="none" stroke="currentColor" stroke-width="1.4" />
+                  </g>
+                  <g class="t-attached">
+                    <circle cx="14" cy="7" r="4.6" fill="currentColor" />
+                    <circle cx="14" cy="7" r="1.6" fill="#0b0c0d" />
+                    <path d="M14 11.5v8" stroke="currentColor" stroke-width="2.2" />
+                    <path d="M14 19l4 4-4 4-4-4z" fill="currentColor" />
+                  </g>
+                  <g class="t-fragile">
+                    <path d="M14 1.5l5.5 5.5-5.5 5.5-5.5-5.5z" fill="currentColor" />
+                    <path d="M12.6 3.6l2.2 2.3-1.7 1.5 1.9 2.6" fill="none" stroke="#0b0c0d" stroke-width="1.2" />
+                    <path d="M14 12.5v7" stroke="currentColor" stroke-width="2.2" />
+                    <path d="M14 19l4 4-4 4-4-4z" fill="currentColor" />
+                  </g>
+                </svg>
+              </span>
+              <span id="hud-time" class="hud-time">0:00.00</span>
+            </div>
+            <div class="hud-row hud-sub">
+              <span id="hud-depth" class="hud-depth">0 m</span>
+              <span class="hud-dot" aria-hidden="true">&#183;</span>
+              <span id="hud-diff" class="hud-diff">Normal</span>
+            </div>
+            <div id="hud-best" class="hud-best" hidden></div>
+            <div id="hud-section" class="hud-section"></div>
+          </div>
+          <div class="hud-gauge" aria-hidden="true">
+            <div id="hud-gauge-ticks" class="hud-gauge-ticks"></div>
+            <div id="hud-gauge-marker" class="hud-gauge-marker"></div>
+          </div>
+        </div>
+
+        <div id="section-card" class="section-card" aria-live="polite">
+          <div id="section-num" class="section-num"></div>
+          <div id="section-name" class="section-name"></div>
+          <div class="section-rule" aria-hidden="true"></div>
+          <div id="section-sub" class="section-sub"></div>
+        </div>
+
+        <div id="hint" class="hint" role="status" aria-live="polite"></div>
+        <div id="toast" class="toast" role="status" aria-live="polite">
+          <span class="toast-glyph" aria-hidden="true"></span><span id="toast-text"></span>
+        </div>
+
+        <button id="btn-pause" class="btn-pause" type="button" data-action="pause" aria-label="Pause">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="6" y="5" width="4" height="14" rx="1" />
+            <rect x="14" y="5" width="4" height="14" rx="1" />
+          </svg>
+          <kbd class="only-pointer">Esc</kbd>
+        </button>
+
+        <!-- ================================================================ MENU -->
+        <section id="screen-menu" class="screen screen-menu" hidden aria-label="Main menu">
+          <div class="menu-wrap">
+            <header class="title-block">
+              <p class="kicker">The Underspire</p>
+              <h1 class="game-title">
+                <span class="title-word title-a">Abyssal</span>
+                <span class="title-tether" aria-hidden="true"><i></i><b></b><i></i></span>
+                <span class="title-word title-b">Tether</span>
+              </h1>
+              <p class="tagline">A lantern, a line, and a very long way down.</p>
+            </header>
+
+            <nav class="menu-actions" aria-label="Main menu">
+              <button class="btn btn-primary btn-start" type="button" data-action="start" data-autofocus>
+                <span class="btn-label">Begin descent</span>
+                <span id="menu-start-sub" class="btn-sub">Normal</span>
+              </button>
+              <button class="btn" type="button" data-action="difficulty">
+                <span class="btn-label">Difficulty</span>
+              </button>
+              <button class="btn" type="button" data-action="sandbox">
+                <span class="btn-label">Sandbox</span>
+                <span class="btn-sub">No predator</span>
+              </button>
+              <button class="btn" type="button" data-action="controls">
+                <span class="btn-label">Controls</span>
+              </button>
+              <button class="btn" type="button" data-action="settings">
+                <span class="btn-label">Settings</span>
+              </button>
+            </nav>
+
+            <div class="menu-foot">
+              <dl id="menu-best" class="best-strip" aria-label="Best times"></dl>
+              <p class="menu-hint">
+                <span class="only-pointer">Mouse aims &#183; hold the left button to tether &#183; A / D swing &#183; W / S reel</span>
+                <span class="only-touch">Left thumb moves &#183; touch an anchor to tether &#183; lift to let go</span>
+              </p>
+            </div>
+          </div>
+          <button class="btn-icon btn-corner" type="button" data-action="fullscreen" aria-label="Enter fullscreen" aria-pressed="false" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path class="fs-enter" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+              <path class="fs-exit" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+            </svg>
+          </button>
+        </section>
+
+        <!-- ================================================================ DIFFICULTY -->
+        <section id="screen-difficulty" class="screen" hidden aria-labelledby="difficulty-title">
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <button class="btn-back" type="button" data-action="back" aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" /></svg>
+                <span>Back</span>
+              </button>
+              <h2 id="difficulty-title">Choose your descent</h2>
+            </div>
+            <div class="panel-body">
+              <div id="diff-grid" class="diff-grid"></div>
+              <p class="panel-note">Best times and deepest points are kept on this device.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================ CONTROLS -->
+        <section id="screen-controls" class="screen" hidden aria-labelledby="controls-title">
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <button class="btn-back" type="button" data-action="back" aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" /></svg>
+                <span>Back</span>
+              </button>
+              <h2 id="controls-title">Controls</h2>
+            </div>
+            <div class="tabs" role="tablist" aria-label="Control scheme" id="controls-tabs">
+              <button class="tab" type="button" role="tab" id="tab-touch" aria-controls="ctl-touch" data-action="tab" data-tab="touch">Touch</button>
+              <button class="tab" type="button" role="tab" id="tab-desktop" aria-controls="ctl-desktop" data-action="tab" data-tab="desktop"><span class="tab-long">Mouse &amp; keyboard</span><span class="tab-short">Keyboard</span></button>
+              <button class="tab" type="button" role="tab" id="tab-pad" aria-controls="ctl-pad" data-action="tab" data-tab="pad">Gamepad</button>
+            </div>
+            <div class="panel-body">
+              <div class="tab-panel" role="tabpanel" id="ctl-touch" aria-labelledby="tab-touch" hidden>
+                <div class="touch-diagram-slot"></div>
+                <ul class="bind-list">
+                  <li><span class="bind-keys"><span class="chip">1</span> Left thumb</span><span class="bind-what">Drag anywhere on the left half to move and swing. The stick appears under your thumb.</span></li>
+                  <li><span class="bind-keys"><span class="chip">1</span> Push up / down</span><span class="bind-what">Climb the tether / let it out. Flick up quickly to jump.</span></li>
+                  <li><span class="bind-keys"><span class="chip">2</span> Touch an anchor</span><span class="bind-what">Fires the tether at the anchor nearest your finger. Hold to stay attached, lift to let go.</span></li>
+                  <li><span class="bind-keys"><span class="chip">3</span> Second finger</span><span class="bind-what">While swinging, touch another anchor to chain straight to it.</span></li>
+                  <li><span class="bind-keys"><span class="chip">4</span> Pause button</span><span class="bind-what">Top-right corner. The game also pauses when you leave the app.</span></li>
+                </ul>
+                <p class="panel-note">Prefer a right-hand aim stick, or tap-to-attach instead of holding? Switch it in Settings &#8250; Touch.</p>
+              </div>
+              <div class="tab-panel" role="tabpanel" id="ctl-desktop" aria-labelledby="tab-desktop" hidden>
+                <ul class="bind-list">
+                  <li><span class="bind-keys"><kbd>Mouse</kbd></span><span class="bind-what">Aim. Anchors near the cursor are highlighted.</span></li>
+                  <li><span class="bind-keys"><kbd>Left button</kbd></span><span class="bind-what">Hold to fire and keep the tether. Release to let go and keep your momentum.</span></li>
+                  <li><span class="bind-keys"><kbd>A</kbd><kbd>D</kbd></span><span class="bind-what">Move, and pump your swing while attached.</span></li>
+                  <li><span class="bind-keys"><kbd>W</kbd></span><span class="bind-what">Climb the tether. Jump when standing.</span></li>
+                  <li><span class="bind-keys"><kbd>S</kbd></span><span class="bind-what">Let the tether out. Brake on the ground.</span></li>
+                  <li><span class="bind-keys"><kbd>&#8592;</kbd><kbd>&#8593;</kbd><kbd>&#8594;</kbd><kbd>&#8595;</kbd> + <kbd>Space</kbd></span><span class="bind-what">Keyboard-only aim: pick a direction, hold Space to tether.</span></li>
+                  <li><span class="bind-keys"><kbd>Esc</kbd><kbd>P</kbd></span><span class="bind-what">Pause.</span></li>
+                  <li><span class="bind-keys"><kbd>R</kbd></span><span class="bind-what">Restart the run instantly.</span></li>
+                  <li><span class="bind-keys"><kbd>Space</kbd><kbd>Enter</kbd></span><span class="bind-what">Continue after a fall.</span></li>
+                </ul>
+              </div>
+              <div class="tab-panel" role="tabpanel" id="ctl-pad" aria-labelledby="tab-pad" hidden>
+                <ul class="bind-list">
+                  <li><span class="bind-keys"><kbd>Left stick</kbd></span><span class="bind-what">Move and swing. Up / down climbs or lets out the tether.</span></li>
+                  <li><span class="bind-keys"><kbd>Right stick</kbd></span><span class="bind-what">Aim the tether.</span></li>
+                  <li><span class="bind-keys"><kbd>RT</kbd><kbd>RB</kbd><kbd>X</kbd></span><span class="bind-what">Hold to fire and keep the tether. Release to let go.</span></li>
+                  <li><span class="bind-keys"><kbd>A</kbd></span><span class="bind-what">Jump (bottom face button).</span></li>
+                  <li><span class="bind-keys"><kbd>Start</kbd></span><span class="bind-what">Pause.</span></li>
+                  <li><span class="bind-keys"><kbd>Back</kbd></span><span class="bind-what">Restart the run.</span></li>
+                </ul>
+                <p class="panel-note">Button names follow the common layout; face buttons are matched by position.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================ SETTINGS -->
+        <section id="screen-settings" class="screen" hidden aria-labelledby="settings-title">
+          <div class="panel panel-wide">
+            <div class="panel-head">
+              <button class="btn-back" type="button" data-action="back" aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" /></svg>
+                <span>Back</span>
+              </button>
+              <h2 id="settings-title">Settings</h2>
+            </div>
+            <div id="settings-body" class="panel-body settings-body"></div>
+          </div>
+        </section>
+
+        <!-- ================================================================ PAUSE -->
+        <section id="screen-pause" class="screen screen-pause" hidden aria-labelledby="pause-title">
+          <div class="panel panel-pause">
+            <div class="panel-head panel-head-center">
+              <h2 id="pause-title">Paused</h2>
+              <p id="pause-stats" class="run-line"></p>
+            </div>
+            <div class="panel-body">
+              <div class="pause-cols">
+                <div class="pause-actions">
+                  <button class="btn btn-primary" type="button" data-action="resume" data-autofocus>
+                    <span class="btn-label">Resume</span>
+                  </button>
+                  <button id="pause-respawn" class="btn" type="button" data-action="respawn">
+                    <span class="btn-label">Respawn at checkpoint</span>
+                  </button>
+                  <button class="btn" type="button" data-action="restart">
+                    <span class="btn-label">Restart run</span>
+                  </button>
+                  <button class="btn" type="button" data-action="settings">
+                    <span class="btn-label">Settings</span>
+                  </button>
+                  <button class="btn" type="button" data-action="controls">
+                    <span class="btn-label">Controls</span>
+                  </button>
+                  <button class="btn btn-ghost" type="button" data-action="quit">
+                    <span class="btn-label">Quit to menu</span>
+                  </button>
+                </div>
+                <div id="pause-warp" class="pause-warp" hidden>
+                  <h3 class="group-title">Warp to section</h3>
+                  <div id="warp-grid" class="warp-grid"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================ DEATH -->
+        <section id="screen-death" class="screen screen-death" hidden aria-labelledby="death-msg">
+          <div class="death-wrap">
+            <p id="death-kicker" class="death-kicker"></p>
+            <h2 id="death-msg" class="death-msg"></h2>
+            <p id="death-stats" class="death-stats"></p>
+            <div class="death-actions">
+              <button id="death-continue" class="btn btn-primary" type="button" data-action="continue" data-autofocus>
+                <span class="btn-label">Continue</span>
+                <span id="death-continue-sub" class="btn-sub">from the last checkpoint</span>
+              </button>
+              <button class="btn" type="button" data-action="restart">
+                <span class="btn-label">Restart run</span>
+              </button>
+              <button class="btn btn-ghost" type="button" data-action="quit">
+                <span class="btn-label">Menu</span>
+              </button>
+            </div>
+            <p class="death-prompt">
+              <span class="only-pointer"><kbd>Space</kbd> continue &#183; <kbd>R</kbd> restart</span>
+              <span class="only-touch">Tap anywhere to continue</span>
+            </p>
+          </div>
+        </section>
+
+        <!-- ================================================================ VICTORY -->
+        <section id="screen-victory" class="screen screen-victory" hidden aria-labelledby="victory-title">
+          <div class="panel panel-victory">
+            <div class="panel-body">
+              <div class="victory-lamp" aria-hidden="true"></div>
+              <p class="kicker">The Still Lamp</p>
+              <h2 id="victory-title" class="victory-title">You reached the bottom</h2>
+              <div class="victory-time">
+                <span class="victory-time-label">Descent time</span>
+                <span id="v-time" class="victory-time-value">0:00.00</span>
+                <span id="v-newbest" class="badge-new" hidden>
+                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 1l2 5h5l-4 3.2L12.6 15 8 11.6 3.4 15 5 9.2 1 6h5z" /></svg>
+                  New best
+                </span>
+              </div>
+              <dl class="stat-grid">
+                <div><dt>Best</dt><dd id="v-best">&#8212;</dd></div>
+                <div><dt>Previous best</dt><dd id="v-prev">&#8212;</dd></div>
+                <div><dt>Deaths</dt><dd id="v-deaths">0</dd></div>
+                <div><dt>Deepest point</dt><dd id="v-deepest">0 m</dd></div>
+                <div><dt>Difficulty</dt><dd id="v-diff">Normal</dd></div>
+              </dl>
+              <p id="v-note" class="panel-note victory-note"></p>
+              <div class="victory-actions">
+                <button class="btn btn-primary" type="button" data-action="restart" data-autofocus>
+                  <span class="btn-label">Descend again</span>
+                </button>
+                <button class="btn" type="button" data-action="menu">
+                  <span class="btn-label">Menu</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================ TOUCH PRIMER -->
+        <div id="touch-primer" class="modal" role="dialog" aria-modal="true" aria-labelledby="primer-title" hidden>
+          <div class="panel panel-primer">
+            <div class="panel-head panel-head-center">
+              <h2 id="primer-title">Touch controls</h2>
+            </div>
+            <div class="panel-body">
+              <div class="primer-cols">
+                <div class="touch-diagram-slot"></div>
+                <ol class="primer-list">
+                  <li><span class="chip">1</span><span><b>Left thumb</b> &#8212; drag to move and swing. Push up to climb the tether, down to let it out. Flick up to jump.</span></li>
+                  <li><span class="chip">2</span><span id="primer-fire"><b>Touch an anchor</b> &#8212; the tether fires at it. Keep holding to stay attached; lift to let go.</span></li>
+                  <li><span class="chip">3</span><span><b>Second finger</b> &#8212; touch another anchor mid-swing to chain to it.</span></li>
+                  <li><span class="chip">4</span><span><b>Pause</b> &#8212; top-right. Aim stick and tap-to-toggle live in Settings.</span></li>
+                </ol>
+              </div>
+              <div class="primer-actions">
+                <button id="primer-ok" class="btn btn-primary" type="button" data-action="primer-ok" data-autofocus>
+                  <span class="btn-label">Got it</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================================ PORTRAIT HINT -->
+        <div id="rotate-hint" class="rotate-hint" role="status" hidden>
+          <svg class="rotate-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <rect x="9" y="4" width="14" height="24" rx="2.5" />
+            <path d="M27 14a9 9 0 0 0-7-8.5M27 14l-2.6-1.4M27 14l1.2-2.7" />
+          </svg>
+          <span class="rotate-text">Turn your device sideways for the widest view of the shaft.</span>
+          <button class="btn-icon btn-dismiss" type="button" data-action="rotate-dismiss" aria-label="Dismiss">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="boot-msg" class="boot-msg" aria-live="polite">Descending&#8230;</div>
+      <noscript>
+        <div class="noscript">
+          <p class="kicker">Abyssal Tether</p>
+          <p>This game needs JavaScript. Enable it and reload the page to begin the descent.</p>
+        </div>
+      </noscript>
+    </div>
+
+    <!-- Touch-controls diagram, cloned into the Controls screen and the first-run primer. -->
+    <template id="tpl-touch-diagram">
+      <svg class="touch-diagram" viewBox="0 0 320 150" role="img" aria-label="Diagram: left thumb stick on the left half, touch an anchor on the right to fire the tether">
+        <rect class="td-phone" x="3" y="3" width="314" height="144" rx="20" />
+        <rect class="td-zone" x="14" y="38" width="118" height="100" rx="10" />
+        <path class="td-divider" d="M134 30v110" />
+        <circle class="td-stick" cx="66" cy="100" r="24" />
+        <circle class="td-knob" cx="73" cy="90" r="10" />
+        <path class="td-arrow" d="M66 64l-5 6h10zM66 136l-5-6h10z" />
+        <circle class="td-ring" cx="244" cy="34" r="8" />
+        <path class="td-hook" d="M290 64l9 15h-18z" />
+        <path class="td-rope" d="M196 84L244 34" />
+        <path class="td-rope-alt" d="M196 84Q250 92 290 72" />
+        <path class="td-player" d="M196 76l8 8-8 8-8-8z" />
+        <circle class="td-touch" cx="244" cy="34" r="15" />
+        <circle class="td-touch td-touch-2" cx="290" cy="72" r="13" />
+        <rect class="td-pause" x="284" y="12" width="4" height="12" rx="1" />
+        <rect class="td-pause" x="292" y="12" width="4" height="12" rx="1" />
+        <g class="td-num">
+          <circle cx="104" cy="120" r="8" /><text x="104" y="124">1</text>
+          <circle cx="222" cy="20" r="8" /><text x="222" y="24">2</text>
+          <circle cx="300" cy="104" r="8" /><text x="300" y="108">3</text>
+          <circle cx="270" cy="18" r="8" /><text x="270" y="22">4</text>
+        </g>
+      </svg>
+    </template>
+
+    <!-- Classic scripts in contract load order (no modules, so file:// works). -->
+    <script src="js/config.js"></script>
+    <script src="js/level-data.js"></script>
+    <script src="js/level.js"></script>
+    <script src="js/physics.js"></script>
+    <script src="js/camera.js"></script>
+    <script src="js/input.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/threat.js"></script>
+    <script src="js/creature.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>
