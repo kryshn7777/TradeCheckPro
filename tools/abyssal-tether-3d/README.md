@@ -45,8 +45,22 @@ python3.13 -m venv .venv && .venv/bin/pip install bpy==5.2.2
 
 Options: `--seed N` (variation), `--samples`, `--res WxH`, `--rock <albedo.jpg>` (texture the preview wall).
 
-## Rock textures (Poly Haven, CC0)
+## Textures
 
-Planned: download CC0 rock/stone sets (albedo, normal, roughness, AO at 1k–2k, KTX2 for Quest) from Poly Haven
-into `public/abyssal-tether-3d/assets/textures/` for the shaft walls, ledges and the Mason's masonry. This needs
-`polyhaven.com`, `api.polyhaven.com` and `dl.polyhaven.org` allowed in the cloud environment's network settings.
+Original tileable PBR sets (1024², seamless by construction) are baked by `build_textures.py` into
+`public/abyssal-tether-3d/assets/textures/` with a `manifest.json`:
+
+| Set | Tile | Use |
+|---|---|---|
+| `rock` | 4 m | shaft walls, ledges |
+| `masonry` | 4 m | Lanternwright ashlar: built walls, bridges, the creature's stone |
+| `metal` | 2 m | corroded iron: girders, bands, grates |
+| `rockFar` | 16 m | distant structures |
+| `flesh` | 1.5 m | the creature's exposed tissue (fibres run along v) |
+
+Each set has `albedo` (sRGB), `normal` (OpenGL +Y, linear) and `orm` (R = AO, G = roughness, B = metalness, linear),
+so one ORM texture feeds three.js `aoMap`, `roughnessMap` and `metalnessMap`. Run with the Blender venv Python;
+`--preview` renders `previews/textures.png`, `--tilecheck <dir>` writes 2×2 seam-check sheets.
+
+`fetch_polyhaven.py` swaps in CC0 Poly Haven sets (same manifest format) when the network allows
+(`polyhaven.com`, `api.polyhaven.com`, `dl.polyhaven.org`); `--list <category>` and `--set name=id` choose assets.
