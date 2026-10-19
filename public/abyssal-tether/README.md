@@ -108,3 +108,20 @@ tooling. Physics runs at a fixed 240 Hz with an accumulator, capped frame delta 
 
 A debug/test hook is exposed as `window.AT.debug` (state snapshot, teleport, scripted input, deterministic
 stepping, warp).
+
+## Toward a 3D / Meta Quest 3 version
+
+The code is split so a VR port reuses the game rather than rewriting it:
+
+| Layer | Files | In a Quest 3 port |
+|---|---|---|
+| Simulation (DOM-free, renderer-agnostic) | `config.js`, `level-data.js`, `level.js`, `physics.js`, `creature.js` (behaviour), `threat.js` | Reuse as-is in WebXR (Quest Browser), or port the logic 1:1 to C#/Unity. The rope constraint, soft targeting and creature state machine are dimension-agnostic math. |
+| Feedback | `audio.js` | Reuse; swap `StereoPannerNode` for an HRTF `PannerNode` so the predator is placed in true 3D. |
+| Presentation & input | `render.js`, `camera.js`, `particles.js`, `input.js`, `ui.js` | Replace: 3D scene, controller ray aiming (the existing cone/assist targeting maps directly to a pointing ray), trigger = tether, thumbstick = swing/reel, in-world menus. |
+
+Decisions to make first:
+
+* **2.5D or full 3D.** Keeping the player on the shaft's cross-section plane (3D visuals, 2D movement) preserves every
+  physics-verified route in `level-data.js`. Full 3D movement needs a 3D level and re-verification.
+* **Comfort.** Grappling and long falls are the highest motion-sickness risk in VR: plan a speed-driven comfort vignette
+  (the threat vignette is a starting point), no camera shake, and snap turning.
