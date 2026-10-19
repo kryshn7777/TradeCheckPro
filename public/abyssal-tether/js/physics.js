@@ -574,6 +574,11 @@
       let maxImpact = 0;
       let impactNY = 0;
       let impactNX = 0;
+      // Downward speed before any contact this step. A fall that clips a
+      // convex ledge corner sees a diagonal normal, so the normal-projected
+      // impact alone would let terminal-speed falls survive on corners.
+      const preVy = Math.max(0, player.vy);
+      let floorFall = 0;
       const solids = this.level.querySolids(player.x - r - 4, player.y - r - 4, player.x + r + 4, player.y + r + 4, this._solids);
 
       for (let iter = 0; iter < 3; iter++) {
@@ -631,6 +636,12 @@
               impactNX = nx;
               impactNY = ny;
             }
+            // Lethality on floor-ish contacts uses the pre-contact fall speed,
+            // weighted by how floor-like the contact is (corner hits count).
+            if (ny < P.lethalNormalY) {
+              const fall = preVy * U.smoothstep(-P.lethalNormalY, 0.75, -ny);
+              if (fall > floorFall) floorFall = fall;
+            }
             player.vx -= vn * nx;
             player.vy -= vn * ny;
           }
@@ -663,8 +674,9 @@
       player.lastImpact = maxImpact;
 
       const floorish = impactNY < P.lethalNormalY;
-      if (floorish && this.diff.impactsLethal && maxImpact >= this.diff.lethalImpact) {
-        this.kill(player, grapple, 'impact', maxImpact);
+      const lethalMeasure = Math.max(floorish ? maxImpact : 0, floorFall);
+      if (this.diff.impactsLethal && lethalMeasure >= this.diff.lethalImpact) {
+        this.kill(player, grapple, 'impact', lethalMeasure);
         return;
       }
       if (floorish && !wasGrounded) {

@@ -55,44 +55,36 @@
     segments: 22,
     spacing: 32, // follow-the-leader link length (body ≈ 670u)
     hugInset: 30, // head runs this far off the wall's inner face (slightly fused into it)
-    speed: { approach: 268, pursue: 250, creep: 200, burst: 560, recover: 150, observe: 28, distant: 70 },
+    speed: { recover: 150, observe: 28, distant: 70 }, // per-difficulty speeds live in DIFF_TUNE
     steerRate: 3.2, // 1/s — velocity eases toward the desired velocity (no instant turns)
     burstSteerRate: 6.5,
     catchUpStart: 950, // vertical gap beyond which it is surely off-screen → closes faster
     catchUpGain: 1.1, // extra u/s per unit of gap beyond catchUpStart
     catchUpMax: 900,
-    maxGap: 2300, // hard rubber band (÷ √aggression); applied off-screen only
     maxModeSpeed: 1.1, // cap on mode profile × section speedMul
     pursueRange: 950, // APPROACHING → PURSUING
     loseRange: 1400, // PURSUING → APPROACHING
     swingNear: 380, // |vertical gap| below which the head leaves the wall for the player
     swingFar: 700,
-    burstMin: 320, // bursts only start in this distance window (never point-blank)
-    burstMax: 1500,
+    burstMax: 1500, // surges never start farther than this
     burstDurMin: 0.85,
     burstDurMax: 1.25,
     engageMul: 2.5, // attack wind-up starts inside killRadius × this
     strikeMul: 1.6, // the lunge connects only if the player is within killRadius × this
-    windup: 0.6, // telegraph (s), shortened by √aggression
+    windup: 0.6, // max telegraph (s); per-difficulty values live in DIFF_TUNE
     windupMin: 0.35,
-    windupCreep: 1.05, // committed advance during the wind-up (× pursue speed)
     strikeTime: 0.14,
     postStrike: 0.4,
-    drainPursue: 0.06, // stamina / s while PURSUING (× diff staminaDrain)
-    drainBurst: 0.24,
+    drainBurst: 0.24, // stamina / s while surging (pursuing drain is per difficulty)
     drainBurstEntry: 0.1,
     drainLunge: 0.18,
-    regenRecover: 0.16, // stamina / s while RECOVERING (× diff staminaRegen)
-    regenObserve: 0.08,
-    recoverTo: 0.62, // RECOVERING ends once stamina is back above this…
-    recoverMin: 2.2, // …and at least this long has passed (s)
+    regenObserve: 0.08, // stamina / s while hesitating (recovering regen is per difficulty)
+    recoverTo: 0.62, // RECOVERING ends once stamina is back above this (and recoverMin passed)
     observeMin: 0.8,
     observeMax: 1.6,
-    listenDelay: 1.0, // player still this long → it stops to listen
-    listenDur: 1.5,
-    listenCooldown: 9,
-    listenRange: 1700,
+    listenCooldown: 2.5,
     stillSpeed: 45, // player speed below which they count as "still"
+    stillDebounce: 0.35, // s — brief stops (direction changes) do not count as "still"
     moveSpeed: 110, // player speed that counts as "making noise" while it listens
     graceRespawn: 3.5,
     graceSection: 2.5,
@@ -101,14 +93,54 @@
     sightingDuration: 8.5,
   };
 
-  /** Per-mode behaviour profiles (multipliers / bursts per minute). */
+  /**
+   * Per-difficulty hunting tuning (Normal / Nightmare / Abyss), tuned against
+   * HUMAN pacing (first-timers average ~45 u/s on Normal, moving in bursts and
+   * pausing 2–8 s to read the route) as well as steady descents.
+   *   approach/pursue/burst  u/s (far / near / surge)
+   *   menace     stalking distance it presses to while you keep moving
+   *   holdBack   fraction of your speed it follows at when inside `menace`
+   *              (so the gap re-opens while you move)
+   *   listenDelay/listenDur  stillness before it stops to listen / how long
+   *   creep      u/s it closes on a player who stays silent after it listened
+   *   windup     attack telegraph (s);  windupAdv  u/s it keeps coming meanwhile
+   *              → a lunge misses anyone moving away faster than
+   *                windupAdv − (engage − strike reach) / windup
+   *   burstRate  surges per minute; commit = chance a surge near you is a lunge
+   *   drain/regen  stamina per second (pursuing / recovering), recoverMin (s)
+   */
+  const DIFF_TUNE = {
+    normal: {
+      approach: 255, pursue: 170, burst: 460, menace: 430, holdBack: 0.5,
+      listenDelay: 1.2, listenDur: 2.0, creep: 32, windup: 0.6, windupAdv: 140,
+      burstRate: 1.3, commit: 0.35, drain: 0.045, regen: 0.15, recoverMin: 3.0, maxGap: 2000,
+    },
+    nightmare: {
+      approach: 285, pursue: 215, burst: 540, menace: 370, holdBack: 0.6,
+      listenDelay: 1.0, listenDur: 1.6, creep: 48, windup: 0.52, windupAdv: 170,
+      burstRate: 1.9, commit: 0.5, drain: 0.045, regen: 0.18, recoverMin: 2.5, maxGap: 1900,
+    },
+    abyss: {
+      approach: 335, pursue: 280, burst: 630, menace: 320, holdBack: 0.7,
+      listenDelay: 0.75, listenDur: 1.1, creep: 85, windup: 0.45, windupAdv: 250,
+      burstRate: 2.6, commit: 0.65, drain: 0.04, regen: 0.2, recoverMin: 2.0, maxGap: 1700,
+    },
+  };
+  /** The config.js values each DIFF_TUNE row was tuned with (edits to config scale relative to these). */
+  const DIFF_REF = {
+    normal: { speed: 1.0, staminaDrain: 1.0, staminaRegen: 1.0 },
+    nightmare: { speed: 1.18, staminaDrain: 0.9, staminaRegen: 1.25 },
+    abyss: { speed: 1.34, staminaDrain: 0.8, staminaRegen: 1.5 },
+  };
+
+  /** Per-mode behaviour profiles (multipliers on DIFF_TUNE). */
   const MODES = {
-    dormant: { speed: 0.5, burst: 0, listen: 1, recover: 1, observe: 1 },
-    sighting: { speed: 0.5, burst: 0, listen: 1, recover: 1, observe: 1 },
-    stalk: { speed: 0.92, burst: 1.6, listen: 1.25, recover: 1.15, observe: 1.25 },
-    hunt: { speed: 1.0, burst: 2.6, listen: 1.0, recover: 1.0, observe: 1.0 },
-    frenzy: { speed: 1.05, burst: 4.2, listen: 0.8, recover: 0.8, observe: 0.7 },
-    escape: { speed: 1.1, burst: 3.4, listen: 0.65, recover: 0.65, observe: 0.55 },
+    dormant: { speed: 0.5, burst: 0, listen: 1, recover: 1, observe: 1, creep: 1, menace: 1, commit: 0 },
+    sighting: { speed: 0.5, burst: 0, listen: 1, recover: 1, observe: 1, creep: 1, menace: 1, commit: 0 },
+    stalk: { speed: 0.93, burst: 0.65, listen: 1.05, recover: 1.15, observe: 1.25, creep: 1.0, menace: 1.0, commit: 0.8 },
+    hunt: { speed: 1.0, burst: 1.0, listen: 1.0, recover: 1.0, observe: 1.0, creep: 1.0, menace: 1.0, commit: 1.0 },
+    frenzy: { speed: 1.04, burst: 1.6, listen: 0.95, recover: 0.8, observe: 0.7, creep: 1.0, menace: 0.95, commit: 1.15 },
+    escape: { speed: 1.08, burst: 1.3, listen: 0.95, recover: 0.7, observe: 0.55, creep: 1.0, menace: 0.95, commit: 1.25 },
   };
   const LETHAL_MODES = { stalk: true, hunt: true, frenzy: true, escape: true };
 
@@ -298,6 +330,18 @@
       };
       /** false in sandbox (diff.creature.enabled === false): never appears, never kills, silent. */
       this.active = this.cfg.enabled;
+      // Tuning row: by difficulty key, else nearest by aggression. config.js values
+      // scale relative to the ones the row was tuned with.
+      let key = DIFF_TUNE[this.diff.key] ? this.diff.key : null;
+      if (!key) key = this.cfg.aggression < 1.15 ? 'normal' : this.cfg.aggression < 1.45 ? 'nightmare' : 'abyss';
+      this.tuneKey = key;
+      const ref = DIFF_REF[key];
+      this.cfg.speedRatio = ref.speed > 0 ? this.cfg.speed / ref.speed : 1;
+      this.cfg.staminaDrain /= ref.staminaDrain;
+      this.cfg.staminaRegen /= ref.staminaRegen;
+      /** Effective hunting tuning for the current difficulty × mode × section (see _applyScaling). */
+      this.k = Object.assign({ burstRate: 0, commit: 0 }, DIFF_TUNE[key]);
+      this.creeping = false;
       this.seed = options && isFinite(options.seed) ? options.seed | 0 : (Math.random() * 1e9) | 0;
       this._rand = U.rng(this.seed);
 
@@ -359,7 +403,7 @@
 
       this.bbox = { x0: 0, y0: 0, x1: 0, y1: 0 };
       this.audio = { x: 0, y: 0, distance: FAR, intensity: 0, movement: 0, state: S.DORMANT };
-      this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, lx: 0, ly: 0, hit: false };
+      this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, lx: 0, ly: 0, hit: false, cause: '' };
       this._solidScratch = [];
       this._gripScratch = [];
       this._far = { ax: 0, ay: 0, hx: 0, hy: 0, len: 0, th: 0, alpha: 0, look: 0, u: 0, dir: 1, sc: 1, W: 1, H: 1 };
@@ -400,6 +444,8 @@
       this.victory = null;
       this.nearMiss = 0;
       this.listening = false;
+      this.creeping = false;
+      this.burstCommit = false;
       this.grace = 0;
       this.mode = 'dormant';
       this.profile = MODES.dormant;
@@ -639,6 +685,7 @@
     // ---- hunting (stalk / hunt / frenzy / escape) -------------------------------
 
     _updateHunt(dt, player) {
+      const K = this.k;
       const alive = player.alive !== false;
       const dist = Math.hypot(player.x - this.x, player.y - this.y);
       const gapY = player.y - this.y;
@@ -651,11 +698,14 @@
       this._tickHitch(dt);
 
       // Hard rubber band: never let it fall hopelessly far behind (it is off-screen there).
-      if (gapY > this.maxGap) this._shift(0, gapY - this.maxGap);
+      if (gapY > K.maxGap) this._shift(0, gapY - K.maxGap);
 
       const engage = this.cfg.killRadius * T.engageMul;
       const canAttack = this.lethal && alive && this.grace <= 0;
+      const still = alive && this.stillTime > T.stillDebounce;
+      const moving = alive && this.playerSpeed > T.moveSpeed;
       const st = this.state;
+      if (st !== S.APPROACHING) this.creeping = false;
 
       if (!alive && (st === S.APPROACHING || st === S.PURSUING || st === S.BURST)) {
         this._enterObserve(2.5, false); // hangs over the fallen, fronds searching
@@ -663,11 +713,23 @@
         switch (st) {
           case S.APPROACHING:
           case S.PURSUING:
-            if (st === S.PURSUING) this._drain(T.drainPursue * dt);
-            if (canAttack && dist < engage) this._startAttack();
+            if (this.creeping) {
+              // Closing on a silent player after listening.
+              if (moving) {
+                this.creeping = false;
+                this._heard(dist);
+              } else if (canAttack && dist < engage) this._startAttack('creep');
+              break;
+            }
+            if (st === S.PURSUING) this._drain(K.drain * dt);
+            if (canAttack && dist < engage && !still) this._startAttack('contact');
             else if (this.stamina <= 0) this._setState(S.RECOVERING);
-            else if (this._shouldListen(dist, alive)) this._enterObserve(this.listenDur, true);
-            else if (this._shouldBurst(dist)) this._startBurst();
+            else if (this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
+            else if (still && this.stillTime >= K.listenDelay + K.listenDur && dist <= K.menace + 80) {
+              // Already listened recently: go straight to creeping in.
+              this.creeping = true;
+              if (st !== S.APPROACHING) this._setState(S.APPROACHING);
+            } else if (this.burstTimer <= 0 && !still && this.stamina > 0.3) this._tryBurst(dist);
             else {
               if (st === S.APPROACHING && dist < T.pursueRange) this._setState(S.PURSUING);
               else if (st === S.PURSUING && dist > T.loseRange) this._setState(S.APPROACHING);
@@ -675,24 +737,35 @@
               if (this.callTimer <= 0) this._ambientCall(dist);
             }
             break;
-          case S.BURST:
+          case S.BURST: {
             this._drain(T.drainBurst * dt);
-            if (canAttack && dist < engage) this._startAttack();
-            else if (this.stateTime >= this.stateDur || (!canAttack && dist < engage)) {
+            let end = this.stateTime >= this.stateDur;
+            if (this.burstCommit) {
+              if (canAttack && dist < engage) {
+                this._startAttack('lunge');
+                break;
+              }
+              if (!canAttack && dist < engage * 1.6) end = true;
+            } else if (dist <= K.menace * 0.9) end = true; // pressure surge stops short
+            if (end) {
               if (this.stamina <= 0) this._setState(S.RECOVERING);
               else this._setState(dist < T.pursueRange ? S.PURSUING : S.APPROACHING);
             }
             break;
+          }
           case S.OBSERVING:
             this._regen(T.regenObserve * dt);
-            if (this.listening && alive && this.playerSpeed > T.moveSpeed && this.stateTime > 0.25) {
-              // It heard you move.
+            if (this.listening && moving && this.stateTime > 0.25) {
               this.listening = false;
-              if (this.stamina > 0.3 && dist > T.burstMin * 0.6 && dist < T.burstMax) this._startBurst();
-              else this._setState(S.PURSUING);
+              this._heard(dist); // it heard you move
             } else if (this.stateTime >= this.stateDur) {
               if (!alive) this.stateDur += 1;
-              else {
+              else if (this.listening && still) {
+                // Silence held: it creeps in, slow and certain.
+                this.listening = false;
+                this.creeping = true;
+                this._setState(S.APPROACHING);
+              } else {
                 this.listening = false;
                 this._setState(dist < T.pursueRange ? S.PURSUING : S.APPROACHING);
               }
@@ -702,10 +775,10 @@
             this._updateAttack(dt, player);
             return; // the attack drives its own movement
           case S.RECOVERING:
-            this._regen(T.regenRecover * dt);
+            this._regen(K.regen * dt);
             if (this.stateTime >= this.stateDur && this.stamina >= T.recoverTo) {
               const dur = (T.observeMin + this._rand() * (T.observeMax - T.observeMin)) * this.profile.observe;
-              this._enterObserve(dur / Math.sqrt(this.cfg.aggression), false);
+              this._enterObserve(dur, false);
             }
             break;
           default:
@@ -716,30 +789,39 @@
       this._steerHunt(dt, player, dist, gapY);
     }
 
-    _shouldListen(dist, alive) {
-      return (
-        alive &&
-        this.stillTime >= this.listenDelay &&
-        !this._listenedThisStill &&
-        this.listenCd <= 0 &&
-        dist < T.listenRange &&
-        dist > this.cfg.killRadius * T.engageMul * 1.2
-      );
+    /** It heard the player move: lunge if it has the strength, else give chase. */
+    _heard(dist) {
+      if (this.stamina > 0.3 && dist < T.burstMax) this._startBurst(true);
+      else this._setState(S.PURSUING);
     }
 
-    _shouldBurst(dist) {
+    /** Burst timer fired: a lunge when it is already close, a pressure surge when far. */
+    _tryBurst(dist) {
+      const K = this.k;
+      if (dist <= K.menace * 1.35) {
+        if (this._rand() < K.commit) this._startBurst(true);
+        else this.burstTimer = 2 + this._rand() * 3; // hesitates; tries again soon
+      } else if (dist >= K.menace + 200 && dist < T.burstMax) {
+        this._startBurst(false);
+      } else {
+        this.burstTimer = 1.5;
+      }
+    }
+
+    _shouldListen(dist, alive) {
+      const K = this.k;
       return (
-        this.burstRate > 0 &&
-        this.burstTimer <= 0 &&
-        this.stamina > 0.3 &&
-        dist > T.burstMin &&
-        dist < T.burstMax &&
-        this.stillTime < this.listenDelay // a still player is stalked, not charged
+        alive &&
+        this.stillTime >= K.listenDelay &&
+        !this._listenedThisStill &&
+        this.listenCd <= 0 &&
+        dist <= K.menace + 80 &&
+        dist > this.cfg.killRadius * T.engageMul
       );
     }
 
     _steerHunt(dt, player, dist, gapY) {
-      const spd = this.speedScale;
+      const K = this.k;
       this._scanWallsIfNeeded(dt);
       const hugX = this._hugX();
       const swing = 1 - U.smoothstep(T.swingNear, T.swingFar, Math.abs(gapY));
@@ -748,32 +830,58 @@
       let speed = 0;
       let rate = T.steerRate;
       const noise = this._noise();
+      const still = player.alive !== false && this.stillTime > T.stillDebounce;
+      const catchUp = gapY > T.catchUpStart ? Math.min(T.catchUpMax, (gapY - T.catchUpStart) * T.catchUpGain) : 0;
       switch (this.state) {
         case S.APPROACHING:
         case S.PURSUING: {
-          const base = this.state === S.PURSUING ? T.speed.pursue : T.speed.approach;
-          speed = base * spd * noise * this._hitch;
-          if (this.stillTime >= this.listenDelay) {
-            // Stalking a silent player: slow, deliberate, steady.
-            speed = Math.min(speed, T.speed.creep * spd * (0.88 + 0.18 * noise));
+          if (this.creeping) {
+            // Slow, deliberate, steady: the predator closing on silence.
+            speed = K.creep * (0.85 + 0.25 * (noise - 0.66));
+            tx = player.x;
+            rate = 2.5;
+            break;
           }
-          if (gapY > T.catchUpStart) speed += Math.min(T.catchUpMax, (gapY - T.catchUpStart) * T.catchUpGain);
+          const base = this.state === S.PURSUING ? K.pursue : K.approach;
+          speed = base * noise * this._hitch + catchUp;
+          // Stalking distance: it presses to `menace`, not into you, unless it
+          // commits to a lunge or has listened to your silence.
+          const m = K.menace;
+          if (dist < m + 150) {
+            if (still) {
+              // Hovers at the edge of the light while deciding whether you are there.
+              speed = Math.min(speed, T.speed.observe * (0.5 + 0.5 * noise) + Math.max(0, dist - m) * 0.8);
+            } else {
+              // Follow your AWAY component (sideways swinging does not pull it in),
+              // easing back out to `menace` when it is inside it.
+              const dl = Math.max(dist, 1);
+              const away = ((player.vx || 0) * (player.x - this.x) + (player.vy || 0) * (player.y - this.y)) / dl;
+              const f = U.lerp(K.holdBack, 1.05, U.clamp((dist - m) / 150, 0, 1));
+              speed = Math.min(speed, Math.max(0, Math.max(0, away) * f + (dist - m) * 0.8));
+              if (dist < m * 0.75) {
+                // You came at it: it gives ground (still stalking, not committed).
+                const dl2 = Math.max(dist, 1);
+                tx = this.x - ((player.x - this.x) / dl2) * 120;
+                ty = this.y - ((player.y - this.y) / dl2) * 120;
+                speed = Math.min(K.pursue, (m * 0.75 - dist) * 2 + 40);
+              }
+            }
+          }
           if (!this.lethal) {
             // Non-lethal hunting (data-driven): it looms but holds off.
-            const hold = this.cfg.killRadius * T.engageMul * 1.6;
+            const hold = Math.max(m, this.cfg.killRadius * T.engageMul * 1.6);
             speed *= U.clamp((dist - hold * 0.75) / (hold * 0.25), 0, 1);
           }
           break;
         }
         case S.BURST:
-          speed = T.speed.burst * spd * (0.85 + 0.25 * noise);
-          if (gapY > T.catchUpStart) speed += Math.min(T.catchUpMax, (gapY - T.catchUpStart) * T.catchUpGain);
+          speed = K.burst * (0.85 + 0.25 * noise) + catchUp;
           rate = T.burstSteerRate;
-          tx = U.lerp(hugX, player.x, Math.max(swing, 0.55));
+          tx = U.lerp(hugX, player.x, Math.max(swing, this.burstCommit ? 0.85 : 0.55));
           break;
         case S.OBSERVING:
           // Hesitates: holds on the wall, sways, drifts a little toward the sound.
-          speed = T.speed.observe * spd * (0.5 + noise * 0.5);
+          speed = T.speed.observe * (0.5 + noise * 0.5);
           tx = hugX + Math.sin(this._t * 0.7 + this.seed) * 40;
           ty = this.y + U.clamp(gapY, -60, 60);
           rate = 2;
@@ -781,7 +889,7 @@
         case S.RECOVERING: {
           // Withdraws upward, into the dark beside the masonry, slowing as it goes.
           const k = 1 - U.smoothstep(0, Math.max(this.stateDur, 0.5) * 1.2, this.stateTime);
-          speed = (T.speed.recover * k + 22) * Math.max(0.6, spd);
+          speed = (T.speed.recover * k + 22) * Math.max(0.6, this.speedScale);
           tx = hugX;
           ty = this.y - 420;
           rate = 2.2;
@@ -808,15 +916,24 @@
 
     // ---- attack ------------------------------------------------------------------
 
-    _startAttack() {
+    _startAttack(cause) {
       const a = this.attack;
+      a.cause = cause || 'contact';
       a.phase = 'windup';
       a.t = 0;
       a.hit = false;
-      a.windup = U.clamp(T.windup / Math.pow(this.cfg.aggression, 0.55), T.windupMin, T.windup);
+      a.windup = U.clamp(this.k.windup, T.windupMin, T.windup);
+      // The wind-up is a coil, not a continuation of the surge: shed momentum so
+      // the telegraph is honest and a player moving away really can escape.
+      const sp = Math.hypot(this.vx, this.vy);
+      const cap = this.k.windupAdv * 0.5;
+      if (sp > cap) {
+        this.vx *= cap / sp;
+        this.vy *= cap / sp;
+      }
       this.stats.attacks++;
       this._setState(S.ATTACK);
-      this._emit('creature:attack', { x: this.x, y: this.y });
+      this._emit('creature:attack', { x: this.x, y: this.y, windup: a.windup });
     }
 
     _updateAttack(dt, player) {
@@ -830,8 +947,7 @@
       if (a.phase === 'windup') {
         // Committed, telegraphed advance while the crown flares. Moving away
         // fast enough during this window turns the lunge into a near miss.
-        const speed = T.speed.pursue * this.speedScale * T.windupCreep;
-        this._moveToward(player.x, player.y, speed, 6, dt);
+        this._moveToward(player.x, player.y, this.k.windupAdv, 6, dt);
         if (a.t >= a.windup) this._strike(player);
       } else if (a.phase === 'strike') {
         const k = Math.min(1, a.t / T.strikeTime);
@@ -1048,7 +1164,7 @@
       this.stateTime = 0;
       this.audio.state = to;
       if (to === S.RECOVERING) {
-        if (!this.victory) this.stateDur = (T.recoverMin * this.profile.recover) / Math.sqrt(this.cfg.aggression);
+        if (!this.victory) this.stateDur = this.k.recoverMin;
         this.listening = false;
         this.stats.retreats++;
       }
@@ -1070,13 +1186,25 @@
       else this._setState(S.OBSERVING);
     }
 
-    _startBurst() {
-      this.stateDur = (T.burstDurMin + this._rand() * (T.burstDurMax - T.burstDurMin)) * (0.9 + 0.1 * this.cfg.aggression);
+    /**
+     * A surge. `commit` = a real lunge at you (ends in a telegraphed ATTACK if it
+     * gets in range); otherwise a pressure surge that stops short at the
+     * stalking distance — loud and frightening, but it does not strike.
+     */
+    _startBurst(commit) {
+      this.burstCommit = !!commit;
+      this.creeping = false;
+      this.stateDur = T.burstDurMin + this._rand() * (T.burstDurMax - T.burstDurMin);
       this._drain(T.drainBurstEntry);
-      this.burstTimer = Math.max(3, ((0.6 + this._rand() * 0.8) * 60) / Math.max(this.burstRate, 0.01));
+      this._scheduleBurst();
       this.stats.bursts++;
       this._setState(S.BURST);
       this._emit('creature:burst', { x: this.x, y: this.y, distance: this.distance });
+    }
+
+    _scheduleBurst() {
+      const rate = this.k.burstRate;
+      this.burstTimer = rate > 0 ? Math.max(3, ((0.6 + this._rand() * 0.8) * 60) / rate) : 1e9;
     }
 
     _drain(amount) {
@@ -1088,23 +1216,36 @@
     }
 
     _applyScaling(c) {
-      const aggr = this.cfg.aggression;
       const prof = this.profile || MODES.hunt;
-      // Aggression adds a little extra drive on top of the raw speed scale.
-      const drive = 1 + 0.1 * (aggr - 1);
+      const D = DIFF_TUNE[this.tuneKey] || DIFF_TUNE.normal;
+      const k = this.k;
       // Section speedMul stacks on the mode profile. Speed-ups are applied at half
       // strength and the product is capped (1.1 = the escape baseline) so data
-      // tweaks can never make a difficulty unescapable (pursuit sims are very
-      // sensitive to this: +15% raw made Abyss uncatchable-proof runs fail).
+      // tweaks can never make a difficulty unescapable (the pursuit sims are very
+      // sensitive to this).
       const sm = U.clamp(num(c.speedMul, 1), 0.5, 1.6);
       const secEff = sm > 1 ? 1 + (sm - 1) * 0.5 : Math.max(0.75, sm);
       const mEff = Math.min(prof.speed * secEff, Math.max(prof.speed, T.maxModeSpeed));
-      this.speedScale = this.cfg.speed * drive * mEff;
-      const rate = num(c.burstRate, 0) > 0 ? c.burstRate : prof.burst;
-      this.burstRate = rate * aggr;
-      this.maxGap = T.maxGap / Math.sqrt(aggr);
-      this.listenDelay = T.listenDelay / Math.sqrt(aggr);
-      this.listenDur = (T.listenDur * prof.listen) / Math.pow(aggr, 0.7);
+      const spd = this.cfg.speedRatio * mEff;
+      this.speedScale = spd;
+      k.approach = D.approach * spd;
+      k.pursue = D.pursue * spd;
+      k.burst = D.burst * spd;
+      k.windupAdv = D.windupAdv * spd;
+      k.creep = D.creep * prof.creep * this.cfg.speedRatio;
+      k.menace = D.menace * prof.menace;
+      k.holdBack = D.holdBack;
+      k.listenDelay = D.listenDelay * prof.listen;
+      k.listenDur = D.listenDur * prof.listen;
+      k.windup = D.windup;
+      // section.burstRate (if given) scales relative to a nominal 2.6 surges/min.
+      const secBurst = num(c.burstRate, 0) > 0 ? U.clamp(c.burstRate / 2.6, 0.5, 2) : 1;
+      k.burstRate = D.burstRate * prof.burst * secBurst;
+      k.commit = Math.min(0.95, D.commit * prof.commit);
+      k.drain = D.drain;
+      k.regen = D.regen;
+      k.recoverMin = D.recoverMin * prof.recover;
+      k.maxGap = D.maxGap;
     }
 
     _enterPlay(player, offsetY, grace) {
@@ -1129,8 +1270,11 @@
       this.sighting = null;
       this.stamina = 1;
       this.grace = grace;
-      this.burstTimer = 4 + this._rand() * 3;
-      this.listenCd = 2.5;
+      this._scheduleBurst();
+      this.burstTimer = Math.max(this.burstTimer * 0.5, 4);
+      this.listenCd = 0;
+      this.creeping = false;
+      this.burstCommit = false;
       this.attack.phase = null;
       this.listening = false;
       this.stateDur = 0;
@@ -1599,7 +1743,7 @@
       a.y = this.y;
       a.distance = player ? this.distance : FAR;
       // Agitation (not distance-attenuated: the audio engine applies distance itself).
-      const mv = this.inPlay ? U.clamp(this.speed / (T.speed.burst * 1.1), 0, 1) : this.sighting ? 0.25 : 0.05;
+      const mv = this.inPlay ? U.clamp(this.speed / (this.k.burst * 1.1), 0, 1) : this.sighting ? 0.25 : 0.05;
       a.movement = mv;
       a.intensity = U.clamp((AGITATION[this.state] || 0.2) * (0.75 + 0.25 * mv) + this.nearMiss * 0.2, 0, 1);
     }
