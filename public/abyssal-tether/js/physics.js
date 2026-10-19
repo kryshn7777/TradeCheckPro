@@ -8,7 +8,7 @@
  *   1. timers / control
  *   2. gravity + player intent (run, air control, swing pump, reel)
  *   3. semi-implicit Euler integration
- *   4. rope radial constraint (project position, strip outward radial velocity)
+ *   4. rope radial constraint (Rope#constrain: project position, strip outward radial velocity)
  *   5. collision resolution against solids, impacts, hazards
  *
  * DOM-free: loadable from Node for level-verification tooling.
@@ -79,6 +79,116 @@
   }
 
   // ===========================================================================
+  // Rope — the tether itself: anchor, length, reel, swing pump, constraint.
+  // ===========================================================================
+  class Rope {
+    constructor() {
+      this.anchor = null;
+      this.length = 0;
+      // Scratch: distance and unit direction anchor → player from the last measure().
+      this.d = 0;
+      this.nx = 0;
+      this.ny = 1;
+    }
+
+    get attached() {
+      return this.anchor !== null;
+    }
+
+    attach(anchor, distance, maxLength) {
+      this.anchor = anchor;
+      this.length = U.clamp(distance, C.rope.minLength, maxLength);
+    }
+
+    detach() {
+      this.anchor = null;
+      this.length = 0;
+    }
+
+    /** Measures anchor → player; returns true when the rope is taut. */
+    measure(player) {
+      const dx = player.x - this.anchor.x;
+      const dy = player.y - this.anchor.y;
+      const d = Math.hypot(dx, dy) || 1e-6;
+      this.d = d;
+      this.nx = dx / d;
+      this.ny = dy / d;
+      return d >= this.length - C.rope.tautSlack;
+    }
+
+    /**
+     * Reel in (input < 0) or out (input > 0). Reeling in on a taut rope
+     * conserves angular momentum about the anchor (v_t * L = const), so
+     * shortening mid-swing speeds the swing up — a deliberate, learnable
+     * technique (gain capped per step). Call measure() first.
+     */
+    reel(player, input, dt, maxLength, taut) {
+      const R = C.rope;
+      if (input < -0.15) {
+        if (!taut) this.length = Math.min(this.length, this.d);
+        const newLen = Math.max(R.minLength, this.length - R.reelInSpeed * -input * dt);
+        if (taut && newLen < this.length) {
+          const nx = this.nx;
+          const ny = this.ny;
+          const vr = player.vx * nx + player.vy * ny;
+          const tvx = player.vx - vr * nx;
+          const tvy = player.vy - vr * ny;
+          const gain = Math.min(this.length / newLen, R.reelSpinCap);
+          player.vx = vr * nx + tvx * gain;
+          player.vy = vr * ny + tvy * gain;
+        }
+        this.length = newLen;
+      } else if (input > 0.15) {
+        this.length = Math.min(maxLength, this.length + R.reelOutSpeed * input * dt);
+      }
+    }
+
+    /**
+     * Swing pump: project the horizontal intent onto the rope tangent, so
+     * A/D always pushes "along the arc" — never fights the rope. Call
+     * measure() first.
+     */
+    pump(player, mx, dt) {
+      const tx = -this.ny;
+      const ty = this.nx;
+      const along = mx * tx; // (mx, 0) · t
+      player.vx += tx * along * C.rope.pumpAccel * dt;
+      player.vy += ty * along * C.rope.pumpAccel * dt;
+    }
+
+    /**
+     * Inextensible-when-taut, slack-when-short constraint: if the player is
+     * beyond the rope length, project them back onto the circle and remove
+     * only the OUTWARD radial velocity. Tangential velocity (the swing) is
+     * untouched, so momentum is preserved and readable. Updates
+     * player.tension; returns the radial speed removed (0 if slack).
+     */
+    constrain(player) {
+      const an = this.anchor;
+      const L = this.length;
+      const dx = player.x - an.x;
+      const dy = player.y - an.y;
+      const d = Math.hypot(dx, dy);
+      if (d <= L || d < 1e-6) return 0;
+      const nx = dx / d;
+      const ny = dy / d;
+      player.x = an.x + nx * L;
+      player.y = an.y + ny * L;
+      let removed = 0;
+      const vr = player.vx * nx + player.vy * ny;
+      if (vr > 0) {
+        player.vx -= vr * nx;
+        player.vy -= vr * ny;
+        removed = vr;
+      }
+      // Tension estimate for feedback: centripetal requirement + gravity along the rope.
+      const vt2 = player.vx * player.vx + player.vy * player.vy;
+      player.tension = Math.max(0, vt2 / L + C.player.gravity * ny);
+      return removed;
+    }
+  }
+
+  // ===========================================================================
   // GrappleSystem — targeting, firing, attachment, release, fragile anchors.
   // ===========================================================================
   class GrappleSystem {
@@ -94,7 +204,23 @@
       this.bus = bus;
       this.settings = settings || AT.SETTINGS_DEFAULTS;
       this._scratch = [];
+      this.rope = new Rope();
       this.reset();
+    }
+
+    /** Attached anchor (pass-through to the rope). */
+    get anchor() {
+      return this.rope.anchor;
+    }
+    set anchor(v) {
+      this.rope.anchor = v || null;
+    }
+    /** Current rope length (pass-through to the rope). */
+    get ropeLength() {
+      return this.rope.length;
+    }
+    set ropeLength(v) {
+      this.rope.length = v;
     }
 
     reset() {
@@ -280,8 +406,7 @@
     attach(player, anchor, chained) {
       const prev = this.anchor;
       const d = Math.hypot(player.x - anchor.x, player.y - anchor.y);
-      this.anchor = anchor;
-      this.ropeLength = U.clamp(d, C.rope.minLength, this.maxRopeLength());
+      this.rope.attach(anchor, d, this.maxRopeLength());
       this.extend = 0;
       this.attachTime = 0;
       this.miss = null;
@@ -305,8 +430,7 @@
     release(player, reason) {
       if (!this.anchor) return;
       const anchor = this.anchor;
-      this.anchor = null;
-      this.ropeLength = 0;
+      this.rope.detach();
       player.grappleState = 'idle';
       player.ropeLength = 0;
       player.tension = 0;
@@ -374,7 +498,6 @@
     step(player, grapple, intent, dt) {
       if (!player.alive) return;
       const P = C.player;
-      const R = C.rope;
 
       player.prevX = player.x;
       player.prevY = player.y;
@@ -403,52 +526,26 @@
       // ---- 2. forces -------------------------------------------------------------
       player.vy += P.gravity * dt;
 
-      const anchor = grapple.anchor;
+      const rope = grapple.rope;
+      const anchor = rope.anchor;
       let taut = false;
       if (anchor) {
-        const dx = player.x - anchor.x;
-        const dy = player.y - anchor.y;
-        const d = Math.hypot(dx, dy) || 1e-6;
-        const nx = dx / d; // unit vector anchor → player
-        const ny = dy / d;
-        taut = d >= grapple.ropeLength - R.tautSlack;
-
-        // Reel. Reeling in on a taut rope conserves angular momentum about
-        // the anchor (v_t * L = const), so shortening mid-swing speeds the
-        // swing up — a deliberate, learnable technique (capped per step).
-        if (my < -0.15) {
-          if (!taut) grapple.ropeLength = Math.min(grapple.ropeLength, d);
-          const newLen = Math.max(R.minLength, grapple.ropeLength - R.reelInSpeed * -my * dt);
-          if (taut && newLen < grapple.ropeLength) {
-            const vr = player.vx * nx + player.vy * ny;
-            const tvx = player.vx - vr * nx;
-            const tvy = player.vy - vr * ny;
-            const gain = Math.min(grapple.ropeLength / newLen, R.reelSpinCap);
-            player.vx = vr * nx + tvx * gain;
-            player.vy = vr * ny + tvy * gain;
-          }
-          grapple.ropeLength = newLen;
-        } else if (my > 0.15) {
-          grapple.ropeLength = Math.min(grapple.maxRopeLength(), grapple.ropeLength + R.reelOutSpeed * my * dt);
-        }
-        player.ropeLength = grapple.ropeLength;
-
-        // Swing pump: project the horizontal intent onto the rope tangent, so
-        // A/D always pushes "along the arc" — never fights the rope.
-        if (taut && mx !== 0 && !player.grounded) {
-          const tx = -ny;
-          const ty = nx;
-          const along = mx * tx; // (mx, 0) · t
-          player.vx += tx * along * R.pumpAccel * dt;
-          player.vy += ty * along * R.pumpAccel * dt;
-        }
+        taut = rope.measure(player);
+        rope.reel(player, my, dt, grapple.maxRopeLength(), taut);
+        player.ropeLength = rope.length;
+        if (taut && mx !== 0 && !player.grounded) rope.pump(player, mx, dt);
       }
 
       // Ground / air control (a taut rope pulling the player off the floor
       // is handled by the constraint below; running still works on slack).
       if (player.grounded) {
         const target = mx * P.runMaxSpeed;
-        if (Math.abs(mx) > 0.05) {
+        if (!anchor && my > 0.5 && my > Math.abs(mx)) {
+          // S / stick down on the ground: brake hard (a diagonal run does not).
+          // While tethered, S means "give me rope" instead.
+          player.vx *= Math.exp(-P.groundFriction * P.brakeFactor * dt);
+          if (Math.abs(player.vx) < 2) player.vx = 0;
+        } else if (Math.abs(mx) > 0.05) {
           if (Math.abs(player.vx) > P.runMaxSpeed && U.sign(player.vx) === U.sign(mx)) {
             // Keep landing momentum, bleeding it off gently.
             player.vx = U.damp(player.vx, target, P.overspeedFriction, dt);
@@ -530,37 +627,13 @@
       grapple.step(player, dt);
     }
 
-    /**
-     * Rope as an inextensible-when-taut, slack-when-short constraint:
-     * if the player is beyond the rope length, project them back onto the
-     * circle and remove only the OUTWARD radial velocity. Tangential velocity
-     * (the swing) is untouched, so momentum is preserved and readable.
-     */
+    /** Applies the rope constraint (see Rope#constrain) and reports hard catches. */
     applyRopeConstraint(player, grapple) {
-      const an = grapple.anchor;
-      const L = grapple.ropeLength;
-      const dx = player.x - an.x;
-      const dy = player.y - an.y;
-      const d = Math.hypot(dx, dy);
-      if (d <= L || d < 1e-6) return;
-      const nx = dx / d;
-      const ny = dy / d;
-      player.x = an.x + nx * L;
-      player.y = an.y + ny * L;
-      const vr = player.vx * nx + player.vy * ny;
-      if (vr > 0) {
-        player.vx -= vr * nx;
-        player.vy -= vr * ny;
-        if (vr > C.rope.joltFxSpeed) {
-          player.ropeJolt = vr;
-          this.bus.emit('rope:jolt', { speed: vr, x: player.x, y: player.y });
-        }
+      const removed = grapple.rope.constrain(player);
+      if (removed > C.rope.joltFxSpeed) {
+        player.ropeJolt = removed;
+        this.bus.emit('rope:jolt', { speed: removed, x: player.x, y: player.y });
       }
-      // Tension estimate for feedback: centripetal requirement + gravity along the rope.
-      const tvx = player.vx;
-      const tvy = player.vy;
-      const vt2 = tvx * tvx + tvy * tvy;
-      player.tension = Math.max(0, vt2 / L + C.player.gravity * ny);
     }
 
     resolveCollisions(player, grapple, dt) {
@@ -708,6 +781,7 @@
   }
 
   AT.Player = Player;
+  AT.Rope = Rope;
   AT.GrappleSystem = GrappleSystem;
   AT.Physics = Physics;
 })((window.AT = window.AT || {}));

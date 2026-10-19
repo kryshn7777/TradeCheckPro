@@ -28,6 +28,7 @@
       runAccel: 2600,
       runMaxSpeed: 330,
       groundFriction: 10, // exponential decay rate when no ground input
+      brakeFactor: 2.4, // S on the ground: groundFriction × this
       overspeedFriction: 2.2, // decay toward runMaxSpeed when landing fast
       airAccel: 760,
       airMaxSpeed: 380, // air control never accelerates beyond this; it never brakes momentum either
