@@ -204,6 +204,7 @@ export class TetherSystem {
     this.bus = bus;
     this.settings = settings || {};
     this._scratch = [];
+    this._found = { anchor: null, score: 0 }; // reused result (callers read it immediately)
     this.hands = {};
     for (const h of HANDS) this.hands[h] = this._makeHand(h);
   }
@@ -249,7 +250,7 @@ export class TetherSystem {
    * angle to the ray is inside the cone OR the anchor lies within `rayAssist`
    * metres of the ray; best = most aligned (angle + perpendicular offset),
    * with a little stickiness for this hand's current highlight.
-   * Returns { anchor, score } or null.
+   * Returns a reused { anchor, score } object (read it immediately) or null.
    */
   findTarget(player, aim, hand) {
     if (!aim) return null;
@@ -289,7 +290,10 @@ export class TetherSystem {
       best = an;
       bestScore = score;
     }
-    return best ? { anchor: best, score: bestScore } : null;
+    if (!best) return null;
+    this._found.anchor = best;
+    this._found.score = bestScore;
+    return this._found;
   }
 
   /** Refresh each hand's highlight from its aim (once per frame). */

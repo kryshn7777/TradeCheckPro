@@ -1,0 +1,296 @@
+/* ABYSSAL TETHER 3D — style.css
+ * Shell styles: full-viewport dark stage, the canvas, the boot loader, the
+ * fatal overlay and base tokens / primitives the UI module builds on
+ * (ui3d.js injects its own component styles). Palette and type follow the 2D
+ * game (public/abyssal-tether/style.css).
+ */
+
+:root {
+  --bg: #08090a;
+  --stone-950: #0a0b0c;
+  --stone-900: #0f1112;
+  --stone-850: #141718;
+  --stone-800: #1a1d1f;
+  --stone-700: #23282a;
+  --stone-600: #30363a;
+
+  --ink: #ddd5c4;
+  --ink-2: #b3ac9e;
+  --ink-3: #868074;
+  --ink-4: #5e5b54;
+  --phosphor: #e8dcc0;
+  --amber: #e0a050;
+  --amber-2: #b67a3a;
+  --amber-soft: rgba(224, 160, 80, 0.16);
+  --verdigris: #3f6b63;
+  --verdigris-2: #6a9c90;
+  --rust: #7a3b22;
+  --cyan: #6fa3b5;
+
+  --line: rgba(232, 220, 192, 0.11);
+  --line-2: rgba(232, 220, 192, 0.2);
+  --line-3: rgba(232, 220, 192, 0.34);
+  --panel-a: rgba(21, 24, 25, 0.95);
+  --panel-b: rgba(10, 11, 12, 0.97);
+  --focus: #f2e6c9;
+
+  --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Times New Roman',
+    'Noto Serif', 'DejaVu Serif', serif;
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  --gutter: 16px;
+  --tap: 44px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --pad-t: max(var(--gutter), env(safe-area-inset-top, 0px));
+  --pad-r: max(var(--gutter), env(safe-area-inset-right, 0px));
+  --pad-b: max(var(--gutter), env(safe-area-inset-bottom, 0px));
+  --pad-l: max(var(--gutter), env(safe-area-inset-left, 0px));
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.5 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 0%, #121516 0%, var(--bg) 60%);
+}
+
+/* ---- stage / canvas ------------------------------------------------------- */
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.stage canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+  cursor: crosshair;
+}
+
+body.playing .stage canvas {
+  cursor: none;
+}
+
+/* ---- UI root: overlays never block the canvas unless a child opts in ------ */
+.ui-root {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ui-root > * {
+  pointer-events: auto;
+}
+
+.ui-root [hidden] {
+  display: none !important;
+}
+
+/* While the headset is presenting the page is not visible; keep the DOM quiet. */
+body.xr-presenting .ui-root {
+  visibility: hidden;
+}
+
+/* ---- primitives the UI module may reuse ------------------------------------ */
+.at-panel {
+  background: linear-gradient(180deg, var(--panel-a), var(--panel-b));
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  color: var(--ink);
+}
+
+.at-title {
+  margin: 0;
+  font: 600 clamp(28px, 6vw, 56px) / 1.05 var(--font-display);
+  letter-spacing: 0.14em;
+  color: var(--phosphor);
+  text-shadow: 0 0 24px rgba(224, 160, 80, 0.18);
+}
+
+.at-btn {
+  appearance: none;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 10px 20px;
+  border: 1px solid var(--line-3);
+  border-radius: 3px;
+  background: rgba(232, 220, 192, 0.04);
+  color: var(--ink);
+  font: 500 15px/1.2 var(--font-ui);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+
+.at-btn:hover {
+  border-color: var(--amber);
+  color: var(--phosphor);
+  background: var(--amber-soft);
+}
+
+.at-btn:focus-visible,
+.ui-root :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.at-btn--primary {
+  border-color: var(--amber);
+  color: var(--phosphor);
+}
+
+.at-btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- boot loader ----------------------------------------------------------- */
+.boot {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
+  background: var(--bg);
+  transition: opacity 0.6s var(--ease);
+}
+
+.boot.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-inner {
+  text-align: center;
+}
+
+.boot-title {
+  margin: 0;
+  font: 600 clamp(22px, 5vw, 40px) / 1.1 var(--font-display);
+  letter-spacing: 0.16em;
+  color: var(--phosphor);
+}
+
+.boot-mark {
+  display: inline-block;
+  margin-left: 0.3em;
+  padding: 0.05em 0.35em;
+  border: 1px solid var(--amber);
+  border-radius: 2px;
+  color: var(--amber);
+  font: 600 0.5em/1.4 var(--font-ui);
+  letter-spacing: 0.2em;
+  vertical-align: 0.45em;
+}
+
+.boot-line {
+  position: relative;
+  width: 2px;
+  height: 64px;
+  margin: 18px auto 14px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+
+.boot-line span {
+  position: absolute;
+  left: 0;
+  top: -40%;
+  width: 100%;
+  height: 40%;
+  background: var(--amber);
+  animation: boot-descend 1.4s var(--ease) infinite;
+}
+
+.boot-msg {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+@keyframes boot-descend {
+  to {
+    top: 100%;
+  }
+}
+
+.noscript {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink-2);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-line span {
+    animation: none;
+    top: 30%;
+  }
+
+  .boot,
+  .at-btn {
+    transition: none;
+  }
+}

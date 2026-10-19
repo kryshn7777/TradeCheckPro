@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#08090a" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      name="description"
+      content="Abyssal Tether VR: descend a colossal buried cathedral-machine on two grappling tethers while something vast follows you down. Built for Meta Quest 3 (WebXR); also plays with mouse and keyboard."
+    />
+    <title>Abyssal Tether VR</title>
+    <!-- Original glyph: a phosphor anchor ring, a taut tether and the amber lantern below it. -->
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2308090a'/%3E%3Cpath d='M10 6v52M54 6v52' stroke='%232a2f31' stroke-width='4'/%3E%3Ccircle cx='32' cy='15' r='7.5' fill='none' stroke='%23e8dcc0' stroke-width='3.5'/%3E%3Cpath d='M32 22.5V40' stroke='%23e8dcc0' stroke-width='2.5'/%3E%3Cpath d='M32 38l8 8-8 8-8-8z' fill='%23e0a050'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.min.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+    <link rel="modulepreload" href="./vendor/three/three.module.min.js" />
+    <link rel="modulepreload" href="src/game.js" />
+  </head>
+  <body class="is-loading" data-game-state="loading">
+    <div id="app">
+      <!-- Renderer3D appends its WebGL canvas here. -->
+      <div id="stage" class="stage" role="img" aria-label="Abyssal Tether: the game view"></div>
+
+      <!-- UI3D builds the desktop menus, HUD, hints and the Enter VR button inside this root. -->
+      <div id="ui-root" class="ui-root"></div>
+
+      <div id="boot" class="boot" role="status" aria-live="polite">
+        <div class="boot-inner">
+          <p class="boot-title">ABYSSAL TETHER <span class="boot-mark">VR</span></p>
+          <div class="boot-line" aria-hidden="true"><span></span></div>
+          <p id="boot-msg" class="boot-msg">Loading…</p>
+        </div>
+      </div>
+    </div>
+
+    <noscript>
+      <div class="noscript">
+        <p class="boot-title">ABYSSAL TETHER <span class="boot-mark">VR</span></p>
+        <p>This game needs JavaScript, WebGL&nbsp;2 and ES modules. For VR, open it in the Meta Quest Browser over HTTPS.</p>
+      </div>
+    </noscript>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
