@@ -47,6 +47,10 @@
     aimFire: 0.8, // aim stick: fires at this deflection
     aimRearm: 0.5, // aim stick: pulled back under this, a new push past aimFire chains
     screenMargin: 8, // keep stick bases this far inside the safe area
+    // A touch that starts inside the left-stick zone but lands this close (CSS px) to an
+    // anchor the tether could fire at grapples instead of spawning the stick — the camera
+    // often puts anchors in the left 42 % of the screen and "touch an anchor" must work there.
+    anchorTouchPx: 40,
     // Mouse.
     compatMouseGuardMs: 800, // ignore mouse-typed pointer events this long after touch
     mouseReclaimPx: 3, // mouse must move this far to take aim back from keys / pad
@@ -361,6 +365,14 @@
         zones: { leftMaxX: 0, rightMinX: 0, minY: 0 },
       };
       this._overlayAim = makeOverlayStick(true);
+      /**
+       * Optional hook `(sx, sy) → bool`: does a touch at this canvas point (CSS px) land on
+       * an anchor the player could tether to right now? When unset, AT.game's camera and
+       * grapple targeting are used if present (see _touchOnAnchor).
+       */
+      this.anchorHitTest = null;
+      this._hitPt = { x: 0, y: 0 };
+      this._hitAim = { mode: 'point', x: 0, y: 0, touch: true };
       this._touchPool = [];
       for (let i = 0; i < 10; i++) this._touchPool.push({ x: 0, y: 0, id: 0 });
 
@@ -857,7 +869,7 @@
       }
       const s = this.settings || AT.SETTINGS_DEFAULTS;
       this._aimMode = 'touch';
-      if (!this.leftStick.active && this._inLeftZone(x, y)) {
+      if (!this.leftStick.active && this._inLeftZone(x, y) && !this._touchOnAnchor(x, y)) {
         rec.role = R_STICK;
         this._startStick(this.leftStick, rec, x, y);
         this.leftStick.jumpReady = true;
@@ -1183,6 +1195,34 @@
     }
     _inRightZone(x, y) {
       return x > this._w * this.tuning.rightZoneMinX && y > this._zoneTop();
+    }
+
+    /** True when a touch at (x, y) lands on an anchor the tether could attach to now. */
+    _touchOnAnchor(x, y) {
+      const fn = this.anchorHitTest;
+      if (typeof fn === 'function') {
+        try {
+          return !!fn(x, y);
+        } catch {
+          return false;
+        }
+      }
+      const g = AT.game;
+      if (!g || !g.camera || !g.player || !g.grapple || !g.player.alive) return false;
+      const cam = g.camera;
+      if (typeof cam.screenToWorld !== 'function' || typeof g.grapple.findTarget !== 'function') return false;
+      try {
+        const w = cam.screenToWorld(x, y, this._hitPt);
+        const aim = this._hitAim;
+        aim.x = w.x;
+        aim.y = w.y;
+        const found = g.grapple.findTarget(g.player, aim);
+        if (!found || !found.anchor) return false;
+        const sc = cam.worldToScreen(found.anchor.x, found.anchor.y, this._hitPt);
+        return Math.hypot(sc.x - x, sc.y - y) <= this.tuning.anchorTouchPx;
+      } catch {
+        return false;
+      }
     }
 
     _stickRadius() {

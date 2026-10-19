@@ -2429,9 +2429,14 @@ body.reduced-effects .rotate-icon {
   }
 }
 
-/* Short landscape phones: the section card shares the top band with the first
-   anchors of each section, so it stays translucent and leaves sooner. */
+/* Short landscape phones: the top band is where each section's first anchor
+   sits when the card appears (measured: S1–S4 on 844×390 / 740×360), so the
+   card drops just below the middle — under the player, above the hint — stays
+   translucent and leaves sooner. */
 @media (orientation: landscape) and (max-height: 560px) {
+  .section-card {
+    top: 58%;
+  }
   .section-card.is-on {
     animation: section-card-soft 3.6s ease both;
   }
