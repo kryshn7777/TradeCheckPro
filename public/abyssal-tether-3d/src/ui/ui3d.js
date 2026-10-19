@@ -61,6 +61,8 @@ const PANEL_W = 1.28;
 const PANEL_H = 0.96;
 const PANEL_DIST = 1.6;
 const PANEL_DROP = 0.1; // panel centre below the eyes
+const PANEL_PITCH_MIN = -0.6; // rad: a panel opened while looking down sits at most this far below the horizon …
+const PANEL_PITCH_MAX = 0.35; // … or this far above it
 const RECENTER_ANGLE = 70 * U.DEG; // switching screens re-centres when the panel is this far off
 // Wrist HUD (left grip space): logical canvas, size, mount offset and tilt.
 const WRIST_CW = 320;
@@ -156,8 +158,10 @@ const CONTROLS_QUEST = [
   [['Right stick ← →'], 'Smooth turn.', 'Smooth turn'],
   [['Right stick ↑ ↓'], 'Reel every attached tether in / out.', 'Reel in / let out'],
   [['A'], 'Jump.', 'Jump'],
-  [['B', '≡'], 'Pause.', 'Pause'],
-  [['X'], 'Restart while paused or after a fall.', 'Restart (paused / fallen)'],
+  [['B', '≡'], 'Pause · back out of a menu.', 'Pause · back'],
+  [['X'], 'Hold to restart the run while paused or after a fall.', 'Hold: restart (paused / fallen)'],
+  [['Y'], 'Hold to re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Hold: re-centre'],
+  [['Left stick click'], 'Brake on the ground.', 'Brake'],
 ];
 const CONTROLS_DESKTOP = [
   [['Mouse'], 'Look around. Click the view first to capture the mouse.'],
@@ -239,14 +243,15 @@ function spacing(ctx, em) {
     // older canvas: no tracking
   }
 }
-/** Text with optional tracking (em) and shadow. */
-function txt(ctx, s, x, y, font, color, align, track) {
+/** Text with optional tracking (em); `maxW` (optional) condenses it to fit whatever font the device has. */
+function txt(ctx, s, x, y, font, color, align, track, maxW) {
   ctx.font = font;
   ctx.fillStyle = color;
   ctx.textAlign = align || 'left';
   ctx.textBaseline = 'alphabetic';
   spacing(ctx, track || 0);
-  ctx.fillText(s, x, y);
+  if (maxW > 0) ctx.fillText(s, x, y, maxW);
+  else ctx.fillText(s, x, y);
   spacing(ctx, 0);
 }
 function measure(ctx, s, font, track) {
@@ -462,6 +467,7 @@ const MARKUP = `
     <div class="panel-body">
       <div class="pause-cols">
         <div class="pause-actions">
+          <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Continue this run in the headset</span></button>
           <button class="btn btn-primary" type="button" data-action="resume" data-autofocus><span class="btn-label">Resume</span></button>
           <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Respawn at checkpoint</span></button>
           <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
@@ -481,6 +487,7 @@ const MARKUP = `
     <h2 id="at3d-death-msg" class="death-msg"></h2>
     <p class="death-stats"></p>
     <div class="death-actions">
+      <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
       <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">from the last checkpoint</span></button>
       <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
@@ -651,7 +658,7 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .death-stats{margin:0 0 .4em;font-size:.82em;letter-spacing:.08em;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .at3d-ui .death-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5em;width:min(22em,100%)}
 .at3d-ui .death-actions .btn{align-items:center;text-align:center}
-.at3d-ui .death-actions .btn-primary{grid-column:1/-1}
+.at3d-ui .death-actions .btn-primary,.at3d-ui .death-actions .btn-vr{grid-column:1/-1}
 .at3d-ui .death-prompt{margin:.4em 0 0;font-size:.78em;color:var(--ink-3);animation:at3d-pulse 2.6s ease-in-out infinite}
 @keyframes at3d-pulse{0%,100%{opacity:.65}50%{opacity:1}}
 .at3d-ui .screen-victory{background:radial-gradient(ellipse 70% 70% at 50% 40%,rgba(40,28,12,.35),rgba(4,5,6,.86))}
@@ -743,6 +750,7 @@ export class UI3D {
     this._modality = 'none';
     this._vrSupported = false;
     this._vrChecked = false;
+    this._hadXR = false; // an immersive session has run (and ended) on this page
     this._forceVR = false;
     this._xr = false;
     this._clock = 0;
@@ -784,7 +792,10 @@ export class UI3D {
     this._q = new THREE.Quaternion();
     this._q2 = new THREE.Quaternion();
     this._s = new THREE.Vector3();
-    this._head = { x: 0, y: 1.6, z: 0, yaw: 0, ok: false };
+    this._head = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0, ok: false };
+    this._ctrlLostShown = false;
+    this._prevBack = false;
+    this._prevConfirm = false;
     this._noteYaw = 0;
     this._noteYawSet = false;
   }
@@ -818,7 +829,9 @@ export class UI3D {
       toast: q('.toast'),
       toastText: q('.toast-text'),
       startSub: q('.menu-start-sub'),
-      vrBtn: q('[data-action="enter-vr"]'),
+      startBtn: q('.btn-start'),
+      vrBtn: q('.menu-actions [data-action="enter-vr"]'),
+      vrReturn: [...this.root.querySelectorAll('.btn-vr-return')],
       vrNote: q('.vr-note'),
       bestStrip: q('.best-strip'),
       diffGrid: q('.diff-grid'),
@@ -992,7 +1005,38 @@ export class UI3D {
   _syncVRBlock() {
     const d = this.dom;
     if (!d) return;
-    d.vrBtn.hidden = !this._vrSupported;
+    const vr = this._vrSupported;
+    d.vrBtn.hidden = !vr;
+    // Pause / death: a way back into the headset that keeps the run (the session can end
+    // mid-run through Exit VR, the Quest browser or the system). After a session ended it is
+    // the screen's first choice; before any session it reads 'Enter VR'.
+    for (const b of d.vrReturn) {
+      b.hidden = !vr;
+      const lab = b.querySelector('.btn-label');
+      if (lab) lab.textContent = this._hadXR ? 'Return to VR' : 'Enter VR';
+      if (vr && this._hadXR && b.closest('.pause-actions')) b.setAttribute('data-autofocus', '');
+      else b.removeAttribute('data-autofocus');
+    }
+    // Menu: in a headset's own browser (the Quest Browser's 2D page) Enter VR is the primary
+    // action — 'Begin descent' starts a flat mouse-and-keyboard run a controller cannot play.
+    // A desktop browser that merely has a VR runtime installed keeps Begin descent first.
+    const start = d.startBtn;
+    if (start && d.vrBtn.parentNode === start.parentNode) {
+      if (this._vrFirst()) {
+        if (d.vrBtn.nextElementSibling !== start) start.parentNode.insertBefore(d.vrBtn, start);
+        d.vrBtn.classList.add('btn-primary');
+        d.vrBtn.setAttribute('data-autofocus', '');
+        start.classList.remove('btn-primary');
+        start.removeAttribute('data-autofocus');
+      } else {
+        if (start.nextElementSibling !== d.vrBtn) start.parentNode.insertBefore(d.vrBtn, start.nextElementSibling);
+        d.vrBtn.classList.remove('btn-primary');
+        d.vrBtn.removeAttribute('data-autofocus');
+        start.classList.add('btn-primary');
+        start.setAttribute('data-autofocus', '');
+      }
+    }
+    if (this._ready) this.refreshMenu();
     const secure = typeof window === 'undefined' || window.isSecureContext !== false;
     d.vrNote.hidden = this._vrSupported || !this._vrChecked;
     if (!this._vrSupported) {
@@ -1004,6 +1048,13 @@ export class UI3D {
       if (!secure) d.vrNote.append(document.createTextNode(' WebXR needs HTTPS — use the published site.'));
       d.vrNote.append(document.createTextNode(' On this device, play with mouse and keyboard.'));
     }
+  }
+
+  /** VR supported AND this is a standalone headset's browser (Quest / Pico / Wolvic). */
+  _vrFirst() {
+    if (!this._vrSupported) return false;
+    const ua = typeof navigator !== 'undefined' && navigator.userAgent ? navigator.userAgent : '';
+    return /OculusBrowser|Quest|Pico|Wolvic|\bVR\b/.test(ua);
   }
 
   // ------------------------------------------------------------------ screens
@@ -1134,7 +1185,9 @@ export class UI3D {
     const key = this._defaultDifficulty();
     const diff = DIFFICULTY[key];
     const best = Storage.getBest(key);
-    this.dom.startSub.textContent = best != null ? `${diff.label} · best ${fmtTime(best)}` : diff.label;
+    // With VR first on the menu, the flat run says what it is.
+    if (this._vrFirst()) this.dom.startSub.textContent = `Flat screen · mouse & keyboard · ${diff.label}`;
+    else this.dom.startSub.textContent = best != null ? `${diff.label} · best ${fmtTime(best)}` : diff.label;
     if (this._bestCells) {
       for (const k of DIFFICULTY_ORDER) {
         const dd = this._bestCells[k];
@@ -1366,11 +1419,18 @@ export class UI3D {
     return g.level && Array.isArray(g.level.sections) ? g.level.sections : null;
   }
 
+  /** True once the goal is reached (the gate slam is playing): respawn / warp no longer apply. */
+  _victoryRunning() {
+    const g = this.game || {};
+    return typeof g.victoryT === 'number' && g.victoryT >= 0;
+  }
+
   _preparePause() {
     const g = this.game || {};
+    const won = this._victoryRunning();
     this.dom.pauseStats.textContent = this._runLine();
-    this.dom.pauseRespawn.hidden = !(this._canRespawn() && g.player);
-    const sections = g.difficultyKey === 'sandbox' ? this._sections() : null;
+    this.dom.pauseRespawn.hidden = won || !(this._canRespawn() && g.player);
+    const sections = g.difficultyKey === 'sandbox' && !won ? this._sections() : null;
     this.dom.pauseWarp.hidden = !sections;
     if (sections) {
       if (this._warpLevel !== g.level) {
@@ -1406,7 +1466,8 @@ export class UI3D {
       depthMeters: num(i.depthMeters, U.depthMeters(num(p.y, 0))),
       time: num(i.time, num(g.time, 0)),
       message: i.message || null,
-      prompt: typeof i.prompt === 'string' && i.prompt ? i.prompt : null,
+      // X restarts only when held (InputManager): older prompt wording says 'X to restart'.
+      prompt: typeof i.prompt === 'string' && i.prompt ? i.prompt.replace(/(^|·\s*)X to restart/, '$1hold X to restart') : null,
     };
   }
 
@@ -1968,6 +2029,12 @@ export class UI3D {
       this._noteYawSet = false;
       this._vrDirty = true;
       this._hud.cls = -1;
+      if (!xr && !this._hadXR) {
+        // A session has ended: the pause / death screens now offer 'Return to VR' first.
+        this._hadXR = true;
+        this._syncVRBlock();
+        if (this.current === 'pause' || this.current === 'death') this._focusInitial(this.current, null);
+      }
       if (xr) {
         this._unlockAudio();
         const active = document.activeElement;
@@ -2213,7 +2280,9 @@ export class UI3D {
     vr.notes.add(vr.hint, vr.title, vr.toast);
 
     // Wrist HUD (depth-tested: the hand / controller may cover it, like a real watch).
-    vr.wristC = mkCanvas(WRIST_CW, WRIST_CH, false);
+    // Mipmapped: ~1.6× minified at arm's length, the small text would shimmer otherwise
+    // (it repaints at most every 0.2 s, so the mip rebuild is cheap).
+    vr.wristC = mkCanvas(WRIST_CW, WRIST_CH, true);
     vr.wrist = mkPlane(vr.wristC, WRIST_W, 10, { depthTest: true, depthWrite: true, transparent: true, alphaTest: 0.02 });
     vr.wrist.name = 'UI3D.wrist';
     vr.wristMount = new THREE.Group();
@@ -2391,8 +2460,9 @@ export class UI3D {
     H.x = this._v.x;
     H.y = this._v.y;
     H.z = this._v.z;
-    // Forward (−Z) flattened to a yaw.
+    // Forward (−Z): its pitch, then flattened to a yaw.
     this._v2.set(0, 0, -1).applyQuaternion(this._q);
+    H.pitch = Math.asin(U.clamp(this._v2.y, -1, 1));
     const fl = Math.hypot(this._v2.x, this._v2.z);
     if (fl > 0.15) H.yaw = Math.atan2(-this._v2.x, -this._v2.z);
     H.ok = isFinite(H.x + H.y + H.z + H.yaw);
@@ -2401,9 +2471,13 @@ export class UI3D {
 
   _placePanel(H) {
     const p = this._vr.panel;
-    // yaw θ: forward = (−sin θ, 0, −cos θ); the panel's +Z faces back at the head.
-    p.position.set(H.x - Math.sin(H.yaw) * PANEL_DIST, H.y - PANEL_DROP, H.z - Math.cos(H.yaw) * PANEL_DIST);
-    p.rotation.set(0, H.yaw, 0);
+    // yaw θ: forward = (−sin θ, 0, −cos θ); the panel's +Z faces back at the head. It also
+    // follows the head's pitch (clamped): deaths and falls happen looking down, and a
+    // panel at eye level would open 60° above the gaze, outside the headset's view.
+    const pt = U.clamp(H.pitch || 0, PANEL_PITCH_MIN, PANEL_PITCH_MAX);
+    const cp = Math.cos(pt);
+    p.position.set(H.x - Math.sin(H.yaw) * cp * PANEL_DIST, H.y + Math.sin(pt) * PANEL_DIST - PANEL_DROP, H.z - Math.cos(H.yaw) * cp * PANEL_DIST);
+    p.rotation.set(pt, H.yaw, 0, 'YXZ');
     p.updateMatrixWorld(true);
   }
 
@@ -2438,6 +2512,7 @@ export class UI3D {
         if (Math.abs(wrapAngle(H.yaw - vr.panel.rotation.y)) > RECENTER_ANGLE) this._placePanel(H);
       }
     }
+    if (panelUp && this.current === 'pause' && this._controllersLost() !== this._ctrlLostShown) this._vrDirty = true;
     if (panelUp && this._vrDirty) {
       this._vrDirty = false;
       this._paintPanel();
@@ -2453,12 +2528,39 @@ export class UI3D {
         this._setHoverFrame(null);
       }
     }
+    // Quest habits: B goes back out of a sub-panel, A selects the hovered button. Rising
+    // edges of the intent flags only (a frozen debug frame re-reads the last intent).
+    const it = this._intent();
+    const back = !!(it && it.backPressed);
+    const confirm = !!(it && it.confirmPressed);
+    const backEdge = back && !this._prevBack;
+    const confirmEdge = confirm && !this._prevConfirm;
+    this._prevBack = back;
+    this._prevConfirm = confirm;
+    if (panelUp && this.current !== null) {
+      if (backEdge && SUB_SCREENS[this.current]) {
+        // (Game3D's B toggles pause only on the 'pause' screen, so this cannot also resume.)
+        this._emitClick();
+        this._back();
+      } else if (confirmEdge && this._hover && this._hover.act !== 'slide' && this.current !== 'death' && this._clock - this._lastClickAt > CLICK_DEBOUNCE) {
+        // (The death panel is excluded: Game3D already rises again on A there.)
+        this._lastClickAt = this._clock;
+        const r = this._hover;
+        this._activateRegion(r, r.x + r.w / 2);
+      }
+    }
 
     // ---- notes ------------------------------------------------------------------
     this._updateNotes(dt, H, panelUp);
 
     // ---- wrist HUD --------------------------------------------------------------
     this._updateWrist(dt, g);
+  }
+
+  /** XR: a controller is missing or replaced by a tracked hand (the InputManager pauses the run). */
+  _controllersLost() {
+    const inp = this.game && this.game.input;
+    return !!(this._xr && inp && inp.controllersLost);
   }
 
   // ---- pointer ---------------------------------------------------------------------
@@ -2538,7 +2640,9 @@ export class UI3D {
       const s = this._settings();
       if (g.input && typeof g.input.haptic === 'function' && s.haptics !== false) {
         try {
-          g.input.haptic(s.dominantHand === 'left' ? 'left' : 'right', 0.12, 12);
+          // The hand that is actually pointing (a click with the other trigger moves the pointer there).
+          const hand = g.input.uiHand === 'left' || g.input.uiHand === 'right' ? g.input.uiHand : s.dominantHand === 'left' ? 'left' : 'right';
+          g.input.haptic(hand, 0.12, 12);
         } catch {
           // optional
         }
@@ -2784,8 +2888,16 @@ export class UI3D {
       }
       if (k === last) txt(ctx, 'LAST', x + cw - 22, y + 50, `650 28px ${F_UI}`, COL.amber, 'right', 0.12);
       const nm = d.label.toUpperCase();
-      const ns = fitSize(ctx, nm, cw - 44, 40, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.08);
-      txt(ctx, nm, x + 22, y + 108, `700 ${ns}px ${F_DISPLAY}`, COL.phosphor, 'left', 0.08);
+      // The card's name must fit on any headset's font set (Quest has no Georgia):
+      // shrink first, then drop the tracking, then condense as a last resort.
+      const nameW = cw - 44;
+      let ns = fitSize(ctx, nm, nameW, 40, 26, (px) => `700 ${px}px ${F_DISPLAY}`, 0.08);
+      let tr = 0.08;
+      if (measure(ctx, nm, `700 ${ns}px ${F_DISPLAY}`, tr) > nameW) {
+        tr = 0;
+        ns = fitSize(ctx, nm, nameW, 40, 26, (px) => `700 ${px}px ${F_DISPLAY}`, 0);
+      }
+      txt(ctx, nm, x + 22, y + 108, `700 ${ns}px ${F_DISPLAY}`, COL.phosphor, 'left', tr, nameW);
       const bf = `400 28px ${F_UI}`;
       const lines = wrapLines(ctx, d.blurb, cw - 44, bf).slice(0, 7);
       lines.forEach((ln, li) => txt(ctx, ln, x + 22, y + 158 + li * 36, bf, COL.ink2, 'left', 0));
@@ -2824,14 +2936,15 @@ export class UI3D {
     this._frame(ctx);
     this._header(ctx, 'Controls');
     txt(ctx, 'META QUEST TOUCH CONTROLLERS', 44, 148, `400 28px ${F_DISPLAY}`, COL.ink2, 'left', 0.16);
-    const rowH = 64;
+    const rowH = CONTROLS_QUEST.length > 8 ? 54 : 64; // 10 rows: 212 + 9 × 54 = 698, above the footer
     CONTROLS_QUEST.forEach(([keys, , short], i) => {
       const y = 212 + i * rowH;
       this._keycaps(ctx, keys, 44, y, 28);
       txt(ctx, short, 420, y, `400 30px ${F_UI}`, COL.ink, 'left', 0);
       if (i < CONTROLS_QUEST.length - 1) {
+        // Midway between this row's keycap (bottom y + 12) and the next one's (top y + rowH − 34).
         ctx.fillStyle = COL.line;
-        ctx.fillRect(44, y + 24, CW - 88, 1);
+        ctx.fillRect(44, y + Math.round((rowH - 22) / 2), CW - 88, 1);
       }
     });
     txt(ctx, 'Smooth turning, full-speed falls. Pause any time.', CW / 2, 740, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
@@ -2885,12 +2998,15 @@ export class UI3D {
   _paintPause(ctx) {
     this._frame(ctx);
     const g = this.game || {};
+    const won = this._victoryRunning();
     const sandbox = g.difficultyKey === 'sandbox';
-    const sections = sandbox ? this._sections() : null;
+    const sections = sandbox && !won ? this._sections() : null;
     txt(ctx, 'PAUSED', CW / 2, 78, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.16);
-    txt(ctx, this._runLine(), CW / 2, 124, `500 28px ${F_UI}`, COL.ink3, 'center', 0.04);
+    this._ctrlLostShown = this._controllersLost();
+    if (this._ctrlLostShown) txt(ctx, 'Pick up both controllers to continue', CW / 2, 124, `650 30px ${F_UI}`, COL.amber, 'center', 0.02);
+    else txt(ctx, this._runLine(), CW / 2, 124, `500 28px ${F_UI}`, COL.ink3, 'center', 0.04);
     const items = [['resume', 'Resume', { primary: true }]];
-    if (this._canRespawn() && g.player) items.push(['respawn', 'Respawn at checkpoint', {}]);
+    if (!won && this._canRespawn() && g.player) items.push(['respawn', 'Respawn at checkpoint', {}]);
     items.push(['restart', 'Restart run', {}], ['settings', 'Settings', {}], ['controls', 'Controls', {}], ['quit', 'Quit to menu', { ghost: true }]);
     const bw = sections ? 440 : 520;
     const bx = sections ? 40 : (CW - bw) / 2;
@@ -2948,7 +3064,7 @@ export class UI3D {
     const hw = (bw - 16) / 2;
     this._btn(ctx, this._region(bx, by + 118, hw, 80, 'restart'), 'Restart run', null, {});
     this._btn(ctx, this._region(bx + hw + 16, by + 118, hw, 80, 'quit'), 'Menu', null, { ghost: true });
-    const pr = i.prompt || (i.canRespawn ? 'A (or point + trigger) to rise again · X to restart' : 'A (or point + trigger) to begin again');
+    const pr = i.prompt || (i.canRespawn ? 'A (or point + trigger) to rise again · hold X to restart' : 'A (or point + trigger) to begin again');
     const pf = `500 ${fitSize(ctx, pr, CW - 80, 28, 22, (px) => `500 ${px}px ${F_UI}`, 0.02)}px ${F_UI}`;
     txt(ctx, pr, cx, Math.min(CH - 30, by + 250), pf, COL.ink3, 'center', 0.02);
   }

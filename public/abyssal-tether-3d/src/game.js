@@ -49,6 +49,13 @@ const RESPAWN_FADE = 0.95;
 const START_FADE = 1;
 const RESTART_FADE = 0.7;
 const FADE_IN_RATE = 1.5; // fade units per second when clearing
+// XR: the head is free of the body (lean / step in the room). Within HEAD_CLEAR
+// of a solid it starts to fade, black by HEAD_BLACK (≈ the camera near plane):
+// a wall never opens onto the void outside the level or the predator behind it.
+const HEAD_CLEAR = 0.15;
+const HEAD_BLACK = 0.05;
+const HEAD_FADE_IN = 10; // fade units per second while entering geometry
+const HEAD_FADE_OUT = 4;
 const XR_HEAD_OFFSET = 1.1; // XR: rig = body − (0, 1.1, 0) → a standing user's eyes sit at the body
 const XR_BLUR_GRACE = 3; // ignore window blur this long after an XR session starts (Quest focus juggling)
 const XR_RECENTRE_FRAMES = 3; // wait for a few posed XR frames before reading the head pose
@@ -804,6 +811,10 @@ export class Game3D {
     this._hadPointerLock = false;
     this._handTmp = { x: 0, y: 0, z: 0 };
     this._rigTmp = { x: 0, y: 0, z: 0 };
+    this._headScratch = [];
+    this._headBlock = 0; // 0..1 head-in-geometry darkening (XR)
+    this._fadeBase = 0; // this.fade before the head darkening was mixed in (last frame)
+    this._fadeOut = -1; // this.fade as _updateFeedback left it (last frame)
     this._dbgAim = { left: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1 }, right: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1 } };
     this._onXRVisibility = () => this._xrVisibilityChanged();
   }
@@ -867,6 +878,9 @@ export class Game3D {
       this.ui = nullUI();
     }
     this._uiFallback = !!this.ui.isNull;
+    // Every mesh that exists now (level, hands, UI panels, fade sphere): compile its
+    // shader programs before the first frame so nothing hitches on first use.
+    this._precompile();
 
     this._bindWindow();
     this._setState('menu', true);
@@ -987,12 +1001,20 @@ export class Game3D {
             const View = M.creatureView.CreatureView;
             const cv = new View(this.renderer.scene, gltf);
             this.creatureView = cv;
+            this._precompile(); // the creature's programs, while still on the menu
             this.bus.emit('assets:kit', { ok: true });
-            // Masonry / metal / flesh textures for the creature (optional; degrades gracefully).
-            if (typeof View.loadTextures === 'function') {
-              View.loadTextures('assets/textures/manifest.json')
-                .then((t) => {
-                  if (t && this.creatureView === cv) cv.setTextures(t);
+            // Masonry / metal / flesh detail for the creature: the level's own texture
+            // sets (same manifest key as buildLevel → the renderer's cached load), so
+            // nothing is decoded or uploaded twice. Optional; degrades gracefully.
+            const r = this.renderer;
+            if (typeof cv.setTextures === 'function' && r && typeof r.applyTextures === 'function') {
+              Promise.resolve(r.applyTextures(this.textures))
+                .then(() => {
+                  const sets = r.materials && r.materials.sets;
+                  if (sets && this.creatureView === cv) {
+                    cv.setTextures(sets);
+                    this._precompile(); // textured variants of its materials
+                  }
                 })
                 .catch((err) => this._fault('creatureTextures', err));
             }
@@ -1011,6 +1033,13 @@ export class Game3D {
       this._fault('creatureKit', err);
       standIn();
     }
+  }
+
+  /** Compiles every shader program the scene can need (Renderer3D.precompile; rare calls only). */
+  _precompile() {
+    const r = this.renderer;
+    if (!r || typeof r.precompile !== 'function') return;
+    this._try('renderer', () => r.precompile());
   }
 
   _bindWindow() {
@@ -1706,6 +1735,7 @@ export class Game3D {
         // but only AT3D.debug.step advances the simulation.
         this.realTime += dt;
         this._updateRig();
+        this._updateFeedback(dt, true); // head-in-wall darkening only
         this._updateViews(dt);
         this._updateUI(dt);
         this._render(dt);
@@ -2411,14 +2441,59 @@ export class Game3D {
     }
   }
 
-  _updateFeedback(dt) {
-    if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.4);
-    const s = this.state;
-    if (s === 'dead') this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
-    else if (s === 'paused') this.fade = U.approach(this.fade, PAUSE_FADE, dt * 3);
-    else if (s === 'victory') this.fade = U.approach(this.fade, VICTORY_FADE, dt * 0.8);
-    else if (s === 'playing' && this.fade > 0) this.fade = Math.max(0, this.fade - dt * FADE_IN_RATE);
-    // menu: the attract loop drives the fade
+  /** Flash / fade lifecycle, then the XR head-in-wall darkening (`headOnly`: just that — debug freeze). */
+  _updateFeedback(dt, headOnly) {
+    // Take back last frame's head-in-wall darkening (unless something set the fade since).
+    if (this.fade === this._fadeOut) this.fade = this._fadeBase;
+    if (!headOnly) {
+      if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.4);
+      const s = this.state;
+      if (s === 'dead') this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
+      else if (s === 'paused') this.fade = U.approach(this.fade, PAUSE_FADE, dt * 3);
+      else if (s === 'victory') this.fade = U.approach(this.fade, VICTORY_FADE, dt * 0.8);
+      else if (s === 'playing' && this.fade > 0) this.fade = Math.max(0, this.fade - dt * FADE_IN_RATE);
+      // menu: the attract loop drives the fade
+    }
+    this._fadeBase = this.fade;
+    this._updateHeadBlock(dt);
+    if (this._headBlock > this.fade) this.fade = this._headBlock;
+    this._fadeOut = this.fade;
+  }
+
+  /**
+   * XR: darkens the view while the head is inside (or within HEAD_CLEAR of) level
+   * geometry — leaning or stepping into a wall from a ledge. Not a comfort
+   * vignette: it only hides what the player must never see (the outside of the level).
+   */
+  _updateHeadBlock(dt) {
+    let target = 0;
+    const input = this.input;
+    if (this.xrActive && this.level && input && typeof input.headPose === 'function') {
+      let h = null;
+      try {
+        h = input.headPose();
+      } catch (err) {
+        this._fault('input', err);
+      }
+      if (h && isFinite(h.x) && isFinite(h.y) && isFinite(h.z)) {
+        const r = HEAD_CLEAR;
+        const L = this.level.querySolids(h.x - r, h.y - r, h.z - r, h.x + r, h.y + r, h.z + r, this._headScratch);
+        let d2 = r * r;
+        for (let i = 0; i < L.length; i++) {
+          const b = L[i];
+          if (b.active === false) continue;
+          const dx = h.x - U.clamp(h.x, b.minX, b.maxX);
+          const dy = h.y - U.clamp(h.y, b.minY, b.maxY);
+          const dz = h.z - U.clamp(h.z, b.minZ, b.maxZ);
+          const q = dx * dx + dy * dy + dz * dz;
+          if (q < d2) d2 = q;
+        }
+        L.length = 0;
+        target = U.clamp((r - Math.sqrt(d2)) / (r - HEAD_BLACK), 0, 1);
+      }
+    }
+    const b = this._headBlock;
+    this._headBlock = U.approach(b, target, dt * (target > b ? HEAD_FADE_IN : HEAD_FADE_OUT));
   }
 
   /** Continuous rope-tension / fragile-anchor haptics, rate limited. */
@@ -2767,13 +2842,17 @@ export class Game3D {
     return o;
   }
 
-  /** Advances the simulation deterministically at a fixed 1/60 s frame, then renders once. */
-  debugStep(seconds) {
+  /**
+   * Advances the simulation deterministically at a fixed 1/60 s frame, then renders once
+   * (opts.render === false skips the render; opts.state === false skips the snapshot —
+   * for long scripted runs).
+   */
+  debugStep(seconds, opts) {
     const s = finiteOr(Number(seconds), 0);
     const n = U.clamp(Math.round(s * 60), 1, MAX_DEBUG_STEP_FRAMES);
     for (let i = 0; i < n; i++) this._frame(1 / 60, false);
-    this._render(1 / 60);
-    return this.debugState();
+    if (!opts || opts.render !== false) this._render(1 / 60);
+    return opts && opts.state === false ? null : this.debugState();
   }
 
   debugTeleport(x, y, z) {
@@ -2882,7 +2961,7 @@ export class Game3D {
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),
       setInput: (partial) => this.debugSetInput(partial),
-      step: (seconds) => this.debugStep(seconds),
+      step: (seconds, opts) => this.debugStep(seconds, opts),
       attach: (hand, id) => this.debugAttach(hand, id),
       godMode: (on) => {
         this._godMode = on === undefined ? true : !!on;

@@ -7,8 +7,11 @@
  *   buttons[0] trigger   buttons[1] grip (squeeze)   buttons[3] stick click
  *   buttons[4] A / X     buttons[5] B / Y            axes[2], axes[3] thumbstick
  *
- * Hand tracking is optional: an XRHand input source has no usable trigger, so
- * its primary action (pinch → 'selectstart' / 'selectend') stands in for it.
+ * The game needs both controllers (sticks, grips, face buttons), so hand
+ * tracking is not requested. Should a runtime still expose tracked hands or
+ * gamepad-less pointers, their primary action (pinch → 'selectstart' /
+ * 'selectend') stands in for the trigger, and the InputManager pauses a run
+ * while either controller is missing.
  *
  * Poses are not copied here: three.js updates each slot's target-ray and grip
  * Groups (rig-local matrices) at the start of every XR frame, before the
@@ -20,7 +23,8 @@
 const HANDS = ['left', 'right'];
 
 export const XR_SLOT_COUNT = 4; // two controllers + room for hands / extra sources
-export const XR_OPTIONAL_FEATURES = ['local-floor', 'bounded-floor', 'hand-tracking'];
+// No 'hand-tracking': the game cannot be played with hands (no sticks / grips / A–B).
+export const XR_OPTIONAL_FEATURES = ['local-floor', 'bounded-floor'];
 
 /** xr-standard button indices. */
 export const XRB = { TRIGGER: 0, GRIP: 1, TOUCHPAD: 2, STICK: 3, PRIMARY: 4, SECONDARY: 5 };
@@ -141,6 +145,7 @@ export class XRInput {
     this.visibility = 'visible';
     this.refSpaceType = 'local-floor';
     this.entering = false;
+    this._enterPromise = null; // the pending request (a second Enter VR joins it)
     this.lastError = null;
     // Callbacks wired by the InputManager.
     this.onStart = null;
@@ -223,11 +228,13 @@ export class XRInput {
   /**
    * Requests and starts an immersive-vr session. requestSession() is called
    * synchronously (before any await) so the caller's user gesture still
-   * counts. Resolves to the session; rejects with the browser's error.
+   * counts. Resolves to the session; rejects with the browser's error. A
+   * second call while a request is pending (double click, impatient second
+   * press) returns that same pending promise instead of failing.
    */
   enter() {
     if (this.session) return Promise.resolve(this.session);
-    if (this.entering) return Promise.reject(new Error('An XR session request is already pending'));
+    if (this.entering && this._enterPromise) return this._enterPromise;
     const nx = typeof navigator !== 'undefined' ? navigator.xr : null;
     if (!this.xr) return Promise.reject(new Error('The renderer has no WebXR manager'));
     if (!nx || typeof nx.requestSession !== 'function') return Promise.reject(new Error('WebXR is not available in this browser'));
@@ -241,19 +248,22 @@ export class XRInput {
       this.lastError = err;
       return Promise.reject(err);
     }
-    return Promise.resolve(request)
+    this._enterPromise = Promise.resolve(request)
       .then((session) => this._start(session))
       .then(
         (session) => {
           this.entering = false;
+          this._enterPromise = null;
           return session;
         },
         (err) => {
           this.entering = false;
+          this._enterPromise = null;
           this.lastError = err;
           throw err;
         },
       );
+    return this._enterPromise;
   }
 
   async _start(session) {

@@ -49,6 +49,8 @@ export const PALETTE = {
 
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
+/** Fallback texture resolution (px) generated at boot, before the baked sets load. */
+const PROCEDURAL_SIZE = 256;
 
 // -----------------------------------------------------------------------------
 // Procedural tileable textures (fallback until the baked sets load)
@@ -494,15 +496,15 @@ function setFromBuilt(size, built, tile) {
 }
 
 /**
- * Procedural fallback sets: { rock, masonry, crumble, metal, distant, grate, crack }.
- * ~0.3 s at 512 px on a desktop; call once.
+ * Procedural fallback sets: { rock, masonry, metal, distant, grate, crack, macro }.
+ * ~1 s at 512 px, ~0.25 s at 256 px on a desktop (main thread); call once.
+ * (Crumbling ledges use the masonry set with the crack overlay.)
  */
 export function makeProceduralTextureSets(size = 512) {
   const out = {};
   try {
     out.rock = setFromBuilt(size, genRock(size, 11), 4);
     out.masonry = setFromBuilt(size, genMasonry(size, 23, false), 4);
-    out.crumble = setFromBuilt(size, genMasonry(size, 41, true), 4);
     out.metal = setFromBuilt(size, genMetal(size, 57), 4);
     out.distant = out.rock;
     out.grate = { map: genGrate(256), tileMeters: 4, procedural: true };
@@ -843,7 +845,9 @@ export class MaterialLibrary {
     } catch {
       this.maxAniso = 1;
     }
-    this.sets = makeProceduralTextureSets(512);
+    // Fallback only: visible until the baked manifest arrives (or for good when
+    // it is missing). 256 px keeps its main-thread cost at boot to ~¼.
+    this.sets = makeProceduralTextureSets(PROCEDURAL_SIZE);
     this._applyAniso(this.sets);
     this._procedural = this.sets;
     this.m = {};
@@ -915,7 +919,10 @@ export class MaterialLibrary {
     // Emissive bits of decor (lamp bulbs, inlays, statue lanterns): vertex colours.
     m.decorGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.7 });
-    // Volumetric light shafts: additive, fades to black in fog.
+    // Volumetric light shafts: additive, fades to black in fog. forceSinglePass:
+    // a transparent DoubleSide material otherwise draws twice per eye (back then
+    // front) and re-resolves its program on every pass; additive with no depth
+    // write is order-independent, so one pass looks the same.
     m.lightShaft = new THREE.MeshBasicMaterial({
       vertexColors: true,
       transparent: true,
@@ -923,6 +930,7 @@ export class MaterialLibrary {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
+      forceSinglePass: true,
       toneMapped: false,
     });
     patchMaterial(m.lightShaft, { fog: 'fade', fogCap: 0.85, shaft: true, nearFade: [2.5, 14] });
@@ -965,19 +973,48 @@ export class MaterialLibrary {
       if (!role) continue;
       const s = sets[role] || (role === 'distant' ? sets.rock : null);
       if (!s || !s.map) continue;
+      if (mat.map !== s.map) changed = true;
       mat.map = s.map;
       if (role === 'flesh') mat.color.set(0xffffff);
-      if (mat.normalMap && s.normalMap) mat.normalMap = s.normalMap;
+      if (mat.normalMap && s.normalMap) {
+        if (mat.normalMap !== s.normalMap) changed = true;
+        mat.normalMap = s.normalMap;
+      }
       if (mat.aoMap && s.ormMap) {
+        if (mat.aoMap !== s.ormMap) changed = true;
         mat.aoMap = s.ormMap;
         mat.roughnessMap = s.ormMap;
         mat.metalnessMap = s.ormMap;
       }
       if (mat.userData.at) mat.userData.at.uTexScale.value = 1 / (s.tileMeters || DEFAULT_TILE);
-      changed = true;
     }
-    if (changed) this.sets = Object.assign({}, this.sets, sets);
+    // Same sets again (a restart re-applies them) → nothing to re-upload or recompile.
+    if (changed) {
+      this.sets = Object.assign({}, this.sets, sets);
+      this._releaseProcedural();
+    }
     return changed;
+  }
+
+  /** Frees the GPU copies of procedural textures no material samples any more (baked sets replaced them). */
+  _releaseProcedural() {
+    const used = new Set();
+    for (const name of Object.keys(this.m)) {
+      const mat = this.m[name];
+      for (const k of ['map', 'normalMap', 'aoMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap']) if (mat[k]) used.add(mat[k]);
+      const U = mat.userData.at;
+      if (U) for (const k of Object.keys(U)) if (U[k] && U[k].value && U[k].value.isTexture) used.add(U[k].value);
+    }
+    const group = this._procedural;
+    if (!group) return;
+    for (const k of Object.keys(group)) {
+      const s = group[k];
+      if (!s) continue;
+      for (const t of [s.map, s.normalMap, s.ormMap]) {
+        // dispose() only drops the GPU copy; the canvas stays, so a later re-use simply re-uploads.
+        if (t && t.isTexture && !used.has(t)) t.dispose();
+      }
+    }
   }
 
   dispose() {

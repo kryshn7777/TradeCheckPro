@@ -9,8 +9,11 @@
  *         left stick = move / swing / air control, relative to HEAD yaw
  *         right stick X = smooth turn (no snap), right stick Y = reel (up = in)
  *         A = jump (+ confirm)   B = pause (+ back while a panel is up)
- *         X = restart while paused / dead (never mid-run)    hold Y = recenter
+ *         hold X = restart while paused / dead (never mid-run)
+ *         hold Y = recenter (and re-measure the player's eye height)
  *         left stick click = brake
+ *         Both controllers are required: losing one (put down → tracked hands,
+ *         battery, disconnect) for ctrlLostPauseS mid-run raises a pause edge.
  * Desktop: see desktopInput.js (LMB right tether, RMB left tether, WASD, …).
  *
  * Frame model (as in the 2D game): device events and per-frame polls mutate
@@ -33,7 +36,7 @@
  */
 
 import { Group, Matrix4, Quaternion, Vector3 } from 'three';
-import { U } from '../sim/config3d.js';
+import { CONFIG, U } from '../sim/config3d.js';
 import { XRInput, tetherDown } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
 
@@ -55,6 +58,10 @@ export const INPUT_TUNING = {
   turnExponent: 1.6, // response curve: fine control near the centre
   gripDeadzone: 0.25, // a resting finger on the grip is not a yank
   recenterHoldS: 0.8, // hold Y this long to recenter
+  restartHoldS: 1.0, // hold X this long to restart (a tap would throw away the whole descent)
+  ctrlLostPauseS: 0.5, // a run pauses once a controller has been missing (or is a tracked hand) this long
+  eyeCalMin: 0.6, // plausible eye heights (m above the real floor) for the height calibration …
+  eyeCalMax: 2.3, // … outside this the previous / default calibration is kept
   // --- desktop ---------------------------------------------------------------
   mouseRadPerPx: 0.0022, // × settings.mouseSensitivity
   keyLookRate: 1.9, // rad/s arrow-key look, × settings.mouseSensitivity
@@ -235,6 +242,10 @@ export class InputManager {
     this.uiHand = this._dominant();
     /** Rig-local head position captured by the last recenter (XR). */
     this.recenterOffset = { x: 0, y: 0, z: 0 };
+    /** XR: the player's measured eye height above the real floor (NaN until measured). */
+    this.xrEyeHeight = NaN;
+    /** XR: true while a controller is missing or replaced by a tracked hand (the run auto-pauses). */
+    this.controllersLost = false;
     this.lastError = null;
 
     this.intent = makeIntent();
@@ -250,6 +261,11 @@ export class InputManager {
     this._yHold = 0;
     this._recenterLatched = false;
     this._recenterPending = false;
+    this._xHold = 0;
+    this._xLatched = false;
+    this._calibrate = true; // the next recenter also measures the eye height
+    this._pivotYaw = NaN; // rig yaw at the last xrRigPosition (turns pivot about the head)
+    this._ctrlLostT = 0;
     this._haptic = { left: { until: 0, i: 0 }, right: { until: 0, i: 0 } };
     this._look = { x: 0, y: 0 };
     this._savedCam = null;
@@ -273,6 +289,11 @@ export class InputManager {
           this._playerDead = false;
         });
       }
+      // A run starts with the player in their playing posture: the Game's recentre for the
+      // spawn facing (same frame) re-measures the eye height (seated in the menu, standing now).
+      on('game:start', () => {
+        this._calibrate = true;
+      });
     }
 
     // Scratch (no per-frame allocation).
@@ -301,6 +322,7 @@ export class InputManager {
     this.xrIn.onReset = () => {
       // The system re-aligned the reference space (Quest: hold the Meta button).
       this._recenterPending = true;
+      this._calibrate = true;
     };
 
     this.desktop = new DesktopInput(this, this.canvas, opts.env);
@@ -501,7 +523,11 @@ export class InputManager {
    * Captures the current head position (rig-local) as the body's centre, so
    * xrRigPosition() keeps the head over the body however far the player has
    * drifted in the room. Automatic at session start and after a system
-   * recenter; hold Y to do it by hand. Desktop: resets the look pitch.
+   * recenter; hold Y to do it by hand. Those three, and the first recenter of
+   * a run, also measure the player's eye height (standing or seated), so the
+   * eyes always sit eyeHeight above the body whoever wears the headset; the
+   * Game's other recentres (respawn, warp) keep the last measurement.
+   * Desktop: resets the look pitch.
    */
   recenter() {
     this._recenterPending = false;
@@ -518,6 +544,14 @@ export class InputManager {
     this.recenterOffset.x = e[12];
     this.recenterOffset.y = e[13];
     this.recenterOffset.z = e[14];
+    this._pivotYaw = NaN;
+    if (this._calibrate && this.xrIn.refSpaceType === 'local-floor') {
+      const h = e[13];
+      if (h >= this.tuning.eyeCalMin && h <= this.tuning.eyeCalMax) {
+        this.xrEyeHeight = h;
+        this._calibrate = false;
+      }
+    }
     this._emit('input:recenter', { x: e[12], y: e[13], z: e[14] });
     this.haptic('both', 0.25, 30);
     return true;
@@ -525,21 +559,49 @@ export class InputManager {
 
   /**
    * XR: where the Game should put the rig so the recentred head point sits
-   * over the body (pivoting smooth turns about the head, not the room origin):
-   * rig = player − (0, 1.1, 0) − R(rigYaw)·(recenterOffset.x, 0, recenterOffset.z).
-   * Before any recenter the offset is 0 and this equals the contract formula.
+   * over the body:
+   * rig = player − (0, eye − eyeHeight, 0) − R(rigYaw)·(recenterOffset.x, 0, recenterOffset.z),
+   * where eye is the measured eye height (1.6 m until measured, which is the
+   * contract's rig = player − (0, 1.1, 0)). Before any recenter the offset is 0.
+   * A rig yaw change since the last call (smooth turn) pivots about the HEAD,
+   * not the body: the offset is rotated so the head keeps its world position.
    */
   xrRigPosition(px, py, pz, out) {
     const o = out || this._rigPos;
     const yaw = this.rig ? this.rig.rotation.y : 0;
+    if (this._pivotYaw === this._pivotYaw && yaw !== this._pivotYaw) this._turnAboutHead(yaw - this._pivotYaw);
+    this._pivotYaw = yaw;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
     const hx = this.recenterOffset.x;
     const hz = this.recenterOffset.z;
     o.x = px - (hx * c + hz * s);
     o.z = pz - (-hx * s + hz * c);
-    o.y = py - XR_RIG_DROP + (this.xrIn.refSpaceType === 'local' ? this.tuning.localSpaceEyeHeight : 0);
+    if (this.xrIn.refSpaceType === 'local') {
+      o.y = py - XR_RIG_DROP + this.tuning.localSpaceEyeHeight;
+    } else {
+      const eyeAbove = CONFIG.player.eyeHeight;
+      const eye = this.xrEyeHeight > 0 ? this.xrEyeHeight : XR_RIG_DROP + eyeAbove;
+      o.y = py + eyeAbove - eye;
+    }
     return o;
+  }
+
+  /**
+   * Keeps the head's world position through a rig rotation by `d` (rad):
+   * world head = body + R(yaw)·(h − o), so o' = h − R(−d)·(h − o).
+   */
+  _turnAboutHead(d) {
+    const cam = this.xrIn.headCamera();
+    if (!cam || !isFinite(d)) return;
+    const e = cam.matrix.elements;
+    const o = this.recenterOffset;
+    const dx = e[12] - o.x;
+    const dz = e[14] - o.z;
+    const c = Math.cos(d);
+    const s = Math.sin(d);
+    o.x = e[12] - (dx * c - dz * s);
+    o.z = e[14] - (dx * s + dz * c);
   }
 
   // ---------------------------------------------------------------------------
@@ -789,6 +851,9 @@ export class InputManager {
     this._edges.jump = false;
     this._yHold = 0;
     this._recenterLatched = false;
+    this._xHold = 0;
+    this._xLatched = false;
+    this._ctrlLostT = 0;
     this.desktop.clear();
     this._emit('input:release', { reason: reason || 'release' });
   }
@@ -818,7 +883,11 @@ export class InputManager {
       this.recenterOffset.x = 0;
       this.recenterOffset.y = 0;
       this.recenterOffset.z = 0;
+      this.xrEyeHeight = NaN;
+      this.controllersLost = false;
     }
+    this._pivotYaw = NaN;
+    this._calibrate = true;
     this._releaseAll(`mode:${mode}`);
     this._placeDesktopSockets();
     this._emit('input:mode', { mode });
@@ -971,10 +1040,7 @@ export class InputManager {
         this._edges.pause = true;
         if (this.uiMode) this._edges.back = true;
       }
-      if (pollButton(B.x, L.primary)) {
-        this._edges.any = true;
-        if (this._restartAllowed()) this._edges.restart = true;
-      }
+      if (pollButton(B.x, L.primary)) this._edges.any = true;
       pollButton(B.y, L.secondary);
       pollButton(B.l3, L.stickClick);
     }
@@ -982,13 +1048,41 @@ export class InputManager {
       this._yHold += dt;
       if (!this._recenterLatched && this._yHold >= T.recenterHoldS) {
         this._recenterLatched = true;
+        this._calibrate = true; // a deliberate recenter also re-measures the eye height
         this.recenter();
       }
     } else {
       this._yHold = 0;
       this._recenterLatched = false;
     }
+    // X restarts only when HELD (it mirrors A, 'rise again', on the other hand): a tap does nothing.
+    if (B.x.down && this._restartAllowed()) {
+      this._xHold += dt;
+      if (!this._xLatched && this._xHold >= T.restartHoldS) {
+        this._xLatched = true;
+        this._edges.restart = true;
+        this.haptic('left', 0.5, 60);
+      }
+    } else {
+      this._xHold = 0;
+      this._xLatched = false;
+    }
     I.brake = B.l3.down;
+
+    // Both controllers are needed (move, reel, turn, jump, pause): when one goes missing or
+    // becomes a tracked hand mid-run (put down, battery, disconnect), pause the run.
+    const ctrlOk = L.connected && L.kind === 'controller' && R.connected && R.kind === 'controller';
+    if (readable) this.controllersLost = !ctrlOk;
+    if (readable && !ctrlOk && !this.uiMode && this._liveState() === 'playing') {
+      this._ctrlLostT += dt;
+      if (this._ctrlLostT > T.ctrlLostPauseS) {
+        this._ctrlLostT = 0;
+        this._edges.pause = true;
+        this._emit('input:controllers', { ok: false, left: L.kind, right: R.kind });
+      }
+    } else {
+      this._ctrlLostT = 0;
+    }
 
     // 3. left stick → world move relative to head yaw
     this._headMatrix(this._m3);

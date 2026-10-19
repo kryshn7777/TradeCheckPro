@@ -222,6 +222,9 @@ function standInTemplate(kind) {
 
 function patchMasonMaterial(mat, uniforms, opts) {
   const vertexOverrides = opts.vertexMaterial;
+  // Shared uniform holder, visible to Renderer3D.precompile(), which uploads the
+  // detail textures on the menu instead of on the creature's first sighting.
+  mat.userData.masonUniforms = uniforms;
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     // Use the renderer's fog curve when it installed one (materials.js installRadialFog).
