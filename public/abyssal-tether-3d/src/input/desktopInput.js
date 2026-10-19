@@ -108,6 +108,7 @@ const GAME_KEYS = {
 };
 
 const LOCK_PAUSE_DEDUPE_MS = 350; // Esc keydown + pointer-lock loss arriving together = one pause
+const LOCK_SETTLE_MS = 120; // movement reported right after the lock engages is the cursor warp, not a look
 const BLUR_GRACE_MS = 400; // lock lost because the window lost focus is not a pause press
 
 function nowMs() {
@@ -141,6 +142,8 @@ export class DesktopInput {
     this._lockPauseAt = -1e9;
     this._escPauseAt = -1e9;
     this._blurAt = -1e9;
+    this._lockedAt = -1e9;
+    this._lockWarp = false;
     this._attached = false;
     this._h = {
       keydown: (ev) => this.onKeyDown(ev),
@@ -295,6 +298,13 @@ export class DesktopInput {
       this.im._desktopLockChanged(false, pause);
     } else if (!was && this.locked) {
       this._selfUnlock = false;
+      // Chrome reports the cursor's jump to the locked element's centre as one
+      // large movement right after locking (here −389, −375 px): it would swing
+      // the view the moment a run starts. Drop movement until the lock settles.
+      this._lockedAt = nowMs();
+      this._lockWarp = true;
+      this.lookX = 0;
+      this.lookY = 0;
       this.im._desktopLockChanged(true, false);
     }
   }
@@ -428,8 +438,19 @@ export class DesktopInput {
 
   onMouseMove(e) {
     if (!this.locked) return;
+    const sinceLock = nowMs() - this._lockedAt;
+    if (sinceLock < LOCK_SETTLE_MS) {
+      this._lockWarp = false;
+      return;
+    }
     const mx = Number(e.movementX) || 0;
     const my = Number(e.movementY) || 0;
+    if (this._lockWarp) {
+      // The warp can also arrive late (a busy main thread delays it past the settle
+      // window): the first movement after locking is dropped when it is a big jump.
+      this._lockWarp = false;
+      if (Math.abs(mx) > 80 || Math.abs(my) > 80) return;
+    }
     // Guard against the occasional huge first-event jump some browsers emit after locking.
     if (Math.abs(mx) > 400 || Math.abs(my) > 400) return;
     this.lookX += mx;

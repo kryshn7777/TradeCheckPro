@@ -540,7 +540,12 @@ light(-4.6, -207, -5.4, '#9a4a2a', 0.8, 10, 0.6);
 //  REWARD     The throat's landing at the bottom of the spiral.
 //  ESCALATION Vertical panic: no platforms, constant bursts.
 // =============================================================================
-slabHole('s7-roof', -55, 31, -43, 43, -287, -284, [-34, 10, -11, 11]);
+// The roof's hole runs 5 m past the landing's east edge: under the Two Descents'
+// east wall (which hangs free above it) a 4 m mouth opens from the landing
+// level down into the nave. It is the predator's way down from the shaft (its
+// girth cannot pass the 1 m slit around the rest of the landing) and lies
+// 22 m from the checkpoint, away from both S6 descents.
+slabHole('s7-roof', -55, 31, -43, 43, -287, -284, [-34, 15, -11, 11]);
 walls('s7-wall', -52, 28, -40, 40, -424, -287);
 S('s7-landing', -34, 10, -291, -288, -11, 11);
 // The inverted spire: the Lanternwrights' cathedral hangs from the landing into the nave.
@@ -721,8 +726,10 @@ const sections = [
     triggers: [
       // Fires as the player stands on the catwalk over the Vault: the predator
       // crosses the Vault's far wall (inner face z = −160) and is gone. Path:
-      // centre (x,y,z), unit direction (dx,dy,dz), length span, seconds.
-      { y: -104.5, name: 'sighting', data: { x: -14, y: -141, z: -158.5, dx: 0.9946, dy: 0.1041, dz: 0, span: 172, duration: 10 } },
+      // centre (x,y,z), unit direction (dx,dy,dz), length span, seconds. It runs
+      // level, 8 m under the catwalk: on the horizon of a natural forward look
+      // (lower and the catwalk deck itself hides it from anyone standing on it).
+      { y: -104.5, name: 'sighting', data: { x: -14, y: -112, z: -158.5, dx: 1, dy: 0, dz: 0, span: 172, duration: 10 } },
       { y: -127, name: 'call', data: { x: -40, y: -150, z: -140, intensity: 0.5 } },
     ],
   },
@@ -755,9 +762,10 @@ const sections = [
     creature: creature('hunt', true, 120),
     hints: [
       {
+        // Named by the plaques, not left / right: in VR you arrive facing any way.
         y: -207, duration: 8,
-        text: 'Left: the long stair, slow and certain. Right: frayed rings that snap under load — quick and thin.',
-        desktop: 'Left: the long stair, slow and certain. Right: frayed rings that snap under load — quick and thin.',
+        text: 'Two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
+        desktop: 'Two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
       },
     ],
     triggers: [

@@ -2287,6 +2287,11 @@ export class AudioManager3D {
   }
 
   _onTriggerCall(p) {
+    // Once the creature is hunting, Creature3D answers the trigger itself with a
+    // creature:call from its REAL position: a made-up point far above would send
+    // the ear the wrong way (and rate-limit the true call into silence).
+    const cr = this._game && this._game.creature;
+    if (cr && cr.active !== false && cr.inPlay) return;
     const data = p.data && typeof p.data === 'object' ? p.data : EMPTY;
     let x = num(data.x, NaN);
     let y = num(data.y, NaN);

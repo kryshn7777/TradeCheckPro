@@ -26,7 +26,8 @@
  * bus (FX + glyph pulses), settings.reducedEffects.
  * Render order: glyphs 20, light glows 15, highlights 60, fade sphere 900 —
  * VR UI panels that must show over the death fade should use > 900 with
- * depthTest false.
+ * depthTest false; XR hand launchers draw after those at 960 (depth-tested
+ * against the world only, see handsView.HANDS_RENDER_ORDER_XR).
  */
 
 import * as THREE from 'three';
@@ -41,7 +42,10 @@ function hyp(x, y, z = 0) {
 }
 
 
-const ENV_LIGHTS = 3; // real PointLights for level.lights (plus the lantern)
+// Real PointLights for level.lights (plus the lantern). Every lit fragment pays
+// for every slot (three unrolls NUM_POINT_LIGHTS), and the descent has ≤ 2 env
+// lights in reach in 97.5 % of frames; the rest still read via lightGlows/emissive.
+const ENV_LIGHTS = 2;
 const ENV_REASSIGN = 0.25; // seconds between nearest-light re-evaluations
 const ENV_GAIN = 1.6; // level.lights: candela = intensity × max(6, 0.06·range²) × gain (reaches ~range)
 const THEME_BLEND = 9; // metres either side of a section boundary
@@ -52,6 +56,28 @@ const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
 const LANTERN_DECAY = 1.6; // gentler than physical so the lantern still grazes walls 10–20 m away
 const DEFAULT_TEXTURE_MANIFEST = 'assets/textures/manifest.json';
+const DESKTOP_FOV = 70; // WebXR overwrites camera.fov with the headset's; resize() restores this
+// Material slots + uniform holders scanned by precompile() for textures to upload early.
+const TEX_SLOTS = ['map', 'normalMap', 'aoMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'lightMap', 'specularMap'];
+
+/** Adds every texture `mat` samples (slots, ShaderMaterial uniforms, uniform objects in userData) to `out`. */
+function collectTextures(mat, out) {
+  if (!mat) return;
+  for (let i = 0; i < TEX_SLOTS.length; i++) {
+    const t = mat[TEX_SLOTS[i]];
+    if (t && t.isTexture) out.add(t);
+  }
+  const scan = (U) => {
+    if (!U || typeof U !== 'object' || U.isTexture) return;
+    for (const k of Object.keys(U)) {
+      const v = U[k] && U[k].value;
+      if (v && v.isTexture) out.add(v);
+    }
+  };
+  scan(mat.uniforms);
+  const ud = mat.userData;
+  if (ud) for (const k of Object.keys(ud)) scan(ud[k]);
+}
 
 const DEFAULT_THEME = {
   fog: '#1c2125',
@@ -110,7 +136,8 @@ export class Renderer3D {
     this.scene.fog = new THREE.Fog(this.fogColor.clone(), DEFAULT_THEME.fogNear, DEFAULT_THEME.fogFar);
     this.scene.background = this.fogColor.clone();
 
-    this.camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.05, 400);
+    this.baseFov = DESKTOP_FOV;
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.05, 400);
     this.camera.name = 'HeadCamera';
     this.rig = new THREE.Group();
     this.rig.name = 'PlayerRig';
@@ -227,16 +254,23 @@ export class Renderer3D {
 
   /**
    * Compiles every program the level can need now (including objects that are
-   * hidden until later: plaques, highlights, the fade sphere) so nothing
-   * hitches mid-descent. Call again after adding other modules' meshes.
+   * hidden until later: plaques, highlights, the fade sphere) and uploads every
+   * texture those objects sample (decode + upload + mips happen here, on the
+   * menu, not on first sight mid-descent). Call again after adding other
+   * modules' meshes or swapping their textures.
    */
   precompile() {
     const hidden = [];
+    const textures = new Set();
     this.scene.traverse((o) => {
       if (!o.visible) {
         hidden.push(o);
         o.visible = true;
       }
+      const m = o.material;
+      if (!m) return;
+      if (Array.isArray(m)) for (let i = 0; i < m.length; i++) collectTextures(m[i], textures);
+      else collectTextures(m, textures);
     });
     try {
       this.renderer.compile(this.scene, this.camera);
@@ -244,6 +278,16 @@ export class Renderer3D {
       /* compile is an optimisation only */
     }
     for (const o of hidden) o.visible = false;
+    if (typeof this.renderer.initTexture === 'function') {
+      for (const t of textures) {
+        if (t.isRenderTargetTexture || !(t.version > 0)) continue; // not loaded yet: uploads on its own later
+        try {
+          this.renderer.initTexture(t); // no-op when already uploaded at this version
+        } catch {
+          /* optimisation only */
+        }
+      }
+    }
   }
 
   /** Applies baked texture sets (see buildLevel for accepted forms). */
@@ -254,7 +298,13 @@ export class Renderer3D {
       return this.materials.setTextureSets(sets);
     };
     const isLoadedSets = (o) => o && typeof o === 'object' && Object.keys(o).some((k) => o[k] && o[k].map && o[k].map.isTexture);
-    if (isLoadedSets(textures)) return Promise.resolve(apply(textures));
+    // New sets → upload them (and re-check programs) now, while the menu is up.
+    const applyAndUpload = (sets) => {
+      const ok = apply(sets);
+      if (ok) this.precompile();
+      return ok;
+    };
+    if (isLoadedSets(textures)) return Promise.resolve(applyAndUpload(textures));
     let p;
     if (textures && typeof textures.then === 'function') {
       p = Promise.resolve(textures).then((t) => (isLoadedSets(t) ? t : t ? loadTextureManifest(t) : null));
@@ -265,7 +315,7 @@ export class Renderer3D {
       if (!this._texCache.has(key)) this._texCache.set(key, loadTextureManifest(key));
       p = this._texCache.get(key);
     }
-    return p.then(apply).catch((err) => {
+    return p.then(applyAndUpload).catch((err) => {
       if (typeof console !== 'undefined') console.warn('[AT3D] texture sets unavailable, using procedural', err);
       return false;
     });
@@ -533,6 +583,9 @@ export class Renderer3D {
     if (!w || !h) return;
     r.setPixelRatio(Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2));
     r.setSize(w, h);
+    // An XR session leaves its own fov/zoom on the user camera (WebXRManager.updateUserCamera).
+    this.camera.fov = this.baseFov;
+    this.camera.zoom = 1;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }

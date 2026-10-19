@@ -178,9 +178,13 @@ export class FX {
       toneMapped: false,
     });
     mat.onBeforeCompile = (shader) => {
+      // Cap each point at 1/8 of the viewport height (scale = half the target
+      // height): a hard landing's puffs right at the feet would otherwise cover
+      // most of both eyes several additive layers deep.
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aSize;')
-        .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;');
+        .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;')
+        .replace('#include <logdepthbuf_vertex>', 'gl_PointSize = min( gl_PointSize, scale * 0.25 );\n#include <logdepthbuf_vertex>');
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <fog_fragment>',
         '#ifdef USE_FOG\n  gl_FragColor.rgb *= 1.0 - atFogFactor( vFogDepth );\n#endif',
@@ -191,6 +195,7 @@ export class FX {
     this.bursts.name = 'fxBursts';
     this.bursts.frustumCulled = false;
     this.bursts.renderOrder = 31;
+    this.bursts.visible = false; // shown while any point is alive (empty draws still cost a program bind per eye)
     this.scene.add(this.bursts);
   }
 
@@ -202,6 +207,7 @@ export class FX {
     this.debris.count = 0;
     this.debris.frustumCulled = false;
     this.debris.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.debris.visible = false; // shown while any chunk is alive
     this.d = {
       n: 0,
       px: new Float32Array(DEBRIS_MAX),
@@ -232,8 +238,9 @@ export class FX {
     });
     this.fade = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), mat);
     this.fade.name = 'fxFadeSphere';
-    // Drawn last with no depth test, so it also covers the hand launchers 0.3–0.6 m from
-    // the head (inside the sphere). UI panels shown over the death fade should use > 900.
+    // Drawn after the world with no depth test. UI panels shown over the death fade use
+    // > 900; in XR the hand launchers draw after it too (handsView, 960), so the
+    // controllers you point at a pause/death panel never go dark. On desktop they fade.
     this.fade.renderOrder = 900;
     this.fade.frustumCulled = false;
     this.fade.visible = false;
@@ -293,7 +300,8 @@ export class FX {
       const x = num(e.x, NaN);
       if (!isFinite(x)) return;
       const impact = num(e.impact, 0);
-      this.burst('puff', x, num(e.y, 0), num(e.z, 0), { count: Math.min(16, 3 + Math.round(impact)), spread: 0.4, ground: true });
+      // Few, wide puffs: they spawn at the feet, so each one covers a lot of both eyes.
+      this.burst('puff', x, num(e.y, 0), num(e.z, 0), { count: Math.min(8, 2 + Math.round(impact * 0.5)), spread: 0.4, ground: true });
       if (e.hard) {
         this.burst('chips', x, num(e.y, 0), num(e.z, 0), { count: 8 });
         this.burst('debris', x, num(e.y, 0), num(e.z, 0), { count: 5, size: 0.05, up: true });
@@ -336,7 +344,9 @@ export class FX {
     this.b.n = 0;
     this.d.n = 0;
     this.debris.count = 0;
+    this.debris.visible = false;
     this.bursts.geometry.setDrawRange(0, 0);
+    this.bursts.visible = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -549,6 +559,7 @@ export class FX {
     }
     b.n = n;
     this.bursts.geometry.setDrawRange(0, n);
+    this.bursts.visible = n > 0;
     if (n) {
       this.bPos.needsUpdate = true;
       this.bCol.needsUpdate = true;
@@ -615,6 +626,7 @@ export class FX {
     }
     d.n = n;
     this.debris.count = n;
+    this.debris.visible = n > 0;
     if (n) this.debris.instanceMatrix.needsUpdate = true;
   }
 

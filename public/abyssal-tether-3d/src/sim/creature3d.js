@@ -99,6 +99,8 @@ export const CREATURE_TUNING = {
   catchUpStart: 38, // vertical gap (m) beyond which it is surely out of sight → closes faster
   catchUpGain: 1.1, // extra m/s per metre of gap beyond catchUpStart
   catchUpMax: 30,
+  introTime: 10, // first entry into the hunt: this long without catch-up, approaching slower —
+  introSpeed: 0.6, // heard (scraping, steps far overhead) well before it is seen
   maxModeSpeed: 1.1, // cap on mode profile × section speedMul
   pursueRange: 38, // APPROACHING → PURSUING
   loseRange: 56, // PURSUING → APPROACHING
@@ -184,7 +186,10 @@ export const CREATURE_MODES = {
   stalk: { speed: 0.93, burst: 0.65, listen: 1.05, recover: 1.15, observe: 1.25, creep: 1.0, menace: 1.0, commit: 0.8, stall: 1.08 },
   hunt: { speed: 1.0, burst: 1.0, listen: 1.0, recover: 1.0, observe: 1.0, creep: 1.0, menace: 1.0, commit: 1.0, stall: 1.0 },
   frenzy: { speed: 1.04, burst: 1.6, listen: 0.95, recover: 0.8, observe: 0.7, creep: 1.0, menace: 0.95, commit: 1.15, stall: 0.95 },
-  escape: { speed: 1.08, burst: 1.3, listen: 0.95, recover: 0.7, observe: 0.55, creep: 1.0, menace: 0.95, commit: 1.25, stall: 0.92 },
+  // Escape is relentless: it closes from 24 m of vertical gap (not 38) and a
+  // retreat only pauses it, no higher than 12 m over you, instead of withdrawing
+  // up the throat (24 keeps careful Normal play surviving: creature/pacing.mjs).
+  escape: { speed: 1.08, burst: 1.3, listen: 0.95, recover: 0.7, observe: 0.55, creep: 1.0, menace: 0.95, commit: 1.25, stall: 0.92, catchUpStart: 24, holdOnRecover: true },
 };
 const MODES = CREATURE_MODES;
 const LETHAL_MODES = { stalk: true, hunt: true, frenzy: true, escape: true };
@@ -591,6 +596,7 @@ export class Creature3D {
     this._farAz = this._rand() * TAU;
     this._sightTrigger = null;
     this._sightAuto = -1;
+    this._introT = 0; // > 0: the slow first approach of a hunt (T.introTime)
     this._glow = 0.1;
     this._unfurl = 0.6;
     this._jitter = 0;
@@ -640,7 +646,10 @@ export class Creature3D {
     this._applyScaling(c);
     if (lethalMode) {
       this.lethal = c.lethal === true;
-      if (!this.inPlay) this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection);
+      if (!this.inPlay) {
+        this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection);
+        this._introT = T.introTime; // respawns / warps clear it (onRespawn)
+      }
     } else {
       this.lethal = false;
       if (this.inPlay) this._leavePlay();
@@ -668,6 +677,7 @@ export class Creature3D {
     this.stallTime = 0;
     this._stallX = NaN;
     this.listening = false;
+    this._introT = 0;
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -854,6 +864,7 @@ export class Creature3D {
     this.burstTimer -= dt;
     this.routeTimer -= dt;
     this.callTimer -= dt;
+    if (this._introT > 0) this._introT -= dt;
     this._tickHitch(dt);
 
     // Hard rubber band: never let it fall hopelessly far behind (it is out of sight there).
@@ -1137,7 +1148,9 @@ export class Creature3D {
     let rate = T.steerRate;
     const noise = this._noise();
     const still = player.alive !== false && this.stillTime > T.stillDebounce;
-    const catchUp = below > T.catchUpStart ? Math.min(T.catchUpMax, (below - T.catchUpStart) * T.catchUpGain) : 0;
+    const intro = this._introT > 0;
+    const cuStart = this.profile.catchUpStart || T.catchUpStart;
+    const catchUp = !intro && below > cuStart ? Math.min(T.catchUpMax, (below - cuStart) * T.catchUpGain) : 0;
     switch (this.state) {
       case S.APPROACHING:
       case S.PURSUING: {
@@ -1152,7 +1165,7 @@ export class Creature3D {
           break;
         }
         const base = this.state === S.PURSUING ? K.pursue : K.approach;
-        speed = base * noise * this._hitch + catchUp;
+        speed = base * noise * this._hitch * (intro ? T.introSpeed : 1) + catchUp;
         // Stalking distance: it presses to `menace`, not into you, unless it
         // commits to a lunge or has listened to your silence.
         const m = this._menace();
@@ -1208,11 +1221,12 @@ export class Creature3D {
         break;
       }
       case S.RECOVERING: {
-        // Withdraws upward along the masonry, slowing as it goes.
+        // Withdraws upward along the masonry, slowing as it goes (escape: it
+        // only pauses, holding no higher than 12 m over you).
         const k = 1 - U.smoothstep(0, Math.max(this.stateDur, 0.5) * 1.2, this.stateTime);
         speed = (T.speed.recover * k + 0.9) * Math.max(0.6, this.speedScale);
         tx = U.lerp(this.x, this._hugX, 0.3);
-        ty = this.y + 17;
+        ty = this.profile.holdOnRecover ? Math.min(this.y, player.y + 12) : this.y + 17;
         tz = U.lerp(this.z, this._hugZ, 0.3);
         stick = 1;
         rate = 2.2;
@@ -1343,9 +1357,14 @@ export class Creature3D {
         G[axis] = headSide;
         const d1 = len3(G[0] - P[0], G[1] - P[1], G[2] - P[2]);
         const d2 = len3(Q[0] - G[0], Q[1] - G[1], Q[2] - G[2]);
-        const cost = d1 + d2;
+        // A rim whose way on to the target runs straight back through the same
+        // slab (over the top of a landing when you are underneath it) only
+        // looks short: last resort.
+        const cost = d1 + d2 + (segmentBox(G[0], G[1], G[2], Q[0], Q[1], Q[2], best) >= 0 ? 1000 : 0);
         if (cost >= bestCost) continue;
         if (!this._clearAt(G[0], G[1], G[2])) continue;
+        // …and only a rim it can reach from here: not one on the far side of a wall.
+        if (typeof lv.segmentBlocked === 'function' && lv.segmentBlocked(P[0], P[1], P[2], G[0], G[1], G[2], 0)) continue;
         G[axis] = farSide;
         if (!this._clearAt(G[0], G[1], G[2])) continue;
         bestCost = cost;

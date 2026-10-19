@@ -20,6 +20,11 @@
  *    'far-structure' decor plus a sparse procedural ring beyond the walls.
  *  - Glows of environment lights, the Still Lamp and distant lit windows:
  *    one Points draw.
+ *  - The chamber gate (portcullis): its own mesh (+1 call near the finale).
+ *    Raised into the wall above the chamber mouth during play; drops when the
+ *    Game closes it (game.gateClosed) and snaps open again on restart.
+ *  - Instanced/points objects with nothing to draw are hidden (three otherwise
+ *    still binds their program and uniforms per eye before skipping the draw).
  */
 
 import * as THREE from 'three';
@@ -37,6 +42,9 @@ const VIEW_MARGIN = 6; // metres beyond fog far still drawn
 const GLYPH_MAX_DIST = 110;
 const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel / fogged: glyphs carry them
 const PLAQUE_DIST = 26;
+const GATE_ACCEL = 120; // m/s²: the portcullis falls 7.5 m in ~0.35 s
+const GATE_LIP = 0.5; // metres of the raised gate (spiked lip) left showing below the opening
+const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', glow: 'decorGlow', shaft: 'lightShaft' };
 
 const BUCKET_OF = {
   wall: 'rock',
@@ -576,8 +584,11 @@ DECOR.lantern = DECOR.lamp;
 DECOR.rock = DECOR.cliff;
 DECOR.boulder = DECOR.cliff;
 
-/** Iron bars filling a thin box (the chamber gate). size = [x,y,z], thin = index of the thin axis. */
-function gateBars(P, size, thin) {
+/**
+ * Iron bars filling a thin box (the chamber gate). size = [x,y,z], thin = index of the thin axis.
+ * spikes: iron points under the vertical bars (the portcullis's lip).
+ */
+function gateBars(P, size, thin, spikes = false) {
   const axes = [0, 1, 2].filter((a) => a !== thin);
   const barAxis = thin !== 1 ? 1 : size[axes[0]] >= size[axes[1]] ? axes[1] : axes[0];
   const spreadAxis = axes.find((a) => a !== barAxis);
@@ -592,6 +603,10 @@ function gateBars(P, size, thin) {
     c[spreadAxis] = -size[spreadAxis] / 2 + (size[spreadAxis] * i) / n;
     const d = dims(barAxis, size[barAxis], 0.07);
     P.box('metal', c[0], c[1], c[2], d[0], d[1], d[2]);
+    if (spikes && barAxis === 1) {
+      c[1] = -size[1] / 2 - 0.11;
+      P.geo('metal', new THREE.ConeGeometry(0.055, 0.22, 4), _m4b.makeRotationX(Math.PI).setPosition(c[0], c[1], c[2]));
+    }
   }
   for (const k of [-1, -0.33, 0.33, 1]) {
     const c = [0, 0, 0];
@@ -1064,6 +1079,7 @@ export class LevelView {
       right: this._makeHighlight('right', PALETTE.handRight),
     };
     this._attachPulse = new Map(); // anchor → time of attach
+    this.gate = null; // the chamber portcullis (see _buildGate)
     this.fx = null; // optional FX (set by Renderer3D): grit trickles from loaded crumbling ledges
   }
 
@@ -1101,6 +1117,7 @@ export class LevelView {
     }
     this._chunks.length = 0;
     this._plaques.length = 0;
+    this.gate = null;
     this.level = null;
   }
 
@@ -1221,11 +1238,17 @@ export class LevelView {
     this._crumbleMesh.count = 0;
     this._crumbleMesh.frustumCulled = false;
     this._crumbleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // Tints depend only on the id (stable across restarts / _rebind): computed once.
+    this._crumbleTints = new Float32Array(nC * 3);
     for (let i = 0; i < this._crumbles.length; i++) {
       this._solidTint(this._crumbles[i], _c);
       this._crumbleMesh.setColorAt(i, _c);
+      this._crumbleTints[i * 3] = _c.r;
+      this._crumbleTints[i * 3 + 1] = _c.g;
+      this._crumbleTints[i * 3 + 2] = _c.b;
     }
     if (this._crumbleMesh.instanceColor) this._crumbleMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    this._crumbleMesh.visible = false;
     this.root.add(this._crumbleMesh);
     this.stats.solids += this._crumbles.length;
   }
@@ -1257,6 +1280,7 @@ export class LevelView {
         n++;
       }
       mesh.count = n;
+      mesh.visible = n > 0;
       mesh.instanceMatrix.needsUpdate = true;
       mesh.instanceColor.needsUpdate = true;
     }
@@ -1548,6 +1572,14 @@ export class LevelView {
         haveStill = true;
         this._stillLamp = new THREE.Vector3(d.x, d.y - sy / 2 + sy * 0.5, z);
       }
+      if (type === 'grate' && !this.gate) {
+        // The chamber gate: its own mesh so it can drop on victory.
+        haveGrate = true;
+        const size = [lw, sy, ld];
+        this._buildGate(P, d.x, d.y, z, rotY, size, size.indexOf(Math.min(lw, sy, ld)));
+        count++;
+        continue;
+      }
       if (type === 'grate') haveGrate = true;
       const fn = DECOR[type] || DECOR[d.type];
       if (!fn) {
@@ -1564,7 +1596,7 @@ export class LevelView {
       const sz3 = [gate.maxX - gate.minX, gate.maxY - gate.minY, gate.maxZ - gate.minZ];
       const thin = sz3.indexOf(Math.min(...sz3));
       if (sz3[thin] <= 1.5) {
-        addItem((gate.minX + gate.maxX) / 2, (gate.minY + gate.maxY) / 2, (gate.minZ + gate.maxZ) / 2, 0, () => gateBars(P, sz3, thin));
+        this._buildGate(P, (gate.minX + gate.maxX) / 2, (gate.minY + gate.maxY) / 2, (gate.minZ + gate.maxZ) / 2, 0, sz3, thin);
       }
     }
     // The Still Lamp from level.stillLamp / the goal when the data has no 'still-lamp' decor.
@@ -1589,7 +1621,7 @@ export class LevelView {
       }
     }
     // Merge per band per material.
-    const matOf = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', glow: 'decorGlow', shaft: 'lightShaft' };
+    const matOf = DECOR_MAT;
     for (const [bi, lists] of bands) {
       for (const k of Object.keys(lists)) {
         const list = lists[k];
@@ -1612,6 +1644,87 @@ export class LevelView {
     }
     this.stats.decor = count;
     this.stats.skippedTypes = [...skipped];
+  }
+
+  /**
+   * The chamber's portcullis, built at (cx, cy, cz) (closed position = the gate
+   * box) as its own object. It starts raised into the wall above the opening with
+   * a short spiked lip showing (only when its bars are vertical), and _updateGate
+   * drops it when the Game closes the gate.
+   */
+  _buildGate(P, cx, cy, cz, rotY, size, thin) {
+    for (const k of Object.keys(P.lists)) P.lists[k] = [];
+    // A little thinner than the gate box: the raised bars sit inside the wall
+    // and must not share (z-fight) its faces.
+    const sz = size.slice();
+    sz[thin] *= 0.88;
+    const raise = thin !== 1 ? Math.max(0, size[1] - GATE_LIP) : 0;
+    gateBars(P, sz, thin, raise > 0);
+    const group = new THREE.Group();
+    group.name = 'chamberGate';
+    _m4.makeRotationY(rotY || 0);
+    const bb = new THREE.Box3();
+    let tris = 0;
+    for (const k of Object.keys(P.lists)) {
+      const list = P.lists[k];
+      if (!list.length) continue;
+      let merged = null;
+      try {
+        merged = mergeGeometries(list, false);
+      } catch {
+        merged = null;
+      }
+      for (const g of list) g.dispose();
+      P.lists[k] = [];
+      if (!merged) continue;
+      merged.applyMatrix4(_m4);
+      merged.computeBoundingSphere();
+      merged.computeBoundingBox();
+      bb.union(merged.boundingBox);
+      tris += merged.attributes.position.count / 3;
+      const mesh = new THREE.Mesh(merged, this.mats.get(DECOR_MAT[k]) || this.mats.get('decorMetal'));
+      mesh.name = `gate_${k}`;
+      group.add(mesh);
+    }
+    if (!group.children.length) return;
+    if (this.stats.decorTris) this.stats.decorTris.grate = (this.stats.decorTris.grate || 0) + tris;
+    this.gate = group;
+    this._gateBaseY = cy;
+    this._gateRaise = raise;
+    this._gateY = raise;
+    this._gateV = 0;
+    this._gateCenter = new THREE.Vector3(cx, cy + raise / 2, cz);
+    this._gateRadius = hyp(size[0], size[1] + raise, size[2]) / 2;
+    // Where the bars meet the floor (world, closed): sparks run along the wider axis.
+    const alongX = bb.max.x - bb.min.x >= bb.max.z - bb.min.z;
+    this._gateFoot = { x: cx, y: cy - size[1] / 2, z: cz, w: alongX ? bb.max.x - bb.min.x : bb.max.z - bb.min.z, alongX };
+    group.position.set(cx, cy + raise, cz);
+    this.root.add(group);
+  }
+
+  /** Drops the gate (accelerating) when game.gateClosed; opens it at once otherwise. */
+  _updateGate(dt, game, head, vd) {
+    const g = this.gate;
+    if (!g) return;
+    const want = game && game.gateClosed ? 0 : this._gateRaise;
+    if (want < this._gateY) {
+      this._gateV += GATE_ACCEL * dt;
+      this._gateY = Math.max(want, this._gateY - this._gateV * dt);
+      if (this._gateY <= want && this.fx) {
+        // Iron hits stone: sparks along the foot and a dust skirt.
+        const f = this._gateFoot;
+        for (let i = 0; i < 5; i++) {
+          const k = ((i + 0.5) / 5 - 0.5) * f.w;
+          this.fx.burst('sparks', f.x + (f.alongX ? k : 0), f.y + 0.05, f.z + (f.alongX ? 0 : k), { count: 4 });
+        }
+        this.fx.burst('puff', f.x, f.y + 0.1, f.z, { count: 10, spread: f.w * 0.4, ground: true });
+      }
+    } else {
+      this._gateY = want;
+      this._gateV = 0;
+    }
+    g.position.y = this._gateBaseY + this._gateY;
+    g.visible = this._gateCenter.distanceTo(head) < vd + this._gateRadius;
   }
 
   _addPlaque(d, lw, sy, ld, rotY) {
@@ -1885,6 +1998,7 @@ export class LevelView {
       this._colossal.material.color.copy(fogInfo.color).multiplyScalar(0.22);
     }
     this._updateSolidStates(game, head, vd);
+    this._updateGate(dt, game, head, vd);
     this._updateHazards(dt, head, vd);
     this._updateAnchors(game, head, t);
     this._updateHighlights(game, head, t);
@@ -1916,12 +2030,14 @@ export class LevelView {
       const ph = i * 3.1;
       this._solidMatrix(s, Math.sin(this.time * 61 + ph) * amp, Math.sin(this.time * 47 + ph) * amp * 0.6, Math.cos(this.time * 53 + ph) * amp, _m4);
       mesh.setMatrixAt(n, _m4);
-      this._solidTint(s, _c);
-      if (k > 0) _c.multiplyScalar(1 + k * 0.25);
+      const tint = this._crumbleTints;
+      const kk = k > 0 ? 1 + k * 0.25 : 1;
+      _c.setRGB(tint[i * 3] * kk, tint[i * 3 + 1] * kk, tint[i * 3 + 2] * kk);
       mesh.setColorAt(n, _c);
       n++;
     }
     mesh.count = n;
+    mesh.visible = n > 0;
     if (n) {
       mesh.instanceMatrix.needsUpdate = true;
       mesh.instanceColor.needsUpdate = true;
@@ -1948,6 +2064,7 @@ export class LevelView {
         mesh.setMatrixAt(n++, _m4);
       }
       mesh.count = n;
+      mesh.visible = n > 0;
       if (n) mesh.instanceMatrix.needsUpdate = true;
     }
   }
@@ -2041,6 +2158,7 @@ export class LevelView {
     for (let k = 0; k < mm.length; k++) {
       const slot = mm[k];
       slot.mesh.count = slot.n;
+      slot.mesh.visible = slot.n > 0;
       if (slot.n) {
         slot.mesh.instanceMatrix.needsUpdate = true;
         slot.mesh.instanceColor.needsUpdate = true;
@@ -2048,6 +2166,7 @@ export class LevelView {
       }
     }
     glyphs.count = g;
+    glyphs.visible = g > 0;
     if (g) {
       glyphs.instanceMatrix.needsUpdate = true;
       glyphs.instanceColor.needsUpdate = true;

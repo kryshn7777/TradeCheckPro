@@ -81,6 +81,15 @@ const FX_COLOR = {
 
 const ZERO_OFFSET = Object.freeze({ x: 0, y: 0, z: 0 });
 
+/**
+ * XR draw order of the launchers + lantern: after the VR UI panels/notes (945–954,
+ * no depth test) and the fade sphere (900), so a hand raised in front of a panel
+ * stays in front of it and the pause/death fade never blacks out the controllers
+ * you point with. They are still depth-tested against the world (which writes
+ * depth; panels, notes and the fade do not). Desktop keeps 0 (fades with the world).
+ */
+export const HANDS_RENDER_ORDER_XR = 960;
+
 const SHAPE_BEAM = 0;
 const SHAPE_RING = 1;
 const SHAPE_DIAMOND = 2;
@@ -241,6 +250,11 @@ export function buildLanternGeometry() {
 /** MeshStandardMaterial + per-vertex glow (emissive += vColor · (glow.x·uGlowA + glow.y·uGlowB + uSelf)). */
 function makeLauncherMaterial() {
   const mat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.55, side: DoubleSide });
+  // Transparent (alpha stays 1) only so renderOrder can place the hands after the
+  // UI and the fade (see HANDS_RENDER_ORDER_XR); forceSinglePass avoids the extra
+  // back-face pass three gives transparent DoubleSide materials.
+  mat.transparent = true;
+  mat.forceSinglePass = true;
   const uniforms = { uGlowA: { value: 0.6 }, uGlowB: { value: 0 }, uSelf: { value: 0.05 } };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uGlowA = uniforms.uGlowA;
@@ -433,7 +447,10 @@ export class HandsView {
     this.camera = this.r3.camera || (input && input.camera) || null;
     this.scene = this.r3.scene || null;
     this.visible = true;
-    this.showUIPointer = true;
+    // UI3D draws the menu pointer (ray + dot over its panels). Ours is only a
+    // fallback for a game running without UI3D (game.ui.isNull), or when set true.
+    this.showUIPointer = false;
+    this._order = -1;
     this._time = 0;
     this._lanternMode = '';
     this._wrist = { left: null, right: null };
@@ -548,6 +565,12 @@ export class HandsView {
       m.visible = showHands;
     }
     this.lantern.visible = showHands;
+    const order = xr ? HANDS_RENDER_ORDER_XR : 0;
+    if (order !== this._order) {
+      this._order = order;
+      for (const h of HANDS) this.launchers[h].renderOrder = order;
+      this.lantern.renderOrder = order;
+    }
     this._updateLanternParent(xr);
 
     // Head (current frame) for billboards.
@@ -564,7 +587,8 @@ export class HandsView {
     const batch = this.batch;
     batch.begin();
     for (const h of HANDS) this._updateHand(h, step, game, tethers, playing, xr && showHands, showHands);
-    if (xr && inp.uiMode && this.showUIPointer && this.visible) this._uiPointer();
+    const uiPointer = this.showUIPointer || !game || !game.ui || !!game.ui.isNull;
+    if (xr && inp.uiMode && uiPointer && this.visible) this._uiPointer();
     batch.end();
     // keep the batch in world space
     if (this.batch.mesh.parent && this.batch.mesh.parent !== this.scene && this.scene) this.scene.add(this.batch.mesh);
@@ -581,8 +605,7 @@ export class HandsView {
     try {
       if (leftOk) {
         // The light sits in our lantern's glass; its own bulb mesh would double the glass.
-        this.r3.setLanternParent(target, ZERO_OFFSET);
-        if (this.r3.lanternBulb && this.r3.lanternBulb.isObject3D) this.r3.lanternBulb.visible = false;
+        this.r3.setLanternParent(target, ZERO_OFFSET, { bulb: false });
       } else {
         this.r3.setLanternParent(target);
       }
