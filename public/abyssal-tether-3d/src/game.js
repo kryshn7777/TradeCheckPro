@@ -984,8 +984,18 @@ export class Game3D {
         (gltf) => {
           this.kit = gltf;
           try {
-            this.creatureView = new M.creatureView.CreatureView(this.renderer.scene, gltf);
+            const View = M.creatureView.CreatureView;
+            const cv = new View(this.renderer.scene, gltf);
+            this.creatureView = cv;
             this.bus.emit('assets:kit', { ok: true });
+            // Masonry / metal / flesh textures for the creature (optional; degrades gracefully).
+            if (typeof View.loadTextures === 'function') {
+              View.loadTextures('assets/textures/manifest.json')
+                .then((t) => {
+                  if (t && this.creatureView === cv) cv.setTextures(t);
+                })
+                .catch((err) => this._fault('creatureTextures', err));
+            }
           } catch (err) {
             this._fault('creatureView', err);
             standIn();
@@ -2433,7 +2443,7 @@ export class Game3D {
     const cv = this.creatureView;
     if (cv) {
       try {
-        cv.update(this.creature, dt);
+        cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);
       }
