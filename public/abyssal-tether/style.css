@@ -2428,3 +2428,34 @@ body.reduced-effects .rotate-icon {
     transform: translateX(-50%);
   }
 }
+
+/* Short landscape phones: the section card shares the top band with the first
+   anchors of each section, so it stays translucent and leaves sooner. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .section-card.is-on {
+    animation: section-card-soft 3.6s ease both;
+  }
+}
+@keyframes section-card-soft {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  14% {
+    opacity: 0.7;
+    transform: translate(-50%, 0);
+  }
+  72% {
+    opacity: 0.7;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
+}
+@media (orientation: landscape) and (max-height: 560px) and (prefers-reduced-motion: reduce) {
+  .section-card.is-on {
+    animation: section-card-still 3.6s ease both;
+  }
+}

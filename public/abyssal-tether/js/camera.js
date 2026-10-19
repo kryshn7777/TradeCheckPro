@@ -115,12 +115,14 @@
     /** Jumps straight to a position (no smoothing, look-ahead reset, shake kept). */
     snapTo(x, y) {
       const C = cfg();
-      this.fx = finite(x, this.fx);
-      this.fy = finite(y, this.fy);
-      this._vx = 0;
-      this._vy = 0;
       this._lookX = 0;
       this._lookY = C.lookDownBase * this.viewH;
+      // Land on the resting framing (look-down applied) so respawns and
+      // restarts do not glide ~100u into place.
+      this.fx = finite(x, this.fx);
+      this.fy = finite(y, this.fy - this._lookY) + this._lookY;
+      this._vx = 0;
+      this._vy = 0;
       this._snapped = true;
       this._compose();
     }

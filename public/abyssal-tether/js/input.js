@@ -33,7 +33,7 @@
     // Portrait (H > W) override for zoneMinY. The contract value (0.22) makes the
     // left zone a third of a portrait screen, so anchors drawn there cannot be
     // touched directly; ~0.5 keeps thumbs at the bottom and frees the upper half.
-    portraitZoneMinY: 0.22,
+    portraitZoneMinY: 0.5, // portrait: keep the upper half free for grappling anchors
     // Floating sticks.
     stickRadiusFrac: 0.11, // × min(W, H)
     stickRadiusMin: 44,
