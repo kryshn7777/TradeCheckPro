@@ -38,6 +38,10 @@ function bootstrap() {
     .then(() => {
       document.body.classList.remove('is-loading');
       hideBoot();
+      // Desktop perf safety net (GPU warning, adaptive resolution, ?perf overlay); optional.
+      import('./ui/perfDiag.js')
+        .then((m) => m.installPerfDiag(game))
+        .catch(() => {});
     })
     .catch((err) => {
       try {
