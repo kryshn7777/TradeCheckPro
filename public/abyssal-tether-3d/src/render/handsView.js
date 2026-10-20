@@ -907,6 +907,7 @@ export class HandsView {
         for (const h of HANDS) {
           const mesh = this.gear[h].ecgMesh;
           if (!mesh) continue;
+          if (h === 'right' && game.bagFx) continue; // the right wrist shows the bag (see _bindBag)
           mesh.material.map = tex;
           mesh.material.needsUpdate = true;
           // glTF UVs have their origin top-left (textures there are flipY = false); a CanvasTexture is flipY = true: flip v once
@@ -938,6 +939,28 @@ export class HandsView {
         m.rotateZ(Math.PI / 2);
         this._ecgPlanes[h] = m;
       }
+    }
+  }
+
+  /**
+   * The right wrist screen shows the bag: four item icons with counts, the lantern charge, the apply progress and the
+   * adrenaline timer (bagFx publishes one CanvasTexture); the left wrist keeps the heartbeat trace.
+   */
+  _bindBag(game) {
+    const bfx = game ? game.bagFx : null;
+    if (!bfx || typeof bfx.makeIconTexture !== 'function' || !this.gear) return;
+    const mesh = this.gear.right ? this.gear.right.ecgMesh : null;
+    if (!mesh) return;
+    const tex = bfx.makeIconTexture();
+    if (!tex || this._bagTex === tex) return;
+    this._bagTex = tex;
+    mesh.material.map = tex;
+    mesh.material.needsUpdate = true;
+    if (tex.flipY && !mesh.userData.ecgFlipped) {
+      const uv = mesh.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+      uv.needsUpdate = true;
+      mesh.userData.ecgFlipped = true;
     }
   }
 
@@ -1120,6 +1143,7 @@ export class HandsView {
     }
     if (gear && xr !== this._gearXr) this._placeGear(xr);
     this._bindEcg(game);
+    this._bindBag(game);
     if (this._ecgPlanes) {
       for (const h of HANDS) {
         const pl = this._ecgPlanes[h];
