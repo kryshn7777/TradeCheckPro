@@ -97,7 +97,7 @@ ap.add_argument("--nobake", action="store_true", help="export dry run: skip the 
 ap.add_argument("--lab", default="", help="crown: build only the crown + 3 vertebrae (fast look-dev)")
 ap.add_argument("--exposure", type=float, default=0.0)
 ap.add_argument("--border", default="", help="xmin,xmax,ymin,ymax crop (0-1) for quick detail checks")
-ap.add_argument("--fullcam", default="1.73,-17.12,-6.0,-0.93,-2.02,13.0,22", help="x,y,z,tx,ty,tz,lens")
+ap.add_argument("--fullcam", default="-1,-28,-2,-2,-4,14,20", help="x,y,z,tx,ty,tz,lens")
 ap.add_argument("--herocam", default="6.0,-2.5,0.4,0.0,0.3,0.0,22", help="fwd,dz,side,tfwd,tdz,tside,lens")
 ap.add_argument("--approachcam", default="3.5,-0.35,0.0,0.0,-1.0,0.0,0.0,18",
                 help="fwd,dz,side,dors,tfwd,tdz,tside,lens (relative to the crown)")

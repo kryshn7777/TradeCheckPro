@@ -168,6 +168,8 @@ export class HandGear {
     this.slide = bone('Slide') ? new BoneDriver(bone('Slide'), root, back) : null;
     this.body = bone('Body') ? new BoneDriver(bone('Body'), root, back) : null;
     this.head = bone('Head') || null;
+    this.wrist = root.getObjectByName(`Hand_${sfx}`) || null; // wrist joint (Hand bone origin)
+    this.forearm = root.getObjectByName(`Forearm_${sfx}`) || null; // elbow-end joint (Forearm bone head)
     this.headRestScale = this.head ? this.head.scale.clone() : null;
 
     // --- mechanics state ---------------------------------------------------------------
@@ -183,15 +185,18 @@ export class HandGear {
   }
 
   /** The head leaves (true) or returns to (false) the muzzle. */
-  setHeadOut(out, kick = 1) {
+  setHeadOut(out) {
     if (out === this.headOut) return;
     this.headOut = out;
     if (this.head) {
       if (out) this.head.scale.setScalar(0.0001);
       else this.head.scale.copy(this.headRestScale);
     }
-    // firing kicks the slide back; re-seating nudges it forward (a small clunk)
-    this.slideV += out ? this.T.recoilKick * kick : -this.T.recoilKick * 0.35;
+  }
+
+  /** Recoil impulse on the slide (+ = back, − = a small forward clunk). */
+  kick(k = 1) {
+    this.slideV += this.T.recoilKick * k;
   }
 
   /**

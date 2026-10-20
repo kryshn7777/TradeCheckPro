@@ -579,6 +579,7 @@ export class HandsView {
     // GLB gear (arms + launchers + lantern + loose grapple heads): see _loadGear.
     this.gear = null; // { left: HandGear, right: HandGear }
     this._disposed = false;
+    this._fireListeners = [];
     this._lanternFallback = null;
     this.gearState = this.tuning.gear ? 'loading' : 'off'; // off | loading | ready | failed
     this.gearError = null;
@@ -628,6 +629,75 @@ export class HandsView {
   launcher(hand) {
     if (this.gear && this.gear[hand]) return this.gear[hand].root;
     return this.launchers[hand] || null;
+  }
+
+  /**
+   * Stable API for the rope FX / body avatar (all world space, no allocation):
+   *   getMuzzle(hand, outPos, outDir)   nozzle position + unit forward direction (barrel axis)
+   *   getWristSocket(hand, outMatrix)   world matrix of the wrist (Hand bone: origin at the wrist joint)
+   *   getElbowAnchor(hand, outPos)      centre of the open sleeve end near the elbow (where an upper arm attaches)
+   *   addFireListener(fn) / removeFireListener(fn)   fn(hand) when a shot leaves the muzzle (see onFire)
+   * Each returns false when the gear is not up / the hand is untracked (the outputs are then untouched, except
+   * getMuzzle which falls back to InputManager.handPose + the grip forward axis).
+   */
+  getMuzzle(hand, outPos, outDir) {
+    const g = this.gear && this.gear[hand];
+    if (g && this.input && this.input.handTracked(hand) && g.muzzleWorld(outPos)) {
+      g.root.updateWorldMatrix(true, false);
+      const e = g.root.matrixWorld.elements;
+      outDir.set(-e[8], -e[9], -e[10]).normalize(); // socket −Z in world
+      return true;
+    }
+    const inp = this.input;
+    if (!inp) return false;
+    const pose = inp.handPose(hand);
+    outPos.set(pose.x, pose.y, pose.z);
+    this._q.set(pose.qx, pose.qy, pose.qz, pose.qw);
+    outDir.set(0, 0, -1).applyQuaternion(this._q);
+    return false;
+  }
+
+  getWristSocket(hand, outMatrix) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !g.wrist) return false;
+    g.wrist.updateWorldMatrix(true, false);
+    outMatrix.copy(g.wrist.matrixWorld);
+    return true;
+  }
+
+  getElbowAnchor(hand, outPos) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !g.forearm || !g.wrist) return false;
+    g.root.updateWorldMatrix(true, false);
+    g.forearm.updateWorldMatrix(true, false);
+    g.wrist.updateWorldMatrix(true, false);
+    outPos.setFromMatrixPosition(g.forearm.matrixWorld); // elbow joint
+    this._tmp.setFromMatrixPosition(g.wrist.matrixWorld);
+    this._tmp.subVectors(outPos, this._tmp).normalize();
+    outPos.addScaledVector(this._tmp, 0.028); // the sleeve ends 2.8 cm past the joint
+    return true;
+  }
+
+  addFireListener(fn) {
+    if (typeof fn === 'function' && !this._fireListeners.includes(fn)) this._fireListeners.push(fn);
+  }
+
+  removeFireListener(fn) {
+    const i = this._fireListeners.indexOf(fn);
+    if (i >= 0) this._fireListeners.splice(i, 1);
+  }
+
+  /** A shot leaves the muzzle: kick the recoil slide and tell the listeners (rope FX). */
+  onFire(hand, kick = 1) {
+    const g = this.gear && this.gear[hand];
+    if (g) g.kick(kick);
+    for (let i = 0; i < this._fireListeners.length; i++) {
+      try {
+        this._fireListeners[i](hand);
+      } catch {
+        /* a listener must not break the hands */
+      }
+    }
   }
 
   /**
@@ -951,7 +1021,9 @@ export class HandsView {
     const out = attached || miss;
     if (out !== R.headOut) {
       R.headOut = out;
-      G.setHeadOut(out, attached ? 1 : 0.8);
+      G.setHeadOut(out); // head leaves / re-seats in the muzzle
+      if (out) this.onFire(hand, attached ? 1 : 0.8);
+      else G.kick(-0.35);
     }
     const g = (CONFIG.player && CONFIG.player.gravity) || 9.81;
     G.animate(dt, {
