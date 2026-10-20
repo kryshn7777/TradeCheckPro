@@ -176,9 +176,9 @@ export class EnvProbe {
         const t = Math.pow(y, 0.65);
         // horizon: the haze colour; up: the cold light, strongest overhead
         _c.setRGB(
-          (fog.r * 0.9 * (1 - t) + L.r * (0.22 + 1.0 * amb) * t) * bands,
-          (fog.g * 0.9 * (1 - t) + L.g * (0.22 + 1.0 * amb) * t) * bands,
-          (fog.b * 0.9 * (1 - t) + L.b * (0.22 + 1.0 * amb) * t) * bands,
+          (fog.r * 0.9 * (1 - t) + L.r * (0.4 + 2.4 * amb) * t) * bands,
+          (fog.g * 0.9 * (1 - t) + L.g * (0.4 + 2.4 * amb) * t) * bands,
+          (fog.b * 0.9 * (1 - t) + L.b * (0.4 + 2.4 * amb) * t) * bands,
         );
       } else {
         const t = Math.pow(-y, 0.55);
@@ -188,9 +188,9 @@ export class EnvProbe {
     }
     col.needsUpdate = true;
     // shaft window: the daylight that still reaches this depth
-    const shaftI = 2.2 + 16 * amb;
+    const shaftI = 3.5 + 24 * amb;
     this._shaft.material.color.setRGB(L.r * shaftI, L.g * shaftI, L.b * shaftI);
-    const lanI = 1.4 + 9 * amb;
+    const lanI = 2.6 + 15 * amb;
     for (const w of this._lancets) w.m.material.color.setRGB(L.r * lanI * w.k, L.g * lanI * w.k, L.b * lanI * w.k);
     // lamps: the section accent pulled toward flame colour; count from the level's lights in the section
     _c.copy(spec.accent).lerp(_warm, 0.6);

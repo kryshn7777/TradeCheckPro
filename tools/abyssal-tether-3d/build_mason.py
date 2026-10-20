@@ -4660,6 +4660,8 @@ def build_low_module_objects(Alow, spec, coll):
         flat = np.concatenate(flats)
         sz = np.concatenate(sizes)
         me = mesh_from_arrays("LO_" + name, V, flat, sz, np.vstack(uvs))
+        me.materials.append(bpy.data.materials.new("T_%s_A" % name))
+        me.materials.append(bpy.data.materials.new("T_%s_E" % name))
         me.polygons.foreach_set("material_index", np.concatenate(mats))
         me.polygons.foreach_set("use_smooth", np.ones(len(sz), bool))
         ob = bpy.data.objects.new("LO_" + name, me)
@@ -5065,10 +5067,6 @@ def export_production():
     sc.collection.children.link(game)
     # per-module temporary materials (A atlas / E emissive): the join keeps module identity through the slots
     modobs = build_low_module_objects(Alow, spec, game)
-    for name, ob in modobs.items():
-        ob.data.materials.clear()
-        ob.data.materials.append(bpy.data.materials.new("T_%s_A" % name))
-        ob.data.materials.append(bpy.data.materials.new("T_%s_E" % name))
     # ---- per-atlas bake
     gmats = {}
     emissive = make_emissive_material()
