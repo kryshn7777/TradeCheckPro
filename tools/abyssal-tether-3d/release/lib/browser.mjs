@@ -38,11 +38,16 @@ export async function newPage(owner, { viewport = { width: 1280, height: 720 }, 
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Polls fn() in Node until it returns truthy (or throws on timeout). */
+/** Polls fn() in Node until it returns truthy (errors count as "not yet"); throws on timeout. */
 export async function until(fn, { timeout = 15000, every = 100, label = 'condition' } = {}) {
   const t0 = Date.now();
   for (;;) {
-    const v = await fn();
+    let v;
+    try {
+      v = await fn();
+    } catch {
+      v = false; // e.g. "execution context destroyed" while the page navigates
+    }
     if (v) return v;
     if (Date.now() - t0 > timeout) throw new Error(`timeout waiting for ${label}`);
     await sleep(every);

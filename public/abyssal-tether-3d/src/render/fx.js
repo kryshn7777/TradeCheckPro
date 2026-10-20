@@ -25,11 +25,12 @@
 import * as THREE from 'three';
 import { Atmosphere, FX_LIGHT_GLSL, FxLighting, makeNoise3D } from './atmosphere.js';
 import { Rubble, Trickles } from './debris.js';
+import { LanternHalo } from './lanternHalo.js';
 
 const DUST_COUNT = 1100;
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
 const BURST_MAX = 360;
-const DEBRIS_MAX = 88; // × 80 triangles (worst case 7.0k, typically < 2k)
+const DEBRIS_MAX = 80; // × 80 triangles (worst case 6.4k, typically < 2k)
 const GRAVITY = 13.5;
 
 const K_SPARK = 0;
@@ -95,6 +96,7 @@ export class FX {
     this.lighting = new FxLighting(scene);
     this._noise = makeNoise3D(64);
     this.atmosphere = new Atmosphere(scene, this.lighting, this._noise, this._rng);
+    this.halo = new LanternHalo(scene, this.lighting.uniforms, this._noise);
     this.trickles = new Trickles(scene, this.lighting.uniforms, this._rng);
     this.trickles.burst = (kind, x, y, z, opts) => this.burst(kind, x, y, z, opts);
     this._buildDust();
@@ -188,6 +190,7 @@ export class FX {
   transformed += uCenter;
   vec3 atV = normalize( transformed - cameraPosition );
   vec3 atLit = uAmbient * 0.25 + atLantern( transformed, atV, 0.0, 1.6 ) * 0.9 + atEnvLights( transformed, atV, 0.0 ) * 0.8 + atGlow( transformed ) * 0.6;
+  atLit = mix( vec3( dot( atLit, vec3( 0.2126, 0.7152, 0.0722 ) ) ), atLit, 0.65 ); // lit dust is pale, not orange
   float atTw = 0.5 + 0.5 * sin( uTime * ( 0.9 + 2.4 * atHv.z ) + atHv.y * 40.0 );
   vColor.rgb *= atLit * ( 0.35 + 1.3 * atTw * atTw ) * uMoteGain;`,
         )
@@ -773,6 +776,7 @@ export class FX {
 
     this.lighting.update(dt, game);
     this.atmosphere.update(dt, game, head, tier, this.threat);
+    this.halo.update(dt, this.time, this.atmosphere.density, this.threat, this.lighting.lanternLevel, this.scene.fog ? this.scene.fog.color : this._black, tier);
     const si = level && typeof level.sectionIndexAt === 'function' ? level.sectionIndexAt(head.y) : 0;
     const stir = Math.min(1, this.lighting.creatureNear * (0.6 + Math.min(1, this.lighting.creatureSpeed / 6)) + this.threat * 0.3);
     this.trickles.update(dt, level, head, tier, SECTION_WET[si] || 0, stir);
@@ -1021,6 +1025,7 @@ export class FX {
     this.rubble.dispose();
     this.trickles.dispose();
     this.atmosphere.dispose();
+    this.halo.dispose();
     if (this._noise) this._noise.dispose();
     if (this.fade.parent) this.fade.parent.remove(this.fade);
     this.fade.geometry.dispose();

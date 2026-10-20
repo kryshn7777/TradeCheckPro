@@ -80,11 +80,24 @@ const MODULES = {
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
   handsView: './render/handsView.js',
+  healthFx: './render/healthFx.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
   gltf: 'three/addons/loaders/GLTFLoader.js',
+  // WP-RELEASE: platform + meta modules (every one optional; the game plays without them)
+  loadingScene: './platform/loadingScene.js',
+  resilience: './platform/resilience.js',
+  governor: './platform/governor.js',
+  entitlement: './platform/entitlement.js',
+  save: './meta/save.js',
 };
+/** Loaded before the first head-tracked frame (bootMinimal); everything else loads behind the loading scene. */
+const EARLY_MODULES = ['renderer', 'input', 'loadingScene', 'resilience', 'governor', 'save'];
+const LATE_MODULES = Object.keys(MODULES).filter((n) => !EARLY_MODULES.includes(n));
+const SAVE_WAIT_MS = 1500; // bootContent waits at most this long for the saved profile
+/** Lets queued tasks (XR frame callbacks, input) run between heavy boot steps. */
+const yieldToFrames = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Short, original death lines per cause (round-robin by death count). */
 const DEATH_MESSAGES = {
@@ -99,6 +112,16 @@ const DEATH_MESSAGES = {
 // -----------------------------------------------------------------------------
 function finiteOr(v, fallback) {
   return typeof v === 'number' && isFinite(v) ? v : fallback;
+}
+
+/** Milliseconds since the navigation started (boot timing: VRC.Quest.Performance.3 counts from the launch). */
+function nowSinceNav() {
+  return typeof performance !== 'undefined' ? Math.round(performance.now()) : 0;
+}
+
+/** Save stand-in until meta/save.js is loaded (or when it cannot load): Continue is simply not offered. */
+function nullSaveStandIn() {
+  return { isNull: true, ready: false, continueInfo: () => null, flush: () => Promise.resolve(false) };
 }
 
 function nowMs() {
@@ -755,6 +778,7 @@ export class Game3D {
     this.deathT = 0;
     this.creatureView = null;
     this.handsView = null;
+    this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
     this.lastDeath = null; // info handed to the death panel
     this.lastVictory = null; // info handed to the victory panel
     this.textures = null; // resolved texture manifest handed to renderer.buildLevel
@@ -822,6 +846,20 @@ export class Game3D {
     this._fadeOut = -1; // this.fade as _updateFeedback left it (last frame)
     this._dbgAim = { left: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1 }, right: { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1 } };
     this._onXRVisibility = () => this._xrVisibilityChanged();
+
+    // ---- WP-RELEASE: boot phases, platform services --------------------------------------------------------------
+    this.contentReady = false; // bootContent finished (menu is up)
+    this.contextLost = false; // WebGL context currently lost (platform/resilience.js)
+    this.save = null; // meta/save.js SaveService (null object when unavailable)
+    this.entitlement = null; // platform/entitlement.js (dormant: Chapter I is always playable)
+    this.governor = null; // platform/governor.js (XR frame-time governor)
+    this.resilience = null; // platform/resilience.js
+    this.loading = null; // platform/loadingScene.js while content loads
+    this.bootTimes = {}; // ms since navigationStart: minimal, firstFrame, xrStart, firstXRFrame, content
+    this._minimal = null;
+    this._contentPromise = null;
+    this._saveReady = null;
+    this._continuing = null;
   }
 
   // ===========================================================================
@@ -831,19 +869,32 @@ export class Game3D {
   /**
    * Loads modules, creates every subsystem, the menu attract scene and starts
    * the animation loop. Rejects only if the core (level / WebGL) cannot start.
+   * Two phases (RELEASE T1, VRC.Quest.Performance.3): bootMinimal() puts head-tracked frames on screen, bootContent()
+   * loads the heavy content behind the loading scene. main.js runs them separately so an immersive launch can
+   * enter VR in between; boot() runs both for callers that do not care.
    */
   async boot() {
     if (this.booted) return this;
+    await this.bootMinimal();
+    return this.bootContent();
+  }
+
+  /** Phase 1: renderer + input + XR hooks + loading scene + animation loop. Resolves once frames can be shown. */
+  bootMinimal() {
+    if (!this._minimal) this._minimal = this._bootMinimal();
+    return this._minimal;
+  }
+
+  async _bootMinimal() {
     this.settings = Storage.loadSettings();
     this.bus = new EventBus();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
+    this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
+    this.save = nullSaveStandIn();
 
-    await this._loadModules();
+    await this._loadModules(EARLY_MODULES);
     const M = this.modules;
-    if (!M.level || typeof M.level.Level3D !== 'function') {
-      throw new Error('The level module (src/sim/level3d.js or src/data/level-data-3d.js) could not be loaded.');
-    }
 
     // Renderer (fallback: a plain three.js view).
     this.renderer = this._optional(
@@ -858,19 +909,63 @@ export class Game3D {
     const canvas = this.renderer.renderer.domElement;
     const inputOpts = { renderer: this.renderer.renderer, camera: this.renderer.camera, rig: this.renderer.rig, canvas, settings: this.settings, bus: this.bus, game: this };
     this.input = this._optional('input', () => new M.input.InputManager(inputOpts), () => new FallbackInput(inputOpts), !!(M.input && M.input.InputManager));
+    this._wireBus();
+
+    // Platform services (all optional).
+    this.loading = this._optionalOrNull('loadingScene', () => new M.loadingScene.LoadingScene(THREE, this.renderer), !!(M.loadingScene && M.loadingScene.LoadingScene) && !this.renderer.isFallback);
+    this.resilience = this._optionalOrNull('resilience', () => new M.resilience.Resilience(this, { immersiveApp: !!this.options.immersiveApp }).install(), !!(M.resilience && M.resilience.Resilience));
+    this.governor = this._optionalOrNull(
+      'governor',
+      () => {
+        const q = typeof window !== 'undefined' && window.location ? M.governor.QualityGovernor.modeFromSearch(window.location.search) : { mode: 'auto', level: 0 };
+        return new M.governor.QualityGovernor(this, q);
+      },
+      !!(M.governor && M.governor.QualityGovernor),
+    );
+    this._saveReady = this._startSave(); // IndexedDB open + migration run beside the module downloads; never rejects
+
+    this._startLoop(); // the loop renders the loading scene until bootContent finishes
+    this.bootTimes.minimal = nowSinceNav();
+    this.bus.emit('game:boot-minimal', {});
+    return this;
+  }
+
+  /** Phase 2: level, view, creature kit, audio, UI, menu. Safe to call while an XR session is already running. */
+  bootContent() {
+    if (this.booted) return Promise.resolve(this);
+    if (!this._contentPromise) this._contentPromise = this.bootMinimal().then(() => this._bootContent());
+    return this._contentPromise;
+  }
+
+  async _bootContent() {
+    const progress = async (p, label) => {
+      if (this.loading) this.loading.setProgress(p, label);
+      await yieldToFrames();
+    };
+    await this._loadModules(LATE_MODULES);
+    const M = this.modules;
+    if (!M.level || typeof M.level.Level3D !== 'function') {
+      throw new Error('The level module (src/sim/level3d.js or src/data/level-data-3d.js) could not be loaded.');
+    }
+    await progress(0.25, 'Lowering the lantern');
 
     this.audio = this._optional('audio', () => new M.audio.AudioManager3D(this.bus, this.settings), nullAudio, !!(M.audio && M.audio.AudioManager3D));
     this.threat = this._optional('threat', () => new M.threat.ThreatSystem3D(this.bus), nullThreat, !!(M.threat && M.threat.ThreatSystem3D));
+    await this._saveReadyBounded(); // restored settings (if localStorage was wiped) are in before the UI reads them
+    await progress(0.4, 'Lowering the lantern');
 
-    this._wireBus();
     this._enterAttract(); // level / player / tethers / creature exist before the UI looks at them
+    await progress(0.55, 'Reading the walls');
 
     // Texture manifest for the level view (bounded wait), then build it.
     this.textures = await this._loadTextureManifest();
     this._viewReady = true;
+    await progress(0.7, 'Reading the walls');
     this._ensureLevelView();
+    await progress(0.82, 'Lighting the lamps');
 
     this._setupHandsView();
+    this._setupHealthFx();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -883,24 +978,123 @@ export class Game3D {
       this.ui = nullUI();
     }
     this._uiFallback = !!this.ui.isNull;
+    await progress(0.92, 'Almost there');
     // Every mesh that exists now (level, hands, UI panels, fade sphere): compile its
     // shader programs before the first frame so nothing hitches on first use.
+    if (this.loading) {
+      this.loading.dispose();
+      this.loading = null;
+    }
     this._precompile();
 
+    this._startEntitlement();
     this._bindWindow();
     this._setState('menu', true);
     this._try('audio', () => this.audio.setVolume(this.settings.volume));
     this._try('audio', () => this.audio.setPaused(true));
     this._try('ui', () => this.ui.show('menu'));
     this.booted = true;
+    this.contentReady = true;
+    this.bootTimes.content = nowSinceNav();
+    if (this.xrActive) this._resyncXRBindings(); // the session started while the content was loading
     this._startLoop();
     this.bus.emit('game:boot', {});
     return this;
   }
 
-  async _loadModules() {
+  /** Content that was created after the XR session started: do what _onXRStart does for it. */
+  _resyncXRBindings() {
+    const hv = this.handsView;
+    const input = this.input;
+    if (!(hv && hv.manageLantern)) {
+      const socket = (hv && hv.lanternSocket) || (input && typeof input.handSocket === 'function' ? input.handSocket('left') : null) || (input && input.lanternSocket) || null;
+      if (socket) this._try('renderer', () => this.renderer.setLanternParent && this.renderer.setLanternParent(socket));
+    }
+    this._uiMode = null;
+    this._syncUIMode();
+    this._unlockAudio();
+  }
+
+  _optionalOrNull(name, factory, available) {
+    if (!available) return null;
+    try {
+      return factory() || null;
+    } catch (err) {
+      this._fault(name, err);
+      return null;
+    }
+  }
+
+  /** Save service: loads the profile, migrates today's keys, follows the bus. Never rejects. */
+  async _startSave() {
+    const M = this.modules;
+    if (!M.save || typeof M.save.SaveService !== 'function') return null;
+    try {
+      const svc = new M.save.SaveService(this);
+      await svc.init();
+      this.save = svc;
+      // localStorage wiped but the profile survived (IndexedDB): bring the settings back
+      const saved = svc.savedSettings();
+      if (saved && Storage.get('settings', null) == null) {
+        for (const k of Object.keys(SETTINGS_DEFAULTS)) if (k in saved && typeof saved[k] === typeof SETTINGS_DEFAULTS[k]) this.settings[k] = saved[k];
+        if (!DIFFICULTY[this.settings.lastDifficulty]) this.settings.lastDifficulty = 'normal';
+        sanitizeHeightSettings(this.settings);
+      } else if (!saved) svc.store.recordSettings(this.settings);
+      return svc;
+    } catch (err) {
+      this._fault('save', err);
+      return null;
+    }
+  }
+
+  _saveReadyBounded() {
+    if (!this._saveReady) return Promise.resolve(null);
+    return Promise.race([this._saveReady, new Promise((resolve) => setTimeout(() => resolve(null), SAVE_WAIT_MS))]);
+  }
+
+  /** Entitlement (E06): dormant; reports the state, answers the chapter gate, never blocks anything. */
+  _startEntitlement() {
+    const M = this.modules;
+    if (!M.entitlement || typeof M.entitlement.Entitlement !== 'function') return;
+    try {
+      this.entitlement = M.entitlement.Entitlement.fromUrl({ bus: this.bus });
+      this.entitlement.init().catch((err) => this._fault('entitlement', err));
+    } catch (err) {
+      this._fault('entitlement', err);
+    }
+  }
+
+  /** Chapter gate (E06). Chapter I is always playable. */
+  isChapterPlayable(n) {
+    return this.entitlement ? this.entitlement.isChapterPlayable(n) : Number(n) === 1;
+  }
+
+  /** The frame while content is still loading: loading scene only, no simulation. */
+  _loadingFrame(dt, frame) {
+    void frame;
+    try {
+      const r = this.renderer;
+      const presenting = !!(r.renderer.xr && r.renderer.xr.isPresenting);
+      if (presenting && !this.bootTimes.firstXRFrame) {
+        this.bootTimes.firstXRFrame = nowSinceNav();
+        this.bus.emit('game:first-xr-frame', { ms: this.bootTimes.firstXRFrame });
+      } else if (!this.bootTimes.firstFrame) this.bootTimes.firstFrame = nowSinceNav();
+      if (this.loading) this.loading.update(dt, presenting);
+      r.render();
+      this._frameErrors = 0;
+    } catch (err) {
+      this._frameErrors++;
+      this._fault('loading', err);
+      if (this._frameErrors >= FATAL_FRAME_ERRORS) {
+        this._stopLoop();
+        showFatal(err);
+      }
+    }
+  }
+
+  async _loadModules(only) {
     const overrides = this.options.modules || {};
-    const names = Object.keys(MODULES);
+    const names = (only || Object.keys(MODULES)).filter((n) => !(n in this.modules));
     const results = await Promise.all(
       names.map((name) => {
         if (name in overrides) return Promise.resolve(overrides[name]);
@@ -978,6 +1172,18 @@ export class Game3D {
     } catch (err) {
       this._fault('handsView', err);
       this.handsView = null;
+    }
+  }
+
+  /** The low-health vignette (a camera child) and the ECG texture; optional (a failure leaves the game without them). */
+  _setupHealthFx() {
+    const M = this.modules;
+    if (this.healthFx || !M.healthFx || typeof M.healthFx.HealthFx !== 'function' || !this.renderer) return;
+    try {
+      this.healthFx = new M.healthFx.HealthFx(this);
+    } catch (err) {
+      this._fault('healthFx', err);
+      this.healthFx = null;
     }
   }
 
@@ -1166,6 +1372,15 @@ export class Game3D {
       this._hapticBoth(0.25 + 0.4 * Math.min(1, k), Math.round(U.clamp(finiteOr(d.duration, 0.6), 0.1, 1.5) * 1000));
       this.flash = Math.max(this.flash, 0.05 * k);
     });
+    bus.on('health:damage', (e) => {
+      if (!this._inRun()) return;
+      const k = U.clamp(finiteOr(e.amount, 0.1) * 2.2, 0, 1);
+      this._hapticBoth(0.3 + 0.7 * k, Math.round(70 + 260 * k));
+    });
+    bus.on('checkpoint', () => {
+      const h = this.health;
+      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal); // reaching a checkpoint patches you up
+    });
     bus.on('xr:recenter', () => this.recenter());
   }
 
@@ -1205,11 +1420,15 @@ export class Game3D {
     const session = typeof xr.getSession === 'function' ? xr.getSession() : null;
     this._xrSession = session;
     if (session && typeof session.addEventListener === 'function') session.addEventListener('visibilitychange', this._onXRVisibility);
-    try {
-      xr.setFoveation(1);
-    } catch {
-      /* not supported by this layer */
+    if (this.governor) this._try('governor', () => this.governor.onSessionStart(session));
+    else {
+      try {
+        xr.setFoveation(1);
+      } catch {
+        /* not supported by this layer */
+      }
     }
+    if (!this.bootTimes.xrStart) this.bootTimes.xrStart = nowSinceNav();
     // Recentre the head on the body but keep the user's physical facing: UI3D has
     // already placed any open panel in front of the head in world space, and
     // rotating the room now would swing it away. Facing is set on start / respawn.
@@ -1238,6 +1457,7 @@ export class Game3D {
     this._xrSession = null;
     this.xrActive = false;
     this._lastTs = null;
+    if (this.governor) this._try('governor', () => this.governor.onSessionEnd());
     // Keep the world yaw the head had, then hand the camera back to desktop control.
     const cam = r.camera;
     const worldYaw = r.rig.rotation.y + yawOfQuaternion(cam.quaternion);
@@ -1296,6 +1516,7 @@ export class Game3D {
 
   /** Ends the immersive session (back to desktop). */
   exitVR() {
+    if (this.resilience) this.resilience.markExitRequested();
     try {
       if (this.input && typeof this.input.exitVR === 'function' && !this.input.isFallback) return this.input.exitVR();
       const s = this.renderer.renderer.xr.getSession();
@@ -1436,6 +1657,43 @@ export class Game3D {
     return this.start(key);
   }
 
+  /** Is there a saved run to continue (meta/save.js)? The menu shows Continue when this is true. */
+  canContinue() {
+    return !!(this.save && this.save.continueInfo && this.save.continueInfo());
+  }
+
+  /**
+   * Continue the saved run: starts the saved difficulty and moves to the saved checkpoint with the saved clock,
+   * deaths and depth. Returns false when there is nothing to continue. Call from a click / trigger handler.
+   */
+  continueRun() {
+    const info = this.save && this.save.continueInfo ? this.save.continueInfo() : null;
+    if (!info || !DIFFICULTY[info.difficulty] || !this.booted) return false;
+    this._continuing = info;
+    let ok = false;
+    try {
+      ok = this.start(info.difficulty);
+      if (ok) ok = this._resumeAt(info);
+    } finally {
+      this._continuing = null;
+    }
+    if (ok) this.bus.emit('game:continue', { info });
+    return ok;
+  }
+
+  _resumeAt(info) {
+    const lvl = this.level;
+    const cp = info.checkpoint;
+    const idx = cp.index > 0 ? Math.min(cp.index, lvl.sections.length - 1) : 0;
+    if (idx > 0 && !this._warp(idx)) return false;
+    this.time = Math.max(0, finiteOr(info.time, 0));
+    this.deaths = Math.max(0, finiteOr(info.deaths, 0) | 0);
+    const deepest = -finiteOr(info.depthMeters, 0);
+    if (deepest < this.deepest) this.deepest = deepest;
+    this.fade = Math.max(this.fade, START_FADE);
+    return true;
+  }
+
   /**
    * Respawns at the current checkpoint (death panel or pause menu). With
    * checkpoints 'none' (Abyss) this restarts the run.
@@ -1448,6 +1706,7 @@ export class Game3D {
     const p = this.player;
     this.level.reset();
     p.reset(cp.x, cp.y, cp.z);
+    if (this.health) this.health.reset(); // a respawn restores full health
     this.tethers.reset();
     this._acc = 0;
     this._pendingJump = false;
@@ -1529,6 +1788,7 @@ export class Game3D {
     const cp = lvl.checkpointFor(idx, 'all');
     const p = this.player;
     p.reset(cp.x, cp.y, cp.z);
+    if (this.health) this.health.reset();
     this.tethers.reset();
     this._acc = 0;
     this._pendingJump = false;
@@ -1734,7 +1994,7 @@ export class Game3D {
   }
 
   /** setAnimationLoop callback (rAF on desktop, XRSession frames in VR). */
-  _loop(time) {
+  _loop(time, frame) {
     if (!this._running) return;
     const now = typeof time === 'number' && isFinite(time) ? time : nowMs();
     let realDt = this._lastTs === null ? 1 / 72 : (now - this._lastTs) / 1000;
@@ -1746,6 +2006,12 @@ export class Game3D {
     }
     const dt = Math.min(realDt, C.MAX_FRAME_DT);
     if (this.xrActive) this._xrFrames++;
+    if (this.resilience) this.resilience.heartbeat(nowMs());
+    if (!this.booted) {
+      this._loadingFrame(dt, frame); // content still loading: the loading scene, head-tracked
+      return;
+    }
+    if (this.governor && this.xrActive) this.governor.sample(realDt, frame);
     try {
       if (this._frozen) {
         // Debug manual stepping: presentation keeps running (rig, views, UI, render),
@@ -1944,6 +2210,7 @@ export class Game3D {
     const PDT = C.PHYSICS_DT;
     const p = this.player;
     const si = this._stepIntent;
+    if (this.physics.health) this.physics.health.god = this._godMode || this.victoryT >= 0; // no damage in god mode or during the victory sequence
     if (intent.jumpPressed) this._pendingJump = true;
     const mv = intent.move;
     si.move.x = mv ? U.clamp(finiteOr(mv.x, 0), -1, 1) : 0;
@@ -2542,6 +2809,14 @@ export class Game3D {
   }
 
   _updateViews(dt) {
+    const fx = this.healthFx;
+    if (fx) {
+      try {
+        fx.update(dt, this);
+      } catch (err) {
+        this._fault('healthFx', err);
+      }
+    }
     const cv = this.creatureView;
     if (cv) {
       try {
@@ -2686,6 +2961,11 @@ export class Game3D {
 
   get rig() {
     return this.renderer ? this.renderer.rig : null;
+  }
+
+  /** The player's health model (sim/health3d.js: hp 0..1, low, dead, heartbeatRate) or null before a world exists. */
+  get health() {
+    return this.physics ? this.physics.health : null;
   }
 
   get scene() {
@@ -2959,6 +3239,7 @@ export class Game3D {
       xr: this.xrActive,
       fps: r(this.fps),
       perf: Object.assign({}, this.perf),
+      health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       checkpoint: Object.assign({}, this.checkpoint),
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
@@ -2995,10 +3276,37 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // Health (tests, QA, screenshots): hp 0..1 sets the health directly (no events); damage(amount) hurts as a hit would.
+      health: (hp) => {
+        const h = this.health;
+        if (h && typeof hp === 'number' && isFinite(hp)) h.setHp(hp);
+        return h ? { hp: h.hp, low: h.low, dead: h.dead, bpm: h.heartbeatRate } : null;
+      },
+      damage: (amount, cause) => {
+        const h = this.health;
+        if (!h || !(amount > 0)) return false;
+        const dead = h.damage(amount, cause || 'fall', 0);
+        if (dead) this.physics.kill(this.player, this.tethers, 'impact', 0);
+        return dead;
+      },
       freeze: (on) => {
         this._frozen = on === undefined ? true : !!on;
         return this._frozen;
       },
+      // WP-RELEASE: platform services, for tests and QA (nothing here changes play)
+      platform: () => ({
+        bootTimes: Object.assign({}, this.bootTimes),
+        booted: this.booted,
+        contentReady: this.contentReady,
+        contextLost: this.contextLost,
+        resilience: this.resilience ? this.resilience.report() : null,
+        governor: this.governor ? this.governor.report() : null,
+        entitlement: this.entitlement ? this.entitlement.info() : null,
+        save: this.save && this.save.profile ? { info: this.save.store.info, continue: this.save.continueInfo() } : null,
+      }),
+      loseContext: () => !!(this.resilience && this.resilience.loseContext()),
+      restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
+      governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
     };
   }
 }

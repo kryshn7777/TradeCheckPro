@@ -80,9 +80,8 @@ export const HANDS_TUNING = {
   gearUrl: GEAR_URL,
   wristLiftGear: { x: 0, y: 0.083, z: 0.115 }, // wrist-HUD mount above the strapped-on launcher, behind the drum
   desktopGear: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, scale: 1 }, // arm model offset on the desktop virtual hand
-  gearEnv: 0.55, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
+  gearEnv: 0.8, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
   gearGlowIdle: 0.45, // emissive intensity of the pilot lamp / gauge phosphor
-  padRate: 1, // (reserved) extra smoothing on the analog inputs
   gripRest: 0.62, // resting-finger-on-the-grip-button reads as a half-closed hand
   headScaleMax: 8, // loose grapple head enlarges with distance like the rope does (ropeView R_PER_M)
 };
@@ -463,14 +462,23 @@ class FxBatch {
  * once and set on the gear materials only; its strength follows the scene's
  * ambient light so the hands do not glow in a pitch-black chamber.
  */
-function buildGearEnvironment(renderer) {
+export const GEAR_ENV = {
+  top: '#8a8f98',
+  mid: '#34363a',
+  bot: '#2a3034',
+  lampA: [3.0, 3.0, 3.0],
+  lampB: [1.5, 1.5, 1.5],
+  strip: [0.7, 1.0, 1.2],
+};
+
+export function buildGearEnvironment(renderer, E = GEAR_ENV) {
   const sc = new Scene();
   const geo = new SphereGeometry(6, 24, 12);
   const pos = geo.attributes.position;
   const col = new Float32Array(pos.count * 3);
-  const top = new Color('#4b4036');
-  const mid = new Color('#1d1914');
-  const bot = new Color('#2c3a40');
+  const top = new Color(E.top);
+  const mid = new Color(E.mid);
+  const bot = new Color(E.bot);
   const c = new Color();
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i) / 6;
@@ -482,22 +490,20 @@ function buildGearEnvironment(renderer) {
   }
   geo.setAttribute('color', new BufferAttribute(col, 3));
   sc.add(new Mesh(geo, new MeshBasicMaterial({ vertexColors: true, side: BackSide, toneMapped: false })));
-  const lampA = new Mesh(new BoxGeometry(2.6, 0.12, 1.4), new MeshBasicMaterial({ color: new Color(9, 6.2, 3.4), toneMapped: false }));
-  lampA.position.set(-1.2, 4.2, 1.6);
-  sc.add(lampA);
-  const lampB = new Mesh(new BoxGeometry(0.2, 1.6, 0.9), new MeshBasicMaterial({ color: new Color(3.4, 2.5, 1.6), toneMapped: false }));
-  lampB.position.set(4.4, 1.0, -1.4);
-  sc.add(lampB);
-  const strip = new Mesh(new BoxGeometry(3.2, 0.1, 0.5), new MeshBasicMaterial({ color: new Color(0.6, 1.1, 1.3), toneMapped: false }));
-  strip.position.set(0, -3.6, -2.0);
-  sc.add(strip);
+  const box = (w, h, d, rgb, x, y, z) => {
+    const m = new Mesh(new BoxGeometry(w, h, d), new MeshBasicMaterial({ color: new Color(rgb[0], rgb[1], rgb[2]), toneMapped: false }));
+    m.position.set(x, y, z);
+    sc.add(m);
+  };
+  box(2.6, 0.12, 1.4, E.lampA, -1.2, 4.2, 1.6);
+  box(0.2, 1.6, 0.9, E.lampB, 4.4, 1.0, -1.4);
+  box(3.2, 0.1, 0.5, E.strip, 0, -3.6, -2.0);
   const pm = new PMREMGenerator(renderer);
   const rt = pm.fromScene(sc, 0.03);
   pm.dispose();
-  geo.dispose();
   for (const o of sc.children) {
     if (o.material) o.material.dispose();
-    if (o.geometry && o.geometry !== geo) o.geometry.dispose();
+    if (o.geometry) o.geometry.dispose();
   }
   return rt;
 }
@@ -716,12 +722,22 @@ export class HandsView {
       }
     }
     const mats = { left: makeMat(PAL.glowLeft), right: makeMat(PAL.glowRight), lantern: makeMat(PAL.lanternGlass) };
+    // The wrist ECG screens: unlit, one material per hand (the GLB's placeholder trace until healthFx binds its texture).
+    const ecgSrc = this._findMaterial(root, 'Arm_ECG_Screen');
+    this._ecgPlaceholder = ecgSrc ? ecgSrc.emissiveMap || ecgSrc.map || null : null;
     const gear = {};
     for (const h of HANDS) {
       const node = root.getObjectByName(h === 'left' ? 'Arm_L' : 'Arm_R');
       if (!node) throw new Error(`player_arms.glb: Arm_${h === 'left' ? 'L' : 'R'} missing`);
       node.parent.remove(node);
       gear[h] = new HandGear(h, node, poses, mats[h], GEAR_TUNING);
+      if (gear[h].ecgMesh) {
+        const em = new MeshBasicMaterial({ map: this._ecgPlaceholder, toneMapped: false, fog: false });
+        em.transparent = true; // alpha stays 1: draw order only (see HANDS_RENDER_ORDER_XR)
+        em.forceSinglePass = true;
+        em.name = 'Arm_ECG_Screen';
+        gear[h].ecgMesh.material = em;
+      }
       const sock = inp && inp.handSocket ? inp.handSocket(h) : null;
       if (sock) sock.add(node);
       node.visible = false;
@@ -780,6 +796,62 @@ export class HandsView {
         this.r3.precompile();
       } catch {
         /* optimisation only */
+      }
+    }
+  }
+
+  _findMaterial(root, name) {
+    let found = null;
+    root.traverse((o) => {
+      if (!found && o.isMesh && o.material && o.material.name === name) found = o.material;
+    });
+    return found;
+  }
+
+  /**
+   * healthFx (another module, may arrive after us) publishes a CanvasTexture with the ECG trace:
+   * bind it to the GLB screens (and the plane on the procedural fallback hands) once it exists.
+   */
+  _bindEcg(game) {
+    const hfx = game ? game.healthFx : null;
+    if (!hfx || !hfx.ecgTexture) return;
+    const tex = hfx.ecgTexture;
+    if (this._ecgTex !== tex) {
+      this._ecgTex = tex;
+      if (this.gear) {
+        for (const h of HANDS) {
+          const mesh = this.gear[h].ecgMesh;
+          if (!mesh) continue;
+          mesh.material.map = tex;
+          mesh.material.needsUpdate = true;
+          // glTF UVs have their origin top-left (textures there are flipY = false); a CanvasTexture is flipY = true: flip v once
+          if (tex.flipY && !mesh.userData.ecgFlipped) {
+            const uv = mesh.geometry.attributes.uv;
+            for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+            uv.needsUpdate = true;
+            mesh.userData.ecgFlipped = true;
+          }
+        }
+      }
+    }
+    if (!this._ecgPlanes && typeof hfx.makeEcgPlane === 'function') {
+      this._ecgPlanes = {};
+      for (const h of HANDS) {
+        let m = null;
+        try {
+          m = hfx.makeEcgPlane(0.07, 0.035);
+        } catch {
+          m = null;
+        }
+        if (!m) continue;
+        m.name = `AT3D-ecg-${h}`;
+        m.frustumCulled = false;
+        m.renderOrder = this._order > 0 ? this._order : 0;
+        // lies on the bracer plate, tilted toward the eye; baseline along the forearm
+        m.position.set(h === 'left' ? 0.012 : -0.012, 0.056, 0.1);
+        m.rotation.set(-Math.PI / 2 + 0.45, 0, h === 'left' ? -0.0 : 0.0);
+        m.rotateZ(Math.PI / 2);
+        this._ecgPlanes[h] = m;
       }
     }
   }
@@ -953,6 +1025,17 @@ export class HandsView {
       }
     }
     if (gear && xr !== this._gearXr) this._placeGear(xr);
+    this._bindEcg(game);
+    if (this._ecgPlanes) {
+      for (const h of HANDS) {
+        const pl = this._ecgPlanes[h];
+        if (!pl) continue;
+        const sock = inp.handSocket(h);
+        if (sock && pl.parent !== sock) sock.add(pl);
+        pl.visible = showHands && !gear; // the GLB screens replace the plane once the model is up
+        if (pl.renderOrder !== (xr ? HANDS_RENDER_ORDER_XR : 0)) pl.renderOrder = xr ? HANDS_RENDER_ORDER_XR : 0;
+      }
+    }
     this.lantern.visible = showHands;
     const order = xr ? HANDS_RENDER_ORDER_XR : 0;
     if (order !== this._order) {

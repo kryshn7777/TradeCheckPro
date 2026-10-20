@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#08090a" />
     <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Abyssal Tether" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
     <meta
       name="description"
       content="Abyssal Tether VR: descend a colossal buried cathedral-machine on two grappling tethers while something vast follows you down. Built for Meta Quest 3 (WebXR); also plays with mouse and keyboard."
@@ -16,6 +21,7 @@
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2308090a'/%3E%3Cpath d='M10 6v52M54 6v52' stroke='%232a2f31' stroke-width='4'/%3E%3Ccircle cx='32' cy='15' r='7.5' fill='none' stroke='%23e8dcc0' stroke-width='3.5'/%3E%3Cpath d='M32 22.5V40' stroke='%23e8dcc0' stroke-width='2.5'/%3E%3Cpath d='M32 38l8 8-8 8-8-8z' fill='%23e0a050'/%3E%3C/svg%3E"
     />
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
     <link rel="stylesheet" href="style.css" />
     <script type="importmap">
       {
@@ -26,7 +32,10 @@
       }
     </script>
     <link rel="modulepreload" href="./vendor/three/three.module.min.js" />
+    <link rel="modulepreload" href="src/platform/earlyXR.js" />
     <link rel="modulepreload" href="src/game.js" />
+    <link rel="modulepreload" href="src/render/renderer3d.js" />
+    <link rel="modulepreload" href="src/input/inputManager.js" />
   </head>
   <body class="is-loading" data-game-state="loading">
     <div id="app">
@@ -41,6 +50,11 @@
           <p class="boot-title">ABYSSAL TETHER <span class="boot-mark">VR</span></p>
           <div class="boot-line" aria-hidden="true"><span></span></div>
           <p id="boot-msg" class="boot-msg">Loading…</p>
+          <!-- Shown only when the installed immersive app could not enter VR by itself (see main.js). -->
+          <div id="boot-actions" class="boot-actions" hidden>
+            <button id="boot-enter-vr" type="button" class="boot-btn">Enter VR</button>
+            <button id="boot-flat" type="button" class="boot-btn boot-btn-quiet">Play on screen</button>
+          </div>
         </div>
       </div>
     </div>

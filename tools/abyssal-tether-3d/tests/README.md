@@ -23,6 +23,12 @@ Every script takes `--root DIR` (or `AT3D_ROOT`) like the harness; by default it
 |---|---|
 | `swingbench.mjs` | Rope physics bench on the real `Player3D` / `TetherSystem` / `Physics3D`: (1) near grab 1.3 / 1.6 / 2.0 m at 6 / 9 / 12 m/s tangential (peak omega, peak load, revolutions in 3 s), (2) free pendulum L = 4 / 8 / 15 m at 10 and 60 degrees (period vs the large-angle formula, energy drift per period), (3) catches after 5 / 10 / 20 m free falls (peak load, rebound, pay-out), (4) two ropes taut at once (energy, jitter, stalled reel), (5) every bot route on every variant (max omega, max load, frames above 4 / 6 / 10 g), (6) reeling in on a conical swing (angular momentum), (7) a typical swing. `node tools/abyssal-tether-3d/tests/physics/swingbench.mjs` prints the tables; `--check` asserts the limits (what `npm run test:at3d` runs); `--only 1,2`, `--variant normal`, `--set rope.maxTensionG=4,rope.catchPeakG=6` (tuning sweeps), `--json`, `--root DIR` (compare against another copy of the game). Loads are in `CONFIG.player.gravity` units, measured as specific force per fixed step. |
 
+## health/
+
+| File | |
+|---|---|
+| `unit.mjs` | `Health3D` / fall damage (`src/sim/health3d.js`): the damage curve per difficulty (0 up to the threshold, convex, 1 at the lethal speed) and the wall curve, the hit cooldown, regeneration (delay + rate, per difficulty), the `health:damage` / `health:low` / `health:recover` events and the low-state hysteresis, hazards (60 hp, cooldown, death on the repeat), Sandbox, god mode, the heartbeat (60 -> 140 bpm), determinism and snapshot / restore, then `Physics3D` on the real level: drops from known heights onto the spawn ledge, the lethal fall still killing, accumulation, a hazard and a creature kill. Pass / fail. |
+
 ## creature/
 
 | File | |

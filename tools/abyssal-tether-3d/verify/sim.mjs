@@ -304,6 +304,13 @@ export class Sim {
       this.deathCause = e.cause;
       this.events.push(['death', e.cause, +this.t.toFixed(2), +e.x.toFixed(1), +e.y.toFixed(1), +e.z.toFixed(1), +(e.impact || 0).toFixed(1)]);
     });
+    this._secIdx = 0; // section / checkpoint bookkeeping, as Game3D._enterSection (a new checkpoint heals)
+    this._cpIdx = 0;
+    this.damageLog = []; // health:damage events of the real run: [t, cause, amount (hp), hp after, speed]
+    this.bus.on('health:damage', (e) => {
+      if (this.ghost) return;
+      this.damageLog.push([+this.t.toFixed(2), e.cause, +(e.amount * 100).toFixed(1), +(e.hp * 100).toFixed(1), +(e.speed || 0).toFixed(1)]);
+    });
     this.bus.on('grapple:attach', (e) => {
       if (this.ghost) return;
       this.attaches.push(e.anchor.id);
@@ -360,6 +367,10 @@ export class Sim {
     this.deaths = 0;
     this.attaches = [];
     this.events = [];
+    this.damageLog = [];
+    this.physics.health.reset();
+    this._secIdx = this.level.sectionIndexAt(y);
+    this._cpIdx = this.level.checkpointFor(this._secIdx, this.diff.checkpoints).index;
     this.trace = [];
     this.hash = new TrajectoryHash();
     this.logFrames = 0;
@@ -388,6 +399,7 @@ export class Sim {
       if (!p.alive) break;
     }
     intent.jumpPressed = false;
+    if (real) this._checkpoint(p);
     if (real && this.creature) this._stepCreature(timers);
     if (timers) {
       const wall = now() - t0;
@@ -400,6 +412,18 @@ export class Sim {
       if (this._frameNo++ % this.traceEvery === 0) this.trace.push(p.x, p.y, p.z);
     }
     return p.alive;
+  }
+
+  /** Game3D._enterSection: reaching a deeper checkpoint (per the difficulty's policy) restores health. */
+  _checkpoint(p) {
+    const si = this.level.sectionIndexAt(p.y);
+    if (si === this._secIdx || si < 0) return;
+    this._secIdx = si;
+    const cp = this.level.checkpointFor(si, this.diff.checkpoints);
+    if (cp && cp.index > this._cpIdx) {
+      this._cpIdx = cp.index;
+      this.physics.health.heal(CONFIG.health.checkpointHeal);
+    }
   }
 
   _stepCreature(timers) {
@@ -435,6 +459,7 @@ export class Sim {
     const s = { t: this.t, p: new Array(this.playerKeys.length), hands: {}, dyn: [] };
     for (let i = 0; i < this.playerKeys.length; i++) s.p[i] = p[this.playerKeys[i]];
     s.tethered = p._tethered;
+    s.health = this.physics.health.snapshot();
     for (const h of HANDS) {
       const st = this.tethers.hands[h];
       const o = {};
@@ -453,6 +478,7 @@ export class Sim {
     this.t = s.t;
     for (let i = 0; i < this.playerKeys.length; i++) p[this.playerKeys[i]] = s.p[i];
     p._tethered = s.tethered;
+    this.physics.health.restore(s.health);
     for (const h of HANDS) {
       const st = this.tethers.hands[h];
       const o = s.hands[h];
@@ -470,6 +496,18 @@ export class Sim {
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
     }
+  }
+
+  /** Damage taken this run (hp points, 100 = full health): hits, total, lowest hp, the events. */
+  damageReport() {
+    const h = this.physics.health;
+    return {
+      hits: h.hits,
+      total: +(h.totalDamage * 100).toFixed(1),
+      minHp: +(h.minHp * 100).toFixed(1),
+      endHp: +(h.hp * 100).toFixed(1),
+      events: this.damageLog,
+    };
   }
 
   attachedHands() {

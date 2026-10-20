@@ -262,6 +262,42 @@ body.xr-presenting .ui-root {
   letter-spacing: 0.08em;
 }
 
+.boot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.boot-actions[hidden] {
+  display: none;
+}
+
+.boot-btn {
+  min-width: 160px;
+  min-height: var(--tap);
+  padding: 10px 22px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  background: var(--stone-800);
+  color: var(--phosphor);
+  font: 600 15px/1.2 var(--font-ui);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.boot-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.boot-btn-quiet {
+  border-color: var(--line-3);
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
 @keyframes boot-descend {
   to {
     top: 100%;

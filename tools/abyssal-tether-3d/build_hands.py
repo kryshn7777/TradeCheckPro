@@ -22,7 +22,8 @@ Builds, in Blender, from code (deterministic, no hand-sculpting):
   LOW game meshes, then bake high → low into one shared 2048² atlas used by
   both sides (mirrored UVs): albedo (sRGB), normal (OpenGL, MikkTSpace),
   ORM (R = AO, G = roughness, B = metalness) and an emissive mask (pilot lamp,
-  gauge phosphor, lantern glass), all tinted/driven at runtime. LOD1 ≈ 40 %.
+  gauge phosphor, lantern glass), all tinted/driven at runtime. The ECG wrist screen is
+  its own material slot ('Arm_ECG_Screen', UV 0..1) on the launcher mesh.
 
 Output (see tools/abyssal-tether-3d/README.md for node names, pivots, axes):
   <out>/player_arms.glb
@@ -534,7 +535,10 @@ def forearm_radii(y):
     t = min(1.0, max(0.0, (-y) / 0.27))
     rx = 0.0225 + (0.0395 - 0.0225) * (1 - (1 - t) ** 1.6)
     rz = 0.0315 + (0.0420 - 0.0315) * (1 - (1 - t) ** 1.4)
-    return rx, rz
+    # past the launcher the sleeve narrows toward the elbow end (a lean arm, not a pipe)
+    k = min(1.0, max(0.0, (-y - 0.20) / 0.10))
+    f = 1.0 - 0.15 * k * k * (3 - 2 * k)
+    return rx * f, rz * f
 
 
 def forearm_axis(y):
@@ -556,7 +560,7 @@ def build_sleeve(high):
     if not high:
         ys = [SLEEVE_END, SLEEVE_END - 0.006, SLEEVE_END - 0.040, SLEEVE_END - 0.050] + [v for v in ys if v < SLEEVE_END - 0.06]
     rng = random.Random(args.seed + 3)
-    fold_ph = [rng.uniform(0, 6.28) for _ in range(8)]
+    fold_ph = [rng.uniform(0, 6.28) for _ in range(8)]  # noqa
     rows = []
     for y in ys:
         rx, rz = forearm_radii(y)
@@ -571,8 +575,14 @@ def build_sleeve(high):
             d = 0.0
             if high:
                 # long draped folds + compression rings above the cuff + sag below
-                d += 0.0018 * math.sin(3 * a + fold_ph[0] + 4 * u) * (0.4 + u)
-                d += 0.0011 * math.sin(5 * a + fold_ph[1] - 7 * u)
+                d += 0.0030 * math.sin(3 * a + fold_ph[0] + 4 * u) * (0.4 + u)
+                d += 0.0020 * math.sin(5 * a + fold_ph[1] - 7 * u) * (0.5 + 0.5 * u)
+                d += 0.0014 * math.sin(2 * a + fold_ph[4] + 11 * u) * math.sin(math.pi * min(1.0, u * 1.4))
+                # sleeve rolled back at the elbow end: a thick roll with a pinch line above it
+                rl = (y - SLEEVE_TOP) / 0.050  # 0 at the end … 1 where the roll begins
+                if 0.0 <= rl < 1.0:
+                    d += 0.0075 * math.sin(math.pi * min(1.0, rl * 1.15)) ** 0.8 - 0.0016 * math.exp(-((rl - 0.97) / 0.03) ** 2)
+                    d += 0.0010 * math.sin(7 * a + fold_ph[5]) * math.sin(math.pi * rl)
                 comp = math.exp(-((SLEEVE_END - 0.075 - y) / 0.03) ** 2) if not cuff else 0.0
                 d += 0.0022 * comp * math.sin(2 * math.pi * (y / 0.011) + 1.7 * math.sin(2 * a + fold_ph[2]))
                 d += 0.0016 * max(0.0, -math.sin(a)) * u  # gravity sag (−X side hangs)
@@ -997,6 +1007,11 @@ def slotted_screw(bm, p, n, r, h, seg=12, slot_dir=None):
 # -----------------------------------------------------------------------------
 # Launcher (socket space, right side; the left side is the mirror)
 # -----------------------------------------------------------------------------
+STRAP_Y = (-0.0975, -0.2185)  # strap centres (hand-space y); the ECG screen sits between them
+ECG_Y = -0.1575
+ECG_A = math.radians(167.0)  # medial side of the sleeve, slightly up: faces the player's eye
+ECG_HALF = (0.0425, 0.0275)  # housing half-size (along the arm, across)
+ECG_GLASS = (0.0350, 0.0175)  # 7 x 3.5 cm screen
 DRUM_C = Vector((0.0055, -0.122, 0.0995))  # drum axle centre
 DRUM_W = 0.0300  # between flanges
 DRUM_R_CORE = 0.0110
@@ -1022,6 +1037,32 @@ class Part:
         self.hi_mat = hi_mat or {}
 
 
+def ecg_frame():
+    """Frame of the ECG screen (socket space): P on the sleeve, n = face normal (toward the player's eye),
+    u = along the arm toward the hand (the image baseline), U = image up (n × u, so u × U = n)."""
+    P = sleeve_surface(ECG_Y, ECG_A, 0.0)
+    out = (sleeve_surface(ECG_Y, ECG_A, 0.02) - P).normalized()
+    n = (out + Vector((0, 0, 1)) * 0.9).normalized()
+    u = SD((0, 1, 0))
+    u = (u - n * u.dot(n)).normalized()
+    U = n.cross(u).normalized()
+    return P, n, u, U
+
+
+def prism_frame(bm, outline, O, u, v, w, L, bevel=0.0, bseg=2):
+    """Extrude an outline given in (v, w) coordinates along u over length L, centred on O."""
+    a = [bm.verts.new(Vector(O) - u * (L / 2) + v * y + w * z) for y, z in outline]
+    b = [bm.verts.new(Vector(O) + u * (L / 2) + v * y + w * z) for y, z in outline]
+    n = len(outline)
+    faces = [bm.faces.new(b), bm.faces.new(a[::-1])]
+    for k in range(n):
+        faces.append(bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])))
+    if bevel > 0:
+        edges = list({e for f in faces for e in f.edges})
+        bmesh.ops.bevel(bm, geom=edges, offset=bevel, segments=bseg, profile=0.5, affect="EDGES", clamp_overlap=True)
+    return faces
+
+
 def sleeve_surface(y_h, a, extra=0.0):
     """Socket-space point on the (un-folded) sleeve surface at hand-space y and
     angle a (0 = back of the hand / +X, π/2 = thumb side / top)."""
@@ -1033,7 +1074,7 @@ def sleeve_surface(y_h, a, extra=0.0):
     return S(c + Vector((x, 0.0, z)))
 
 
-def build_brace(bm, hi, extra=0.0035, thick=0.0026, y0=-0.040, y1=-0.205, a_half=0.98):
+def build_brace(bm, hi, extra=0.0035, thick=0.0026, y0=-0.040, y1=-0.238, a_half=0.98):
     """Iron saddle over the top of the sleeve (rolled edges, thick ends)."""
     ny = 34 if hi else 9
     na = 40 if hi else 10
@@ -1453,7 +1494,7 @@ def build_launcher(hi):
     bm = add("Brace", "Body", "iron")
     build_brace(bm, hi)
     if hi:
-        for yh in (-0.046, -0.199):
+        for yh in (-0.046, -0.232):
             for k in range(5):
                 a = math.pi / 2 - 0.82 + 1.64 * k / 4
                 p = sleeve_surface(yh, a, 0.0035 + 0.0026)
@@ -1467,7 +1508,7 @@ def build_launcher(hi):
                 p = sleeve_surface(yh, a, 0.0035 + 0.0026)
                 nn = (sleeve_surface(yh, a, 0.02) - p).normalized()
                 dome_rivet(bm, p, nn, 0.0017, 0.0011, 10)
-    for i, yh in enumerate((-0.0975, -0.1735)):
+    for i, yh in enumerate(STRAP_Y):
         bms = add(f"Strap{i}", "Body", "strap")
         ba = build_strap(bms, hi, yh)
         bmb = add(f"Buckle{i}", "Body", "brass")
@@ -1501,6 +1542,42 @@ def build_launcher(hi):
     if hi:
         for dy in (-0.0145, 0.0145):
             slotted_screw(bm, pc + Vector((-0.0005, dy, 0)), Vector((-1, 0, 0)), 0.0013, 0.0008, 10)
+    # ---- ECG wrist screen: wedge housing on the medial side of the sleeve, brass rim, recessed glass ----
+    P0, n, u, U = ecg_frame()
+    ya = ECG_Y
+    # arc of the sleeve under the housing (sunk 3 mm), in (across, height) coordinates
+    def proj(a):
+        d = sleeve_surface(ya, a, -0.003) - P0
+        return d.dot(U), d.dot(n)
+    lo = hi_a = ECG_A
+    while proj(lo)[0] > -ECG_HALF[1] and lo > ECG_A - 1.5:
+        lo -= 0.01
+    while proj(hi_a)[0] < ECG_HALF[1] and hi_a < ECG_A + 1.5:
+        hi_a += 0.01
+    arc = [proj(lo + (hi_a - lo) * k / 6) for k in range(7)]
+    w_top = max(z for _, z in arc) + 0.0050
+    outline = [(y, z) for y, z in arc] + [(arc[-1][0], w_top), (arc[0][0], w_top)]
+    bm = add("EcgHousing", "Body", "iron")
+    prism_frame(bm, outline, P0, u, U, n, 2 * ECG_HALF[0], bevel=seg(0.0008, 0.0), bseg=2)
+    if hi:
+        for su in (-1, 1):
+            for sv in (-1, 1):
+                pr = P0 + u * (su * 0.0407) + U * (sv * 0.0242) + n * w_top
+                slotted_screw(bm, pr, n, 0.0015, 0.0010, 10)
+    bm = add("EcgRim", "Body", "brass")
+    rot = frame_matrix(u, U, n)
+    gu, gv = ECG_GLASS
+    rw = 0.0036
+    zc = w_top + 0.0013
+    for sv in (-1, 1):
+        box(bm, P0 + U * (sv * (gv + rw / 2 + 0.0002)) + n * zc, (gu + rw + 0.0002, rw / 2, 0.0013), rot, bevel=seg(0.0004, 0.0), bseg=1)
+    for su in (-1, 1):
+        box(bm, P0 + u * (su * (gu + rw / 2 + 0.0002)) + n * zc, (rw / 2, gv + 0.0002, 0.0013), rot, bevel=seg(0.0004, 0.0), bseg=1)
+    # the glass: one quad (own UV 0..1, own material); counter-clockwise seen from +n
+    bm = add("EcgGlass", "Body", "glass")
+    Cg = P0 + n * (w_top + 0.0006)
+    q = [Cg - u * gu - U * gv, Cg + u * gu - U * gv, Cg + u * gu + U * gv, Cg - u * gu + U * gv]
+    bm.faces.new([bm.verts.new(v) for v in q])
     return P
 
 
@@ -1703,23 +1780,30 @@ def detail_glove(ob):
             dlt = (Pm - np.array(J[jj])) @ Yd
             dors = np.clip(Nm @ -Zd, 0, None)
             palm = np.clip(Nm @ Zd, 0, None)
-            add += 0.00038 * np.exp(-(dlt / 0.0058) ** 2) * np.sin(2 * np.pi * dlt / 0.0029 + 1.3 * jj) * dors ** 0.7
+            # 2–3 irregular creases where the leather bunches over the knuckle (wavy, uneven spacing and depth)
+            wob = 0.0008 * np.sin(Pm[:, 2] * 410 + 1.9 * jj + k) + 0.0005 * np.sin(Pm[:, 0] * 530 + 0.7 * k)
+            for off, amp, wid in ((-0.0036, 0.00030, 0.0009), (-0.0004 + 0.0007 * math.sin(k * 1.7), 0.00046, 0.0011), (0.0034 - 0.0006 * math.cos(k), 0.00026, 0.0008)):
+                add -= amp * np.exp(-(((dlt - off + wob) / wid) ** 2)) * dors ** 0.6
+                add += 0.45 * amp * np.exp(-(((dlt - off + wob - 0.0017) / 0.0014) ** 2)) * dors ** 0.6  # soft lip beside each crease
             add -= 0.00055 * np.exp(-(dlt / 0.0011) ** 2) * palm
         if j == 0 and name != "Thumb":
             Yd = np.array(Fr[0][1])
             Zd = np.array(Fr[0][2])
             dlt = (Pm - np.array(J[0])) @ Yd
             dors = np.clip(Nm @ -Zd, 0, None)
-            add += 0.00030 * np.exp(-(dlt / 0.0075) ** 2) * np.sin(2 * np.pi * dlt / 0.0034) * dors
+            wob = 0.0010 * np.sin(Pm[:, 2] * 300 + k)
+            for off, amp in ((-0.0060, 0.00030), (-0.0015, 0.00040), (0.0030, 0.00026)):
+                add -= amp * np.exp(-(((dlt - off + wob) / 0.0012) ** 2)) * dors
         d[m] += add
     # gathered (shirred) elastic wrist: longitudinal ridges
     m = (P[:, 1] > -0.030) & (P[:, 1] < 0.002)
     ang = np.arctan2(P[:, 2], P[:, 0])
     w = np.sin(np.pi * (P[:, 1] + 0.030) / 0.032)
-    d += np.where(m, 0.00045 * w * np.sin(ang * 44 + 2.0 * np.sin(P[:, 1] * 260)) ** 3, 0.0)
-    # loose leather on the back of the hand
+    d += np.where(m, 0.00034 * w * np.sin(ang * 31 + 2.0 * np.sin(P[:, 1] * 260 + ang * 3)) ** 3, 0.0)
+    # loose, slightly puckered leather on the back of the hand: broad uneven undulation, not a grid
     m = (Nn[:, 0] > 0.3) & (P[:, 1] > 0.01) & (P[:, 1] < 0.085)
-    d += np.where(m, 0.00028 * np.sin(P[:, 1] * 410 + 3 * np.sin(P[:, 2] * 220)) * np.sin(P[:, 2] * 330 + 1.0), 0.0)
+    und = (np.sin(P[:, 1] * 150 + P[:, 2] * 95 + 0.4) + np.sin(P[:, 1] * 83 - P[:, 2] * 171 + 2.1) + np.sin(P[:, 2] * 233 + P[:, 1] * 41 + 4.0)) / 3.0
+    d += np.where(m, 0.00026 * und, 0.0)
     P += Nn * d[:, None]
     verts.foreach_set("co", P.reshape(-1))
     me.update()
@@ -1947,8 +2031,10 @@ def hb_material(cls, kind=None):
         strength, dist = 0.35, 0.0003
         pattern = b.math("ADD", b.math("MULTIPLY", weave, 0.5), 0.5)
     elif cls == "strap":
-        # stitch rows 2.6 mm in from both strap edges; strap centres at hand y −0.0975 / −0.1735
-        yc = b.math("SUBTRACT", b.math("ABSOLUTE", b.math("SUBTRACT", b.math("FLOORED_MODULO", b.math("ADD", along, 0.0975 + 0.038), 0.076), 0.038)), 0.0)
+        # stitch rows 2.6 mm in from both strap edges; strap centres at STRAP_Y
+        yh = b.vmath("DOT_PRODUCT", rel, tuple(SD((0, 1, 0))), out=1)  # hand-space y along the forearm
+        per = STRAP_Y[0] - STRAP_Y[1]
+        yc = b.math("ABSOLUTE", b.math("SUBTRACT", b.math("FLOORED_MODULO", b.math("ADD", yh, -STRAP_Y[0] + per / 2), per), per / 2))
         edge_off = b.math("ABSOLUTE", b.math("SUBTRACT", yc, 0.012 - 0.0026))
         row = b.math("SUBTRACT", 1.0, b.smooth(edge_off, 0.00025, 0.0007))
         dash = b.smooth(b.math("SINE", b.math("MULTIPLY", around, 2 * math.pi / 0.0042)), 0.1, 0.5)
@@ -2128,7 +2214,7 @@ def make_graphics(tmpdir):
     pl = Image.new("L", (W_, H_), 0)
     dp = ImageDraw.Draw(pl)
     dp.rectangle((22, 22, W_ - 23, H_ - 23), outline=255, width=10)
-    for t, yy, sz in (("LANTERNWRIGHTS", 0.13, 150), ("TETHER  ·  Nº 7", 0.55, 120)):
+    for t, yy, sz in (("LANTERNWRIGHTS", 0.14, 118), ("TETHER  ·  Nº 7", 0.58, 104)):
         f = _font(sz)
         bb = dp.textbbox((0, 0), t, font=f)
         dp.text(((W_ - (bb[2] - bb[0])) / 2, H_ * yy - bb[1]), t, fill=255, font=f)
@@ -2390,8 +2476,8 @@ def composite(R, res, outdir, tag=""):
             col = mix(col, C((0.62, 0.62, 0.63)).reshape(1, 3), n3 * 0.35 * (1 - cv))  # fine scratches
             soot = cv * (0.55 + 0.45 * n1)
             col = col * (1 - 0.7 * soot)[:, None]
-            rust = sm(n1 * 0.55 + cv * 0.75 + n2 * 0.25, 0.80, 1.0) * (0.0 if c == "steel" else 1.0)
-            col = mix(col, C((0.17, 0.065, 0.028)).reshape(1, 3), rust * 0.85)
+            rust = sm(n1 * 0.45 + cv * 0.85 + n2 * 0.20, 0.97, 1.30) * (0.0 if c == "steel" else 1.0)
+            col = mix(col, C((0.105, 0.048, 0.026)).reshape(1, 3), rust * 0.75)
             r = 0.36 + 0.14 * n2 - 0.14 * wear + 0.32 * soot + 0.40 * rust
             mt = 1.0 - 0.85 * rust - 0.35 * soot
         elif c in ("brass", "copper", "plate"):
@@ -2399,7 +2485,7 @@ def composite(R, res, outdir, tag=""):
                 clean, tarn, polish = (0.80, 0.42, 0.28), (0.30, 0.13, 0.08), (0.95, 0.60, 0.42)
             else:
                 clean, tarn, polish = (0.74, 0.54, 0.25), (0.30, 0.20, 0.09), (0.96, 0.80, 0.48)
-            t = np.clip(sm(n1, 0.30, 0.80) * 0.65 + cv * 0.7, 0, 1)
+            t = np.clip(sm(n1, 0.22, 0.72) * 0.80 + cv * 0.85, 0, 1)
             col = mix(np.broadcast_to(C(clean).reshape(1, 3), (m.sum(), 3)).copy(), C(tarn).reshape(1, 3), t)
             pol = np.clip(e * 1.6 + cx * 1.0, 0, 1) * (0.4 + 0.6 * sm(n2, 0.3, 0.7))
             col = mix(col, C(polish).reshape(1, 3), pol)
@@ -2429,9 +2515,10 @@ def composite(R, res, outdir, tag=""):
             r = 0.72 + 0 * n2
             mt = np.zeros_like(r)
         elif c == "canvas":
-            col = (C((0.078, 0.073, 0.052)) * (0.8 + 0.4 * n1)[:, None] * (0.88 + 0.24 * n3)[:, None]).reshape(-1, 3)
-            col = mix(col, C((0.15, 0.135, 0.10)).reshape(1, 3), np.clip(cx * 1.2, 0, 1) * 0.6)
-            col = col * (1 - 0.5 * cv)[:, None]
+            col = (C((0.052, 0.048, 0.034)) * (0.65 + 0.7 * n1)[:, None] * (0.88 + 0.24 * n3)[:, None]).reshape(-1, 3)
+            col = mix(col, C((0.13, 0.115, 0.082)).reshape(1, 3), np.clip(cx * 1.4, 0, 1) * 0.65)  # worn fold ridges
+            col = mix(col, C((0.025, 0.022, 0.016)).reshape(1, 3), sm(n2, 0.5, 0.8) * 0.55)  # oil / grime blotches
+            col = col * (1 - 0.6 * cv)[:, None]
             r = 0.66 - 0.18 * sm(n2, 0.4, 0.8) + 0.1 * cv
             mt = np.zeros_like(r)
         elif c == "strap":
@@ -2480,15 +2567,17 @@ def composite(R, res, outdir, tag=""):
         x = np.clip(x, 0, 1)
         return np.where(x <= 0.0031308, x * 12.92, 1.055 * np.power(x, 1 / 2.4) - 0.055)
 
-    def save(arr, path, q=92):
+    def save(arr, path, q=92, half=False):
         im = Image.fromarray((np.clip(arr, 0, 1) * 255 + 0.5).astype(np.uint8)[::-1])
+        if half:  # masks that need no more than half the atlas resolution
+            im = im.resize((im.width // 2, im.height // 2), Image.LANCZOS)
         im.save(path, quality=q, subsampling=0 if q >= 90 else 2, optimize=True)
         return path
     paths = {
-        "albedo": save(srgb(alb), os.path.join(outdir, f"arms_albedo{tag}.jpg"), 90),
-        "normal": save(np.clip(nrm, 0, 1), os.path.join(outdir, f"arms_normal{tag}.jpg"), 95),
-        "orm": save(np.stack([ao_out, rough, metal], -1), os.path.join(outdir, f"arms_orm{tag}.jpg"), 90),
-        "emissive": save(srgb(np.stack([em, em, em], -1)), os.path.join(outdir, f"arms_emissive{tag}.jpg"), 85),
+        "albedo": save(srgb(alb), os.path.join(outdir, f"arms_albedo{tag}.jpg"), 89),
+        "normal": save(np.clip(nrm, 0, 1), os.path.join(outdir, f"arms_normal{tag}.jpg"), 93),
+        "orm": save(np.stack([ao_out, rough, metal], -1), os.path.join(outdir, f"arms_orm{tag}.jpg"), 86),
+        "emissive": save(srgb(np.stack([em, em, em], -1)), os.path.join(outdir, f"arms_emissive{tag}.jpg"), 85, half=True),
     }
     return paths
 
@@ -2540,6 +2629,64 @@ def game_material(paths, emit_strength=1.0, emit_tint=(1.0, 0.70, 0.35)):
     return mat
 
 
+def make_ecg_material():
+    """'Arm_ECG_Screen': an emissive phosphor screen (placeholder trace; the game binds healthFx.ecgTexture)."""
+    from PIL import Image, ImageDraw
+    W_, H_ = 256, 128
+    im = Image.new("RGB", (W_, H_), (2, 6, 4))
+    d = ImageDraw.Draw(im)
+    for x in range(0, W_, 16):
+        d.line((x, 0, x, H_), fill=(6, 22, 14))
+    for y in range(0, H_, 16):
+        d.line((0, y, W_, y), fill=(6, 22, 14))
+    pts = []
+    for x in range(W_):
+        t = (x % 86) / 86.0
+        y = 0.0
+        y += 0.10 * math.exp(-((t - 0.18) / 0.05) ** 2)
+        y -= 0.12 * math.exp(-((t - 0.36) / 0.012) ** 2)
+        y += 0.78 * math.exp(-((t - 0.40) / 0.010) ** 2)
+        y -= 0.22 * math.exp(-((t - 0.44) / 0.014) ** 2)
+        y += 0.20 * math.exp(-((t - 0.64) / 0.060) ** 2)
+        pts.append((x, 62 - y * 52))
+    d.line(pts, fill=(90, 255, 150), width=3)
+    d.text((8, 104), "72 BPM", fill=(120, 255, 170), font=_font(15))
+    d.rectangle((150, 108, 246, 118), outline=(70, 200, 120))
+    d.rectangle((152, 110, 214, 116), fill=(70, 200, 120))
+    fp = os.path.join(CACHE_DIR, "ecg_placeholder.png")
+    im.save(fp)
+    mat = bpy.data.materials.new("Arm_ECG_Screen")
+    b = NB(mat)
+    out = b.n("ShaderNodeOutputMaterial")
+    bsdf = b.n("ShaderNodeBsdfPrincipled")
+    b.link(bsdf.outputs[0], out.inputs["Surface"])
+    bsdf.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.08
+    tex = b.n("ShaderNodeTexImage", image=bpy.data.images.load(fp, check_existing=True))
+    b.link(tex.outputs["Color"], bsdf.inputs["Emission Color" if "Emission Color" in bsdf.inputs else "Emission"])
+    bsdf.inputs["Emission Strength"].default_value = 1.0
+    mat["emit_node"] = bsdf.name
+    return mat
+
+
+def set_ecg_uvs(ob):
+    """UV 0..1 over the ECG glass (material slot 1): u along the arm toward the hand (the baseline), v = n × u
+    (so the image is not mirrored seen from the player's side); the same rule for both sides."""
+    me = ob.data
+    uv = me.uv_layers.active.data
+    polys = [p for p in me.polygons if p.material_index == 1]
+    for p in polys:
+        pts = [me.vertices[me.loops[li].vertex_index].co for li in p.loop_indices]
+        c = sum(pts, Vector()) / len(pts)
+        n = Vector(p.normal)
+        u = Vector((0, 1, 0))
+        u = (u - n * u.dot(n)).normalized()
+        U = n.cross(u).normalized()
+        for li, co in zip(p.loop_indices, pts):
+            d = co - c
+            uv[li].uv = (d.dot(u) / (2 * ECG_GLASS[0]) + 0.5, d.dot(U) / (2 * ECG_GLASS[1]) + 0.5)
+
+
 # -----------------------------------------------------------------------------
 # Assembly helpers
 # -----------------------------------------------------------------------------
@@ -2550,6 +2697,7 @@ def mesh_from_parts(name, parts, coll, bone_of=None):
     flip_layer = None
     verts_bone = []
     flips = []
+    matidx = []
     for nm, ob in parts:
         me = ob.data.copy()
         me.transform(ob.matrix_world)
@@ -2561,6 +2709,7 @@ def mesh_from_parts(name, parts, coll, bone_of=None):
         bone = bone_of(nm) if bone_of else None
         verts_bone += [bone] * (len(bm.verts) - n0)
         flips += [1 if nm in ("Dial", "Plate") else 0] * (len(bm.faces) - f0)
+        matidx += [1 if nm == "EcgGlass" else 0] * (len(bm.faces) - f0)
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -2568,6 +2717,8 @@ def mesh_from_parts(name, parts, coll, bone_of=None):
     coll.objects.link(ob)
     attr = me.attributes.new("flipu", "INT", "FACE")
     attr.data.foreach_set("value", flips)
+    if any(matidx):
+        me.polygons.foreach_set("material_index", matidx)
     if bone_of:
         for i, bn in enumerate(verts_bone):
             if bn not in vg:
@@ -2856,7 +3007,7 @@ def render_all(scene, R, poses, gear_mat):
     setup_cycles(scene, args.samples, args.res)
     scene.cycles.use_adaptive_sampling = True
     scene.render.film_transparent = False
-    scene.view_settings.exposure = 0.0
+    scene.view_settings.exposure = 0.4
     world = bpy.data.worlds.new("RenderWorld")
     scene.world = world
     bg = world.node_tree.nodes["Background"]
@@ -2868,6 +3019,9 @@ def render_all(scene, R, poses, gear_mat):
     lantern_mat.name = "AT3D_Gear_LanternRender"
     lantern_mat.node_tree.nodes[gear_mat["emit_node"]].inputs["Emission Strength"].default_value = 14.0
     bsdf.inputs["Emission Strength"].default_value = 5.0
+    for m in bpy.data.materials:
+        if m.name.startswith("Arm_ECG_Screen") and m.node_tree:
+            m.node_tree.nodes[m["emit_node"]].inputs["Emission Strength"].default_value = 2.6
     lan = R["lantern_mesh"]
     lan.data.materials.clear()
     lan.data.materials.append(lantern_mat)
@@ -2914,7 +3068,7 @@ def render_all(scene, R, poses, gear_mat):
         gb = glow.node_tree.nodes["Principled BSDF"]
         gb.inputs["Emission Color"].default_value = (1.0, 0.62, 0.25, 1)
         gb.inputs["Emission Strength"].default_value = 3.0
-        anchor = Vector((0.55, 3.12, 2.35))
+        anchor = Vector((0.5, 3.12, 1.95))
         bm = bmesh.new()
         torus(bm, anchor, Vector((0, 1, 0)), 0.09, 0.016, 32, 10)
         ring = new_obj("AnchorRing", bm, env)
@@ -2941,10 +3095,11 @@ def render_all(scene, R, poses, gear_mat):
         rb.inputs["Emission Strength"].default_value = 0.35
         rope.data.materials.append(cab)
         lp = place_lantern(5.0)
-        lantern_light(lp, 3.0)
-        hide.append(add_light("ShaftCool", "SPOT", (1.4, 1.2, 6.5), 260, (0.45, 0.62, 0.85), size=0.6, target=(0.2, 1.2, 0.8), spot=math.radians(40)))
-        hide.append(add_light("Bounce", "AREA", (0.0, 1.2, 0.4), 0.6, (0.9, 0.55, 0.3), size=1.0, target=(0, 0.4, 1.2)))
-        cam = look_cam("CamFP", (0.0, 0.0, 1.60), (0.02, 1.0, 1.60 - 0.44), 17.0)
+        lantern_light(lp, 22.0)
+        hide.append(add_light("ShaftCool", "SPOT", (1.4, 1.2, 6.5), 900, (0.45, 0.62, 0.85), size=0.6, target=(0.2, 1.2, 1.0), spot=math.radians(50)))
+        hide.append(add_light("Bounce", "AREA", (0.0, 1.0, 0.5), 5.0, (0.9, 0.6, 0.38), size=1.2, target=(0, 0.5, 1.4)))
+        hide.append(add_light("Fill", "AREA", (0.0, -0.3, 2.2), 6.0, (0.55, 0.65, 0.8), size=1.5, target=(0, 0.6, 1.2)))
+        cam = look_cam("CamFP", (0.0, 0.0, 1.60), (0.0, 1.0, 1.60 - 0.40), 19.0)
         cam.data.sensor_width = 36
         render_shot(scene, cam, os.path.join(RENDER_DIR, "arms_fp.png"), args.res, args.samples)
         clear_temp()
@@ -3103,7 +3258,7 @@ def main():
     dec.ratio = 0.08
     apply_mods(gl)
     activate(gl)
-    bpy.ops.object.quadriflow_remesh(target_faces=2700, use_mesh_symmetry=False, use_preserve_sharp=False,
+    bpy.ops.object.quadriflow_remesh(target_faces=2600, use_mesh_symmetry=False, use_preserve_sharp=False,
                                      use_preserve_boundary=False, smooth_normals=False, mode="FACES", seed=args.seed)
     stitches = detail_glove(gh)
     sh = new_obj("Sleeve_High_R", build_sleeve(True), build)
@@ -3127,7 +3282,7 @@ def main():
     def realize(P, tag, coll, offset=None):
         out = {}
         for nm, (bmp, bone, mk) in P.items():
-            o = new_obj(f"{nm}_{tag}", bmp, coll)
+            o = new_obj(f"{nm}_{tag}", bmp, coll, recalc=(nm != "EcgGlass"))
             if offset is not None:
                 o.data.transform(Matrix.Translation(offset))
             if tag == "H":
@@ -3143,6 +3298,9 @@ def main():
     LL = realize(build_launcher(False), "L", build)
     for nm in LOW_SKIP:
         bpy.data.objects.remove(LL.pop(nm))
+    # the ECG glass has its own UV (0..1) and material: out of the atlas and the bake, re-joined at assembly
+    bpy.data.objects.remove(LH.pop("EcgGlass"))
+    ECG_GLASS_OB = LL.pop("EcgGlass")
     LAN_OFF = Vector((0.6, 0.0, 0.0))  # keep the lantern away from the launcher while baking
     NH = realize(build_lantern(True), "H", build, LAN_OFF)
     NL = realize(build_lantern(False), "L", build, LAN_OFF)
@@ -3211,6 +3369,7 @@ def main():
     head_parts = [(n, LL[n]) for n in ("HeadShaft", "HeadPoint")]
     head_prop = mesh_from_parts("GrappleHead", head_parts, export)
     head_prop.data.transform(Matrix.Translation(-Vector((0, MUZZLE_Y, BARREL_Z))))
+    LL["EcgGlass"] = ECG_GLASS_OB
     lmesh_R = mesh_from_parts("Launcher_R_Mesh", list(LL.items()), export, bone_of=lambda nm: f"{LL[nm]['bone']}_R")
     sharpen_by_angle(lmesh_R, 48)
     for o in (lan_mesh, head_prop):
@@ -3220,6 +3379,8 @@ def main():
     for o in (arm_low, lmesh_R, lan_mesh, head_prop):
         o.data.materials.clear()
         o.data.materials.append(gear)
+    ecg_mat = make_ecg_material()
+    lmesh_R.data.materials.append(ecg_mat)  # slot 1: 'Arm_ECG_Screen' (HandsView swaps its map for healthFx.ecgTexture)
     arms, rigs, meshes = {}, {}, {}
     arms["R"] = build_armature("R", export)
     me = arm_low.data
@@ -3240,6 +3401,8 @@ def main():
     # --- left side (mirror) -----------------------------------------------------
     meshes["L"] = mirror_mesh_obj(arm_low, "Arm_L_Mesh", export, rename=lambda n: n[:-2] + "_L")
     lmeshes["L"] = mirror_mesh_obj(lmesh_R, "Launcher_L_Mesh", export, rename=lambda n: n[:-2] + "_L")
+    for side in ("R", "L"):
+        set_ecg_uvs(lmeshes[side])
     arms["L"] = build_armature("L", export)
     rigs["L"] = build_launcher_rig("L", export)
     roots = {}
@@ -3257,17 +3420,13 @@ def main():
         arms[side].parent = root
         rigs[side].parent = root
         make_pose_actions(arms[side], side, poses)
-        for nm, pos in (("Muzzle", MUZZLE), ("LanternHook", LAUNCHER_SOCKETS["LanternHook"]), ("WristHUD", Vector((-0.050, -0.165, 0.050)))):
+        for nm, pos in (("Muzzle", MUZZLE), ("LanternHook", LAUNCHER_SOCKETS["LanternHook"])):
             e = bpy.data.objects.new(f"{nm}_{side}", None)
             e.empty_display_size = 0.01
             e.location = (pos.x * sg, pos.y, pos.z)
             e.parent = root
             export.objects.link(e)
             sockets[f"{nm}_{side}"] = e
-        # LOD1 ≈ 40 %
-        for ob in (meshes[side], lmeshes[side]):
-            lod = decimate_copy(ob, ob.name + "_LOD1", 0.40, export)
-            lod.parent = ob.parent
     lroot = bpy.data.objects.new("Lantern", None)
     export.objects.link(lroot)
     lan_mesh.parent = lroot
@@ -3283,9 +3442,9 @@ def main():
     # --- stats + export ---------------------------------------------------------
     stats = {}
     for side in ("R", "L"):
-        stats[side] = (tri_count(meshes[side]), tri_count(lmeshes[side]), tri_count(bpy.data.objects[meshes[side].name + "_LOD1"]),
-                       tri_count(bpy.data.objects[lmeshes[side].name + "_LOD1"]))
-    log("tris (arm, launcher, arm LOD1, launcher LOD1):", stats, "lantern", tri_count(lan_mesh), "head", tri_count(head_prop))
+        stats[side] = (tri_count(meshes[side]), tri_count(lmeshes[side]))
+    log("tris (arm, launcher):", stats, "lantern", tri_count(lan_mesh), "head", tri_count(head_prop))
+    log("launcher low tris by part:", sorted(((tri_count(LL[n]), n) for n in LL), reverse=True))
     for o in bpy.context.view_layer.objects:
         o.select_set(False)
     for o in export.objects:
@@ -3307,9 +3466,6 @@ def main():
         RR = {"roots": roots, "arms": arms, "lantern_mesh": lan_mesh, "hook_L": sockets["LanternHook_L"],
               "lantern_socket": lsock, "muzzle_R": sockets["Muzzle_R"]}
         head_prop.hide_render = True
-        for side in ("R", "L"):
-            bpy.data.objects[meshes[side].name + "_LOD1"].hide_render = True
-            bpy.data.objects[lmeshes[side].name + "_LOD1"].hide_render = True
         render_all(scene, RR, poses, gear)
     log("done")
 

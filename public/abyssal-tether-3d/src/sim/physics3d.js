@@ -23,6 +23,7 @@
  */
 
 import { CONFIG, U } from './config3d.js';
+import { Health3D } from './health3d.js';
 
 const C = CONFIG;
 export const HANDS = ['left', 'right'];
@@ -504,6 +505,15 @@ export class Physics3D {
     this.bus = bus;
     this._solids = [];
     this._hazards = [];
+    // Fall / hazard damage (health3d.js). Death comes from hp reaching 0 (or the lethal speed, which is damage 1).
+    this.health = new Health3D(diff, bus);
+  }
+
+  /** The health model with the current bus (Sim swaps physics.bus for look-ahead frames). */
+  _health() {
+    const h = this.health;
+    h.bus = this.bus;
+    return h;
   }
 
   /**
@@ -524,6 +534,7 @@ export class Physics3D {
     player.prevY = player.y;
     player.prevZ = player.z;
     player.landedThisStep = false;
+    this._health().step(dt);
 
     // ---- 1. timers & control ------------------------------------------------
     if (player.stagger > 0) player.stagger = Math.max(0, player.stagger - dt);
@@ -688,8 +699,10 @@ export class Physics3D {
     for (let i = 0; i < hz.length; i++) {
       if (hz[i].active === false) continue;
       if (U.sphereBox(player.x, player.y, player.z, r * 0.8, hz[i])) {
-        this.kill(player, tethers, 'hazard');
-        return;
+        if (this._health().hazardHit()) {
+          this.kill(player, tethers, 'hazard');
+          return;
+        }
       }
     }
 
@@ -803,9 +816,15 @@ export class Physics3D {
     player.lastImpact = maxImpact;
     const floorish = impactNY > P.lethalNormalY;
     const lethalMeasure = Math.max(floorish ? maxImpact : 0, floorFall);
-    if (this.diff.impactsLethal && lethalMeasure >= this.diff.lethalImpact) {
-      this.kill(player, tethers, 'impact', lethalMeasure);
-      return;
+    if (this.diff.impactsLethal) {
+      // Landing / wall damage; the lethal speed is damage 1, so the old rule (speed >= lethalImpact kills) still holds.
+      const hp = this._health();
+      let dead = lethalMeasure > 0 && hp.landing(lethalMeasure);
+      if (!dead && !floorish && maxImpact > 0) dead = hp.wallHit(maxImpact);
+      if (dead) {
+        this.kill(player, tethers, 'impact', Math.max(lethalMeasure, maxImpact));
+        return;
+      }
     }
     if (floorish && !wasGrounded) {
       const hard = maxImpact >= P.hardLandingSpeed;
@@ -821,6 +840,7 @@ export class Physics3D {
   kill(player, tethers, cause, impact) {
     if (!player.alive) return;
     if (tethers) tethers.releaseAll(player, 'death');
+    this.health.die();
     player.alive = false;
     player.deathCause = cause;
     player.vx = 0;

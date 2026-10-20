@@ -152,7 +152,7 @@ export const DIFFICULTY = {
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
-    health: { fallThreshold: 0.3, regenDelay: 15, regenRate: 0.01, hazardDamage: 1, wallScale: 1.25 },
+    health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
   },
   sandbox: {
     key: 'sandbox',

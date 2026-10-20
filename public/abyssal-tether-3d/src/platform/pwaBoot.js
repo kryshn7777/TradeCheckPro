@@ -119,11 +119,13 @@ export async function registerServiceWorker({ onUpdateReady = null, isXRActive =
     });
   });
 
-  // Long-lived sessions: look for a new build now and then and whenever the app comes back to the foreground.
+  // Look for a new build on every launch (one tiny no-cache request for sw.js: browsers otherwise check at most
+  // once a day), then now and then in long-lived sessions and whenever the app comes back to the foreground.
   const check = () => {
     if (typeof document !== 'undefined' && document.hidden) return;
     reg.update().catch(() => {});
   };
+  check();
   if (win) {
     setInterval(check, UPDATE_CHECK_MS);
     document.addEventListener('visibilitychange', () => {

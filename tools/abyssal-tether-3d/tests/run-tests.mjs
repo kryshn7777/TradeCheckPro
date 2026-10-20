@@ -19,6 +19,7 @@ const suites = [
   ['input: intent mapping', 'input/test-intent.mjs'],
   ['input: uiio fixes (eye height, controller loss, hold X, head-pivot turn, double Enter VR)', 'input/test-uiio-fixes.mjs'],
   ['creature: behaviour units', 'creature/unit.mjs'],
+  ['health: fall damage curve, cooldown, regen, events, difficulty scaling, determinism, Physics3D drops and hazards', 'health/unit.mjs'],
   ['physics: swing bench checks (near grab, pendulum, catches, two ropes, bot routes, reel)', 'physics/swingbench.mjs', ['--check']],
 ];
 if (hasFlag(argv, '--reports')) suites.push(['creature: invariants report', 'creature/invariants.mjs']);

@@ -385,6 +385,9 @@ export class AudioManager3D {
     this._breathRate = 14;
     this._breathLevel = 0;
     this._heartLevel = 0;
+    this._heartHealth = 0; // the share of the heartbeat that comes from low health (0..1)
+    this._heartThreat = 0;
+    this._hitT = 0; // s of muffled hearing left after a big hit
     this._prevBeat = -1;
     this._beatClock = 0;
     this._lastBeatAt = -10;
@@ -1396,7 +1399,13 @@ export class AudioManager3D {
     const lethal = Math.max(5, num(game && game.diff && game.diff.lethalImpact, 17));
 
     this._mixBuses(now, state);
-    this.kMuffle.set(dead ? 480 : this._nyq, now, dead ? 0.12 : 0.6);
+    // Hurt: hearing dulls with the damage (down to ~3.8 kHz near zero hp) and rings and ducks for a moment after a big hit.
+    const HP = game && game.health && playing && !dead ? game.health : null;
+    const hurtK = HP ? U.clamp(num(HP.hurt, 0), 0, 1) : 0;
+    this._hitT = Math.max(0, this._hitT - dtc);
+    let cutoff = dead ? 480 : this._nyq * Math.pow(3800 / this._nyq, hurtK * hurtK);
+    if (this._hitT > 0 && !dead) cutoff = Math.min(cutoff, 1400 * Math.pow(this._nyq / 1400, 1 - Math.min(1, this._hitT)));
+    this.kMuffle.set(cutoff, now, dead ? 0.12 : this._hitT > 0 ? 0.04 : 0.6);
 
     // ---- section ---------------------------------------------------------
     let si = this._secIndex;
@@ -1419,6 +1428,7 @@ export class AudioManager3D {
     const speed = Math.hypot(vx, vy, vz);
     const hspeed = Math.hypot(vx, vz);
     this._exertion = Math.max(0, this._exertion - dtc * 0.06);
+    if (hurtK > 0) this._exertion = Math.max(this._exertion, 0.6 * hurtK); // labored breathing when hurt
     if (body && playing) {
       this._exertion = Math.min(1, this._exertion + dtc * 0.07 * U.smoothstep(250 * SPEED_K, 900 * SPEED_K, speed));
       if (P.grounded && hspeed > 200 * SPEED_K) this._exertion = Math.min(1, this._exertion + dtc * 0.025);
@@ -1519,7 +1529,9 @@ export class AudioManager3D {
 
     // ---- psychological ------------------------------------------------------
     const psyOn = playing && !dead && !victory;
-    this._heartLevel = psyOn ? U.smoothstep(0.2, 0.9, tv) : 0;
+    this._heartThreat = psyOn ? U.smoothstep(0.2, 0.9, tv) : 0;
+    this._heartHealth = psyOn && HP ? 0.95 * U.smoothstep(0.5, 0.08, num(HP.hp, 1)) : 0; // your own pulse, louder as the health goes
+    this._heartLevel = Math.max(this._heartThreat, this._heartHealth);
     this.kPsyG.set(psyOn ? 0.28 * Math.pow(U.smoothstep(0.12, 1, tv), 1.3) : 0, now, 0.6);
 
     // ---- creature -------------------------------------------------------------
@@ -1643,10 +1655,16 @@ export class AudioManager3D {
   _scheduleHeart(dt, now, game) {
     const lvl = this._heartLevel;
     const TH = game && game.threat ? game.threat : null;
-    const rate = U.clamp(num(TH && TH.heartRate, 60 + 100 * this._tv), 40, 190);
+    let rate = U.clamp(num(TH && TH.heartRate, 60 + 100 * this._tv), 40, 190);
+    // Low health: the player's own heart sets the rate (60 -> 140 bpm) and keeps its own time.
+    const ownBeat = this._heartHealth > 0.02 && this._heartHealth >= this._heartThreat;
+    if (ownBeat) {
+      const hb = num(game && game.health && game.health.heartbeatRate, 0);
+      if (hb > 0) rate = U.clamp(Math.max(rate, hb), 40, 190);
+    }
     const period = 60 / rate;
     let fire = false;
-    const beat = TH ? num(TH.beat, NaN) : NaN;
+    const beat = TH && !ownBeat ? num(TH.beat, NaN) : NaN;
     this._beatClock += dt;
     if (beat === beat) {
       if (beat < this._prevBeat - 0.5) fire = true; // phase wrapped → new beat
@@ -1668,7 +1686,7 @@ export class AudioManager3D {
       g.cancelScheduledValues(t);
       gn.cancelScheduledValues(t);
       f.cancelScheduledValues(t);
-      const peak = 0.34 * lvl;
+      const peak = (0.34 + 0.22 * this._heartHealth) * lvl;
       // lub
       f.setValueAtTime(64, t);
       f.setTargetAtTime(44, t, 0.05);
@@ -2069,6 +2087,7 @@ export class AudioManager3D {
       'player:jump': this._onJump,
       'player:land': this._onLand,
       'player:wallhit': this._onWallHit,
+      'health:damage': this._onHealthDamage,
       'player:death': this._onDeath,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
@@ -2269,6 +2288,17 @@ export class AudioManager3D {
   _onWallHit(p) {
     this._exertion = Math.min(1, this._exertion + 0.06);
     this._sfxWall(p);
+  }
+
+  /** Fall / hazard damage: a body thump (no voice), and above ~25 hp a ringing in the ears with dulled hearing. */
+  _onHealthDamage(p) {
+    const a = U.clamp(num(p.amount, 0.1), 0, 1);
+    this._exertion = Math.min(1, this._exertion + 0.15 + 0.4 * a);
+    this._sfxHurt(a);
+    if (a >= 0.25) {
+      this._hitT = Math.max(this._hitT, 0.6 + 1.6 * a);
+      this._sfxRing(a);
+    }
   }
 
   _onDeath(p) {
@@ -2676,6 +2706,54 @@ export class AudioManager3D {
       this._swell(hg.gain, t + 0.03, 0.9, 0.02, 0.08, 0.05);
       this._tickTrain(v, t + 0.05, 3, 0.25, 0.25, 1200, 3200, 4, 0.01, 0.5);
     }
+    this._commit(v);
+  }
+
+  /** Damage thump: a deep body blow and a dull crack, scaled by the damage (no grunt). */
+  _sfxHurt(a) {
+    const s = U.smoothstep(0.02, 0.6, a);
+    const v = this._begin('hurt', 2, 0.1, 0.9, this.busPlayer, 0.55 + 0.45 * s, 0, 0.1 + 0.1 * s, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'sine', 78, t);
+    o.frequency.setTargetAtTime(32, t, 0.09);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.55 + 0.45 * s, 0.004, 0.12 + 0.14 * s);
+    o.connect(og);
+    og.connect(v.out);
+    const b = this._vNoise(v, this._brown, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 220 + 500 * s, 0);
+    const bg = this._vGain(v, 0);
+    this._perc(bg.gain, t, 0.5 + 0.4 * s, 0.003, 0.08 + 0.1 * s);
+    b.connect(lp);
+    lp.connect(bg);
+    bg.connect(v.out);
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 700, 0.9);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, 0.16 + 0.2 * s, 0.002, 0.03);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The ringing in the ears after a big hit: two detuned high sines that fade over ~2.5 s. */
+  _sfxRing(a) {
+    const s = U.smoothstep(0.2, 0.9, a);
+    const v = this._begin('ring', 2, 0.6, 3.2, this.busStinger, 0.07 + 0.1 * s, 0, 0, 0);
+    if (!v) return;
+    const t = v.t0 + 0.05;
+    const f = 3300 + 500 * s;
+    const o1 = this._vOsc(v, 'sine', f, t);
+    const o2 = this._vOsc(v, 'sine', f * 1.012, t);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.04);
+    g.gain.setTargetAtTime(0, t + 0.25, 0.6 + 0.6 * s);
+    o1.connect(g);
+    o2.connect(g);
+    g.connect(v.out);
     this._commit(v);
   }
 

@@ -181,7 +181,7 @@ export class FxLighting {
       const b = c.body;
       const sp = b && b.spine && b.spine.length >= 3 ? b.spine : null;
       const glow = b && isFinite(b.glow) ? b.glow : 0.3;
-      U.uGlowPos.value.set(sp ? sp[0] : c.x, sp ? sp[1] : c.y, sp ? sp[2] : c.z, 5);
+      U.uGlowPos.value.set(sp ? sp[0] : c.x, sp ? sp[1] : c.y, sp ? sp[2] : c.z, 7);
       U.uGlowCol.value.copy(GLOW_COLOR).multiplyScalar((0.25 + glow * 1.6) * Math.min(1, near * 1.6));
     } else {
       U.uGlowPos.value.set(0, NO_POS, 0, 5);
@@ -454,6 +454,7 @@ uniform float uBase;
 uniform float uAmb;
 uniform float uFloor;
 uniform float uLanternGain;
+uniform float uGlowGain;
 uniform float uLanternK;
 uniform float uDetail;
 uniform float uKeyGain;
@@ -527,7 +528,7 @@ void main() {
   vec3 air = max( mix( vec3( 1.0 ), hue, uTintSat ), vec3( 0.0 ) );
   // The lantern lights the haze around the player (soft, multiply-scattered falloff);
   // lamps glow through it; the creature's sensory glow tints it when it is close.
-  vec3 lit = atLantern( p, v, 0.15, uLanternK ) * uLanternGain + atEnvLights( p, v, 0.2 ) + atGlow( p );
+  vec3 lit = atLantern( p, v, 0.15, uLanternK ) * uLanternGain + atEnvLights( p, v, 0.2 ) + atGlow( p ) * uGlowGain;
   vec3 col = base * uBase + ( uAmbient * uAmb + atKey( v, 0.4 ) * ( uKeyGain * uScatter ) ) * air + lit * uScatter;
   #ifdef USE_FOG
     col = mix( col, fogColor, ff );
@@ -536,6 +537,8 @@ void main() {
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   gl_FragColor.rgb *= gl_FragColor.a;
+  // dither: sub-LSB noise on the little this layer adds, so long dark gradients do not band in 8 bit
+  gl_FragColor.rgb += ( fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5 ) * ( 1.0 / 255.0 ) * min( 1.0, gl_FragColor.a * 20.0 );
 }
 `;
 
@@ -623,12 +626,13 @@ export class Atmosphere {
       uFloor: { value: 0.2 },
       uLanternGain: { value: 1 },
       uLanternK: { value: 1.9 },
+      uGlowGain: { value: 3 },
       uDetail: { value: 1 },
       uKeyGain: { value: 0.06 },
       uTintSat: { value: 1.3 },
     });
     /** Look parameters (tuned on screenshots; per-section mood multiplies density/mist). */
-    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, key: 0.06, tint: 1.3 };
+    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 3, key: 0.06, tint: 1.3 };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dFog',
       uniforms: this.uniforms,
@@ -735,6 +739,7 @@ export class Atmosphere {
     U.uFloor.value = P.floor;
     U.uLanternGain.value = P.lantern;
     U.uLanternK.value = P.lanternK;
+    U.uGlowGain.value = P.glow;
     U.uDetail.value = tier >= 1 ? 1 : 0;
     U.uKeyGain.value = P.key;
     U.uTintSat.value = P.tint;

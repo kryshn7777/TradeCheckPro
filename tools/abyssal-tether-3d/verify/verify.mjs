@@ -191,6 +191,9 @@ function idChecks(L, P) {
 // -----------------------------------------------------------------------------
 // Runs
 // -----------------------------------------------------------------------------
+/** Fall damage of a run (health3d.js), hp points: hits, total taken, lowest hp, hp at the end. */
+const dmgOf = (d) => ({ hits: d.hits, total: d.total, minHp: d.minHp, endHp: d.endHp });
+
 function runRoute(ch, v, start, route, opts = {}) {
   const L = opts.level || ch.makeLevel(v);
   const sim = new Sim(L, v, opts.sim || {});
@@ -234,6 +237,7 @@ function fullRun(ch, v, line, simOpts) {
     fail: r.fail,
     splits,
     attaches: r.attaches.length,
+    damage: dmgOf(r.damage),
     trace: r.sim.trace,
     events: r.sim.events,
     sim: r.sim,
@@ -378,7 +382,7 @@ async function verifyChapter(ch) {
       const tag = `${v}/${label}`;
       report.full[tag] = Object.assign({}, r, { trace: undefined, events: undefined, sim: undefined });
       if (!r.ok) fail(`[${ch.id}] full run ${tag}: ${r.fail || ''} deaths ${r.deaths} maxLand ${r.maxLand} inGoal ${r.inGoal}`);
-      console.log(`  ${tag.padEnd(16)} ${r.ok ? 'PASS' : 'FAIL'} ${r.time}s deaths=${r.deaths} maxLand=${r.maxLand}@${r.maxLandAtY} attaches=${r.attaches} splits ${JSON.stringify(r.splits)}`);
+      console.log(`  ${tag.padEnd(16)} ${r.ok ? 'PASS' : 'FAIL'} ${r.time}s deaths=${r.deaths} maxLand=${r.maxLand}@${r.maxLandAtY} dmg=${r.damage.total}hp/${r.damage.hits} minHp=${r.damage.minHp} attaches=${r.attaches} splits ${JSON.stringify(r.splits)}`);
     }
   }
 
@@ -391,9 +395,10 @@ async function verifyChapter(ch) {
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
       if (!ok) fail(`[${ch.id}/${v}] section ${key}: ${r.fail}`);
-      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), deaths: r.deaths };
+      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), deaths: r.deaths, damage: dmgOf(r.damage) };
     }
     console.log(`  ${v}: ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.ok ? 'ok' : 'FAIL'} ${o.time}s/${o.maxLand}`).join(' | ')}`);
+    console.log(`  ${v} damage (hp taken / lowest hp): ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.damage.total}/${o.damage.minHp}`).join(' | ')}`);
   }
 
   if (R.ALT_ROUTES && Object.keys(R.ALT_ROUTES).length) {
@@ -406,8 +411,8 @@ async function verifyChapter(ch) {
         traces[v].push(r.sim.trace);
         const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
         if (!ok) fail(`[${ch.id}/${v}] alt ${k}: ${r.fail}`);
-        res.push(`${k} ${ok ? 'ok' : 'FAIL'} ${r.time.toFixed(1)}s/${r.maxLand.toFixed(2)}`);
-        report[`alt_${v}_${k}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2) };
+        res.push(`${k} ${ok ? 'ok' : 'FAIL'} ${r.time.toFixed(1)}s/${r.maxLand.toFixed(2)} dmg ${r.damage.total}/${r.damage.minHp}`);
+        report[`alt_${v}_${k}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), damage: dmgOf(r.damage) };
       }
       console.log(`  ${v}: ${res.join(' | ')}`);
     }
@@ -435,9 +440,9 @@ async function verifyChapter(ch) {
       const r = runRoute(ch, v, sc.start(L), route, { level: L });
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
-      report.scenarios[`${name}/${v}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), fail: r.fail, events: r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 12) };
+      report.scenarios[`${name}/${v}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), damage: dmgOf(r.damage), fail: r.fail, events: r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 12) };
       if (!ok) fail(`[${ch.id}] scenario ${name}/${v}: ${r.fail}`);
-      console.log(`  ${(name + '/' + v).padEnd(24)} ${ok ? 'PASS' : 'FAIL'} ${r.time.toFixed(1)}s maxLand=${r.maxLand.toFixed(2)} ${r.fail || ''}`);
+      console.log(`  ${(name + '/' + v).padEnd(24)} ${ok ? 'PASS' : 'FAIL'} ${r.time.toFixed(1)}s maxLand=${r.maxLand.toFixed(2)} dmg=${r.damage.total}hp minHp=${r.damage.minHp} ${r.fail || ''}`);
       console.log(`     ${JSON.stringify(r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 9))}`);
     }
   }

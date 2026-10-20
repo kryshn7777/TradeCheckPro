@@ -210,6 +210,17 @@ export class Health3D {
     this.minHp = 0;
   }
 
+  /** Debug / test: sets hp directly (no events, no cooldowns). */
+  setHp(hp) {
+    if (this.dead) return;
+    this.hp = U.clamp(hp, 0, 1);
+    this.low = this.hp <= H.lowEnter;
+    this.wounded = this.hp < 1;
+    this.sinceHurt = 0;
+    if (this.hp < this.minHp) this.minHp = this.hp;
+    this.heartbeatRate = heartRate(this.hp, this.adrenaline);
+  }
+
   /** Restores `fraction` of full health (a checkpoint, a pickup). */
   heal(fraction = 1) {
     if (this.dead || !(fraction > 0)) return;

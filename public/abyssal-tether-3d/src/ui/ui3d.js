@@ -428,6 +428,7 @@ const MARKUP = `
     <div class="hud-row hud-sub"><span class="hud-depth">0 m</span><span class="hud-dot" aria-hidden="true">·</span><span class="hud-diff">Normal</span></div>
     <div class="hud-best" hidden></div>
     <div class="hud-section"></div>
+    <canvas class="hud-ecg" width="256" height="128" aria-label="Heart monitor"></canvas>
   </div>
   <div class="hud-gauge" aria-hidden="true"><div class="hud-gauge-ticks"></div><div class="hud-gauge-marker"></div></div>
 </div>
@@ -719,6 +720,7 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .hud-best{font-size:.72em;color:var(--ink-3);text-align:center;font-variant-numeric:tabular-nums}
 .at3d-ui .hud-section{font:400 .82em var(--fd);font-variant:small-caps;letter-spacing:.14em;color:var(--amber);text-align:center;opacity:0;transition:opacity .6s}
 .at3d-ui .hud-section.is-on{opacity:.9}
+.at3d-ui .hud-ecg{display:block;width:9.4em;height:auto;aspect-ratio:2/1;margin-top:.3em;border-radius:2px;background:#020a06}
 .at3d-ui .tglyph{position:relative;display:inline-flex;width:1.75em;height:1.75em}
 .at3d-ui .tglyph[data-hand=left]{color:#8fc1b4}
 .at3d-ui .tglyph[data-hand=right]{color:#f0b468}
@@ -799,7 +801,7 @@ export class UI3D {
     this._lastToast = { text: '', t: -10 };
 
     // HUD caches (compared before every DOM write).
-    this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1 };
+    this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1 };
     // Notes (hint / section title / toast), shared by DOM and VR.
     this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false };
     this._title = { name: '', sub: '', num: '', t: 0, dirty: false };
@@ -856,6 +858,7 @@ export class UI3D {
       hudDiff: q('.hud-diff'),
       hudBest: q('.hud-best'),
       hudSection: q('.hud-section'),
+      hudEcg: q('.hud-ecg'), // heart monitor: a copy of healthFx.ecgCanvas (the same picture as the wrist screen in VR)
       glyph: { left: q('.tglyph[data-hand="left"]'), right: q('.tglyph[data-hand="right"]') },
       gaugeMarker: q('.hud-gauge-marker'),
       gaugeTicks: q('.hud-gauge-ticks'),
@@ -2354,6 +2357,12 @@ export class UI3D {
       h.tr = tr;
       this.dom.glyph.right.dataset.state = tr;
       this.dom.glyph.right.setAttribute('aria-label', `Right tether: ${tr}`);
+    }
+    const fx = g.healthFx;
+    if (fx && fx.ecgFrame !== h.ecg && this.dom.hudEcg) {
+      h.ecg = fx.ecgFrame;
+      if (!this._ecgCtx) this._ecgCtx = this.dom.hudEcg.getContext('2d');
+      if (this._ecgCtx) this._ecgCtx.drawImage(fx.ecgCanvas, 0, 0);
     }
     h.acc += step;
     if (h.acc < HUD_INTERVAL) return;

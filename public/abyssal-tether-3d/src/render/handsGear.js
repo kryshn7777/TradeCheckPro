@@ -27,7 +27,7 @@
  * Axes are converted to each bone's parent frame at load, so no bone roll is assumed.
  */
 
-import { Color, MeshStandardMaterial, Object3D, Quaternion, Vector3 } from 'three';
+import { Quaternion, Vector3 } from 'three';
 
 export const GEAR_URL = new URL('../../assets/models/player_arms.glb', import.meta.url).href;
 
@@ -51,9 +51,6 @@ export const GEAR_TUNING = {
 
 const _q = new Quaternion();
 const _q2 = new Quaternion();
-const _v = new Vector3();
-const _ax = new Vector3();
-const _rest = new Quaternion();
 
 /** Product of the local rotations from `root` (excluded) down to `node` (included). */
 function chainQuat(node, root, out) {
@@ -117,10 +114,16 @@ export class HandGear {
     const sfx = hand === 'left' ? 'L' : 'R';
     const sg = hand === 'left' ? -1 : 1;
     this.meshes = [];
+    this.ecgMesh = null; // the wrist screen (own material 'Arm_ECG_Screen', UV 0..1)
     root.traverse((o) => {
       if (o.isMesh) {
         if (/_LOD1$/.test(o.name)) {
           o.visible = false; // LOD1 is for far/low tiers; hands are always inside 1 m
+          return;
+        }
+        o.frustumCulled = false;
+        if (o.material && o.material.name === 'Arm_ECG_Screen') {
+          this.ecgMesh = o;
           return;
         }
         o.material = material;
@@ -331,10 +334,3 @@ export function readPoses(animations) {
   }
   return out;
 }
-
-/** Colour helper for emissive tints. */
-export function tint(hex) {
-  return new Color(hex);
-}
-
-export { Object3D };

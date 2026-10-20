@@ -16,7 +16,12 @@
 import { makeIntent, FRAME, HANDS, CONFIG } from './sim.mjs';
 
 const G = CONFIG.player.gravity;
-const LAND_LIMIT = 0.85;
+// The bot plans its releases and catches so that no landing comes close to lethal. With fall damage (health3d.js) a
+// landing at 85 % of the lethal speed costs ~60 hp, so the bot now plans at 68 % (at most ~27 hp a landing). The look-ahead
+// takes no damage itself (it only judges the landing speed), so a line is the same on every difficulty; the real run shows
+// what it costs. The verify gate on a route's real maximum stays 0.85 (LAND_OK). AT3D_LAND_LIMIT overrides the planning
+// limit for experiments.
+const LAND_LIMIT = (typeof process !== 'undefined' && process.env && Number(process.env.AT3D_LAND_LIMIT)) || 0.68; // (the browser e2e runs this file too)
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -283,6 +288,11 @@ export class Bot {
     }
   }
 
+  /** Is the look-ahead's landing unacceptable (a landing above LAND_LIMIT of the lethal speed)? */
+  landBad() {
+    return this.sim.ghostMaxLand >= LAND_LIMIT;
+  }
+
   // -------------------------------------------------------------------------
   // Look-ahead (clone → simulate → restore)
   // -------------------------------------------------------------------------
@@ -292,6 +302,11 @@ export class Bot {
     const snap = sim.snapshot();
     const savedHolding = { left: this.holding.left, right: this.holding.right };
     const savedLast = this.lastHand;
+    // The bot plans on the lethal landing limit only (as before the health model): look-ahead frames take no
+    // damage, so its lines are the same as without health and the real run shows what they cost.
+    const hp = sim.physics ? sim.physics.health : null;
+    const godWas = hp ? hp.god : false;
+    if (hp) hp.god = true;
     sim.ghost = true;
     sim.ghostMaxLand = 0;
     const it = this.gIntent;
@@ -314,6 +329,7 @@ export class Bot {
       sim.frame(it);
     }
     sim.ghost = false;
+    if (hp) hp.god = godWas;
     sim.restore(snap);
     this.holding.left = savedHolding.left;
     this.holding.right = savedHolding.right;
@@ -338,7 +354,7 @@ export class Bot {
         if (p.grounded) {
           const gs = p.groundSolid;
           if (!gs || (gs !== P && !(okIds && okIds.includes(gs.id)))) return false;
-          if (++groundedFrames > 24) return this.sim.ghostMaxLand < LAND_LIMIT;
+          if (++groundedFrames > 24) return !this.landBad();
         } else if (groundedFrames > 0) return false;
         if (p.y < top - 30) return false;
         return undefined;
@@ -366,7 +382,7 @@ export class Bot {
         }
       },
       hold + 100,
-      (k) => (this.sim.ghostMaxLand >= LAND_LIMIT ? false : k >= hold + 99 ? true : undefined),
+      (k) => (this.landBad() ? false : k >= hold + 99 ? true : undefined),
     );
   }
 
@@ -383,7 +399,7 @@ export class Bot {
       (k) => {
         const T = this.sim.tethers;
         if (!T.hands[hand].rope.attached) return false;
-        if (this.sim.ghostMaxLand >= LAND_LIMIT) return false;
+        if (this.landBad()) return false;
         if (k >= horizon - 1) return true;
         return undefined;
       },
@@ -460,6 +476,7 @@ export class Bot {
       attaches: sim.attaches.slice(),
       lookaheads: this.lookaheads,
       misTarget: this.misTarget,
+      damage: sim.damageReport ? sim.damageReport() : null,
     };
   }
 
@@ -614,7 +631,7 @@ export class Bot {
         g.reel = reel;
       },
       66,
-      (k) => (this.sim.ghostMaxLand >= LAND_LIMIT ? false : k >= 65 ? true : undefined),
+      (k) => (this.landBad() ? false : k >= 65 ? true : undefined),
     );
     if (!safe) {
       this.dampT = 0.6;
