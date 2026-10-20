@@ -2515,12 +2515,14 @@ def shape_stage(sc, low, highs_by_cls):
     palette = {"canvas": (0.30, 0.29, 0.24), "canvas_pack": (0.33, 0.30, 0.22), "twill": (0.22, 0.24, 0.26), "twill_pocket": (0.25, 0.27, 0.29),
                "leather": (0.42, 0.25, 0.12), "leather_boot": (0.33, 0.20, 0.10), "rubber": (0.1, 0.1, 0.1), "cord_hw": (0.6, 0.55, 0.4),
                "webbing": (0.62, 0.38, 0.16), "pack_strap": (0.25, 0.2, 0.14), "steel": (0.6, 0.6, 0.62), "wool": (0.5, 0.18, 0.12), "rope": (0.7, 0.6, 0.4), "brass": (0.8, 0.6, 0.2)}
-    objs = [o for lst in highs_by_cls.values() for o in lst] if "hi" in args.only else [low]
-    for ob in objs:
+    hi_mode = "hi" in args.only.split(",")
+    highs = [o for lst in highs_by_cls.values() for o in lst]
+    for ob in (highs if hi_mode else [low]):
+        cls = ob.get("cls", "canvas")
         ob.data.materials.clear()
         ob.data.materials.append(cm)
-        ob.color = (*palette.get(ob.get("cls", "canvas"), (0.5, 0.5, 0.5)), 1.0)
-    for o in (list(sum(highs_by_cls.values(), [])) if "hi" not in args.only else [low]):
+        ob.color = (*palette.get(cls, (0.5, 0.5, 0.5)), 1.0)
+    for o in (([low] if hi_mode else highs)):
         o.hide_render = True
     cams = {
         "front": ((0, 3.4, 1.0), (0, 0, 0.95), 40),
