@@ -57,6 +57,22 @@ const _white = new THREE.Color(1, 1, 1);
  */
 export const KEY_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize();
 
+/**
+ * Shared "look" uniforms, driven per frame by Renderer3D (one object, every lit
+ * material reads the same values, so nothing recompiles when they change):
+ *  uRimColor  the haze colour reflected at grazing angles (a Fresnel-like edge
+ *             light: relief reads as lit edges against the dark wall behind it)
+ *  uRim       its strength
+ *  uWet       0..1 section wetness: porous stone darkens, roughness drops, so the
+ *             carried lantern slides highlights over the surfaces as you swing
+ *  uWarm      lantern-pool warmth bias of the rim (0 = cold haze)
+ */
+export const LOOK = {
+  uRimColor: { value: new THREE.Color(0.2, 0.25, 0.28) },
+  uRim: { value: 0.0 },
+  uWet: { value: 0.0 },
+};
+
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
 /** Fallback texture resolution (px) generated at boot, before the baked sets load. */
@@ -643,6 +659,8 @@ const UV_ASSIGN = UV_TARGETS.map((t) => `#ifdef USE_${t}\n\t${UV_VARY[t]} = atUv
  *  shade: true   unlit silhouettes take a cheap key-light term from their world
  *                normal (KEY_DIR, the shaft key in Renderer3D): lit tops and
  *                flanks, shaded undersides — colossi read as carved masses, not cut-outs
+ *  lit: true     rim (Fresnel haze edge light) + wetness response from the shared LOOK
+ *                uniforms; `wetK` scales this material's wetness, `wetMin` floors it (flesh is always wet)
  *  fog: 'cap'    linear fog capped at fogCap (silhouettes survive)
  *       'fade'   additive materials: fade toward black instead of fog colour
  * Uniform objects live on material.userData.at so callers can drive them.
@@ -671,10 +689,14 @@ export function patchMaterial(mat, opts = {}) {
   const macro = !!opts.macro && uvMode;
   const shaft = !!opts.shaft;
   const shade = !!opts.shade;
-  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|fog:${fog}`;
+  const lit = !!opts.lit;
+  const wetK = opts.wetK != null ? opts.wetK : 1;
+  const wetMin = opts.wetMin || 0;
+  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
+    if (lit) Object.assign(shader.uniforms, LOOK);
     let vs = shader.vertexShader;
     let fs = shader.fragmentShader;
     let vDecl = '';
@@ -771,6 +793,25 @@ ${UV_ASSIGN}
       fs = fs.replace(
         '#include <opaque_fragment>',
         '#include <opaque_fragment>\n  gl_FragColor.rgb *= vAtFacing * vAtFacing * smoothstep( uNearFade.x, uNearFade.y, vAtDist );',
+      );
+    }
+
+    if (lit) {
+      fDecl += 'uniform vec3 uRimColor;\nuniform float uRim;\nuniform float uWet;\n';
+      const dry = uvMode ? 'smoothstep( 0.55, 0.95, vAtTop )' : '0.0';
+      // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
+      fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
+  float atWet = max( uWet * ${wetK.toFixed(3)}, ${wetMin.toFixed(3)} ) * ( 1.0 - ${dry} );
+  diffuseColor.rgb *= 1.0 - 0.32 * atWet;`);
+      fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
+      fs = fs.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+  {
+    float atRim = pow( 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 ), 3.0 );
+    totalEmissiveRadiance += uRimColor * ( atRim * uRim ) * ( 0.25 + diffuseColor.rgb );
+  }`,
       );
     }
 
@@ -944,11 +985,11 @@ export class MaterialLibrary {
     const m = this.m;
     const macro = S.macro && S.macro.map;
     // Level solids (InstancedMesh, box-projected world UVs, ash on tops).
-    m.rock = this._std(S.rock, {}, { uv: 'box', ash: 0.32, macro, role: 'rock' });
-    m.masonry = this._std(S.masonry, {}, { uv: 'box', ash: 0.38, macro, role: 'masonry' });
+    m.rock = this._std(S.rock, {}, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true });
+    m.masonry = this._std(S.masonry, {}, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true });
     // Crumbling ledges read differently by PATTERN (dense dark cracks) and value (paler, dusty), not hue alone.
-    m.crumble = this._std(S.masonry, { color: 0xf0e2c8 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry' });
-    m.metal = this._std(S.metal, {}, { uv: 'box', ash: 0.22, macro, role: 'metal' });
+    m.crumble = this._std(S.masonry, { color: 0xf0e2c8 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true });
+    m.metal = this._std(S.metal, {}, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.5 });
     m.grate = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: S.grate && S.grate.map,
@@ -960,12 +1001,12 @@ export class MaterialLibrary {
     patchMaterial(m.grate, { uv: 'box', tile: 4 });
     // Merged decor + environment dressing (uv already in metres; vertex colour =
     // baked AO × the section grade).
-    m.decorStone = this._std(S.masonry, { vertexColors: true }, { uv: 'metric', ash: 0.3, macro, role: 'masonry' });
-    m.decorMetal = this._std(S.metal, { vertexColors: true }, { uv: 'metric', ash: 0.15, macro, role: 'metal' });
-    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true }, { uv: 'metric', ash: 0.25, macro, role: 'distant' });
+    m.decorStone = this._std(S.masonry, { vertexColors: true }, { uv: 'metric', ash: 0.3, macro, role: 'masonry', lit: true });
+    m.decorMetal = this._std(S.metal, { vertexColors: true }, { uv: 'metric', ash: 0.15, macro, role: 'metal', lit: true, wetK: 0.5 });
+    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true }, { uv: 'metric', ash: 0.25, macro, role: 'distant', lit: true });
     // Organic growth (the predator's sinew through the masonry): the flesh set's
     // relief, graded to a dark, MATTE bruise-brown (art bible: never wet red).
-    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh' });
+    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45 });
     m.decorFlesh.userData.matte = 0.82;
     m.decorFlesh.roughnessMap = null;
     m.decorFlesh.roughness = 0.82;

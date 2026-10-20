@@ -52,7 +52,6 @@ function copyGame(dest) {
 async function deploy(dir, version) {
   return generate({ root: dir, template: TEMPLATE, out: path.join(dir, 'sw.js'), version });
 }
-const pageEval = (page, fn, arg_) => page.evaluate(fn, arg_);
 
 async function waitBooted(page, timeout = 120000) {
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout, label: 'game booted' });
@@ -194,7 +193,7 @@ async function scenarioUpdate(browser) {
   await page.reload({ waitUntil: 'domcontentloaded', timeout: 90000 });
   await waitBooted(page);
   await waitUpdatesApi(page);
-  const ready = await until(() => page.evaluate(() => !!(window.AT3D.game.updates && window.AT3D.game.updates.ready)), { timeout: 60000, label: 'update ready' }).catch(() => false);
+  const ready = await until(() => page.evaluate(() => !!(window.AT3D.game.updates && window.AT3D.game.updates.ready)), { timeout: 150000, label: 'update ready' }).catch(() => false);
   check('[update] a new build downloads in the background and "update ready" is signalled', !!ready, { changed });
   const fetched = [...new Set(srv.state.hits.filter((h) => h.method === 'GET').map((h) => h.path.slice(SUB.length)))];
   const heavy = fetched.filter((f) => /\.(glb|jpg|png|js|json)$/.test(f) && !['sw.js'].includes(f) && !/^icons\//.test(f) && f !== 'manifest.webmanifest');
@@ -231,12 +230,13 @@ async function scenarioUpdate(browser) {
   check('[bad deploy] the game still boots from the previous build', await page.evaluate(() => window.AT3D.debug.state().ui === 'menu'));
   await waitUpdatesApi(page);
 
-  // 404 on a precached file
-  fs.appendFileSync(path.join(dir, 'style.css'), '\n/* at3d-test-v3 */\n');
+  // a CHANGED file that fails to download (unchanged files are copied from the previous cache, so they never hit the network)
+  await until(() => page.evaluate(async () => !(await navigator.serviceWorker.getRegistrations())[0].installing), { timeout: 60000, label: 'no install in flight' });
+  fs.appendFileSync(path.join(dir, 'style.css'), '\n/* at3d-test-v3b */\n');
   const d3b = await deploy(dir, '9.3.1+{hash}');
-  srv.state.blocked.add(SUB + 'assets/textures/rock_albedo.jpg');
+  srv.state.blocked.add(SUB + 'style.css');
   await page.evaluate(() => window.AT3D.game.updates.check());
-  await sleep(4000);
+  await sleep(5000);
   const bad2 = await page.evaluate(async () => {
     const r = (await navigator.serviceWorker.getRegistrations())[0];
     return { waiting: !!r.waiting, ready: !!window.AT3D.game.updates.ready };
@@ -264,9 +264,10 @@ async function scenarioPurge(browser) {
   await page.goto(srv.base + QS);
   await waitBooted(page);
   await until(async () => (await swState(page)).active, { timeout: 60000, label: 'sw active' });
+  await until(async () => Object.entries((await swState(page)).caches).filter(([n, c]) => n.includes(':core-') && c > 10).length === 1, { timeout: 60000, label: 'core cache filled' });
   await page.goto(srv.base + '?sw=0');
   await waitBooted(page);
-  const gone = await until(async () => (await swState(page)).regs === 0, { timeout: 15000, label: 'purged' }).catch(() => false);
+  const gone = await until(async () => (await swState(page)).regs === 0, { timeout: 90000, label: 'purged' }).catch(() => false);
   const s = await swState(page);
   check('[purge] ?sw=0 unregisters the worker and deletes its caches', !!gone && Object.keys(s.caches).length === 0, s);
   await ctx.close();

@@ -55,7 +55,7 @@ void main() {
   float n = texture( uNoise, q ).r;
   I *= 0.55 + 0.9 * n;
   // art-directed: the glow is centred on the lantern's direction and dies away round the sides
-  I *= pow( 0.5 + 0.5 * dot( v, w / max( length( w ), 1e-3 ) ), uSharp );
+  I *= pow( max( 0.5 + 0.5 * dot( v, w / max( length( w ), 1e-3 ) ), 0.0 ), uSharp );
   // soft shoulder: a glow, never a white-out
   float h = 1.0 - exp( - I * uGain );
   // warm at the core, the air's own colour at the rim
@@ -82,7 +82,7 @@ export class LanternHalo {
   constructor(scene, lightUniforms, noise) {
     this.scene = scene;
     this.gain = 1;
-    this.params = { gain: 0.022, core: 0.5, reach: 4, tint: 0.5, half: 7, sharp: 8 };
+    this.params = { gain: 0.016, core: 0.5, reach: 4, tint: 0.5, half: 7, sharp: 12 };
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -94,11 +94,11 @@ export class LanternHalo {
       uAmbient: lightUniforms.uAmbient,
       uWind: { value: new THREE.Vector3(0.006, -0.004, 0.004) },
       uTime: { value: 0 },
-      uGain: { value: 0.022 },
+      uGain: { value: 0.016 },
       uCore: { value: 0.5 },
       uReach: { value: 4 },
       uTint: { value: 0.5 },
-      uSharp: { value: 8 },
+      uSharp: { value: 12 },
       uHalf: { value: 7 },
       uFog: { value: new THREE.Color(0x202020) },
     };

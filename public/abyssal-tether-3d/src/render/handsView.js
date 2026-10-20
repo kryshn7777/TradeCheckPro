@@ -79,7 +79,8 @@ export const HANDS_TUNING = {
   gear: true, // false = procedural launchers only
   gearUrl: GEAR_URL,
   wristLiftGear: { x: 0, y: 0.083, z: 0.115 }, // wrist-HUD mount above the strapped-on launcher, behind the drum
-  desktopGear: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, scale: 1 }, // arm model offset on the desktop virtual hand
+  desktopGear: { x: 0, y: 0.03, z: 0.03, rx: 0, ry: 0, rz: 0, scale: 1.3 }, // arm model offset on the desktop virtual hand
+  gearLight: 0.5, // × direct light on the gear (the lantern sits a few cm from the hands)
   gearEnv: 0.8, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
   gearGlowIdle: 0.45, // emissive intensity of the pilot lamp / gauge phosphor
   gripRest: 0.62, // resting-finger-on-the-grip-button reads as a half-closed hand
@@ -583,6 +584,7 @@ export class HandsView {
     this.gearError = null;
     this.gearReady = null; // Promise, resolves true/false
     this._gearEnv = null;
+    this._gearLight = { value: this.tuning.gearLight };
     this._gearMats = null; // { left, right, lantern }
     this._heads = { left: null, right: null };
     this._pad = {
@@ -705,6 +707,19 @@ export class HandsView {
       m.forceSinglePass = true;
       m.emissive = new Color(hex);
       m.emissiveIntensity = this.tuning.gearGlowIdle;
+      // The lantern is a few centimetres from the hands (and the hands are the brightest thing in a dark
+      // shaft): scale the direct light on the gear so the leather and brass are not blown out by it.
+      const lightU = this._gearLight;
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uGearLight = lightU;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uGearLight;')
+          .replace(
+            '#include <lights_fragment_end>',
+            '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uGearLight;\n\treflectedLight.directSpecular *= uGearLight;',
+          );
+      };
+      m.customProgramCacheKey = () => 'at3d-gear-light';
       if (this._gearEnv) {
         m.envMap = this._gearEnv.texture;
         m.envMapIntensity = this.tuning.gearEnv;

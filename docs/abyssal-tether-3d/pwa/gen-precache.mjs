@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* SUPERSEDED (2026-10-20, WP-RELEASE): the live generator is tools/abyssal-tether-3d/release/gen-precache.mjs. Kept as design notes. */
 /* ABYSSAL TETHER 3D: precache list generator (DRAFT tooling, Node >= 18, no dependencies).
  *
  * Walks a built copy of the game, hashes every file, sorts each into the CORE tier (downloaded

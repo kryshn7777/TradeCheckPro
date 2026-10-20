@@ -1,3 +1,4 @@
+/* SUPERSEDED (2026-10-20, WP-RELEASE): adopted as src/platform/pwaBoot.js + earlyXR.js. Kept as design notes. */
 /* ABYSSAL TETHER 3D: PWA boot helpers DRAFT (service worker, storage, immersive auto-start).
  *
  * Status: proposal, not wired in. Intended home once adopted: src/platform/pwaBoot.js, called

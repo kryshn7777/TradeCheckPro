@@ -29,6 +29,17 @@ Every script takes `--root DIR` (or `AT3D_ROOT`) like the harness; by default it
 |---|---|
 | `unit.mjs` | `Health3D` / fall damage (`src/sim/health3d.js`): the damage curve per difficulty (0 up to the threshold, convex, 1 at the lethal speed) and the wall curve, the hit cooldown, regeneration (delay + rate, per difficulty), the `health:damage` / `health:low` / `health:recover` events and the low-state hysteresis, hazards (60 hp, cooldown, death on the repeat), Sandbox, god mode, the heartbeat (60 -> 140 bpm), determinism and snapshot / restore, then `Physics3D` on the real level: drops from known heights onto the spawn ledge, the lethal fall still killing, accumulation, a hazard and a creature kill. Pass / fail. |
 
+## release/
+
+| File | |
+|---|---|
+| `test-save.mjs` | `meta/save.js` (E05): schema, migration from today's `abyssalTether3d.v1.*` keys, corrupted / newer-schema records, adapters (memory, localStorage, newest-wins load), debounced non-throwing writes, records and completion, `SaveService` wiring and the Continue slot on a fake game bus. |
+| `test-entitlement.mjs` | `platform/entitlement.js` (E06): the nine store scenarios (no store, owned, not owned, offline grace, provider down, refund after 24 h, purchase, cancel, purchase outside the store), the chapter gate, the dev-only `?entitlement=` mock and its lock in the release channel. |
+| `test-governor.mjs` | `platform/governor.js`: degrade / recover / hysteresis / flapping back-off, hitch and pause exemptions, reducedEffects floor, foveation + fx tier + viewport scale + target frame rate, no allocation per frame. |
+| `test-platform.mjs` | Immersive launch detection, the early `requestSession` hand-over, the service-worker registration policy, the precache generator (tiers, excludes, version hash, size gate). |
+
+The browser side of the release work (PWA install / offline / update, immersive boot time, context loss, soak) lives in `../release/` (`test-pwa.mjs`, `test-boot.mjs`, `soak.mjs`).
+
 ## creature/
 
 | File | |

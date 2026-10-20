@@ -110,14 +110,14 @@ export async function registerServiceWorker({ onUpdateReady = null, isXRActive =
       }
     }
   };
-  notify();
-  reg.addEventListener('updatefound', () => {
-    const sw = reg.installing;
+  const watch = (sw) => {
     if (!sw) return;
-    sw.addEventListener('statechange', () => {
-      if (sw.state === 'installed') notify();
-    });
-  });
+    if (sw.state === 'installed') notify();
+    else sw.addEventListener('statechange', () => sw.state === 'installed' && notify());
+  };
+  notify();
+  watch(reg.installing); // an update that began before we attached (the browser's own check on navigation)
+  reg.addEventListener('updatefound', () => watch(reg.installing));
 
   // Look for a new build on every launch (one tiny no-cache request for sw.js: browsers otherwise check at most
   // once a day), then now and then in long-lived sessions and whenever the app comes back to the foreground.
@@ -155,8 +155,12 @@ export async function purgeServiceWorkers() {
     await Promise.all(regs.filter((r) => r.scope === SCOPE_URL).map((r) => r.unregister()));
     if (typeof caches !== 'undefined') {
       const prefix = `at3d${new URL(SCOPE_URL).pathname}:`;
-      const names = await caches.keys();
-      await Promise.all(names.filter((n) => n.startsWith(prefix)).map((n) => caches.delete(n)));
+      // twice: a worker that was still installing when it was unregistered may create its cache a moment later
+      for (let pass = 0; pass < 2; pass++) {
+        const names = await caches.keys();
+        await Promise.all(names.filter((n) => n.startsWith(prefix)).map((n) => caches.delete(n)));
+        if (pass === 0) await new Promise((resolve) => setTimeout(resolve, 400));
+      }
     }
     return true;
   } catch {

@@ -1,3 +1,4 @@
+/* SUPERSEDED (2026-10-20, WP-RELEASE): the live template is tools/abyssal-tether-3d/release/sw.template.js. Kept as design notes. */
 /* ABYSSAL TETHER 3D: service worker DRAFT (not live).
  *
  * Status: proposal for the Meta Horizon Store build (see ../RELEASE.md, "Service worker and

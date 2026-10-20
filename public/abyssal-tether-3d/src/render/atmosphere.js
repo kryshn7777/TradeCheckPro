@@ -1,7 +1,9 @@
 /* ABYSSAL TETHER 3D — atmosphere.js
  * Volumetric-looking fog without raymarching, in ONE draw call:
  *  - drifting fog CARDS: camera-facing quads (an instanced quad) anchored in
- *    world space around the head and recycled as the player moves. Each card
+ *    world space around the head and recycled as the player moves: big far cards
+ *    (the shaft's layered depth) and, every third card, a small near-field card
+ *    that lives within ~7 m of the head with finer noise (the lantern's lit pool). Each card
  *    is a soft slice through one tileable 3D noise field (64³, built once at
  *    load) that is sampled at the fragment's WORLD position and blown by a slow
  *    wind, so billboard rotation never shows and overlapping cards read as one
@@ -626,13 +628,13 @@ export class Atmosphere {
       uFloor: { value: 0.2 },
       uLanternGain: { value: 1 },
       uLanternK: { value: 1.9 },
-      uGlowGain: { value: 3 },
+      uGlowGain: { value: 2 },
       uDetail: { value: 1 },
       uKeyGain: { value: 0.06 },
       uTintSat: { value: 1.3 },
     });
     /** Look parameters (tuned on screenshots; per-section mood multiplies density/mist). */
-    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 3, key: 0.06, tint: 1.3 };
+    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 2, key: 0.06, tint: 1.3 };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dFog',
       uniforms: this.uniforms,

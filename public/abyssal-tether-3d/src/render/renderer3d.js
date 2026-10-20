@@ -32,7 +32,7 @@
  */
 
 import * as THREE from 'three';
-import { KEY_DIR, MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
+import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
 import { LevelView } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
@@ -91,7 +91,13 @@ const DEFAULT_THEME = {
   fogNear: 3,
   fogFar: 60,
   ambient: 0.35,
+  wet: 0.2,
+  rim: 0.5,
 };
+// Per-section look (Chapter I, by section index; the art bible's wetness ramp: dry ash at the top,
+// soaked in the Last Throat) and the strength of the haze rim light on carved relief.
+const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
+const SECTION_RIM = [0.55, 0.55, 0.5, 0.6, 0.45, 0.45, 0.6, 0.4];
 
 const _tmpC = new THREE.Color();
 
@@ -221,6 +227,8 @@ export class Renderer3D {
       fogNear: DEFAULT_THEME.fogNear,
       fogFar: DEFAULT_THEME.fogFar,
       ambient: DEFAULT_THEME.ambient,
+      wet: DEFAULT_THEME.wet,
+      rim: DEFAULT_THEME.rim,
     };
     this._themeTarget = {
       fog: new THREE.Color(),
@@ -229,6 +237,8 @@ export class Renderer3D {
       fogNear: 0,
       fogFar: 0,
       ambient: 0,
+      wet: 0,
+      rim: 0,
     };
     this._themeInit = false;
     this._fogInfo = { color: this.scene.fog.color, light: this._theme.light };
@@ -382,9 +392,12 @@ export class Renderer3D {
   _parseThemes(level) {
     this.themes = [];
     const secs = level && Array.isArray(level.sections) ? level.sections : [];
-    for (const s of secs) {
+    for (let si = 0; si < secs.length; si++) {
+      const s = secs[si];
       const th = (s && s.theme) || {};
       this.themes.push({
+        wet: num(th.wet, num(SECTION_WET[si], DEFAULT_THEME.wet)),
+        rim: num(th.rim, num(SECTION_RIM[si], DEFAULT_THEME.rim)),
         yTop: num(s.yTop, Infinity),
         yBottom: num(s.yBottom, -Infinity),
         fog: colorOf(th.fog, DEFAULT_THEME.fog),
@@ -423,6 +436,8 @@ export class Renderer3D {
       out.fogNear = DEFAULT_THEME.fogNear;
       out.fogFar = DEFAULT_THEME.fogFar;
       out.ambient = DEFAULT_THEME.ambient;
+      out.wet = DEFAULT_THEME.wet;
+      out.rim = DEFAULT_THEME.rim;
       return out;
     }
     const i = Math.max(0, this._sectionIndexAt(y));
@@ -448,6 +463,8 @@ export class Renderer3D {
     out.fogNear = THREE.MathUtils.lerp(a.fogNear, b.fogNear, w);
     out.fogFar = THREE.MathUtils.lerp(a.fogFar, b.fogFar, w);
     out.ambient = THREE.MathUtils.lerp(a.ambient, b.ambient, w);
+    out.wet = THREE.MathUtils.lerp(a.wet, b.wet, w);
+    out.rim = THREE.MathUtils.lerp(a.rim, b.rim, w);
     return out;
   }
 
@@ -572,6 +589,8 @@ export class Renderer3D {
     th.fogNear += (tgt.fogNear - th.fogNear) * k;
     th.fogFar += (tgt.fogFar - th.fogFar) * k;
     th.ambient += (tgt.ambient - th.ambient) * k;
+    th.wet += (tgt.wet - th.wet) * k;
+    th.rim += (tgt.rim - th.rim) * k;
 
     // Threat tightens and darkens the fog a little (felt, not read).
     const tk = this.threat;
@@ -595,6 +614,11 @@ export class Renderer3D {
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
     this.key.intensity = Math.max(0, th.ambient) * this.keyScale * (1 - tk * 0.35);
+
+    // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
+    LOOK.uWet.value = th.wet;
+    LOOK.uRim.value = th.rim * (1 - tk * 0.3);
+    LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;

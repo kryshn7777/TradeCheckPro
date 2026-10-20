@@ -194,8 +194,18 @@ float atRockNoise( vec3 x ) {
     const d = this.d;
     const r = this.rand;
     let i = d.n;
-    if (i >= this.max) i = Math.floor(r() * this.max);
-    else d.n++;
+    if (i >= this.max) {
+      // Full: recycle the stone closest to its end (best of a few random picks), not a random live one.
+      let best = Infinity;
+      for (let k = 0; k < 6; k++) {
+        const j = Math.floor(r() * this.max);
+        const left = d.rest[j] > 0 ? d.rest[j] : d.life[j];
+        if (left < best) {
+          best = left;
+          i = j;
+        }
+      }
+    } else d.n++;
     d.px[i] = x;
     d.py[i] = y;
     d.pz[i] = z;

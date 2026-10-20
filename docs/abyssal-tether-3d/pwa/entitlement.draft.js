@@ -1,3 +1,4 @@
+/* SUPERSEDED (2026-10-20, WP-RELEASE): adopted as src/platform/entitlement.js (same behaviour, injectable env, mock, chapter gate). Kept as design notes. */
 /* ABYSSAL TETHER 3D: full-game entitlement DRAFT (Digital Goods API + Payment Request).
  *
  * Status: proposal, not wired into the game. Design and rationale: ../RELEASE.md, "In-app

@@ -3173,11 +3173,12 @@ def render_all(scene, R, poses, gear_mat):
         tres = f"{w // 2}x{h // 2}"
         for pname in ("Open", "Grip", "Trigger", "Point"):
             apply_pose(arms["R"], poses, pname, "R")
-            cam = look_cam("CamPose", (-0.36, 0.20, 0.17), (0.0, 0.015, 0.012), 50.0)
-            p = os.path.join(RENDER_DIR, f"_pose_{pname}.png")
-            render_shot(scene, cam, p, tres, args.samples)
-            tiles.append(p)
-        sheet(tiles, os.path.join(RENDER_DIR, "finger_poses.png"), 2, ["OPEN", "GRIP", "TRIGGER (squeezed)", "POINT"])
+            for ci, (cl, ct) in enumerate((((-0.36, 0.20, 0.17), (0.0, 0.015, 0.012)), ((-0.24, 0.17, -0.19), (0.0, 0.02, 0.0)))):
+                cam = look_cam("CamPose", cl, ct, 50.0)
+                p = os.path.join(RENDER_DIR, f"_pose_{pname}{ci}.png")
+                render_shot(scene, cam, p, tres, max(24, args.samples - 8))
+                tiles.append(p)
+        sheet(tiles, os.path.join(RENDER_DIR, "finger_poses.png"), 4, ["OPEN", "", "GRIP", "", "TRIGGER (squeezed)", "", "POINT", ""])
         clear_temp()
     for f in os.listdir(RENDER_DIR):
         if f.startswith("_turn_") or f.startswith("_pose_"):

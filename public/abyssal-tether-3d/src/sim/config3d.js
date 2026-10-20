@@ -84,7 +84,7 @@ export const CONFIG = {
   health: {
     lowEnter: 0.35, // hp at or below this is "low": the heartbeat, the ECG turns red, the pulse starts
     lowExit: 0.5, // ... until hp climbs back to this (hysteresis)
-    vignetteStart: 0.5, // the red screen-edge vignette fades in below this hp
+    vignetteStart: 0.6, // the red screen-edge vignette fades in below this hp (full rim at 0)
     fallExp: 2, // landing damage = ((v/vLethal - threshold) / (1 - threshold))^fallExp: 0 at the threshold, 1 (dead) at the lethal speed
     wallThreshold: 0.5, // side impacts: no damage below this fraction of the lethal speed
     wallMax: 0.45, // ... damage at the lethal speed (the normal-component speed)

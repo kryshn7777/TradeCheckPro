@@ -21,6 +21,10 @@ const suites = [
   ['creature: behaviour units', 'creature/unit.mjs'],
   ['health: fall damage curve, cooldown, regen, events, difficulty scaling, determinism, Physics3D drops and hazards', 'health/unit.mjs'],
   ['physics: swing bench checks (near grab, pendulum, catches, two ropes, bot routes, reel)', 'physics/swingbench.mjs', ['--check']],
+  ['release: save data (E05: schema, migration, adapters, SaveService, Continue slot)', 'release/test-save.mjs'],
+  ['release: entitlement (E06: nine store scenarios, chapter gate, release-channel mock lock)', 'release/test-entitlement.mjs'],
+  ['release: XR governor (steps, hysteresis, reduced effects, no allocation)', 'release/test-governor.mjs'],
+  ['release: platform (immersive launch, early XR request, SW policy, precache generator)', 'release/test-platform.mjs'],
 ];
 if (hasFlag(argv, '--reports')) suites.push(['creature: invariants report', 'creature/invariants.mjs']);
 if (hasFlag(argv, '--browser')) suites.push(['input: Playwright desktop + mock WebXR', 'input/run-pw.cjs']);

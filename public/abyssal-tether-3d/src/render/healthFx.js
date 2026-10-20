@@ -17,7 +17,7 @@
  * VR UI panels 950 and the hands in XR 960). Its shader is compiled at load (the mesh exists, visible, when the
  * game precompiles the scene) and nothing is allocated per frame.
  *
- * Strength follows hp: nothing at or above vignetteStart (50 hp), rising to a full red rim at zero; below the low
+ * Strength follows hp: nothing at or above vignetteStart (60 hp), rising to a full red rim at zero; below the low
  * threshold (35 hp) it pulses with the heartbeat, bounded (alpha +-14 %, rim radius +-0.05); a damage hit adds a
  * short red flash (peak alpha <= 0.34, one hit per cooldown, so never a strobe). Comfort: no motion, no shake.
  * settings.reducedEffects: a static tint (no pulse, no flash).
@@ -62,7 +62,7 @@ void main() {
   e = e * e * (3.0 - 2.0 * e);
   // Rim: dark blood red, strongest in the corners. Haze: a dim grey lifts nothing and flattens colour.
   vec3 rimCol = mix(vec3(0.020, 0.0015, 0.002), vec3(0.30, 0.004, 0.006), smoothstep(0.0, 0.7, e));
-  float rimA = clamp(e * uVig * 0.94, 0.0, 0.94);
+  float rimA = clamp(e * uVig * 0.9, 0.0, 0.9);
   float hazeA = uHaze * 0.24 * (0.45 + 0.55 * e);
   vec3 hazeCol = vec3(0.020, 0.012, 0.012);
   float a = rimA + hazeA * (1.0 - rimA);
@@ -269,8 +269,8 @@ export class HealthFx {
     u.uHaze.value = this._haze;
     u.uFlash.value = this._flash;
     // Lenses crop the corners of the eye buffer: start the rim a little further in when presenting.
-    const r0 = (this._xr ? 0.46 : 0.55) - PULSE_RADIUS * pulse;
-    const r1 = this._xr ? 1.18 : 1.35;
+    const r0 = (this._xr ? 0.5 : 0.6) - PULSE_RADIUS * pulse;
+    const r1 = this._xr ? 1.22 : 1.4;
     u.uRange.value.set(r0, r1);
     this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004;
 
@@ -325,7 +325,7 @@ export class HealthFx {
       const dx = ECG_SPEED * step;
       const n = Math.max(1, Math.round(dx));
       const cycles = (bpm / 60) * step;
-      const jit = reduced || dead ? 0 : this._lowAmt * 0.16 + (low ? 0.05 : 0);
+      const jit = reduced || dead ? 0 : this._lowAmt * 0.075 + (low ? 0.02 : 0);
       for (let i = 1; i <= n; i++) {
         this._beat += cycles / n;
         // an irregular rhythm when low: the rate wobbles, every so often a beat comes early
@@ -373,9 +373,9 @@ export class HealthFx {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     const bands = [
-      { from: 0, to: 70, a: 1, w: 2.4 },
-      { from: 70, to: 150, a: 0.62, w: 2 },
-      { from: 150, to: PLOT_W - GAP, a: 0.32, w: 1.8 },
+      { from: 0, to: 70, a: 1, w: 3.2 },
+      { from: 70, to: 150, a: 0.72, w: 2.8 },
+      { from: 150, to: PLOT_W - GAP, a: 0.42, w: 2.4 },
     ];
     for (let b = 2; b >= 0; b--) {
       const band = bands[b];

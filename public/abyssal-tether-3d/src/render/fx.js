@@ -1,25 +1,32 @@
 /* ABYSSAL TETHER 3D — fx.js
  * Effects, all pooled (no per-frame allocation, every program compiled at load
  * by Renderer3D.precompile — the objects exist from construction):
- *  - atmosphere (atmosphere.js): volumetric-looking fog cards + mist sheets
- *    over ledges and across the shaft below, lit by the lantern, the nearest
- *    lamps and the creature's glow (one draw call)
+ *  - atmosphere (atmosphere.js): volumetric-looking fog — world-anchored soft
+ *    cards (a far set and a small near-field set that fills the lantern's pool)
+ *    + low mist sheets over ledges and across the shaft below, sampling one
+ *    tileable 3D noise; lit by the lantern, the nearest lamps, the shaft key
+ *    light and the creature's glow, tinted by the section fog (one draw call)
+ *  - lantern halo (lanternHalo.js): the lantern's glow in the haze, one quad
+ *    with a closed-form scattering integral per pixel (one draw call)
  *  - ambient dust / ash: a fixed cloud of points wrapped around the head in
- *    the vertex shader (zero CPU per particle); motes catch the lantern light;
- *    density and drift rise with threat
- *  - trickles (debris.js): grit streaming from cracks and down walls, water
- *    drips in the wet deep sections; the fall runs in the vertex shader
- *    (one draw call)
+ *    the vertex shader (zero CPU per particle); each mote tumbles and drifts on
+ *    its own path and shines only where the lantern / lamps / creature light it
+ *  - trickles (debris.js): grit streaming from cracks and down walls (grains +
+ *    a faint veil), water drips in the wet deep sections; the fall runs in the
+ *    vertex shader (one draw call)
  *  - bursts: sparks, dust puffs, grit, chips and splashes (one Points draw)
  *  - rubble (debris.js): pooled stones that bounce off the level and settle
- *    (one InstancedMesh draw) — shed by the creature as it passes, by its
- *    footfalls, hard landings, crumbling ledges and fragile anchors, rope jolts,
- *    rumbles, and the gate slam
+ *    (one InstancedMesh draw), shed by: the creature as it passes (more the
+ *    closer and faster) and where it strikes / windups / slams the gate, its
+ *    footfalls, hard landings, wall hits, crumbling ledges, fragile anchors
+ *    under load, rope jolts, level rumbles and debris triggers (a column of
+ *    stones falls at data.x/y/z, where the audio puts it), and the gate slam
  *  - the death fade: a black sphere around the head (opacity from game.fade),
  *    with a dim warm flash on big impacts (game.flash)
  * Quality tiers: settings.reducedEffects → minimal; WebXR → Quest budget;
  * desktop → high. `?fx=low|quest|high` (or settings.fxQuality) forces a tier.
- * Added draw calls over the old FX: fog 1 + trickles 1 (per eye).
+ * Draw calls added over the old FX: fog 1 + halo 1 + trickles 1 + rubble 1 (only
+ * while any stone is alive) = 4 (≤ 8 000 triangles in the worst case).
  */
 
 import * as THREE from 'three';
@@ -713,9 +720,9 @@ export class FX {
       q.acc += q.rate * dt;
       while (q.acc >= 1) {
         q.acc -= 1;
-        const sz = 0.04 + r() * r() * 0.2;
+        const sz = 0.07 + r() * r() * 0.3; // chunks of the structure, visible 15-20 m away
         this._spawnDebris(q.x + (r() - 0.5) * 2.2, q.y + r() * 1.6, q.z + (r() - 0.5) * 2.2, (r() - 0.5) * 0.8, -1 - r() * 3, (r() - 0.5) * 0.8, sz);
-        if (r() < 0.25) this._spawnPoint(K_PUFF, q.x + (r() - 0.5) * 2, q.y + r(), q.z + (r() - 0.5) * 2, 0, -2.5, 0, 1.6, 0.4, 0.34, 0.33, 0.31);
+        if (r() < 0.45) this._spawnPoint(K_PUFF, q.x + (r() - 0.5) * 2, q.y + r(), q.z + (r() - 0.5) * 2, 0, -2.5, 0, 1.8, 0.55, 0.34, 0.33, 0.31);
       }
     }
   }

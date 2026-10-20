@@ -32,6 +32,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate, globToRegExp, DEFAULT_EXCLUDE } from './gen-precache.mjs';
+import { mdToHtml } from './lib/md.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '..', '..', '..');
@@ -152,27 +153,31 @@ const fill = (tpl) =>
     .replace(/\{\{GAME_PATH\}\}/g, GAME_PATH)
     .replace(/\{\{VERSION\}\}/g, VERSION);
 const pages = [
-  ['site/index.html', 'index.html'],
-  ['site/privacy.html', 'privacy/index.html'],
-  ['site/support.html', 'support/index.html'],
+  { src: 'site/index.html', dest: 'index.html' },
+  { src: 'PRIVACY_POLICY.md', dest: 'privacy/index.html', md: true },
+  { src: 'SUPPORT.md', dest: 'support/index.html', md: true },
 ];
 const unfilled = new Set();
-for (const [src, dest] of pages) {
-  const from = path.join(STORE_DIR, src);
+for (const pg of pages) {
+  const from = path.join(STORE_DIR, pg.src);
   if (!fs.existsSync(from)) {
-    fail(`missing site page template ${path.relative(REPO, from)}`);
+    fail(`missing site page source ${path.relative(REPO, from)}`);
     continue;
   }
-  const html = fill(fs.readFileSync(from, 'utf8'));
-  for (const m of html.matchAll(/&lt;[A-Z][A-Z .@\-a-z]+&gt;|<(?:STUDIO NAME|support@your-domain|your-domain|postal address[^>]*|YYYY-MM-DD|hosting provider)>/g)) unfilled.add(m[0]);
-  const to = path.join(WEB, dest);
+  let html;
+  if (pg.md) {
+    const { html: body, title } = mdToHtml(fill(fs.readFileSync(from, 'utf8')));
+    html = fill(fs.readFileSync(path.join(STORE_DIR, 'site', 'page.html'), 'utf8')).replace('{{TITLE}}', () => title).replace('{{CONTENT}}', () => body);
+  } else html = fill(fs.readFileSync(from, 'utf8'));
+  for (const m of html.matchAll(/&lt;[A-Za-z][^<>&]{2,60}&gt;|<(?:STUDIO NAME|support@your-domain|your-domain|postal address[^>]*|YYYY-MM-DD|hosting provider)>/g)) unfilled.add(m[0].replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
+  const to = path.join(WEB, pg.dest);
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.writeFileSync(to, html);
 }
 if (unfilled.size) warn(`owner placeholders still in the site pages: ${[...unfilled].join(', ')} (edit tools/abyssal-tether-3d/release/release.config.json "owner")`);
 
 // 6. headers --------------------------------------------------------------------------------------------------------
-fs.writeFileSync(path.join(WEB, '_headers'), fs.readFileSync(path.join(PWA_DOCS, '_headers.draft'), 'utf8').replace(/__GAME_PATH__/g, GAME_PATH));
+fs.writeFileSync(path.join(WEB, '_headers'), fs.readFileSync(path.join(PWA_DOCS, '_headers.draft'), 'utf8').replace('Hosting headers DRAFT', 'Hosting headers').replace(/__GAME_PATH__/g, GAME_PATH));
 
 // 7. TWA packaging pack ---------------------------------------------------------------------------------------------
 const twaTpl = fs

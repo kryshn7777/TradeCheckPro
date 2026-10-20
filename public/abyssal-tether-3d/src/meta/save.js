@@ -626,7 +626,7 @@ export class SaveStore {
     }, 'progress');
   }
 
-  deathRecorded({ cause, difficulty, deepestMeters, time }) {
+  deathRecorded({ cause, difficulty, deepestMeters }) {
     return this.update((p) => {
       p.totals.deaths++;
       const k = typeof cause === 'string' ? cause : 'impact';
@@ -813,7 +813,6 @@ export class SaveService {
   /** The Continue slot, shaped for the menu; null when there is nothing to continue. */
   continueInfo() {
     const run = this.store.profile.run;
-    const g = this.game;
     if (!run || run.chapter !== 'ch1') return null;
     if (run.kind === 'start' && !(run.time > 0)) return null; // a run that never left the start has nothing to continue
     const diff = DIFFICULTY[run.difficulty];
