@@ -26,7 +26,7 @@ import * as THREE from 'three';
 import { Atmosphere, FX_LIGHT_GLSL, FxLighting, makeNoise3D } from './atmosphere.js';
 import { Rubble, Trickles } from './debris.js';
 
-const DUST_COUNT = 900;
+const DUST_COUNT = 1100;
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
 const BURST_MAX = 360;
 const DEBRIS_MAX = 88; // × 80 triangles (worst case 7.0k, typically < 2k)
@@ -121,14 +121,20 @@ export class FX {
     const col = new Float32Array(n * 3);
     const r = this._rng;
     for (let i = 0; i < n; i++) {
-      pos[i * 3] = (r() * 2 - 1) * DUST_HALF;
-      pos[i * 3 + 1] = (r() * 2 - 1) * DUST_HALF;
-      pos[i * 3 + 2] = (r() * 2 - 1) * DUST_HALF;
-      const ash = r() < 0.75;
-      const k = 0.1 + r() * 0.18;
+      // Denser near the head (the lantern's pool is where motes read): radius ~ u^1.6 of the cube.
+      const rad = Math.pow(r(), 1.6) * DUST_HALF;
+      const th = r() * Math.PI * 2;
+      const cp = r() * 2 - 1;
+      const sp = Math.sqrt(1 - cp * cp);
+      pos[i * 3] = Math.cos(th) * sp * rad;
+      pos[i * 3 + 1] = cp * rad;
+      pos[i * 3 + 2] = Math.sin(th) * sp * rad;
+      // albedo of the mote (it shines only when something lights it): pale stone/ash, a few warm fibres
+      const ash = r() < 0.8;
+      const k = 0.55 + r() * 0.45;
       col[i * 3] = (ash ? 0.85 : 1.0) * k;
-      col[i * 3 + 1] = (ash ? 0.84 : 0.82) * k;
-      col[i * 3 + 2] = (ash ? 0.8 : 0.62) * k;
+      col[i * 3 + 1] = (ash ? 0.84 : 0.8) * k;
+      col[i * 3 + 2] = (ash ? 0.8 : 0.6) * k;
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -140,11 +146,12 @@ export class FX {
         uOffset: { value: new THREE.Vector3() },
         uHalf: { value: DUST_HALF },
         uTime: { value: 0 },
+        uMoteGain: { value: 1 },
       },
       this.lighting.uniforms,
     );
     const mat = new THREE.PointsMaterial({
-      size: 0.022,
+      size: 0.03,
       map: this._dot,
       vertexColors: true,
       transparent: true,
@@ -154,48 +161,43 @@ export class FX {
       toneMapped: false,
     });
     const U = this.dustU;
-    // Motes catch the light: the lantern (warm, strongly — dust in a lamp beam),
-    // the nearest lamps and the creature's glow; the nearest ones fade out so
-    // nothing big and bright floats right in front of the eyes.
-    const lightGlsl = /* glsl */ `
-uniform vec3 uLanternPos;
-uniform vec3 uLanternCol;
-uniform vec4 uEnvPos[ 2 ];
-uniform vec3 uEnvCol[ 2 ];
-uniform vec4 uGlowPos;
-uniform vec3 uGlowCol;
-vec3 atMoteLight( vec3 p ) {
-  vec3 d = p - uLanternPos;
-  vec3 L = uLanternCol * ( 0.05 / ( dot( d, d ) + 0.25 ) );
-  for ( int i = 0; i < 2; i ++ ) {
-    vec3 e = p - uEnvPos[ i ].xyz;
-    float r = uEnvPos[ i ].w * 0.6;
-    L += uEnvCol[ i ] * ( 0.02 / ( dot( e, e ) + 1.0 ) ) * max( 0.0, 1.0 - dot( e, e ) / ( r * r ) );
-  }
-  vec3 g = p - uGlowPos.xyz;
-  L += uGlowCol * ( 0.25 / ( 1.0 + dot( g, g ) * 0.3 ) );
-  return L;
-}`;
+    // Motes shine only where light reaches them: the lantern (warm and strong close by: dust in a
+    // lamp beam), the nearest lamps and the creature's glow, plus a whisper of ambient so the
+    // far air is not black. Each one tumbles (a slow sparkle), drifts on its own lissajous around
+    // a shared wind, and fades out of the cube edge and right next to the eyes. Motion is entirely
+    // in the vertex shader from uTime (no per-particle CPU work).
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, U);
       shader.vertexShader = shader.vertexShader
         .replace(
           '#include <common>',
-          `#include <common>\nuniform vec3 uCenter;\nuniform vec3 uOffset;\nuniform float uHalf;\nuniform float uTime;\nvarying float vDustEdge;\n${lightGlsl}`,
+          `#include <common>\nuniform vec3 uCenter;\nuniform vec3 uOffset;\nuniform float uHalf;\nuniform float uTime;\nuniform float uMoteGain;\nvarying float vDustEdge;\n${FX_LIGHT_GLSL}`,
         )
         .replace(
           '#include <begin_vertex>',
-          `float atH = fract( sin( dot( position.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
-  vec3 atP = position + uOffset * ( 0.55 + 0.9 * atH );
-  atP.x += sin( uTime * ( 0.3 + atH * 0.4 ) + atH * 6.28 ) * 0.25;
-  atP.z += cos( uTime * ( 0.25 + atH * 0.3 ) + atH * 4.0 ) * 0.25;
+          `vec3 atHv = fract( sin( position * vec3( 12.9898, 78.233, 37.719 ) + position.yzx * vec3( 39.346, 11.135, 83.155 ) ) * 43758.5453 );
+  float atH = atHv.x;
+  vec3 atP = position + uOffset * ( 0.55 + 0.9 * atHv.y );
+  atP += vec3( sin( uTime * ( 0.21 + atHv.x * 0.37 ) + atHv.y * 6.283 ), 0.5 * sin( uTime * ( 0.17 + atHv.y * 0.3 ) + atHv.z * 6.283 ), cos( uTime * ( 0.19 + atHv.z * 0.33 ) + atHv.x * 6.283 ) ) * ( 0.18 + 0.32 * atHv.z );
   vec3 transformed = mod( atP - uCenter + uHalf, 2.0 * uHalf ) - uHalf;
-  vDustEdge = 1.0 - smoothstep( 0.6, 1.0, length( transformed ) / uHalf );
-  vDustEdge *= smoothstep( 0.35, 1.1, length( transformed ) );
+  float atR = length( transformed );
+  vDustEdge = 1.0 - smoothstep( 0.6, 1.0, atR / uHalf );
+  vDustEdge *= smoothstep( 0.3, 0.95, atR );
   transformed += uCenter;
-  vColor.rgb = vColor.rgb + vColor.rgb * atMoteLight( transformed ) * ( 2.0 + 6.0 * atH );`,
+  vec3 atV = normalize( transformed - cameraPosition );
+  vec3 atLit = uAmbient * 0.25 + atLantern( transformed, atV, 0.0, 1.6 ) * 0.9 + atEnvLights( transformed, atV, 0.0 ) * 0.8 + atGlow( transformed ) * 0.6;
+  float atTw = 0.5 + 0.5 * sin( uTime * ( 0.9 + 2.4 * atHv.z ) + atHv.y * 40.0 );
+  vColor.rgb *= atLit * ( 0.35 + 1.3 * atTw * atTw ) * uMoteGain;`,
         )
-        .replace('gl_PointSize = size;', 'gl_PointSize = size * ( 0.6 + 0.8 * atH );');
+        .replace(
+          'gl_PointSize = size;',
+          'gl_PointSize = size * ( 0.55 + 0.9 * atH );',
+        )
+        // never a sub-pixel speck (they shimmer): at least 1.5 px, dimmed by the area it lost
+        .replace(
+          '#include <logdepthbuf_vertex>',
+          'float atPx = gl_PointSize;\n  gl_PointSize = max( atPx, 1.5 );\n  vColor.rgb *= min( 1.0, atPx * atPx / 2.25 );\n#include <logdepthbuf_vertex>',
+        );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vDustEdge;')
         .replace(
@@ -203,7 +205,7 @@ vec3 atMoteLight( vec3 p ) {
           '#ifdef USE_FOG\n  gl_FragColor.rgb *= 1.0 - atFogFactor( vFogDepth );\n#endif\n  gl_FragColor.rgb *= vDustEdge;',
         );
     };
-    mat.customProgramCacheKey = () => 'at3d-dust-lit';
+    mat.customProgramCacheKey = () => 'at3d-dust-lit2';
     this.dust = new THREE.Points(g, mat);
     this.dust.name = 'fxDust';
     this.dust.frustumCulled = false;

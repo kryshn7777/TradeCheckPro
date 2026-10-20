@@ -459,10 +459,10 @@ void main() {
     vec3 side = vec3( toCam.z, 0.0, -toCam.x );
     float sl = length( side );
     side = sl > 1e-4 ? side / sl : vec3( 1.0, 0.0, 0.0 );
-    float hw = 0.012 + B.w * ( 0.4 + 1.8 * pow( u, 0.7 ) ) + 0.05 * u;
+    float hw = 0.05 + B.w * ( 0.6 + 2.2 * pow( u, 0.7 ) ) + 0.08 * u;
     wp = c + side * ( position.x * hw );
     vFall = Lr * u;
-    vAlpha = ( 1.0 - kind ) * B.x * 0.11 * smoothstep( 0.0, 0.05, u ) * ( 1.0 - 0.75 * u );
+    vAlpha = ( 1.0 - kind ) * B.x * 0.7 * smoothstep( 0.0, 0.05, u ) * ( 1.0 - 0.75 * u );
     vCol = vec3( 0.0 );
     vKind = 2.0;
   } else {
@@ -477,7 +477,8 @@ void main() {
       t = fract( uTime / period + ph ) * period;
       float u = t / T;
       show *= step( t, T ) * smoothstep( 0.0, 0.08, u ) * ( 1.0 - smoothstep( 0.82, 1.0, u ) );
-      len = clamp( ${G.toFixed(2)} * t * 0.04, 0.025, 0.45 );
+      len = clamp( ${G.toFixed(2)} * t * 0.016, 0.015, 0.2 ) * ( 0.55 + 0.9 * fract( aGrain.z * 7.31 ) );
+      show *= 0.3 + 0.7 * fract( aGrain.z * 13.7 + 0.3 );
     } else {
       float period = T + 0.9 + 2.2 * aGrain.z;
       float tc = fract( uTime / period + aGrain.y ) * period;
@@ -490,8 +491,9 @@ void main() {
     float fall = min( 0.5 * ${G.toFixed(2)} * t * t, L );
     vec3 c = A.xyz - vec3( 0.0, fall, 0.0 );
     float ang = aGrain.z * 41.3 + aGrain.w * 2.1;
-    float spread = B.w * ( kind < 0.5 ? ( 0.25 + 0.75 * clamp( fall / 4.0, 0.0, 1.0 ) ) * ( 0.3 + aGrain.z ) : 0.0 );
+    float spread = B.w * 2.0 * ( kind < 0.5 ? ( 0.25 + 0.75 * clamp( fall / 4.0, 0.0, 1.0 ) ) * ( 0.3 + aGrain.z ) : 0.0 );
     c.xz += vec2( cos( ang ), sin( ang ) ) * spread;
+    if ( kind < 0.5 ) c.xz += vec2( sin( t * 5.0 + aGrain.z * 40.0 ), cos( t * 4.3 + aGrain.z * 23.0 ) ) * 0.012 * min( t, 1.0 );
     vec3 toCam = cameraPosition - c;
     float dist = max( length( toCam ), 1e-3 );
     vec3 side = vec3( toCam.z, 0.0, -toCam.x );
@@ -503,10 +505,10 @@ void main() {
     show *= min( 1.0, wid / minW );
     wid = max( wid, minW );
     wp = c + side * ( position.x * wid ) + vec3( 0.0, position.y * len, 0.0 );
-    vec3 light = min( uAmbient + atLightAt( c, toCam / -dist, 0.0 ) * 0.5, vec3( 1.5 ) );
+    vec3 light = min( uAmbient + atLightAt( c, toCam / -dist, 0.0 ) * 0.9, vec3( 1.5 ) );
     // grit is grey stone dust: the lantern warms it, it does not turn it orange
     light = mix( vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), light, 0.45 );
-    vCol = kind < 0.5 ? vec3( 0.42, 0.40, 0.37 ) * light : vec3( 0.75, 0.85, 0.92 ) * ( light * 4.0 + 0.03 ); // water glints: specular, brighter than stone
+    vCol = kind < 0.5 ? vec3( 0.8, 0.76, 0.7 ) * light : vec3( 0.75, 0.85, 0.92 ) * ( light * 4.0 + 0.03 ); // water glints: specular, brighter than stone
     vAlpha = show;
     vKind = kind;
   }
@@ -538,9 +540,9 @@ void main() {
     float streak = 0.55 + 0.25 * sin( f - uTime * 6.0 ) + 0.2 * sin( f * 2.7 - uTime * 9.3 + vQ.x * 4.0 );
     a = clamp( vAlpha * across * across * streak, 0.0, 1.0 );
     vec3 v = normalize( vWorld - cameraPosition );
-    vec3 light = min( uAmbient + atLightAt( vWorld, v, 0.0 ) * 0.5, vec3( 1.5 ) );
+    vec3 light = min( uAmbient + atLightAt( vWorld, v, 0.0 ) * 0.9, vec3( 1.5 ) );
     light = mix( vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), light, 0.45 );
-    col = vec3( 0.46, 0.44, 0.41 ) * light;
+    col = vec3( 0.7, 0.67, 0.62 ) * light;
   } else {
     float across = 1.0 - vQ.x * vQ.x;
     float along = vKind < 0.5 ? 1.0 - vQ.y * 0.85 : 1.0 - vQ.y * 0.6;
@@ -716,7 +718,7 @@ export class Trickles {
       }
       any = true;
       s.grains = s.kind === DRIP ? DRIP_DROPS : clamp(Math.round(16 + heavy * 14), 5, GRAINS);
-      B.set(s.alpha * (s.kind === DRIP ? 1 : 0.8 + 0.2 * heavy), s.grains, s.kind, s.kind === DRIP ? 0 : 0.035 + 0.05 * heavy);
+      B.set(s.alpha * (s.kind === DRIP ? 1 : 0.8 + 0.2 * heavy), s.grains, s.kind, s.kind === DRIP ? 0 : 0.06 + 0.08 * heavy);
       this._landings(dt, i, s, head);
     }
     this.mesh.visible = any;
