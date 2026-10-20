@@ -15,7 +15,8 @@
     "e2e:at3d": "node tools/abyssal-tether-3d/e2e/e2e.cjs",
     "at3d:sw": "node tools/abyssal-tether-3d/release/gen-sw.mjs",
     "build:at3d-release": "node tools/abyssal-tether-3d/release/build-release.mjs",
-    "test:at3d-release": "node tools/abyssal-tether-3d/release/test-pwa.mjs && node tools/abyssal-tether-3d/release/test-boot.mjs",
+    "test:at3d-release": "flock /tmp/at3d-browser.lock node tools/abyssal-tether-3d/release/test-pwa.mjs && flock /tmp/at3d-browser.lock node tools/abyssal-tether-3d/release/sanity.mjs",
+    "sanity:at3d": "flock /tmp/at3d-browser.lock node tools/abyssal-tether-3d/release/sanity.mjs",
     "soak:at3d": "node tools/abyssal-tether-3d/release/soak.mjs",
     "capture:at3d-store": "node tools/abyssal-tether-3d/release/capture-screens.mjs",
     "art:at3d-store": "python3 tools/abyssal-tether-3d/release/make-art.py"
