@@ -7,7 +7,7 @@ const THREE = await import('three');
 const { InputManager, makeIntent, yawOfMatrix } = await import(srcUrl('input/inputManager.js'));
 const { readSource, makeXRHand, buttonValue, tetherDown } = await import(srcUrl('input/xrInput.js'));
 const { HandsView, buildLauncherGeometry } = await import(srcUrl('render/handsView.js'));
-const { EventBus, SETTINGS_DEFAULTS } = await import(srcUrl('sim/config3d.js'));
+const { EventBus, SETTINGS_DEFAULTS, CONFIG } = await import(srcUrl('sim/config3d.js'));
 
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) pass++; else { fail++; console.log('FAIL:', msg); } }
@@ -373,9 +373,9 @@ const frame = (im, dt = 1 / 72) => { const I = im.update(dt); const snap = JSON.
   L.gamepad.buttons[5] = btn(0); frame(im);
   // xrRigPosition
   rig.rotation.y = 0; const rp = im.xrRigPosition(0, 0, 0);
-  near(rp.x, -0.6, 1e-9, 'rig x offsets the recentred head'); near(rp.z, 0.4, 1e-9, 'rig z'); near(rp.y, -1.0, 1e-9, 'rig y = eyeHeight 0.5 − measured eye 1.5 (hold Y re-measures)');
+  near(rp.x, -0.6, 1e-9, 'rig x offsets the recentred head'); near(rp.z, 0.4, 1e-9, 'rig z'); near(rp.y, -CONFIG.player.radius, 1e-9, 'rig y = body − radius: the real floor is the ground under the feet (1:1, hold Y keeps it)');
   rig.rotation.y = 0.8; const rp2 = im.xrRigPosition(0, 0, 0); rig.position.set(rp2.x, rp2.y, rp2.z);
-  const hm = im.headMatrix(new THREE.Matrix4()); near(hm.elements[12], 0, 1e-9, 'head lands over the body x (rotated rig)'); near(hm.elements[14], 0, 1e-9, 'head over body z'); near(hm.elements[13], 0.5, 1e-9, 'head 0.5 above the body whatever the measured height');
+  const hm = im.headMatrix(new THREE.Matrix4()); near(hm.elements[12], 0, 1e-9, 'head lands over the body x (rotated rig)'); near(hm.elements[14], 0, 1e-9, 'head over body z'); near(hm.elements[13], 1.5 - CONFIG.player.radius, 1e-9, 'a standing head is its real height (1.5 m) above the ground under the body, not a fixed offset');
   rig.rotation.y = 0;
   // ref-space reset → recenter on the next frame
   xr.head(new THREE.Vector3(0, 1.7, 0)); xr.ref.dispatchEvent(new Event('reset')); frame(im); near(im.recenterOffset.x, 0, 1e-9, 'system reset → recenter');

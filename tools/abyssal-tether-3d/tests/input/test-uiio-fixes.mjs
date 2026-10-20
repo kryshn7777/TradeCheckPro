@@ -1,4 +1,4 @@
-// Node unit tests for the uiio fixer round: VR-01 (eye-height calibration), VR-04 (controller
+// Node unit tests for the uiio fixer round: VR-01 (player height: 1:1 scale + calibration), VR-04 (controller
 // loss pauses), VR-05 (hold X), VR-09 (turn pivots about the head), BUG-5 (double Enter VR).
 // Run: node tools/abyssal-tether-3d/tests/input/test-uiio-fixes.mjs [--root DIR]
 import './register.mjs';
@@ -7,7 +7,8 @@ import { srcUrl } from '../../verify/root.mjs';
 const THREE = await import('three');
 const { InputManager } = await import(srcUrl('input/inputManager.js'));
 const { XRInput, XR_OPTIONAL_FEATURES } = await import(srcUrl('input/xrInput.js'));
-const { EventBus, SETTINGS_DEFAULTS } = await import(srcUrl('sim/config3d.js'));
+const { EventBus, SETTINGS_DEFAULTS, CONFIG, VIEW, Storage, eyeAboveBody, heightCalibration, sanitizeHeightSettings } = await import(srcUrl('sim/config3d.js'));
+const R = CONFIG.player.radius;
 
 let pass = 0;
 let fail = 0;
@@ -164,38 +165,79 @@ async function xrSetup(headY) {
   return { scene, rig, camera, xr, im, bus, game, L, R, settings };
 }
 
-// ---- VR-01: eye-height calibration ----------------------------------------------------
+// ---- VR-01: player height, true 1:1 scale + calibration ------------------------------------
 {
-  const { im, rig, xr, bus } = await xrSetup(1.2); // seated player
-  near(im.xrEyeHeight, 1.2, 1e-9, 'session start measures the eye height (seated 1.2 m)');
-  const rp = im.xrRigPosition(0, 10, 0);
-  near(rp.y, 10 + 0.5 - 1.2, 1e-9, 'seated: rig = body + 0.5 − 1.2');
-  rig.position.set(rp.x, rp.y, rp.z);
-  near(im.headMatrix(new THREE.Matrix4()).elements[13], 10.5, 1e-9, 'seated: eyes 0.5 above the body (as on desktop)');
-  // A Game recentre (respawn) while crouching keeps the measurement…
-  xr.head(new THREE.Vector3(0, 0.9, 0));
+  // The head height in the game is the real eye height above the floor, for tall, short and seated players.
+  for (const eye of [1.45, 1.65, 1.85, 1.2]) {
+    const { im, rig, settings } = await xrSetup(eye);
+    near(im.xrEyeHeight, eye, 1e-9, `session start reads the eye height (${eye} m)`);
+    near(im.measureEyeHeight(), eye, 1e-9, `measureEyeHeight() = live eye height (${eye} m)`);
+    const rp = im.xrRigPosition(0, 10, 0);
+    near(rp.y, 10 - R, 1e-9, `${eye} m, Standing: rig = body − radius (the real floor is the ground under the feet)`);
+    rig.position.set(rp.x, rp.y, rp.z);
+    near(im.headMatrix(new THREE.Matrix4()).elements[13] - (10 - R), eye, 1e-9, `${eye} m, Standing: in-game eye height above the ground = real eye height`);
+    // Seated: the calibration press lifts the eyes to the reference standing eye height.
+    settings.heightMode = 'seated';
+    Object.assign(settings, heightCalibration('seated', im.measureEyeHeight()));
+    near(settings.heightMeasured, eye, 1e-3, 'calibration stores the measured eye height');
+    const rs = { ...im.xrRigPosition(0, 10, 0) };
+    rig.position.set(rs.x, rs.y, rs.z);
+    near(im.headMatrix(new THREE.Matrix4()).elements[13] - (10 - R), VIEW.standEye, 2e-3, `${eye} m, Seated: eyes at the standing reference (${VIEW.standEye} m)`);
+    // Fine trim: +5 cm, and the limits.
+    settings.heightOffset = 0.05;
+    near(im.xrRigPosition(0, 10, 0).y - rs.y, 0.05, 1e-9, 'fine offset +5 cm lifts the rig');
+    settings.heightOffset = 9;
+    near(im.heightTrim(), VIEW.offsetMax, 1e-12, 'fine offset is limited to ±30 cm');
+    settings.heightOffset = 0;
+    // Standing ignores the seated calibration.
+    settings.heightMode = 'standing';
+    near(im.xrRigPosition(0, 10, 0).y, 10 - R, 1e-9, 'Standing mode ignores heightCal');
+    im.dispose();
+  }
+  const { im, rig, xr, settings } = await xrSetup(1.2);
+  settings.heightMode = 'seated';
+  Object.assign(settings, heightCalibration('seated', im.measureEyeHeight()));
+  near(settings.heightCal, VIEW.standEye - 1.2, 1e-3, 'seated 1.2 m: heightCal = standEye − 1.2');
+  const y0 = im.xrRigPosition(0, 3, 0).y;
+  // Recentre (hold Y, respawn, system reset) must not wipe the calibration or move the rig vertically.
+  xr.head(new THREE.Vector3(0.2, 0.9, 0.1));
   im.recenter();
-  near(im.xrEyeHeight, 1.2, 1e-9, 'respawn recentre while crouching keeps the measured height');
-  // …a run start re-measures (the player stood up to play).
-  xr.head(new THREE.Vector3(0, 1.62, 0));
-  bus.emit('game:start', {});
-  im.recenter();
-  near(im.xrEyeHeight, 1.62, 1e-9, 'game:start → the next recentre re-measures (standing 1.62 m)');
-  // Implausible readings are ignored (and the request stays pending).
-  bus.emit('game:start', {});
+  near(im.xrRigPosition(0, 3, 0).y, y0, 1e-12, 'recentre keeps the player-height calibration (rig y unchanged)');
+  near(settings.heightCal, VIEW.standEye - 1.2, 1e-3, 'recentre does not touch the stored calibration');
+  rig.rotation.y = 1.3;
+  near(im.xrRigPosition(0, 3, 0).y, y0, 1e-12, 'turning keeps the rig height');
+  rig.rotation.y = 0;
+  // Implausible readings are not measurements.
   xr.head(new THREE.Vector3(0, 0.05, 0));
   im.recenter();
-  near(im.xrEyeHeight, 1.62, 1e-9, 'a 5 cm eye height is not a measurement');
-  xr.head(new THREE.Vector3(0, 1.58, 0));
-  im.recenter();
-  near(im.xrEyeHeight, 1.58, 1e-9, '…the next plausible recentre measures');
-  // Default before any measurement = the contract (rig = body − 1.1).
-  im.xrEyeHeight = NaN;
-  near(im.xrRigPosition(0, 0, 0).y, -1.1, 1e-9, 'unmeasured: rig = body − 1.1 (contract)');
-  // 'local' reference space: unchanged formula.
+  ok(Number.isNaN(im.measureEyeHeight()), 'a 5 cm eye height is not a measurement');
+  ok(heightCalibration('seated', 0.05) === null && heightCalibration('seated', NaN) === null, 'heightCalibration rejects implausible readings');
+  near(im.xrEyeHeight, 0.9, 1e-9, 'a bad recentre reading keeps the previous eye height');
+  // 'local' reference space (no floor): the head at the recentre is a standing eye height above the ground.
+  settings.heightMode = 'standing';
+  xr.head(new THREE.Vector3(0, 0.1, 0));
   im.xrIn.refSpaceType = 'local';
-  near(im.xrRigPosition(0, 0, 0).y, 0.5, 1e-9, "'local' space: rig = body − 1.1 + 1.6");
+  im.recenter();
+  near(im.xrRigPosition(0, 0, 0).y, -R + VIEW.standEye - 0.1, 1e-9, "'local' space: head at the recentre = standing eye height over the ground");
   im.dispose();
+}
+{
+  // Settings: old saved settings (no height keys) migrate to the defaults; garbage is clamped.
+  const store = {};
+  globalThis.localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+  Storage.set('settings', { volume: 0.3, aimAssist: 1.2, dominantHand: 'left', haptics: false, lastDifficulty: 'abyss' });
+  let s = Storage.loadSettings();
+  ok(s.heightMode === 'standing' && s.heightCal === 0 && s.heightOffset === 0 && s.heightMeasured === 0, 'old saved settings migrate: Standing, no calibration, no trim');
+  ok(s.volume === 0.3 && s.dominantHand === 'left' && s.lastDifficulty === 'abyss', 'old keys survive the migration');
+  Storage.set('settings', Object.assign({}, s, { heightMode: 'seated', heightCal: 0.42, heightOffset: 0.075, heightMeasured: 1.2 }));
+  s = Storage.loadSettings();
+  ok(s.heightMode === 'seated' && s.heightCal === 0.42 && s.heightOffset === 0.075 && s.heightMeasured === 1.2, 'height settings round-trip through Storage');
+  Storage.set('settings', Object.assign({}, s, { heightMode: 'giant', heightCal: 99, heightOffset: -4, heightMeasured: 12 }));
+  s = Storage.loadSettings();
+  ok(s.heightMode === 'standing' && s.heightCal === VIEW.calMax && s.heightOffset === -VIEW.offsetMax && s.heightMeasured === 0, 'garbage height settings are clamped / reset');
+  near(sanitizeHeightSettings({ heightOffset: 0.0131 }).heightOffset, 0.025, 1e-9, 'fine offset snaps to 2.5 cm steps');
+  near(eyeAboveBody(), VIEW.standEye - R, 1e-12, 'desktop eye = standing eye height over the feet (1.62 − radius over the sphere centre)');
+  delete globalThis.localStorage;
 }
 
 // ---- VR-09: smooth turn pivots about the head ----------------------------------------------

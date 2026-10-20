@@ -49,7 +49,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok  ', m); } else { fail+
   ok(await page.evaluate(() => T.input.mode === 'desktop' && !T.input.xrActive), 'desktop mode at boot');
   ok(await page.evaluate(() => T.r3.lanternParent === 'PerspectiveCamera'), 'desktop lantern on the camera');
   // Look at the front anchor: aim straight at it from the camera.
-  await page.evaluate(() => { const a = T.anchors[0]; const dx = a.x, dy = a.y - 0.5, dz = a.z; T.rig.rotation.y = Math.atan2(-dx, -dz); T.camera.rotation.x = Math.atan2(dy, Math.hypot(dx, dz)); });
+  await page.evaluate(() => { const a = T.anchors[0]; const dx = a.x, dy = a.y - T.EYE, dz = a.z; T.rig.rotation.y = Math.atan2(-dx, -dz); T.camera.rotation.x = Math.atan2(dy, Math.hypot(dx, dz)); });
   await frames(4);
   ok(await page.evaluate(() => T.targets.right === 'a-front' && T.targets.left === 'a-front'), 'both desktop hands target the anchor at the view centre');
   await page.screenshot({ path: path.join(SHOTS, 'desktop-target.png') });
@@ -238,7 +238,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ok  ', m); } else { fail+
   await frames(3);
   ok(await page.evaluate(() => T.input.mode === 'desktop' && !T.attached.right), 'session end → desktop mode, tether released');
   ok(await page.evaluate(() => T.r3.lanternParent === 'PerspectiveCamera'), 'lantern back on the camera');
-  ok(await page.evaluate(() => Math.abs(T.camera.position.y - 0.5) < 1e-6), 'desktop camera pose restored');
+  ok(await page.evaluate(() => Math.abs(T.camera.position.y - T.EYE) < 1e-6), 'desktop camera pose restored');
   await page.screenshot({ path: path.join(SHOTS, 'desktop-after-xr.png') });
   const errs = await page.evaluate(() => T.errors);
   ok(errs.length === 0, 'no loop errors ' + (errs.length ? errs.join('\n') : ''));

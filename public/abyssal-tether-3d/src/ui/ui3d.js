@@ -34,7 +34,7 @@
  * previews/tests); dispose().
  */
 import * as THREE from 'three';
-import { DIFFICULTY, DIFFICULTY_ORDER, SETTINGS_DEFAULTS, Storage, U } from '../sim/config3d.js';
+import { DIFFICULTY, DIFFICULTY_ORDER, SETTINGS_DEFAULTS, Storage, U, VIEW, heightCalibration } from '../sim/config3d.js';
 
 // =============================================================================
 // Constants
@@ -149,7 +149,34 @@ const SETTINGS_SCHEMA = [
     ],
   },
   { key: 'haptics', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
+  // Player height (VR panel: its own page, "Player height ›" on the settings page).
+  { group: 'Player height' },
+  {
+    key: 'heightMode',
+    type: 'choice',
+    label: 'Player height',
+    desc: 'Standing: your real height, 1:1. Seated: lifts your eyes to a standing eye height.',
+    page: 'height',
+    options: [
+      ['standing', 'Standing'],
+      ['seated', 'Seated'],
+    ],
+  },
+  {
+    key: 'heightOffset',
+    type: 'range',
+    label: 'Fine height',
+    desc: 'Raise or lower your eyes a little.',
+    page: 'height',
+    min: -VIEW.offsetMax,
+    max: VIEW.offsetMax,
+    step: VIEW.offsetStep,
+    fmt: (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`,
+  },
+  { type: 'height', page: 'height' },
 ];
+const HEIGHT_KEYS = ['heightMode', 'heightCal', 'heightOffset', 'heightMeasured'];
+const mTxt = (v) => `${v.toFixed(2)} m`;
 
 /** [keys, full description, short VR description]. */
 const CONTROLS_QUEST = [
@@ -642,6 +669,9 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .seg button[aria-pressed=true]{background:linear-gradient(180deg,rgba(74,52,27,.95),rgba(36,26,16,.96));color:#fbe7c2;box-shadow:inset 0 -2px 0 var(--amber)}
 .at3d-ui .set-actions{display:flex;justify-content:flex-end}
 .at3d-ui .set-actions .btn{width:auto;align-items:center}
+.at3d-ui .height-actions{flex-wrap:wrap}
+.at3d-ui .height-actions .btn{width:auto;align-items:center;text-align:center}
+.at3d-ui .btn.is-disabled{opacity:.55}
 .at3d-ui .panel-pause{width:min(44em,100%)}
 .at3d-ui .pause-cols{display:flex;gap:1.2em}
 .at3d-ui .pause-actions{display:grid;grid-template-columns:1fr;gap:.5em;flex:1;min-width:0}
@@ -778,6 +808,11 @@ export class UI3D {
     // VR state (built lazily).
     this._vr = null;
     this._vrDirty = true;
+    this._vrSetPage = 0; // VR settings: 0 = general, 1 = player height
+    this._cal = null; // height calibration countdown { t } while running
+    this._calMsg = ''; // result / error line of the last calibration press
+    this._heightKey = ''; // the status text last painted (a change repaints the panel)
+    this._heightDom = null; // DOM status line + buttons of the settings screen
     this._regions = [];
     this._hover = null;
     this._lastClickAt = -10;
@@ -1107,6 +1142,13 @@ export class UI3D {
     if (name === 'menu') this.refreshMenu();
     else if (name === 'difficulty') this._refreshDifficulty();
     else if (name === 'settings') this.syncSettings();
+    if (name !== 'settings') {
+      this._vrSetPage = 0;
+      if (this._cal) {
+        this._cal = null;
+        this._calMsg = '';
+      }
+    }
     else if (name === 'pause') this._preparePause();
     else if (name === 'death') this._deathArmedAt = this._clock + DEATH_ARM;
     if (name !== null) this._deathTimer = -1;
@@ -1175,6 +1217,11 @@ export class UI3D {
   }
 
   _back() {
+    if (this._xr && this.current === 'settings' && this._vrSetPage) {
+      this._vrSetPage = 0;
+      this._vrDirty = true;
+      return;
+    }
     const state = this.game && this.game.state;
     let target = this._returnTo || 'menu';
     if (state === 'paused') target = 'pause';
@@ -1300,6 +1347,10 @@ export class UI3D {
         body.appendChild(group);
         continue;
       }
+      if (def.type === 'height') {
+        this._buildHeightBlock(group || body);
+        continue;
+      }
       const row = make('div', 'set-row');
       const label = make('div', 'set-label');
       const id = `at3d-set-${def.key}`;
@@ -1353,10 +1404,155 @@ export class UI3D {
     body.appendChild(actions);
   }
 
+  /** DOM: the measured eye height, Calibrate and Reset buttons (the player-height block of the settings screen). */
+  _buildHeightBlock(parent) {
+    const row = make('div', 'set-row set-height');
+    const label = make('div', 'set-label');
+    label.appendChild(make('span', 'set-name', 'Calibrate'));
+    const status = make('p', 'set-desc height-status');
+    status.setAttribute('aria-live', 'polite');
+    label.appendChild(status);
+    const ctl = make('div', 'set-control height-actions');
+    const calibrate = make('button', 'btn btn-primary');
+    calibrate.type = 'button';
+    calibrate.dataset.action = 'calibrate-height';
+    calibrate.appendChild(make('span', 'btn-label', 'Calibrate'));
+    const reset = make('button', 'btn btn-ghost');
+    reset.type = 'button';
+    reset.dataset.action = 'reset-height';
+    reset.appendChild(make('span', 'btn-label', 'Reset height'));
+    ctl.append(calibrate, reset);
+    row.append(label, ctl);
+    parent.appendChild(row);
+    this._heightDom = { status, calibrate };
+  }
+
+  // ------------------------------------------------------------------ player height
+  _input() {
+    const g = this.game || {};
+    return g.input || null;
+  }
+
+  /** The eye height the headset reports right now (m above the real floor), or NaN outside VR. */
+  _liveEye() {
+    const inp = this._input();
+    if (!this._xr || !inp || typeof inp.measureEyeHeight !== 'function') return NaN;
+    try {
+      return inp.measureEyeHeight();
+    } catch {
+      return NaN;
+    }
+  }
+
+  /** What the height panel shows: { head, line1, line2, msg } (also the repaint key). */
+  _heightInfo() {
+    const s = this._settings();
+    const seated = s.heightMode === 'seated';
+    const trim = num(s.heightOffset, 0);
+    const live = this._liveEye();
+    const measured = num(s.heightMeasured, 0);
+    const lift = (seated ? num(s.heightCal, 0) : 0) + trim;
+    let head;
+    let line1;
+    let line2;
+    if (live > 0) {
+      head = mTxt(live);
+      line1 = 'Your eyes now, above the real floor';
+      line2 = `In the game your eyes sit at ${mTxt(live + lift)}${seated ? ` (seated +${(num(s.heightCal, 0) * 100).toFixed(0)} cm)` : ''}`;
+    } else {
+      head = measured > 0 ? mTxt(measured) : '— —';
+      line1 = measured > 0 ? 'Measured at the last calibration' : 'Not measured yet. Put the headset on to calibrate';
+      line2 = `Desktop eyes: ${mTxt(VIEW.standEye + trim)} above the feet`;
+    }
+    let msg = '';
+    if (this._cal) msg = `Hold still… ${Math.max(1, Math.ceil(this._cal.t))}`;
+    else if (this._calMsg) msg = this._calMsg;
+    else if (seated && num(s.heightCal, 0) === 0 && measured <= 0) msg = 'Sit as you will play, then press Calibrate';
+    return { head, line1, line2, msg };
+  }
+
+  /** Refreshes the DOM status line and flags the VR panel when the text changed. */
+  _refreshHeight() {
+    const h = this._heightInfo();
+    const key = `${h.head}|${h.line1}|${h.line2}|${h.msg}|${this._cal ? 1 : 0}|${this._xr ? 1 : 0}`;
+    if (key === this._heightKey) return;
+    this._heightKey = key;
+    const d = this._heightDom;
+    if (d) {
+      d.status.textContent = `Eye height ${h.head}. ${h.line1}. ${h.line2}.${h.msg ? ` ${h.msg}.` : ''}`;
+      const cb = d.calibrate.querySelector('.btn-label');
+      if (cb) cb.textContent = this._cal ? 'Cancel' : this._xr ? 'Calibrate: stand (or sit) normally and press' : 'Calibrate (in VR)';
+      d.calibrate.setAttribute('aria-disabled', String(!this._xr && !this._cal));
+      d.calibrate.classList.toggle('is-disabled', !this._xr && !this._cal);
+    }
+    if (this.current === 'settings') this._vrDirty = true;
+  }
+
+  /** Calibrate press: a short countdown so the pose is natural, then the headset's eye height is read. */
+  _startCalibration() {
+    if (this._cal) {
+      this._cal = null;
+      this._calMsg = 'Calibration cancelled';
+      this._refreshHeight();
+      return;
+    }
+    if (!this._xr) {
+      this._calMsg = 'Put the headset on: Enter VR, then open Settings';
+      this._refreshHeight();
+      return;
+    }
+    this._calMsg = '';
+    this._cal = { t: VIEW.calCountdown };
+    this._refreshHeight();
+  }
+
+  _updateCalibration(dt) {
+    const c = this._cal;
+    if (c) {
+      c.t -= dt;
+      if (c.t <= 0) {
+        this._cal = null;
+        this._finishCalibration();
+      }
+    }
+    this._heightPoll = (this._heightPoll || 0) - dt;
+    if (this._heightPoll <= 0 || c) {
+      this._heightPoll = 0.2;
+      if (this.current === 'settings' || this._cal || this._calMsg) this._refreshHeight();
+    }
+  }
+
+  _finishCalibration() {
+    const s = this._settings();
+    const eye = this._liveEye();
+    const partial = heightCalibration(s.heightMode, eye);
+    if (!partial) {
+      this._calMsg = 'No reading. Keep the headset on and try again';
+      this._refreshHeight();
+      return;
+    }
+    this._applySettings(partial);
+    const seated = s.heightMode === 'seated';
+    this._calMsg = seated ? `Seated: eyes lifted ${(partial.heightCal * 100).toFixed(0)} cm to ${mTxt(eye + partial.heightCal + num(s.heightOffset, 0))}` : `Standing: eyes at ${mTxt(eye)}, your real height`;
+    const inp = this._input();
+    if (inp && typeof inp.haptic === 'function') inp.haptic('both', 0.4, 60);
+    this._refreshHeight();
+  }
+
+  _resetHeight() {
+    this._cal = null;
+    this._calMsg = '';
+    const partial = {};
+    for (const k of HEIGHT_KEYS) partial[k] = SETTINGS_DEFAULTS[k];
+    this._applySettings(partial);
+    this._refreshHeight();
+  }
+
   /** Copies the live settings into every control (DOM + VR). */
   syncSettings() {
     if (!this.dom) return;
     const s = this._settings();
+    this._refreshHeight();
     for (const key of Object.keys(this._ctl)) {
       const c = this._ctl[key];
       const v = key in s ? s[key] : SETTINGS_DEFAULTS[key];
@@ -1406,6 +1602,9 @@ export class UI3D {
   _resetSettings() {
     const partial = {};
     for (const def of SETTINGS_SCHEMA) if (def.key) partial[def.key] = SETTINGS_DEFAULTS[def.key];
+    for (const k of HEIGHT_KEYS) partial[k] = SETTINGS_DEFAULTS[k];
+    this._cal = null;
+    this._calMsg = '';
     this._applySettings(partial);
   }
 
@@ -1753,6 +1952,16 @@ export class UI3D {
       case 'reset-settings':
         this._resetSettings();
         break;
+      case 'calibrate-height':
+        this._startCalibration();
+        break;
+      case 'reset-height':
+        this._resetHeight();
+        break;
+      case 'height-page':
+        this._vrSetPage = parseInt(d.value, 10) === 1 ? 1 : 0;
+        this._vrDirty = true;
+        break;
       case 'enter-vr':
         this._enterVR();
         break;
@@ -2032,6 +2241,7 @@ export class UI3D {
     const step = dt > 0 && dt < 1 ? dt : 0;
     this._clock += step;
     const g = this.game || {};
+    this._updateCalibration(step);
 
     // XR session started / ended.
     const xr = this._xrActive();
@@ -2968,47 +3178,73 @@ export class UI3D {
 
   _paintSettings(ctx) {
     this._frame(ctx);
-    this._header(ctx, 'Settings');
+    const page = this._vrSetPage === 1;
+    this._header(ctx, page ? 'Player height' : 'Settings');
     const s = this._settings();
-    const rows = SETTINGS_SCHEMA.filter((d) => d.key && !d.desktop);
+    const rows = SETTINGS_SCHEMA.filter((d) => d.key && !d.desktop && !d.page);
     const rowH = 94;
-    rows.forEach((def, i) => {
-      const y = 116 + i * rowH;
-      const v = def.key in s ? s[def.key] : SETTINGS_DEFAULTS[def.key];
-      txt(ctx, def.label, 44, y + 42, `600 30px ${F_UI}`, COL.ink, 'left', 0);
-      if (def.type === 'range') {
-        const val = U.clamp(num(v, def.min), def.min, def.max);
-        txt(ctx, def.fmt(val), 44, y + 78, `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
-        this._btn(ctx, this._region(500, y + 14, 68, 68, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
-        const tx = 588;
-        const tw = 280;
-        const r = this._region(tx, y + 14, tw, 68, 'slide', { key: def.key });
-        const f = (val - def.min) / (def.max - def.min);
-        rr(ctx, tx, r.y + 28, tw, 12, 6);
-        ctx.fillStyle = '#30363a';
-        ctx.fill();
-        rr(ctx, tx, r.y + 28, Math.max(12, tw * f), 12, 6);
-        ctx.fillStyle = COL.amber2;
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(tx + tw * f, r.y + 34, 15, 0, Math.PI * 2);
-        ctx.fillStyle = COL.phosphor;
-        ctx.fill();
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#1a1d1f';
-        ctx.stroke();
-        this._btn(ctx, this._region(888, y + 14, 68, 68, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
-      } else {
-        const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
-        opts.forEach(([value, label], j) => {
-          const on = value === v;
-          this._btn(ctx, this._region(588 + j * 188, y + 14, 176, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
-        });
-      }
-      ctx.fillStyle = COL.line;
-      ctx.fillRect(44, y + rowH - 2, CW - 88, 1);
-    });
-    this._btn(ctx, this._region(CW / 2 - 170, 116 + rows.length * rowH + 22, 340, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+    if (page) {
+      this._paintHeightPage(ctx, s, rowH);
+      return;
+    }
+    rows.forEach((def, i) => this._paintSettingRow(ctx, def, 116 + i * rowH, rowH, s));
+    const by = 116 + rows.length * rowH + 22;
+    this._btn(ctx, this._region(CW / 2 - 360, by, 340, 70, 'height-page', { value: 1 }), 'Player height  ›', null, { size: 28 });
+    this._btn(ctx, this._region(CW / 2 + 20, by, 340, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+  }
+
+  /** One settings row at y: label + value, then a − slider + for ranges or option buttons. */
+  _paintSettingRow(ctx, def, y, rowH, s) {
+    const v = def.key in s ? s[def.key] : SETTINGS_DEFAULTS[def.key];
+    txt(ctx, def.label, 44, y + 42, `600 30px ${F_UI}`, COL.ink, 'left', 0);
+    if (def.type === 'range') {
+      const val = U.clamp(num(v, def.min), def.min, def.max);
+      txt(ctx, def.fmt(val), 44, y + 78, `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
+      this._btn(ctx, this._region(500, y + 14, 68, 68, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
+      const tx = 588;
+      const tw = 280;
+      const r = this._region(tx, y + 14, tw, 68, 'slide', { key: def.key });
+      const f = (val - def.min) / (def.max - def.min);
+      rr(ctx, tx, r.y + 28, tw, 12, 6);
+      ctx.fillStyle = '#30363a';
+      ctx.fill();
+      rr(ctx, tx, r.y + 28, Math.max(12, tw * f), 12, 6);
+      ctx.fillStyle = COL.amber2;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(tx + tw * f, r.y + 34, 15, 0, Math.PI * 2);
+      ctx.fillStyle = COL.phosphor;
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#1a1d1f';
+      ctx.stroke();
+      this._btn(ctx, this._region(888, y + 14, 68, 68, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
+    } else {
+      const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
+      opts.forEach(([value, label], j) => {
+        const on = value === v;
+        this._btn(ctx, this._region(588 + j * 188, y + 14, 176, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
+      });
+    }
+    ctx.fillStyle = COL.line;
+    ctx.fillRect(44, y + rowH - 2, CW - 88, 1);
+  }
+
+  /** VR settings page 2: Standing / Seated, the fine trim, the eye height readout, Calibrate and Reset. */
+  _paintHeightPage(ctx, s, rowH) {
+    const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'height');
+    defs.forEach((def, i) => this._paintSettingRow(ctx, def, 112 + i * rowH, rowH, s));
+    const h = this._heightInfo();
+    const y0 = 112 + defs.length * rowH + 10;
+    txt(ctx, 'EYE HEIGHT', 44, y0 + 30, `400 24px ${F_DISPLAY}`, COL.ink3, 'left', 0.16);
+    txt(ctx, h.head, 44, y0 + 98, `650 64px ${F_UI}`, COL.phosphor, 'left', 0);
+    txt(ctx, h.line1, 340, y0 + 56, `500 26px ${F_UI}`, COL.ink2, 'left', 0);
+    txt(ctx, h.line2, 340, y0 + 94, `500 26px ${F_UI}`, COL.ink3, 'left', 0);
+    const by = 640;
+    if (h.msg) txt(ctx, h.msg, CW / 2, by - 18, `650 30px ${F_UI}`, this._cal ? COL.amber : COL.verdigris, 'center', 0.02);
+    const label = this._cal ? `Hold still… ${Math.max(1, Math.ceil(this._cal.t))}` : this._xr ? 'Calibrate: stand (or sit) normally and press' : 'Calibrate (in VR)';
+    this._btn(ctx, this._region(44, by, 640, 84, 'calibrate-height'), label, null, { primary: !this._cal, size: 26 });
+    this._btn(ctx, this._region(704, by, 276, 84, 'reset-height'), 'Reset height', null, { ghost: true, size: 28 });
   }
 
   _paintPause(ctx) {

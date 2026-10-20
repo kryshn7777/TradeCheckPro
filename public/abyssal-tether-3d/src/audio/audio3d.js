@@ -41,7 +41,7 @@
  * setVolume(v); setPaused(b); update(dt, game); stopAll(). Extras: enabled,
  * activeVoices, peakVoices, hrtfVoices; _attachContext(ctx) (tests).
  */
-import { CONFIG, SETTINGS_DEFAULTS, U as CU } from '../sim/config3d.js';
+import { CONFIG, SETTINGS_DEFAULTS, U as CU, eyeAboveBody } from '../sim/config3d.js';
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -1313,7 +1313,8 @@ export class AudioManager3D {
       const P = game && game.player ? game.player : null;
       if (P) {
         this._lx = num(P.rx, num(P.x, this._lx));
-        this._ly = num(P.ry, num(P.y, this._ly));
+        const by = num(P.ry, num(P.y, NaN));
+        if (by === by) this._ly = by + eyeAboveBody(); // no camera: the standing head, not the chest
         this._lz = num(P.rz, num(P.z, this._lz));
       }
     }

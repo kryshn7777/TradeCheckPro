@@ -1,7 +1,7 @@
 # Abyssal Tether 3D: unit tests and creature tools
 
 ```bash
-npm run test:at3d                      # Node suites: input intent mapping, the uiio fixes, creature units
+npm run test:at3d                      # Node suites: input intent mapping, the uiio fixes, creature units, the physics swing bench checks
 npm run test:at3d -- --browser         # + the Playwright input test (desktop + mock WebXR)
 npm run test:at3d -- --reports         # + the creature invariants report
 ```
@@ -13,9 +13,15 @@ Every script takes `--root DIR` (or `AT3D_ROOT`) like the harness; by default it
 | File | |
 |---|---|
 | `test-intent.mjs` | `InputManager` intent mapping: XR button reading and hysteresis, desktop handlers (pointer lock, mouse look, keys, blur release), a mock `WebXRManager` session (controllers, hands, grip vs ray poses, session end), `HandsView` launcher geometry. 164 checks. |
-| `test-uiio-fixes.mjs` | The VR UX fixes: eye-height calibration, controller loss pauses, hold X, smooth turn pivots about the head, double Enter VR. 101 checks. |
+| `test-uiio-fixes.mjs` | The VR UX fixes: player height (true 1:1 rig at 1.2 / 1.45 / 1.65 / 1.85 m, Seated calibration, fine trim, settings migration), controller loss pauses, hold X, smooth turn pivots about the head, double Enter VR. 142 checks. |
 | `run-pw.cjs` + `pw/` | Browser: a small scene (`pw/harness.js`) running the game's `InputManager`, `HandsView` and `TetherSystem` through the real three.js `WebXRManager` with a mock WebXR device (`pw/mockxr.js`); screenshots in `input/out/shots/`. |
 | `register.mjs`, `hooks.mjs` | Node module hooks that map the browser importmap (`three`, `three/addons/…`) to the game's `vendor/three`, so the input and render modules load in Node. A test imports `./register.mjs` first and loads three.js and the game with dynamic `import()`. |
+
+## physics/
+
+| File | |
+|---|---|
+| `swingbench.mjs` | Rope physics bench on the real `Player3D` / `TetherSystem` / `Physics3D`: (1) near grab 1.3 / 1.6 / 2.0 m at 6 / 9 / 12 m/s tangential (peak omega, peak load, revolutions in 3 s), (2) free pendulum L = 4 / 8 / 15 m at 10 and 60 degrees (period vs the large-angle formula, energy drift per period), (3) catches after 5 / 10 / 20 m free falls (peak load, rebound, pay-out), (4) two ropes taut at once (energy, jitter, stalled reel), (5) every bot route on every variant (max omega, max load, frames above 4 / 6 / 10 g), (6) reeling in on a conical swing (angular momentum), (7) a typical swing. `node tools/abyssal-tether-3d/tests/physics/swingbench.mjs` prints the tables; `--check` asserts the limits (what `npm run test:at3d` runs); `--only 1,2`, `--variant normal`, `--set rope.maxTensionG=4,rope.catchPeakG=6` (tuning sweeps), `--json`, `--root DIR` (compare against another copy of the game). Loads are in `CONFIG.player.gravity` units, measured as specific force per fixed step. |
 
 ## creature/
 

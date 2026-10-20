@@ -336,7 +336,9 @@ chainRing('s3-save', -27, -90, -3, 30, 'ring', 'recovery', { omitIn: NM });
 chainRing('s3-save-nm', -27, -90, -3, 30, 'fragile', 'recovery', { onlyIn: NM });
 const s3Arm = S('s3-arm', -34, -28.5, -73.6, -72.6, -8.6, -7.4, 'metal');
 under('s3-lower', s3Arm, -29, -8, 'ring', 'route');
-S('s3-shelf', -34, -24, -99, -96, -11, 1);
+// Head clearance (1:1 height, head 1.24 m over the body): the b1 pendulum's west swing passes under the shelf's east lip,
+// so the lip is cut back to x -26.1 (was -24; the ring above still drops you onto it): a body under an overhang needs 1.6 m of headroom.
+S('s3-shelf', -34, -26.1, -99, -96, -11, 1);
 const g5 = S('s3-g5', -21, -19.5, -91, -90, -11, 11, 'metal');
 under('s3-b1', g5, -20.25, -6, 'ring', 'route');
 
@@ -366,7 +368,8 @@ light(-16, -64, 0, '#7c9a9c', 0.6, 16, 0);
 //  REWARD     The plinth, and a ring that lowers you into the Gullet.
 //  ESCALATION Abyss: the cradle's chains give way under your weight.
 // =============================================================================
-walls('s4-wall', -34, 11, -11, 11, -150, -98, { n: { a0: -30, a1: 7, y0: -146, y1: -102 } });
+// The window's lintel starts at -100.5 (was -102): a body flying out of the window at the section start puts its head 1.24 m higher.
+walls('s4-wall', -34, 11, -11, 11, -150, -98, { n: { a0: -30, a1: 7, y0: -146, y1: -100.5 } });
 // The Vault: an immense room north of the hall (its south wall is the hall's).
 walls('vault-wall', -110, 80, -160, -14, -280, -60, { s: { a0: -40, a1: 17, y0: -280, y1: -60 } });
 S('vault-floor', -113, 83, -283, -280, -163, -11, 'wall', { tag: 'floor' });
@@ -545,7 +548,9 @@ light(-4.6, -207, -5.4, '#9a4a2a', 0.8, 10, 0.6);
 // level down into the nave. It is the predator's way down from the shaft (its
 // girth cannot pass the 1 m slit around the rest of the landing) and lies
 // 22 m from the checkpoint, away from both S6 descents.
-slabHole('s7-roof', -55, 31, -43, 43, -287, -284, [-34, 15, -11, 11]);
+// Head clearance: the hole is 2 m wider than the landing on its west, north and south sides, so a standing head at the
+// landing's edge never enters the 3 m slab (the landing's top is 1 m under the roof; a body at the lip has its head above it).
+slabHole('s7-roof', -55, 31, -43, 43, -287, -284, [-36, 15, -13, 13]);
 walls('s7-wall', -52, 28, -40, 40, -424, -287);
 S('s7-landing', -34, 10, -291, -288, -11, 11);
 // The inverted spire: the Lanternwrights' cathedral hangs from the landing into the nave.

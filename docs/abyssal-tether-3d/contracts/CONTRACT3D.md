@@ -180,10 +180,48 @@ diff, settings, bus, level, player, tethers, physics, creature, threat, renderer
 time, deaths, sectionIndex, deepest, flash, fade
 loop via renderer.setAnimationLoop(fn): dt cap; input.update; tethers.updateTargets/handleInput; fixed-step
 physics (CONFIG.PHYSICS_DT); creature (caughtPlayer → kill 'creature'); threat; sections/checkpoints/hints/
-triggers; goal → victory (gate slam); rig follows player (XR: rig = player − (0, 1.1, 0) so a standing user's
-head sits at the body; desktop: camera at body + eyeHeight); renderer.update + render; ui.update; audio.update.
+triggers; goal → victory (gate slam); rig follows player (XR: 1:1 scale, rig.y = player.y − radius + lift, so the real
+floor is the ground under the feet; desktop: camera at a standing eye height, see "Rig and eye height" below);
+renderer.update + render; ui.update; audio.update.
 Debug: window.AT3D = { game, debug: { state(), teleport(x,y,z), setInput(partial|null), step(sec), attach(hand,id),
 godMode(b), warp(i), freeze(b) } }.
 ```
 Records/settings via `Storage` (separate prefix from 2D). Death in VR: fade to near-black around the head
 (a black sphere with opacity) + muffled audio; respawn on trigger/A.
+
+## 9. Rig and eye height (player height contract)
+The world is 1:1. The collision sphere (`CONFIG.player.radius` = 0.38 m) rests on the floor, so the ground under the
+player's feet is `body.y − radius`, and the head is a point `eye − radius` above the sphere centre.
+
+| | |
+|---|---|
+| `VIEW.standEye` (`config3d.js`) | 1.62 m: the standing eye height above the feet. Desktop camera, the Seated reference and the `'local'` space assumption. |
+| `eyeAboveBody()` | `standEye − radius` = **1.24 m**: the desktop eye above the sphere centre, and the nominal head point for clearance. |
+| XR `local-floor` | `rig.y = body.y − radius + lift` (`InputManager.xrRigPosition`). The real floor is the ground, so a standing user's real eye height **is** the in-game eye height (1.45 m stays 1.45 m, 1.85 m stays 1.85 m). Horizontally the head is recentred over the body and smooth turns pivot about the head, as before. |
+| XR `local` (no floor granted) | The head at the last recentre is taken to be at `standEye` above the ground (`rig.y = body.y − radius + standEye − recenterOffset.y + trim`). |
+| Desktop | `rig.y = body.y + eyeAboveBody() + trim`. |
+| `lift` | Standing: `heightOffset`. Seated: `heightCal + heightOffset`. |
+
+Settings (persisted in `Storage` settings; saved settings without these keys migrate to the defaults, values are clamped
+by `sanitizeHeightSettings`): `heightMode` `'standing'` (default) | `'seated'`; `heightCal` m, the Seated lift;
+`heightOffset` m, the fine trim, ±`VIEW.offsetMax` (0.30) in `VIEW.offsetStep` (0.025) steps, applies in VR and on the desktop;
+`heightMeasured` m, the eye height at the last calibration (shown in the panel).
+
+**Calibration** (Settings, desktop DOM and the VR panel's "Player height" page): "Calibrate: stand (or sit) normally and press"
+starts a `VIEW.calCountdown` (3 s) countdown so the pose is natural, then reads the headset's eye height above the real floor
+(`InputManager.measureEyeHeight()`, `local-floor` only; readings outside 0.6–2.3 m are rejected). `heightCalibration(mode, eye)`
+gives the settings to store: Standing records `heightMeasured` only (the rig is already 1:1); Seated also sets
+`heightCal = standEye − eye` so the eyes sit at the standing reference. "Reset height" restores Standing / 0 / 0.
+**Hold Y (recentre), respawn recentres, system resets and turning never change the vertical mapping or touch the calibration**:
+they only reposition the head horizontally. `InputManager.xrEyeHeight` (the reading at the last recentre) is informational.
+
+**Head clearance.** With the head 1.24 m above the sphere centre (up to ~1.5 m for a tall player) a body can pass where its
+head cannot. Level data must keep the head point out of solids on every route (`tools/abyssal-tether-3d/verify/headclear.mjs`:
+every bot route, every variant, every physics step; nothing within 0.1 m, none found within 0.25 m after the S3/S4/S7 fixes)
+and below its anchor while hanging (`CONFIG.rope.minLength` ≥ 1.6 m). `Game3D._updateHeadBlock` fades the view to black as the
+head point (XR head pose, or the desktop camera) comes within `HEAD_CLEAR` (0.20 m) of a solid, fully black at `HEAD_BLACK`
+(0.10 m): the near plane is 0.05 m and each eye is 0.032 m off the head centre.
+
+Everything that sits relative to the head (VR panels at 1.6 m, tag-along notes at 1.5 m, the audio listener = the camera's world
+pose) or to a controller (wrist HUD, ropes, lantern) is independent of the eye height. The attract camera floats at
+`eyeAboveBody()` over its path. The creature's line of sight (`creature3d._losBlocked`) tests the body centre, not the head.

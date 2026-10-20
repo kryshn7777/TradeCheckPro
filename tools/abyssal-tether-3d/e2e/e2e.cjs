@@ -637,6 +637,28 @@ async function partXR(browser, base) {
     return out;
   });
   check('VR difficulty card names fit their cards (≤ 268 px of 312)', Object.values(fit).every((o) => o.w <= 268 || o.px <= 26), fit);
+  // Player height in the VR settings panel: page 2 paints, the Calibrate press counts down then reads the headset.
+  await page.evaluate(() => {
+    const ui = window.AT3D.game.ui;
+    ui.show('settings');
+    ui._action('height-page', { value: 1 }, true);
+  });
+  await page.waitForTimeout(900);
+  await shot(page, '10c-vr-height-panel');
+  const hc = await page.evaluate(() => {
+    const g = window.AT3D.game;
+    const ui = g.ui;
+    g.applySettings({ heightMode: 'seated' });
+    ui._action('calibrate-height', {}, true);
+    const started = !!ui._cal;
+    for (let i = 0; i < 5; i++) ui._updateCalibration(1);
+    const s = Object.assign({}, g.settings);
+    const regions = ui._regions.map((r) => r.act);
+    ui._resetHeight();
+    return { started, counted: !ui._cal, s, after: Object.assign({}, g.settings), regions };
+  });
+  check('VR height panel: Calibrate counts down, then stores the measured eye height and the seated offset', hc.started && hc.counted && Math.abs(hc.s.heightMeasured - 1.6) < 0.01 && Math.abs(hc.s.heightCal - (1.62 - 1.6)) < 0.01, hc);
+  check('VR height panel: Reset restores Standing / 0', hc.after.heightMode === 'standing' && hc.after.heightCal === 0 && hc.after.heightOffset === 0 && hc.after.heightMeasured === 0, hc.after);
   await page.evaluate(() => window.AT3D.game.ui.show('menu'));
 
   await page.evaluate(() => window.AT3D.game.start('normal'));
@@ -645,7 +667,21 @@ async function partXR(browser, base) {
   await page.waitForFunction((f) => window.__xr.frames > f, (await page.evaluate(() => window.__xr.frames)) + 8);
   await page.evaluate(() => window.AT3D.debug.freeze(true));
   s = await step(page, 0.3);
-  check('XR rig: head over the body (rig = body − 1.1 m, recentred)', Math.abs(s.rig.y - (s.player.y - 1.1)) < 0.05 && s.player.grounded, [s.rig, s.player]);
+  // True 1:1 scale (CONTRACT3D "Rig and eye height"): the real floor is the ground under the body
+  // (rig = body − radius), so the mock head's real eye height IS the in-game eye height.
+  check('XR rig: the real floor is the ground under the feet (rig = body − 0.38 m, recentred)', Math.abs(s.rig.y - (s.player.y - 0.38)) < 0.02 && s.player.grounded, [s.rig, s.player]);
+  for (const eye of [1.45, 1.65, 1.85, 1.2]) {
+    await page.evaluate((h) => (window.__xr.head.y = h), eye);
+    await page.waitForFunction((f) => window.__xr.frames >= f, (await page.evaluate(() => window.__xr.frames)) + 4, { timeout: 120000 });
+    const got = await page.evaluate(() => {
+      const g = window.AT3D.game;
+      const h = g.input.headPose();
+      return { head: h.y, ground: g.player.y - g.player.radius, measured: g.input.measureEyeHeight() };
+    });
+    check(`XR height ${eye} m: in-game eye height above the ground = real eye height`, Math.abs(got.head - got.ground - eye) < 0.03 && Math.abs(got.measured - eye) < 1e-3, got);
+  }
+  await page.evaluate(() => (window.__xr.head.y = 1.6));
+  await page.waitForFunction((f) => window.__xr.frames >= f, (await page.evaluate(() => window.__xr.frames)) + 4, { timeout: 120000 });
 
   // Aim the right controller's ray at t1 (rig-local pose for the mock).
   const aimCtrl = (hand, id) =>

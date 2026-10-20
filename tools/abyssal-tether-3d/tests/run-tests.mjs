@@ -19,14 +19,15 @@ const suites = [
   ['input: intent mapping', 'input/test-intent.mjs'],
   ['input: uiio fixes (eye height, controller loss, hold X, head-pivot turn, double Enter VR)', 'input/test-uiio-fixes.mjs'],
   ['creature: behaviour units', 'creature/unit.mjs'],
+  ['physics: swing bench checks (near grab, pendulum, catches, two ropes, bot routes, reel)', 'physics/swingbench.mjs', ['--check']],
 ];
 if (hasFlag(argv, '--reports')) suites.push(['creature: invariants report', 'creature/invariants.mjs']);
 if (hasFlag(argv, '--browser')) suites.push(['input: Playwright desktop + mock WebXR', 'input/run-pw.cjs']);
 
 let failed = 0;
-for (const [name, file] of suites) {
+for (const [name, file, extra] of suites) {
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [path.join(HERE, file), ...pass], { encoding: 'utf8', maxBuffer: 64 << 20 });
+  const r = spawnSync(process.execPath, [path.join(HERE, file), ...(extra || []), ...pass], { encoding: 'utf8', maxBuffer: 64 << 20 });
   const out = (r.stdout || '') + (r.stderr || '');
   const ok = r.status === 0;
   if (!ok) failed++;

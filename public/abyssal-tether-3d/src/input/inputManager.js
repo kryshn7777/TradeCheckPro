@@ -10,7 +10,7 @@
  *         right stick X = smooth turn (no snap), right stick Y = reel (up = in)
  *         A = jump (+ confirm)   B = pause (+ back while a panel is up)
  *         hold X = restart while paused / dead (never mid-run)
- *         hold Y = recenter (and re-measure the player's eye height)
+ *         hold Y = recenter (horizontal only: the player-height calibration is kept)
  *         left stick click = brake
  *         Both controllers are required: losing one (put down → tracked hands,
  *         battery, disconnect) for ctrlLostPauseS mid-run raises a pause edge.
@@ -36,14 +36,11 @@
  */
 
 import { Group, Matrix4, Quaternion, Vector3 } from 'three';
-import { CONFIG, U } from '../sim/config3d.js';
+import { CONFIG, U, VIEW } from '../sim/config3d.js';
 import { XRInput, tetherDown } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
 
 export const HANDS = ['left', 'right'];
-
-/** Rig below the body centre in XR (CONTRACT §8: rig = player − (0, 1.1, 0)). */
-export const XR_RIG_DROP = 1.1;
 
 export const INPUT_TUNING = {
   // --- XR controls ----------------------------------------------------------
@@ -60,8 +57,8 @@ export const INPUT_TUNING = {
   recenterHoldS: 0.8, // hold Y this long to recenter
   restartHoldS: 1.0, // hold X this long to restart (a tap would throw away the whole descent)
   ctrlLostPauseS: 0.5, // a run pauses once a controller has been missing (or is a tracked hand) this long
-  eyeCalMin: 0.6, // plausible eye heights (m above the real floor) for the height calibration …
-  eyeCalMax: 2.3, // … outside this the previous / default calibration is kept
+  eyeCalMin: VIEW.measureMin, // plausible eye heights (m above the real floor) for a measurement …
+  eyeCalMax: VIEW.measureMax, // … outside this the reading is ignored
   // --- desktop ---------------------------------------------------------------
   mouseRadPerPx: 0.0022, // × settings.mouseSensitivity
   keyLookRate: 1.9, // rad/s arrow-key look, × settings.mouseSensitivity
@@ -72,7 +69,7 @@ export const INPUT_TUNING = {
   // --- hands -----------------------------------------------------------------
   muzzle: { x: 0, y: 0.03, z: -0.17 }, // launcher muzzle in the hand-socket frame = rope origin
   xrFallbackHand: { x: 0.2, y: -0.4, z: -0.22 }, // head-relative stand-in while a controller is lost
-  localSpaceEyeHeight: 1.6, // assumed eye height when only a 'local' reference space is granted
+  localSpaceEyeHeight: VIEW.standEye, // eye height above the feet assumed when only a 'local' reference space is granted
   // --- haptics ---------------------------------------------------------------
   hapticMaxMs: 2000,
 };
@@ -242,7 +239,7 @@ export class InputManager {
     this.uiHand = this._dominant();
     /** Rig-local head position captured by the last recenter (XR). */
     this.recenterOffset = { x: 0, y: 0, z: 0 };
-    /** XR: the player's measured eye height above the real floor (NaN until measured). */
+    /** XR: the eye height above the real floor read at the last recenter (NaN until then; info only: the rig is 1:1). */
     this.xrEyeHeight = NaN;
     /** XR: true while a controller is missing or replaced by a tracked hand (the run auto-pauses). */
     this.controllersLost = false;
@@ -263,7 +260,6 @@ export class InputManager {
     this._recenterPending = false;
     this._xHold = 0;
     this._xLatched = false;
-    this._calibrate = true; // the next recenter also measures the eye height
     this._pivotYaw = NaN; // rig yaw at the last xrRigPosition (turns pivot about the head)
     this._ctrlLostT = 0;
     this._haptic = { left: { until: 0, i: 0 }, right: { until: 0, i: 0 } };
@@ -289,11 +285,6 @@ export class InputManager {
           this._playerDead = false;
         });
       }
-      // A run starts with the player in their playing posture: the Game's recentre for the
-      // spawn facing (same frame) re-measures the eye height (seated in the menu, standing now).
-      on('game:start', () => {
-        this._calibrate = true;
-      });
     }
 
     // Scratch (no per-frame allocation).
@@ -322,7 +313,6 @@ export class InputManager {
     this.xrIn.onReset = () => {
       // The system re-aligned the reference space (Quest: hold the Meta button).
       this._recenterPending = true;
-      this._calibrate = true;
     };
 
     this.desktop = new DesktopInput(this, this.canvas, opts.env);
@@ -523,10 +513,10 @@ export class InputManager {
    * Captures the current head position (rig-local) as the body's centre, so
    * xrRigPosition() keeps the head over the body however far the player has
    * drifted in the room. Automatic at session start and after a system
-   * recenter; hold Y to do it by hand. Those three, and the first recenter of
-   * a run, also measure the player's eye height (standing or seated), so the
-   * eyes always sit eyeHeight above the body whoever wears the headset; the
-   * Game's other recentres (respawn, warp) keep the last measurement.
+   * recenter; hold Y to do it by hand. It is horizontal only: the vertical
+   * mapping is the 1:1 floor mapping plus the player-height calibration
+   * (settings.heightMode / heightCal / heightOffset), which a recenter never
+   * touches. It does read the current eye height into `xrEyeHeight` (info).
    * Desktop: resets the look pitch.
    */
   recenter() {
@@ -545,24 +535,48 @@ export class InputManager {
     this.recenterOffset.y = e[13];
     this.recenterOffset.z = e[14];
     this._pivotYaw = NaN;
-    if (this._calibrate && this.xrIn.refSpaceType === 'local-floor') {
+    if (this.xrIn.refSpaceType === 'local-floor') {
       const h = e[13];
-      if (h >= this.tuning.eyeCalMin && h <= this.tuning.eyeCalMax) {
-        this.xrEyeHeight = h;
-        this._calibrate = false;
-      }
+      if (h >= this.tuning.eyeCalMin && h <= this.tuning.eyeCalMax) this.xrEyeHeight = h;
     }
     this._emit('input:recenter', { x: e[12], y: e[13], z: e[14] });
     this.haptic('both', 0.25, 30);
     return true;
   }
 
+  /** Fine height trim in metres (settings.heightOffset, ±VIEW.offsetMax). Applies in VR and on the desktop. */
+  heightTrim() {
+    const v = this.settings ? this.settings.heightOffset : 0;
+    return typeof v === 'number' && isFinite(v) ? U.clamp(v, -VIEW.offsetMax, VIEW.offsetMax) : 0;
+  }
+
+  /**
+   * Metres the real floor is lifted under the player in XR (local-floor): 0 when Standing (real height, 1:1),
+   * the calibrated seated offset in Seated mode, plus the fine trim.
+   */
+  heightLift() {
+    const s = this.settings || {};
+    const cal = s.heightMode === 'seated' && typeof s.heightCal === 'number' && isFinite(s.heightCal) ? U.clamp(s.heightCal, VIEW.calMin, VIEW.calMax) : 0;
+    return cal + this.heightTrim();
+  }
+
+  /** XR (local-floor): the headset's live eye height above the real floor; NaN otherwise or when implausible. */
+  measureEyeHeight() {
+    if (!this.xrActive || this.xrIn.refSpaceType !== 'local-floor') return NaN;
+    const cam = this.xrIn.headCamera();
+    if (!cam) return NaN;
+    const h = cam.matrix.elements[13];
+    return h >= this.tuning.eyeCalMin && h <= this.tuning.eyeCalMax ? h : NaN;
+  }
+
   /**
    * XR: where the Game should put the rig so the recentred head point sits
-   * over the body:
-   * rig = player − (0, eye − eyeHeight, 0) − R(rigYaw)·(recenterOffset.x, 0, recenterOffset.z),
-   * where eye is the measured eye height (1.6 m until measured, which is the
-   * contract's rig = player − (0, 1.1, 0)). Before any recenter the offset is 0.
+   * over the body, 1:1 in height. local-floor: the real floor is the ground
+   * under the body (the sphere rests on it at body.y − radius), so
+   * rig = player − (0, radius, 0) + (0, heightLift, 0) − R(rigYaw)·(recenterOffset.x, 0, recenterOffset.z)
+   * and a standing user's real eye height IS the in-game eye height. A 'local'
+   * space has no floor: the head at the recenter is taken to be at
+   * VIEW.standEye above the ground. Before any recenter the offset is 0.
    * A rig yaw change since the last call (smooth turn) pivots about the HEAD,
    * not the body: the offset is rotated so the head keeps its world position.
    */
@@ -577,13 +591,9 @@ export class InputManager {
     const hz = this.recenterOffset.z;
     o.x = px - (hx * c + hz * s);
     o.z = pz - (-hx * s + hz * c);
-    if (this.xrIn.refSpaceType === 'local') {
-      o.y = py - XR_RIG_DROP + this.tuning.localSpaceEyeHeight;
-    } else {
-      const eyeAbove = CONFIG.player.eyeHeight;
-      const eye = this.xrEyeHeight > 0 ? this.xrEyeHeight : XR_RIG_DROP + eyeAbove;
-      o.y = py + eyeAbove - eye;
-    }
+    const ground = py - CONFIG.player.radius;
+    if (this.xrIn.refSpaceType === 'local') o.y = ground + this.tuning.localSpaceEyeHeight - this.recenterOffset.y + this.heightTrim();
+    else o.y = ground + this.heightLift();
     return o;
   }
 
@@ -887,7 +897,6 @@ export class InputManager {
       this.controllersLost = false;
     }
     this._pivotYaw = NaN;
-    this._calibrate = true;
     this._releaseAll(`mode:${mode}`);
     this._placeDesktopSockets();
     this._emit('input:mode', { mode });
@@ -1048,7 +1057,6 @@ export class InputManager {
       this._yHold += dt;
       if (!this._recenterLatched && this._yHold >= T.recenterHoldS) {
         this._recenterLatched = true;
-        this._calibrate = true; // a deliberate recenter also re-measures the eye height
         this.recenter();
       }
     } else {

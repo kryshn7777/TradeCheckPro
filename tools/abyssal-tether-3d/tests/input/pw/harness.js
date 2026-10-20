@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { InputManager } from '/game/src/input/inputManager.js';
 import { HandsView } from '/game/src/render/handsView.js';
 import { Player3D, TetherSystem } from '/game/src/sim/physics3d.js';
-import { DIFFICULTY, EventBus, SETTINGS_DEFAULTS, U } from '/game/src/sim/config3d.js';
+import { DIFFICULTY, EventBus, SETTINGS_DEFAULTS, U, eyeAboveBody } from '/game/src/sim/config3d.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.xr.enabled = true;
@@ -76,10 +76,11 @@ const tethers = new TetherSystem(level, diff, bus, settings);
 const input = new InputManager({ renderer, camera, rig, canvas: renderer.domElement, settings, bus });
 const hands = new HandsView(r3, input);
 const game = { state: 'playing', tethers, level, diff, player, input, settings };
-camera.position.set(0, 0.5, 0);
+const EYE = eyeAboveBody(); // desktop eye over the body centre (CONTRACT3D "Rig and eye height")
+camera.position.set(0, EYE, 0);
 let last = performance.now();
 let frames = 0;
-const T = (window.T = { THREE, renderer, scene, camera, rig, input, hands, tethers, player, game, level, bus, log, lantern, r3, anchors, errors: [], frames: 0, holdFrames: false });
+const T = (window.T = { EYE, THREE, renderer, scene, camera, rig, input, hands, tethers, player, game, level, bus, log, lantern, r3, anchors, errors: [], frames: 0, holdFrames: false });
 window.addEventListener('error', (e) => T.errors.push(String(e.message)));
 renderer.setAnimationLoop(() => {
   try {
