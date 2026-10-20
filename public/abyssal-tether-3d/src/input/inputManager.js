@@ -107,10 +107,18 @@ export function makeIntent() {
     // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
     // hip-bag gesture state (bagGesture.js; null on the desktop).
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    // Grip climbing (WP-CLIMB): VR grip per hand + the palm points; desktop F + the view axes (see makeClimbIntent).
+    climb: makeClimbIntent(),
     // extras (not in the contract; harmless to ignore)
     anyPressed: false,
     source: 'desktop',
   };
+}
+
+/** Grip climbing intent (WP-CLIMB, sim/climb3d.js): grab = grip squeezed (VR, hand points in world space) / F held (desktop). */
+function makeClimbIntent() {
+  const hand = () => ({ ok: false, x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }); // x,y,z: palm in world; rx,ry,rz: relative to the body (the Game fills them)
+  return { vr: false, grab: { left: false, right: false }, fwd: 0, side: 0, rx: 1, rz: 0, fx: 0, fz: -1, hands: { left: hand(), right: hand() } };
 }
 
 function makeTrigger() {
@@ -253,6 +261,7 @@ export class InputManager {
     this.intent = makeIntent();
     this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false };
     this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
+    this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
     this._bagGesture = makeBagGesture();
     this._bagHands = [
       { ok: false, x: 0, y: 0, z: 0, grip: 0 },
@@ -1175,6 +1184,9 @@ export class InputManager {
     // 5b. the bag at the hip: a hand in the zone + grip opens the radial; release on an icon applies it (bagGesture.js)
     this._updateBagGesture();
 
+    // 5c. climbing: a squeezed grip is a grab (the Game decides whether a hold is in reach), the palm points in world space
+    this._updateClimbXR(I, readable);
+
     // 6. aim rays (world space, from each controller's target ray)
     for (const h of HANDS) I.hands[h].aim = this._xrAim(h, this._aim[h]) ? this._aim[h] : null;
 
@@ -1193,6 +1205,36 @@ export class InputManager {
       I.ui.ray = r;
     } else {
       I.ui.ray = null;
+    }
+  }
+
+  /** WP-CLIMB: grip -> grab with hysteresis (not at the bag), and each palm's world position (the grip socket, a little forward). */
+  _updateClimbXR(I, readable) {
+    const C = I.climb;
+    const K = CONFIG.climb;
+    const g = this._bagGesture;
+    C.vr = true;
+    C.fwd = 0;
+    C.side = 0;
+    for (let i = 0; i < 2; i++) {
+      const h = HANDS[i];
+      const grip = this.xrIn.hands[h].grip;
+      let on = this._gripOn[i] ? grip > K.gripOff : grip > K.gripOn;
+      if (!readable || this.uiMode) on = false;
+      // A grip at the hip belongs to the bag.
+      if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) on = false;
+      this._gripOn[i] = on;
+      C.grab[h] = on;
+      const hi = C.hands[h];
+      const sock = this.sockets[h];
+      hi.ok = this._handTracked(h) && !!sock && !!sock.parent;
+      if (hi.ok) {
+        sock.updateWorldMatrix(true, false);
+        this._v.set(0, -0.01, -0.07).applyMatrix4(sock.matrixWorld);
+        hi.x = this._v.x;
+        hi.y = this._v.y;
+        hi.z = this._v.z;
+      }
     }
   }
 
@@ -1287,6 +1329,21 @@ export class InputManager {
     I.brake = D.key('KeyC');
     I.turnRate = 0;
     const yank = D.key('KeyF') ? 1 : 0;
+
+    // climbing: F clings to a marked surface in reach, W/S climb, A/D traverse (view relative), Space hops off
+    const C = I.climb;
+    C.vr = false;
+    const cling = !!yank && !this.uiMode;
+    C.grab.left = cling;
+    C.grab.right = cling;
+    C.fwd = (D.key('KeyW') ? 1 : 0) - (D.key('KeyS') ? 1 : 0);
+    C.side = (D.key('KeyD') ? 1 : 0) - (D.key('KeyA') ? 1 : 0);
+    C.rx = c;
+    C.rz = -sn;
+    C.fx = -sn;
+    C.fz = -c;
+    C.hands.left.ok = false;
+    C.hands.right.ok = false;
 
     // both hands aim along the view centre
     const ok = this.camera ? rayFromMatrix(this._m3.elements, this._aim.right) : null;

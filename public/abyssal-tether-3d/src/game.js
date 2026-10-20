@@ -89,6 +89,7 @@ const MODULES = {
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
+  climbView: './render/climbView.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
@@ -140,6 +141,12 @@ function blankHand() {
   return { aim: null, pressed: false, held: false, released: false, yank: 0 };
 }
 
+/** The grip-climbing part of an intent (sim/climb3d.js): grab per hand, desktop climb axes + view axes, palm points. */
+function blankClimb() {
+  const hand = () => ({ ok: false, x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 });
+  return { vr: false, grab: { left: false, right: false }, fwd: 0, side: 0, rx: 1, rz: 0, fx: 0, fz: -1, hands: { left: hand(), right: hand() } };
+}
+
 /** An intent in the contract §2 shape with everything idle. */
 export function blankIntent() {
   return {
@@ -155,6 +162,7 @@ export function blankIntent() {
     backPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    climb: blankClimb(),
   };
 }
 
@@ -793,6 +801,7 @@ export class Game3D {
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
+    this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
     this.lastDeath = null; // info handed to the death panel
     this.lastVictory = null; // info handed to the victory panel
     this.textures = null; // resolved texture manifest handed to renderer.buildLevel
@@ -841,7 +850,7 @@ export class Game3D {
     this._override = null;
     this._ovIntent = blankIntent();
     this._blank = blankIntent();
-    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } } };
+    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } }, climb: blankClimb() };
     this._threatCtx = { player: null, creature: null, tethers: null, diff: null, level: null };
     this._uiFallback = false;
     this._uiMode = null;
@@ -1219,6 +1228,14 @@ export class Game3D {
         this.bagFx = null;
       }
     }
+    if (!this.climbView && M.climbView && typeof M.climbView.ClimbView === 'function') {
+      try {
+        this.climbView = new M.climbView.ClimbView(this);
+      } catch (err) {
+        this._fault('climbView', err);
+        this.climbView = null;
+      }
+    }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
       try {
         this.pickupsView = new M.pickupsView.PickupsView(this);
@@ -1493,6 +1510,31 @@ export class Game3D {
       if (!this._inRun()) return;
       const k = U.clamp(finiteOr(e.amount, 0.1) * 2.2, 0, 1);
       this._hapticBoth(0.3 + 0.7 * k, Math.round(70 + 260 * k));
+    });
+    // Grip climbing (sim/climb3d.js): a click as a hand takes a hold, a scrape of grit while moving over stone, a hard
+    // shudder as the strength runs out, the hands slipping.
+    bus.on('climb:grab', (e) => {
+      if (this._inRun()) this._haptic(e.hand, 0.5, 35);
+    });
+    bus.on('climb:release', (e) => {
+      if (!this._inRun() || !e) return;
+      if (e.reason === 'slip') this._hapticBoth(0.9, 240);
+      else if (e.reason !== 'death' && e.reason !== 'reset') this._haptic(e.hand, 0.16, 25);
+    });
+    bus.on('climb:scrape', (e) => {
+      if (this._inRun()) this._haptic(e.hand, U.clamp(0.08 + 0.1 * finiteOr(e.speed, 1), 0.08, 0.3), 45);
+    });
+    bus.on('climb:strain', (e) => {
+      if (!this._inRun()) return;
+      const k = U.clamp(finiteOr(e.level, 0.3), 0, 1);
+      const cl = this.climb;
+      for (let i = 0; i < 2; i++) if (!cl || cl.hands[HANDS[i]].gripping) this._haptic(HANDS[i], 0.22 + 0.55 * k, 90);
+    });
+    bus.on('climb:slip', () => {
+      if (this._inRun()) this.flash = Math.max(this.flash, 0.14);
+    });
+    bus.on('climb:hop', () => {
+      if (this._inRun()) this._hapticBoth(0.35, 50);
     });
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;
@@ -1857,6 +1899,7 @@ export class Game3D {
     this.level.reset();
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset(); // a respawn restores full health
+    if (this.physics && this.physics.climb) this.physics.climb.reset(); // ... and a fresh grip
     this._restoreBag(); // ... and the bag as it was at the checkpoint (supplies taken since lie there again)
     this.tethers.reset();
     this._acc = 0;
@@ -1940,6 +1983,7 @@ export class Game3D {
     const p = this.player;
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset();
+    if (this.physics && this.physics.climb) this.physics.climb.reset();
     this.tethers.reset();
     this._acc = 0;
     this._pendingJump = false;
@@ -2426,6 +2470,9 @@ export class Game3D {
   _applyTurn(dt, intent) {
     const rate = finiteOr(intent.turnRate, 0);
     if (rate === 0 || !this.renderer || this.state === 'dead') return;
+    // Hanging by a hand in VR: the hold would be dragged round by a turn about the head. Turn your body instead.
+    const cl = this.physics ? this.physics.climb : null;
+    if (cl && cl.holding && cl.mode === 1) return;
     this.renderer.rig.rotation.y += rate * dt;
   }
 
@@ -2485,6 +2532,7 @@ export class Game3D {
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
+    this._prepareClimb(intent, si);
     this._acc += dt;
     let steps = 0;
     while (this._acc >= PDT - 1e-9) {
@@ -2504,6 +2552,51 @@ export class Game3D {
     }
     if (this._acc < 0) this._acc = 0;
     this.alpha = p.alive ? U.clamp(this._acc / PDT, 0, 1) : 0;
+  }
+
+  /**
+   * Grip climbing (sim/climb3d.js), once per frame before the physics steps: copies the climb intent, turns each palm into a
+   * point relative to the body (the rig follows the body's render position, so hand - body does not depend on where the body
+   * moves this frame), lets the model probe which hands are in reach of a hold, and gives a grip that is a grab to the climb
+   * (no rope yank on it; on the desktop Space is the hop, not the reel).
+   */
+  _prepareClimb(intent, si) {
+    const climb = this.physics ? this.physics.climb : null;
+    const sc = si.climb;
+    const ic = intent.climb;
+    if (!climb || !sc) return;
+    const p = this.player;
+    if (!ic || this.state !== 'playing' || this.victoryT >= 0) {
+      sc.vr = false;
+      sc.grab.left = false;
+      sc.grab.right = false;
+      sc.hands.left.ok = false;
+      sc.hands.right.ok = false;
+      climb.probe(p, null);
+      return;
+    }
+    sc.vr = !!ic.vr && !!this.xrActive;
+    sc.fwd = finiteOr(ic.fwd, 0);
+    sc.side = finiteOr(ic.side, 0);
+    sc.rx = finiteOr(ic.rx, 1);
+    sc.rz = finiteOr(ic.rz, 0);
+    sc.fx = finiteOr(ic.fx, 0);
+    sc.fz = finiteOr(ic.fz, -1);
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      sc.grab[h] = !!ic.grab[h];
+      const a = ic.hands[h];
+      const b = sc.hands[h];
+      b.ok = !!a.ok && isFinite(a.x) && isFinite(a.y) && isFinite(a.z);
+      if (b.ok) {
+        b.rx = a.x - p.rx;
+        b.ry = a.y - p.ry;
+        b.rz = a.z - p.rz;
+      }
+    }
+    climb.probe(p, sc);
+    for (let k = 0; k < 2; k++) if (climb.suppressYank(HANDS[k])) si.hands[HANDS[k]].yank = 0;
+    if (climb.holding && !sc.vr) si.reel = 0;
   }
 
   _updateProgress(dt) {
@@ -3090,6 +3183,13 @@ export class Game3D {
         this._fault('bagFx', err);
       }
     }
+    if (this.climbView) {
+      try {
+        this.climbView.update(dt, this);
+      } catch (err) {
+        this._fault('climbView', err);
+      }
+    }
     if (this.pickupsView) {
       try {
         this.pickupsView.update(dt, this);
@@ -3257,6 +3357,11 @@ export class Game3D {
   /** Lantern charge 0..1 (sim/inventory3d.js; drains while playing, a battery restores 50 %); 1 before a world exists. */
   get lanternCharge() {
     return this.bag ? this.bag.lanternCharge : 1;
+  }
+
+  /** The grip-climbing model (sim/climb3d.js: stamina, warn, holding, hands[h].gripping / hover) or null before a world exists. */
+  get climb() {
+    return this.physics ? this.physics.climb : null;
   }
 
   /** The player's health model (sim/health3d.js: hp 0..1, low, dead, heartbeatRate) or null before a world exists. */
@@ -3537,6 +3642,7 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),

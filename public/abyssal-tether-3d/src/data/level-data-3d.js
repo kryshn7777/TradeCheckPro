@@ -737,6 +737,78 @@ sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'alcove');
 sup('sup-s8-09', 's8-step2-s', -2, 14);
 
 // =============================================================================
+// CLIMB ZONES (WP-CLIMB, sim/climb3d.js) — the surfaces the player can grab and climb
+//  Not every surface: short, authored courses of rough masonry, chains, sinew roots and ledge lips, placed where a climb is a
+//  RECOVERY (back up out of a pocket, off a shelf, to rope height) or an optional alternative to a lowering the route already
+//  gives, never a way round a swing or a drop (the route bot ignores them). Stamina keeps them honest: a dry course of 11-13 m
+//  is ~60-70 % of a full grip, a wet one (dripping stone) is limited to ~7.5 m. Each zone is a thin box just off the surface
+//  (`face` = the surface's coordinate along its normal `n`), marked in the world with chalky studs (render/climbView.js).
+//  verify.mjs checks that every zone hugs a solid, stays clear of hazards and keeps its height within the stamina budget.
+// =============================================================================
+const climb = [];
+const CT = 0.4; // thickness of a grip volume off its surface (m)
+/**
+ * Wall zone. side: 'w' = the wall is on the west, its inner face (x = c) looks +x; 'e' = face looks -x; 'n' = the wall is
+ * on the north, its face (z = c) looks +z; 's' = face looks -z. a0..a1 run along the wall (z for w/e, x for n/s).
+ */
+function CL(id, side, c, a0, a1, y0, y1, kind = 'masonry', extra) {
+  const o = { id, kind, minY: Math.min(y0, y1), maxY: Math.max(y0, y1), face: c };
+  if (side === 'w' || side === 'e') {
+    const sg = side === 'w' ? 1 : -1;
+    o.minX = sg > 0 ? c - 0.05 : c - CT;
+    o.maxX = sg > 0 ? c + CT : c + 0.05;
+    o.minZ = Math.min(a0, a1);
+    o.maxZ = Math.max(a0, a1);
+    o.n = { x: sg, y: 0, z: 0 };
+  } else {
+    const sg = side === 'n' ? 1 : -1;
+    o.minZ = sg > 0 ? c - 0.05 : c - CT;
+    o.maxZ = sg > 0 ? c + CT : c + 0.05;
+    o.minX = Math.min(a0, a1);
+    o.maxX = Math.max(a0, a1);
+    o.n = { x: 0, y: 0, z: sg };
+  }
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+/** Underside zone: hang under a slab whose bottom face is y = c. */
+function CLU(id, c, x0, x1, z0, z1, kind = 'ledge', extra) {
+  const o = { id, kind, minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1), minY: c - CT, maxY: c + 0.05, face: c, n: { x: 0, y: -1, z: 0 } };
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+/** A hanging chain at (x, z) from y0 to y1. */
+function CLC(id, x, z, y0, y1, extra) {
+  const o = { id, kind: 'chain', minX: x - 0.45, maxX: x + 0.45, minZ: z - 0.45, maxZ: z + 0.45, minY: Math.min(y0, y1), maxY: Math.max(y0, y1) };
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+// S1 · The Threshold: back up out of the pocket (the swing is retried from the lip), and a practice wall by the spawn.
+CL('c-s1-pocket', 'w', -11, -3.6, 3.6, -7.7, -0.5);
+CL('c-s1-practice', 'w', -11, 6.6, 8.2, 0.3, 5.2);
+// S2 · The Long Swing: from the hall floor back up beside the landing (to try the swing again); out of the floor opening.
+CL('c-s2-east', 'e', 11, -0.3, 8.5, -34.6, -21.8);
+CL('c-s2-shaft', 'w', -34, 3.6, 7.8, -42.6, -34.6);
+// S3 · Broken Gallery: up the west wall from the shelf toward rope height (the anchors above come within range).
+CL('c-s3-shelf', 'w', -34, -9.5, -4.5, -95.4, -84);
+// S4 · The Listening Vault: the shelf wall, and the cradle's chain up toward the ring above it.
+CL('c-s4-shelf', 'e', 11, -9.5, -3.5, -118.6, -108);
+CLC('c-s4-chain', -31.5, -5, -111.6, -100.2);
+// S5 · The Gullet Stair: shaft wall courses from a ledge up to the one above (the predator hunts: a slow, exposed choice).
+CL('c-s5-east', 'e', -3, 0, 3, -183.6, -176.4, 'sinew', { wet: true });
+CL('c-s5-west', 'w', -21, -4, 2, -199.6, -193.4);
+// S6 · The Two Descents: the dividing wall between the long stair's shelves.
+CL('c-s6-div1', 'e', -13, -2.6, 3, -229.6, -218.6);
+CL('c-s6-div2', 'e', -13, -2.6, 3, -253.6, -242.6);
+// S7 · The Hollow Nave: hang under the landing, the spire's faces.
+CLU('c-s7-under', -291, -33, -15.6, -6, 6);
+CL('c-s7-spire-w', 'e', -15, -2.8, 2.8, -301.6, -294, 'sinew', { wet: true });
+CL('c-s7-spire-s', 'n', 3, -13, -10, -352, -342.5);
+// S8 · The Last Throat: the converging walls.
+CL('c-s8-w1', 'w', -22, -8, 8, -469.6, -460);
+CL('c-s8-w3', 'w', -12, -8, -1, -546.4, -535.2);
+
+// =============================================================================
 // Sections (themes, creature behaviour, hints, triggers)
 // =============================================================================
 const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0) => ({ mode, lethal, speedMul, burstRate, spawnOffsetY });
@@ -760,6 +832,11 @@ const sections = [
         y: -0.2, duration: 7,
         text: 'Push the LEFT STICK the way you want to swing. Let go near the top of the arc to fly.',
         desktop: 'W A S D pumps the swing. Release near the top of the arc to fly.',
+      },
+      {
+        y: -7.5, duration: 9,
+        text: 'Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.',
+        desktop: 'Studded stone can be climbed: stand close, hold F, then W A S D to climb. SPACE hops off.',
       },
       {
         y: -6.5, duration: 8,
@@ -934,4 +1011,5 @@ export const LEVEL_DATA_3D = {
   decor,
   lights,
   supplies, // candidate spots for the bag's consumables (see SUPPLIES above)
+  climb, // grip zones (see CLIMB ZONES above)
 };

@@ -425,7 +425,7 @@ export class BodyView {
     const air = !p.grounded && this._airT > 0.08;
     this._wasAir = air;
     const th = game.tethers;
-    _ropeAccum(this, th, p);
+    _ropeAccum(this, th, p, game.climb);
     const ropes = this._ropes;
     const wt = this._wt || (this._wt = { Idle_Stand: 0, Run: 0, Hang_Swing: 0, Fall: 0, Land: 0 });
     wt.Idle_Stand = wt.Run = wt.Hang_Swing = wt.Fall = wt.Land = 0;
@@ -716,10 +716,25 @@ export class BodyView {
 }
 
 /** Counts the attached ropes and the mean unit direction anchor -> player (into view._ropeDir). */
-function _ropeAccum(view, th, p) {
+function _ropeAccum(view, th, p, climb) {
   view._ropes = 0;
   view._ropeDir.set(0, 0, 0);
-  if (!th || !th.hands) return;
+  // WP-CLIMB: a body hanging from a hold on the wall dangles like one on a rope: each gripping hand counts as a line from its
+  // hold (the legs trail below it, the pelvis leans along it).
+  if (climb && climb.holding) {
+    for (const h of ['left', 'right']) {
+      const st = climb.hands[h];
+      if (!st.gripping) continue;
+      view._ropes++;
+      _v.set(p.rx - st.ax, p.ry - st.ay, p.rz - st.az);
+      const l = _v.length();
+      if (l > 0.05) view._ropeDir.addScaledVector(_v, 1 / l);
+    }
+  }
+  if (!th || !th.hands) {
+    if (view._ropes > 1) view._ropeDir.multiplyScalar(1 / view._ropes);
+    return;
+  }
   for (const h of ['left', 'right']) {
     const rope = th.hands[h] && th.hands[h].rope;
     if (!rope || !rope.attached || !rope.anchor) continue;

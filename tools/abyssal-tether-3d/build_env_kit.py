@@ -33,13 +33,17 @@ Conventions (three.js space: +Y up; Blender Z-up is converted on export):
   ch1_env_growth           flesh     back-centre; a sinew burl Ø 1.4 clinging to a wall (z ≥ 0)
   ch1_env_saint            stone     bottom-back-centre; hooded saint on a bracket in a pointed niche, h = 1.28 (figure 0.8), w 0.4, d 0.23
   ch1_env_gear             metal     centre on the wall (z = 0); iron cog, r = 1 (teeth), rim face z 0.16, hub z 0.3
+  ch1_env_geartrain        metal     centre of the big cog on the wall (z = 0); VR hero: three meshing cogs (22/12/7 teeth, r = 1 / 0.56 / 0.34), bearing
+                                     blocks + straps, a rack bar and a chain over the big cog; bbox x -1.25..1.95, y -1.3..1.75, z to 0.46 (~2.1 k tris)
+  ch1_env_corbel_hero      stone     top-back-centre; VR hero: carved corbel head 1.0 w x 1.9 h x 1.1 d, stepped tiers, dentils, volutes, leaves, dead lantern (~0.9 k)
+  ch1_env_arch_fragment    stone     bottom-back-centre; VR hero: crumbling pointed-arch relief 1.22 w x 1.0 h x 0.42 d on a shelf with fallen stones (~0.3 k)
   ch1_env_far_colossus     stone     bottom-centre; hooded Lanternwright, lantern held forward (+z), h = 1
   ch1_env_far_column       stone     bottom-centre; fluted colossal column, broken top, h = 1 (r 0.07)
   ch1_env_far_spire        stone     top-centre; inverted spire with fins and pinnacles, y 0 → −1
   ch1_env_far_arcade       stone     deck-top-centre; three pointed arches on piers, w 1 (x ±0.5), y 0 → −1
 
 Run (Blender 4.2+/5.x, or the `bpy` Python module):
-  blender -b -P build_env_kit.py -- [--out <dir>] [--render]
+  blender -b -P build_env_kit.py -- [--out <dir>] [--render] [--focus name,name]
   python build_env_kit.py [--out <dir>] [--render]
 """
 

@@ -104,6 +104,8 @@ const FX_COLOR = {
   left: [0.42, 1.0, 0.82],
   right: [1.0, 0.7, 0.3],
   ui: [0.85, 0.92, 1.0],
+  grip: [0.95, 0.93, 0.8], // handholds: chalk
+  gripOff: [1.0, 0.45, 0.3], // a hold in reach but no strength to take it
 };
 
 const ZERO_OFFSET = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -1022,6 +1024,13 @@ export class HandsView {
     // The hook is a projectile now: it has left the muzzle from the shot until it bites (rope:fire already kicked the slide).
     const flying = !!(st && st.flying) && !attached && !!showHands;
     const pad = this._readPad(hand, xr, st);
+    // WP-CLIMB: a hand on a hold closes into a fist (the trigger finger too), whatever the controller says.
+    const cl = game ? game.climb : null;
+    if (cl && cl.hands[hand].gripping && showHands) {
+      pad.squeeze = 1;
+      pad.trigger = Math.max(pad.trigger, 0.85);
+      pad.point = 0;
+    }
     G.poseFingers(dt, pad.squeeze, pad.trigger, pad.point);
 
     // line state → mechanics
@@ -1188,6 +1197,7 @@ export class HandsView {
     const batch = this.batch;
     batch.begin();
     for (const h of HANDS) this._updateHand(h, step, game, tethers, playing, xr && showHands, showHands);
+    if (playing && showHands) this._updateHolds(game, xr);
     const uiPointer = this.showUIPointer || !game || !game.ui || !!game.ui.isNull;
     if (xr && inp.uiMode && uiPointer && this.visible) this._uiPointer();
     batch.end();
@@ -1402,6 +1412,36 @@ export class HandsView {
       const hsz = Math.max(0.012, f.dotDist * this.tuning.wallDotAngular) * (f.hollow ? 1.6 : 1);
       const a = (f.hollow ? 0.28 : 0.42) * f.dot * (inp.xrActive ? 1 : 0.85);
       B.sprite(c, this._camR, this._camU, hsz, rgb, a, f.hollow ? SHAPE_HOLLOW : SHAPE_DOT);
+    }
+  }
+
+  /**
+   * WP-CLIMB: the handholds. A chalk ring on the nearest hold of each hand that is in reach (dim red when it is, but the
+   * strength is gone), a small dot where a hand is holding on. Sprites of the existing batch: no extra draw call.
+   * Desktop: both virtual hands share one hold, so one ring.
+   */
+  _updateHolds(game, xr) {
+    const cl = game ? game.climb : null;
+    if (!cl) return;
+    const B = this.batch;
+    const t = this._time;
+    const c = this._tmp;
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      const st = cl.hands[h];
+      if (!xr && k === 0) continue; // desktop: one ring / dot
+      if (st.gripping) {
+        c.set(st.ax, st.ay, st.az);
+        const d = this._hp.distanceTo(c);
+        B.sprite(c, this._camR, this._camU, Math.min(0.05, Math.max(0.012, d * 0.012)), FX_COLOR.grip, 0.9, SHAPE_DOT);
+      } else if (st.hover && !cl.holding) {
+        c.set(st.hx, st.hy, st.hz);
+        const d = this._hp.distanceTo(c);
+        const hsz = Math.min(0.1, Math.max(0.03, d * (st.hoverIn ? 0.05 : 0.04)));
+        const pulse = 0.78 + 0.22 * Math.sin(t * 9 + k);
+        if (cl.canGrip) B.sprite(c, this._camR, this._camU, hsz, FX_COLOR.grip, (st.hoverIn ? 0.95 : 0.45) * pulse, SHAPE_RING);
+        else B.sprite(c, this._camR, this._camU, hsz, FX_COLOR.gripOff, 0.6, SHAPE_HOLLOW);
+      }
     }
   }
 

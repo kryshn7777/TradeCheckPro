@@ -225,3 +225,19 @@ The character faces glTF −Z with the origin on the floor between the feet; eye
 is closed by a scarf roll. Bones: `Root, Pelvis, Spine1, Spine2, Neck, Pack, Clavicle_L/R, UpperArm_L/R, Forearm_L/R` (the
 forearm is a 10 cm stub that slides into the arms' sleeve opening), `Thigh_L/R, Shin_L/R, Foot_L/R, Toe_L/R, Pouch_L/R`.
 Clips (30 fps): `Idle_Stand` 3 s, `Run` 1 s (matches ~3.2 m/s), `Hang_Swing` 2 s, `Fall` 1.5 s, `Land` 0.6 s (once).
+
+## Environment kit (`build_env_kit.py`) and the VR hero props
+
+`build_env_kit.py` (Blender or the `bpy` module, procedural, deterministic, ~2 s without `--render`) writes
+`public/abyssal-tether-3d/assets/models/env/ch1_env_kit.glb` (413 KB): modular dressing parts, one mesh each, no UVs (LevelView projects the
+shared baked sets in metres), vertex AO in `COLOR_0`, materials named `stone | metal | flesh`. The part table and pivot conventions are
+in the script's docstring. WP-GFX-VR-POLISH added three hero parts the eye can linger on from a ledge at 1:1 scale: `ch1_env_geartrain`
+(three meshing cogs, bearing blocks, straps, rack bar, chain; ~2.1 k tris), `ch1_env_corbel_hero` (carved corbel head with a dead lantern;
+~0.9 k) and `ch1_env_arch_fragment` (crumbling pointed-arch relief with fallen stones; ~0.3 k). LevelView places them in the existing bays
+(`_icon`: gear trains replace every other big gear, arch fragments every third saint; the corbel table: every fourth plain corbel on
+ledges, at most 6 per section), through the same stone / metal decor lists, so no extra draw call. `--focus a,b --render` renders only the
+named parts. Quick part check without the Cycles preview: import the GLB into Blender and render each part with a sun lamp.
+
+```bash
+flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d/build_env_kit.py [--out DIR]
+```

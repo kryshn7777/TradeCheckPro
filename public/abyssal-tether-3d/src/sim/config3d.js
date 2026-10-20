@@ -128,7 +128,7 @@ export const CONFIG = {
     moveDrain: 0.05, // extra while the body moves at moveRef m/s (climbing; VR: pulling)
     moveRef: 1.4,
     twoHand: 0.62, // x the drain with both hands on holds
-    wetMul: 2, // x on a wet zone
+    wetMul: 1.7, // x on a wet zone
     regenGround: 0.4, // standing on solid ground (a full refill in ~2.5 s)
     regenAir: 0.05, // swinging on a rope / falling (a slow breath)
     regenGrip: 0.12, // gripping while standing (resting on a ledge)
@@ -209,7 +209,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
     health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
-    climb: { drainMul: 1.2 },
+    climb: { drainMul: 1.1 },
   },
   abyss: {
     key: 'abyss',
@@ -227,7 +227,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
     health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
-    climb: { drainMul: 1.4 },
+    climb: { drainMul: 1.25 },
   },
   sandbox: {
     key: 'sandbox',

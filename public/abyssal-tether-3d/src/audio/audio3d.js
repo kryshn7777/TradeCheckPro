@@ -2210,6 +2210,12 @@ export class AudioManager3D {
       'player:jump': this._onJump,
       'player:land': this._onLand,
       'player:wallhit': this._onWallHit,
+      'climb:grab': this._onClimbGrab,
+      'climb:release': this._onClimbRelease,
+      'climb:scrape': this._onClimbScrape,
+      'climb:strain': this._onClimbStrain,
+      'climb:slip': this._onClimbSlip,
+      'climb:hop': this._onClimbHop,
       'health:damage': this._onHealthDamage,
       'pickup:collect': this._onPickup,
       'pickup:full': this._onBagRefuse,
@@ -2449,6 +2455,38 @@ export class AudioManager3D {
   _onWallHit(p) {
     this._exertion = Math.min(1, this._exertion + 0.06);
     this._sfxWall(p);
+  }
+
+  // ---- grip climbing (WP-CLIMB, sim/climb3d.js): a glove closing on stone, grit scraping, the hold straining, slipping ----
+
+  _onClimbGrab(p) {
+    this._exertion = Math.min(1, this._exertion + 0.025);
+    this._sfxGrip(p);
+  }
+
+  _onClimbRelease(p) {
+    if (!p || p.reason === 'death' || p.reason === 'reset' || p.reason === 'slip' || p.reason === 'hop') return;
+    this._sfxGripLet(U.clamp(0.4 + num(p.speed, 0) / 9, 0.4, 1), p.hand);
+  }
+
+  _onClimbScrape(p) {
+    this._exertion = Math.min(1, this._exertion + 0.004);
+    this._sfxScrape(p);
+  }
+
+  _onClimbStrain(p) {
+    const k = U.clamp(num(p.level, 0.3), 0, 1);
+    this._exertion = Math.min(1, this._exertion + 0.03 + 0.05 * k);
+    this._sfxStrain(k);
+  }
+
+  _onClimbSlip() {
+    this._exertion = Math.min(1, this._exertion + 0.2);
+    this._sfxSlip();
+  }
+
+  _onClimbHop() {
+    this._sfxGripLet(0.9, 'right');
   }
 
   /** Fall / hazard damage: a body thump (no voice), and above ~25 hp a ringing in the ears with dulled hearing. */
@@ -2849,6 +2887,125 @@ export class AudioManager3D {
     this._perc(lg.gain, t, 0.5 * heavy, 0.003, 0.07);
     lo.connect(lg);
     lg.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A glove closing on a hold: a dry slap, a short grit burst (a chain: a metal clack; sinew: a wet squeeze). */
+  _sfxGrip(p) {
+    const kind = p.kind || 'masonry';
+    const v = this._begin('gripGrab', 1, 0.06, 0.35, this.busPlayer, 0.5, HAND_PAN[p.hand] || 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'sine', kind === 'chain' ? 190 : 130, t);
+    o.frequency.setTargetAtTime(70, t, 0.03);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.4, 0.002, 0.035);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', kind === 'chain' ? 3400 : kind === 'sinew' ? 700 : 2200, kind === 'chain' ? 5 : 1.1);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, kind === 'sinew' ? 0.22 : 0.35, 0.002, kind === 'chain' ? 0.06 : 0.025);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    if (kind === 'chain') this._tickTrain(v, t + 0.01, 3, 0.1, 0.25, 2600, 5200, 8, 0.01, 0.6);
+    this._commit(v);
+  }
+
+  /** Letting go of a hold / hopping off: a light scuff and a pebble or two. */
+  _sfxGripLet(strength, hand) {
+    const v = this._begin('gripLet', 1, 0.08, 0.3, this.busPlayer, 0.35 * strength, HAND_PAN[hand] || 0, 0.06, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 1500, 0.9);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.35, 0.01, 0.03, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    this._tickTrain(v, t + 0.03, 2, 0.12, 0.18, 1800, 3800, 4, 0.01, 0.7);
+    this._commit(v);
+  }
+
+  /** Moving over a hold: grit dragged across stone (wet: a smear; chain: links clinking; sinew: a creaking rub). */
+  _sfxScrape(p) {
+    const kind = p.kind || 'masonry';
+    const sp = U.clamp(num(p.speed, 1) / 3, 0.25, 1);
+    const v = this._begin('gripScrape', 1, 0.15, 0.4, this.busPlayer, 0.22 + 0.18 * sp, HAND_PAN[p.hand] || 0, 0.07, 0);
+    if (!v) return;
+    const t = v.t0;
+    if (kind === 'chain') {
+      this._tickTrain(v, t, 4, 0.22, 0.4, 2200, 5200, 9, 0.012, 0.5);
+      const b = this._vNoise(v, this._brown, t, 1);
+      const lp = this._vFilter(v, 'lowpass', 420, 0);
+      const bg = this._vGain(v, 0);
+      this._swell(bg.gain, t, 0.12, 0.03, 0.1, 0.08);
+      b.connect(lp);
+      lp.connect(bg);
+      bg.connect(v.out);
+    } else {
+      const wet = !!p.wet || kind === 'sinew';
+      const n = this._vNoise(v, wet ? this._pink : this._white, t, wet ? 0.9 : rand(0.9, 1.15));
+      const bp = this._vFilter(v, 'bandpass', wet ? 900 : 2400, wet ? 0.8 : 1.4);
+      bp.frequency.setValueAtTime(wet ? 900 : 2800, t);
+      bp.frequency.exponentialRampToValueAtTime(wet ? 600 : 1500, t + 0.3);
+      const g = this._vGain(v, 0);
+      this._swell(g.gain, t, 0.3 * (0.5 + sp), 0.04, 0.12, 0.08);
+      n.connect(bp);
+      bp.connect(g);
+      g.connect(v.out);
+      if (!wet) this._tickTrain(v, t + 0.02, 3, 0.25, 0.14, 1600, 3800, 3, 0.006, 0.6);
+    }
+    this._commit(v);
+  }
+
+  /** The hold straining: a low stressed creak under a held, shaky breath that quickens with the warning level. */
+  _sfxStrain(k) {
+    const v = this._begin('gripStrain', 2, 0.35, 0.9, this.busPlayer, 0.32 + 0.3 * k, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'sawtooth', 70 + 40 * k, t);
+    o.frequency.linearRampToValueAtTime(52 + 30 * k, t + 0.6);
+    const b1 = this._vFilter(v, 'bandpass', 520, 8);
+    const cg = this._vGain(v, 0);
+    this._swell(cg.gain, t, 0.5, 0.08, 0.35, 0.12);
+    o.connect(b1);
+    b1.connect(cg);
+    cg.connect(v.out);
+    // a strained exhale through the teeth
+    const n = this._vNoise(v, this._pink, t + 0.05, 1);
+    const hp = this._vFilter(v, 'bandpass', 2600, 1.3);
+    const ng = this._vGain(v, 0);
+    this._swell(ng.gain, t + 0.05, 0.1 + 0.12 * k, 0.1, 0.25, 0.12);
+    n.connect(hp);
+    hp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The hands give out: a scrabble of grit and nails, a gasp, a short rush. */
+  _sfxSlip() {
+    const v = this._begin('gripSlip', 3, 0.3, 0.9, this.busPlayer, 0.7, 0, 0.14, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._tickTrain(v, t, 9, 0.45, 0.45, 1200, 4200, 3, 0.01, 0.4);
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 2800, 0.9);
+    bp.frequency.setValueAtTime(2800, t);
+    bp.frequency.exponentialRampToValueAtTime(700, t + 0.5);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.3, 0.03, 0.2, 0.15);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 110, t);
+    o.frequency.setTargetAtTime(60, t, 0.1);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t + 0.05, 0.3, 0.01, 0.1);
+    o.connect(og);
+    og.connect(v.out);
     this._commit(v);
   }
 
