@@ -68,7 +68,7 @@ const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel /
 const PLAQUE_DIST = 26;
 const GATE_ACCEL = 120; // m/s²: the portcullis falls 7.5 m in ~0.35 s
 const GATE_LIP = 0.5; // metres of the raised gate (spiked lip) left showing below the opening
-const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', glow: 'decorGlow', shaft: 'lightShaft' };
+const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', rubble: 'decorRubble', glow: 'decorGlow', shaft: 'lightShaft' };
 
 const BUCKET_OF = {
   wall: 'rock',
@@ -1764,6 +1764,117 @@ class DressSpace {
   }
 }
 
+/**
+ * Surface geometry helpers (WP-GFX-QUEST-MAT). Both are tiny, flat-shaded, non-indexed (they merge into the decor chunks
+ * like every other part) and carry vertex colour = baked AO x stone tone.
+ *
+ * rubbleGeo: a cluster of fractured stone chunks (jittered icosahedra, 20 triangles each) resting on y = baseY in world space.
+ */
+const _ico = new THREE.IcosahedronGeometry(1, 0).toNonIndexed().attributes.position.array;
+function _vhash(x, y, z, k) {
+  let h = Math.imul(Math.round(x * 997) ^ 0x9e3779b9, 73856093) ^ Math.imul(Math.round(y * 991) + k, 19349663) ^ Math.imul(Math.round(z * 983), 83492791);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+function rubbleGeo(rng, cx, baseY, cz, radius, n) {
+  const pos = [];
+  const col = [];
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const m = new THREE.Matrix4();
+  const sc = new THREE.Vector3();
+  const tp = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = radius * Math.sqrt(rng());
+    const size = (0.06 + rng() * 0.2) * (1 - 0.55 * (rr / Math.max(radius, 0.1)));
+    sc.set(size * (0.8 + rng() * 0.8), size * (0.45 + rng() * 0.5), size * (0.8 + rng() * 0.8));
+    e.set((rng() - 0.5) * 0.9, rng() * 6.283, (rng() - 0.5) * 0.9);
+    q.setFromEuler(e);
+    tp.set(cx + Math.cos(a) * rr, baseY + sc.y * 0.42, cz + Math.sin(a) * rr);
+    m.compose(tp, q, sc);
+    const tone = 0.62 + 0.38 * rng();
+    const k = i * 13;
+    for (let j = 0; j < _ico.length; j += 3) {
+      const d = 0.72 + 0.56 * _vhash(_ico[j], _ico[j + 1], _ico[j + 2], k);
+      v.set(_ico[j] * d, _ico[j + 1] * d, _ico[j + 2] * d).applyMatrix4(m);
+      pos.push(v.x, v.y, v.z);
+      const ao = 0.5 + 0.5 * Math.min(1, Math.max(0, (v.y - baseY) / (sc.y * 1.6)));
+      col.push(tone * ao, tone * ao, tone * ao);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals(); // non-indexed: flat per-triangle normals
+  return g;
+}
+
+/**
+ * blockPatchGeo: a patch of dressed ashlar proud of a wall (face-local: x along the face, y up, z out of it): cols x rows
+ * blocks in staggered courses, each 2.5-9 cm proud with chamfered, irregularly chipped arrises; some blocks are missing.
+ */
+function blockPatchGeo(rng, cols, rows, bw, bh) {
+  const pos = [];
+  const col = [];
+  const c3 = new THREE.Vector3();
+  const quad = (a, b, c, d, cen, shade) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const mx = (a[0] + c[0]) / 2 - cen[0], my = (a[1] + c[1]) / 2 - cen[1], mz = (a[2] + c[2]) / 2 - cen[2];
+    const flip = nx * mx + ny * my + nz * mz < 0;
+    const order = flip ? [a, c, b, a, d, c] : [a, b, c, a, c, d];
+    for (const p of order) {
+      pos.push(p[0], p[1], p[2]);
+      const k = p[2] < 1e-4 ? shade * 0.5 : shade;
+      col.push(k, k, k);
+    }
+  };
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * bw * 0.5;
+    for (let cI = 0; cI < cols; cI++) {
+      if (rng() < 0.18) continue;
+      const x0 = cI * bw + off + 0.02;
+      const x1 = x0 + bw - 0.04;
+      const y0 = r * bh + 0.02;
+      const y1 = y0 + bh - 0.04;
+      const p = 0.025 + rng() * 0.065;
+      const c = Math.min(0.045, p * 0.9, (y1 - y0) * 0.3);
+      const j = () => (rng() - 0.5) * c * 1.4;
+      const T = [
+        [x0 + c + j(), y0 + c + j(), p],
+        [x1 - c + j(), y0 + c + j(), p],
+        [x1 - c + j(), y1 - c + j(), p],
+        [x0 + c + j(), y1 - c + j(), p],
+      ];
+      const B = [
+        [x0, y0, 0],
+        [x1, y0, 0],
+        [x1, y1, 0],
+        [x0, y1, 0],
+      ];
+      c3.set((x0 + x1) / 2, (y0 + y1) / 2, p * 0.4);
+      const cen = [c3.x, c3.y, c3.z];
+      const tone = 0.82 + 0.18 * rng();
+      quad(T[0], T[1], T[2], T[3], cen, tone);
+      quad(B[0], B[1], T[1], T[0], cen, 0.55 * tone); // underside of the block: shadowed
+      quad(B[1], B[2], T[2], T[1], cen, 0.8 * tone);
+      quad(B[2], B[3], T[3], T[2], cen, 0.95 * tone); // top: catches the shaft light
+      quad(B[3], B[0], T[0], T[3], cen, 0.8 * tone);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  if (!pos.length) return null;
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
 /** World AABB of an item-local box [x0,x1]×[y0,y1]×[z0,z1] placed by a face frame (axis-aligned faces only). */
 function frameBox(F, x0, x1, y0, y1, z0, z1) {
   // U = Y × N (horizontal), N horizontal or vertical not supported here (walls only)
@@ -2100,9 +2211,87 @@ class Dresser {
       }
     }
     if (!near) this._farWall(F, hosts, rng);
+    else if (F.s.kind === 'wall' || F.s.kind === 'stone') this._blocks(F, hosts, makeRng(hashStr(`blk${s.id}|${F.N.x},${F.N.z}`)));
     this._cogs(F, hosts, rng);
   }
 
+
+  /**
+   * Chipped ashlar patches proud of a wall face (sparse, near tier only): the flat box face stops being a texture alone, and
+   * stereo parallax finally has edges to work with. Budget: <= 14 patches per face, ~80 triangles each.
+   */
+  _blocks(F, hosts, rng) {
+    const S = this.S;
+    if (F.H < 4) return;
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    let n = Math.min(14, Math.floor((span * F.H) / 90 + rng()));
+    for (let tries = 0; tries < n * 4 + 2 && n > 0; tries++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      const cols = 2 + Math.floor(rng() * 3);
+      const rows = 1 + Math.floor(rng() * 3);
+      const bw = 0.5 + rng() * 0.4;
+      const bh = 0.26 + rng() * 0.16;
+      const w = cols * bw + 0.5;
+      const h = rows * bh;
+      if (b - a < w + 2.4 || F.H < h + 3) continue;
+      const u = a + 1.2 + rng() * (b - a - w - 2.4);
+      const y = 1.2 + rng() * (F.H - h - 3);
+      const box = frameBox(F, u - 0.2, u + w + 0.2, y - 0.2, y + h + 0.2, 0, 0.3);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const geo = blockPatchGeo(rng, cols, rows, bw, bh);
+      if (!geo) continue;
+      this._cat = 'chip';
+      this.put(F, geo, u, y, 'stone', this.grade(F.o.y + y).stone, null, true);
+      this._cat = null;
+      this.stats.blocks = (this.stats.blocks || 0) + 1;
+      n--;
+    }
+  }
+
+  /** Rubble on a walkable top: clusters of fractured stone near the edges and wall feet (near tier only). */
+  _rubble(s, rng) {
+    const W = s.maxX - s.minX;
+    const D = s.maxZ - s.minZ;
+    if (W < 2 || D < 2) return;
+    const S = this.S;
+    const n = Math.min(12, Math.max(1, Math.round((2 * (W + D)) / 50 + rng() * 2)));
+    const g = this.grade(s.maxY);
+    let left = n;
+    for (let i = 0; i < n * 3 && left > 0; i++) {
+      // a point along the rim (inset 0.4 .. 1.8 m) most of the time, else anywhere on the top
+      let x;
+      let z;
+      if (rng() < 0.75) {
+        const side = rng();
+        const inset = 0.4 + rng() * 1.4;
+        if (side < 0.5) {
+          x = s.minX + rng() * W;
+          z = rng() < 0.5 ? s.minZ + inset : s.maxZ - inset;
+        } else {
+          z = s.minZ + rng() * D;
+          x = rng() < 0.5 ? s.minX + inset : s.maxX - inset;
+        }
+      } else {
+        x = s.minX + 0.5 + rng() * (W - 1);
+        z = s.minZ + 0.5 + rng() * (D - 1);
+      }
+      if (x < s.minX + 0.3 || x > s.maxX - 0.3 || z < s.minZ + 0.3 || z > s.maxZ - 0.3) continue;
+      if (S.inSolid(x, s.maxY + 0.3, z)) continue; // a wall stands here
+      let near = false;
+      for (const a of S.anchors) {
+        if (Math.abs(a.y - s.maxY) < 2.5 && (a.x - x) * (a.x - x) + (a.z - z) * (a.z - z) < 2.2 * 2.2) near = true;
+      }
+      if (near) continue;
+      const geo = rubbleGeo(rng, x, s.maxY, z, 0.35 + rng() * 0.7, 5 + Math.floor(rng() * 8));
+      tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
+      worldUV(geo);
+      this._count('rubble', s.maxY, geo.attributes.position.count / 3);
+      this.emit(geo, 'rubble', true);
+      this.stats.rubble = (this.stats.rubble || 0) + 1;
+      left--;
+    }
+  }
 
   /**
    * Colossal turning cogs sunk half into a far-ish wall: the order's machine
@@ -2994,6 +3183,7 @@ class Dresser {
     const rng = makeRng(hashStr(`slab${s.id}`));
     const metal = s.kind === 'metal' || s.kind === 'bridge' || s.kind === 'grate';
     if (metal && s.kind !== 'grate') this._dressIron(s);
+    if (!metal && s.kind !== 'crumble') this._rubble(s, makeRng(hashStr(`rub${s.id}`)));
     const sides = [
       { N: { x: 1, y: 0, z: 0 }, c: s.maxX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
       { N: { x: -1, y: 0, z: 0 }, c: s.minX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
@@ -3409,7 +3599,17 @@ export class LevelView {
     for (const bucket of SOLID_BUCKETS) {
       const list = lists[bucket];
       if (!list || !list.length) continue;
-      const mesh = new THREE.InstancedMesh(this._unitBox, this.mats.get(bucket), list.length);
+      // lightmaps: each bucket has its own copy of the unit box carrying the per-instance chart row (iLm = row + 1, 0 = none)
+      const bucketMat = this.mats.get(bucket);
+      if (bucketMat && !(bucketMat.defines && bucketMat.defines.AT_LM !== undefined)) {
+        bucketMat.defines = Object.assign({}, bucketMat.defines, { AT_LM: '' });
+        bucketMat.needsUpdate = true;
+      }
+      const bucketGeo = this._unitBox.clone();
+      const lmAttr = new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1);
+      lmAttr.setUsage(THREE.DynamicDrawUsage);
+      bucketGeo.setAttribute('iLm', lmAttr);
+      const mesh = new THREE.InstancedMesh(bucketGeo, bucketMat, list.length);
       mesh.name = `solids_${bucket}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -3422,9 +3622,10 @@ export class LevelView {
         tints[i * 3 + 2] = _c.b;
       }
       this.root.add(mesh);
-      this._solidSets.push({ mesh, list, tints });
+      this._solidSets.push({ mesh, list, tints, lm: new Float32Array(list.length), lmAttr });
       this.stats.solids += list.length;
     }
+    this._applyLightmap();
     this._packAt = new THREE.Vector3(1e9, 1e9, 1e9);
     this._packDist = 0;
     this._packStamp = 0;
@@ -3450,6 +3651,37 @@ export class LevelView {
     this.stats.solids += this._crumbles.length;
   }
 
+  /**
+   * Lightmaps (render/lighting.js): hands the chart index (assets/lighting/lm_ch1_index.json) to the solids, or null to
+   * drop it. A solid takes part when the index has its id and the same box (cm); the others keep the baked volume.
+   * Returns how many solids carry a chart.
+   */
+  setLightmapIndex(idx) {
+    this._lmIndex = idx && idx.solids && idx.boxes ? idx : null;
+    return this._applyLightmap();
+  }
+
+  _applyLightmap() {
+    const idx = this._lmIndex;
+    let n = 0;
+    for (const set of this._solidSets || []) {
+      for (let i = 0; i < set.list.length; i++) {
+        const s = set.list[i];
+        let row = 0;
+        if (idx && s && idx.solids[s.id] !== undefined) {
+          const b = idx.boxes[s.id];
+          if (b && Math.round(s.minX * 100) === b[0] && Math.round(s.minY * 100) === b[1] && Math.round(s.minZ * 100) === b[2] && Math.round(s.maxX * 100) === b[3] && Math.round(s.maxY * 100) === b[4] && Math.round(s.maxZ * 100) === b[5]) {
+            row = idx.solids[s.id] + 1;
+            n++;
+          }
+        }
+        set.lm[i] = row;
+      }
+    }
+    if (this._packAt) this._packAt.set(1e9, 1e9, 1e9); // re-pack on the next update
+    return n;
+  }
+
   /** Re-packs the static solids within `vd` of the head (only when needed). */
   _packSolids(head, vd, force) {
     const moved = this._packAt.distanceToSquared(head) > 1.5 * 1.5;
@@ -3462,7 +3694,7 @@ export class LevelView {
     // Pack a little wider than the view so small moves never reveal a hole.
     const r = vd + 4;
     for (const set of this._solidSets) {
-      const { mesh, list, tints } = set;
+      const { mesh, list, tints, lm, lmAttr } = set;
       let n = 0;
       for (let i = 0; i < list.length; i++) {
         const s = list[i];
@@ -3474,8 +3706,10 @@ export class LevelView {
         mesh.setMatrixAt(n, this._solidMatrix(s, 0, 0, 0, _m4));
         _c.setRGB(tints[i * 3], tints[i * 3 + 1], tints[i * 3 + 2]);
         mesh.setColorAt(n, _c);
+        lmAttr.array[n] = lm[i];
         n++;
       }
+      lmAttr.needsUpdate = true;
       mesh.count = n;
       mesh.visible = n > 0;
       mesh.instanceMatrix.needsUpdate = true;
@@ -3837,7 +4071,7 @@ export class LevelView {
   /** The decor lists of the band holding y (created on demand); detail → the finer, nearer tier. */
   _bandLists(bands, y, detail = false) {
     const bi = detail ? `${detail === 'mid' ? 'm' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
-    if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] });
+    if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], rubble: [], glow: [], shaft: [] });
     return bands.get(bi);
   }
 
@@ -3954,7 +4188,7 @@ export class LevelView {
         // merges queued by a flush go first, one band per step (each is a big copy)
         if (job.merge.length) {
           const [bi, k, list] = job.merge.shift();
-          const lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] };
+          const lists = { stone: [], metal: [], rock: [], flesh: [], rubble: [], glow: [], shaft: [] };
           lists[k] = list;
           this._mergeBands(new Map([[bi, lists]]), true);
           continue;

@@ -19,6 +19,7 @@
  */
 
 import * as THREE from 'three';
+import { LM_RANGE_LAMP, LM_RANGE_STATIC } from './lightmapFormat.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -89,6 +90,23 @@ export const LOOK = {
   uGIInv: { value: new THREE.Vector3(1, 1, 1) },
   uGIWarm: { value: new THREE.Color(1.0, 0.55, 0.22) },
   uGICool: { value: new THREE.Color(0.3, 0.5, 0.6) },
+  // Baked lightmaps (render/lighting.js, tools/abyssal-tether-3d/bake/bake_lightmaps.mjs): uLM = RGBA8 page array (rgb sqrt
+  // static irradiance, a sqrt flame-lamp direct light), uLMTab = per-solid chart table (vertex shader), uLMK: x on/off,
+  // y exposure, z lamp flicker, w ambient floor (irradiance added everywhere), uLMLamp = lamp tint (luminance 1).
+  uLM: { value: null },
+  uLMTab: { value: null },
+  uLMK: { value: new THREE.Vector4(0, 1, 1, 0) },
+  uLMLamp: { value: new THREE.Color(1.0, 0.55, 0.22) },
+  // Surface detail (WP-GFX-QUEST-MAT): x detail-normal strength, y / z distance (m) over which it fades out.
+  uDetailK: { value: new THREE.Vector4(0.9, 5, 16, 0) },
+  // Parallax offset mapping: x on/off, y max distance (m), z fade length (m), w depth scale. Driven by the quality tier.
+  uParallaxK: { value: new THREE.Vector4(1, 8, 3, 1) },
+  // Height-based blending in cracks and joints: x grime, y moss, z standing water (× wetness).
+  uCrevK: { value: new THREE.Vector4(0.55, 0.55, 0.7, 0) },
+  // In-shader filmic grade (no post pass): x contrast about mid grey, y saturation, z extra desaturation at depth
+  // (0 at y = 0 m .. full at y = -300 m), w unused; uGradeTint multiplies the linear colour (per-section warmth).
+  uGradeK: { value: new THREE.Vector4(1.1, 1.0, 0.2, 0) },
+  uGradeTint: { value: new THREE.Color(1, 1, 1) },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -566,6 +584,9 @@ export function makeProceduralTextureSets(size = 512) {
 
 const ROLE_MATCH = [
   // role, test(name)
+  ['detail', (n) => n === 'detail'],
+  ['rubble', (n) => n === 'rubble'],
+  ['roots', (n) => n === 'roots'],
   ['distant', (n) => /dist|far|dark|deep/.test(n) && !/mason|ashlar|brick|metal|iron|rust/.test(n)],
   ['masonry', (n) => /mason|ashlar|brick|block|stone/.test(n) && !/dist|far/.test(n)],
   ['metal', (n) => /metal|iron|rust|steel/.test(n)],
@@ -578,11 +599,56 @@ function pickKey(obj, names) {
   return null;
 }
 
+// KTX2 (Basis Universal, GPU-compressed): the renderer hands itself over once (Renderer3D → configureTextureLoading); the
+// loader is created lazily, so a missing transcoder / Worker / WebAssembly never breaks anything: the JPEG sets load instead.
+let _ktxRenderer = null;
+let _ktxLoader = null; // KTX2Loader | false (tried and unavailable)
+export function configureTextureLoading(opts = {}) {
+  if (opts.renderer) _ktxRenderer = opts.renderer;
+}
+const KTX2_BASIS_PATH = (() => {
+  try {
+    return new URL('../../vendor/three/addons/libs/basis/', import.meta.url).href;
+  } catch {
+    return null;
+  }
+})();
+async function getKTX2Loader() {
+  if (_ktxLoader !== null) return _ktxLoader || null;
+  _ktxLoader = false;
+  try {
+    if (!_ktxRenderer || !KTX2_BASIS_PATH || typeof Worker === 'undefined' || typeof WebAssembly === 'undefined') return null;
+    const mod = await import('three/addons/loaders/KTX2Loader.js');
+    const l = new mod.KTX2Loader();
+    l.setTranscoderPath(KTX2_BASIS_PATH);
+    l.setWorkerLimit(2);
+    l.detectSupport(_ktxRenderer);
+    _ktxLoader = l;
+  } catch (err) {
+    if (typeof console !== 'undefined') console.warn('[AT3D] KTX2 unavailable, using JPEG textures', err && err.message);
+  }
+  return _ktxLoader || null;
+}
+function releaseKTX2Loader() {
+  if (_ktxLoader && typeof _ktxLoader.dispose === 'function') {
+    try {
+      _ktxLoader.dispose(); // ends the transcoder workers (their WASM heaps are several MB each)
+    } catch {
+      /* nothing */
+    }
+  }
+  _ktxLoader = null; // a later call (a restart with another manifest) builds a fresh one
+}
+
 /**
  * Loads assets/textures/manifest.json style sets.
+ * Each entry: { albedo, normal, orm, tileMeters, [heightM], [ktx2: { albedo, normal, orm, normalHeightInB }] }. When the
+ * entry has a `ktx2` block and the browser can run the Basis transcoder, the GPU-compressed files are used (UASTC / ETC1S
+ * -> ASTC / ETC2 / BC7 on the device, full mip chains, the normal map's blue channel carries the height field for parallax);
+ * otherwise (or if any of the three fails) the JPEG fallbacks load.
  * @param {string|object} manifestOrUrl  URL of the manifest or the parsed JSON
  * @param {string} [baseUrl]  base for relative paths (defaults to the manifest's folder)
- * @returns {Promise<object|null>} { rock, masonry, metal, distant } (each {map, normalMap, ormMap, tileMeters})
+ * @returns {Promise<object|null>} { rock, masonry, metal, distant, flesh, rubble, roots, detail } (each {map, normalMap, ormMap, tileMeters, heightM})
  */
 export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manifest.json', baseUrl) {
   let manifest = manifestOrUrl;
@@ -607,45 +673,80 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
   if (base == null) base = 'assets/textures/';
   const sets = manifest.sets && typeof manifest.sets === 'object' ? manifest.sets : manifest;
   const loader = new THREE.TextureLoader();
+  const abs = (rel) => (/^(https?:|data:|blob:|\/)/.test(rel) ? rel : base + rel);
+  const setup = (tex, srgb, mips) => {
+    tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    if (!mips) tex.generateMipmaps = true; // compressed textures ship their own mip chain
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    return tex;
+  };
   const load = (rel, srgb) =>
     new Promise((resolve) => {
       if (!rel) {
         resolve(null);
         return;
       }
-      const url = /^(https?:|data:|blob:|\/)/.test(rel) ? rel : base + rel;
-      loader.load(
-        url,
-        (tex) => {
-          tex.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-          tex.wrapS = THREE.RepeatWrapping;
-          tex.wrapT = THREE.RepeatWrapping;
-          tex.generateMipmaps = true;
-          tex.minFilter = THREE.LinearMipmapLinearFilter;
-          resolve(tex);
-        },
-        undefined,
-        () => resolve(null),
-      );
+      loader.load(abs(rel), (tex) => resolve(setup(tex, srgb, false)), undefined, () => resolve(null));
+    });
+  const loadK = (ktx, rel, srgb) =>
+    new Promise((resolve) => {
+      if (!rel) {
+        resolve(null);
+        return;
+      }
+      ktx.load(abs(rel), (tex) => resolve(setup(tex, srgb, true)), undefined, () => resolve(null));
     });
 
-  const result = {};
   const names = Object.keys(sets).filter((k) => sets[k] && typeof sets[k] === 'object');
+  const wantsKtx = names.some((n) => sets[n].ktx2 && typeof sets[n].ktx2 === 'object');
+  const ktx = wantsKtx ? await getKTX2Loader() : null;
+  const dispose = (list) => {
+    for (const t of list) if (t && t.dispose) t.dispose();
+  };
+
+  const result = {};
   const assigned = new Set();
   for (const [role, test] of ROLE_MATCH) {
     const name = names.find((n) => !assigned.has(n) && (n.toLowerCase() === role || test(n.toLowerCase())));
     if (!name) continue;
     assigned.add(name);
     const s = sets[name];
-    const [map, normalMap, ormMap] = await Promise.all([
-      load(pickKey(s, ['albedo', 'color', 'baseColor', 'diffuse', 'diff', 'map']), true),
-      load(pickKey(s, ['normal', 'normalGL', 'nor_gl', 'nrm', 'normalMap']), false),
-      load(pickKey(s, ['orm', 'arm', 'ORM', 'ormMap']), false),
-    ]);
-    if (!map) continue;
     const tile = Number(s.tileMeters || s.tile || s.size || DEFAULT_TILE);
-    result[role] = { map, normalMap, ormMap, tileMeters: isFinite(tile) && tile > 0 ? tile : DEFAULT_TILE, name };
+    const tileMeters = isFinite(tile) && tile > 0 ? tile : DEFAULT_TILE;
+    const k = s.ktx2 && typeof s.ktx2 === 'object' ? s.ktx2 : null;
+    if (role === 'detail') {
+      let n = ktx && k && k.normal ? await loadK(ktx, k.normal, false) : null;
+      if (!n) n = await load(pickKey(s, ['normal', 'normalGL', 'nor_gl', 'nrm', 'normalMap']), false);
+      if (n) result.detail = { normalMap: n, tileMeters };
+      continue;
+    }
+    let map = null;
+    let normalMap = null;
+    let ormMap = null;
+    let packed = false;
+    if (ktx && k && k.albedo && k.normal && k.orm) {
+      [map, normalMap, ormMap] = await Promise.all([loadK(ktx, k.albedo, true), loadK(ktx, k.normal, false), loadK(ktx, k.orm, false)]);
+      if (map && normalMap && ormMap) {
+        packed = !!k.normalHeightInB && Number(s.heightM) > 0;
+      } else {
+        dispose([map, normalMap, ormMap]);
+        map = normalMap = ormMap = null;
+      }
+    }
+    if (!map) {
+      [map, normalMap, ormMap] = await Promise.all([
+        load(pickKey(s, ['albedo', 'color', 'baseColor', 'diffuse', 'diff', 'map']), true),
+        load(pickKey(s, ['normal', 'normalGL', 'nor_gl', 'nrm', 'normalMap']), false),
+        load(pickKey(s, ['orm', 'arm', 'ORM', 'ormMap']), false),
+      ]);
+    }
+    if (!map) continue;
+    result[role] = { map, normalMap, ormMap, tileMeters, heightM: packed ? Number(s.heightM) : 0, ktx2: packed || (!!ktx && !!k && map.isCompressedTexture === true), name };
   }
+  if (wantsKtx) releaseKTX2Loader();
   return Object.keys(result).length ? result : null;
 }
 
@@ -657,6 +758,56 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
 // Lighting chunks: baked GI + procedural reflections + wet film (lit materials only)
 // -----------------------------------------------------------------------------
 
+/**
+ * Lightmap plumbing (solids only: materials that define AT_LM and meshes with the per-instance attribute `iLm` = chart
+ * table row + 1, 0 = none; see LevelView.setLightmapIndex). The unit-box faces map to the chart of their solid: the
+ * vertex shader looks up the face's atlas rectangle in the chart table (uLMTab, 3 texels per face: rect, crop, layer)
+ * and the varyings carry the atlas uv (linear over the face), the layer and the rectangle (to clamp the sample).
+ * Face order and (s, t) axes: render/lightmapFormat.js.
+ */
+const LM_VERT_DECL = `#ifdef AT_LM
+attribute float iLm;
+uniform highp sampler2D uLMTab;
+varying highp vec2 vLmUv;
+flat varying highp float vLmLayer;
+flat varying highp vec4 vLmRect;
+#endif
+`;
+const LM_FRAG_VARY = `#ifdef AT_LM
+varying highp vec2 vLmUv;
+flat varying highp float vLmLayer;
+flat varying highp vec4 vLmRect;
+#endif
+`;
+const LM_VERT_BODY = `#ifdef AT_LM
+  vLmLayer = - 1.0;
+  vLmUv = vec2( 0.0 );
+  vLmRect = vec4( 0.0 );
+  if ( iLm > 0.5 ) {
+    vec3 atLa = abs( normal );
+    int atLf = 0;
+    vec2 atLst = position.zy + 0.5;
+    if ( atLa.x > 0.5 ) {
+      atLf = normal.x > 0.0 ? 0 : 1;
+    } else if ( atLa.y > 0.5 ) {
+      atLf = normal.y > 0.0 ? 2 : 3;
+      atLst = position.xz + 0.5;
+    } else {
+      atLf = normal.z > 0.0 ? 4 : 5;
+      atLst = position.xy + 0.5;
+    }
+    ivec2 atLt = ivec2( atLf * 3, int( iLm + 0.5 ) - 1 );
+    vec4 atLr = texelFetch( uLMTab, atLt, 0 );
+    vec4 atLc = texelFetch( uLMTab, atLt + ivec2( 1, 0 ), 0 );
+    float atLy = texelFetch( uLMTab, atLt + ivec2( 2, 0 ), 0 ).x;
+    if ( atLy > - 0.5 ) {
+      vLmUv = mix( atLr.xy, atLr.zw, ( atLst - atLc.xy ) / max( atLc.zw - atLc.xy, vec2( 1e-5 ) ) );
+      vLmLayer = atLy;
+      vLmRect = atLr;
+    }
+  }
+#endif`;
+
 const LOOK_FRAG_DECL = `uniform highp sampler3D uGI;
 uniform vec4 uGIK;
 uniform vec3 uGIMin;
@@ -667,6 +818,11 @@ uniform vec4 uEnvK;
 uniform vec3 uLanternW;
 uniform vec4 uLanternC;
 uniform vec2 uLanternR;
+#ifdef AT_LM
+uniform highp sampler2DArray uLM;
+uniform vec4 uLMK;
+uniform vec3 uLMLamp;
+#endif
 `;
 
 /**
@@ -685,11 +841,18 @@ function buildLightsBeginGI() {
   const mTail = '#if defined( RE_IndirectSpecular )\n\tvec3 radiance = vec3( 0.0 );';
   if (!c || !c.includes(mDir) || !c.includes(mTail)) return null;
   c = c.replace(mDir, mDir + '\n\t\tdirectLight.color *= atKeyVis;');
+  // lightmapped fragments: the pooled dynamic lamps (decay 2; the lantern keeps 1.6, lighting.js sets both) are baked
+  const mPoint = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
+  if (c.includes(mPoint)) c = c.replace(mPoint, mPoint + '\n\t\tdirectLight.color *= ( atLmOn > 0.5 && pointLight.decay > 1.8 ) ? 0.0 : 1.0;');
   c = c.replace(
     mTail,
     `#if defined( RE_IndirectDiffuse )
-	irradiance *= mix( 1.0, atGv.a, uGIK.y );
-	iblIrradiance += atBounce;
+	if ( atLmOn > 0.5 ) {
+		irradiance = atLmE;
+	} else {
+		irradiance *= mix( 1.0, atGv.a, uGIK.y );
+		iblIrradiance += atBounce;
+	}
 #endif
 ` + mTail,
   );
@@ -697,6 +860,23 @@ function buildLightsBeginGI() {
 vec4 atGv = vec4( 1.0, 0.0, 1.0, 1.0 );
 float atKeyVis = 1.0;
 vec3 atBounce = vec3( 0.0 );
+float atLmOn = 0.0;
+vec3 atLmE = vec3( 0.0 );
+#ifdef AT_LM
+if ( uLMK.x > 0.5 && vLmLayer > - 0.5 ) {
+	// baked lightmap: ONE fetch (rgb static irradiance, a flame-lamp direct light); replaces the hemisphere ambient, the
+	// shaft key and the volume for this fragment. The lantern still adds its own direct light below.
+	vec2 atLu = clamp( vLmUv, vLmRect.xy + 0.0005, vLmRect.zw - 0.0005 );
+	vec4 atLm = texture( uLM, vec3( atLu, vLmLayer ) );
+	vec3 atLs = atLm.rgb * atLm.rgb * ${LM_RANGE_STATIC.toFixed(1)};
+	float atLl = atLm.a * atLm.a * ${LM_RANGE_LAMP.toFixed(1)} * uLMK.z;
+	atLmE = ( atLs + uLMLamp * atLl ) * uLMK.y + vec3( uLMK.w );
+	atLmE *= mix( 1.0, clamp( dot( normal, nonPerturbedNormal ), 0.0, 1.0 ), 0.5 );
+	atLmOn = 1.0;
+	atKeyVis = 0.0;
+	atGv.a = clamp( 0.3 + 0.7 * sqrt( dot( atLs, vec3( 0.3333 ) ) * uLMK.y ), 0.0, 1.0 );
+} else
+#endif
 if ( uGIK.x > 0.5 ) {
 	vec3 atGq = ( vAtW + inverseTransformDirection( nonPerturbedNormal, viewMatrix ) * 0.8 - uGIMin ) * uGIInv;
 	vec3 atGd = abs( atGq - 0.5 );
@@ -785,6 +965,103 @@ export function installLookChunks() {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Surface detail chunks (WP-GFX-QUEST-MAT): parallax offset, detail normal, packed-height normal, crevice blending, grade
+// -----------------------------------------------------------------------------
+
+const HQ_FRAG_DECL = `uniform sampler2D uDetailMap;
+uniform float uDetailScale;
+uniform float uDetailAmt;
+uniform float uHeightM;
+uniform float uTexScale;
+uniform vec4 uDetailK;
+uniform vec4 uParallaxK;
+uniform vec4 uCrevK;
+`;
+
+/**
+ * Runs at the top of the colour pipeline (before map_fragment). Everything the surface samples afterwards goes through
+ * atPUv: the box / metric UV, shifted by ONE parallax tap on near surfaces (uHeightM > 0 means the normal map's blue
+ * channel holds the height field, see tools/abyssal-tether-3d/build_textures_hq.py): offset limiting, single step, no
+ * silhouette; the tangent frame is the same screen-derivative frame three.js uses for normal maps, so box-mapped
+ * faces (UV swaps per face) and metric decor UVs need no tangents. Beyond uParallaxK.y metres it is skipped.
+ * atHN is the height (0..1) at the shifted UV (0.5 when the set has none), atDt the shared detail texel (RG normal, B grain).
+ */
+const HQ_PARALLAX = `vec2 atPUv = vAtUv;
+float atHN = 0.5;
+vec4 atDt = vec4( 0.5, 0.5, 0.5, 1.0 );
+float atDist = length( vViewPosition );
+float atDf = uDetailAmt * uDetailK.x * ( 1.0 - smoothstep( uDetailK.y, uDetailK.z, atDist ) );
+#ifdef USE_NORMALMAP
+if ( uHeightM > 0.0 ) {
+	vec2 atGx = dFdx( vAtUv );
+	vec2 atGy = dFdy( vAtUv );
+	atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
+	mat3 atTbn = getTangentFrame( - vViewPosition, normalize( vNormal ), vAtUv );
+	float atPf = uParallaxK.x * ( 1.0 - smoothstep( uParallaxK.y - uParallaxK.z, uParallaxK.y, atDist ) );
+	vec3 atV = normalize( vViewPosition );
+	vec2 atVt = vec2( dot( atV, atTbn[ 0 ] ), dot( atV, atTbn[ 1 ] ) );
+	float atVz = max( dot( atV, atTbn[ 2 ] ), 0.3 );
+	atPUv = vAtUv + atVt / atVz * ( ( atHN - 0.5 ) * uHeightM * uParallaxK.w * atPf * uTexScale );
+	atHN = textureGrad( normalMap, atPUv, atGx, atGy ).b;
+}
+#endif
+if ( atDf > 0.002 ) atDt = textureGrad( uDetailMap, atPUv * uDetailScale, dFdx( vAtUv ) * uDetailScale, dFdy( vAtUv ) * uDetailScale );
+#define vMapUv atPUv
+#define vNormalMapUv atPUv
+#define vAoMapUv atPUv
+#define vRoughnessMapUv atPUv
+#define vMetalnessMapUv atPUv
+`;
+
+/**
+ * three's normal_fragment_maps with the tangent-space normal read as: xy from the texture, z rebuilt when the blue channel
+ * carries height, then the shared detail normal layered over it (fades with distance). null when the chunk has other text
+ * (a different three.js build): the materials then keep the stock normal path and the packed height is ignored.
+ */
+function buildHQNormalChunk() {
+  const c = THREE.ShaderChunk.normal_fragment_maps;
+  const stock = 'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;\n\tmapN.xy *= normalScale;\n\tnormal = normalize( tbn * mapN );';
+  if (!c || !c.includes(stock)) return null;
+  return c.replace(
+    stock,
+    `vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+	mapN.xy *= normalScale;
+	if ( uHeightM > 0.0 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.05 ) );
+	if ( atDf > 0.002 ) mapN.xy += ( atDt.xy * 2.0 - 1.0 ) * atDf;
+	normal = normalize( tbn * mapN );`,
+  );
+}
+const HQ_NORMAL = buildHQNormalChunk();
+
+/** Height-based blending, after the wetness is known: grime and moss settle in the low parts (joints, cracks, pits). */
+const HQ_CREVICE = `  float atMossV = 0.0;
+  {
+    float atCav = 1.0 - smoothstep( 0.08, 0.5, atHN );
+    float atAoV = 1.0;
+    #ifdef USE_AOMAP
+      atAoV = texture2D( aoMap, vAoMapUv ).r;
+    #endif
+    diffuseColor.rgb *= mix( 1.0, 0.82 + 0.36 * atDt.b, clamp( atDf * 1.4, 0.0, 1.0 ) );
+    diffuseColor.rgb *= 1.0 - uCrevK.x * atCav * ( 0.35 + 0.65 * ( 1.0 - atAoV ) ) * 0.6;
+    float atMn = texture2D( uMacroMap, vAtUv * 0.37 + vec2( 0.7, 0.2 ) ).r;
+    atMossV = clamp( atCav * smoothstep( 0.35, 0.8, atMn ) * ( 0.3 + 0.7 * smoothstep( 0.2, 0.9, vAtTop ) ) * uCrevK.y * ( 0.2 + uWet * 1.6 ), 0.0, 0.85 );
+    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.04, 0.07, 0.03 ) * ( 0.6 + atMn ), atMossV );
+    atWet = max( atWet, atCav * uWet * uCrevK.z * ( 1.0 - atMossV ) );
+  }
+`;
+
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\n';
+/** Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth. */
+const GRADE_FRAG = `  {
+    vec3 atC = max( gl_FragColor.rgb, vec3( 0.0 ) );
+    float atL = dot( atC, vec3( 0.2126, 0.7152, 0.0722 ) );
+    float atSat = uGradeK.y * ( 1.0 - uGradeK.z * smoothstep( 0.0, - 300.0, vAtW.y ) );
+    atC = mix( vec3( atL ), atC, atSat );
+    atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
+    gl_FragColor.rgb = atC * uGradeTint;
+  }`;
+
 const UV_TARGETS = ['MAP', 'NORMALMAP', 'AOMAP', 'ROUGHNESSMAP', 'METALNESSMAP', 'ALPHAMAP', 'EMISSIVEMAP'];
 const UV_VARY = {
   MAP: 'vMapUv',
@@ -829,6 +1106,12 @@ export function patchMaterial(mat, opts = {}) {
     uGlowColor: { value: new THREE.Color(opts.glowColor != null ? opts.glowColor : PALETTE.phos) },
     uSplit: { value: opts.splitGap || 0.08 },
     uNearFade: { value: new THREE.Vector2(opts.nearFade ? opts.nearFade[0] : 0, opts.nearFade ? opts.nearFade[1] : 0) },
+    // surface detail (hq): shared detail normal texture, its repeat per material tile, per-material strength, and the
+    // height range (m) of the set's packed height (0 = the set has none: no parallax, stock normal z)
+    uDetailMap: { value: null },
+    uDetailScale: { value: 8 },
+    uDetailAmt: { value: 0 },
+    uHeightM: { value: 0 },
   };
   mat.userData.at = U;
   const uvMode = opts.uv || null;
@@ -845,7 +1128,11 @@ export function patchMaterial(mat, opts = {}) {
   const breathe = opts.breathe || 0;
   const aniso = lit && macro && opts.aniso ? opts.aniso : 0;
   const gi = lit && opts.gi !== false && LIGHTS_BEGIN_GI !== null;
-  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
+  const hq = lit && !!uvMode && macro && !!opts.hq && HQ_NORMAL !== null;
+  const grade = lit && !!opts.grade;
+  mat.userData.hq = hq;
+  mat.userData.hqDetail = opts.detail != null ? opts.detail : 1;
+  const key = `at3d|hq:${hq ? 1 : 0}|gr:${grade ? 1 : 0}|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -904,6 +1191,12 @@ ${UV_ASSIGN}
       }
     }
 
+    if (hq) {
+      fDecl += HQ_FRAG_DECL;
+      fs = fs.replace('#include <map_fragment>', HQ_PARALLAX + '#include <map_fragment>');
+      fs = fs.replace('#include <normal_fragment_maps>', HQ_NORMAL);
+    }
+
     if (ash || crack || macro) {
       if (ash) fDecl += 'uniform float uAsh;\nuniform vec3 uAshColor;\n';
       if (crack) fDecl += 'uniform sampler2D uCrackMap;\nuniform float uCrackScale;\nuniform float uCrackAmt;\n';
@@ -950,8 +1243,8 @@ ${UV_ASSIGN}
     }
 
     if (lit) {
-      vDecl += 'varying vec3 vAtW;\n';
-      fDecl += 'varying vec3 vAtW;\n';
+      vDecl += 'varying vec3 vAtW;\n' + LM_VERT_DECL;
+      fDecl += 'varying vec3 vAtW;\n' + LM_FRAG_VARY;
       vs = vs.replace(
         '#include <project_vertex>',
         `#include <project_vertex>
@@ -961,7 +1254,8 @@ ${UV_ASSIGN}
       atWp4 = instanceMatrix * atWp4;
     #endif
     vAtW = ( modelMatrix * atWp4 ).xyz;
-  }`,
+  }
+${LM_VERT_BODY}`,
       );
     }
     if (lit && breathe > 0) {
@@ -992,16 +1286,23 @@ ${
   }`
     : ''
 }
-  diffuseColor.rgb *= 1.0 - ( 0.32 - 0.14 * ${dry} ) * atWet;
+${hq ? HQ_CREVICE : ''}  diffuseColor.rgb *= 1.0 - ( 0.32 - 0.14 * ${dry} ) * atWet;
   diffuseColor.rgb *= 1.0 + uVG * clamp( ( vAtW.y - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );`);
       fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
+${
+  hq
+    ? `  roughnessFactor *= 0.9 + 0.2 * texture2D( uMacroMap, vAtUv * 0.083 + vec2( 0.31, 0.17 ) ).r;
+  roughnessFactor = mix( roughnessFactor, 0.92, atMossV );
+`
+    : ''
+}  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
       if (aniso > 0) {
         // Brushed-metal look without tangents or MeshPhysicalMaterial: a fine grain across the surface's v axis
         // tilts the normal along v, so the lantern's highlight stretches into a short streak across the grain.
+        const nrmAnchor = hq ? HQ_NORMAL : '#include <normal_fragment_maps>';
         fs = fs.replace(
-          '#include <normal_fragment_maps>',
-          `#include <normal_fragment_maps>
+          nrmAnchor,
+          `${nrmAnchor}
   {
     vec3 atQ0 = dFdx( - vViewPosition );
     vec3 atQ1 = dFdy( - vViewPosition );
@@ -1031,6 +1332,11 @@ ${
     totalEmissiveRadiance += uRimColor * ( atRim * uRim ) * ( 0.25 + diffuseColor.rgb );
   }`,
       );
+    }
+
+    if (grade) {
+      fDecl += GRADE_DECL;
+      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG);
     }
 
     if (shade) {
@@ -1147,9 +1453,9 @@ export function fogFactor(d, near, far) {
 export class MaterialLibrary {
   constructor(renderer) {
     this.renderer = renderer || null;
-    this.maxAniso = 4;
+    this.maxAniso = 8;
     try {
-      if (renderer && renderer.capabilities) this.maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);
+      if (renderer && renderer.capabilities) this.maxAniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
     } catch {
       this.maxAniso = 1;
     }
@@ -1204,11 +1510,11 @@ export class MaterialLibrary {
     const m = this.m;
     const macro = S.macro && S.macro.map;
     // Level solids (InstancedMesh, box-projected world UVs, ash on tops).
-    m.rock = this._std(S.rock, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true });
-    m.masonry = this._std(S.masonry, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true });
+    m.rock = this._std(S.rock, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true, hq: true, grade: true });
+    m.masonry = this._std(S.masonry, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true, hq: true, grade: true });
     // Crumbling ledges read differently by PATTERN (dense dark cracks) and value (paler, dusty), not hue alone.
-    m.crumble = this._std(S.masonry, { color: 0xf0e2c8, envMapIntensity: 0.4 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true });
-    m.metal = this._std(S.metal, { envMapIntensity: 1.25 }, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.4 });
+    m.crumble = this._std(S.masonry, { color: 0xf0e2c8, envMapIntensity: 0.4 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true, hq: true, grade: true });
+    m.metal = this._std(S.metal, { envMapIntensity: 1.25 }, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.4, hq: true, grade: true, detail: 0.6 });
     m.grate = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: S.grate && S.grate.map,
@@ -1221,15 +1527,18 @@ export class MaterialLibrary {
     patchMaterial(m.grate, { uv: 'box', tile: 4 });
     // Merged decor + environment dressing (uv already in metres; vertex colour =
     // baked AO × the section grade).
-    m.decorStone = this._std(S.masonry, { vertexColors: true, envMapIntensity: 0.5 }, { uv: 'metric', ash: 0.3, macro, role: 'masonry', lit: true });
-    m.decorMetal = this._std(S.metal, { vertexColors: true, envMapIntensity: 1.2 }, { uv: 'metric', ash: 0.15, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.3 });
-    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true, envMapIntensity: 0.45 }, { uv: 'metric', ash: 0.25, macro, role: 'distant', lit: true });
+    m.decorStone = this._std(S.masonry, { vertexColors: true, envMapIntensity: 0.5 }, { uv: 'metric', ash: 0.3, macro, role: 'masonry', lit: true, hq: true, grade: true });
+    m.decorMetal = this._std(S.metal, { vertexColors: true, envMapIntensity: 1.2 }, { uv: 'metric', ash: 0.15, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.3, hq: true, grade: true, detail: 0.6 });
+    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true, envMapIntensity: 0.45 }, { uv: 'metric', ash: 0.25, macro, role: 'distant', lit: true, hq: true, grade: true, detail: 0.5 });
     // Organic growth (the predator's sinew through the masonry): the flesh set's
     // relief, graded to a dark, MATTE bruise-brown (art bible: never wet red).
-    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, envMapIntensity: 0.8, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45, breathe: 0.03 });
+    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, envMapIntensity: 0.8, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45, breathe: 0.03, hq: true, grade: true, detail: 0.35 });
     m.decorFlesh.userData.matte = 0.82;
     m.decorFlesh.roughnessMap = null;
     m.decorFlesh.roughness = 0.82;
+    // Rubble piles and root cords (levelView surface geometry): the new 1K sets, same shader as the other decor.
+    m.decorRubble = this._std(S.rubble || S.rock, { vertexColors: true, envMapIntensity: 0.4 }, { uv: 'metric', ash: 0.2, macro, role: 'rubble', lit: true, hq: true, grade: true, detail: 0.9 });
+    m.decorRoots = this._std(S.roots || S.rock, { vertexColors: true, envMapIntensity: 0.4 }, { uv: 'metric', macro, role: 'roots', lit: true, hq: true, grade: true, detail: 0.7, wetK: 1.2 });
     // Emissive bits of decor (lamp bulbs, inlays, statue lanterns): vertex colours.
     m.decorGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.55 });
@@ -1297,6 +1606,7 @@ export class MaterialLibrary {
     if (!sets || typeof sets !== 'object') return false;
     this._applyAniso(sets);
     let changed = false;
+    const det = sets.detail && sets.detail.normalMap ? sets.detail : null;
     for (const name of Object.keys(this.m)) {
       const mat = this.m[name];
       const role = mat.userData.setRole;
@@ -1316,7 +1626,17 @@ export class MaterialLibrary {
         mat.roughnessMap = mat.userData.matte ? null : s.ormMap;
         mat.metalnessMap = s.ormMap;
       }
-      if (mat.userData.at) mat.userData.at.uTexScale.value = 1 / (s.tileMeters || DEFAULT_TILE);
+      const U = mat.userData.at;
+      if (U) U.uTexScale.value = 1 / (s.tileMeters || DEFAULT_TILE);
+      if (U && mat.userData.hq) {
+        // packed height (normal.b) only when the set was loaded from KTX2; the JPEG fallbacks keep the stock normal
+        U.uHeightM.value = mat.normalMap === s.normalMap ? s.heightM || 0 : 0;
+        if (det) {
+          U.uDetailMap.value = det.normalMap;
+          U.uDetailScale.value = (s.tileMeters || DEFAULT_TILE) / (det.tileMeters || 0.5);
+          U.uDetailAmt.value = mat.userData.hqDetail;
+        }
+      }
     }
     // Same sets again (a restart re-applies them) → nothing to re-upload or recompile.
     if (changed) {

@@ -39,7 +39,7 @@
  */
 
 import * as THREE from 'three';
-import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
+import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
 import { LevelView } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
@@ -107,6 +107,19 @@ const DEFAULT_THEME = {
 // soaked in the Last Throat) and the strength of the haze rim light on carved relief.
 const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
+
+// Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
+// the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
+const SURFACE_TIERS = {
+  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1 },
+};
+// WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
+// governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
+const XR_RENDER_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
+// Foveation by governor level when the platform governor is absent (it sets 0.5 / 1 itself).
+const XR_FOVEATION = [0.5, 0.75, 1, 1, 1];
 
 const _tmpC = new THREE.Color();
 
@@ -215,11 +228,15 @@ export class Renderer3D {
     this._envScratch = [];
 
     this.materials = new MaterialLibrary(r);
+    configureTextureLoading({ renderer: r }); // KTX2 (GPU-compressed) texture sets need the renderer's compressed-format support
     this._game = null;
     this._bus = null;
     this._lampFlick = 1;
     this.governor = new RenderGovernor(this);
     this.lighting = new Lighting(this);
+    this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1.15;
+    this._applyXRRenderScale();
+    this.governor.on((ev) => this._applyXRFoveation(ev.level));
     this.lightingReady = Promise.resolve(false);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 12), this.materials.get('sky'));
     this.sky.name = 'SkyDome';
@@ -655,6 +672,7 @@ export class Renderer3D {
     LOOK.uWet.value = th.wet;
     LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3);
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
+    this._driveSurfaceLook(th, tk);
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;
@@ -693,7 +711,56 @@ export class Renderer3D {
    * governor does); without it a pin that needs another resolution rebuilds the probe (do it behind a fade).
    */
   setQualityTier(name, opts) {
-    return this.lighting.setTier(name, opts);
+    const r = this.lighting.setTier(name, opts);
+    this.setXRRenderScale(XR_RENDER_SCALE[this.lighting.tier] || this.xrRenderScale);
+    return r;
+  }
+
+  /**
+   * WebXR framebuffer scale (1 = the runtime's recommended resolution): 1.15 on the quest tier, 1.2 high, 1.0 low. three.js only
+   * reads it when a session starts, so a change made while presenting waits for the next session; the platform governor
+   * lowers the *viewport* inside this allocation (levels 2-4 = 0.9 / 0.8 / 0.7 of it) when frames are missed.
+   */
+  setXRRenderScale(f) {
+    this.xrRenderScale = THREE.MathUtils.clamp(num(f, this.xrRenderScale || 1), 0.6, 1.5);
+    this._applyXRRenderScale();
+    return this.xrRenderScale;
+  }
+
+  _applyXRRenderScale() {
+    const xr = this.renderer.xr;
+    if (!xr || typeof xr.setFramebufferScaleFactor !== 'function' || xr.isPresenting) return;
+    try {
+      xr.setFramebufferScaleFactor(this.xrRenderScale);
+    } catch {
+      /* older runtimes */
+    }
+  }
+
+  /** Foveation follows the governor level when there is no platform governor driving it (desktop / tests / QA). */
+  _applyXRFoveation(level) {
+    const xr = this.renderer.xr;
+    if (!xr || !xr.isPresenting || this.governor.mode === 'platform' || typeof xr.setFoveation !== 'function') return;
+    try {
+      xr.setFoveation(XR_FOVEATION[Math.max(0, Math.min(XR_FOVEATION.length - 1, level | 0))]);
+    } catch {
+      /* layer without foveation */
+    }
+  }
+
+  /** Per frame: the tier / governor levers of the surface shader (parallax, detail normal, crevices) and the section grade. */
+  _driveSurfaceLook(th, tk) {
+    const P = SURFACE_TIERS[this.lighting.tier] || SURFACE_TIERS.quest;
+    const lvl = this.governor.level;
+    const par = lvl >= 2 ? 0 : P.parallax; // parallax is the first thing the governor drops
+    LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
+    LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, 0);
+    LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
+    // Grade: a little contrast, the sections' warmth/cold in the highlights, slight desaturation, more with depth.
+    const a = th.accent;
+    const m = Math.max(a.r, a.g, a.b, 1e-3);
+    LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
+    LOOK.uGradeK.value.set(1.1 + 0.06 * tk, 0.94 - 0.1 * tk, 0.22, 0);
   }
 
   get qualityTier() {

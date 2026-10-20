@@ -3,37 +3,69 @@
     "albedo": "rock_albedo.jpg",
     "normal": "rock_normal.jpg",
     "orm": "rock_orm.jpg",
-    "tileMeters": 4.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "shaft rock: dark bedded stone, jointed blocks, faults, calcite veins, seeps"
+    "tileMeters": 4,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.14491,
+    "source": "baked:build_textures_hq.py",
+    "description": "shaft rock: bedded strata, jointed blocks, faults, veins, seeps, micro grain",
+    "ktx2": {
+      "albedo": "rock_albedo.ktx2",
+      "normal": "rock_normal.ktx2",
+      "orm": "rock_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "masonry": {
     "albedo": "masonry_albedo.jpg",
     "normal": "masonry_normal.jpg",
     "orm": "masonry_orm.jpg",
-    "tileMeters": 4.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "Lanternwright ashlar: dressed courses + band course, worn chipped arrises, eroded joints"
+    "tileMeters": 4,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.05296,
+    "source": "baked:build_textures_hq.py",
+    "description": "Lanternwright ashlar: dressed courses, chipped arrises, eroded mortar, grime runs, micro peck",
+    "ktx2": {
+      "albedo": "masonry_albedo.ktx2",
+      "normal": "masonry_normal.ktx2",
+      "orm": "masonry_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "metal": {
     "albedo": "metal_albedo.jpg",
     "normal": "metal_normal.jpg",
     "orm": "metal_orm.jpg",
-    "tileMeters": 2.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "corroded iron: blackened scale, flaking rust blooms and runs, pitting"
+    "tileMeters": 2,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.01305,
+    "source": "baked:build_textures_hq.py",
+    "description": "corroded iron plate: scale, flaking rust, pitting, runs, edge wear",
+    "ktx2": {
+      "albedo": "metal_albedo.ktx2",
+      "normal": "metal_normal.ktx2",
+      "orm": "metal_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "rockFar": {
     "albedo": "rockFar_albedo.jpg",
     "normal": "rockFar_normal.jpg",
     "orm": "rockFar_orm.jpg",
-    "tileMeters": 16.0,
+    "tileMeters": 16,
     "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "distant rock: darker massive beds, large joints, low fine detail"
+    "hero": false,
+    "heightM": 1.12548,
+    "source": "baked:build_textures_hq.py",
+    "description": "distant rock: dark massive beds, big joints",
+    "ktx2": {
+      "albedo": "rockFar_albedo.ktx2",
+      "normal": "rockFar_normal.ktx2",
+      "orm": "rockFar_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "flesh": {
     "albedo": "flesh_albedo.jpg",
@@ -41,7 +73,59 @@
     "orm": "flesh_orm.jpg",
     "tileMeters": 1.5,
     "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "dark wet sinew: fibre bundles, branching raised veins, capillaries, wet sheen"
+    "hero": false,
+    "heightM": 0.02322,
+    "source": "baked:build_textures_hq.py",
+    "description": "dark wet sinew: fibre bundles, raised veins, capillaries",
+    "ktx2": {
+      "albedo": "flesh_albedo.ktx2",
+      "normal": "flesh_normal.ktx2",
+      "orm": "flesh_orm.ktx2",
+      "normalHeightInB": true
+    }
+  },
+  "rubble": {
+    "albedo": "rubble_albedo.jpg",
+    "normal": "rubble_normal.jpg",
+    "orm": "rubble_orm.jpg",
+    "tileMeters": 2,
+    "size": 1024,
+    "hero": false,
+    "heightM": 0.06939,
+    "source": "baked:build_textures_hq.py",
+    "description": "broken stone and dust: gravel, chips, damp gaps",
+    "ktx2": {
+      "albedo": "rubble_albedo.ktx2",
+      "normal": "rubble_normal.ktx2",
+      "orm": "rubble_orm.ktx2",
+      "normalHeightInB": true
+    }
+  },
+  "roots": {
+    "albedo": "roots_albedo.jpg",
+    "normal": "roots_normal.jpg",
+    "orm": "roots_orm.jpg",
+    "tileMeters": 2,
+    "size": 1024,
+    "hero": false,
+    "heightM": 0.0543,
+    "source": "baked:build_textures_hq.py",
+    "description": "root cords and bark fibre: twisted strands, fissures, damp moss",
+    "ktx2": {
+      "albedo": "roots_albedo.ktx2",
+      "normal": "roots_normal.ktx2",
+      "orm": "roots_orm.ktx2",
+      "normalHeightInB": true
+    }
+  },
+  "detail": {
+    "normal": "detail_normal.png",
+    "tileMeters": 0.5,
+    "size": 512,
+    "source": "baked:build_textures_hq.py",
+    "description": "shared micro normal (RG) + grain (B), layered over every macro normal",
+    "ktx2": {
+      "normal": "detail_normal.ktx2"
+    }
   }
 }
