@@ -1327,6 +1327,12 @@ export class AudioManager3D {
       this._polledVolume = vol;
       this.setVolume(vol);
     }
+    // WP-UX effects slider (settings.sfxVolume): every bus except the music stingers follows it.
+    const sfx = this._sfxMul();
+    if (sfx !== this._sfxSeen) {
+      this._sfxSeen = sfx;
+      if (this._built) this._mixBuses(this.ctx.currentTime, this._state);
+    }
 
     // The listener tracks the head every frame: HRTF needs a fresh orientation.
     this._followListener(game);
@@ -1438,17 +1444,24 @@ export class AudioManager3D {
     }
   }
 
+  /** settings.sfxVolume 0..1 squared (the same perceptual curve as the master); 1 when unset. */
+  _sfxMul() {
+    const v = this.settings && typeof this.settings.sfxVolume === 'number' && isFinite(this.settings.sfxVolume) ? U.clamp(this.settings.sfxVolume, 0, 1) : 1;
+    return v * v;
+  }
+
   _mixBuses(now, state) {
     const ducked = this._pauseFlag || state === 'paused' || state === 'menu';
     const hushed = now < this._hushUntil;
     const dead = this._dead || state === 'dead';
     const tc = 0.15;
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
-    this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player, now, tc);
-    this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature, now, tc);
-    this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych, now, dead ? 0.08 : tc);
+    const fx = this._sfxMul();
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
+    this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
+    this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
+    this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
     this.kStinger.set(hushed ? 0 : BUS_LEVEL.stinger * (ducked ? DUCKED.stinger : 1), now, tc);
-    this.kUi.set(BUS_LEVEL.ui, now, tc);
+    this.kUi.set(BUS_LEVEL.ui * fx, now, tc);
     this._mixSpace(now, hushed, 1.5);
   }
 

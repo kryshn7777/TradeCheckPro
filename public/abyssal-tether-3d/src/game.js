@@ -22,7 +22,8 @@
  */
 
 import * as THREE from 'three';
-import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings } from './sim/config3d.js';
+import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings, sanitizeUxSettings } from './sim/config3d.js';
+import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
@@ -1068,6 +1069,7 @@ export class Game3D {
         for (const k of Object.keys(SETTINGS_DEFAULTS)) if (k in saved && typeof saved[k] === typeof SETTINGS_DEFAULTS[k]) this.settings[k] = saved[k];
         if (!DIFFICULTY[this.settings.lastDifficulty]) this.settings.lastDifficulty = 'normal';
         sanitizeHeightSettings(this.settings);
+        sanitizeUxSettings(this.settings);
       } else if (!saved) svc.store.recordSettings(this.settings);
       return svc;
     } catch (err) {
@@ -2030,6 +2032,7 @@ export class Game3D {
     if (s.dominantHand !== 'left' && s.dominantHand !== 'right') s.dominantHand = D.dominantHand;
     if (!DIFFICULTY[s.lastDifficulty]) s.lastDifficulty = 'normal';
     sanitizeHeightSettings(s);
+    sanitizeUxSettings(s);
     Storage.saveSettings(s);
     this._try('audio', () => this.audio.setVolume(s.volume));
     this._try('input', () => this.input.applySettings && this.input.applySettings(s));
@@ -2468,12 +2471,19 @@ export class Game3D {
 
   /** XR smooth turn (no snap, no vignette — user decision). Desktop: 0 (the mouse turns). */
   _applyTurn(dt, intent) {
-    const rate = finiteOr(intent.turnRate, 0);
-    if (rate === 0 || !this.renderer || this.state === 'dead') return;
+    let rate = finiteOr(intent.turnRate, 0);
+    let step = 0;
+    if (this.settings && this.settings.turnMode === 'snap') {
+      // WP-UX comfort option: the stick snaps the view by settings.snapAngle, once per push (smooth turning stays the default).
+      step = snapTurnStep(this._snapState || (this._snapState = makeSnapState()), rate, SNAP_FULL_RATE * U.clamp(finiteOr(this.settings.turnSpeed, 1), 0.25, 3), this.settings.snapAngle);
+      rate = 0;
+    }
+    if ((rate === 0 && step === 0) || !this.renderer || this.state === 'dead') return;
     // Hanging by a hand in VR: the hold would be dragged round by a turn about the head. Turn your body instead.
     const cl = this.physics ? this.physics.climb : null;
     if (cl && cl.holding && cl.mode === 1) return;
-    this.renderer.rig.rotation.y += rate * dt;
+    this.renderer.rig.rotation.y += rate * dt + step;
+    if (step !== 0) this.bus.emit('comfort:snap', { dir: step > 0 ? 1 : -1 });
   }
 
   // ---- per-state updates -------------------------------------------------------

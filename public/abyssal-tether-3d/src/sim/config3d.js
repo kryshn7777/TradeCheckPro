@@ -265,7 +265,59 @@ export const SETTINGS_DEFAULTS = {
   heightCal: 0, // metres added in Seated mode, set by the calibration press (standEye − measured eye height)
   heightOffset: 0, // fine trim, ±VIEW.offsetMax in VIEW.offsetStep steps (VR and desktop)
   heightMeasured: 0, // eye height above the real floor at the last calibration press (0 = never), shown in the panel
+  // ---- WP-UX (ui/uxLogic.js documents every key; ranges in UX_LIMITS, validation in sanitizeUxSettings) ----
+  musicVolume: 0.8, // 0..1, times the master volume (audio/music3d.js reads it)
+  sfxVolume: 1.0, // 0..1, times the master volume (every non-music sound)
+  hapticStrength: 1.0, // 0.25..1.5 multiplier on every controller pulse (input haptic())
+  captions: false, // subtitle-style captions for the sounds that warn you (ui/captions.js)
+  colorSafe: false, // shape + word cues next to colour for health, grip, bag and warnings
+  textScale: 1.0, // 0.9..1.5: VR panels, notes and captions get physically larger; the desktop UI font grows
+  vignette: 0, // 0..1 comfort vignette strength while moving fast, swinging or turning (0 = off, the default)
+  turnMode: 'smooth', // 'smooth' | 'snap'
+  snapAngle: 45, // degrees per snap step: 30 | 45 | 60 | 90
+  qualityTier: 'auto', // 'auto' | 'low' | 'quest' | 'high' (render tier pin; auto = the governor and the device decide)
+  renderScale: 1.0, // 0.7..1.3: multiplier on the tier's XR framebuffer scale, read when a VR session starts
+  brightness: 1.0, // 0.6..1.6 exposure multiplier (calibration screen)
+  blackLevel: 0, // 0..1 lifts the darkest pixels by up to 6/255 (calibration screen)
+  brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
 };
+
+/** Limits and allowed values of the WP-UX settings (the single source for the UI, sanitizeUxSettings and the tests). */
+export const UX_LIMITS = {
+  volume: [0, 1],
+  musicVolume: [0, 1],
+  sfxVolume: [0, 1],
+  hapticStrength: [0.25, 1.5],
+  textScale: [0.9, 1.5],
+  vignette: [0, 1],
+  renderScale: [0.7, 1.3],
+  brightness: [0.6, 1.6],
+  blackLevel: [0, 1],
+  snapAngles: [30, 45, 60, 90],
+  turnModes: ['smooth', 'snap'],
+  qualityTiers: ['auto', 'low', 'quest', 'high'],
+};
+
+/** Clamps / snaps the WP-UX keys of a settings object in place (after load, restore or apply). Returns the object. */
+export function sanitizeUxSettings(s) {
+  const D = SETTINGS_DEFAULTS;
+  const L = UX_LIMITS;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  for (const k of ['volume', 'musicVolume', 'sfxVolume', 'hapticStrength', 'textScale', 'vignette', 'renderScale', 'brightness', 'blackLevel']) {
+    const [lo, hi] = L[k];
+    s[k] = Math.min(hi, Math.max(lo, num(s[k], D[k])));
+  }
+  if (L.turnModes.indexOf(s.turnMode) < 0) s.turnMode = D.turnMode;
+  if (L.qualityTiers.indexOf(s.qualityTier) < 0) s.qualityTier = D.qualityTier;
+  const a = num(s.snapAngle, D.snapAngle);
+  let best = L.snapAngles[0];
+  for (const c of L.snapAngles) if (Math.abs(c - a) < Math.abs(best - a)) best = c;
+  s.snapAngle = best;
+  s.captions = s.captions === true;
+  s.colorSafe = s.colorSafe === true;
+  s.brightnessChecked = s.brightnessChecked === true;
+  return s;
+}
 
 /**
  * Player height tuning. The collision sphere (CONFIG.player.radius) rests on the floor, so the ground under the
@@ -474,6 +526,7 @@ export const Storage = {
     }
     if (!DIFFICULTY[out.lastDifficulty]) out.lastDifficulty = 'normal';
     sanitizeHeightSettings(out);
+    sanitizeUxSettings(out);
     return out;
   },
   saveSettings: (s) => Storage.set('settings', s),

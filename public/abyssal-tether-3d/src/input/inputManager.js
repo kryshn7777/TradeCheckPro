@@ -668,7 +668,8 @@ export class InputManager {
     if (!this.xrActive || (hand !== 'left' && hand !== 'right')) return false;
     const gp = this.xrIn.gamepadFor(hand);
     if (!gp) return false;
-    const i = U.clamp(Number(intensity) || 0, 0, 1);
+    const hs = s && typeof s.hapticStrength === 'number' && isFinite(s.hapticStrength) ? s.hapticStrength : 1; // WP-UX slider
+    const i = U.clamp((Number(intensity) || 0) * hs, 0, 1);
     const d = U.clamp(Math.round(Number(ms) || 0), 1, this.tuning.hapticMaxMs);
     if (i <= 0) return false;
     const t = nowMs();

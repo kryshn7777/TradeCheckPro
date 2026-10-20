@@ -68,3 +68,26 @@ No browser e2e, no soak tests, no multi-round critic loops, no adversarial revie
 - Do not git commit/push; the lead commits. No git stash.
 - Quest budget: whole frame <= 150 draw calls and <= 350k triangles stereo; no per-frame allocation in hot loops; sim stays deterministic and DOM/three-free.
 - Original IP only.
+
+## Quest-3 reference-quality parity checklist (owner 2026-10-20: "Match this level of quality")
+Status: DONE = in the build (light-checked, headset-unverified) · PART = partly · TODO = work package · N/A = platform handles it (browser WebXR).
+| Target | State | Where / next |
+|---|---|---|
+| Baked GI / baked indirect | DONE | GI volume + Node path-traced lightmaps (QUEST-LIGHT) |
+| PBR materials, normal + roughness maps, 2K ASTC (KTX2) | DONE hero set | QUEST-MAT; extend coverage in GFX-PARITY if gaps |
+| Reflection captures, wet/metal reflections | PART | envProbe per section; wet puddle/roughness response -> GFX-PARITY |
+| Selective real-time lights | DONE | lantern + pooled lamps; shadows baked |
+| Contact shadows / AO | PART | baked AO in lightmaps; dynamic contact shadows for body/hands/creature/props -> GFX-PARITY |
+| Beveled edges | PART | env kit bevelled; unit-box solids get shader edge-bevel normals -> GFX-PARITY |
+| Fingerprint/scratch/dust/wear, decals | PART | decals + detail maps; hands/launcher wear maps + wear decals -> GFX-PARITY, SCENE-DETAIL |
+| Glass/transparent | PART | lantern glass/halo; launcher gauge glass -> GFX-PARITY |
+| Fog/depth, controlled particles | DONE | atmosphere/debris/ropeFx budgets |
+| Fixed foveated rendering, 4x MSAA, render scale | DONE (governor) | tune on headset; confirm samples=4 in XR -> GFX-PARITY |
+| Vulkan / mobile forward / Multiview | N/A | Quest Browser WebXR (single-pass multiview used by three r170 when OVR_multiview2 present) |
+| 90 FPS target | TODO | currently 72 Hz target; add 90 Hz option with auto fallback via updateTargetFrameRate -> GFX-PARITY |
+| LOD, occlusion culling, fewer draw calls | PART | creature LODs, instancing, section culling; verify section/portal culling + prop LODs -> GFX-PARITY |
+| Hand tracking + gripping poses | TODO | controllers only today -> WP-HANDTRACK (optional hand-tracking, pinch/fist = trigger/grip) |
+| Object weight/inertia, interactions | PART | rope/pendulum + pickups; dropped/thrown bag items with inertia -> WP-HANDTRACK/GFX-PARITY tail |
+| Character models + animation | DONE | body + rigged Mason |
+| Skin/fabric/wood/stone/metal shaders | PART | stone/metal done; fabric sheen + skin on arms/body -> GFX-PARITY |
+| Variation/imperfections, controlled sightlines, far simplification | PART | SCENE-DETAIL, VR-POLISH |
