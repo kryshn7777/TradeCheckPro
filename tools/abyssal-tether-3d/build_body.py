@@ -1852,7 +1852,7 @@ def uv_unwrap(ob):
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.ops.uv.select_all(action="SELECT")
     try:
-        bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=0.0016, shape_method="CONCAVE")
+        bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=0.0014, shape_method="AABB")
     except TypeError:
         bpy.ops.uv.pack_islands(rotate=True, margin=0.002)
     bpy.ops.object.mode_set(mode="OBJECT")

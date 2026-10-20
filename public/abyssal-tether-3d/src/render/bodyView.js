@@ -38,8 +38,9 @@ const T = {
   upper: 0.3, // rest bone lengths are read from the skeleton; these are only fallbacks
   stub: 0.1,
   sleeveInset: 0.04, // the stub tip sits this far inside the arms' sleeve opening (m)
-  neckDrop: 0.1, // neck base below the head pivot (m)
-  pivot: [0, -0.09, 0.07], // head pivot relative to the eyes, in head space (m)
+  neckDrop: 0.17, // neck base below the eyes (m)
+  neckBack: 0.11, // ... and behind them (m), 0.20 when looking down (the head hangs forward of the neck)
+  neckBackDown: 0.21,
   armStretch: 1.35,
   torsoLimitXr: 0.65, // rad: the torso may lag the head yaw by this much before it is dragged along
   torsoLimitDesk: 0.5,
@@ -54,7 +55,7 @@ const T = {
   // Looking down pushes the feet this far forward (along the torso heading) while the neck stays under the camera: the body
   // leans back a little, so the chest, belt, thighs, knees and boots are inside the view (the desktop camera is a narrow
   // 70-degree window; a real person sees them with peripheral vision).
-  shiftDesk: 0.3,
+  shiftDesk: 0.28,
   shiftXr: 0.16,
   light: 0.5, // x the direct (lantern) light on the body: it is lit like the hands, not blown out
   env: 1.1, // image based light (the hands' lit-room reflection)
@@ -504,16 +505,20 @@ export class BodyView {
     pel.updateMatrixWorld(true);
 
     // ---- neck base target ----
-    _v.set(T.pivot[0], T.pivot[1], T.pivot[2]).applyQuaternion(_qh);
-    _Nt.copy(_H).add(_v);
-    _Nt.y -= T.neckDrop;
+    const back = T.neckBack + (T.neckBackDown - T.neckBack) * sstep(0.3, 1.1, pitchDown);
+    _Nt.set(_H.x + Math.sin(headYaw) * back, _H.y - T.neckDrop - 0.02 * sstep(0.3, 1.1, pitchDown), _H.z + Math.cos(headYaw) * back);
     // pelvis under it
     const Ls = (this.len.spine1 + this.len.spine2) * k;
     _S.set(root.position.x, 0, root.position.z);
-    const px = _S.x + (_Nt.x - _S.x) * 0.55;
-    const pz = _S.z + (_Nt.z - _S.z) * 0.55;
+    const px = _S.x + (_Nt.x - _S.x) * 0.62;
+    const pz = _S.z + (_Nt.z - _S.z) * 0.62;
     const hxz2 = (_Nt.x - px) * (_Nt.x - px) + (_Nt.z - pz) * (_Nt.z - pz);
     let py = _Nt.y - Math.sqrt(Math.max(0.0004, Ls * Ls - hxz2));
+    // the legs must reach the planted feet: hip (0.08 below Spine1's head) to ankle <= leg length
+    const legL = (this.len.thigh + this.len.shin) * k * 0.985;
+    const dxz2 = (px - _S.x) * (px - _S.x) + (pz - _S.z) * (pz - _S.z);
+    const reachY = feetY + (this.len.ankle + 0.08) * k + Math.sqrt(Math.max(0.01, legL * legL - dxz2));
+    if (this._ikW > 0.5 && py > reachY) py = reachY;
     py = clamp(py, feetY + 0.3 * k, feetY + 1.04 * k);
     // pelvis bone position so that Spine1's head lands on (px, py, pz)
     worldQuat(pel, _qa);
