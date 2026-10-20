@@ -280,6 +280,7 @@ export const SETTINGS_DEFAULTS = {
   brightness: 1.0, // 0.6..1.6 exposure multiplier (calibration screen)
   blackLevel: 0, // 0..1 lifts the darkest pixels by up to 6/255 (calibration screen)
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
+  tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
 };
 
 /** Limits and allowed values of the WP-UX settings (the single source for the UI, sanitizeUxSettings and the tests). */
@@ -316,6 +317,7 @@ export function sanitizeUxSettings(s) {
   s.captions = s.captions === true;
   s.colorSafe = s.colorSafe === true;
   s.brightnessChecked = s.brightnessChecked === true;
+  s.tutorialHints = s.tutorialHints !== false;
   return s;
 }
 

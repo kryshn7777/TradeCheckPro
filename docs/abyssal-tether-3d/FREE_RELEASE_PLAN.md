@@ -92,3 +92,11 @@ Status: DONE = in the build (light-checked, headset-unverified) · PART = partly
 | Character models + animation | DONE | body + rigged Mason |
 | Skin/fabric/wood/stone/metal shaders | PART | stone/metal done; fabric sheen + skin on arms/body -> GFX-PARITY |
 | Variation/imperfections, controlled sightlines, far simplification | PART | SCENE-DETAIL, VR-POLISH |
+| (2nd list 2026-10-20 'WebXR realism optimization points') WebXR immersive-vr, WebGL2, three.js, PBR, IBL/HDR env, KTX2/Basis, mips + anisotropy, foveation, multiview, instancing, LOD, particles, dynamic resolution | DONE/PART | already in build (anisotropy set on level/hero textures; confirm mips on all KTX2) |
+| WebGPU | N/A | Quest Browser WebXR is WebGL2 only today; keep WebGL2 path |
+| Draco/Meshopt geometry compression | TODO | GLBs total ~26 MB raw (rig 7.9, arms 5.8, hero 5.6, kit 5.5, body 2.1); add EXT_meshopt_compression (npm meshoptimizer encoder + vendored MeshoptDecoder, GLTFLoader.setMeshoptDecoder) -> GFX-PARITY |
+| Screen-space reflections | N/A (cost) | replaced by probe reflections + wet-surface response; no SSR on Quest |
+| Real-time shadows for key objects | PART | cheap blob/contact shadows + lantern-lit key props; no shadow-map pass on Quest budget -> GFX-PARITY decides |
+| WebXR-compatible post-processing | N/A (cost) | no full-screen passes; tonemap/grade in-shader (LOOK uniforms), vignette as shader/quad |
+| Smooth locomotion, stable head tracking | DONE | 1:1 height, comfort options in WP-UX |
+
