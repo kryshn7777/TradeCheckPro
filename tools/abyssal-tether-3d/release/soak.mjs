@@ -48,15 +48,18 @@ const browser = await launch(['--enable-precise-memory-info', '--js-flags=--expo
 const ctx = await browser.newContext({ viewport: { width: VW, height: VH } });
 const page = await newPage(ctx, { xr: true, viewport: { width: VW, height: VH } });
 const cdp = await ctx.newCDPSession(page);
+if (argv.includes('--verbose')) page.on('console', (m) => m.text().startsWith('SOAK') && console.log('   ' + m.text()));
 await page.goto(srv.base + '?sw=0&gov=off', { waitUntil: 'domcontentloaded' });
 await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 180000, label: 'boot' });
 await sleep(1000);
 
 // ---- in-page driver ------------------------------------------------------------------------------------------------
+await page.evaluate(() => (window.__soakVerbose = location.search.includes('verbose') || true));
 await page.evaluate(
   ({ RENDER_EVERY }) => {
     const G = window.AT3D.game;
     const D = window.AT3D.debug;
+    const verbose = !!window.__soakVerbose;
     const S = (window.__soak = { simSeconds: 0, deaths: 0, respawns: 0, contextLosses: 0, xrCycles: 0, restarts: 0, menuLoops: 0, pauses: 0, sections: new Set(), wallMs: 0 });
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     /** Simulates `sec` seconds, rendering a real frame every RENDER_EVERY simulated seconds. */
@@ -64,6 +67,7 @@ await page.evaluate(
       let left = sec;
       while (left > 1e-6) {
         const chunk = Math.min(RENDER_EVERY, left);
+        if (verbose) console.log(`SOAK step ${chunk}s state=${G.state} t=${S.simSeconds.toFixed(0)}`);
         D.step(chunk, { render: true, state: false });
         S.simSeconds += chunk;
         left -= chunk;
@@ -206,6 +210,7 @@ async function gc() {
   }
 }
 
+const log = (m) => process.env.SOAK_LOG && console.log('   [soak] ' + m);
 const samples = [];
 const events = [];
 const t0 = Date.now();
@@ -248,10 +253,13 @@ async function contextCycle() {
 let bench = null;
 for (let k = 0; k < CYCLES; k++) {
   const name = await page.evaluate((i) => window.__soakCycle(i), k);
+  log(`cycle ${k + 1} script ${name} done`);
   if (k % 5 === 2) await xrCycle();
   if (k % 7 === 4) await contextCycle();
   bench = await page.evaluate(() => window.__soakBench());
+  log('bench done');
   await gc();
+  log('gc done');
   await sleep(150);
   const s = await page.evaluate(() => window.__soakSample());
   s.cycle = k;

@@ -24,8 +24,11 @@
  * floor/wall hit only pays the excess over the one already taken (so the total is the larger of
  * the two, not the sum).
  *
+ * Checkpoints: Game3D restores full health on reaching a new checkpoint (CONFIG.health.checkpointHeal) and a respawn /
+ * restart / warp resets it; Abyss has no checkpoints, so there it only regenerates.
+ *
  * Regeneration: regenDelay seconds without damage, then regenRate hp/s (fraction of full) up to
- * full. Normal 6 s / 5 hp/s, Nightmare 9 s / 3 hp/s, Abyss 15 s / 1 hp/s. Sandbox (no lethal
+ * full. Normal 6 s / 5 hp/s, Nightmare 9 s / 3 hp/s, Abyss 12 s / 2 hp/s. Sandbox (no lethal
  * impacts) takes no fall damage. god (debug) takes none at all.
  *
  * Bus events (payloads are plain objects):

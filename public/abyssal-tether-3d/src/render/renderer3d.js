@@ -50,8 +50,8 @@ const ENV_LIGHTS = 2;
 const ENV_REASSIGN = 0.25; // seconds between nearest-light re-evaluations
 const ENV_GAIN = 1.6; // level.lights: candela = intensity × max(6, 0.06·range²) × gain (reaches ~range)
 const THEME_BLEND = 9; // metres either side of a section boundary
-const AMBIENT_SCALE = 2.7; // theme.ambient → hemisphere intensity
-const KEY_SCALE = 5; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
+const AMBIENT_SCALE = 3.4; // theme.ambient → hemisphere intensity
+const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
@@ -97,7 +97,7 @@ const DEFAULT_THEME = {
 // Per-section look (Chapter I, by section index; the art bible's wetness ramp: dry ash at the top,
 // soaked in the Last Throat) and the strength of the haze rim light on carved relief.
 const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
-const SECTION_RIM = [0.55, 0.55, 0.5, 0.6, 0.45, 0.45, 0.6, 0.4];
+const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 
 const _tmpC = new THREE.Color();
 
@@ -129,7 +129,7 @@ export class Renderer3D {
     r.setPixelRatio(Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.2;
+    r.toneMappingExposure = 1.25;
     r.shadowMap.enabled = false;
     r.xr.enabled = true;
     try {
@@ -174,6 +174,8 @@ export class Renderer3D {
     this.key.castShadow = false;
     this.key.position.copy(KEY_DIR); // toward the key (materials.KEY_DIR): from high above, slanted
     this.keyScale = KEY_SCALE;
+    /** Look multipliers (debug / grading hooks): ambient fill, shaft key, rim light. */
+    this.tune = { ambient: 1, key: 1, rim: 1 };
     this.scene.add(this.key);
 
     // Lantern: one warm flickering PointLight carried by the player.
@@ -609,15 +611,16 @@ export class Renderer3D {
     const grey = (_tmpC.r + _tmpC.g + _tmpC.b) / 3;
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
-    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * (1 - tk * 0.25);
+    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
-    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * (1 - tk * 0.35);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35);
 
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
+    LOOK.uTime.value = this.time;
     LOOK.uWet.value = th.wet;
-    LOOK.uRim.value = th.rim * (1 - tk * 0.3);
+    LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3);
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
 
     // Lantern flicker (a living flame, never a strobe).

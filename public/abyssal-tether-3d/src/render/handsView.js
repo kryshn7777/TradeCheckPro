@@ -80,8 +80,8 @@ export const HANDS_TUNING = {
   gearUrl: GEAR_URL,
   wristLiftGear: { x: 0, y: 0.083, z: 0.115 }, // wrist-HUD mount above the strapped-on launcher, behind the drum
   desktopGear: { x: 0, y: 0.03, z: 0.03, rx: 0, ry: 0, rz: 0, scale: 1.3 }, // arm model offset on the desktop virtual hand
-  gearLight: 0.5, // × direct light on the gear (the lantern sits a few cm from the hands)
-  gearEnv: 0.8, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
+  gearLight: 0.2, // × direct light on the gear (the lantern sits a few cm from the hands)
+  gearEnv: 1.2, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
   gearGlowIdle: 0.45, // emissive intensity of the pilot lamp / gauge phosphor
   gripRest: 0.62, // resting-finger-on-the-grip-button reads as a half-closed hand
   headScaleMax: 8, // loose grapple head enlarges with distance like the rope does (ropeView R_PER_M)

@@ -65,12 +65,15 @@ export const KEY_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize();
  *  uRim       its strength
  *  uWet       0..1 section wetness: porous stone darkens, roughness drops, so the
  *             carried lantern slides highlights over the surfaces as you swing
- *  uWarm      lantern-pool warmth bias of the rim (0 = cold haze)
+ *  uVG        vertical grade: surfaces above the eye catch a little more of the
+ *             light that falls down the shaft, those far below sink into the pit
  */
 export const LOOK = {
   uRimColor: { value: new THREE.Color(0.2, 0.25, 0.28) },
   uRim: { value: 0.0 },
   uWet: { value: 0.0 },
+  uVG: { value: 0.3 },
+  uTime: { value: 0.0 },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -692,7 +695,8 @@ export function patchMaterial(mat, opts = {}) {
   const lit = !!opts.lit;
   const wetK = opts.wetK != null ? opts.wetK : 1;
   const wetMin = opts.wetMin || 0;
-  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|fog:${fog}`;
+  const breathe = opts.breathe || 0;
+  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -796,13 +800,29 @@ ${UV_ASSIGN}
       );
     }
 
+    if (lit && breathe > 0) {
+      // living growth: a slow position-only sway (no per-face displacement, so flat-shaded faces never tear apart)
+      vDecl += 'uniform float uTime;\n';
+      vs = vs.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+  {
+    float atPh = position.y * 0.8 + position.x * 0.5 + position.z * 0.6;
+    transformed += vec3( sin( uTime * 0.7 + atPh ), 0.4 * sin( uTime * 0.5 + atPh * 1.3 ), cos( uTime * 0.6 + atPh * 0.9 ) ) * ${breathe.toFixed(4)};
+  }`,
+      );
+    }
     if (lit) {
-      fDecl += 'uniform vec3 uRimColor;\nuniform float uRim;\nuniform float uWet;\n';
+      fDecl += 'uniform vec3 uRimColor;\nuniform float uRim;\nuniform float uWet;\nuniform float uVG;\n';
       const dry = uvMode ? 'smoothstep( 0.55, 0.95, vAtTop )' : '0.0';
       // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
       fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
   float atWet = max( uWet * ${wetK.toFixed(3)}, ${wetMin.toFixed(3)} ) * ( 1.0 - ${dry} );
-  diffuseColor.rgb *= 1.0 - 0.32 * atWet;`);
+  diffuseColor.rgb *= 1.0 - 0.32 * atWet;
+  {
+    float atWy = cameraPosition.y + dot( vec3( viewMatrix[ 0 ][ 1 ], viewMatrix[ 1 ][ 1 ], viewMatrix[ 2 ][ 1 ] ), - vViewPosition );
+    diffuseColor.rgb *= 1.0 + uVG * clamp( ( atWy - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );
+  }`);
       fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
       fs = fs.replace(
@@ -1006,7 +1026,7 @@ export class MaterialLibrary {
     m.decorRock = this._std(S.distant || S.rock, { vertexColors: true }, { uv: 'metric', ash: 0.25, macro, role: 'distant', lit: true });
     // Organic growth (the predator's sinew through the masonry): the flesh set's
     // relief, graded to a dark, MATTE bruise-brown (art bible: never wet red).
-    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45 });
+    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45, breathe: 0.03 });
     m.decorFlesh.userData.matte = 0.82;
     m.decorFlesh.roughnessMap = null;
     m.decorFlesh.roughness = 0.82;

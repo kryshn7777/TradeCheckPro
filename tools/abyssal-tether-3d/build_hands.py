@@ -2500,13 +2500,14 @@ def composite(R, res, outdir, tag=""):
                 r = r * (1 - engr) + 0.65 * engr
                 mt = mt * (1 - engr)
         elif c == "leather":
-            col = (C((0.085, 0.052, 0.031)) * (0.75 + 0.55 * n1)[:, None]).reshape(-1, 3)
-            wear = np.clip(cx * 1.2 + e * 0.8, 0, 1) * (0.35 + 0.65 * sm(n2, 0.35, 0.7))
-            col = mix(col, C((0.19, 0.135, 0.092)).reshape(1, 3), wear * 0.85)
-            col = mix(col, C((0.23, 0.18, 0.13)).reshape(1, 3), n3 * 0.7)  # dry cracks
-            dirt = cv * (0.5 + 0.5 * n1)
-            col = col * (1 - 0.55 * dirt)[:, None]
-            r = 0.60 + 0.10 * n2 - 0.20 * wear + 0.18 * n3 + 0.08 * dirt
+            col = (C((0.060, 0.036, 0.021)) * (0.70 + 0.65 * n1)[:, None]).reshape(-1, 3)
+            col = mix(col, C((0.085, 0.052, 0.030)).reshape(1, 3), sm(n2, 0.4, 0.8) * 0.5)  # uneven tanning
+            wear = np.clip(cx * 1.3 + e * 0.9, 0, 1) * (0.35 + 0.65 * sm(n2, 0.35, 0.7))
+            col = mix(col, C((0.20, 0.135, 0.085)).reshape(1, 3), wear * 0.9)  # rubbed through to the lighter hide
+            col = mix(col, C((0.24, 0.18, 0.125)).reshape(1, 3), n3 * 0.55 * (1 - 0.5 * cv))  # dry cracks
+            dirt = np.clip(cv * 1.3, 0, 1) * (0.55 + 0.45 * n1)
+            col = col * (1 - 0.72 * dirt)[:, None]  # grime packed into the creases
+            r = 0.58 + 0.10 * n2 - 0.26 * wear + 0.18 * n3 + 0.12 * dirt
             mt = np.zeros_like(r)
         elif c == "thread":
             col = (C((0.47, 0.40, 0.28)) * (0.8 + 0.3 * n1)[:, None]).reshape(-1, 3)
@@ -2718,7 +2719,8 @@ def mesh_from_parts(name, parts, coll, bone_of=None):
     attr = me.attributes.new("flipu", "INT", "FACE")
     attr.data.foreach_set("value", flips)
     if any(matidx):
-        me.polygons.foreach_set("material_index", matidx)
+        ea = me.attributes.new("ecgface", "INT", "FACE")  # material slots are assigned after the slots exist (see assemble)
+        ea.data.foreach_set("value", matidx)
     if bone_of:
         for i, bn in enumerate(verts_bone):
             if bn not in vg:
@@ -3068,7 +3070,7 @@ def render_all(scene, R, poses, gear_mat):
         gb = glow.node_tree.nodes["Principled BSDF"]
         gb.inputs["Emission Color"].default_value = (1.0, 0.62, 0.25, 1)
         gb.inputs["Emission Strength"].default_value = 3.0
-        anchor = Vector((0.5, 3.12, 1.95))
+        anchor = Vector((0.5, 3.12, 2.0))
         bm = bmesh.new()
         torus(bm, anchor, Vector((0, 1, 0)), 0.09, 0.016, 32, 10)
         ring = new_obj("AnchorRing", bm, env)
@@ -3095,11 +3097,11 @@ def render_all(scene, R, poses, gear_mat):
         rb.inputs["Emission Strength"].default_value = 0.35
         rope.data.materials.append(cab)
         lp = place_lantern(5.0)
-        lantern_light(lp, 22.0)
+        lantern_light(lp, 60.0)
         hide.append(add_light("ShaftCool", "SPOT", (1.4, 1.2, 6.5), 900, (0.45, 0.62, 0.85), size=0.6, target=(0.2, 1.2, 1.0), spot=math.radians(50)))
-        hide.append(add_light("Bounce", "AREA", (0.0, 1.0, 0.5), 5.0, (0.9, 0.6, 0.38), size=1.2, target=(0, 0.5, 1.4)))
-        hide.append(add_light("Fill", "AREA", (0.0, -0.3, 2.2), 6.0, (0.55, 0.65, 0.8), size=1.5, target=(0, 0.6, 1.2)))
-        cam = look_cam("CamFP", (0.0, 0.0, 1.60), (0.0, 1.0, 1.60 - 0.40), 19.0)
+        hide.append(add_light("Bounce", "AREA", (0.0, 1.0, 0.5), 30.0, (0.9, 0.6, 0.38), size=1.2, target=(0, 0.5, 1.4)))
+        hide.append(add_light("Fill", "AREA", (0.0, -0.3, 2.2), 40.0, (0.55, 0.65, 0.8), size=1.5, target=(0, 0.6, 1.2)))
+        cam = look_cam("CamFP", (0.0, 0.0, 1.60), (0.0, 1.0, 1.0), 17.0)
         cam.data.sensor_width = 36
         render_shot(scene, cam, os.path.join(RENDER_DIR, "arms_fp.png"), args.res, args.samples)
         clear_temp()
@@ -3382,6 +3384,9 @@ def main():
         o.data.materials.append(gear)
     ecg_mat = make_ecg_material()
     lmesh_R.data.materials.append(ecg_mat)  # slot 1: 'Arm_ECG_Screen' (HandsView swaps its map for healthFx.ecgTexture)
+    _ev = [0] * len(lmesh_R.data.polygons)
+    lmesh_R.data.attributes["ecgface"].data.foreach_get("value", _ev)
+    lmesh_R.data.polygons.foreach_set("material_index", _ev)
     arms, rigs, meshes = {}, {}, {}
     arms["R"] = build_armature("R", export)
     me = arm_low.data

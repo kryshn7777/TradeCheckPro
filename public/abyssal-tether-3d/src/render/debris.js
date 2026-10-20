@@ -655,6 +655,7 @@ export class Trickles {
       blendSrcAlpha: THREE.OneFactor,
       blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
       side: THREE.DoubleSide,
+      forceSinglePass: true, // a transparent double-sided material would otherwise draw twice (back, then front)
     });
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.name = 'fxTrickles';

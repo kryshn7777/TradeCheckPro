@@ -31,7 +31,6 @@ const FRAG = /* glsl */ `
 uniform sampler3D uNoise;
 uniform vec3 uLanternPos;
 uniform vec3 uLanternCol;
-uniform vec3 uAmbient;
 uniform vec3 uWind;
 uniform float uTime;
 uniform float uGain;
@@ -45,6 +44,12 @@ void main() {
   vec3 C = cameraPosition;
   vec3 v = normalize( vWorld - C );
   vec3 w = uLanternPos - C;
+  // art-directed: the glow is centred on the lantern's direction and dies away round the sides
+  float ang = pow( max( 0.5 + 0.5 * dot( v, w / max( length( w ), 1e-3 ) ), 0.0 ), uSharp );
+  if ( ang < 0.004 ) {
+    gl_FragColor = vec4( 0.0 ); // most of the quad: nothing to add, no noise fetch
+    return;
+  }
   float t0 = dot( w, v );
   float b2 = max( dot( w, w ) - t0 * t0, 0.0 );
   float b = sqrt( b2 + uCore * uCore );
@@ -53,9 +58,7 @@ void main() {
   // air swirling in the glow: the noise where the ray passes nearest the lantern
   vec3 q = ( C + v * max( t0, 0.0 ) ) * ( 1.0 / 7.0 ) + uWind * uTime;
   float n = texture( uNoise, q ).r;
-  I *= 0.55 + 0.9 * n;
-  // art-directed: the glow is centred on the lantern's direction and dies away round the sides
-  I *= pow( max( 0.5 + 0.5 * dot( v, w / max( length( w ), 1e-3 ) ), 0.0 ), uSharp );
+  I *= ( 0.55 + 0.9 * n ) * ang;
   // soft shoulder: a glow, never a white-out
   float h = 1.0 - exp( - I * uGain );
   // warm at the core, the air's own colour at the rim
@@ -81,7 +84,6 @@ export class LanternHalo {
    */
   constructor(scene, lightUniforms, noise) {
     this.scene = scene;
-    this.gain = 1;
     this.params = { gain: 0.016, core: 0.5, reach: 4, tint: 0.5, half: 7, sharp: 12 };
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0]), 3));
@@ -91,7 +93,6 @@ export class LanternHalo {
       uNoise: { value: noise },
       uLanternPos: lightUniforms.uLanternPos,
       uLanternCol: { value: new THREE.Color(0, 0, 0) },
-      uAmbient: lightUniforms.uAmbient,
       uWind: { value: new THREE.Vector3(0.006, -0.004, 0.004) },
       uTime: { value: 0 },
       uGain: { value: 0.016 },
@@ -118,6 +119,7 @@ export class LanternHalo {
       blendSrcAlpha: THREE.OneFactor,
       blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
       side: THREE.DoubleSide,
+      forceSinglePass: true, // a transparent double-sided material would otherwise draw twice (back, then front)
     });
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.name = 'fxLanternHalo';

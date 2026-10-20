@@ -278,7 +278,7 @@ class Parts {
     return this._push('glow', g);
   }
   /** Additive volumetric shaft: open cylinder, bright core at the top fading downward and outward. */
-  shaft(cx, cy, cz, rTop, rBot, h, color, k) {
+  shaft(cx, cy, cz, rTop, rBot, h, color, k, phase = 0) {
     let g = new THREE.CylinderGeometry(rTop, rBot, h, 12, 4, true);
     g = nonIndexed(g);
     g.translate(cx, cy, cz);
@@ -288,7 +288,10 @@ class Parts {
     _c.set(color);
     for (let i = 0; i < p.count; i++) {
       const t = (p.getY(i) - (cy - h / 2)) / h; // 0 bottom → 1 top
-      const a = k * (0.15 + 0.85 * t * t);
+      // dust streaks: the beam is brighter along a few radial bands (angle noise)
+      const ang = Math.atan2(p.getZ(i) - cz, p.getX(i) - cx);
+      const streak = 0.62 + 0.38 * Math.sin(ang * 3 + phase) * Math.sin(ang * 5 - phase * 1.7 + t * 2);
+      const a = k * (0.15 + 0.85 * t * t) * streak;
       col[i * 3] = _c.r * a;
       col[i * 3 + 1] = _c.g * a;
       col[i * 3 + 2] = _c.b * a;
@@ -564,7 +567,16 @@ const DECOR = {
   },
   'shaft-light'(P, sx, sy, sz, item) {
     const col = typeof item.color === 'string' || typeof item.color === 'number' ? item.color : PALETTE.cyan;
-    P.shaft(0, 0, 0, Math.max(sx, sz) * 0.3, Math.max(sx, sz) * 0.55, sy, col, 0.09);
+    // three nested shells: a bright core inside a wide faint skirt, so the beam has a soft falloff, not an edge
+    const R = Math.max(sx, sz);
+    const ph = (item.x || 0) * 0.37 + (item.y || 0) * 0.11;
+    for (const [sc, kk, d] of [
+      [1, 0.45, 0],
+      [0.62, 0.7, 1.3],
+      [0.34, 1.0, 2.1],
+    ]) {
+      P.shaft(0, 0, 0, R * 0.22 * sc, R * 0.8 * sc, sy, col, 0.075 * kk, ph + d);
+    }
   },
   debris(P, sx, sy, sz) {
     const rng = P.rng;
@@ -1138,6 +1150,11 @@ const GRADE = [
   { stone: [0.84, 0.86, 0.88], growth: 0.85, inlay: 0.5, course: 12, pier: 10, arcade: true, saints: 10, gears: 2, giant: 2.3, giantEvery: 2 }, // S7 Hollow Nave
   { stone: [0.78, 0.68, 0.62], growth: 1.0, inlay: 0.0, course: 7, pier: 6.6, arcade: false, saints: 4, gears: 1, giant: 1.6, giantEvery: 3 }, // S8 Last Throat
 ];
+/** Colossal turning cogs per section (S1..S8): the machine shows through the masonry from the second section down. */
+/** Organ-pipe banks per section (S1..S8). */
+const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
+const COG = [0, 2, 2, 3, 2, 3, 4, 3];
+const COG_MAX = 48;
 const DR = {
   wallMinH: 4.5, // solids taller than this are walls; lower ones are slabs
   anchorClear: 1.3, // no carving within this of an anchor ...
@@ -1332,6 +1349,162 @@ function glowQuad(cx, cy, cz, w, h) {
   g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(new Array(18).fill(1), 3));
   return g;
+}
+
+
+/**
+ * A colossal cog, unit radius, axis +z (back face at z = 0, 0.04 thick, hub to 0.065): trapezoid
+ * teeth, a rim, six spokes and a hub boss. Non-indexed position / normal / uv
+ * (metres at an 8 m reference radius) / AO colour, for one InstancedMesh.
+ */
+export function gearGeometry(teeth = 30, spokes = 6) {
+  const sh = new THREE.Shape();
+  const da = (Math.PI * 2) / teeth;
+  const R_ROOT = 0.9;
+  for (let i = 0; i < teeth; i++) {
+    const a = i * da;
+    for (const [k, r] of [
+      [0.04, R_ROOT],
+      [0.2, 1],
+      [0.46, 1],
+      [0.62, R_ROOT],
+    ]) {
+      const t = a + k * da;
+      const x = Math.cos(t) * r;
+      const y = Math.sin(t) * r;
+      if (i === 0 && k === 0.04) sh.moveTo(x, y);
+      else sh.lineTo(x, y);
+    }
+  }
+  sh.closePath();
+  const sa = (Math.PI * 2) / spokes;
+  const gap = 0.1;
+  for (let i = 0; i < spokes; i++) {
+    const hole = new THREE.Path();
+    const a0 = i * sa + gap;
+    const a1 = (i + 1) * sa - gap;
+    const n = 5;
+    for (let k = 0; k <= n; k++) {
+      const t = a0 + ((a1 - a0) * k) / n;
+      const x = Math.cos(t) * 0.76;
+      const y = Math.sin(t) * 0.76;
+      if (k === 0) hole.moveTo(x, y);
+      else hole.lineTo(x, y);
+    }
+    for (let k = n; k >= 0; k--) {
+      const t = a0 + ((a1 - a0) * k) / n;
+      hole.lineTo(Math.cos(t) * 0.3, Math.sin(t) * 0.3);
+    }
+    hole.closePath();
+    sh.holes.push(hole);
+  }
+  let body = new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: false, curveSegments: 1 });
+  body = nonIndexed(body);
+  keepAttrs(body, ['position', 'normal']);
+  let hub = new THREE.CylinderGeometry(0.2, 0.2, 0.025, 10, 1);
+  hub.rotateX(Math.PI / 2);
+  hub.translate(0, 0, 0.0525);
+  hub = nonIndexed(hub);
+  keepAttrs(hub, ['position', 'normal']);
+  for (const g of [body, hub]) {
+    const n = g.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const v = Math.abs(g.attributes.normal.getZ(i)) > 0.9 ? 1 : 0.62;
+      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = g === hub ? v * 0.9 : v;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const uv = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) {
+      uv[i * 2] = g.attributes.position.getX(i) * 8;
+      uv[i * 2 + 1] = g.attributes.position.getY(i) * 8;
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
+  const merged = mergeGeometries([body, hub], false);
+  body.dispose();
+  hub.dispose();
+  return merged;
+}
+
+/**
+ * Flat world-space decal geometry facing +y (floor inlays): rings, spokes and
+ * rectangles as triangles, ao colour. `glow` omits the normal (MeshBasic list).
+ */
+class FlatBuilder {
+  constructor(y) {
+    this.y = y;
+    this.p = [];
+    this.c = [];
+  }
+
+  tri(a, b, c, col) {
+    const cr = (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]); // 2D (x, z) cross, y-up when > 0
+    const t = cr > 0 ? [a, b, c] : [a, c, b];
+    for (const v of t) {
+      this.p.push(v[0], this.y, v[1]);
+      this.c.push(col[0], col[1], col[2]);
+    }
+  }
+
+  quad(a, b, c, d, col) {
+    this.tri(a, b, c, col);
+    this.tri(a, c, d, col);
+  }
+
+  ring(cx, cz, r0, r1, segs, col, a0 = 0, a1 = Math.PI * 2) {
+    for (let i = 0; i < segs; i++) {
+      const t0 = a0 + ((a1 - a0) * i) / segs;
+      const t1 = a0 + ((a1 - a0) * (i + 1)) / segs;
+      const c0 = Math.cos(t0);
+      const s0 = Math.sin(t0);
+      const c1 = Math.cos(t1);
+      const s1 = Math.sin(t1);
+      this.quad([cx + c0 * r0, cz + s0 * r0], [cx + c0 * r1, cz + s0 * r1], [cx + c1 * r1, cz + s1 * r1], [cx + c1 * r0, cz + s1 * r0], col);
+    }
+    return this;
+  }
+
+  /** A strip of width w from radius r0 to r1 along angle a. */
+  spoke(cx, cz, a, r0, r1, w, col) {
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    const px = -dz * w * 0.5;
+    const pz = dx * w * 0.5;
+    this.quad([cx + dx * r0 + px, cz + dz * r0 + pz], [cx + dx * r1 + px, cz + dz * r1 + pz], [cx + dx * r1 - px, cz + dz * r1 - pz], [cx + dx * r0 - px, cz + dz * r0 - pz], col);
+    return this;
+  }
+
+  rect(x0, z0, x1, z1, col) {
+    this.quad([x0, z0], [x1, z0], [x1, z1], [x0, z1], col);
+    return this;
+  }
+
+  /** A rectangular frame line of width w, inset d from [x0,x1]×[z0,z1]. */
+  frame(x0, z0, x1, z1, d, w, col) {
+    const a = x0 + d;
+    const b = x1 - d;
+    const c = z0 + d;
+    const e = z1 - d;
+    this.rect(a, c, b, c + w, col).rect(a, e - w, b, e, col).rect(a, c + w, a + w, e - w, col).rect(b - w, c + w, b, e - w, col);
+    return this;
+  }
+
+  get empty() {
+    return this.p.length === 0;
+  }
+
+  geometry(withNormal) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    if (withNormal) {
+      const n = new Float32Array(this.p.length);
+      for (let i = 1; i < n.length; i += 3) n[i] = 1;
+      g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    return g;
+  }
 }
 
 // Unit box faces for TriBuilder: four corners (x, y, z in ±1) then the normal;
@@ -1589,6 +1762,7 @@ class Dresser {
     this.emit = emit;
     this.plan = plan;
     this.secs = Array.isArray(level.sections) ? level.sections : [];
+    this.gears = []; // colossal turning cogs: { m (Matrix4, unit-radius → world), spin (rad/s), phase, tint, sec }
     this.stats = { faces: 0, piers: 0, courses: 0, crowns: 0, corbels: 0, roots: 0, arches: 0, braces: 0, burls: 0, lancets: 0, cords: 0 };
     this._m = new THREE.Matrix4();
   }
@@ -1682,7 +1856,10 @@ class Dresser {
       const sec = secOf(y);
       yield sec;
       if (kind === 0) yield* this._dressWall(o, sec);
-      else if (kind === 1) this._dressSlab(o);
+      else if (kind === 1) {
+        this._dressSlab(o);
+        this._inlay(o);
+      }
       else this._ceiling(o);
     }
   }
@@ -1775,7 +1952,7 @@ class Dresser {
     }
     courses.sort((a, b) => b - a);
     const near = F.across <= DR.nearWall;
-    F.budget = { roots: DR.rootsPerFace, burls: DR.burlsPerFace, lancets: DR.lancetsPerFace, icons: DR.iconsPerFace, trunks: DR.trunksPerFace };
+    F.budget = { organs: 1, roots: DR.rootsPerFace, burls: DR.burlsPerFace, lancets: DR.lancetsPerFace, icons: DR.iconsPerFace, trunks: DR.trunksPerFace };
     for (const yc of courses) {
       yield sec;
       const g = this.grade(yc);
@@ -1880,6 +2057,66 @@ class Dresser {
           F.budget.burls--;
         }
       }
+    }
+    this._cogs(F, hosts, rng);
+  }
+
+
+  /**
+   * Colossal turning cogs sunk half into a far-ish wall: the order's machine
+   * showing through the masonry. A big wheel (r 6–15 m) with a smaller one meshing
+   * into it, drawn by one InstancedMesh that LevelView turns slowly. Only on tall,
+   * wide wall faces away from the route (across ≥ 18 m), clear of every anchor,
+   * prop and the player space; they stand ≤ 1 m off the wall.
+   */
+  _cogs(F, hosts, rng) {
+    const S = this.S;
+    if (F.across < 18 || F.H < 22) return;
+    const used = this._cogUsed || (this._cogUsed = {});
+    for (let tries = 0; tries < 10; tries++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      const r = 6 + rng() * 8;
+      if (b - a < r * 2 + 5 || F.H < r * 2 + 6) continue;
+      const u = a + r + 2 + rng() * (b - a - 2 * r - 4);
+      const y = r + 3 + rng() * (F.H - 2 * r - 6);
+      const sec = typeof this.level.sectionIndexAt === 'function' ? this.level.sectionIndexAt(F.o.y + y) | 0 : 0;
+      if ((used[sec] || 0) >= (COG[sec] || 0)) continue;
+      const st = this.secs[sec] && this.secs[sec].theme;
+      if (F.across > 0.75 * ((st && st.fogFar) || 80)) continue; // beyond the haze: nobody would see it
+      const g = this.grade(F.o.y + y);
+      if (S.blocked(frameBox(F, u - r - 0.5, u + r + 0.5, y - r - 0.5, y + r + 0.5, 0, 3.5), hosts, true, DR.propClear * 1.5)) continue; // nothing (ledge, beam, anchor) within 3.5 m in front
+      const wp = (cx, cy) => [F.o.x + F.N.z * cx, F.o.y + cy, F.o.z - F.N.x * cx];
+      const clash = (cx, cy, rr, skip) => {
+        const p = wp(cx, cy);
+        return this.gears.some((o) => o !== skip && Math.hypot(o.cx - p[0], o.cy - p[1], o.cz - p[2]) < o.r + rr + 0.4);
+      };
+      if (clash(u, y, r + 0.3, null)) continue;
+      const dir = rng() < 0.5 ? -1 : 1;
+      const spin = (dir * 0.9) / r;
+      const push = (cx, cy, rr, sp, phase) => {
+        const m = new THREE.Matrix4();
+        faceMatrix(m, F.o.x + F.N.z * cx + F.N.x * 0.12, F.o.y + cy, F.o.z - F.N.x * cx + F.N.z * 0.12, F.N, rr, rr, Math.min(rr, 3));
+        const p = wp(cx, cy);
+        const o = { m, spin: sp, phase, tint: g.stone, sec, r: rr, cx: p[0], cy: p[1], cz: p[2] };
+        this.gears.push(o);
+        this._count('cog', F.o.y + cy, 800);
+        return o;
+      };
+      const parent = push(u, y, r, spin, rng() * 6.28);
+      // a smaller wheel meshing into it (centres r + r2 − a tooth apart), at a free angle
+      const r2 = r * (0.42 + rng() * 0.2);
+      for (let k = 0; k < 6; k++) {
+        const ang = rng() * 6.283;
+        const d = r + r2 - 0.1 * r2;
+        const u2 = u + Math.cos(ang) * d;
+        const y2 = y + Math.sin(ang) * d;
+        if (u2 - r2 < a + 1 || u2 + r2 > b - 1 || y2 - r2 < 2 || y2 + r2 > F.H - 2) continue;
+        if (S.blocked(frameBox(F, u2 - r2 - 0.4, u2 + r2 + 0.4, y2 - r2 - 0.4, y2 + r2 + 0.4, 0, 3.5), hosts, true, DR.propClear * 1.5) || clash(u2, y2, r2, parent)) continue;
+        push(u2, y2, r2, -spin * (r / r2), rng() * 6.28);
+        break;
+      }
+      used[sec] = (used[sec] || 0) + 1;
+      this.stats.cogs = (this.stats.cogs || 0) + 1;
     }
   }
 
@@ -2148,6 +2385,7 @@ class Dresser {
         const W = b - a;
         if (W < 2.2) continue;
         if (this._icon(F, a, b, yBot, yTop, g, hosts, rng)) continue;
+        if (this._organ(F, a, b, yBot, yTop, g, hosts, rng)) continue;
         if (!lancets) continue;
         const m = Math.max(1, Math.round(W / 3.2));
         const w = W / m;
@@ -2161,6 +2399,13 @@ class Dresser {
           if (F.budget.lancets <= 0 || S.blocked(box, hosts, false)) continue;
           this._cat = 'lancet';
           this._lancet(F, cx, yBot - s.minY, lw, jamb, rise, 0.16, 0.13, g.stone, 'stone', true, false);
+          // some of the blind lancets still hold a dim pane of old light: lit windows receding down the wall
+          if (g.inlay > 0.2 && rng() < 0.3 * g.inlay + 0.1) {
+            const k = (0.1 + rng() * 0.16) * Math.min(1, g.inlay + 0.2);
+            const warm = rng() < 0.18;
+            this._cat = 'pane';
+            this.put(F, archPanel(lw - 0.16, jamb, rise - 0.08, yBot - s.minY, 0.04, 1, 9), cx, 0, 'glow', warm ? [k * 1.5, k * 1.0, k * 0.5] : [k * 0.55, k * 1.0, k * 0.95]);
+          }
           this._cat = null;
           this.stats.lancets++;
           F.budget.lancets--;
@@ -2221,6 +2466,62 @@ class Dresser {
       }
     }
     return false;
+  }
+
+
+  /**
+   * A bank of iron organ pipes on a shelf in the bay [a, b] × [yBot, yTop] (world
+   * y): the order's machine speaks through the masonry. Pointed rank (tallest in
+   * the middle), collars, dark mouths, a backing board. Budgeted per face and
+   * section; never in the player space or near an anchor. True when placed.
+   */
+  _organ(F, a, b, yBot, yTop, g, hosts, rng) {
+    if (F.budget.organs <= 0) return false;
+    const sec = typeof this.level.sectionIndexAt === 'function' ? this.level.sectionIndexAt((yBot + yTop) / 2) | 0 : 0;
+    const used = this._organUsed || (this._organUsed = {});
+    if ((used[sec] || 0) >= (ORGAN[sec] || 0) || rng() > 0.5) return false;
+    const W = b - a;
+    const H = yTop - yBot;
+    if (W < 3 || H < 6) return false;
+    const n = Math.min(11, Math.floor((W - 0.6) / 0.62));
+    if (n < 4) return false;
+    const S = this.S;
+    const s = F.s;
+    const y0 = yBot - s.minY;
+    const hMax = Math.min(H - 1.6, 11);
+    const base = y0 + 1.0;
+    if (S.blocked(frameBox(F, a, b, y0, y0 + 1 + hMax + 0.4, 0, 1.0), hosts, true, DR.propClear)) return false;
+    const cx = (a + b) / 2;
+    const pitch = (W - 0.5) / n;
+    const T = new TriBuilder();
+    // shelf (a corbelled ledge) and the backing board
+    T.box(cx, y0 + 0.5, 0.45, W - 0.2, 0.2, 0.9, 0.7, 0, 63 & ~32);
+    T.box(cx, y0 + 0.2, 0.3, W - 0.6, 0.45, 0.6, 0.6, 0, 63 & ~32);
+    T.box(cx, base + hMax * 0.5 + 0.2, 0.09, W - 0.2, hMax + 0.4, 0.18, 0.5, 0, 63 & ~32);
+    const metal = new TriBuilder();
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const h = hMax * (0.42 + 0.58 * Math.sin(Math.PI * t) ** 0.8);
+      const r = Math.max(0.1, Math.min(0.27, 0.07 + 0.016 * h));
+      const px = a + 0.25 + pitch * (i + 0.5);
+      const cyl = new THREE.CylinderGeometry(r, r * 1.04, h, 9, 1, true);
+      cyl.translate(px, base + h / 2, 0.4);
+      let g2 = nonIndexed(cyl);
+      keepAttrs(g2, ['position', 'normal']);
+      const cn = g2.attributes.position.count;
+      g2.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(cn * 3).fill(0.9), 3));
+      metal.add(g2);
+      for (const k of [0.34, 0.7]) metal.box(px, base + h * k, 0.4, r * 2.5, 0.09, r * 2.5, 0.8, 0, 31);
+      metal.box(px, base + h * 0.17, 0.4 + r, r * 1.5, r * 0.8, 0.05, 0.22, 0, 16); // the mouth
+    }
+    this._cat = 'organ';
+    this.put(F, T.geometry(), 0, 0, 'stone', g.stone);
+    this.put(F, metal.geometry(), 0, 0, 'metal', g.stone);
+    this._cat = null;
+    used[sec] = (used[sec] || 0) + 1;
+    F.budget.organs--;
+    this.stats.organs = (this.stats.organs || 0) + 1;
+    return true;
   }
 
   /** One pointed lancet moulding: two jambs + a two-centred arch (item-local boxes). */
@@ -2468,6 +2769,132 @@ class Dresser {
     }
   }
 
+
+
+  // ---------------------------------------------------------------------------
+  // Iron beams and decks: edge flanges and stiffener plates down the sides, plate
+  // seams and rivet lines flush on top (nothing above the walking surface)
+  // ---------------------------------------------------------------------------
+  _dressIron(s) {
+    const S = this.S;
+    const X = s.maxX - s.minX;
+    const Z = s.maxZ - s.minZ;
+    const H = s.maxY - s.minY;
+    if (H > 2.2 || Math.max(X, Z) < 3) return;
+    const alongX = X >= Z;
+    const L = alongX ? X : Z;
+    const W = alongX ? Z : X;
+    const g = this.grade(s.maxY);
+    const hosts = new Set([s]);
+    const axis = alongX ? 'x' : 'z';
+    const c0 = alongX ? s.minX : s.minZ;
+    const cMid = c0 + L / 2;
+    const cx = (s.minX + s.maxX) / 2;
+    const cz = (s.minZ + s.maxZ) / 2;
+    const ux = alongX ? 1 : 0;
+    const uz = alongX ? 0 : 1;
+    const m = new THREE.Matrix4().set(ux, 0, -uz, cx, 0, 1, 0, s.maxY, uz, 0, ux, cz, 0, 0, 0, 1);
+    const box = { minX: s.minX - 0.3, maxX: s.maxX + 0.3, minY: s.minY, maxY: s.maxY - 0.04, minZ: s.minZ - 0.3, maxZ: s.maxZ + 0.3 };
+    const segs = S.cut(box, axis, c0, c0 + L, hosts, false, 1.3, DR.anchorClear);
+    this._cat = 'iron';
+    for (const [t0, t1] of segs) {
+      const len = t1 - t0 - 0.1;
+      const mid = (t0 + t1) / 2 - cMid;
+      const B = new TriBuilder();
+      for (const side of [-1, 1]) {
+        B.box(mid, -0.21, side * (W / 2 + 0.05), len, 0.3, 0.1, 0.78, 0, side > 0 ? 63 & ~32 : 63 & ~16);
+        B.box(mid, -0.07, side * (W / 2 + 0.03), len, 0.07, 0.14, 0.95, 0, side > 0 ? 63 & ~32 : 63 & ~16);
+      }
+      const n = Math.max(1, Math.round(len / 1.7));
+      if (H >= 0.55) {
+        for (let i = 0; i <= n; i++) {
+          const x = mid - len / 2 + (len * i) / n;
+          for (const side of [-1, 1]) B.box(x, -0.28 - (H - 0.55) / 2, side * (W / 2 + 0.07), 0.12, Math.min(H - 0.3, 1.4), 0.1, 0.68, 0, side > 0 ? 63 & ~32 : 63 & ~16);
+        }
+      }
+      this.putWorld(B.geometry(), m, 'metal', g.stone);
+      this.stats.irons = (this.stats.irons || 0) + 1;
+    }
+    this._cat = null;
+    // seams across and rivet lines along the walking surface (flush strips)
+    const y = s.maxY + 0.012;
+    const F = new FlatBuilder(y);
+    const dark = [0.5, 0.5, 0.5];
+    const rl = [1.15, 1.15, 1.15];
+    const step = W > 3 ? 2.4 : 1.8;
+    const ns = Math.floor(L / step);
+    for (let i = 1; i < ns; i++) {
+      const t = c0 + (L * i) / ns;
+      if (alongX) F.rect(t - 0.03, s.minZ + 0.12, t + 0.03, s.maxZ - 0.12, dark);
+      else F.rect(s.minX + 0.12, t - 0.03, s.maxX - 0.12, t + 0.03, dark);
+    }
+    for (const sd of [0.16, W - 0.2]) {
+      if (alongX) F.rect(s.minX + 0.1, s.minZ + sd, s.maxX - 0.1, s.minZ + sd + 0.04, rl);
+      else F.rect(s.minX + sd, s.minZ + 0.1, s.minX + sd + 0.04, s.maxZ - 0.1, rl);
+    }
+    if (!F.empty) {
+      const geo = F.geometry(true);
+      tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
+      worldUV(geo);
+      this._count('iron-top', s.maxY, geo.attributes.position.count / 3);
+      this.emit(geo, 'metal', false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Floor inlays: carved bands and a great rosette cut flush into the big floors
+  // (nothing rises above the walking surface: collision and sight lines untouched)
+  // ---------------------------------------------------------------------------
+  _inlay(s) {
+    if (s.kind !== 'stone') return;
+    const X = s.maxX - s.minX;
+    const Z = s.maxZ - s.minZ;
+    if (X < 7 || Z < 7 || s.maxY - s.minY < 1.5) return;
+    const g = this.grade(s.maxY);
+    const rng = makeRng(hashStr(`inlay${s.id}`));
+    const y = s.maxY + 0.014;
+    const cx = (s.minX + s.maxX) / 2;
+    const cz = (s.minZ + s.maxZ) / 2;
+    const dark = [0.5, 0.5, 0.5];
+    const lt = [1.12, 1.12, 1.12];
+    const B = new FlatBuilder(y);
+    // carved frame lines parallel to the edge: a wide dark course and a fine pale one
+    B.frame(s.minX, s.minZ, s.maxX, s.maxZ, 0.62, 0.2, dark);
+    B.frame(s.minX, s.minZ, s.maxX, s.maxZ, 0.98, 0.07, lt);
+    const glow = new FlatBuilder(y + 0.004);
+    const k = DR.inlayK * 0.5 * g.inlay;
+    const gcol = [INLAY_COL.r * k, INLAY_COL.g * k, INLAY_COL.b * k];
+    const R = Math.min(X, Z) * 0.5 - 1.6;
+    if (R >= 3) {
+      const r = Math.min(R, 7.5);
+      B.ring(cx, cz, r - 0.28, r, 56, dark);
+      B.ring(cx, cz, r * 0.72, r * 0.72 + 0.12, 44, lt);
+      B.ring(cx, cz, r * 0.46 - 0.22, r * 0.46, 36, dark);
+      const sp = 8 + Math.floor(rng() * 3) * 2;
+      const a0 = rng() * Math.PI;
+      for (let i = 0; i < sp; i++) {
+        const a = a0 + (i * Math.PI * 2) / sp;
+        B.spoke(cx, cz, a, r * 0.46, r * 0.72, 0.16, dark);
+        B.spoke(cx, cz, a + Math.PI / sp, r * 0.72, r, 0.1, lt);
+      }
+      if (g.inlay > 0.05) glow.ring(cx, cz, r * 0.72 - 0.16, r * 0.72 - 0.1, 44, gcol);
+    }
+    for (const [b, withN, list] of [
+      [B, true, 'stone'],
+      [glow, false, 'glow'],
+    ]) {
+      if (b.empty) continue;
+      const geo = b.geometry(withN);
+      if (list === 'stone') {
+        tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
+        worldUV(geo);
+      }
+      this._count(list === 'glow' ? 'inlay-glow' : 'inlay', s.maxY, geo.attributes.position.count / 3);
+      this.emit(geo, list, false);
+    }
+    this.stats.inlays = (this.stats.inlays || 0) + 1;
+  }
+
   // ---------------------------------------------------------------------------
   // Slabs: crown mouldings, beads, corbels / atlas figures, iron braces
   // ---------------------------------------------------------------------------
@@ -2478,6 +2905,7 @@ class Dresser {
     const g = this.grade(s.maxY);
     const rng = makeRng(hashStr(`slab${s.id}`));
     const metal = s.kind === 'metal' || s.kind === 'bridge' || s.kind === 'grate';
+    if (metal && s.kind !== 'grate') this._dressIron(s);
     const sides = [
       { N: { x: 1, y: 0, z: 0 }, c: s.maxX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
       { N: { x: -1, y: 0, z: 0 }, c: s.minX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
@@ -2605,6 +3033,19 @@ class Dresser {
             this.kit(W, 'ch1_env_bracket', u, 0, [1, 1, 1], 'metal', sc, 1, 1);
             this.stats.braces++;
             continue;
+          }
+          // a doorway (2.6 m: the human measure the rest of the building is read against) where this ledge meets the wall
+          if (g.arcade && span >= 7 && H >= 1.5 && rng() < 0.6) {
+            const du = span * (0.3 + 0.4 * rng());
+            const dw = 1.5;
+            const dh = 2.7;
+            const dbox = frameBox(W, du - dw / 2 - 0.25, du + dw / 2 + 0.25, H, H + dh + 0.3, 0, 0.35);
+            if (!S.blocked(dbox, hostsW, true, DR.propClear)) {
+              this._cat = 'door';
+              this._lancet(W, du, H, dw, dh - 1.0, 1.0, 0.2, 0.2, g.stone, 'stone', true, false);
+              this._cat = null;
+              this.stats.doors = (this.stats.doors || 0) + 1;
+            }
           }
           // a corbel table under ledges; under whole floors a sparser one
           const floor = (s.maxX - s.minX) * (s.maxZ - s.minZ) > 150;
@@ -2757,6 +3198,7 @@ export class LevelView {
     if (this._chunkByKey) this._chunkByKey.clear();
     this._kitPlan = null;
     this._dressJob = null;
+    this._cogs = null;
     this._colossal = null;
     this._lightGlow = null;
     this.gate = null;
@@ -3319,6 +3761,7 @@ export class LevelView {
     this.stats.dressTris = { procedural: 0, kit: 0, detail: 0 };
     const tris = this.stats.dressTris;
     const job = { bands: new Map(), it: null, sec: -1, merge: [] };
+    this._makeCogMesh();
     const emit = (geo, list, detail) => {
       geo.computeBoundingBox();
       const y = (geo.boundingBox.min.y + geo.boundingBox.max.y) / 2;
@@ -3334,6 +3777,7 @@ export class LevelView {
     try {
       const D = new Dresser(level, emit, plan);
       this.stats.dress = D.stats;
+      job.D = D;
       job.it = D.steps();
       this._dressJob = job;
     } catch (err) {
@@ -3341,6 +3785,52 @@ export class LevelView {
       this.stats.dress = { error: String(err && err.message) };
       this._dressJob = null;
     }
+  }
+
+
+  /**
+   * One InstancedMesh for every colossal cog (turned and distance-culled in
+   * update). Created empty at build so Renderer3D.precompile() compiles its
+   * (instanced) program on the menu; the dressing plan fills it in later.
+   */
+  _makeCogMesh() {
+    const mesh = new THREE.InstancedMesh(gearGeometry(), this.mats.get('decorMetal'), COG_MAX);
+    mesh.name = 'cogs';
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.setColorAt(0, _c.setRGB(1, 1, 1));
+    mesh.count = 0;
+    mesh.visible = false;
+    this.root.add(mesh);
+    this._cogs = { mesh, items: [] };
+  }
+
+  _buildCogs(list) {
+    const C = this._cogs;
+    if (!C || !list || !list.length) return;
+    C.items = list.slice(0, COG_MAX).map((c) => ({ m: c.m, spin: c.spin, phase: c.phase, tint: c.tint, r: c.r, pos: new THREE.Vector3().setFromMatrixPosition(c.m) }));
+    this.stats.cogTris = C.items.length * 800;
+  }
+
+  _updateCogs(head, t, vd) {
+    const C = this._cogs;
+    if (!C) return;
+    const mesh = C.mesh;
+    let n = 0;
+    for (let i = 0; i < C.items.length; i++) {
+      const c = C.items[i];
+      if (c.pos.distanceTo(head) - c.r * 1.1 > vd) continue;
+      _m4.makeRotationZ(c.phase + c.spin * t);
+      _m4b.multiplyMatrices(c.m, _m4);
+      mesh.setMatrixAt(n, _m4b);
+      mesh.setColorAt(n, _c.setRGB(c.tint[0], c.tint[1], c.tint[2]));
+      n++;
+    }
+    mesh.count = n;
+    mesh.visible = n > 0;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
 
   /** Advances the dressing job for about `ms` milliseconds. */
@@ -3366,6 +3856,7 @@ export class LevelView {
         const r = job.it.next();
         if (r.done) {
           this._flushDressing(Infinity);
+          this._buildCogs(job.D && job.D.gears);
           job.finished = true;
           continue;
         }
@@ -3941,6 +4432,7 @@ export class LevelView {
       // distance) layers near giants over far ones.
       this._colossal.material.color.copy(fogInfo.color).multiplyScalar(0.22);
     }
+    this._updateCogs(head, t, vd);
     this._updateSolidStates(game, head, vd);
     this._updateGate(dt, game, head, vd);
     this._updateHazards(dt, head, vd);

@@ -92,6 +92,8 @@ ap.add_argument("--hero-haze", type=float, default=0.55, help="mist-pass depth h
 ap.add_argument("--blend", action="store_true", help="also save ossuary.blend")
 ap.add_argument("--export", default="", help="directory: also write the Quest LOD0/1/2 game meshes (glb)")
 ap.add_argument("--threads", type=int, default=0)
+ap.add_argument("--omit", default="", help="look-dev: comma list of crown features to skip (ropes,strands,arms,tongue,lips,wheel,membr)")
+ap.add_argument("--nobake", action="store_true", help="export dry run: skip the bakes")
 ap.add_argument("--lab", default="", help="crown: build only the crown + 3 vertebrae (fast look-dev)")
 ap.add_argument("--exposure", type=float, default=0.0)
 ap.add_argument("--border", default="", help="xmin,xmax,ymin,ymax crop (0-1) for quick detail checks")
@@ -116,6 +118,7 @@ RES = tuple(int(v) for v in args.res.lower().split("x"))
 SHOTS = [s.strip() for s in args.shots.split(",") if s.strip()]
 
 SEED = args.seed
+OMIT = set(x.strip() for x in args.omit.split(',') if x.strip())
 rng = random.Random(SEED)
 UP = np.array([0.0, 0.0, 1.0])
 DOWN = -UP
@@ -973,7 +976,7 @@ def marrow_slab(M, p, n, g, dims, k, bulge=1.06, bore=False):
     sw = box_support(dims, w) * bulge
     axes = basis_axes(u, w, n, su, sw, g / 2 + 0.05 * k)
     V, F = blob(p, axes, sub=3, amp=0.12, freq=2.2 / k, seed=rng.random() * 50)
-    gl_ = 0.55 if rng.random() < 0.6 else 0.0
+    gl_ = 0.0 if rng.random() < 0.6 or True else 0.0
     if bore:
         add_cut(A["Marrow"], xf(V, M), F, g=gl_)
     else:
@@ -1021,7 +1024,7 @@ def surface_veins(M, dims, k, count=3):
         if len(P) < 4:
             continue
         r = np.linspace(0.016, 0.004, len(P)) * k
-        A["Vein"].add_tube(xf(P, M), r, sides=5, g=float(rng.random() < 0.45))
+        A["Vein"].add_tube(xf(P, M), r, sides=5, g=0.0 * float(rng.random() < 0.45))
 
 
 def rebar(start, direction, length, bend_dir, bend=0.3, r=0.016, acc=None):
@@ -1254,12 +1257,12 @@ def _build_vertebra(idx, s, k):
         marrow_slab(M, p, n, g + 0.06 * k, dims, k, bore=s < GULLET_S0 + GULLET_L + 0.8)
         crack_tendons(M, p, n, g + 0.06 * k, dims, rng.randint(4, 8), k)
         if rng.random() < 0.8:
-            crack_seam(M, p, n, dims, k, rng.uniform(0.6, 1.0))
+            rng.uniform(0.6, 1.0)      # (round 3: no glowing seams; ember only in the throat and a few pits)
         # ember glints deep in some fractures
         if rng.random() < 0.55:
             q = p + perp(n) * box_support(dims, perp(n)) * 0.7
             V, F = blob(q, basis_axes(perp(n), np.cross(n, perp(n)), n, 0.09 * k, 0.05 * k, 0.03 * k), sub=2, amp=0.2)
-            A["Ember"].add(xf(V, M), F, g=0.03)
+            A["Marrow"].add(xf(V, M), F, g=0.0)
     # neural spine: short raked stubs, often snapped; the tall skyline set-pieces are built separately
     # rhythmic dorsal row of raked pinnacles, growing taller and sharper toward the crown (the head is the
     # biggest, sharpest end, so the silhouette has a direction)
@@ -1344,7 +1347,7 @@ def _build_disc(va, vb):
         ex = np.cos(aa)
         ez = np.sin(aa)
         P = O + S * (np.sign(ex) * np.abs(ex) ** 0.6 * rx * 1.08)[:, None] + D * (np.sign(ez) * np.abs(ez) ** 0.6 * rz * 1.08)[:, None]
-        A["Vein"].add_tube(P, 0.014 * kk, sides=5, g=float(rng.random() < 0.55))
+        A["Vein"].add_tube(P, 0.014 * kk, sides=5, g=0.0 * float(rng.random() < 0.55))
 
 
 # =============================================================================
@@ -1465,7 +1468,7 @@ def build_belfry(v):
     for j in range(3):
         q = base + up * 0.62 * k + (a1 * rng.uniform(-0.3, 0.3) + a2 * rng.uniform(-0.3, 0.3)) * k
         V, F = blob(q, basis_axes(a1, a2, up, 0.17 * k, 0.17 * k, 0.06 * k), sub=2, amp=0.25)
-        A["Pit"].add(xf(V, M), F)
+        A["Soot"].add(xf(V, M), F)
     cp = xf((base + up * (hc - 0.05 * k))[None], M)[0]
     chain(np.array([cp, cp + DOWN * 1.3 * k]), 0.8)
     meat_hook(cp + DOWN * 1.32 * k, 1.4)
@@ -1726,7 +1729,7 @@ def _grapnel(Aj, F, nout, side_vec, Dv, k, planted=True):
         rq = 0.06 * k * (1 - tt) + 0.003
         A["Iron"].add_tube(Q, rq, sides=7, ry=rq * 0.6, up=np.cross(axis, dd), cap1=False, m=tt)
     ax = nrm(P[3] - P[0])
-    iron_hoop(Aj + ax * 0.06, ax, 0.11 * k, k, w=0.045, rivets=6, heat=0.35)
+    iron_hoop(Aj + ax * 0.06, ax, 0.11 * k, k, w=0.045, rivets=6, heat=0.0)
     if planted:
         bite = F + nout * 0.02
         rubble(bite, nout, k)
@@ -1863,7 +1866,7 @@ def _build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
     if stub:
         tipp = arc[jcut - 1]
         V, F = blob(tipp, basis_axes(side, T, D, 0.25 * k, 0.22 * k, 0.25 * k), sub=3, amp=0.3, freq=3.5)
-        A["Flesh"].add(V, F, m=0.9, g=0.2)
+        A["Flesh"].add(V, F, m=0.9, g=0.0)
         for _ in range(4):
             hang_strand(tipp - D * 0.1, rng.uniform(0.8, 2.4), 0.024 * k, A["Tendon"])
         hang_strand(tipp, rng.uniform(0.5, 1.4), 0.016 * k, A["Oil"])
@@ -1878,7 +1881,7 @@ def _build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
     pX = nrm(np.cross(upa, side))
     pY = np.cross(upa, pX)
     stone_at((pw, pw, ph), pX, pY, upa, K, 0.16, 0.02 * k, rng.randint(2, 4), subdiv=1)
-    iron_hoop(K - upa * ph * 0.28, upa, pw * 0.76, k, w=0.07, rivets=10, heat=0.25 if rng.random() < 0.4 else 0.0)
+    iron_hoop(K - upa * ph * 0.28, upa, pw * 0.76, k, w=0.07, rivets=10, heat=0.0)
     ptop = K + upa * ph / 2
     stone_at((pw * 1.18, pw * 1.18, 0.15 * k), pX, pY, upa, ptop + upa * 0.06 * k, 0.3, 0.01, 1)
     Mk = mat4(pX, pY, upa, ptop)
@@ -1920,7 +1923,7 @@ def _build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
             A["Bone"].add(V, F, uv, al)
         V, F = blob(end - tg * 0.03, basis_axes(perp(tg), np.cross(tg, perp(tg)), tg, 0.075 * k, 0.075 * k, 0.05 * k),
                     sub=2, amp=0.2)
-        A["Marrow"].add(V, F, g=0.35)
+        A["Marrow"].add(V, F, g=0.0)
         for _ in range(3):
             hang_strand(end, rng.uniform(0.7, 2.0), 0.016 * k, A["Tendon"])
         hang_strand(end, rng.uniform(0.4, 1.1), 0.012 * k, A["Oil"])
@@ -1938,7 +1941,7 @@ def _build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
     met = bezier([J, (J + Aj) / 2 - side * 0.08 * k, Aj], 22)
     tm = np.linspace(0, 1, len(met))
     A["Iron"].add_tube(met, (0.055 - 0.015 * tm) * k ** 0.8, ry=(0.04 - 0.01 * tm) * k ** 0.8, up=pn, sides=6, m=0.0,
-                       g=np.clip((tm - 0.8) / 0.2, 0, 1) * 0.3)
+                       g=0.0)
     for i in range(2, len(met) - 2, 4):
         V, F = blob(met[i] + pn * 0.045 * k, basis_axes(side, T, pn, 0.018 * k, 0.018 * k, 0.012 * k), sub=1, amp=0.0)
         A["Iron"].add(V, F, m=0.0)
@@ -2726,13 +2729,14 @@ def _build_crown():
                 V, F = blob(root, basis_axes(np.cross(Tq, rd), Tq, rd, Lt * 0.22, Lt * 0.22, Lt * 0.1), sub=2, amp=0.25,
                             freq=8.0)
                 A["Gum"].add(V, F, m=0.0, d=dfrac)
-    # the one hot point: a forge-coal sphincter far down the gullet, seen between the last rings of teeth
-    Oe, Te, De, Se = gullet_frame(GL - 0.35)
-    V, F = blob(Oe, basis_axes(Se, Te, De, 0.46, 0.1, 0.075), sub=3, amp=0.25, freq=5.0)
+    # the one hot point: a fissure in the throat wall far down (off the axis: a glow round a corner, never a pupil)
+    Oe, Te, De, Se = gullet_frame(GL - 0.6)
+    Oe = Oe + Se * 0.5 - De * 0.04
+    V, F = blob(Oe, basis_axes(Se, Te, De, 0.07, 0.12, 0.36), sub=3, amp=0.25, freq=5.0)
     A["Ember"].add(V, F, g=0.9)
     th_ = np.linspace(0, 2 * math.pi, 30, endpoint=False)
-    lipr = Oe[None] + Se[None] * (np.cos(th_) * 0.52)[:, None] + De[None] * (np.sin(th_) * 0.16)[:, None] + Te[None] * 0.05
-    A["Gum"].add_tube(lipr, 0.075 * (1 + 0.3 * np.sin(th_ * 3)), sides=8, cap0=False, cap1=False, m=0.0, nz_amp=0.2,
+    lipr = Oe[None] + Se[None] * (np.cos(th_) * 0.13)[:, None] + De[None] * (np.sin(th_) * 0.45)[:, None] - Se[None] * 0.02
+    A["Gum"].add_tube(lipr, 0.06 * (1 + 0.3 * np.sin(th_ * 3)), sides=8, cap0=False, cap1=False, m=0.0, nz_amp=0.2,
                       nz_freq=6.0)
     CROWN["forge"] = Oe
     CROWN["throat_light"] = gullet_frame(GL - 0.6)[0]
@@ -2749,7 +2753,7 @@ def _build_crown():
         """One portal tooth; kind: bone | stone | nail | molar."""
         if kind is None:
             kr = rng.random()
-            kind = "bone" if kr < 0.45 else ("stone" if kr < 0.82 else "nail")
+            kind = "bone" if kr < 0.5 else ("stone" if kr < 0.92 else "nail")
         roll = {"bone": rng.uniform(0.45, 0.99) if False else 0.5, "stone": 0.2, "nail": 0.05, "molar": 0.9}[kind]
         if kind == "bone":
             roll = rng.uniform(0.4, 0.84)
@@ -2776,14 +2780,12 @@ def _build_crown():
                     V = lowT(V)
                 A["Carved"].add(V, F, uv, al * 0.0 + np.clip((al - 0.4) / 0.6, 0, 1))
                 tp = root + dd * L * trunc
-                if trunc < 1.0:
-                    rb_ = root + dd * L * trunc - dd * 0.08
-                    for _ in range(rng.randint(1, 2)):
-                        rbd = nrm(dd + perp(dd) * rng.uniform(-0.5, 0.5))
-                        rbv = np.array([rb_, rb_ + rbd * 0.3])
-                        if lower:
-                            rbv = lowT(rbv)
-                        rebar(rbv[0], rbv[1] - rbv[0], 0.3, -T, 0.3, 0.013)
+                if trunc < 1.0 and rng.random() < 0.5:
+                    rb_ = root + dd * L * trunc - dd * 0.05
+                    rbv = np.array([rb_, rb_ + nrm(dd + perp(dd) * rng.uniform(-0.3, 0.3)) * 0.22])
+                    if lower:
+                        rbv = lowT(rbv)
+                    A["Iron"].add_tube(rbv, 0.014, sides=5, m=0.0)
             else:
                 V, F, uv, al = shard(root, dd, L, r0, hook_dir=-T, hook=0.3, rings=8, sides=6, sink=0.06, fang=True,
                                      trunc=trunc, flat=rng.uniform(0.6, 1.0))
@@ -2803,7 +2805,7 @@ def _build_crown():
             while y < PORT_YS + 0.18:
                 lowp = y < Y_GAP - 0.05
                 yy = y
-                Lr = (0.18 + 0.72 * rng.random() ** 2.0) * (1.7 if rng.random() < 0.09 else 1.0)
+                Lr = (0.16 + 0.5 * rng.random() ** 2.0) * (1.9 if rng.random() < 0.07 else 1.0)
                 base_r = 0.06 + 0.13 * rng.random() ** 1.3
                 dd = nrm(np.array([-sx * 1.0, rng.uniform(0.12, 0.45) if lowp else rng.uniform(-0.5, -0.1),
                                    rng.uniform(-0.2, 0.2)]))
@@ -2901,8 +2903,8 @@ def _build_crown():
                 A["Flesh"].add_tube(Pl, rad * (1 + 0.45 * np.sin(tt * 37 + zz) * 0.5 + 0.2 * NZ.fbm(Pl * 3.0, 2)), sides=9,
                                     nz_amp=0.2, nz_freq=7.0, seed=rng.random() * 9, m=0.05, cap0=False, cap1=False)
         # (b) muscle ropes: thick, taut, spiralling cords hauling the jaws, from the intrados back into the throat
-        for q in range(7):
-            sfr = rng.uniform(0.05, 0.95)
+        for q in range(0 if 'ropes' in OMIT else 3):
+            sfr = rng.uniform(0.15, 0.85)
             s0 = lanI.Lj + sfr * 2 * lanI.La
             x, y, nx, ny = lanI.eval(s0)
             a_ = P3(x[0] - nx[0] * 0.06, y[0] - ny[0] * 0.06, rng.uniform(-0.2, 0.3))
@@ -2914,42 +2916,41 @@ def _build_crown():
             A["Tendon"].add_tube(Pm + D3(rng.uniform(-1, 1), rng.uniform(-1, 1), 0) * 0.05, 0.025 * rng.uniform(0.8, 1.3),
                                  sides=6, cap0=False, cap1=False)
         # (d) the tongue: a heavy, ridged, glistening slab out of the throat over the dropped lip, dripping
-        tp_ = [(0.0, -0.55, -3.2), (0.0, -0.62, -2.2), (0.02, -0.95, -1.1), (0.05, PORT_YB + 0.52, -0.1),
-               (0.08, PORT_YB + 0.45, 0.55), (0.12, PORT_YB + 0.15, 1.05), (0.18, PORT_YB - 0.6, 1.2), (0.2, PORT_YB - 1.5, 1.15)]
-        kp = []
-        for i_, (x_, y_, z_) in enumerate(tp_):
-            kp.append(P3(x_, y_, z_) if i_ < 3 else lowT(P3(x_, y_, z_))[0])
-        Pt = catmull(np.array(kp), 10)
-        Pt = resample(Pt, step=0.06)
-        tt = np.linspace(0, 1, len(Pt))
-        wid = (0.4 + 0.26 * np.clip(tt * 3, 0, 1)) * (1 - 0.5 * smoothstep(0.85, 1.0, tt))
-        thk = (0.2 + 0.08 * np.clip(tt * 2, 0, 1)) * (1 - 0.6 * smoothstep(0.9, 1.0, tt))
-        ridges = 1 + 0.07 * np.sin(arclen(Pt) * 22.0)
-        T_t, N_t, B_t = frames(Pt, up=D)
-        prof = []
-        for j in range(len(Pt)):
-            a_ = np.linspace(0, 2 * math.pi, 24, endpoint=False)
-            cx = np.cos(a_) * wid[j] * ridges[j]
-            cy = np.sin(a_) * thk[j] * ridges[j] - 0.05 * np.exp(-(np.cos(a_) / 0.28) ** 2) * (np.sin(a_) > 0) * thk[j]
-            prof.append(np.stack([cx, cy], -1))
-        V, F, uv, al = loft(Pt, np.array(prof), fr=(T_t, N_t, B_t), cap0=True, cap1=True, nz_amp=0.1, nz_freq=5.0,
-                            nz_seed=2.2)
-        A["Flesh"].add(V, F, uv, m=0.18 + 0.2 * np.clip(al - 0.6, 0, 1))
-        for q in range(5):
-            i_ = rng.randint(len(Pt) // 2, len(Pt) - 2)
-            hang_strand(Pt[i_] + (rng.uniform(-1, 1)) * S * wid[i_] * 0.6, rng.uniform(0.4, 1.6), rng.uniform(0.014, 0.03), A["Mucus"])
+        if 'tongue' not in OMIT:
+            tp_ = [(0.0, -0.55, -3.2), (0.0, -0.62, -2.2), (0.02, -0.95, -1.1), (0.05, PORT_YB + 0.52, -0.1),
+                   (0.08, PORT_YB + 0.45, 0.55), (0.12, PORT_YB + 0.15, 1.05), (0.18, PORT_YB - 0.6, 1.2), (0.2, PORT_YB - 1.5, 1.15)]
+            kp = []
+            for i_, (x_, y_, z_) in enumerate(tp_):
+                kp.append(P3(x_, y_, z_) if i_ < 3 else lowT(P3(x_, y_, z_))[0])
+            Pt = catmull(np.array(kp), 10)
+            Pt = resample(Pt, step=0.06)
+            tt = np.linspace(0, 1, len(Pt))
+            wid = (0.5 + 0.36 * np.clip(tt * 3, 0, 1)) * (1 - 0.5 * smoothstep(0.85, 1.0, tt))
+            thk = (0.13 + 0.05 * np.clip(tt * 2, 0, 1)) * (1 - 0.6 * smoothstep(0.9, 1.0, tt))
+            ridges = 1 + 0.035 * np.sin(arclen(Pt) * 22.0)
+            T_t, N_t, B_t = frames(Pt, up=D)
+            prof = []
+            for j in range(len(Pt)):
+                a_ = np.linspace(0, 2 * math.pi, 24, endpoint=False)
+                cx = np.cos(a_) * wid[j] * ridges[j]
+                cy = np.sin(a_) * thk[j] * ridges[j] - 0.05 * np.exp(-(np.cos(a_) / 0.28) ** 2) * (np.sin(a_) > 0) * thk[j]
+                prof.append(np.stack([cx, cy], -1))
+            V, F, uv, al = loft(Pt, np.array(prof), fr=(T_t, N_t, B_t), cap0=True, cap1=True, nz_amp=0.1, nz_freq=5.0,
+                                nz_seed=2.2)
+            A["Flesh"].add(V, F, uv, m=0.18 + 0.2 * np.clip(al - 0.6, 0, 1))
+            for q in range(5):
+                i_ = rng.randint(len(Pt) // 2, len(Pt) - 2)
+                hang_strand(Pt[i_] + (rng.uniform(-1, 1)) * S * wid[i_] * 0.6, rng.uniform(0.4, 1.6), rng.uniform(0.014, 0.03), A["Mucus"])
 
 
     # ------------------------------------------------------------------ the ring of raised, empty stone arms
     # asymmetric: three high on the left, two on the right, three low (on the dropped lip, hanging toward the player)
     lanO = Lancet(0.0)
     dout = NORD * W_ + 0.06
-    ARMS = [("L", lanO.Lj * 0.86, 0.95, 0.35, 0.7, 1.5, 1.0, False), ("L", lanO.Lj + lanO.La * 0.32, 0.8, 0.6, 0.6, 1.3, 0.9, False),
-            ("L", lanO.Lj + lanO.La * 0.86, 0.3, 0.9, 0.55, 1.7, 1.05, False),
-            ("R", lanO.Lj + lanO.La * 1.5, 0.7, 0.6, 0.6, 1.45, 1.0, False), ("R", lanO.L - 2.1, 0.95, 0.1, 0.8, 1.25, 0.85, False),
-            ("L", 0.55, 0.4, -0.9, 0.45, 1.5, 0.95, True), ("R", lanO.L - 0.45, 0.4, -0.85, 0.5, 1.4, 0.9, True),
-            ("M", 0.0, 0.0, -0.8, 0.65, 1.3, 0.85, True)]
-    for ai, (sd_, s_a, ox, oy, oz, La_, sz_, low_) in enumerate(ARMS):
+    ARMS = [("L", lanO.Lj * 0.86, 1.0, 0.1, 0.45, 1.0, 0.7, False), ("L", lanO.Lj + lanO.La * 0.3, 0.9, 0.5, 0.45, 0.95, 0.65, False),
+            ("L", lanO.Lj + lanO.La * 0.82, 0.4, 0.95, 0.4, 1.15, 0.72, False),
+            ("R", lanO.Lj + lanO.La * 1.5, 0.8, 0.55, 0.45, 1.0, 0.68, False), ("R", lanO.L - 2.2, 1.0, 0.05, 0.5, 0.9, 0.62, False)]
+    for ai, (sd_, s_a, ox, oy, oz, La_, sz_, low_) in enumerate([] if 'arms' in OMIT else ARMS):
         if sd_ == "M":
             rootc = np.array([0.55, PORT_YB - 0.3, FACE[2] - 0.05])
             dirc = nrm(np.array([0.15, oy, oz]))
@@ -2968,7 +2969,7 @@ def _build_crown():
 
     # ------------------------------------------------------------------ drool: many thick strands
     tp = list(CROWN["tips"])
-    for k in range(10):
+    for k in range(0 if 'strands' in OMIT else 6):
         a_, b_ = rng.sample(tp, 2) if len(tp) >= 2 else (tp[0], tp[0] + D * 0.2)
         if np.linalg.norm(a_ - b_) > 2.4 or np.linalg.norm(a_ - b_) < 0.2:
             continue
@@ -3181,7 +3182,7 @@ def _build_crown():
     A["Iron"].add(V, F, uv, m=al)
     CROWN.setdefault("thorns", []).append((math.radians(250), spur_root, spur_dir, 0.75))
     th_ = [t_ for t_ in CROWN.get("thorns", []) if t_[0] == math.radians(250)]
-    if th_:
+    if th_ and 'tether' not in OMIT:
         build_tether(th_[0])
 
 
@@ -3357,7 +3358,7 @@ def build_cage(v, sgn=1.0):
         a = rng.uniform(0, 2 * math.pi)
         dr = math.cos(a) * sd + math.sin(a) * fwd
         P = np.array([base + dr * rad * 0.8 + up * h + np.cross(up, dr) * 0.04 * math.sin(h * 9) for h in np.linspace(0.1, rng.uniform(0.8, 1.6), 20)])
-        A["Vein"].add_tube(P, 0.01, sides=5, g=0.4)
+        A["Vein"].add_tube(P, 0.01, sides=5, g=0.0)
     pierce(base + sd * 0.4 + up * 0.3, sd + DOWN, 2.6, hook=True, scale=0.9)
     CROWN["cage"] = base
 
@@ -3435,7 +3436,7 @@ def build_bell_at(top, Hb=1.25, Rl=0.6, axis=None):
     for i in range(7):  # the crack: a dark fissure up one side, ember light in it
         p = base + e1 * Rl * (0.96 - 0.05 * i) + axis * (0.03 + i * 0.1 * Hb) + e2 * 0.03 * Rl * math.sin(i * 2.1)
         V2, F2 = blob(p, basis_axes(e1, e2, axis, 0.06 * Rl, 0.03 * Rl, 0.13 * Rl), sub=1, amp=0.2)
-        A["Marrow"].add(V2, F2, g=0.7)
+        A["Marrow"].add(V2, F2, g=0.05)
     for ang in (0.0, math.pi / 2):
         d = math.cos(ang) * e1 + math.sin(ang) * e2
         ring = top + 0.2 * Rl * (np.cos(np.linspace(0, 2 * math.pi, 18))[:, None] * d + np.sin(np.linspace(0, 2 * math.pi, 18))[:, None] * axis)
@@ -3446,7 +3447,7 @@ def build_bell_at(top, Hb=1.25, Rl=0.6, axis=None):
     # a chunk broken out of the lip
     for i in range(3):
         V2, F2 = blob(base + e2 * Rl * 0.93 + e1 * (i - 1) * 0.08 * Rl + axis * 0.03, basis_axes(e1, e2, axis, 0.07 * Rl, 0.05 * Rl, 0.05 * Rl), sub=1, amp=0.3)
-        A["Marrow"].add(V2, F2, g=0.3)
+        A["Marrow"].add(V2, F2, g=0.0)
 
 
 def _build_tail(v):
@@ -3504,10 +3505,18 @@ def build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
         R0 = O + side * (0.4 * v["W"]) + D * (0.08 * v["H"])
         pn = nrm(np.cross(nrm(K - R0), side))
         PARTS[i0]["M"] = frame_zx(R0, K - R0, pn)
+        Kb = K - upa * (1.15 + 0.25 * size) * v["k"] ** 0.7 * 0.65
+        iL = iH = None
         for j in range(i0 + 1, len(PARTS)):
-            if PARTS[j]["name"] == "LegL":
-                Kb = K - upa * (1.15 + 0.25 * size) * v["k"] ** 0.7 * 0.65
+            if PARTS[j]["name"] == "LegL" and iL is None:
+                iL = j
                 PARTS[j]["M"] = frame_zx(Kb, J - Kb, pn)
+            elif PARTS[j]["name"] == "Hook" and iH is None:
+                iH = j
+        if iL is not None:
+            LEGP.append(dict(i0=i0, iL=iL, iH=iH, kind=kind, size=size, k=v["k"], vi=v["idx"], sigma=sigma,
+                             R0=R0.copy(), K=np.asarray(K).copy(), Kb=Kb.copy(), J=np.asarray(J).copy(),
+                             F=np.asarray(L["F"]).copy(), Aj=np.asarray(L["Aj"]).copy()))
 
 
 def frond(root, direction, length, curl_axis, r0=0.018, n=56, curl=1.0, cilia=True):
@@ -4127,7 +4136,7 @@ def mat_bronze():
 def mat_mucus():
     m = bpy.data.materials.new("M_Mucus")
     g = NT(m)
-    g.p(base=(0.62, 0.64, 0.6), rough=0.02, trans=0.92, ior=1.33, coat=1.0, coat_rough=0.015, spec=0.9)
+    g.p(base=(0.92, 0.96, 0.92), rough=0.0, trans=1.0, ior=1.33, coat=0.0, spec=1.0)
     return m
 
 
@@ -4855,6 +4864,937 @@ def hiA_objs(objs):
     return [o for o in objs.values() if o is not None]
 
 
+# =============================================================================
+# PRODUCTION EXPORT (round 3): the modular, rig-ready kit + the assembled hero, LOD0 / LOD1, two baked atlases.
+#
+#   * the creature is rebuilt at game tessellation (LOW) with the same RNG stream, so every part tag matches the
+#     render mesh; each kit module (crown, vertebra variants, tail, leg templates, frond, pit) is cut out of that
+#     rebuild by part id, decimated to its triangle budget, UV-unwrapped and packed into one of two 2048 atlases
+#     (MasonCrown, MasonBody), and baked (base colour / tangent normal / roughness / AO / metal class) from the
+#     render-resolution (hi) faces of exactly the same parts;
+#   * every module vertex is stamped with the rig contract attributes: _SPINE_S, _MASK, _PART, _OWNER (+ _OWNER2 /
+#     _OWNW2 for the flesh that blends between two bones); the owner table travels in the node's extras;
+#   * mason_kit.glb keeps the README part names and pivots (Mason_Segment_0..2, Mason_Tail, Mason_Head,
+#     Mason_Frond_0..2, Mason_Pit, Mason_LimbUpper / Lower, Mason_Hook) plus <Part>_LOD1 twins (the in-game view
+#     shows them when the camera is far);
+#   * mason_hero.glb assembles the same modules (shared meshes, instanced nodes) along the posed spine.
+# =============================================================================
+LEGP = []          # one record per boned leg: part ids + the leg's own frame data (filled by build_leg)
+
+KIT_FAMILY = {
+    "Crown": ("Head", "Pit", "PitMembrane", "Frond_0", "Frond_1", "Frond_2"),
+    "Body": ("Segment_0", "Segment_1", "Segment_2", "Tail", "LimbUpper", "LimbLower", "Hook"),
+}
+KIT_TRIS = {"Head": 17500, "Pit": 110, "PitMembrane": 70, "Frond_0": 64, "Frond_1": 64, "Frond_2": 64,
+            "Segment_0": 1150, "Segment_1": 1050, "Segment_2": 950, "Tail": 560,
+            "LimbUpper": 640, "LimbLower": 420, "Hook": 150}
+LOD1_RATIO = 0.35
+ATLAS_PX = {"Crown": 2048, "Body": 2048}
+EMISSIVE_G = ("Ember", "Pit")
+BLEND_G = ("Flesh", "Marrow", "Gum", "Tendon", "Vein", "Membrane", "Mucus", "Oil", "Seam", "Frond")
+# (flesh, wet, thickness, class / 3)   class: stone 0, iron 1, flesh 2, bone 3
+GROUP_MASK = {
+    "Stone": (0, 0.3, 0.0, 0.0), "Carved": (0, 0.3, 0.0, 0.0), "Soot": (0, 0.0, 0.0, 0.0),
+    "Iron": (0, 0.2, 0.0, 1 / 3), "IronTooth": (0, 0.3, 0.0, 1 / 3), "Bronze": (0, 0.1, 0.0, 1 / 3),
+    "Rope": (0, 0.1, 0.0, 1 / 3), "Glass": (0, 0.6, 0.0, 1 / 3), "Ember": (0, 0, 0, 1 / 3), "Pit": (0, 0.5, 0, 1 / 3),
+    "Flesh": (1, 1, 0.6, 2 / 3), "Marrow": (1, 1, 0.7, 2 / 3), "Gum": (1, 1, 0.5, 2 / 3), "Tendon": (1, 1, 0.5, 2 / 3),
+    "Vein": (1, 1, 0.4, 2 / 3), "Membrane": (0.6, 1, 1.0, 2 / 3), "Mucus": (0, 1, 0.5, 2 / 3), "Oil": (0, 1, 0, 2 / 3),
+    "Seam": (0, 0.6, 0, 2 / 3), "Frond": (0.7, 0.8, 0.9, 2 / 3),
+    "Teeth": (0, 0.7, 0.3, 1.0), "Bone": (0, 0.3, 0.2, 1.0),
+}
+GROUP_IDS = {g: i for i, g in enumerate(GROUP_MASK)}
+GROUP_NAMES = {i: g for g, i in GROUP_IDS.items()}
+
+
+def part_tree():
+    names = [P["name"] for P in PARTS]
+    par = [P.get("parent", 0) for P in PARTS]
+    return names, par
+
+
+def under(i, root, par):
+    while i:
+        if i == root:
+            return True
+        i = par[i]
+    return False
+
+
+def acc_arrays(acc):
+    if acc.n == 0:
+        return None
+    sizes = np.concatenate(acc.sizes)
+    return dict(V=np.vstack(acc.V), flat=np.concatenate(acc.flat), sizes=sizes,
+                starts=np.concatenate([[0], np.cumsum(sizes)[:-1]]), uv=np.vstack(acc.uv),
+                m=np.concatenate(acc.m), g=np.concatenate(acc.g), d=np.concatenate(acc.d),
+                p=np.rint(np.concatenate(acc.p)).astype(np.int64))
+
+
+def extract_faces(arr, ids):
+    """Faces whose vertices all carry a part id in `ids`, compacted into a standalone mesh dict."""
+    if arr is None or not len(ids):
+        return None
+    vin = np.isin(arr["p"], np.fromiter(ids, np.int64))
+    nf = len(arr["sizes"])
+    loop_face = np.repeat(np.arange(nf), arr["sizes"])
+    loop_ok = vin[arr["flat"]]
+    ok = np.bincount(loop_face, weights=loop_ok.astype(float), minlength=nf) == arr["sizes"]
+    if not ok.any():
+        return None
+    keep = ok[loop_face]
+    kept = arr["flat"][keep]
+    used = np.unique(kept)
+    remap = np.full(len(arr["V"]), -1, np.int64)
+    remap[used] = np.arange(len(used))
+    return dict(V=arr["V"][used], flat=remap[kept], sizes=arr["sizes"][ok], uv=arr["uv"][used], m=arr["m"][used],
+                g=arr["g"][used], d=arr["d"][used], p=arr["p"][used])
+
+
+def mesh_from_arrays(name, V, flat, sizes, uv=None):
+    me = bpy.data.meshes.new(name)
+    starts = np.concatenate([[0], np.cumsum(sizes)[:-1]])
+    me.vertices.add(len(V))
+    me.vertices.foreach_set("co", np.asarray(V, np.float32).ravel())
+    me.loops.add(len(flat))
+    me.loops.foreach_set("vertex_index", np.asarray(flat, np.int32))
+    me.polygons.add(len(sizes))
+    me.polygons.foreach_set("loop_start", starts.astype(np.int32))
+    me.polygons.foreach_set("loop_total", np.asarray(sizes, np.int32))
+    me.update(calc_edges=True)
+    if uv is not None:
+        lay = me.uv_layers.new(name="UVMap")
+        lay.data.foreach_set("uv", np.asarray(uv, np.float32)[flat].ravel())
+    return me
+
+
+def set_point_attr(me, name, vals, typ="FLOAT"):
+    if name in me.attributes:
+        me.attributes.remove(me.attributes[name])
+    at = me.attributes.new(name, typ, "POINT")
+    vals = np.asarray(vals, np.float32)
+    if typ == "FLOAT_COLOR":
+        at.data.foreach_set("color", vals.ravel())
+    else:
+        at.data.foreach_set("value", vals.ravel())
+    return at
+
+
+def get_point_attr(me, name, default=0.0):
+    n = len(me.vertices)
+    if name not in me.attributes:
+        return np.full(n, default, np.float32)
+    out = np.zeros(n, np.float32)
+    me.attributes[name].data.foreach_get("value", out)
+    return out
+
+
+def tri_total(me):
+    me.calc_loop_triangles()
+    return len(me.loop_triangles)
+
+
+def kit_specs(Alow):
+    """Which part ids make which kit module, and each module's pivot frame (world pose of the posed creature)."""
+    names, par = part_tree()
+    nP = len(PARTS)
+    ids_named = lambda nm: [i for i in range(nP) if names[i] == nm]
+    head = ids_named("Head")[0]
+    spec = {}
+    head_all = [i for i in range(nP) if under(i, head, par)]
+    fronds = [i for i in head_all if names[i] == "Frond"]
+    pits = [i for i in head_all if names[i] == "Pit"]
+    head_ids = [i for i in head_all if names[i] != "Frond"]
+    spec["Head"] = dict(ids=set(head_ids), M=PARTS[head]["M"], fam="Crown")
+    nfr = len(fronds)
+    for q, fi in enumerate((fronds[nfr // 8], fronds[nfr // 2], fronds[(7 * nfr) // 8])):
+        spec["Frond_%d" % q] = dict(ids={fi}, M=PARTS[fi]["M"], fam="Crown")
+    p0 = pits[0]
+    memb = [i for i in head_all if names[i] == "PitMembrane"]
+    pit_ids = {p0} | {i for i in memb if par[i] == p0}
+    # the pit with the eardrum is the most characteristic: prefer the first membrane-bearing pit
+    for pm in pits:
+        mm = {i for i in memb if par[i] == pm}
+        if mm:
+            p0, pit_ids = pm, {pm} | mm
+            break
+    spec["Pit"] = dict(ids={i for i in pit_ids if names[i] == "Pit"}, M=PARTS[p0]["M"], fam="Crown")
+    spec["PitMembrane"] = dict(ids={i for i in pit_ids if names[i] == "PitMembrane"}, M=PARTS[p0]["M"], fam="Crown")
+    nvert = len(VERTS)
+    for q, vi in enumerate((6, 12, 18)):
+        vi = min(vi, nvert - 2)
+        ids = set(ids_named("Seg%d" % vi))
+        spec["Segment_%d" % q] = dict(ids=ids, M=PARTS[min(ids)]["M"], fam="Body", vert=vi)
+    lastv = nvert - 1
+    ids = set(ids_named("Seg%d" % lastv)) | set(ids_named("Tail"))
+    spec["Tail"] = dict(ids=ids, M=PARTS[min(ids_named("Seg%d" % lastv))]["M"], fam="Body", vert=lastv)
+    cand = [lp for lp in LEGP if lp["kind"] == "normal" and lp["iH"] is not None and 0.9 <= lp["size"] <= 1.12
+            and 8 <= lp["vi"] <= 14]
+    leg = cand[len(cand) // 2] if cand else [lp for lp in LEGP if lp["iH"] is not None][0]
+    spec["LimbUpper"] = dict(ids={leg["i0"]}, M=PARTS[leg["i0"]]["M"], fam="Body", leg=leg)
+    spec["LimbLower"] = dict(ids={leg["iL"]}, M=PARTS[leg["iL"]]["M"], fam="Body", leg=leg)
+    spec["Hook"] = dict(ids={leg["iH"]}, M=PARTS[leg["iH"]]["M"], fam="Body", leg=leg)
+    return spec, dict(head=head, pits=pits, fronds=fronds, par=par, names=names)
+
+
+def crown_owner_table(info):
+    """Owner (bone) per Head part id: from the Own:* tags, the pit order, else the crown."""
+    names, par = info["names"], info["par"]
+    own = {}
+    pit_k = {pid: k for k, pid in enumerate(info["pits"])}
+    for i in range(len(PARTS)):
+        if not under(i, info["head"], par):
+            continue
+        j, nm = i, None
+        while j and j != info["head"]:
+            if names[j].startswith("Own:"):
+                nm = names[j][4:]
+                break
+            if names[j] == "Pit":
+                nm = "pit_%d" % pit_k.get(j, 0)
+                break
+            if names[j] == "PitMembrane":
+                nm = "pit_%d" % pit_k.get(par[j], 0)
+                break
+            j = par[j]
+        own[i] = nm or "crown"
+    return own
+
+
+def build_low_module_objects(Alow, spec, coll):
+    """One Blender object per module in WORLD pose (the posed creature), decimated to its budget. Per-vertex
+    attributes grp (material group id) and part (part id) are re-attached by nearest original vertex."""
+    from mathutils.kdtree import KDTree
+    arrs = {g: acc_arrays(a) for g, a in Alow.items()}
+    out = {}
+    for name, sp in spec.items():
+        parts = {g: extract_faces(a, sp["ids"]) for g, a in arrs.items()}
+        parts = {g: m for g, m in parts.items() if m is not None}
+        if not parts:
+            log("export: module %s empty" % name)
+            continue
+        Vs, flats, sizes, mats, grp, partid, ms, gs, ds, uvs = [], [], [], [], [], [], [], [], [], []
+        off = 0
+        for g, m in parts.items():
+            Vs.append(m["V"])
+            flats.append(m["flat"] + off)
+            sizes.append(m["sizes"])
+            mats.append(np.full(len(m["sizes"]), 1 if g in EMISSIVE_G else 0, np.int32))
+            grp.append(np.full(len(m["V"]), GROUP_IDS[g], np.float32))
+            partid.append(m["p"].astype(np.float32))
+            ms.append(m["m"])
+            gs.append(m["g"])
+            ds.append(m["d"])
+            uvs.append(m["uv"])
+            off += len(m["V"])
+        V = np.vstack(Vs)
+        flat = np.concatenate(flats)
+        sz = np.concatenate(sizes)
+        me = mesh_from_arrays("LO_" + name, V, flat, sz, np.vstack(uvs))
+        me.polygons.foreach_set("material_index", np.concatenate(mats))
+        me.polygons.foreach_set("use_smooth", np.ones(len(sz), bool))
+        ob = bpy.data.objects.new("LO_" + name, me)
+        coll.objects.link(ob)
+        n0 = tri_total(me)
+        tgt = KIT_TRIS[name]
+        orig = dict(V=V, grp=np.concatenate(grp), part=np.concatenate(partid), m=np.concatenate(ms),
+                    g=np.concatenate(gs), d=np.concatenate(ds))
+        if n0 > tgt:
+            apply_decimate(ob, tgt / n0)
+            ob.data.update()
+        me = ob.data
+        kd = KDTree(len(V))
+        for i, v in enumerate(V):
+            kd.insert(Vector(v), i)
+        kd.balance()
+        nn = np.array([kd.find(v.co)[1] for v in me.vertices], np.int64)
+        for key in ("grp", "part", "m", "g", "d"):
+            set_point_attr(me, key, orig[key][nn])
+        # all-smooth with auto-sharp edges: stones read as flat blocks, flesh stays round
+        me.polygons.foreach_set("use_smooth", np.ones(len(me.polygons), bool))
+        me.set_sharp_from_angle(angle=math.radians(48))
+        sp["n0"] = n0
+        sp["obj"] = ob
+        sp["orig_V"] = V
+        log("export: module %-12s %6d -> %6d tris" % (name, n0, tri_total(me)))
+        out[name] = ob
+    return out
+
+
+def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
+    """Bake base colour, tangent normal, roughness, AO and the metal class from the hi faces onto the joined low
+    mesh of one family. Returns dict of image paths (jpg)."""
+    imgs, nodes = {}, {}
+    mats = [m for m in joined.data.materials]
+    for mp in ("albedo", "normal", "rough", "ao", "metal"):
+        im = bpy.data.images.new("Mason_%s_%s" % (fam, mp), size, size, alpha=False, float_buffer=False)
+        if mp != "albedo":
+            im.colorspace_settings.name = "Non-Color"
+        imgs[mp] = im
+    for mt in mats:
+        mt.use_nodes = True
+        nt = mt.node_tree
+        for n in list(nt.nodes):
+            if n.type == "TEX_IMAGE":
+                nt.nodes.remove(n)
+        nodes.setdefault(mt.name, nt.nodes.new("ShaderNodeTexImage"))
+
+    def target(mp):
+        for mt in mats:
+            nd = nodes[mt.name]
+            nd.image = imgs[mp]
+            mt.node_tree.nodes.active = nd
+
+    def bake(mp, typ, samples=1, **kw):
+        target(mp)
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        for h in hi_objs:
+            h.select_set(True)
+        joined.select_set(True)
+        bpy.context.view_layer.objects.active = joined
+        sc.cycles.samples = samples
+        args_ = dict(type=typ, use_clear=True, margin=10, use_selected_to_active=True, cage_extrusion=0.05,
+                     max_ray_distance=0.25)
+        args_.update(kw)
+        if typ == "NORMAL":
+            args_["normal_space"] = "TANGENT"
+        t0 = time.time()
+        bpy.ops.object.bake(**args_)
+        log("export: baked %s/%s in %.0fs" % (fam, mp, time.time() - t0))
+
+    bake("albedo", "DIFFUSE", pass_filter={"COLOR"})
+    bake("normal", "NORMAL")
+    bake("rough", "ROUGHNESS")
+    bake("ao", "AO", samples=samples_ao)
+    # metal class: flat emission masks on the hi groups (iron-class groups = 0.9, everything else 0)
+    saved = []
+    mm = {}
+    for h in hi_objs:
+        gname = h.name.split("__")[0]
+        val = 0.9 if GROUP_MASK.get(gname, (0, 0, 0, 0))[3] == 1 / 3 else 0.0
+        if val not in mm:
+            m_ = bpy.data.materials.new("MASK_%g" % val)
+            m_.use_nodes = True
+            nt = m_.node_tree
+            for n in list(nt.nodes):
+                nt.nodes.remove(n)
+            out = nt.nodes.new("ShaderNodeOutputMaterial")
+            em = nt.nodes.new("ShaderNodeEmission")
+            em.inputs["Color"].default_value = (val, val, val, 1)
+            nt.links.new(em.outputs[0], out.inputs["Surface"])
+            mm[val] = m_
+        saved.append((h, list(h.data.materials)))
+        h.data.materials.clear()
+        h.data.materials.append(mm[val])
+    bake("metal", "EMIT")
+    for h, ml in saved:
+        h.data.materials.clear()
+        for m_ in ml:
+            h.data.materials.append(m_)
+    # pack ORM and save
+    def px(im):
+        a = np.zeros(len(im.pixels), np.float32)
+        im.pixels.foreach_get(a)
+        return a.reshape(size, size, 4)
+
+    ao, ro, me_ = px(imgs["ao"]), px(imgs["rough"]), px(imgs["metal"])
+    orm = np.ones((size, size, 4), np.float32)
+    orm[..., 0], orm[..., 1], orm[..., 2] = ao[..., 0], ro[..., 0], me_[..., 0]
+    paths = {}
+    sc.render.image_settings.file_format = "JPEG"
+    for mp, q, res in (("albedo", 90, size), ("normal", 92, size), ("orm", 86, size // 2)):
+        if mp == "orm":
+            im = bpy.data.images.new("Mason_%s_orm" % fam, size, size, alpha=False, float_buffer=False)
+            im.colorspace_settings.name = "Non-Color"
+            im.pixels.foreach_set(orm.ravel())
+            im.update()
+            if res != size:
+                im.scale(res, res)
+        else:
+            im = imgs[mp]
+        sc.render.image_settings.quality = q
+        fp = os.path.join(outdir, "Mason_%s_%s.jpg" % (fam, mp))
+        im.save_render(fp, scene=sc)
+        paths[mp] = fp
+        imgs[mp + "_final"] = im
+    return paths, imgs
+
+
+def make_atlas_material(fam, paths):
+    m = bpy.data.materials.new("Mason" + fam)
+    m.use_nodes = True
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+
+    def tex(fp, nc):
+        nd = nt.nodes.new("ShaderNodeTexImage")
+        im = bpy.data.images.load(fp, check_existing=False)
+        im.name = os.path.basename(fp)
+        if nc:
+            im.colorspace_settings.name = "Non-Color"
+        nd.image = im
+        return nd
+
+    nt.links.new(tex(paths["albedo"], False).outputs["Color"], bsdf.inputs["Base Color"])
+    nrm_ = nt.nodes.new("ShaderNodeNormalMap")
+    nt.links.new(tex(paths["normal"], True).outputs["Color"], nrm_.inputs["Color"])
+    nt.links.new(nrm_.outputs["Normal"], bsdf.inputs["Normal"])
+    orm = tex(paths["orm"], True)
+    sp_ = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(orm.outputs["Color"], sp_.inputs["Color"])
+    nt.links.new(sp_.outputs["Green"], bsdf.inputs["Roughness"])
+    nt.links.new(sp_.outputs["Blue"], bsdf.inputs["Metallic"])
+    go = nt.nodes.new("ShaderNodeGroup")
+    gout = bpy.data.node_groups.get("glTF Material Output")
+    if gout is None:
+        gout = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+        gout.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+    go.node_tree = gout
+    nt.links.new(sp_.outputs["Red"], go.inputs["Occlusion"])
+    return m
+
+
+def make_emissive_material():
+    m = bpy.data.materials.new("MasonEmissive")
+    m.use_nodes = True
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Base Color"].default_value = (0.02, 0.008, 0.005, 1)
+    bsdf.inputs["Roughness"].default_value = 0.5
+    bsdf.inputs["Emission Color"].default_value = (1.0, 0.26, 0.05, 1)
+    bsdf.inputs["Emission Strength"].default_value = 1.6
+    nt.links.new(bsdf.outputs[0], out.inputs["Surface"])
+    return m
+
+
+def stamp_attributes(name, sp, ob, owner_tbl, info):
+    """Rig contract attributes on a module object (module-local frame): _SPINE_S, _MASK, _PART, _OWNER, _OWNER2,
+    _OWNW2. Returns the owner-name table written to the node extras."""
+    me = ob.data
+    n = len(me.vertices)
+    co = np.zeros(n * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3).astype(float)
+    grp = np.rint(get_point_attr(me, "grp")).astype(int)
+    part = np.rint(get_point_attr(me, "part")).astype(int)
+    gn = [GROUP_NAMES.get(g, "Stone") for g in grp]
+    mask = np.array([GROUP_MASK[g] for g in gn], np.float32)
+    blend = np.array([g in BLEND_G for g in gn])
+    s_loc = -co[:, 1]                                   # rest arc length from the module origin (head = 0 side)
+    owners = {}
+    own1 = np.zeros(n)
+    own2 = np.full(n, -1.0)
+    w2 = np.zeros(n)
+
+    def oid(nm):
+        if nm not in owners:
+            owners[nm] = len(owners)
+        return owners[nm]
+
+    if name == "Head":
+        for i in range(n):
+            own1[i] = oid(owner_tbl.get(int(part[i]), "crown"))
+    elif name in ("Segment_0", "Segment_1", "Segment_2", "Tail"):
+        L = sp.get("pitch", 1.24)
+        a = oid("spine_k")
+        b = oid("spine_k1")
+        own1[:] = a
+        t = smoothstep(0.0, L, np.clip(s_loc, 0, L))
+        own2[blend] = b
+        w2[blend] = t[blend]
+        if name == "Tail":
+            own2[blend] = oid("tail_0")
+    elif name == "LimbUpper":
+        a, b = oid("leg_0"), oid("spine_k")
+        own1[:] = a
+        L = float(np.linalg.norm(co[:, 2].max()))
+        z = co[:, 2]
+        t = 1.0 - smoothstep(0.0, 0.2 * max(z.max(), 1e-3), np.clip(z, 0, None))
+        own2[blend] = b
+        w2[blend] = t[blend]
+    elif name == "LimbLower":
+        a, b, c = oid("leg_1"), oid("leg_2"), oid("leg_0")
+        jl = sp["leg"].get("jlen", 0.0)
+        z = co[:, 2]
+        own1[:] = np.where(z > jl * 0.995, b, a)
+        near = blend & (z < 0.1)
+        own2[near] = c
+        w2[near] = 1.0 - smoothstep(0.0, 0.1, z[near])
+    elif name == "Hook":
+        own1[:] = oid("leg_3")
+    elif name.startswith("Frond"):
+        own1[:] = oid("frond")
+    elif name.startswith("Pit"):
+        own1[:] = oid("pit")
+    else:
+        own1[:] = oid("crown")
+    # plate id: connected stone islands (rigid pieces) numbered per module
+    import bmesh as _bm
+    bm = _bm.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    seen = np.full(len(bm.verts), -1, np.int64)
+    cur = 0
+    for v in bm.verts:
+        if seen[v.index] >= 0:
+            continue
+        stack = [v]
+        seen[v.index] = cur
+        while stack:
+            x = stack.pop()
+            for e in x.link_edges:
+                y = e.other_vert(x)
+                if seen[y.index] < 0:
+                    seen[y.index] = cur
+                    stack.append(y)
+        cur += 1
+    bm.free()
+    set_point_attr(me, "_SPINE_S", s_loc)
+    set_point_attr(me, "_MASK", np.column_stack([mask[:, 0], mask[:, 1], mask[:, 2], mask[:, 3]]), "FLOAT_COLOR")
+    set_point_attr(me, "_PART", seen.astype(np.float32))
+    set_point_attr(me, "_OWNER", own1)
+    set_point_attr(me, "_OWNER2", own2)
+    set_point_attr(me, "_OWNW2", w2)
+    for k in ("grp", "part", "m", "g", "d"):
+        if k in me.attributes:
+            me.attributes.remove(me.attributes[k])
+    return owners
+
+
+def hi_family_objects(objs, ids, fam, coll):
+    """Render-resolution faces (modifiers applied) of the parts in `ids`, one object per material group."""
+    import bmesh as _bm
+    dg = bpy.context.evaluated_depsgraph_get()
+    out = []
+    idarr = np.fromiter(ids, np.int64)
+    for g, ob in objs.items():
+        if ob is None or g in ("Ember_unused",):
+            continue
+        me0 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+        if "part" not in me0.attributes:
+            bpy.data.meshes.remove(me0)
+            continue
+        part = np.rint(get_point_attr(me0, "part")).astype(np.int64)
+        nf = len(me0.polygons)
+        ls = np.zeros(nf, np.int32)
+        lt = np.zeros(nf, np.int32)
+        me0.polygons.foreach_get("loop_start", ls)
+        me0.polygons.foreach_get("loop_total", lt)
+        lv = np.zeros(len(me0.loops), np.int32)
+        me0.loops.foreach_get("vertex_index", lv)
+        vin = np.isin(part, idarr)
+        ok = np.add.reduceat(vin[lv].astype(np.int64), ls) == lt if nf else np.zeros(0, bool)
+        if not ok.any():
+            bpy.data.meshes.remove(me0)
+            continue
+        bm = _bm.new()
+        bm.from_mesh(me0)
+        bm.faces.ensure_lookup_table()
+        kill = [bm.faces[i] for i in np.nonzero(~ok)[0]]
+        if kill:
+            _bm.ops.delete(bm, geom=kill, context="FACES")
+        loose = [v for v in bm.verts if not v.link_faces]
+        if loose:
+            _bm.ops.delete(bm, geom=loose, context="VERTS")
+        me = bpy.data.meshes.new("HI_%s_%s" % (g, fam))
+        bm.to_mesh(me)
+        bm.free()
+        bpy.data.meshes.remove(me0)
+        me.materials.append(ob.active_material)
+        o = bpy.data.objects.new("%s__%s" % (g, fam), me)
+        coll.objects.link(o)
+        out.append(o)
+    return out
+
+
+def uv_pack_family(joined, size):
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    bpy.context.view_layer.objects.active = joined
+    joined.select_set(True)
+    me = joined.data
+    while me.uv_layers:
+        me.uv_layers.remove(me.uv_layers[0])
+    me.uv_layers.new(name="UVMap")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
+    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=8.0 / size)
+    try:
+        bpy.ops.uv.pack_islands(rotate=True, margin=8.0 / size)
+    except Exception as e:
+        log("pack_islands:", e)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def split_module(joined, slot_names, name, coll):
+    """New mesh with only the faces of the module's material slots (UVs / attributes kept)."""
+    import bmesh as _bm
+    bm = _bm.new()
+    bm.from_mesh(joined.data)
+    slot_of = {}
+    for i, m in enumerate(joined.data.materials):
+        slot_of[i] = m.name
+    kill = [f for f in bm.faces if slot_of.get(f.material_index, "") not in slot_names]
+    if kill:
+        _bm.ops.delete(bm, geom=kill, context="FACES")
+    loose = [v for v in bm.verts if not v.link_faces]
+    if loose:
+        _bm.ops.delete(bm, geom=loose, context="VERTS")
+    # remember which faces were emissive (slot name ends with _E)
+    for f in bm.faces:
+        f.material_index = 1 if slot_of[f.material_index].endswith("_E") else 0
+        f.smooth = True
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    return me
+
+
+def export_production():
+    global LOW, rng, A, ENV
+    outd = args.export
+    texd = os.path.join(outd, "textures")
+    os.makedirs(texd, exist_ok=True)
+    sc = bpy.context.scene
+    t0 = time.time()
+    hiA = A
+    hi_objs_all = {k: bpy.data.objects.get("Ossuary_" + k) for k in hiA}
+    # ---- the game-tessellation rebuild (same RNG stream, same part tags)
+    LOW = True
+    rng = random.Random(SEED)
+    A = {k: Acc("Ossuary_G_" + k) for k in hiA}
+    ENV = {k: Acc("Shaft_G_" + k) for k in ENV}
+    VERTS.clear()
+    LEG_LOG.clear()
+    LEGP.clear()
+    del PARTS[1:]
+    PART_STACK[:] = [0]
+    build_creature()
+    LOW = False
+    Alow = A
+    A = hiA
+    log("export: low rebuild %.0fs" % (time.time() - t0))
+    spec, info = kit_specs(Alow)
+    owner_tbl = crown_owner_table(info)
+    game = bpy.data.collections.new("Game")
+    sc.collection.children.link(game)
+    # per-module temporary materials (A atlas / E emissive): the join keeps module identity through the slots
+    modobs = build_low_module_objects(Alow, spec, game)
+    for name, ob in modobs.items():
+        ob.data.materials.clear()
+        ob.data.materials.append(bpy.data.materials.new("T_%s_A" % name))
+        ob.data.materials.append(bpy.data.materials.new("T_%s_E" % name))
+    # ---- per-atlas bake
+    gmats = {}
+    emissive = make_emissive_material()
+    final = {}
+    for fam, members in KIT_FAMILY.items():
+        mods = [m for m in members if m in modobs]
+        copies = []
+        for m in mods:
+            o = modobs[m].copy()
+            o.data = modobs[m].data.copy()
+            o.name = "J_%s" % m
+            game.objects.link(o)
+            copies.append(o)
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        for o in copies:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = copies[0]
+        bpy.ops.object.join()
+        joined = bpy.context.view_layer.objects.active
+        joined.name = "JOINED_" + fam
+        size = ATLAS_PX[fam]
+        uv_pack_family(joined, size)
+        log("export: %s joined %d tris, uv packed" % (fam, tri_total(joined.data)))
+        # hi faces of exactly these parts
+        ids = set()
+        for m in mods:
+            ids |= spec[m]["ids"]
+        hi = hi_family_objects(hi_objs_all, ids, fam, game)
+        for o in bpy.context.view_layer.objects:
+            o.hide_render = True
+        for h in hi:
+            h.hide_render = False
+        joined.hide_render = False
+        sc.render.engine = "CYCLES"
+        sc.cycles.device = "CPU"
+        sc.cycles.use_denoising = False
+        vols = [n for n in (sc.world.node_tree.nodes if sc.world else []) if n.type == "VOLUME_SCATTER"]
+        vol_d = [n.inputs["Density"].default_value for n in vols]
+        for n in vols:
+            n.inputs["Density"].default_value = 0.0
+        ao_dist = sc.world.light_settings.distance if sc.world else None
+        if sc.world:
+            sc.world.light_settings.distance = 0.6
+        if args.nobake:
+            paths = {k: None for k in ("albedo", "normal", "orm")}
+        else:
+            paths, imgs = bake_atlas(sc, fam, joined, hi, size, texd)
+        for n, d_ in zip(vols, vol_d):
+            n.inputs["Density"].default_value = d_
+        if sc.world and ao_dist is not None:
+            sc.world.light_settings.distance = ao_dist
+        gmats[fam] = make_atlas_material(fam, paths) if not args.nobake else bpy.data.materials.new("Mason" + fam)
+        # separate back into modules
+        for m in mods:
+            me = split_module(joined, ("T_%s_A" % m, "T_%s_E" % m), "Mason_" + m, game)
+            me.materials.append(gmats[fam])
+            me.materials.append(emissive)
+            Minv = np.linalg.inv(spec[m]["M"])
+            me.transform(Matrix(Minv.tolist()))
+            ob = bpy.data.objects.new("Mason_" + m, me)
+            game.objects.link(ob)
+            final[m] = ob
+        for h in hi:
+            bpy.data.objects.remove(h)
+        bpy.data.objects.remove(joined)
+    for o in list(modobs.values()):
+        bpy.data.objects.remove(o)
+    # ---- LOD1 twins + stamped rig attributes
+    lod1 = {}
+    for m, ob in list(final.items()):
+        from mathutils.kdtree import KDTree
+        o1 = ob.copy()
+        o1.data = ob.data.copy()
+        o1.name = o1.data.name = ob.name + "_LOD1"
+        game.objects.link(o1)
+        n0 = tri_total(o1.data)
+        apply_decimate(o1, LOD1_RATIO)
+        me0, me1 = ob.data, o1.data
+        c0 = np.zeros(len(me0.vertices) * 3, np.float32)
+        me0.vertices.foreach_get("co", c0)
+        c0 = c0.reshape(-1, 3)
+        kd = KDTree(len(c0))
+        for i, v in enumerate(c0):
+            kd.insert(Vector(v), i)
+        kd.balance()
+        nn = np.array([kd.find(v.co)[1] for v in me1.vertices], np.int64)
+        for key in ("grp", "part"):
+            set_point_attr(me1, key, get_point_attr(me0, key)[nn])
+        me1.polygons.foreach_set("use_smooth", np.ones(len(me1.polygons), bool))
+        me1.set_sharp_from_angle(angle=math.radians(48))
+        lod1[m] = o1
+        log("export: LOD1 %-12s %6d -> %6d tris" % (m, n0, tri_total(me1)))
+    leg = spec["LimbLower"]["leg"]
+    own_tabs = {}
+    for m, ob in final.items():
+        sp = spec[m]
+        if m == "LimbLower":
+            sp["leg"]["jlen"] = float(np.linalg.norm(np.asarray(leg["J"]) - np.asarray(leg["Kb"])))
+        if m.startswith("Segment") or m == "Tail":
+            sp["pitch"] = SEG_STEP * VERTS[sp["vert"]]["k"]
+        own_tabs[m] = stamp_attributes(m, sp, ob, owner_tbl, info)
+        stamp_attributes(m, sp, lod1[m], owner_tbl, info)
+        ob["rig_module"] = json.dumps(dict(module=m, owners={str(v): k for k, v in own_tabs[m].items()}))
+        lod1[m]["rig_module"] = ob["rig_module"]
+        M = spec[m]["M"]
+        ob["pivot_world"] = json.dumps([[round(float(x), 5) for x in r] for r in np.asarray(M)])
+    return dict(final=final, lod1=lod1, spec=spec, info=info, owners=own_tabs, game=game, gmats=gmats,
+                emissive=emissive)
+
+
+def export_glb(objs, fn, quality=88):
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    kw = dict(filepath=fn, export_format="GLB", use_selection=True, export_yup=True, export_apply=False,
+              export_texcoords=True, export_normals=True, export_tangents=False, export_attributes=True,
+              export_extras=True, export_materials="EXPORT", export_cameras=False, export_lights=False,
+              export_animations=False, export_skins=False)
+    try:
+        bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=quality, **kw)
+    except TypeError as e:
+        log("gltf export fallback:", e)
+        bpy.ops.export_scene.gltf(**kw)
+    return os.path.getsize(fn)
+
+
+def leg_scale(lp, tmpl):
+    """Non-uniform scale taking the template leg's modules to leg `lp` (bone lengths, thickness)."""
+    kk = lambda L: (L["k"] ** 0.6) * (L["size"] ** 0.85)
+    sxy = kk(lp) / kk(tmpl)
+    sz_u = np.linalg.norm(np.asarray(lp["K"]) - np.asarray(lp["R0"])) / np.linalg.norm(np.asarray(tmpl["K"]) - np.asarray(tmpl["R0"]))
+    sz_l = np.linalg.norm(np.asarray(lp["J"]) - np.asarray(lp["Kb"])) / np.linalg.norm(np.asarray(tmpl["J"]) - np.asarray(tmpl["Kb"]))
+    return sxy, sz_u, sz_l
+
+
+def assemble_hero(prod, coll, budget0=60000, budget1=25000):
+    """Instance the kit modules along the posed spine: one hierarchy per LOD (shared meshes, instanced nodes)."""
+    final, lod1, spec = prod["final"], prod["lod1"], prod["spec"]
+    tri = {m: (tri_total(final[m].data), tri_total(lod1[m].data)) for m in final}
+    roots = []
+    made = {0: [], 1: []}
+    for li in (0, 1):
+        r = bpy.data.objects.new("Mason_Hero_LOD%d" % li, None)
+        coll.objects.link(r)
+        roots.append(r)
+    total = {0: 0, 1: 0}
+
+    def inst(li, m, mat, name):
+        src = (final if li == 0 else lod1)[m]
+        o = bpy.data.objects.new(name, src.data)
+        for k in src.keys():
+            o[k] = src[k]
+        coll.objects.link(o)
+        o.parent = roots[li]
+        o.matrix_world = Matrix(np.asarray(mat).tolist())
+        total[li] += tri[m][li]
+        made[li].append(o)
+
+    def both(m, mat, name):
+        for li in (0, 1):
+            inst(li, m, mat, name)
+
+    # crown
+    both("Head", spec["Head"]["M"], "Mason_Head")
+    # vertebrae: three variants by hash; the last one is the tail module
+    nvert = len(VERTS)
+    ktmpl = {q: VERTS[spec["Segment_%d" % q]["vert"]]["k"] for q in range(3)}
+    for idx, v in enumerate(VERTS):
+        if idx == nvert - 1:
+            kt = VERTS[spec["Tail"]["vert"]]["k"]
+            S_ = np.diag([v["k"] / kt] * 3 + [1.0])
+            both("Tail", np.asarray(v["M"]) @ S_, "Mason_Tail")
+            continue
+        q = int(hash1_py(idx * 7 + 3) * 3)
+        S_ = np.diag([v["k"] / ktmpl[q]] * 3 + [1.0])
+        both("Segment_%d" % q, np.asarray(v["M"]) @ S_, "Mason_Segment_%d_v%02d" % (q, idx))
+    # legs: nearest the crown first (they read best); LOD0 stops at the triangle budget, LOD1 takes them all
+    tmpl = spec["LimbUpper"]["leg"]
+    legs = [lp for lp in LEGP if lp["iH"] is not None and lp["kind"] in ("normal", "lifted", "reach")]
+    legs.sort(key=lambda lp: lp["vi"] + (0 if lp["kind"] == "reach" else 1))
+    for li, budget in ((0, budget0), (1, budget1)):
+        for n_, lp in enumerate(legs):
+            cost = sum(tri[m][li] for m in ("LimbUpper", "LimbLower", "Hook"))
+            if total[li] + cost > budget:
+                continue
+            sxy, szu, szl = leg_scale(lp, tmpl)
+            for m, key, sz in (("LimbUpper", "i0", szu), ("LimbLower", "iL", szl), ("Hook", "iH", sxy)):
+                S_ = np.diag([sxy, sxy, sz, 1.0])
+                inst(li, m, np.asarray(PARTS[lp[key]]["M"]) @ S_, "Mason_%s_leg%02d" % (m, n_))
+    return roots, made, total
+
+
+def hash1_py(n):
+    x = (int(n) ^ 0x9E3779B9) & 0xFFFFFFFF
+    x = (x * 0x85EBCA6B) & 0xFFFFFFFF
+    x ^= x >> 13
+    x = (x * 0xC2B2AE35) & 0xFFFFFFFF
+    x ^= x >> 16
+    return (x & 0xFFFFFFFF) / 4294967296.0
+
+
+def render_kit_sheet(prod, fn, res=(1280, 720), samples=32):
+    """A module sheet: crown, three vertebra variants, tail, leg modules, frond and pit, lit like the game."""
+    sc = bpy.context.scene
+    final = prod["final"]
+    sheet = bpy.data.collections.new("KitSheet")
+    sc.collection.children.link(sheet)
+    objs = []
+
+    def put(m, x, y, s=1.0, rot_z=0.0, rot_x=0.0):
+        o = bpy.data.objects.new("S_" + m, final[m].data)
+        sheet.objects.link(o)
+        o.location = (x, y, 0)
+        o.scale = (s, s, s)
+        o.rotation_euler = (rot_x, 0, rot_z)
+        objs.append(o)
+        return o
+
+    put("Head", -9.5, 0, 0.75, rot_z=0.0, rot_x=math.radians(90))
+    put("Segment_0", -3.0, 2.6, 1.0, rot_x=math.radians(90))
+    put("Segment_1", 0.2, 2.6, 1.0, rot_x=math.radians(90))
+    put("Segment_2", 3.4, 2.6, 1.0, rot_x=math.radians(90))
+    put("Tail", 7.0, 2.6, 1.0, rot_x=math.radians(90))
+    put("LimbUpper", -3.0, -2.2, 0.6)
+    put("LimbLower", -0.8, -2.2, 0.6)
+    put("Hook", 1.2, -2.2, 1.0)
+    for q in range(3):
+        put("Frond_%d" % q, 3.4 + 1.1 * q, -2.0, 1.5, rot_x=math.radians(90))
+    put("Pit", 7.5, -2.0, 1.6, rot_x=math.radians(90))
+    for ob in objs:
+        ob.hide_render = False
+    for o in bpy.context.view_layer.objects:
+        if o not in objs:
+            o.hide_render = True
+    cam = bpy.data.objects.new("CAM_Kit", bpy.data.cameras.new("CAM_Kit"))
+    sc.collection.objects.link(cam)
+    cam.data.lens = 38
+    cam.location = (-0.5, -26.0, 1.0)
+    cam.rotation_euler = (math.radians(90), 0, 0)
+    sc.camera = cam
+    lights = []
+    for nm, loc, en, col in (("K1", (-6, -12, 9), 3000, (0.9, 0.92, 1.0)), ("K2", (8, -10, 3), 1500, (1.0, 0.8, 0.6))):
+        ld = bpy.data.lights.new(nm, "POINT")
+        ld.energy = en
+        ld.color = col
+        ld.shadow_soft_size = 1.5
+        lo = bpy.data.objects.new(nm, ld)
+        sc.collection.objects.link(lo)
+        lo.location = loc
+        lights.append(lo)
+    sc.world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.012, 0.014, 0.018, 1)
+    sc.view_settings.view_transform = "AgX"
+    sc.render.resolution_x, sc.render.resolution_y = res
+    sc.cycles.samples = samples
+    sc.cycles.use_denoising = True
+    try:
+        sc.render.use_compositing = False
+    except Exception:
+        pass
+    sc.render.filepath = fn
+    sc.render.image_settings.file_format = "PNG"
+    bpy.ops.render.render(write_still=True)
+    return fn
+
+
+def run_production(creature, env):
+    """Bake + export the kit and the hero, report budgets."""
+    outd = args.export
+    sc = bpy.context.scene
+    creature.hide_render = True
+    for ob in env.objects:
+        ob.hide_render = True
+    t0 = time.time()
+    prod = export_production()
+    final, lod1, spec = prod["final"], prod["lod1"], prod["spec"]
+    game = prod["game"]
+    report = dict(modules={}, files={})
+    for m in final:
+        report["modules"][m] = dict(lod0=tri_total(final[m].data), lod1=tri_total(lod1[m].data),
+                                    owners=prod["owners"][m])
+    kit_objs = list(final.values()) + list(lod1.values())
+    fk = os.path.join(outd, "mason_kit.glb")
+    report["files"]["mason_kit.glb"] = export_glb(kit_objs, fk)
+    log("export: kit %.2f MB" % (report["files"]["mason_kit.glb"] / 1e6))
+    roots, made, total = assemble_hero(prod, game)
+    report["hero"] = dict(lod0_tris=total[0], lod1_tris=total[1], nodes_lod0=len(made[0]), nodes_lod1=len(made[1]))
+    fh = os.path.join(outd, "mason_hero.glb")
+    report["files"]["mason_hero.glb"] = export_glb(roots + made[0] + made[1], fh)
+    log("export: hero %.2f MB, LOD0 %d tris, LOD1 %d tris" % (report["files"]["mason_hero.glb"] / 1e6, total[0], total[1]))
+    sheet = os.path.join(outd, "mason_kit.png")
+    if not args.nobake or True:
+        try:
+            render_kit_sheet(prod, sheet)
+        except Exception as e:
+            log("kit sheet failed:", e)
+    with open(os.path.join(outd, "export_report.json"), "w") as fh_:
+        json.dump(report, fh_, indent=2)
+    log("export done in %.0fs" % (time.time() - t0))
+
+
 def main():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
@@ -4969,10 +5909,10 @@ def main():
     Dc = CROWN["D"]
     Sc = CROWN["S"]
     mouth = CROWN["mouth_front"]
-    L_throat = light("L_Throat", "POINT", CROWN["throat_light"], 10.0, (1.0, 0.2, 0.04), 0.12)
-    L_mouth = light("L_Mouth", "POINT", CROWN["mouth_light"], 10.0, (1.0, 0.24, 0.06), 0.3)
-    L_mouth2 = light("L_Mouth2", "POINT", CROWN["mouth_light2"], 6.0, (1.0, 0.2, 0.05), 0.3)
-    L_forge = light("L_Forge", "POINT", CROWN["forge"] - Tc * 0.15, 14.0, (1.0, 0.16, 0.03), 0.15)
+    L_throat = light("L_Throat", "POINT", CROWN["throat_light"], 2.0, (1.0, 0.2, 0.04), 0.12)
+    L_mouth = light("L_Mouth", "POINT", CROWN["mouth_light"], 1.2, (1.0, 0.24, 0.06), 0.3)
+    L_mouth2 = light("L_Mouth2", "POINT", CROWN["mouth_light2"], 1.0, (1.0, 0.2, 0.05), 0.3)
+    L_forge = light("L_Forge", "POINT", CROWN["forge"] - Tc * 0.15, 6.0, (1.0, 0.16, 0.03), 0.15)
     L_top = light("L_ShaftTop", "SPOT", (1.0, -11.0, 50.0), 300000.0, (0.55, 0.7, 1.0), 2.5,
                   target=(0.0, -1.5, 10.0), spot=math.radians(46), blend=0.7)
     hc = [float(x) for x in args.herocam.split(",")]
@@ -5131,7 +6071,7 @@ def main():
         json.dump(stats, fh, indent=2)
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "ossuary.blend"))
-    game_lods = export_game(objs, mats, creature) if args.export else None
+    game_lods = None
 
     for shot in SHOTS:
         t0 = time.time()
@@ -5222,6 +6162,8 @@ def main():
             for ob in game_lods[0].values():
                 ob.hide_render = True
         log("rendered", shot, "in %.0fs" % (time.time() - t0))
+    if args.export:
+        run_production(creature, env)
     log("done")
 
 

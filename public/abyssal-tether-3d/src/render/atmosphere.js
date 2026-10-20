@@ -650,6 +650,7 @@ export class Atmosphere {
       blendSrcAlpha: THREE.OneFactor,
       blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
       side: THREE.DoubleSide,
+      forceSinglePass: true, // a transparent double-sided material would otherwise draw twice (back, then front)
     });
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.name = 'fxFog';
@@ -888,7 +889,7 @@ export class Atmosphere {
         const s = L.s;
         if (s.active === false || s.fallen) continue;
         const dy = head.y - L.y;
-        if (dy < 0.9 || dy > 26) continue; // tops below eye level (mist lies ON the stone)
+        if (dy < 0.6 || dy > 26) continue; // tops below eye level (mist lies ON the stone; no fixed eye height assumed)
         const dx = head.x < s.minX ? s.minX - head.x : head.x > s.maxX ? head.x - s.maxX : 0;
         const dz = head.z < s.minZ ? s.minZ - head.z : head.z > s.maxZ ? head.z - s.maxZ : 0;
         const d2 = dx * dx + dy * dy + dz * dz;
