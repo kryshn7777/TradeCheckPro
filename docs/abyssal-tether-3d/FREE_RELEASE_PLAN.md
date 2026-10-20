@@ -45,6 +45,9 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 | WP-RELEASE | PWA boot split, SW, context loss, saves, governor, store assets, docs | main.js, index.html, pwa/*, game.js boot | to launch |
 | WP-QA | adversarial review, soak, video, final report | all | last |
 
+## Restart log
+- 2026-10-20 ~21:13: an owner interrupt stopped the audio, body, rig and release agents; 22:15 container restart stopped the two Quest graphics agents. Owner chose 'restart all four'; at 22:25 all six (lightmaps, materials, audio, body, rig, release) were running again from the saved partial work.
+
 ## Machine notes
 - The container's memory cgroup OOM-kills big jobs (Blender ~6 GB, headless Chromium 1.5-4.4 GB). Every Blender run goes under `flock /tmp/at3d-blender.lock`, every headless Chromium/Playwright run under `flock /tmp/at3d-browser.lock`. Never broad `pkill`.
 
