@@ -1,0 +1,892 @@
+/* ABYSSAL TETHER 3D — masonRigView.js
+ * MasonRigView — the rigged, skinned, animated Mason (assets/models/mason_rig.glb, built by tools/abyssal-tether-3d/build_mason_rig.py)
+ * on the simulation's body (Creature3D.body). Same public API as CreatureView (constructor(scene, gltf, options), update(creature, dt,
+ * camera), setTextures, info, dispose) plus bindBus(bus) and isRig. game.js loads it asynchronously and keeps the kit CreatureView
+ * as the automatic fallback: any error while constructing or updating this view hands the creature back to the kit.
+ *
+ *   - Skeleton: 170 bones: neck, spine_00..17 (one per sim block), tail_0/1, the crown subtree (crown, portal archivolts, combs,
+ *     ventral hinges, gullet rings, 7 pits, 5 stone arms x 2) and 36 legs (10 lead, 26 follower). LOD0 (<= 60 k tris) and LOD1
+ *     (<= 25 k) share the skeleton and the two atlases; 4 draw calls per LOD.
+ *   - Procedural layers (zero allocation): the spine follows the sim's body (one bone per block, per-bone scale from the link
+ *     lengths), the crown aims at the sound with a spring (lag + overshoot), the head is shrunk / lifted to fit the shaft
+ *     (HeadFit), lead legs IK to the sim's planted hooks, follower legs ripple in a metachronal wave (MasonLegs).
+ *   - Clips: AnimationMixer; the clip graph (mason/masonClipGraph.js, pure) maps sim state to weights; the attack clips are
+ *     scrubbed by the sim's own timer (phase lock) and the parametric clips by body.listen / lunge / frondOpen / glow.
+ *   - Bus: `creature:clip` {name, event, t, x, y, z} at the clip event times (audio sync).
+ *
+ * Debug (AT3D.debug.creature): view.debug.place / clear / play / pose / state.
+ */
+import * as THREE from 'three';
+import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS, STRIKE_CONTACT } from './mason/masonClipGraph.js';
+import { HeadFit } from './mason/masonFit.js';
+import { MasonLegs } from './mason/masonLegs.js';
+import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
+import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
+
+const DEFAULTS = {
+  lodDistance: 38, // nearest spine point -> camera: beyond this the LOD1 mesh shows
+  lodHysteresis: 5,
+  hideDistance: 260,
+  glowPierce: 0.35,
+  sightingFogCap: 0.55,
+  bodyScale: 0.93, // vertebra scale = link / rest pitch x this (a hair under, so the mortar-flesh joints show)
+};
+const SEG = 20;
+const LIFT_FALLOFF = [1, 0.6, 0.3, 0.12];
+const ZERO3 = [0, 0, 0];
+const _v0 = new THREE.Vector3();
+const _m3a = new Float64Array(9);
+const _m3b = new Float64Array(9);
+const _m3c = new Float64Array(9);
+const _m3d = new Float64Array(9);
+
+function len3(x, y, z) {
+  return Math.sqrt(x * x + y * y + z * z);
+}
+
+export class MasonRigView {
+  /**
+   * @param {THREE.Object3D} scene
+   * @param {object} gltf  GLTFLoader result of mason_rig.glb
+   * @param {object} [options]
+   */
+  constructor(scene, gltf, options) {
+    this.opts = Object.assign({}, DEFAULTS, options || {});
+    this.isRig = true;
+    this.scene = scene || null;
+    this.bus = null;
+    this.root = new THREE.Group();
+    this.root.name = 'MasonRigView';
+    this.root.visible = false;
+    this._time = 0;
+    this.info = { rig: true, drawCalls: 0, triangles: 0, trianglesLod1: 0, bones: 0, lod: 0, clips: 0, legsStepping: 0, headScale: 1, fit: [0, 0, 0, 0] };
+
+    const parserJson = gltf && gltf.parser && gltf.parser.json;
+    const meta = parserJson && parserJson.extras && parserJson.extras.mason;
+    if (!meta || !gltf.scene) throw new Error('mason_rig.glb: missing rig metadata');
+    this.meta = meta;
+    this.gltf = gltf;
+    this._collect(gltf);
+    this._buildMaterials();
+    this._buildRig(meta);
+    this._buildActions(gltf, meta);
+    this.graph = new ClipGraph();
+    this.legs = new MasonLegs(this.bones, meta);
+    this.fit = new HeadFit();
+    // per-frame scratch
+    this.F = new Float32Array(SEG * 12);
+    this.S = new Float32Array(SEG);
+    this._sphere = new THREE.Sphere(new THREE.Vector3(), 30);
+    this._lod = 0;
+    this._prevHead = new Float32Array(3);
+    this._havePrev = false;
+    this._speed = 0;
+    this._wasVisible = false;
+    this._hug = 3.2;
+    this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0 };
+    this._forced = null;
+    this._dbg = null;
+    this._level = null;
+    this._lastCreature = null;
+    this.debug = this._makeDebug();
+    if (this.scene) this.scene.add(this.root);
+  }
+
+  bindBus(bus) {
+    this.bus = bus || null;
+  }
+
+  /** compat with CreatureView (the atlases are baked into the GLB) */
+  setTextures() {}
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // construction
+  // ---------------------------------------------------------------------------------------------------------------
+  _collect(gltf) {
+    this.bones = {};
+    this.boneList = [];
+    this.meshes = [[], []];
+    const skinned = [];
+    gltf.scene.traverse((o) => {
+      if (o.isBone) {
+        this.bones[o.userData.name || o.name] = o;
+        this.boneList.push(o);
+      } else if (o.isSkinnedMesh) skinned.push(o);
+    });
+    if (!this.boneList.length || !skinned.length) throw new Error('mason_rig.glb: no skeleton');
+    for (const m of skinned) {
+      let lod = 0;
+      for (let p = m; p; p = p.parent) {
+        const n = (p.userData && p.userData.name) || p.name || '';
+        if (/LOD1/.test(n)) lod = 1;
+      }
+      this.meshes[lod].push(m);
+    }
+    if (!this.meshes[0].length) throw new Error('mason_rig.glb: no LOD0 mesh');
+    if (!this.meshes[1].length) this.meshes[1] = this.meshes[0];
+    this.skeleton = skinned[0].skeleton;
+    for (const b of this.boneList) {
+      b.matrixAutoUpdate = false;
+      b.matrixWorldAutoUpdate = false;
+      b.matrixWorld.identity();
+    }
+    let t0 = 0;
+    let t1 = 0;
+    for (let l = 0; l < 2; l++) {
+      for (const m of this.meshes[l]) {
+        m.removeFromParent();
+        m.frustumCulled = true;
+        m.castShadow = false;
+        m.receiveShadow = false;
+        m.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 40);
+        this.root.add(m);
+        const tris = m.geometry.index ? m.geometry.index.count / 3 : 0;
+        if (l === 0) t0 += tris;
+        else if (this.meshes[1] !== this.meshes[0]) t1 += tris;
+      }
+    }
+    this.info.triangles = t0;
+    this.info.trianglesLod1 = t1;
+    this.info.drawCalls = this.meshes[0].length;
+    this.info.bones = this.boneList.length;
+    this._setLod(0, true);
+  }
+
+  _buildMaterials() {
+    this.uniforms = makeMasonUniforms();
+    this.uniforms.uGlowPierce.value = this.opts.glowPierce;
+    this.materials = [];
+    this.emissive = null;
+    const seen = new Set();
+    for (const l of this.meshes) {
+      for (const m of l) {
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        for (const mat of mats) {
+          if (!mat || seen.has(mat)) continue;
+          seen.add(mat);
+          mat.vertexColors = false;
+          patchMasonMaterial(mat, this.uniforms);
+          this.materials.push(mat);
+          if (/Emissive/i.test(mat.name)) {
+            this.emissive = mat;
+            this._emBase = mat.emissiveIntensity || 1;
+          }
+        }
+      }
+    }
+  }
+
+  _buildRig(meta) {
+    const B = this.bones;
+    this.spineNames = meta.spine; // neck, spine_00..17, tail_0  (== sim points 0..19)
+    this.spine = meta.spine.map((n) => {
+      if (!B[n]) throw new Error('mason_rig.glb: missing bone ' + n);
+      return B[n];
+    });
+    this.tail1 = B[meta.tailExtra] || null;
+    this.restPos = new Float32Array(SEG * 3);
+    for (let i = 0; i < SEG; i++) {
+      const b = this.spine[i];
+      this.restPos[i * 3] = b.position.x;
+      this.restPos[i * 3 + 1] = b.position.y;
+      this.restPos[i * 3 + 2] = b.position.z;
+    }
+    this.neck = this.spine[0];
+    this.crown = [];
+    const walk = (b) => {
+      for (const c of b.children) {
+        if (c.isBone) {
+          this.crown.push(c);
+          walk(c);
+        }
+      }
+    };
+    walk(this.neck);
+    this.pitDirs = meta.pits;
+  }
+
+  _buildActions(gltf, meta) {
+    this.mixer = new THREE.AnimationMixer(gltf.scene);
+    this.act = {};
+    this.clipInfo = {};
+    for (const clip of gltf.animations || []) {
+      const mi = meta.clips && meta.clips[clip.name];
+      if (!mi || mi.kind === 'template') continue;
+      if (mi.kind === 'additive' || mi.kind === 'parametric') THREE.AnimationUtils.makeClipAdditive(clip);
+      const a = this.mixer.clipAction(clip);
+      a.enabled = true;
+      if (mi.loop) a.setLoop(THREE.LoopRepeat, Infinity);
+      else {
+        a.setLoop(THREE.LoopOnce, 1);
+        a.clampWhenFinished = true;
+      }
+      a.setEffectiveWeight(0);
+      a.play();
+      if (mi.kind === 'parametric' || mi.phase) a.paused = true;
+      this.act[clip.name] = a;
+      this.clipInfo[clip.name] = {
+        name: clip.name,
+        kind: mi.kind,
+        duration: clip.duration,
+        loop: !!mi.loop,
+        events: (mi.events || []).map((e) => ({ name: e.name, t: e.u * clip.duration })),
+        prevT: -1,
+        weight: 0,
+        started: false,
+      };
+      // desynchronise the loops
+      if (mi.loop && mi.kind === 'base') a.time = (clip.name.length * 0.37) % clip.duration;
+    }
+    this.info.clips = Object.keys(this.act).length;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // LOD
+  // ---------------------------------------------------------------------------------------------------------------
+  _setLod(lod, force) {
+    if (!force && lod === this._lod) return;
+    this._lod = lod;
+    for (const m of this.meshes[0]) m.visible = lod === 0 || this.meshes[1] === this.meshes[0];
+    if (this.meshes[1] !== this.meshes[0]) for (const m of this.meshes[1]) m.visible = lod === 1;
+    this.info.lod = lod;
+    this.info.drawCalls = this.meshes[lod].length;
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // per frame
+  // ---------------------------------------------------------------------------------------------------------------
+  /**
+   * @param {Creature3D} creature
+   * @param {number} dt
+   * @param {THREE.Camera} [camera]
+   */
+  update(creature, dt, camera) {
+    const C = this._dbg ? this._dbg.creature : creature;
+    if (creature) this._lastCreature = creature;
+    const B = C && C.body;
+    if (!B || !B.visible || C.active === false) {
+      this.root.visible = false;
+      this._wasVisible = false;
+      return;
+    }
+    dt = dt > 0 ? Math.min(dt, 0.1) : 0;
+    this._time += dt;
+    const sp = B.spine;
+    const o = this.opts;
+
+    // ---- distance / LOD / culling ----
+    let camD = 0;
+    if (camera) {
+      camera.getWorldPosition(_v0);
+      camD = 1e9;
+      for (let i = 0; i < SEG; i++) {
+        const d = len3(_v0.x - sp[i * 3], _v0.y - sp[i * 3 + 1], _v0.z - sp[i * 3 + 2]);
+        if (d < camD) camD = d;
+      }
+      if (camD > o.hideDistance) {
+        this.root.visible = false;
+        this._wasVisible = false;
+        return;
+      }
+    }
+    this.root.visible = true;
+    const lodWant = camD > o.lodDistance + (this._lod === 1 ? -o.lodHysteresis : o.lodHysteresis * 0) ? 1 : 0;
+    this._setLod(lodWant);
+    const lodFar = this._lod === 1;
+
+    // ---- teleports / respawns: forget footholds and springs ----
+    const hx0 = sp[0];
+    const hy0 = sp[1];
+    const hz0 = sp[2];
+    let jump = !this._wasVisible;
+    if (this._havePrev) {
+      const dx = hx0 - this._prevHead[0];
+      const dy = hy0 - this._prevHead[1];
+      const dz = hz0 - this._prevHead[2];
+      const d = len3(dx, dy, dz);
+      if (d > 9) jump = true;
+      if (dt > 0) this._speed += (d / dt - this._speed) * (1 - Math.exp(-dt * 6));
+    }
+    this._prevHead[0] = hx0;
+    this._prevHead[1] = hy0;
+    this._prevHead[2] = hz0;
+    this._havePrev = true;
+    if (jump) {
+      this.legs.reset();
+      this.fit.reset();
+      const f = this._focus;
+      f.yaw = f.pitch = f.vyaw = f.vpitch = 0;
+      this._speed = 0;
+    }
+    this._wasVisible = true;
+
+    // ---- sim state -> clip graph ----
+    this._snapshot(C, B);
+    const g = this.graph.update(dt);
+    this._applyClips(dt, g, C);
+    this.mixer.update(dt);
+
+    // ---- spine frames, head fit ----
+    const F = this.F;
+    const S = this.S;
+    computeFrames(B, SEG, F);
+    const level = C.level || this._level;
+    if (C.level) this._level = C.level;
+    const cap = sectionHeadScale(C);
+    this.fit.update(dt, level, F[0], F[1], F[2], F[6], F[7], F[8], F[9], F[10], F[11], cap);
+    const hs = this.fit.scale;
+    const lift = this.fit.lift;
+    // lift the crown (and the first links) off the wall it clings to
+    for (let i = 0; i < LIFT_FALLOFF.length; i++) {
+      const k = lift * LIFT_FALLOFF[i];
+      F[i * 12] += F[i * 12 + 6] * k;
+      F[i * 12 + 1] += F[i * 12 + 7] * k;
+      F[i * 12 + 2] += F[i * 12 + 8] * k;
+    }
+    // per-bone uniform scale from the link lengths (the taper lives in the sim)
+    const P0 = this.meta.P0;
+    const bs = o.bodyScale / P0;
+    S[0] = hs;
+    for (let i = 1; i < SEG; i++) {
+      const a = len3(sp[i * 3] - sp[i * 3 - 3], sp[i * 3 + 1] - sp[i * 3 - 2], sp[i * 3 + 2] - sp[i * 3 - 1]);
+      const b = i < SEG - 1 ? len3(sp[i * 3 + 3] - sp[i * 3], sp[i * 3 + 4] - sp[i * 3 + 1], sp[i * 3 + 5] - sp[i * 3 + 2]) : a;
+      S[i] = clamp((a + b) * 0.5 * bs, 0.4, 1.6);
+    }
+
+    // ---- crown aim (spring) ----
+    this._aim(dt, B, F, g, C);
+
+    // ---- bones ----
+    this._poseSpine(F, S);
+    this._poseCrown();
+    this._poseLegs(dt, B, F, S, level, g, lodFar);
+
+    // ---- shading uniforms ----
+    const sighting = !!C.sighting;
+    this.uniforms.uFogCap.value = sighting ? o.sightingFogCap : 1;
+    this.uniforms.uGlowPierce.value = sighting ? 1 : o.glowPierce;
+    if (this.emissive) {
+      const glow = clamp(B.glow == null ? 0.3 : B.glow, 0, 1);
+      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow);
+    }
+
+    // ---- bounds ----
+    this._bounds(sp, hs);
+    this.info.headScale = hs;
+    this.info.legsStepping = this.legs.stats.stepping;
+    this.info.fit[0] = this.fit.clear[0];
+    this.info.fit[1] = this.fit.clear[1];
+    this.info.fit[2] = this.fit.clear[2];
+    this.info.fit[3] = this.fit.clear[3];
+  }
+
+  _snapshot(C, B) {
+    const s = this.graph.snapshot;
+    const a = C.attack;
+    s.state = C.state || 'DORMANT';
+    s.phase = a && s.state === 'ATTACK' ? a.phase : null;
+    s.atkT = a ? a.t : 0;
+    s.atkWindup = a ? a.windup : 0.75;
+    s.hit = !!(a && a.hit);
+    s.listening = !!C.listening;
+    s.creeping = !!C.creeping;
+    s.jitter = B.jitter || 0;
+    s.lunge = B.lunge || 0;
+    s.frondOpen = B.frondOpen == null ? 0.3 : B.frondOpen;
+    s.glow = B.glow == null ? 0.1 : B.glow;
+    s.distance = C.distance == null ? 99 : C.distance;
+    s.victory = C.victory && C.victory.phase ? C.victory.phase : '';
+    s.sighting = !!C.sighting;
+  }
+
+  // ---- clips ----------------------------------------------------------------------------------------------------
+  _applyClips(dt, g, C) {
+    const act = this.act;
+    const info = this.clipInfo;
+    const f = this._forced;
+    const w = g.w;
+    // one-shot triggers
+    const tr = g.triggers;
+    for (let i = 0; i < tr.length; i++) {
+      const a = act[tr[i]];
+      if (!a) continue;
+      a.reset();
+      a.setEffectiveWeight(0);
+      a.play();
+      info[tr[i]].prevT = -1;
+      this._emitClip(tr[i], 'start', 0, C);
+    }
+    for (let i = 0; i < BASE_CLIPS.length; i++) {
+      const n = BASE_CLIPS[i];
+      const a = act[n];
+      if (!a) continue;
+      let wt = f ? (f.name === n ? 1 : 0) : w[n];
+      const ci = info[n];
+      if (n === 'rear_windup') {
+        if (f && f.name === n) a.time = f.u * ci.duration;
+        else if (!f && g.windupTime >= 0) a.time = g.windupTime;
+        else if (wt < 0.001) a.time = 0;
+      } else if (n === 'strike') {
+        if (f && f.name === n) a.time = f.u * ci.duration;
+        else if (!f && g.strikeTime >= 0) a.time = g.strikeTime;
+        else if (wt < 0.001) a.time = 0;
+      } else if (f && f.name === n) {
+        if (f.hold) {
+          a.paused = true;
+          a.time = f.u * ci.duration;
+        } else a.paused = false;
+      } else if (a.paused && !(n === 'rear_windup' || n === 'strike')) a.paused = false;
+      a.setEffectiveWeight(wt);
+      ci.weight = wt;
+      this._events(n, a, wt, C);
+    }
+    for (let i = 0; i < ADDITIVE_CLIPS.length; i++) {
+      const n = ADDITIVE_CLIPS[i];
+      const a = act[n];
+      if (!a) continue;
+      let wt = f ? (f.name === n ? 1 : 0) : w[n];
+      const ci = info[n];
+      if (f && f.name === n) {
+        if (f.hold) {
+          a.paused = true;
+          a.time = f.u * ci.duration;
+        } else a.paused = false;
+      } else if (a.paused) a.paused = false;
+      a.setEffectiveWeight(wt);
+      ci.weight = wt;
+      this._events(n, a, wt, C);
+    }
+    for (let i = 0; i < PARAM_CLIPS.length; i++) {
+      const n = PARAM_CLIPS[i];
+      const a = act[n];
+      if (!a) continue;
+      const v = f ? (f.name === n ? f.u : 0) : g.param[n];
+      const ci = info[n];
+      a.paused = true;
+      a.time = clamp(v, 0, 1) * ci.duration * 0.999;
+      a.setEffectiveWeight(v > 0.002 ? 1 : 0);
+      ci.weight = v;
+      if (v > 0.5) this._events(n, a, 1, C);
+      else ci.prevT = -1;
+    }
+    this.mixer.timeScale = 1;
+  }
+
+  _events(name, a, weight, C) {
+    const ci = this.clipInfo[name];
+    const ev = ci.events;
+    const t = a.time;
+    const prev = ci.prevT;
+    ci.prevT = weight > 0.02 ? t : -1;
+    if (!ev.length || prev < 0 || weight < 0.15) return;
+    const wrapped = t < prev;
+    if (wrapped && !ci.loop) return;
+    for (let i = 0; i < ev.length; i++) {
+      const et = ev[i].t;
+      const hit = wrapped ? et > prev || et <= t : et > prev && et <= t;
+      if (hit) this._emitClip(name, ev[i].name, et, C);
+    }
+  }
+
+  _emitClip(name, event, t, C) {
+    if (!this.bus) return;
+    const h = C && C.body && C.body.head;
+    this.bus.emit('creature:clip', { name, event, t, x: h ? h.x : 0, y: h ? h.y : 0, z: h ? h.z : 0 });
+  }
+
+  // ---- crown aim ------------------------------------------------------------------------------------------------
+  _aim(dt, B, F, g, C) {
+    const fc = this._focus;
+    const foc = B.focus;
+    let ty = 0;
+    let tp = 0;
+    const attacking = this.graph.snapshot.phase !== null;
+    if (foc && !attacking) {
+      const dx = foc.x - F[0];
+      const dy = foc.y - F[1];
+      const dz = foc.z - F[2];
+      const lr = dx * F[9] + dy * F[10] + dz * F[11];
+      const lu = dx * F[6] + dy * F[7] + dz * F[8];
+      const lf = dx * F[3] + dy * F[4] + dz * F[5];
+      const gain = clamp((foc.amount || 0) * 1.5 + (this.graph.snapshot.listening ? 0.5 : 0), 0, 1);
+      if (gain > 0.001 && len3(dx, dy, dz) > 1) {
+        const lim = 70 * (Math.PI / 180);
+        const limP = 45 * (Math.PI / 180);
+        ty = clamp(-Math.atan2(lr, lf), -lim, lim) * gain;
+        tp = clamp(Math.atan2(lu, Math.sqrt(lr * lr + lf * lf)), -limP, limP) * gain;
+      }
+    }
+    // underdamped spring: ~0.3 s lag, ~12 % overshoot
+    const w0 = 8.5;
+    const z = 0.55;
+    const n = dt > 0 ? Math.max(1, Math.ceil(dt / 0.016)) : 0;
+    const h = n ? dt / n : 0;
+    for (let i = 0; i < n; i++) {
+      fc.vyaw += (w0 * w0 * (ty - fc.yaw) - 2 * z * w0 * fc.vyaw) * h;
+      fc.yaw += fc.vyaw * h;
+      fc.vpitch += (w0 * w0 * (tp - fc.pitch) - 2 * z * w0 * fc.vpitch) * h;
+      fc.pitch += fc.vpitch * h;
+    }
+  }
+
+  // ---- bones ----------------------------------------------------------------------------------------------------
+  _poseSpine(F, S) {
+    const sp = this.spine;
+    const rp = this.restPos;
+    const fc = this._focus;
+    for (let i = 0; i < SEG; i++) {
+      const b = sp[i];
+      const o = i * 12;
+      // frame: columns right, up, back
+      const R = _m3a;
+      R[0] = F[o + 9];
+      R[1] = F[o + 6];
+      R[2] = -F[o + 3];
+      R[3] = F[o + 10];
+      R[4] = F[o + 7];
+      R[5] = -F[o + 4];
+      R[6] = F[o + 11];
+      R[7] = F[o + 8];
+      R[8] = -F[o + 5];
+      const q = b.quaternion;
+      quat3(_m3b, q.x, q.y, q.z, q.w);
+      let M = R;
+      if (i === 0) {
+        // yaw about +Y then pitch about +X (the aim spring), then the clip's neck delta
+        const cy = Math.cos(fc.yaw);
+        const sy = Math.sin(fc.yaw);
+        const cp = Math.cos(fc.pitch);
+        const sp2 = Math.sin(fc.pitch);
+        // Ry * Rx
+        _m3c[0] = cy;
+        _m3c[1] = sy * sp2;
+        _m3c[2] = sy * cp;
+        _m3c[3] = 0;
+        _m3c[4] = cp;
+        _m3c[5] = -sp2;
+        _m3c[6] = -sy;
+        _m3c[7] = cy * sp2;
+        _m3c[8] = cy * cp;
+        mul3(_m3d, R, _m3c);
+        M = _m3d;
+      }
+      const out = i === 0 ? _m3a : _m3d;
+      mul3(out === M ? _m3c : out, M, _m3b);
+      const Rm = out === M ? _m3c : out;
+      const s = S[i];
+      // delta translation (the clip's heave) in the bone frame
+      const dx = (b.position.x - rp[i * 3]) * s;
+      const dy = (b.position.y - rp[i * 3 + 1]) * s;
+      const dz = (b.position.z - rp[i * 3 + 2]) * s;
+      const px = F[o] + R[0] * dx + R[1] * dy + R[2] * dz;
+      const py = F[o + 1] + R[3] * dx + R[4] * dy + R[5] * dz;
+      const pz = F[o + 2] + R[6] * dx + R[7] * dy + R[8] * dz;
+      const e = b.matrixWorld.elements;
+      e[0] = Rm[0] * s;
+      e[1] = Rm[3] * s;
+      e[2] = Rm[6] * s;
+      e[3] = 0;
+      e[4] = Rm[1] * s;
+      e[5] = Rm[4] * s;
+      e[6] = Rm[7] * s;
+      e[7] = 0;
+      e[8] = Rm[2] * s;
+      e[9] = Rm[5] * s;
+      e[10] = Rm[8] * s;
+      e[11] = 0;
+      e[12] = px;
+      e[13] = py;
+      e[14] = pz;
+      e[15] = 1;
+    }
+    if (this.tail1) this.tail1.matrixWorld.copy(sp[SEG - 1].matrixWorld);
+  }
+
+  _poseCrown() {
+    const list = this.crown;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      b.updateMatrix();
+      b.matrixWorld.multiplyMatrices(b.parent.matrixWorld, b.matrix);
+    }
+  }
+
+  _poseLegs(dt, B, F, S, level, g, lodFar) {
+    // follower footholds sit where the lead legs find the surface: average hip -> planted hook distance along the body's down
+    const limbs = B.limbs;
+    if (limbs) {
+      let sum = 0;
+      let n = 0;
+      for (let i = 0; i < limbs.length; i++) {
+        const L = limbs[i];
+        if (!L.planted) continue;
+        const o = L.seg * 12;
+        const d = (F[o] - L.foot.x) * F[o + 6] + (F[o + 1] - L.foot.y) * F[o + 7] + (F[o + 2] - L.foot.z) * F[o + 8];
+        if (d > 0.3 && d < 14) {
+          sum += d;
+          n++;
+        }
+      }
+      if (n) this._hug += (sum / n - this._hug) * (1 - Math.exp(-Math.max(dt, 0.001) * 2));
+    }
+    this.legs.hug = this._hug;
+    const freeze = g.freeze || !!(this._forced && this._forced.hold);
+    this.legs.update(dt, F, S, limbs, level, freeze, lodFar, this._speed);
+  }
+
+  _bounds(sp, hs) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < SEG; i++) {
+      const x = sp[i * 3];
+      const y = sp[i * 3 + 1];
+      const z = sp[i * 3 + 2];
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (z < minZ) minZ = z;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+      if (z > maxZ) maxZ = z;
+    }
+    const sph = this._sphere;
+    sph.center.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+    sph.radius = len3(maxX - minX, maxY - minY, maxZ - minZ) / 2 + 12 + 9 * hs;
+    const list = this.meshes[this._lod];
+    for (let i = 0; i < list.length; i++) list[i].boundingSphere.copy(sph);
+  }
+
+  // ---------------------------------------------------------------------------------------------------------------
+  // debug
+  // ---------------------------------------------------------------------------------------------------------------
+  _makeDebug() {
+    const self = this;
+    return {
+      /** Plays a clip (loops it / plays it once) instead of the sim-driven graph. */
+      play(name, opts) {
+        if (!self.act[name]) return false;
+        self._forced = { name, u: 0, hold: false };
+        const a = self.act[name];
+        a.reset();
+        a.play();
+        if (self.clipInfo[name].kind === 'parametric' || self.clipInfo[name].kind === 'base' || self.clipInfo[name].kind === 'additive') {
+          if (opts && opts.hold) {
+            self._forced.hold = true;
+            self._forced.u = clamp(+opts.u || 0, 0, 1);
+          }
+        }
+        return true;
+      },
+      /** Freezes the forced clip at normalised time u (0..1); pose(u, name) also selects the clip. */
+      pose(u, name) {
+        const nm = name || (self._forced && self._forced.name);
+        if (!nm || !self.act[nm]) return false;
+        self._forced = { name: nm, u: clamp(+u || 0, 0, 1), hold: true };
+        return true;
+      },
+      stop() {
+        self._forced = null;
+        return true;
+      },
+      clear() {
+        self._dbg = null;
+        self._forced = null;
+        self.legs.reset();
+        self.fit.reset();
+        return true;
+      },
+      /** Places a synthetic Mason near the player (screenshots): { player, camera, distance, height, yaw, up:[x,y,z], state, hug }. */
+      place(o) {
+        o = o || {};
+        const P = o.player || { x: 0, y: 0, z: 0 };
+        let fx = 0;
+        let fz = -1;
+        if (o.camera) {
+          o.camera.getWorldDirection(_v0);
+          const l = Math.hypot(_v0.x, _v0.z) || 1;
+          fx = _v0.x / l;
+          fz = _v0.z / l;
+        }
+        const yaw = ((o.yaw || 0) * Math.PI) / 180;
+        const cy = Math.cos(yaw);
+        const sy = Math.sin(yaw);
+        const dx = fx * cy - fz * sy;
+        const dz = fx * sy + fz * cy;
+        const dist = o.distance == null ? 12 : o.distance;
+        const hx = P.x + dx * dist;
+        const hz = P.z + dz * dist;
+        const hy = P.y + (o.height || 0);
+        // faces the player; the body trails away behind it
+        let ffx = P.x - hx;
+        let ffy = o.pitchToPlayer ? P.y - hy : 0;
+        let ffz = P.z - hz;
+        const fl = len3(ffx, ffy, ffz) || 1;
+        ffx /= fl;
+        ffy /= fl;
+        ffz /= fl;
+        const up = o.up || [0, 1, 0];
+        self._dbg = { creature: makeSyntheticCreature(hx, hy, hz, ffx, ffy, ffz, up, o.state || 'OBSERVING', o.hug || 1.45, self._lastCreature) };
+        self.legs.reset();
+        self.fit.reset();
+        return { x: hx, y: hy, z: hz };
+      },
+      state() {
+        return {
+          lod: self._lod,
+          visible: self.root.visible,
+          headScale: self.fit.scale,
+          headLift: self.fit.lift,
+          clear: Array.from(self.fit.clear),
+          forced: self._forced,
+          synthetic: !!self._dbg,
+          weights: Object.fromEntries(Object.entries(self.clipInfo).map(([k, v]) => [k, +v.weight.toFixed(3)])),
+          legs: self.legs.stats,
+          triangles: self.info.triangles,
+          drawCalls: self.info.drawCalls,
+        };
+      },
+      /** Writes a synthetic creature field (state, listening, attack.phase ...) for the next frames. */
+      set(patch) {
+        const c = self._dbg && self._dbg.creature;
+        if (!c || !patch) return false;
+        Object.assign(c, patch);
+        return true;
+      },
+    };
+  }
+
+  setVisible(v) {
+    this.root.visible = !!v;
+  }
+
+  dispose() {
+    if (this.root.parent) this.root.parent.remove(this.root);
+    const seen = new Set();
+    for (const l of this.meshes) {
+      for (const m of l) {
+        if (seen.has(m)) continue;
+        seen.add(m);
+        m.geometry.dispose();
+      }
+    }
+    for (const mat of this.materials) {
+      for (const k of Object.keys(mat)) {
+        const v = mat[k];
+        if (v && v.isTexture) v.dispose();
+      }
+      mat.dispose();
+    }
+    if (this.skeleton && this.skeleton.boneTexture) this.skeleton.boneTexture.dispose();
+    if (this.mixer) this.mixer.stopAllAction();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// A synthetic creature for screenshots / tools: the same body payload the sim writes, built from a head point, a facing and
+// a clinging plane (feet planted on it).
+// ---------------------------------------------------------------------------------------------------------------------
+const LIMB_DEFS = [
+  [2, 1, 8.6],
+  [3, -1, 8.3],
+  [4, 1, 7.9],
+  [6, -1, 7.5],
+  [7, 1, 7.1],
+  [9, -1, 6.8],
+  [10, 1, 6.4],
+  [12, -1, 6.1],
+  [14, 1, 5.7],
+  [15, -1, 5.4],
+];
+
+function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
+  let ux = up[0];
+  let uy = up[1];
+  let uz = up[2];
+  const ul = len3(ux, uy, uz) || 1;
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  const d = ux * fx + uy * fy + uz * fz;
+  let u2x = ux - fx * d;
+  let u2y = uy - fy * d;
+  let u2z = uz - fz * d;
+  const l2 = len3(u2x, u2y, u2z) || 1;
+  u2x /= l2;
+  u2y /= l2;
+  u2z /= l2;
+  const rx = fy * u2z - fz * u2y;
+  const ry = fz * u2x - fx * u2z;
+  const rz = fx * u2y - fy * u2x;
+  const spine = new Float32Array(SEG * 3);
+  const upA = new Float32Array(SEG * 3);
+  const scale = new Float32Array(SEG);
+  let cum = 0;
+  for (let i = 0; i < SEG; i++) {
+    const t = i / (SEG - 1);
+    const taper = 1 - 0.45 * Math.pow(Math.max(0, (t - 0.06) / 0.94), 1.25);
+    scale[i] = taper;
+    if (i > 0) cum += 1.5 * 0.5 * (scale[i - 1] + taper);
+    const sway = Math.sin(cum * 0.28) * 1.6 * Math.min(1, cum / 6);
+    const arch = i > 0 ? 0.65 * Math.sin(Math.PI * i / (SEG - 1)) * Math.min(1, i / 4) : 0;
+    spine[i * 3] = hx - fx * cum + rx * sway + u2x * arch;
+    spine[i * 3 + 1] = hy - fy * cum + ry * sway + u2y * arch;
+    spine[i * 3 + 2] = hz - fz * cum + rz * sway + u2z * arch;
+    upA[i * 3] = u2x;
+    upA[i * 3 + 1] = u2y;
+    upA[i * 3 + 2] = u2z;
+  }
+  const limbs = LIMB_DEFS.map((def) => {
+    const i = def[0];
+    const hipx = spine[i * 3];
+    const hipy = spine[i * 3 + 1];
+    const hipz = spine[i * 3 + 2];
+    const out = def[2] * 0.42 * def[1];
+    return {
+      seg: i,
+      side: def[1],
+      reach: def[2],
+      weight: 1,
+      planted: true,
+      lift: 0,
+      hip: { x: hipx, y: hipy, z: hipz },
+      foot: {
+        x: hipx + rx * out - u2x * (hug + 0.6),
+        y: hipy + ry * out - u2y * (hug + 0.6),
+        z: hipz + rz * out - u2z * (hug + 0.6),
+      },
+    };
+  });
+  return {
+    active: true,
+    synthetic: true,
+    state,
+    attack: { phase: null, t: 0, windup: 0.75, hit: false },
+    listening: false,
+    creeping: false,
+    distance: 12,
+    victory: null,
+    sighting: null,
+    level: real && real.level ? real.level : null,
+    sectionIndex: real ? real.sectionIndex : -1,
+    body: {
+      spine,
+      up: upA,
+      scale,
+      limbs,
+      frondOpen: 0.5,
+      glow: 0.5,
+      lunge: 0,
+      jitter: 0,
+      listen: 0,
+      time: 0,
+      visible: true,
+      head: { x: hx, y: hy, z: hz, fx, fy, fz, ux: u2x, uy: u2y, uz: u2z },
+      focus: { x: 0, y: 0, z: 0, amount: 0 },
+    },
+  };
+}
+
+export { STRIKE_CONTACT, ZERO3 };
