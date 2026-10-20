@@ -36,7 +36,7 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 | WP-CREATURE-ART | finish Ossuary Column design (critic loop) + rig-ready production export | tools/build_mason.py, assets/models/mason_*.glb | DONE 2026-10-20 20:20: critic 6/10 (one pass, capped by owner rule); kit 48.8k tris LOD0, rig-ready attributes; known: wet look weak, approach dark, silhouette spiky, head may be too big for tight sections |
 | WP-CREATURE-RIG | armature, skinning, clips, MasonRigView, sim mapping | render/masonRigView.js, creatureView.js, tools/build_mason_rig.py | launched 2026-10-20 20:25 |
 | WP-GFX | GRAPHICS_PLAN work packages for Chapter I (baked lighting, trims, wetness, volume fog, tiers) | render/* | after ENV + FOG |
-| WP-AUDIO | audio3d + haptics + music | audio/*, input haptics hook | after ARMS |
+| WP-AUDIO | audio3d + haptics + music | audio/*, input haptics hook | launched 2026-10-20 20:40 |
 | WP-UX | ui3d menus, end card, comfort, accessibility | ui/*, game.js | to launch |
 | WP-RELEASE | PWA boot split, SW, context loss, saves, governor, store assets, docs | main.js, index.html, pwa/*, game.js boot | to launch |
 | WP-QA | adversarial review, soak, video, final report | all | last |
