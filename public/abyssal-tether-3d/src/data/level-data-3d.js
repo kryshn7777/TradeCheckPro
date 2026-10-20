@@ -337,8 +337,8 @@ chainRing('s3-save-nm', -27, -90, -3, 30, 'fragile', 'recovery', { onlyIn: NM })
 const s3Arm = S('s3-arm', -34, -28.5, -73.6, -72.6, -8.6, -7.4, 'metal');
 under('s3-lower', s3Arm, -29, -8, 'ring', 'route');
 // Head clearance (1:1 height, head 1.24 m over the body): the b1 pendulum's west swing passes under the shelf's east lip,
-// so the lip is cut back to x -26.1 (was -24; the ring above still drops you onto it): a body under an overhang needs 1.6 m of headroom.
-S('s3-shelf', -34, -26.1, -99, -96, -11, 1);
+// so the lip is cut back to x -26 (was -24; the ring above still drops you onto it). A body swinging under an overhang needs 1.6 m of headroom, so this only just clears the bot's pump arc (tools/abyssal-tether-3d/verify/headclear.mjs): re-run it after any physics change.
+S('s3-shelf', -34, -26, -99, -96, -11, 1);
 const g5 = S('s3-g5', -21, -19.5, -91, -90, -11, 11, 'metal');
 under('s3-b1', g5, -20.25, -6, 'ring', 'route');
 

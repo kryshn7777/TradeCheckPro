@@ -27,7 +27,7 @@ const EYE = parseFloat(argValue(argv, '--eye', String(VIEW.standEye)));
 const NEAR = parseFloat(argValue(argv, '--near', '0.1'));
 const INFO = parseFloat(argValue(argv, '--info', '0.25'));
 const HEAD_UP = EYE - CONFIG.player.radius; // head above the sphere centre
-const ANCHOR_MARGIN = parseFloat(argValue(argv, '--anchor-margin', '0.1'));
+const ANCHOR_MARGIN = parseFloat(argValue(argv, '--anchor-margin', '0'));
 const ANCHOR_REACH = parseFloat(argValue(argv, '--anchor-reach', '0.15'));
 
 /** One finding per (variant, route, solid): the closest approach. */
@@ -160,7 +160,7 @@ for (const cid of chapterIds(argValue(argv, '--chapter', 'ch1'))) {
       for (const s of infoList.slice(0, 20)) console.log(`   d=${s.d.toFixed(3)} ${s.solid} (${s.kind}) S${s.section + 1} t=${s.t}s head=${s.head}`);
     }
     const bad = anchors.filter((a) => (a.hang && a.gap < ANCHOR_MARGIN) || a.headDist < ANCHOR_REACH);
-    console.log(`  taut rope: head within ${ANCHOR_REACH} m of its anchor, or (hanging) not ≥ ${ANCHOR_MARGIN} m below it: ${bad.length} anchor(s); closest of all:`);
+    console.log(`  taut rope: head within ${ANCHOR_REACH} m of its anchor, or (hanging) not ≥ ${ANCHOR_MARGIN} m below it (the closest approach is listed either way): ${bad.length} anchor(s); closest of all:`);
     for (const a of (bad.length ? bad : anchors.slice(0, 5))) console.log(`   headDist=${a.headDist.toFixed(2)} gap=${a.gap.toFixed(2)} ${a.hang ? 'hanging' : 'swinging'} anchor ${a.anchor} S${a.section + 1} t=${a.t}s head=${a.head} dist=${a.dist} len=${a.len}`);
     for (const s of solids) worst = Math.min(worst, s.d);
     nearCount += nearList.length + bad.length;

@@ -3240,11 +3240,12 @@ export class UI3D {
     txt(ctx, h.head, 44, y0 + 98, `650 64px ${F_UI}`, COL.phosphor, 'left', 0);
     txt(ctx, h.line1, 340, y0 + 56, `500 26px ${F_UI}`, COL.ink2, 'left', 0);
     txt(ctx, h.line2, 340, y0 + 94, `500 26px ${F_UI}`, COL.ink3, 'left', 0);
-    const by = 640;
+    const by = 636;
     if (h.msg) txt(ctx, h.msg, CW / 2, by - 18, `650 30px ${F_UI}`, this._cal ? COL.amber : COL.verdigris, 'center', 0.02);
-    const label = this._cal ? `Hold still… ${Math.max(1, Math.ceil(this._cal.t))}` : this._xr ? 'Calibrate: stand (or sit) normally and press' : 'Calibrate (in VR)';
-    this._btn(ctx, this._region(44, by, 640, 84, 'calibrate-height'), label, null, { primary: !this._cal, size: 26 });
-    this._btn(ctx, this._region(704, by, 276, 84, 'reset-height'), 'Reset height', null, { ghost: true, size: 28 });
+    const label = this._cal ? `Hold still… ${Math.max(1, Math.ceil(this._cal.t))}` : 'Calibrate';
+    const sub = this._cal ? 'Press again to cancel' : this._xr ? 'Stand (or sit) normally, then press' : 'Put the headset on to calibrate';
+    this._btn(ctx, this._region(44, by, 640, 90, 'calibrate-height'), label, sub, { primary: !this._cal, size: 30 });
+    this._btn(ctx, this._region(704, by, 276, 90, 'reset-height'), 'Reset height', null, { ghost: true, size: 28 });
   }
 
   _paintPause(ctx) {

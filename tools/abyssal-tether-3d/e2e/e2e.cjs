@@ -309,14 +309,15 @@ async function partDesktop(browser, base) {
     }
   }
   check('LMB (real mouse) fires the right tether onto t1', attached, s.hands);
-  // W walks off the Threshold on the rope; the arc swings out over the sill and the
-  // mouse button is let go near the top of the forward swing, over the sill.
+  // W walks off the Threshold on the rope; Space reels in at the bottom of the fall so the arc swings
+  // out over the sill, and the mouse button is let go on the way up, over the sill.
   await page.keyboard.down('KeyW');
   let swingShot = false;
   let onSill = false;
   let maxSpeed = 0;
   let wDown = true;
   let released = false;
+  let reeling = false;
   for (let i = 0; i < 420 && !onSill; i++) {
     s = await step(page, 1 / 60, { render: false });
     const p = s.player;
@@ -324,6 +325,12 @@ async function partDesktop(browser, base) {
     if (wDown && !p.grounded && p.y < -0.5) {
       await page.keyboard.up('KeyW');
       wDown = false;
+    }
+    // The rope is a spring with a slip clutch: a free fall onto it is caught, not flung. As in the bot's route,
+    // reel in (Space) once the fall is deep so the arc comes up and across over the sill.
+    if (!reeling && !wDown && !p.grounded && p.y < -4) {
+      await page.keyboard.down('Space');
+      reeling = true;
     }
     if (!swingShot && p.y < -2 && s.hands.right.anchor === 't1') {
       swingShot = true;
@@ -335,14 +342,18 @@ async function partDesktop(browser, base) {
       await renderNow(page);
       await shot(page, '03-s1-swing-rope');
     }
-    if (!released && !wDown && p.z < -5.5 && p.x > -10 && p.x < 2 && p.y > -4.5 && p.vz > -2.5) {
+    // Let go on the way up, just past the bottom of the arc, heading over the sill.
+    if (!released && reeling && p.z < -3.4 && p.vy > 0) {
       await page.mouse.up({ button: 'left' });
+      await page.keyboard.up('Space');
+      reeling = false;
       released = true;
     }
     if (!p.alive) break;
     onSill = p.grounded && p.y < -4;
   }
   if (wDown) await page.keyboard.up('KeyW');
+  if (reeling) await page.keyboard.up('Space');
   if (!released) await page.mouse.up({ button: 'left' });
   s = await step(page, 0.4);
   const ground = await page.evaluate(() => {
@@ -645,6 +656,17 @@ async function partXR(browser, base) {
   });
   await page.waitForTimeout(900);
   await shot(page, '10c-vr-height-panel');
+  for (const [pg, name] of [[1, '10d-vr-height-canvas'], [0, '10e-vr-settings-canvas']]) {
+    const img = await page.evaluate((pg) => {
+      const ui = window.AT3D.game.ui;
+      ui._vrSetPage = pg;
+      ui._vrDirty = true;
+      ui._paintPanel();
+      return ui._vr.panelC.canvas.toDataURL('image/png');
+    }, pg);
+    fs.writeFileSync(path.join(SHOTS, `${name}.png`), Buffer.from(img.split(',')[1], 'base64'));
+  }
+  check('settings (DOM) lists the player-height controls: mode, fine trim, Calibrate, Reset', await page.evaluate(() => !!document.querySelector('[data-key="heightMode"]') && !!document.querySelector('[data-key="heightOffset"]') && !!document.querySelector('[data-action="calibrate-height"]') && !!document.querySelector('[data-action="reset-height"]')), null);
   const hc = await page.evaluate(() => {
     const g = window.AT3D.game;
     const ui = g.ui;
@@ -747,6 +769,7 @@ async function partXR(browser, base) {
   let shotTaken = false;
   let stickOn = true;
   let released = false;
+  let reeling = false;
   let landed = false;
   for (let i = 0; i < 420 && !landed; i++) {
     s = await step(page, 1 / 60, { render: false });
@@ -757,13 +780,20 @@ async function partXR(browser, base) {
       stickOn = false;
       check('XR: left stick swings on the rope', s.hands.right.anchor === 't1' && p.speed > 3, { speed: p.speed, y: p.y });
     }
+    // Reel in (right stick up) once the fall is deep: the rope is a spring with a slip clutch (see the desktop swing).
+    if (!reeling && !stickOn && !p.grounded && p.y < -4) {
+      await stick('right', 0, -1);
+      reeling = true;
+    }
     if (!shotTaken && p.y < -1.5) {
       shotTaken = true;
       await xrWait(2);
       await shot(page, '11-vr-swing-rope');
     }
-    if (!released && !stickOn && p.z < -5.5 && p.x > -10 && p.x < 2 && p.y > -4.5 && p.vz > -2.5) {
+    if (!released && reeling && p.z < -3.4 && p.vy > 0) {
       await button('right', 0, false);
+      await stick('right', 0, 0);
+      reeling = false;
       released = true;
       s = await step(page, 3 / 60);
       check('XR: releasing the trigger lets go', s.hands.right.anchor === null, s.hands.right);
@@ -772,6 +802,7 @@ async function partXR(browser, base) {
     landed = p.grounded && p.y < -4;
   }
   if (stickOn) await stick('left', 0, 0);
+  if (reeling) await stick('right', 0, 0);
   if (!released) {
     await button('right', 0, false);
     check('XR: releasing the trigger lets go (over the sill)', false, { player: s.player, maxSpeed });
