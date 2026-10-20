@@ -192,7 +192,7 @@ class MB {
     const base = this.P.length / 3;
     for (let i = 0; i < n; i++) {
       const uv = u ? u[i] : n === 4 ? QUV[i] : TUV[i];
-      this.vert(p[i][0], p[i][1], p[i][2], nx, ny, nz, Array.isArray(col[0]) ? col[i] : col, rect[0] + (rect[2] - rect[0]) * uv[0], rect[1] + (rect[3] - rect[1]) * uv[1]);
+      this.vert(p[i][0], p[i][1], p[i][2], nx, ny, nz, Array.isArray(col[0]) ? col[i] : col, rect[0] + (rect[2] - rect[0]) * clamp01(uv[0]), rect[1] + (rect[3] - rect[1]) * clamp01(uv[1]));
     }
     for (let i = 1; i < n - 1; i++) this.I.push(base, base + i, base + i + 1);
   }
