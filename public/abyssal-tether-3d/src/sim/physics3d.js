@@ -8,10 +8,15 @@
  *   2. gravity + intent (run / air control / swing pump along the rope
  *      tangent plane / reel / yank)
  *   3. semi-implicit Euler integration with clamps
- *   4. rope constraints (each taut rope: project position back onto its
- *      sphere, strip only the OUTWARD radial velocity; 2 Gauss-Seidel passes
- *      when both hands are tethered)
+ *   4. rope bookkeeping (tension total, catch jolt events)
  *   5. sphere-vs-box collisions, impacts, crumbling ledges, hazards
+ *
+ * Ropes are forces, not projections (Rope3D.pull): a taut line is a stiff spring-damper
+ * (stretch of a few % of its length, over-damped at catch speeds: no rebound) on the semi-implicit
+ * Euler step, so a swing is a symplectic pendulum and a central pull conserves angular
+ * momentum exactly. The winch has a holding load (CONFIG.rope.maxTensionG): when the
+ * line would need more, the clutch slips and pays line out at the rate that holds the
+ * load at the limit, dissipating the excess ('rope:slip'). Air drag is quadratic.
  *
  * Coordinates: metres, +Y up (three.js). Boxes are {minX,minY,minZ,maxX,maxY,maxZ}.
  * No three.js / DOM dependency (runs in Node).
@@ -74,7 +79,7 @@ export class Player3D {
 }
 
 // =============================================================================
-// Rope — one hand's tether: anchor, length, reel, pump, constraint.
+// Rope — one hand's tether: anchor, length, reel, pump, elastic pull + slip clutch.
 // =============================================================================
 export class Rope3D {
   constructor(hand) {
@@ -86,7 +91,12 @@ export class Rope3D {
     this.nx = 0;
     this.ny = -1;
     this.nz = 0;
-    this.tension = 0;
+    this.tension = 0; // load the line applied last step (m/s^2, per unit mass, capped by the clutch)
+    // Per-step scratch (recomputed every step, never read across steps except as noted):
+    this.dl = 0; // length change by the winch this step (reel), for the stretch rate
+    this.catchSpeed = 0; // outward radial speed at the moment a slack line went taut (0 otherwise)
+    this.slipSpeed = 0; // m/s of line the clutch is paying out right now (0 = holding)
+    this.slipClock = 0; // s since the last rope:slip event of the current slip (events only)
   }
 
   get attached() {
@@ -96,12 +106,21 @@ export class Rope3D {
   attach(anchor, distance, maxLength) {
     this.anchor = anchor;
     this.length = U.clamp(distance, C.rope.minLength, maxLength);
+    this.tension = 0;
+    this.dl = 0;
+    this.catchSpeed = 0;
+    this.slipSpeed = 0;
+    this.slipClock = 0;
   }
 
   detach() {
     this.anchor = null;
     this.length = 0;
     this.tension = 0;
+    this.dl = 0;
+    this.catchSpeed = 0;
+    this.slipSpeed = 0;
+    this.slipClock = 0;
   }
 
   /** Measures anchor → player; returns true when taut. */
@@ -118,27 +137,30 @@ export class Rope3D {
   }
 
   /**
-   * Reel: input > 0 reels IN (shorten), < 0 lets OUT. Shortening a taut rope
-   * conserves angular momentum about the anchor (v_t·L = const, capped per
-   * step), so reeling mid-swing speeds the swing up. Call measure() first.
+   * Reel: input > 0 reels IN (shorten), < 0 lets OUT. The winch only moves the line's natural
+   * length; the pull (pull()) then accelerates the body inward. The pull is central, so
+   * shortening a taut line conserves angular momentum about the anchor by construction
+   * (v_t x r = const): reeling mid-swing speeds the swing up. reelSpinCap bounds that
+   * spin-up: a taut line shortens by at most (1 - 1/reelSpinCap) of its length per step
+   * (2 % per step, i.e. 4.8 x its length per second, at the cap). Call measure() first.
    */
   reel(p, input, speed, dt, maxLength, taut) {
+    this.dl = 0;
     if (input > 0.15) {
       if (!taut) this.length = Math.min(this.length, this.d);
-      const newLen = Math.max(C.rope.minLength, this.length - speed * input * dt);
-      if (taut && newLen < this.length) {
-        const vr = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
-        const tvx = p.vx - vr * this.nx;
-        const tvy = p.vy - vr * this.ny;
-        const tvz = p.vz - vr * this.nz;
-        const gain = Math.min(this.length / newLen, C.rope.reelSpinCap);
-        p.vx = vr * this.nx + tvx * gain;
-        p.vy = vr * this.ny + tvy * gain;
-        p.vz = vr * this.nz + tvz * gain;
+      let step = speed * input * dt;
+      if (taut) {
+        const cap = this.length * (1 - 1 / C.rope.reelSpinCap);
+        if (step > cap) step = cap;
       }
+      const newLen = Math.max(C.rope.minLength, this.length - step);
+      this.dl = newLen - this.length;
       this.length = newLen;
     } else if (input < -0.15) {
-      this.length = Math.min(maxLength, this.length + C.rope.reelOutSpeed * -input * dt);
+      // (a line already paid out past maxLength by the clutch is left as it is, never snapped shorter)
+      const newLen = Math.max(this.length, Math.min(maxLength, this.length + C.rope.reelOutSpeed * -input * dt));
+      this.dl = newLen - this.length;
+      this.length = newLen;
     }
   }
 
@@ -156,39 +178,90 @@ export class Rope3D {
   }
 
   /**
-   * Radial constraint: beyond the rope length → project back onto the sphere
-   * and remove only the OUTWARD radial velocity; tangential velocity (the
-   * swing) is untouched. Returns the radial speed removed.
+   * The line's force on the body, applied to the velocity (semi-implicit Euler: the caller
+   * integrates the position afterwards). Call measure() and reel() first.
+   *
+   * Taut (d > length) it is a spring-damper along the line, pulling only:
+   *   T = k s + 2 zeta(s') sqrt(k) s'      s = d - length, s' = its rate (body radial speed minus the winch)
+   * with k = maxTension / (strainAtMax x length): the stretch is a few % of the length and a
+   * catch (zeta = catchDamping at catch speeds) has (almost) no rebound; T < 0 (line going slack) is
+   * no push. zeta falls to restDamping for small stretch rates, so a steady swing, whose line
+   * only breathes with the load, does not bleed energy.
+   * Inside the elastic zone (s < strainAtMax x length) the catch may spike to catchPeakG; the
+   * spring part alone never exceeds maxTension.
+   *
+   * SLIP CLUTCH: when the spring would hold more than maxTension, the winch lets the line out
+   * at exactly the rate that keeps the stretch (so the load) at the limit; the excess energy
+   * is dissipated, the line stays that much longer. Returns nothing; sets this.tension (the
+   * load applied), this.catchSpeed (outward radial speed absorbed by a fresh catch) and
+   * this.slipSpeed (m/s of line paid out by the clutch, smoothed over slipFxSmooth: feedback
+   * only, nothing in the simulation reads it).
    */
-  constrain(p) {
-    const an = this.anchor;
-    const L = this.length;
-    const dx = p.x - an.x;
-    const dy = p.y - an.y;
-    const dz = p.z - an.z;
-    const d = len3(dx, dy, dz);
-    if (d <= L || d < 1e-6) {
+  pull(p, dt) {
+    const R = C.rope;
+    this.catchSpeed = 0;
+    const s = this.d - this.length;
+    if (s <= 0) {
       this.tension = 0;
+      this.slipSpeed *= 1 - Math.min(1, dt / R.slipFxSmooth);
+      return;
+    }
+    const gAcc = C.player.gravity;
+    const tmax = R.maxTensionG * gAcc;
+    const sCap = R.strainAtMax * this.length;
+    const k = tmax / sCap;
+    const vr = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+    const sdot = vr - this.dl / dt;
+    const as = sdot < 0 ? -sdot : sdot;
+    // Damping rises with the stretch rate and with the stretch itself (q^3: ~0 in a swing, 1 at the
+    // clutch limit), so the recoil after a slip is dead too, while a steady swing keeps its energy.
+    const q = s / sCap;
+    let f = as / R.catchDampingSpeed;
+    if (q * q * q > f) f = q * q * q;
+    const zeta = R.restDamping + (R.catchDamping - R.restDamping) * (f < 1 ? f : 1);
+    let T = k * s + 2 * zeta * Math.sqrt(k) * sdot;
+    if (T <= 0) {
+      this.tension = 0;
+      this.slipSpeed *= 1 - Math.min(1, dt / R.slipFxSmooth);
+      return;
+    }
+    if (this.tension === 0 && vr > 0) this.catchSpeed = vr;
+    let slip = 0;
+    if (s > sCap) {
+      // Beyond the elastic zone the winch pays the line out. It holds maxTension against a swing
+      // (no outward radial speed) and brakes a fast catch harder, up to catchPeakG: the clutch
+      // drags in proportion to the speed the line runs out at (a fall arrest, not a bungee).
+      T = tmax + R.slipBrakeG * gAcc * (vr > 0 ? vr : 0);
+      const peakSlip = R.catchPeakG * gAcc;
+      if (T > peakSlip) T = peakSlip;
+      const pay = s - sCap;
+      this.length += pay;
+      slip = pay + (this.dl < 0 ? this.dl : 0); // a reel that cannot pull in is not a slip
+      if (slip < 0) slip = 0;
+    } else {
+      const peak = R.catchPeakG * gAcc;
+      if (T > peak) T = peak;
+    }
+    p.vx -= this.nx * T * dt;
+    p.vy -= this.ny * T * dt;
+    p.vz -= this.nz * T * dt;
+    this.tension = T;
+    this.slipSpeed += (slip / dt - this.slipSpeed) * Math.min(1, dt / R.slipFxSmooth);
+  }
+
+  /**
+   * Slip event throttle: returns the rope:slip intensity (0..1) when an event is due this
+   * step (at the start of a slip, then every slipFxPeriod while it goes on), else 0.
+   */
+  slipEvent(dt) {
+    const R = C.rope;
+    if (this.slipSpeed < R.slipFxMin) {
+      this.slipClock = 0;
       return 0;
     }
-    const nx = dx / d;
-    const ny = dy / d;
-    const nz = dz / d;
-    p.x = an.x + nx * L;
-    p.y = an.y + ny * L;
-    p.z = an.z + nz * L;
-    let removed = 0;
-    const vr = p.vx * nx + p.vy * ny + p.vz * nz;
-    if (vr > 0) {
-      p.vx -= vr * nx;
-      p.vy -= vr * ny;
-      p.vz -= vr * nz;
-      removed = vr;
-    }
-    // Tension estimate: centripetal requirement + gravity along the rope (gravity is -Y).
-    const v2 = p.vx * p.vx + p.vy * p.vy + p.vz * p.vz;
-    this.tension = Math.max(0, v2 / L - C.player.gravity * ny);
-    return removed;
+    const due = this.slipClock === 0 || this.slipClock >= R.slipFxPeriod;
+    this.slipClock = due ? dt : this.slipClock + dt;
+    return due ? Math.min(1, this.slipSpeed / R.slipFxSpeed) : 0;
   }
 }
 
@@ -494,6 +567,8 @@ export class Physics3D {
       if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * yank, dt, tethers.maxRopeLength(), taut);
       else rope.reel(player, intent.reel || 0, R.reelInSpeed, dt, tethers.maxRopeLength(), taut);
       if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel, dt);
+      // The line's own pull (elastic catch + slip clutch); both hands act on the same state.
+      rope.pull(player, dt);
     }
     player._tethered = attached;
 
@@ -546,6 +621,13 @@ export class Physics3D {
       player.vx *= k;
       player.vz *= k;
     }
+    if (!player.grounded && P.dragQuad > 0) {
+      // Quadratic air drag, integrated implicitly (v' = v / (1 + k |v| dt)): unconditionally stable.
+      const f = 1 / (1 + P.dragQuad * player.speed * dt);
+      player.vx *= f;
+      player.vy *= f;
+      player.vz *= f;
+    }
 
     // Jump (buffered + coyote). Not while hanging on a taut rope.
     if (player.jumpBuffer > 0 && player.coyote > 0 && !anyTaut) {
@@ -574,30 +656,20 @@ export class Physics3D {
     player.y += player.vy * dt;
     player.z += player.vz * dt;
 
-    // ---- 4. rope constraints ------------------------------------------------------
+    // ---- 4. rope bookkeeping ----------------------------------------------------------
     player.tension = 0;
     if (attached) {
-      const passes = tethers.hands.left.rope.attached && tethers.hands.right.rope.attached ? 2 : 1;
       let jolt = 0;
-      for (let pass = 0; pass < passes; pass++) {
-        for (const h of HANDS) {
-          const rope = tethers.hands[h].rope;
-          if (!rope.attached) continue;
-          jolt = Math.max(jolt, rope.constrain(player));
+      for (const h of HANDS) {
+        const rope = tethers.hands[h].rope;
+        if (!rope.attached) continue;
+        player.tension += rope.tension;
+        if (rope.catchSpeed > jolt) jolt = rope.catchSpeed;
+        const slip = rope.slipEvent(dt);
+        if (slip > 0) {
+          this.bus.emit('rope:slip', { hand: h, intensity: slip, speed: rope.slipSpeed, load: rope.tension / P.gravity, x: player.x, y: player.y, z: player.z });
         }
       }
-      if (passes === 2) {
-        // Two ropes can ask for lengths no position satisfies (e.g. both reeled
-        // in toward far-apart anchors). Reeling then stalls: a rope still
-        // stretched after solving gives out to the achievable length, so the
-        // constraints never fight and pump energy into the body.
-        for (const h of HANDS) {
-          const rope = tethers.hands[h].rope;
-          const d = len3(player.x - rope.anchor.x, player.y - rope.anchor.y, player.z - rope.anchor.z);
-          if (d > rope.length + 0.02) rope.length = d;
-        }
-      }
-      for (const h of HANDS) player.tension += tethers.hands[h].rope.tension;
       if (jolt > R.joltFxSpeed) {
         player.ropeJolt = jolt;
         this.bus.emit('rope:jolt', { speed: jolt, x: player.x, y: player.y, z: player.z });

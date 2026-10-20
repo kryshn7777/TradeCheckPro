@@ -1,0 +1,2076 @@
+{
+ "meta": {
+  "chapter": "ch1",
+  "variants": [
+   "normal",
+   "nightmare",
+   "abyss"
+  ],
+  "note": "V14 baseline: npm run verify:at3d -- --chapter ch1 --write-baseline",
+  "date": "2026-10-19T11:49:17.493Z"
+ },
+ "integrity": {
+  "normal": {
+   "problems": [],
+   "cp_s1": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s1-threshold"
+   },
+   "cp_s2": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s2-landing"
+   },
+   "cp_s3": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s3-landing"
+   },
+   "cp_s4": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s4-landing"
+   },
+   "cp_s5": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s5-landing"
+   },
+   "cp_s6": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s6-fork"
+   },
+   "cp_s7": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s7-landing"
+   },
+   "cp_s8": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s8-landing"
+   },
+   "recovery": [
+    "s2-catch:ring",
+    "s3-save:ring",
+    "s4-catch:ring",
+    "s5-catch:ring",
+    "s7-r1:ring",
+    "s7-r2:ring"
+   ],
+   "ids": {
+    "ids": 222,
+    "refs": 0
+   },
+   "ok": true
+  },
+  "nightmare": {
+   "problems": [],
+   "cp_s1": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s1-threshold"
+   },
+   "cp_s2": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s2-landing"
+   },
+   "cp_s3": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s3-landing"
+   },
+   "cp_s4": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s4-landing"
+   },
+   "cp_s5": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s5-landing"
+   },
+   "cp_s6": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s6-fork"
+   },
+   "cp_s7": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s7-landing"
+   },
+   "cp_s8": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s8-landing"
+   },
+   "recovery": [
+    "s2-catch:ring",
+    "s3-save-nm:fragile",
+    "s7-r2:ring"
+   ],
+   "ids": {
+    "ids": 222,
+    "refs": 0
+   },
+   "ok": true
+  },
+  "abyss": {
+   "problems": [],
+   "cp_s1": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s1-threshold"
+   },
+   "cp_s2": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s2-landing"
+   },
+   "cp_s3": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s3-landing"
+   },
+   "cp_s4": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s4-landing"
+   },
+   "cp_s5": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s5-landing"
+   },
+   "cp_s6": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s6-fork"
+   },
+   "cp_s7": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s7-landing"
+   },
+   "cp_s8": {
+    "groundedAfterSteps": 12,
+    "drift": 0.02,
+    "on": "s8-landing"
+   },
+   "recovery": [
+    "s3-save-nm:fragile"
+   ],
+   "ids": {
+    "ids": 222,
+    "refs": 0
+   },
+   "ok": true
+  }
+ },
+ "full": {
+  "normal/risky": {
+   "ok": true,
+   "time": 165.1,
+   "deaths": 0,
+   "maxLand": 0.75,
+   "maxLandAtY": -225,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 20.2,
+    "s4": 24.4,
+    "s5": 16.1,
+    "s6": 13.5,
+    "s7": 34.6,
+    "s8": 28.9
+   },
+   "attaches": 45
+  },
+  "normal/safe": {
+   "ok": true,
+   "time": 187.9,
+   "deaths": 0,
+   "maxLand": 0.69,
+   "maxLandAtY": -208,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 20.2,
+    "s4": 24.4,
+    "s5": 16.1,
+    "s6": 30,
+    "s7": 38,
+    "s8": 31.8
+   },
+   "attaches": 46
+  },
+  "nightmare/risky": {
+   "ok": true,
+   "time": 165.2,
+   "deaths": 0,
+   "maxLand": 0.8,
+   "maxLandAtY": -225,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 20.2,
+    "s4": 24.4,
+    "s5": 16,
+    "s6": 14,
+    "s7": 34.6,
+    "s8": 28.5
+   },
+   "attaches": 45
+  },
+  "nightmare/safe": {
+   "ok": true,
+   "time": 187.8,
+   "deaths": 0,
+   "maxLand": 0.76,
+   "maxLandAtY": -208,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 20.2,
+    "s4": 24.4,
+    "s5": 16,
+    "s6": 30,
+    "s7": 38,
+    "s8": 31.8
+   },
+   "attaches": 46
+  },
+  "abyss/risky": {
+   "ok": true,
+   "time": 168.5,
+   "deaths": 0,
+   "maxLand": 0.81,
+   "maxLandAtY": -208,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 19.8,
+    "s4": 24.3,
+    "s5": 15.8,
+    "s6": 14.5,
+    "s7": 35,
+    "s8": 31.7
+   },
+   "attaches": 45
+  },
+  "abyss/safe": {
+   "ok": true,
+   "time": 187.1,
+   "deaths": 0,
+   "maxLand": 0.81,
+   "maxLandAtY": -208,
+   "inGoal": true,
+   "fail": null,
+   "splits": {
+    "s1": 8.9,
+    "s2": 18.5,
+    "s3": 19.8,
+    "s4": 24.3,
+    "s5": 15.8,
+    "s6": 30,
+    "s7": 38,
+    "s8": 31.8
+   },
+   "attaches": 46
+  }
+ },
+ "scenarios": {
+  "s2catch/normal": {
+   "ok": true,
+   "time": 8.7,
+   "maxLand": 0.35,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s2-hook",
+     0,
+     16.9
+    ],
+    [
+     "release",
+     "right",
+     "s2-hook",
+     1.07,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s2-catch",
+     1.08,
+     17.9
+    ],
+    [
+     "release",
+     "left",
+     "s2-catch",
+     2.53,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s2-lower",
+     5.02,
+     18.4
+    ],
+    [
+     "release",
+     "right",
+     "s2-lower",
+     8.67,
+     "input"
+    ]
+   ]
+  },
+  "s2catch/nightmare": {
+   "ok": true,
+   "time": 8.7,
+   "maxLand": 0.39,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s2-hook",
+     0,
+     16.9
+    ],
+    [
+     "release",
+     "right",
+     "s2-hook",
+     1.07,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s2-catch",
+     1.08,
+     17.9
+    ],
+    [
+     "release",
+     "left",
+     "s2-catch",
+     2.53,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s2-lower",
+     5.02,
+     18.4
+    ],
+    [
+     "release",
+     "right",
+     "s2-lower",
+     8.67,
+     "input"
+    ]
+   ]
+  },
+  "s3designTest/normal": {
+   "ok": true,
+   "time": 12.2,
+   "maxLand": 0.51,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s3-a3",
+     0,
+     14.6
+    ],
+    [
+     "release",
+     "right",
+     "s3-a3",
+     0.77,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s3-save",
+     2.53,
+     1.7
+    ],
+    [
+     "release",
+     "left",
+     "s3-save",
+     5.35,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s3-b1",
+     5.38,
+     8.2
+    ],
+    [
+     "release",
+     "right",
+     "s3-b1",
+     11.07,
+     "input"
+    ]
+   ]
+  },
+  "s3designTest/nightmare": {
+   "ok": true,
+   "time": 12,
+   "maxLand": 0.72,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s3-a3",
+     0,
+     14.6
+    ],
+    [
+     "release",
+     "right",
+     "s3-a3",
+     0.77,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s3-save-nm",
+     2.6,
+     2.7
+    ],
+    [
+     "break",
+     "s3-save-nm",
+     3.65
+    ],
+    [
+     "release",
+     "left",
+     "s3-save-nm",
+     3.65,
+     "break"
+    ],
+    [
+     "attach",
+     "right",
+     "s3-b1",
+     3.97,
+     9.7
+    ],
+    [
+     "release",
+     "right",
+     "s3-b1",
+     10.63,
+     "input"
+    ]
+   ]
+  },
+  "s3designTest/abyss": {
+   "ok": true,
+   "time": 12.4,
+   "maxLand": 0.7,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s3-a3",
+     0,
+     14.6
+    ],
+    [
+     "release",
+     "right",
+     "s3-a3",
+     0.77,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s3-save-nm",
+     2.6,
+     2.7
+    ],
+    [
+     "break",
+     "s3-save-nm",
+     3.4
+    ],
+    [
+     "release",
+     "left",
+     "s3-save-nm",
+     3.4,
+     "break"
+    ],
+    [
+     "attach",
+     "right",
+     "s3-b1",
+     3.82,
+     10.5
+    ],
+    [
+     "release",
+     "right",
+     "s3-b1",
+     11.2,
+     "input"
+    ]
+   ]
+  },
+  "s7miss/normal": {
+   "ok": true,
+   "time": 34.8,
+   "maxLand": 0.25,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s7-n1",
+     2.1,
+     13.1
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n2",
+     4.12,
+     13.6
+    ],
+    [
+     "release",
+     "right",
+     "s7-n1",
+     4.13,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n3",
+     7.92,
+     11.1
+    ],
+    [
+     "release",
+     "left",
+     "s7-n2",
+     7.93,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n4",
+     9.52,
+     14.3
+    ],
+    [
+     "release",
+     "right",
+     "s7-n3",
+     9.53,
+     "input"
+    ],
+    [
+     "release",
+     "left",
+     "s7-n4",
+     11.63,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n5",
+     11.65,
+     10.9
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n6",
+     13.83,
+     14
+    ],
+    [
+     "release",
+     "right",
+     "s7-n5",
+     13.85,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n7",
+     16.58,
+     13
+    ]
+   ]
+  },
+  "s7miss/nightmare": {
+   "ok": true,
+   "time": 34.8,
+   "maxLand": 0.28,
+   "fail": null,
+   "events": [
+    [
+     "attach",
+     "right",
+     "s7-n1",
+     2.1,
+     13.1
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n2",
+     4.12,
+     13.6
+    ],
+    [
+     "release",
+     "right",
+     "s7-n1",
+     4.13,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n3",
+     7.92,
+     11.1
+    ],
+    [
+     "release",
+     "left",
+     "s7-n2",
+     7.93,
+     "input"
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n4",
+     9.52,
+     14.3
+    ],
+    [
+     "release",
+     "right",
+     "s7-n3",
+     9.53,
+     "input"
+    ],
+    [
+     "release",
+     "left",
+     "s7-n4",
+     11.63,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n5",
+     11.65,
+     10.9
+    ],
+    [
+     "attach",
+     "left",
+     "s7-n6",
+     13.83,
+     14
+    ],
+    [
+     "release",
+     "right",
+     "s7-n5",
+     13.85,
+     "input"
+    ],
+    [
+     "attach",
+     "right",
+     "s7-n7",
+     16.58,
+     13
+    ]
+   ]
+  }
+ },
+ "s6": {
+  "normal": {
+   "risky": 13.4,
+   "safe": 29.8,
+   "fasterBy": "55%"
+  },
+  "nightmare": {
+   "risky": 13.6,
+   "safe": 29.8,
+   "fasterBy": "54%"
+  },
+  "abyss": {
+   "risky": 14.9,
+   "safe": 29.8,
+   "fasterBy": "50%"
+  }
+ },
+ "coverage": {
+  "normal": {
+   "t1": {
+    "fromTrace": 187,
+    "fromStand": 87
+   },
+   "t2": {
+    "fromTrace": 347,
+    "fromStand": 95
+   },
+   "s2-hook": {
+    "fromTrace": 354,
+    "fromStand": 235
+   },
+   "s2-catch": {
+    "fromTrace": 546,
+    "fromStand": 283
+   },
+   "s2-lower": {
+    "fromTrace": 385,
+    "fromStand": 169
+   },
+   "s2-b1": {
+    "fromTrace": 261,
+    "fromStand": 165
+   },
+   "s2-b2": {
+    "fromTrace": 258,
+    "fromStand": 135
+   },
+   "s2-x": {
+    "fromTrace": 259,
+    "fromStand": 102
+   },
+   "s3-a1": {
+    "fromTrace": 262,
+    "fromStand": 83
+   },
+   "s3-a2": {
+    "fromTrace": 425,
+    "fromStand": 97
+   },
+   "s3-a3": {
+    "fromTrace": 364,
+    "fromStand": 59
+   },
+   "s3-save": {
+    "fromTrace": 747,
+    "fromStand": 85
+   },
+   "s3-lower": {
+    "fromTrace": 613,
+    "fromStand": 74
+   },
+   "s3-b1": {
+    "fromTrace": 711,
+    "fromStand": 117
+   },
+   "s4-a1": {
+    "fromTrace": 779,
+    "fromStand": 139
+   },
+   "s4-a2": {
+    "fromTrace": 582,
+    "fromStand": 88
+   },
+   "s4-a3": {
+    "fromTrace": 956,
+    "fromStand": 98
+   },
+   "s4-a4": {
+    "fromTrace": 755,
+    "fromStand": 56
+   },
+   "s4-catch": {
+    "fromTrace": 612,
+    "fromStand": 36
+   },
+   "s4-a5": {
+    "fromTrace": 751,
+    "fromStand": 47
+   },
+   "s5-h1": {
+    "fromTrace": 304,
+    "fromStand": 86
+   },
+   "s5-h2": {
+    "fromTrace": 281,
+    "fromStand": 76
+   },
+   "s5-h3": {
+    "fromTrace": 298,
+    "fromStand": 78
+   },
+   "s5-h4": {
+    "fromTrace": 294,
+    "fromStand": 76
+   },
+   "s5-h5": {
+    "fromTrace": 343,
+    "fromStand": 92
+   },
+   "s5-h6": {
+    "fromTrace": 256,
+    "fromStand": 86
+   },
+   "s5-h7": {
+    "fromTrace": 199,
+    "fromStand": 63
+   },
+   "s5-catch": {
+    "fromTrace": 228,
+    "fromStand": 48
+   },
+   "s6-sa1": {
+    "fromTrace": 277,
+    "fromStand": 158
+   },
+   "s6-sa2": {
+    "fromTrace": 258,
+    "fromStand": 144
+   },
+   "s6-sa3": {
+    "fromTrace": 251,
+    "fromStand": 143
+   },
+   "s6-sa4": {
+    "fromTrace": 255,
+    "fromStand": 143
+   },
+   "s6-sa5": {
+    "fromTrace": 231,
+    "fromStand": 110
+   },
+   "s6-sa6": {
+    "fromTrace": 257,
+    "fromStand": 184
+   },
+   "s6-ra1": {
+    "fromTrace": 202,
+    "fromStand": 73
+   },
+   "s6-ra2": {
+    "fromTrace": 77,
+    "fromStand": 25
+   },
+   "s6-ra3": {
+    "fromTrace": 120,
+    "fromStand": 0
+   },
+   "s6-ra4": {
+    "fromTrace": 112,
+    "fromStand": 0
+   },
+   "s6-ra5": {
+    "fromTrace": 275,
+    "fromStand": 121
+   },
+   "s7-sp1": {
+    "fromTrace": 319,
+    "fromStand": 16
+   },
+   "s7-sp2": {
+    "fromTrace": 412,
+    "fromStand": 0
+   },
+   "s7-n1": {
+    "fromTrace": 280,
+    "fromStand": 22
+   },
+   "s7-n2": {
+    "fromTrace": 383,
+    "fromStand": 9
+   },
+   "s7-n3": {
+    "fromTrace": 389,
+    "fromStand": 0
+   },
+   "s7-n4": {
+    "fromTrace": 342,
+    "fromStand": 0
+   },
+   "s7-n5": {
+    "fromTrace": 252,
+    "fromStand": 16
+   },
+   "s7-r1": {
+    "fromTrace": 384,
+    "fromStand": 0
+   },
+   "s7-r2": {
+    "fromTrace": 493,
+    "fromStand": 0
+   },
+   "s7-n6": {
+    "fromTrace": 366,
+    "fromStand": 16
+   },
+   "s7-n7": {
+    "fromTrace": 325,
+    "fromStand": 3
+   },
+   "s7-n8": {
+    "fromTrace": 405,
+    "fromStand": 0
+   },
+   "s7-n9": {
+    "fromTrace": 470,
+    "fromStand": 0
+   },
+   "s7-n10": {
+    "fromTrace": 551,
+    "fromStand": 0
+   },
+   "s7-n11": {
+    "fromTrace": 671,
+    "fromStand": 296
+   },
+   "s8-e1": {
+    "fromTrace": 507,
+    "fromStand": 60
+   },
+   "s8-e2": {
+    "fromTrace": 505,
+    "fromStand": 0
+   },
+   "s8-e3": {
+    "fromTrace": 501,
+    "fromStand": 0
+   },
+   "s8-e4": {
+    "fromTrace": 430,
+    "fromStand": 0
+   },
+   "s8-e5": {
+    "fromTrace": 254,
+    "fromStand": 0
+   },
+   "s8-e6": {
+    "fromTrace": 530,
+    "fromStand": 88
+   },
+   "s8-w1": {
+    "fromTrace": 526,
+    "fromStand": 109
+   }
+  },
+  "nightmare": {
+   "t1": {
+    "fromTrace": 183,
+    "fromStand": 84
+   },
+   "t2": {
+    "fromTrace": 335,
+    "fromStand": 95
+   },
+   "s2-hook": {
+    "fromTrace": 320,
+    "fromStand": 200
+   },
+   "s2-catch": {
+    "fromTrace": 546,
+    "fromStand": 272
+   },
+   "s2-lower": {
+    "fromTrace": 360,
+    "fromStand": 146
+   },
+   "s2-b1": {
+    "fromTrace": 218,
+    "fromStand": 159
+   },
+   "s2-b2": {
+    "fromTrace": 168,
+    "fromStand": 118
+   },
+   "s2-x": {
+    "fromTrace": 244,
+    "fromStand": 92
+   },
+   "s3-a1": {
+    "fromTrace": 255,
+    "fromStand": 81
+   },
+   "s3-a2": {
+    "fromTrace": 394,
+    "fromStand": 93
+   },
+   "s3-a3": {
+    "fromTrace": 298,
+    "fromStand": 35
+   },
+   "s3-save-nm": {
+    "fromTrace": 742,
+    "fromStand": 75
+   },
+   "s3-lower": {
+    "fromTrace": 534,
+    "fromStand": 66
+   },
+   "s3-b1": {
+    "fromTrace": 708,
+    "fromStand": 105
+   },
+   "s4-a1": {
+    "fromTrace": 692,
+    "fromStand": 120
+   },
+   "s4-a2": {
+    "fromTrace": 503,
+    "fromStand": 69
+   },
+   "s4-a3": {
+    "fromTrace": 892,
+    "fromStand": 98
+   },
+   "s4-a4": {
+    "fromTrace": 723,
+    "fromStand": 56
+   },
+   "s4-a5": {
+    "fromTrace": 708,
+    "fromStand": 46
+   },
+   "s5-h1": {
+    "fromTrace": 284,
+    "fromStand": 86
+   },
+   "s5-h2": {
+    "fromTrace": 265,
+    "fromStand": 69
+   },
+   "s5-h3": {
+    "fromTrace": 277,
+    "fromStand": 72
+   },
+   "s5-h4": {
+    "fromTrace": 276,
+    "fromStand": 70
+   },
+   "s5-h5": {
+    "fromTrace": 336,
+    "fromStand": 92
+   },
+   "s5-h6": {
+    "fromTrace": 259,
+    "fromStand": 77
+   },
+   "s5-h7": {
+    "fromTrace": 196,
+    "fromStand": 63
+   },
+   "s6-sa1": {
+    "fromTrace": 277,
+    "fromStand": 155
+   },
+   "s6-sa2": {
+    "fromTrace": 226,
+    "fromStand": 111
+   },
+   "s6-sa3": {
+    "fromTrace": 221,
+    "fromStand": 110
+   },
+   "s6-sa4": {
+    "fromTrace": 224,
+    "fromStand": 110
+   },
+   "s6-sa5": {
+    "fromTrace": 216,
+    "fromStand": 110
+   },
+   "s6-sa6": {
+    "fromTrace": 225,
+    "fromStand": 132
+   },
+   "s6-ra1": {
+    "fromTrace": 166,
+    "fromStand": 73
+   },
+   "s6-ra2": {
+    "fromTrace": 67,
+    "fromStand": 25
+   },
+   "s6-ra3": {
+    "fromTrace": 94,
+    "fromStand": 0
+   },
+   "s6-ra4": {
+    "fromTrace": 95,
+    "fromStand": 0
+   },
+   "s6-ra5": {
+    "fromTrace": 280,
+    "fromStand": 97
+   },
+   "s7-sp1": {
+    "fromTrace": 278,
+    "fromStand": 16
+   },
+   "s7-sp2": {
+    "fromTrace": 308,
+    "fromStand": 0
+   },
+   "s7-n1": {
+    "fromTrace": 246,
+    "fromStand": 21
+   },
+   "s7-n2": {
+    "fromTrace": 350,
+    "fromStand": 6
+   },
+   "s7-n3": {
+    "fromTrace": 369,
+    "fromStand": 0
+   },
+   "s7-n4": {
+    "fromTrace": 293,
+    "fromStand": 0
+   },
+   "s7-n5": {
+    "fromTrace": 231,
+    "fromStand": 16
+   },
+   "s7-r2": {
+    "fromTrace": 445,
+    "fromStand": 0
+   },
+   "s7-n6": {
+    "fromTrace": 284,
+    "fromStand": 16
+   },
+   "s7-n7": {
+    "fromTrace": 282,
+    "fromStand": 0
+   },
+   "s7-n8": {
+    "fromTrace": 349,
+    "fromStand": 0
+   },
+   "s7-n9": {
+    "fromTrace": 378,
+    "fromStand": 0
+   },
+   "s7-n10": {
+    "fromTrace": 445,
+    "fromStand": 0
+   },
+   "s7-n11": {
+    "fromTrace": 635,
+    "fromStand": 224
+   },
+   "s8-e1": {
+    "fromTrace": 382,
+    "fromStand": 44
+   },
+   "s8-e2": {
+    "fromTrace": 483,
+    "fromStand": 0
+   },
+   "s8-e3": {
+    "fromTrace": 485,
+    "fromStand": 0
+   },
+   "s8-e4": {
+    "fromTrace": 338,
+    "fromStand": 0
+   },
+   "s8-e5": {
+    "fromTrace": 171,
+    "fromStand": 0
+   },
+   "s8-e6": {
+    "fromTrace": 426,
+    "fromStand": 0
+   },
+   "s8-w1": {
+    "fromTrace": 517,
+    "fromStand": 86
+   }
+  },
+  "abyss": {
+   "t1": {
+    "fromTrace": 171,
+    "fromStand": 84
+   },
+   "t2": {
+    "fromTrace": 311,
+    "fromStand": 95
+   },
+   "s2-hook": {
+    "fromTrace": 263,
+    "fromStand": 160
+   },
+   "s2-lower": {
+    "fromTrace": 277,
+    "fromStand": 131
+   },
+   "s2-b1": {
+    "fromTrace": 196,
+    "fromStand": 142
+   },
+   "s2-b2": {
+    "fromTrace": 141,
+    "fromStand": 91
+   },
+   "s2-x": {
+    "fromTrace": 196,
+    "fromStand": 57
+   },
+   "s3-a1": {
+    "fromTrace": 242,
+    "fromStand": 73
+   },
+   "s3-a2": {
+    "fromTrace": 359,
+    "fromStand": 88
+   },
+   "s3-a3": {
+    "fromTrace": 255,
+    "fromStand": 33
+   },
+   "s3-save-nm": {
+    "fromTrace": 734,
+    "fromStand": 67
+   },
+   "s3-lower": {
+    "fromTrace": 450,
+    "fromStand": 65
+   },
+   "s3-b1": {
+    "fromTrace": 694,
+    "fromStand": 97
+   },
+   "s4-a1": {
+    "fromTrace": 633,
+    "fromStand": 113
+   },
+   "s4-a2": {
+    "fromTrace": 471,
+    "fromStand": 57
+   },
+   "s4-a3": {
+    "fromTrace": 840,
+    "fromStand": 93
+   },
+   "s4-a4": {
+    "fromTrace": 704,
+    "fromStand": 54
+   },
+   "s4-a5": {
+    "fromTrace": 635,
+    "fromStand": 20
+   },
+   "s5-h1": {
+    "fromTrace": 274,
+    "fromStand": 78
+   },
+   "s5-h2": {
+    "fromTrace": 222,
+    "fromStand": 58
+   },
+   "s5-h3": {
+    "fromTrace": 227,
+    "fromStand": 61
+   },
+   "s5-h4": {
+    "fromTrace": 237,
+    "fromStand": 59
+   },
+   "s5-h5": {
+    "fromTrace": 295,
+    "fromStand": 74
+   },
+   "s5-h6": {
+    "fromTrace": 255,
+    "fromStand": 77
+   },
+   "s5-h7": {
+    "fromTrace": 202,
+    "fromStand": 63
+   },
+   "s6-sa1": {
+    "fromTrace": 277,
+    "fromStand": 135
+   },
+   "s6-sa2": {
+    "fromTrace": 210,
+    "fromStand": 111
+   },
+   "s6-sa3": {
+    "fromTrace": 203,
+    "fromStand": 110
+   },
+   "s6-sa4": {
+    "fromTrace": 206,
+    "fromStand": 110
+   },
+   "s6-sa5": {
+    "fromTrace": 200,
+    "fromStand": 110
+   },
+   "s6-sa6": {
+    "fromTrace": 214,
+    "fromStand": 83
+   },
+   "s6-ra1": {
+    "fromTrace": 181,
+    "fromStand": 73
+   },
+   "s6-ra2": {
+    "fromTrace": 75,
+    "fromStand": 25
+   },
+   "s6-ra3": {
+    "fromTrace": 91,
+    "fromStand": 0
+   },
+   "s6-ra4": {
+    "fromTrace": 90,
+    "fromStand": 0
+   },
+   "s6-ra5": {
+    "fromTrace": 176,
+    "fromStand": 15
+   },
+   "s7-sp1": {
+    "fromTrace": 169,
+    "fromStand": 14
+   },
+   "s7-sp2": {
+    "fromTrace": 200,
+    "fromStand": 0
+   },
+   "s7-n1": {
+    "fromTrace": 166,
+    "fromStand": 20
+   },
+   "s7-n2": {
+    "fromTrace": 262,
+    "fromStand": 3
+   },
+   "s7-n3": {
+    "fromTrace": 284,
+    "fromStand": 0
+   },
+   "s7-n4": {
+    "fromTrace": 224,
+    "fromStand": 0
+   },
+   "s7-n5": {
+    "fromTrace": 176,
+    "fromStand": 14
+   },
+   "s7-n6": {
+    "fromTrace": 213,
+    "fromStand": 16
+   },
+   "s7-n7": {
+    "fromTrace": 218,
+    "fromStand": 0
+   },
+   "s7-n8": {
+    "fromTrace": 253,
+    "fromStand": 0
+   },
+   "s7-n9": {
+    "fromTrace": 270,
+    "fromStand": 0
+   },
+   "s7-n10": {
+    "fromTrace": 326,
+    "fromStand": 0
+   },
+   "s7-n11": {
+    "fromTrace": 502,
+    "fromStand": 169
+   },
+   "s8-e1": {
+    "fromTrace": 295,
+    "fromStand": 31
+   },
+   "s8-e2": {
+    "fromTrace": 424,
+    "fromStand": 0
+   },
+   "s8-e3": {
+    "fromTrace": 478,
+    "fromStand": 0
+   },
+   "s8-e4": {
+    "fromTrace": 307,
+    "fromStand": 0
+   },
+   "s8-e5": {
+    "fromTrace": 291,
+    "fromStand": 0
+   },
+   "s8-e6": {
+    "fromTrace": 499,
+    "fromStand": 0
+   },
+   "s8-w1": {
+    "fromTrace": 541,
+    "fromStand": 59
+   }
+  }
+ },
+ "counts": {
+  "normal": {
+   "solids": 160,
+   "solidKinds": {
+    "wall": 95,
+    "stone": 32,
+    "metal": 26,
+    "bridge": 4,
+    "crumble": 1,
+    "pillar": 2
+   },
+   "hazards": 1,
+   "hazardKinds": {
+    "rebar": 1
+   },
+   "anchors": 61,
+   "anchorKinds": {
+    "ring": 48,
+    "hook": 9,
+    "fragile": 4
+   },
+   "anchorTags": {
+    "tutorial": 2,
+    "route": 38,
+    "recovery": 6,
+    "shortcut": 3,
+    "risk": 5,
+    "escape": 7
+   },
+   "decor": 122,
+   "decorTypes": {
+    "arch": 6,
+    "statue": 8,
+    "plaque": 9,
+    "lamp": 6,
+    "chain": 43,
+    "girder": 2,
+    "glyphs": 8,
+    "far-structure": 7,
+    "shaft-light": 7,
+    "cables": 2,
+    "machinery": 4,
+    "pipe": 4,
+    "ribs": 9,
+    "bones": 2,
+    "cage": 3,
+    "still-lamp": 1,
+    "grate": 1
+   },
+   "lights": 13,
+   "standable": 76,
+   "depth": 556,
+   "perSection": [
+    {
+     "id": "s1",
+     "y": [
+      40,
+      -8
+     ],
+     "anchors": 2,
+     "solids": 13
+    },
+    {
+     "id": "s2",
+     "y": [
+      -8,
+      -58
+     ],
+     "anchors": 6,
+     "solids": 20
+    },
+    {
+     "id": "s3",
+     "y": [
+      -58,
+      -98
+     ],
+     "anchors": 7,
+     "solids": 17
+    },
+    {
+     "id": "s4",
+     "y": [
+      -98,
+      -150
+     ],
+     "anchors": 5,
+     "solids": 15
+    },
+    {
+     "id": "s5",
+     "y": [
+      -150,
+      -204
+     ],
+     "anchors": 8,
+     "solids": 31
+    },
+    {
+     "id": "s6",
+     "y": [
+      -204,
+      -284
+     ],
+     "anchors": 11,
+     "solids": 18
+    },
+    {
+     "id": "s7",
+     "y": [
+      -284,
+      -420
+     ],
+     "anchors": 15,
+     "solids": 12
+    },
+    {
+     "id": "s8",
+     "y": [
+      -420,
+      -562
+     ],
+     "anchors": 7,
+     "solids": 34
+    }
+   ]
+  },
+  "nightmare": {
+   "solids": 160,
+   "solidKinds": {
+    "wall": 95,
+    "stone": 31,
+    "metal": 26,
+    "crumble": 3,
+    "bridge": 3,
+    "pillar": 2
+   },
+   "hazards": 4,
+   "hazardKinds": {
+    "rebar": 4
+   },
+   "anchors": 58,
+   "anchorKinds": {
+    "ring": 44,
+    "hook": 9,
+    "fragile": 5
+   },
+   "anchorTags": {
+    "tutorial": 2,
+    "route": 38,
+    "recovery": 3,
+    "shortcut": 3,
+    "risk": 5,
+    "escape": 7
+   },
+   "decor": 122,
+   "decorTypes": {
+    "arch": 6,
+    "statue": 8,
+    "plaque": 9,
+    "lamp": 6,
+    "chain": 43,
+    "girder": 2,
+    "glyphs": 8,
+    "far-structure": 7,
+    "shaft-light": 7,
+    "cables": 2,
+    "machinery": 4,
+    "pipe": 4,
+    "ribs": 9,
+    "bones": 2,
+    "cage": 3,
+    "still-lamp": 1,
+    "grate": 1
+   },
+   "lights": 13,
+   "standable": 76,
+   "depth": 556,
+   "perSection": [
+    {
+     "id": "s1",
+     "y": [
+      40,
+      -8
+     ],
+     "anchors": 2,
+     "solids": 13
+    },
+    {
+     "id": "s2",
+     "y": [
+      -8,
+      -58
+     ],
+     "anchors": 6,
+     "solids": 20
+    },
+    {
+     "id": "s3",
+     "y": [
+      -58,
+      -98
+     ],
+     "anchors": 7,
+     "solids": 17
+    },
+    {
+     "id": "s4",
+     "y": [
+      -98,
+      -150
+     ],
+     "anchors": 4,
+     "solids": 15
+    },
+    {
+     "id": "s5",
+     "y": [
+      -150,
+      -204
+     ],
+     "anchors": 7,
+     "solids": 31
+    },
+    {
+     "id": "s6",
+     "y": [
+      -204,
+      -284
+     ],
+     "anchors": 11,
+     "solids": 18
+    },
+    {
+     "id": "s7",
+     "y": [
+      -284,
+      -420
+     ],
+     "anchors": 14,
+     "solids": 12
+    },
+    {
+     "id": "s8",
+     "y": [
+      -420,
+      -562
+     ],
+     "anchors": 7,
+     "solids": 34
+    }
+   ]
+  },
+  "abyss": {
+   "solids": 159,
+   "solidKinds": {
+    "wall": 95,
+    "stone": 31,
+    "metal": 25,
+    "crumble": 4,
+    "bridge": 2,
+    "pillar": 2
+   },
+   "hazards": 7,
+   "hazardKinds": {
+    "spikes": 2,
+    "rebar": 4,
+    "blades": 1
+   },
+   "anchors": 56,
+   "anchorKinds": {
+    "ring": 42,
+    "hook": 9,
+    "fragile": 5
+   },
+   "anchorTags": {
+    "tutorial": 2,
+    "route": 38,
+    "shortcut": 3,
+    "recovery": 1,
+    "risk": 5,
+    "escape": 7
+   },
+   "decor": 122,
+   "decorTypes": {
+    "arch": 6,
+    "statue": 8,
+    "plaque": 9,
+    "lamp": 6,
+    "chain": 43,
+    "girder": 2,
+    "glyphs": 8,
+    "far-structure": 7,
+    "shaft-light": 7,
+    "cables": 2,
+    "machinery": 4,
+    "pipe": 4,
+    "ribs": 9,
+    "bones": 2,
+    "cage": 3,
+    "still-lamp": 1,
+    "grate": 1
+   },
+   "lights": 13,
+   "standable": 75,
+   "depth": 556,
+   "perSection": [
+    {
+     "id": "s1",
+     "y": [
+      40,
+      -8
+     ],
+     "anchors": 2,
+     "solids": 13
+    },
+    {
+     "id": "s2",
+     "y": [
+      -8,
+      -58
+     ],
+     "anchors": 5,
+     "solids": 19
+    },
+    {
+     "id": "s3",
+     "y": [
+      -58,
+      -98
+     ],
+     "anchors": 7,
+     "solids": 17
+    },
+    {
+     "id": "s4",
+     "y": [
+      -98,
+      -150
+     ],
+     "anchors": 4,
+     "solids": 15
+    },
+    {
+     "id": "s5",
+     "y": [
+      -150,
+      -204
+     ],
+     "anchors": 7,
+     "solids": 31
+    },
+    {
+     "id": "s6",
+     "y": [
+      -204,
+      -284
+     ],
+     "anchors": 11,
+     "solids": 18
+    },
+    {
+     "id": "s7",
+     "y": [
+      -284,
+      -420
+     ],
+     "anchors": 13,
+     "solids": 12
+    },
+    {
+     "id": "s8",
+     "y": [
+      -420,
+      -562
+     ],
+     "anchors": 7,
+     "solids": 34
+    }
+   ]
+  }
+ },
+ "determinism": {
+  "normal": {
+   "frames": 9905,
+   "run": "fed0cd24",
+   "rerun": "fed0cd24",
+   "replay": "fed0cd24",
+   "replayFrames": 9905,
+   "replayInGoal": true,
+   "ok": true
+  },
+  "nightmare": {
+   "frames": 9914,
+   "run": "42761cb2",
+   "rerun": "42761cb2",
+   "replay": "42761cb2",
+   "replayFrames": 9914,
+   "replayInGoal": true,
+   "ok": true
+  },
+  "abyss": {
+   "frames": 10110,
+   "run": "8c8490bf",
+   "rerun": "8c8490bf",
+   "replay": "8c8490bf",
+   "replayFrames": 10110,
+   "replayInGoal": true,
+   "ok": true
+  }
+ },
+ "sections_normal": {
+  "s1": {
+   "ok": true,
+   "time": 9,
+   "maxLand": 0.22,
+   "deaths": 0
+  },
+  "s2": {
+   "ok": true,
+   "time": 19.1,
+   "maxLand": 0.4,
+   "deaths": 0
+  },
+  "s3": {
+   "ok": true,
+   "time": 20.1,
+   "maxLand": 0.42,
+   "deaths": 0
+  },
+  "s4": {
+   "ok": true,
+   "time": 23.9,
+   "maxLand": 0.5,
+   "deaths": 0
+  },
+  "s5": {
+   "ok": true,
+   "time": 16.2,
+   "maxLand": 0.69,
+   "deaths": 0
+  },
+  "s6": {
+   "ok": true,
+   "time": 13.4,
+   "maxLand": 0.75,
+   "deaths": 0
+  },
+  "s6safe": {
+   "ok": true,
+   "time": 29.8,
+   "maxLand": 0.18,
+   "deaths": 0
+  },
+  "s7": {
+   "ok": true,
+   "time": 36.2,
+   "maxLand": 0.1,
+   "deaths": 0
+  },
+  "s8": {
+   "ok": true,
+   "time": 28.5,
+   "maxLand": 0.23,
+   "deaths": 0
+  }
+ },
+ "sections_nightmare": {
+  "s1": {
+   "ok": true,
+   "time": 9,
+   "maxLand": 0.24,
+   "deaths": 0
+  },
+  "s2": {
+   "ok": true,
+   "time": 19.1,
+   "maxLand": 0.43,
+   "deaths": 0
+  },
+  "s3": {
+   "ok": true,
+   "time": 20.1,
+   "maxLand": 0.46,
+   "deaths": 0
+  },
+  "s4": {
+   "ok": true,
+   "time": 23.9,
+   "maxLand": 0.55,
+   "deaths": 0
+  },
+  "s5": {
+   "ok": true,
+   "time": 16.1,
+   "maxLand": 0.76,
+   "deaths": 0
+  },
+  "s6": {
+   "ok": true,
+   "time": 13.6,
+   "maxLand": 0.8,
+   "deaths": 0
+  },
+  "s6safe": {
+   "ok": true,
+   "time": 29.8,
+   "maxLand": 0.2,
+   "deaths": 0
+  },
+  "s7": {
+   "ok": true,
+   "time": 36.2,
+   "maxLand": 0.11,
+   "deaths": 0
+  },
+  "s8": {
+   "ok": true,
+   "time": 28.5,
+   "maxLand": 0.25,
+   "deaths": 0
+  }
+ },
+ "sections_abyss": {
+  "s1": {
+   "ok": true,
+   "time": 9,
+   "maxLand": 0.26,
+   "deaths": 0
+  },
+  "s2": {
+   "ok": true,
+   "time": 19.1,
+   "maxLand": 0.46,
+   "deaths": 0
+  },
+  "s3": {
+   "ok": true,
+   "time": 19.8,
+   "maxLand": 0.4,
+   "deaths": 0
+  },
+  "s4": {
+   "ok": true,
+   "time": 24.2,
+   "maxLand": 0.59,
+   "deaths": 0
+  },
+  "s5": {
+   "ok": true,
+   "time": 15.9,
+   "maxLand": 0.81,
+   "deaths": 0
+  },
+  "s6": {
+   "ok": true,
+   "time": 14.9,
+   "maxLand": 0.73,
+   "deaths": 0
+  },
+  "s6safe": {
+   "ok": true,
+   "time": 29.8,
+   "maxLand": 0.21,
+   "deaths": 0
+  },
+  "s7": {
+   "ok": true,
+   "time": 36.2,
+   "maxLand": 0.11,
+   "deaths": 0
+  },
+  "s8": {
+   "ok": true,
+   "time": 28.5,
+   "maxLand": 0.27,
+   "deaths": 0
+  }
+ },
+ "alt_normal_s7spire": {
+  "ok": true,
+  "time": 33.3,
+  "maxLand": 0.13
+ },
+ "alt_normal_s8wall": {
+  "ok": true,
+  "time": 26.1,
+  "maxLand": 0.19
+ },
+ "alt_nightmare_s7spire": {
+  "ok": true,
+  "time": 33.3,
+  "maxLand": 0.14
+ },
+ "alt_nightmare_s8wall": {
+  "ok": true,
+  "time": 26.1,
+  "maxLand": 0.21
+ },
+ "alt_abyss_s7spire": {
+  "ok": true,
+  "time": 33.3,
+  "maxLand": 0.15
+ },
+ "alt_abyss_s8wall": {
+  "ok": true,
+  "time": 39,
+  "maxLand": 0.78
+ }
+}

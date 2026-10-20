@@ -342,7 +342,9 @@ export class Level3D {
   }
 
   _queryBoxes(index, minX, minY, minZ, maxX, maxY, maxZ, out) {
-    out.length = 0;
+    // Indexed writes + one length at the end: `out.length = 0` up front drops V8's
+    // backing store, so every non-empty query regrew it (per-frame allocation).
+    let n = 0;
     const stamp = index.nextStamp();
     const b0 = index.bucketOf(minY);
     const b1 = index.bucketOf(maxY);
@@ -353,15 +355,16 @@ export class Level3D {
         if (s._stamp === stamp) continue;
         s._stamp = stamp;
         if (s.minX > maxX || s.maxX < minX || s.minY > maxY || s.maxY < minY || s.minZ > maxZ || s.maxZ < minZ) continue;
-        out.push(s);
+        out[n++] = s;
       }
     }
+    out.length = n;
     return out;
   }
 
   /** Anchors inside the bounding box of the sphere (x, y, z, r) — a superset; callers do the exact distance. */
   anchorsNear(x, y, z, r, out) {
-    out.length = 0;
+    let n = 0; // indexed writes: see _queryBoxes
     const index = this._anchorIndex;
     const b0 = index.bucketOf(y - r);
     const b1 = index.bucketOf(y + r);
@@ -371,9 +374,10 @@ export class Level3D {
       for (let i = 0; i < bucket.length; i++) {
         const a = bucket[i];
         if (a.x < x - r || a.x > x + r || a.y < y - r || a.y > y + r || a.z < z - r || a.z > z + r) continue;
-        out.push(a);
+        out[n++] = a;
       }
     }
+    out.length = n;
     return out;
   }
 
