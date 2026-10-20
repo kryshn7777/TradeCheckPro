@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Abyssal Tether 3D release artefacts
+dist-at3d/
+public/abyssal-tether-3d/sw.js
+tools/abyssal-tether-3d/release/out/
