@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ABYSSAL TETHER 3D: store art builder (title typography + cover set from real game renders).
 
-Input : docs/abyssal-tether-3d/store/screenshots/hero-2880x1600.png  a raw render of the real game (capture-screens.mjs --only hero);
+Input : docs/abyssal-tether-3d/store/screenshots/hero-2880x1600.png|jpg  a raw render of the real game (capture-screens.mjs --only hero);
         keyart/vista-*-<size>.png renders override it per format when present
 Output: docs/abyssal-tether-3d/store/art/
           hero-3000x900.png               Hero (24-bit PNG)
@@ -253,7 +253,10 @@ def load_render(keyart, name):
     """The raw game render the covers are cut from: keyart/<name> when present, else the 2880 x 1600 hero render."""
     p = os.path.join(keyart, name)
     if not os.path.exists(p):
-        p = os.path.join(os.path.dirname(keyart), 'screenshots', 'hero-2880x1600.png')
+        shots = os.path.join(os.path.dirname(keyart), 'screenshots')
+        p = os.path.join(shots, 'hero-2880x1600.png')
+        if not os.path.exists(p):
+            p = os.path.join(shots, 'hero-2880x1600.jpg')
     if not os.path.exists(p):
         raise SystemExit(f'missing render {p}: run `npm run capture:at3d-store -- --only hero` first')
     return Image.open(p).convert('RGB')

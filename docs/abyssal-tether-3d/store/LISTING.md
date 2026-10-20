@@ -143,5 +143,5 @@ checkpoints, best-time records. Plays offline after the first launch.
 | `art/mini-1080x360.png` | 1080 x 360 | Mini landscape |
 | `art/icon-1024.png`, `art/icon-512.png` | 1024 / 512 | App icon (24-bit PNG, opaque) |
 | `art/logo-transparent.png` | 2880 x 1440 | Logo (32-bit PNG, transparent) |
-| `screenshots/shot-01..10.png` | 1920 x 1080 | Screenshots (at least 3 required; Meta prefers 2560 x 1440 captured on a Quest 3: replace with device captures before submission if possible) |
-| `screenshots/hero-2880x1600.png` | 2880 x 1600 | Press / hero render |
+| `screenshots/shot-01..10.jpg` | 1920 x 1080 | Screenshots (at least 3 required; Meta prefers 2560 x 1440 captured on a Quest 3: replace with device captures before submission if possible) |
+| `screenshots/hero-2880x1600.jpg` | 2880 x 1600 | Press / hero render |

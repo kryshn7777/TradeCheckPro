@@ -133,6 +133,7 @@ export class BodyView {
     this._stature = 0;
     this._k = 1;
     this._shift = 0;
+    this._fill = 0;
     this._lastX = 0;
     this._lastZ = 0;
     this._pvx = 0;
@@ -685,6 +686,14 @@ export class BodyView {
     drive(this._spr.pack, 0.012, 0.01, 90, 7, 0.22);
     drive(this._spr.pouchL, 0.02, 0.02, 70, 5, 0.5);
     drive(this._spr.pouchR, 0.02, 0.02, 70, 5, 0.5);
+    // fullness: the bag's items fill the pack (a flat empty satchel -> a stuffed one), eased
+    const bag = this.game.bag;
+    if (bag && bag.counts && B.Pack) {
+      let have = 0;
+      for (let i = 0; i < bag.counts.length; i++) have += bag.counts[i];
+      this._fill += (Math.min(1, have / 6) - this._fill) * Math.min(1, dt * 4);
+      B.Pack.scale.setScalar(this.rest.Pack.s.x * (0.93 + 0.1 * this._fill));
+    }
     this._swing(B.Pack, this._spr.pack);
     this._swing(B.Pouch_L, this._spr.pouchL);
     this._swing(B.Pouch_R, this._spr.pouchR);

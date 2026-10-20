@@ -25,8 +25,17 @@ ok(!/blood|gore/i.test(short), 'short description has no gore wording');
 
 function png(file) {
   const b = fs.readFileSync(file);
-  if (b.readUInt32BE(0) !== 0x89504e47) return null;
-  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), colorType: b[25], bytes: b.length };
+  if (b.readUInt32BE(0) === 0x89504e47) return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), colorType: b[25], bytes: b.length };
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    // JPEG: find the start-of-frame marker (screenshots are packed as JPEG by pack-screens.py)
+    for (let i = 2; i + 9 < b.length; ) {
+      if (b[i] !== 0xff) return null;
+      const m = b[i + 1];
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5), colorType: 2, bytes: b.length };
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+  }
+  return null;
 }
 const want = [
   ['art/hero-3000x900.png', 3000, 900, [2]],
@@ -37,9 +46,9 @@ const want = [
   ['art/icon-1024.png', 1024, 1024, [2]],
   ['art/icon-512.png', 512, 512, [2]],
   ['art/logo-transparent.png', 2880, 1440, [6]],
-  ['screenshots/hero-2880x1600.png', 2880, 1600, [2, 6]],
+  ['screenshots/hero-2880x1600.jpg', 2880, 1600, [2, 6]],
 ];
-for (let i = 1; i <= 10; i++) want.push([`screenshots/shot-${String(i).padStart(2, '0')}.png`, 1920, 1080, [2, 6]]);
+for (let i = 1; i <= 10; i++) want.push([`screenshots/shot-${String(i).padStart(2, '0')}.jpg`, 1920, 1080, [2, 6]]);
 let total = 0;
 for (const [f, w, h, types] of want) {
   const p = path.join(STORE, f);
@@ -49,7 +58,8 @@ for (const [f, w, h, types] of want) {
   }
   const i = png(p);
   total += i ? i.bytes : 0;
-  ok(i && i.w === w && i.h === h && types.includes(i.colorType), `${f} ${i ? `${i.w}x${i.h} colour type ${i.colorType}` : 'not a PNG'} (want ${w}x${h})`);
+  ok(i && i.w === w && i.h === h && types.includes(i.colorType), `${f} ${i ? `${i.w}x${i.h} colour type ${i.colorType}` : 'not a PNG/JPEG'} (want ${w}x${h})`);
 }
+ok(total < 25 * 1048576, 'art + screenshots stay under 25 MB');
 console.log(`art + screenshots: ${(total / 1048576).toFixed(1)} MB`);
 process.exit(bad ? 1 : 0);

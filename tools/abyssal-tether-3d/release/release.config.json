@@ -6,7 +6,7 @@
   "gameDir": "public/abyssal-tether-3d",
   "distDir": "dist-at3d",
   "gamePath": "/play/",
-  "maxCoreMB": 60,
+  "maxCoreMB": 80,
   "owner": {
     "studio": "<STUDIO NAME>",
     "contactEmail": "<support@your-domain>",

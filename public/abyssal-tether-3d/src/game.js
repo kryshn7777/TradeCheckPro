@@ -2213,6 +2213,12 @@ export class Game3D {
       return;
     }
     if (this.governor && this.xrActive) this.governor.sample(realDt, frame);
+    const rgov = this.renderer && this.renderer.governor;
+    if (rgov) {
+      // render-side governor (lighting tiers): mirrors platform/governor.js in XR, steps by itself on desktop; 0 = not a measuring state
+      const st = this.state;
+      rgov.update(st === 'playing' || st === 'menu' || st === 'dead' ? realDt * 1000 : 0);
+    }
     try {
       if (this._frozen) {
         // Debug manual stepping: presentation keeps running (rig, views, UI, render),

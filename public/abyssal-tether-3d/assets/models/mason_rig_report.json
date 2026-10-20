@@ -1,0 +1,341 @@
+{
+ "file": "/home/user/TradeCheckPro/public/abyssal-tether-3d/assets/models/mason_rig.glb",
+ "bytes": 7875368,
+ "bones": 170,
+ "lod0_tris": 56722,
+ "lod1_tris": 20677,
+ "lod0_verts": 99294,
+ "lod1_verts": 42673,
+ "primitives_per_lod": [
+  4,
+  4
+ ],
+ "clips": [
+  {
+   "name": "crown_idle",
+   "kind": "base",
+   "duration": 6.0,
+   "frames": 181,
+   "loop": true
+  },
+  {
+   "name": "listen",
+   "kind": "base",
+   "duration": 3.2,
+   "frames": 97,
+   "loop": true
+  },
+  {
+   "name": "notice_snap",
+   "kind": "base",
+   "duration": 0.45,
+   "frames": 15,
+   "loop": false
+  },
+  {
+   "name": "rear_windup",
+   "kind": "base",
+   "duration": 0.75,
+   "frames": 23,
+   "loop": false
+  },
+  {
+   "name": "strike",
+   "kind": "base",
+   "duration": 0.4,
+   "frames": 13,
+   "loop": false
+  },
+  {
+   "name": "recoil",
+   "kind": "additive",
+   "duration": 0.6,
+   "frames": 19,
+   "loop": false
+  },
+  {
+   "name": "roar_display",
+   "kind": "base",
+   "duration": 2.5,
+   "frames": 76,
+   "loop": false
+  },
+  {
+   "name": "linger_breathe",
+   "kind": "base",
+   "duration": 3.0,
+   "frames": 91,
+   "loop": true
+  },
+  {
+   "name": "take_close",
+   "kind": "base",
+   "duration": 1.0,
+   "frames": 31,
+   "loop": false
+  },
+  {
+   "name": "plate_shiver",
+   "kind": "additive",
+   "duration": 0.5,
+   "frames": 16,
+   "loop": true
+  },
+  {
+   "name": "breathe_seams",
+   "kind": "additive",
+   "duration": 5.0,
+   "frames": 151,
+   "loop": true
+  },
+  {
+   "name": "arms_flare",
+   "kind": "parametric",
+   "duration": 1.0,
+   "frames": 31,
+   "loop": false
+  },
+  {
+   "name": "pit_dilate",
+   "kind": "parametric",
+   "duration": 1.0,
+   "frames": 31,
+   "loop": false
+  },
+  {
+   "name": "portal_open",
+   "kind": "parametric",
+   "duration": 1.0,
+   "frames": 31,
+   "loop": false
+  },
+  {
+   "name": "portal_snap",
+   "kind": "additive",
+   "duration": 0.25,
+   "frames": 9,
+   "loop": false
+  },
+  {
+   "name": "flinch",
+   "kind": "additive",
+   "duration": 0.5,
+   "frames": 16,
+   "loop": false
+  },
+  {
+   "name": "retreat_fold",
+   "kind": "additive",
+   "duration": 1.4,
+   "frames": 43,
+   "loop": false
+  },
+  {
+   "name": "leg_probe",
+   "kind": "template",
+   "duration": 0.8,
+   "frames": 25,
+   "loop": false
+  }
+ ],
+ "gates": [
+  {
+   "name": "crown_idle",
+   "kind": "base",
+   "bones": 28,
+   "maxspeed": 8.534821580030323,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.0,
+   "f0_deg": 9.634010095381036,
+   "f0_m": 0.04498081213686773,
+   "root": false
+  },
+  {
+   "name": "listen",
+   "kind": "base",
+   "bones": 28,
+   "maxspeed": 715.6437488955805,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.0,
+   "f0_deg": 0.0,
+   "f0_m": 3.978191911446771e-07,
+   "root": false
+  },
+  {
+   "name": "notice_snap",
+   "kind": "base",
+   "bones": 22,
+   "maxspeed": 680.4475612870434,
+   "wrap_deg": 29.5329459126261,
+   "wrap_m": 0.19999999999999996,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "rear_windup",
+   "kind": "base",
+   "bones": 30,
+   "maxspeed": 728.9782262492572,
+   "wrap_deg": 57.955617525383865,
+   "wrap_m": 1.7000861582347488,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "strike",
+   "kind": "base",
+   "bones": 30,
+   "maxspeed": 3170.688584857327,
+   "wrap_deg": 90.07350250327991,
+   "wrap_m": 2.6081769266225905,
+   "f0_deg": 57.99999999995142,
+   "f0_m": 1.7,
+   "root": false
+  },
+  {
+   "name": "recoil",
+   "kind": "additive",
+   "bones": 21,
+   "maxspeed": 181.0740593361874,
+   "wrap_deg": 6.2604918012515505,
+   "wrap_m": 0.012874106700527967,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "roar_display",
+   "kind": "base",
+   "bones": 31,
+   "maxspeed": 441.3051723391519,
+   "wrap_deg": 50.89082808264117,
+   "wrap_m": 0.1384097633136097,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "linger_breathe",
+   "kind": "base",
+   "bones": 28,
+   "maxspeed": 50.60195774170806,
+   "wrap_deg": 1.7075472925031877e-06,
+   "wrap_m": 0.0,
+   "f0_deg": 29.30413654536909,
+   "f0_m": 0.29047622981669663,
+   "root": false
+  },
+  {
+   "name": "take_close",
+   "kind": "base",
+   "bones": 27,
+   "maxspeed": 271.8334862675153,
+   "wrap_deg": 89.18815508526974,
+   "wrap_m": 1.4,
+   "f0_deg": 18.89999999998136,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "plate_shiver",
+   "kind": "additive",
+   "bones": 12,
+   "maxspeed": 77.87148743345927,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.0,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "breathe_seams",
+   "kind": "additive",
+   "bones": 10,
+   "maxspeed": 0.8795810223625964,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.0,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "arms_flare",
+   "kind": "parametric",
+   "bones": 10,
+   "maxspeed": 42.165826281822774,
+   "wrap_deg": 42.132529455058396,
+   "wrap_m": 0.0,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "pit_dilate",
+   "kind": "parametric",
+   "bones": 7,
+   "maxspeed": 0.0,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.6324999999999998,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "portal_open",
+   "kind": "parametric",
+   "bones": 10,
+   "maxspeed": 41.99999999997305,
+   "wrap_deg": 41.999999999961666,
+   "wrap_m": 0.7,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "portal_snap",
+   "kind": "additive",
+   "bones": 9,
+   "maxspeed": 1222.2222222210996,
+   "wrap_deg": 43.652559996301186,
+   "wrap_m": 0.9473273845872365,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "flinch",
+   "kind": "additive",
+   "bones": 10,
+   "maxspeed": 197.91666666646128,
+   "wrap_deg": 1.6240233988372297,
+   "wrap_m": 0.009724026883943488,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "retreat_fold",
+   "kind": "additive",
+   "bones": 24,
+   "maxspeed": 215.08636167694812,
+   "wrap_deg": 61.9999999999494,
+   "wrap_m": 0.9,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  },
+  {
+   "name": "leg_probe",
+   "kind": "template",
+   "bones": 4,
+   "maxspeed": 369.79045631743816,
+   "wrap_deg": 0.0,
+   "wrap_m": 0.0,
+   "f0_deg": 0.0,
+   "f0_m": 0.0,
+   "root": false
+  }
+ ]
+}

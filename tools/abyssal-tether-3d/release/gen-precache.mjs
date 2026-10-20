@@ -87,6 +87,11 @@ export async function generate({ root, template, out = null, version, lazy = [],
   const files = (await walk(root, root)).filter((f) => !excludeRe.some((r) => r.test(f))).sort();
   if (!files.includes(shell)) throw new Error(`shell ${shell} not found under ${root}`);
 
+  // JPEG/PNG fallbacks of a texture that also ships as .ktx2 are only needed where the Basis transcoder cannot run:
+  // they are LAZY (cached on first use) so the install does not download every texture twice.
+  const fileSet = new Set(files);
+  const isFallback = (f) => /\.(jpe?g|png)$/i.test(f) && fileSet.has(f.replace(/\.[^./]+$/, '.ktx2'));
+
   const core = [];
   const lazyList = [];
   let coreBytes = 0;
@@ -95,7 +100,7 @@ export async function generate({ root, template, out = null, version, lazy = [],
     const buf = await readFile(join(root, f));
     const rev = createHash('sha256').update(buf).digest('hex').slice(0, 16);
     const entry = { url: f, rev };
-    if (lazyRe.some((r) => r.test(f))) {
+    if (lazyRe.some((r) => r.test(f)) || isFallback(f)) {
       lazyList.push(entry);
       lazyBytes += buf.length;
     } else {
