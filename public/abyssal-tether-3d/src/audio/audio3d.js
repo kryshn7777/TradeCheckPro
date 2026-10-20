@@ -31,6 +31,16 @@
  *   psych ───┘   space (feedback-delay "room")      │
  *   ui, stinger ────────────────────────────────────┘
  *
+ * WP-AUDIO modules (each owns its nodes; built in _build, driven from _control):
+ *   ambience3d.js  convolution reverb with generated per-section impulse responses, drone bank, drips / groans /
+ *                  creaking iron / chains / slurps / sinew creaks per section, the shaft's breath;
+ *   music3d.js     the adaptive generative score (sub pulse, pad swells, five-note motif, stingers; silence as a signal);
+ *   ropeFx3d.js    per-hand rope friction + taut hum (the matching haptic curve lives in dsp3d.js ropeHaptic);
+ *   movement3d.js  footsteps by surface, wall scrape, air rush, cloth / leather rustle, landing colour;
+ *   creatureSync3d.js  the Mason's sound locked to its clip events (creature:clip), with sim-event fallbacks.
+ * Quality tier: settings.reducedEffects or governor level >= 3 caps one-shots at 14 (HRTF 5), shortens the reverb,
+ * thins ambient events; see _applyTier. The master chain ends in a compressor, a brick-wall-ish limiter and a soft clip.
+ *
  * Robustness: `enabled` is false and every method is a no-op without Web
  * Audio. unlock() is idempotent and gesture-safe (also on XR session start
  * and on the first XR select/squeeze). All parameter changes are ramped,
@@ -42,6 +52,11 @@
  * activeVoices, peakVoices, hrtfVoices; _attachContext(ctx) (tests).
  */
 import { CONFIG, SETTINGS_DEFAULTS, U as CU, eyeAboveBody } from '../sim/config3d.js';
+import { Ambience } from './ambience3d.js';
+import { Music } from './music3d.js';
+import { RopeFx } from './ropeFx3d.js';
+import { Movement } from './movement3d.js';
+import { CreatureSync } from './creatureSync3d.js';
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -101,6 +116,8 @@ const STRIDE = 1.5; // metres per footstep
 const HAND_PAN = { left: -0.35, right: 0.35 };
 
 const BUS_LEVEL = { ambient: 0.85, player: 1, creature: 1, psych: 1, ui: 0.5, stinger: 1 };
+const REDUCED = { voices: 14, hrtf: 5, ambientHrtf: 2 }; // reducedEffects tier caps
+const LOG_LEN = 24; // debug: last events kept
 const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus (other gameplay buses → 0)
 
 // Inharmonic partials for struck iron (ratios, amplitudes, decay time-constants).
@@ -396,6 +413,29 @@ export class AudioManager3D {
     this._dripT = rand(1, 4);
     this._tickT = rand(3, 9);
     this._gritT = 0;
+
+    // WP-AUDIO state shared with the modules.
+    this._reduced = false; // quality tier (settings.reducedEffects or governor level >= 3)
+    this._govLevel = 0;
+    this._maxVoices = MAX_VOICES;
+    this._maxHrtf = MAX_HRTF;
+    this._maxAmbHrtf = HRTF_AMBIENT;
+    this._thin = 1; // 1 = full ambience, down to ~0.35 while the creature listens
+    this._silence = 0; // 0..1: the designed hush (creature listens / lingers / freezes)
+    this._shaftBreath = 0; // -1..1 slow inhale / exhale of the shaft (also read by the renderer, if it likes)
+    this._amb = null;
+    this._music = null;
+    this._rope = null;
+    this._mov = null;
+    this._cs = null;
+    this._mods = [];
+    this._ctl = { tv: 0, playing: false, dead: false, victory: false, menu: true, ducked: true, speed: 0, hspeed: 0, lethal: 17, silence: 0, thin: 1 };
+    this._log = [];
+    this._logN = 0;
+    this._exPeak = 0;
+    this._gasp = false;
+    this._eventCount = 0;
+    this._tierAt = 0;
 
     if (!this.enabled) return;
     this._subscribe();
@@ -705,8 +745,16 @@ export class AudioManager3D {
     this.clip = ctx.createWaveShaper();
     this.clip.curve = makeSoftClip();
     this.clip.oversample = 'none';
+    // Limiter: catches what the glue compressor lets through (several stingers + impacts at once) before the soft clip.
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -4;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.001;
+    this.limiter.release.value = 0.09;
     this.master.connect(this.comp);
-    this.comp.connect(this.clip);
+    this.comp.connect(this.limiter);
+    this.limiter.connect(this.clip);
     this.clip.connect(ctx.destination);
     this.kMaster = this._knob(this.master.gain, 0, 0.0005);
 
@@ -732,6 +780,23 @@ export class AudioManager3D {
     this._buildPlayer();
     this._buildPsych();
     this._buildCreature();
+    this._applyTier(); // reduced tier before the modules size themselves
+    this._cs = new CreatureSync(this);
+    this._amb = new Ambience(this);
+    this._music = new Music(this);
+    this._rope = new RopeFx(this);
+    this._mov = new Movement(this);
+    this._mods = [this._cs, this._amb, this._music, this._rope, this._mov];
+    for (let i = 0; i < this._mods.length; i++) {
+      const mod = this._mods[i];
+      if (typeof mod.build !== 'function') continue;
+      try {
+        mod.build();
+      } catch (err) {
+        mod.broken = true; // the rest of the soundscape carries on without it
+        this._warn('build', err);
+      }
+    }
 
     for (let i = 0; i < this._loops.length; i++) {
       const s = this._loops[i];
@@ -1632,9 +1697,12 @@ export class AudioManager3D {
     const theme = section && section.theme ? section.theme : null;
     const dark = theme ? U.clamp(num(theme.darkness, 0), 0, 1) : 0;
     this._spaceFb = Math.min(0.75, s.fb + 0.05 * dark);
-    this._spaceLevel = s.space * (1 + 0.15 * dark);
+    // The generated convolution reverb carries the tail; the feedback room stays as the diffuse early part.
+    this._spaceLevel = s.space * (1 + 0.15 * dark) * (this._amb && this._amb.enabledReverb ? 0.55 : 1);
     for (let k = 0; k < 3; k++) this.kSpaceDelay[k].set(SPACE_DELAYS[k] * s.size, now, tc * 1.5);
     this._mixSpace(now, false, tc);
+    if (this._amb && !this._amb.broken) this._amb.setSection(this._secIndex, section, now, tc);
+    if (this._music && !this._music.broken) this._music.setSection(this._secIndex, !!this._firstEntry, now);
   }
 
   /** Room feedback + wet level. While hushed the loop is opened so no old tail survives stopAll(). */
@@ -1855,7 +1923,7 @@ export class AudioManager3D {
     }
     v.panner = null;
     if (pos) {
-      const hrtf = this._hrtfCount < (ambient ? HRTF_AMBIENT : MAX_HRTF);
+      const hrtf = this._hrtfCount < (ambient ? this._maxAmbHrtf : this._maxHrtf);
       const p = this._makeSpatialPanner(preset || 'near', pos.x, pos.y, pos.z, hrtf);
       if (hrtf) {
         v.hrtf = true;
@@ -1903,7 +1971,7 @@ export class AudioManager3D {
       active++;
       if (!victim || v.priority < victim.priority || (v.priority === victim.priority && v.t0 < victim.t0)) victim = v;
     }
-    if (active >= MAX_VOICES) {
+    if (active >= this._maxVoices) {
       if (!victim || victim.priority > prio) return null;
       this._kill(victim, now, 0.012);
     }
