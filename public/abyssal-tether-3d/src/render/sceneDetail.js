@@ -84,8 +84,10 @@ function fbm(x, y, s, oct = 3) {
   }
   return t / n;
 }
+/** GLSL-style smoothstep that also takes reversed edges (a > b: 1 below b, 0 above a). */
 const sstep = (a, b, x) => {
-  const t = x < a ? 0 : x > b ? 1 : (x - a) / (b - a);
+  let t = (x - a) / (b - a);
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
   return t * t * (3 - 2 * t);
 };
 const CELL = 128;
@@ -265,8 +267,12 @@ export function paintDecalAtlas() {
     const r = Math.hypot(dx * 1.1, dy * 1.2) + (fbm(u * 7, v * 7, 45, 3) - 0.5) * 0.45;
     let a = sstep(0.4, 0.28, r);
     // drips running down from the blob
-    const drip = h2(Math.floor(u * 14), 3, 46) > 0.55 ? sstep(0.04, 0.0, Math.abs(u * 14 - Math.floor(u * 14) - 0.5) * 0.14) * sstep(0.1, 0.55, (0.62 - v) * 1.6 > 0 ? 1 - (0.62 - v) * 1.4 : 0) : 0;
-    a = Math.max(a, drip * sstep(0.0, 0.1, v) * (v < 0.62 ? 1 : 0));
+    const col = Math.floor(u * 12);
+    if (h2(col, 3, 46) > 0.5 && v < 0.62) {
+      const len = 0.12 + 0.45 * h2(col, 5, 46);
+      const fu = u * 12 - col - 0.5;
+      a = Math.max(a, sstep(0.16, 0.05, Math.abs(fu)) * sstep(0.62 - len, 0.62, v));
+    }
     o[0] = 55;
     o[1] = 82 + 30 * fbm(u * 9, v * 9, 47, 2);
     o[2] = 50;

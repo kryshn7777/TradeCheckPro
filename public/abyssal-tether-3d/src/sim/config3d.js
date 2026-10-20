@@ -282,6 +282,9 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
+  // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
+  frameRate: '72',
 };
 
 /** Limits and allowed values of the WP-UX settings (the single source for the UI, sanitizeUxSettings and the tests). */
@@ -298,6 +301,7 @@ export const UX_LIMITS = {
   snapAngles: [30, 45, 60, 90],
   turnModes: ['smooth', 'snap'],
   qualityTiers: ['auto', 'low', 'quest', 'high'],
+  frameRates: ['72', '90', 'auto'],
 };
 
 /** Clamps / snaps the WP-UX keys of a settings object in place (after load, restore or apply). Returns the object. */
@@ -320,6 +324,7 @@ export function sanitizeUxSettings(s) {
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
   s.reducedEffects = s.reducedEffects === true;
+  s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   return s;
 }
 

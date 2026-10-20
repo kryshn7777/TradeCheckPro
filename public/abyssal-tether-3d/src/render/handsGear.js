@@ -29,6 +29,7 @@
 
 import { Quaternion, Vector3 } from 'three';
 import { loadGLB } from './glbLoad.js';
+import { createGaugeGlass } from './gearSurface.js';
 
 export const GEAR_URL = new URL('../../assets/models/player_arms.glb', import.meta.url).href;
 
@@ -167,6 +168,9 @@ export class HandGear {
     this.wrist = root.getObjectByName(`Hand_${sfx}`) || null; // wrist joint (Hand bone origin)
     this.forearm = root.getObjectByName(`Forearm_${sfx}`) || null; // elbow-end joint (Forearm bone head)
     this.headRestScale = this.head ? this.head.scale.clone() : null;
+    // the gauge glass: one shallow transparent dome over the dial (gearSurface.js), in the socket frame like the rest of the side root
+    this.glass = createGaugeGlass(hand);
+    root.add(this.glass);
 
     // --- mechanics state ---------------------------------------------------------------
     this.drumAngle = 0;
@@ -196,17 +200,25 @@ export class HandGear {
   }
 
   /**
-   * Blends the glove's pose from the analog inputs.
+   * Blends the glove's pose from the analog inputs; every finger has its own smoothed curl (no snapping when a button is touched or
+   * released).
    * @param {number} dt
-   * @param {number} squeeze 0..1 grip button
+   * @param {number} squeeze 0..1 grip curl (middle / ring / pinky follow it, the pinky a little later than the middle: real hands)
    * @param {number} trigger 0..1 trigger button
    * @param {number} point 0..1 how much the index finger is lifted off the lever (needs squeeze)
+   * @param {number} [thumb] 0..1 thumb curl target from the capacitive sensors (thumbstick / A,B / thumbrest touched); omitted = follows
+   *   the grip as before
    */
-  poseFingers(dt, squeeze, trigger, point) {
+  poseFingers(dt, squeeze, trigger, point, thumb) {
     const W = this._fingerW;
+    const tT = thumb === undefined ? squeeze : thumb;
     for (const f of FINGERS) {
       const rate = this._fingerRate[f];
-      W[f] += (squeeze - W[f]) * (1 - Math.exp(-rate * dt));
+      let target = squeeze;
+      if (f === 'Thumb') target = tT;
+      else if (f === 'Middle') target = Math.pow(squeeze, 0.92);
+      else if (f === 'Pinky') target = Math.pow(squeeze, 1.12);
+      W[f] += (target - W[f]) * (1 - Math.exp(-rate * dt));
     }
     this._trig += (trigger - this._trig) * (1 - Math.exp(-28 * dt));
     this._point += (point - this._point) * (1 - Math.exp(-14 * dt));
@@ -234,6 +246,8 @@ export class HandGear {
         _q.slerp(_q2, h);
         node.quaternion.copy(_q);
       } else if (finger === 'Thumb') {
+        // a lifted thumb (no sensor touched) opens away from the handle; resting on the stick / buttons / thumbrest it curls
+        // part way; during a fist (squeeze 1, point 0) it wraps over the fingers: W.Thumb is already max(thumb, squeeze-driven)
         const qp = pnt.get(key) || qg;
         _q2.copy(qg).slerp(qp, pt);
         node.quaternion.copy(qo).slerp(_q2, s);

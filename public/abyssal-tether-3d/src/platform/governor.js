@@ -20,7 +20,12 @@
  *   foveation   renderer.xr.setFoveation(v)                     every XR session
  *   scale       XRView.requestViewportScale(s) (WebXR viewport scaling), applied through the current XRFrame;
  *               where the runtime lacks it the step is recorded but only the other levers act
- *   frame rate  session.updateTargetFrameRate(72) when supportedFrameRates lists it
+ *   frame rate  session.updateTargetFrameRate(72 | 90) when supportedFrameRates lists it. settings.frameRate '72' (default) | '90' | 'auto':
+ *               '90' asks for 90 Hz when the session supports it (else 72); 'auto' starts at 90 Hz when supported and falls back to 72
+ *               for the rest of the session on the first sustained overrun (before any picture step: 72 Hz at full quality beats 90 Hz
+ *               at a lower level). The frame-time targets of the miss / recover rules follow the applied rate. Changing the setting
+ *               mid-session (bus 'settings:changed', or setFrameRate()) re-requests the rate. UX hook: settings.frameRate (config3d.js,
+ *               UX_LIMITS.frameRates).
  * Desktop keeps ui/perfDiag.js (adaptive pixel ratio); this governor acts only inside an XR session.
  *
  * Decision rules (all in seconds of frame time, so a 90 Hz headset works too):
@@ -41,6 +46,29 @@ export const GOVERNOR_STEPS = Object.freeze([
   Object.freeze({ level: 4, tier: 'low', foveation: 1.0, scale: 0.7, fx: 'low' }),
 ]);
 export const REDUCED_FLOOR = 3;
+/** Frame rates the game asks the headset for (Quest 3: 72 default, 90 optional). */
+export const FRAME_RATES = Object.freeze([72, 90]);
+/** The setting values (config3d.js UX_LIMITS.frameRates): strings, like the other enum settings. */
+export const FRAME_RATE_MODES = Object.freeze(['72', '90', 'auto']);
+
+/** Normalises a settings value (72 / '72' / 90 / 'auto' / garbage) to '72' | '90' | 'auto'. Pure. */
+export function normalizeFrameRateMode(v) {
+  if (v === 'auto') return 'auto';
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+  return n === 90 ? '90' : '72';
+}
+
+/**
+ * The rate to request for a mode given the rates the session lists. Pure.
+ * @returns {number} 0 when the session lists none of ours (leave the runtime default)
+ */
+export function pickFrameRate(mode, supported, fellBack = false) {
+  const list = supported ? Array.from(supported) : [];
+  const has = (hz) => list.some((r) => Math.abs(r - hz) < 0.5);
+  const want90 = (mode === '90' || (mode === 'auto' && !fellBack)) && has(90);
+  if (want90) return 90;
+  return has(72) ? 72 : 0;
+}
 
 const WINDOW = 72; // frames in the sliding window (1 s at 72 Hz)
 const MISS_FACTOR = 1.3;
@@ -89,6 +117,16 @@ export class QualityGovernor {
     this._pendingScale = false;
     this._rateRequested = false;
     this._stepListeners = [];
+    this._rateMode = normalizeFrameRateMode(game && game.settings ? game.settings.frameRate : '72'); // '72' | '90' | 'auto'
+    this._rateHz = targetHz; // the rate the frame-time rules currently assume
+    this._rateFellBack = false; // 'auto' gave up on 90 Hz this session
+    this._session = null;
+    if (game && game.bus && typeof game.bus.on === 'function') {
+      game.bus.on('settings:changed', (e) => {
+        const st = e && e.settings ? e.settings : game.settings;
+        if (st && st.frameRate !== undefined) this.setFrameRate(st.frameRate);
+      });
+    }
   }
 
   /** Reads ?gov= . Pure (Node-testable). */
@@ -156,6 +194,9 @@ export class QualityGovernor {
 
   onSessionEnd() {
     this.active = false;
+    this._session = null;
+    this._rateRequested = false;
+    this._rateFellBack = false; // a new session tries 90 Hz again in 'auto'
     this._reset();
     // Back on the desktop path: no foveation / fx override stays behind.
     this._appliedFov = NaN;
@@ -170,23 +211,58 @@ export class QualityGovernor {
     this._stableSince = this._clock;
   }
 
+  /**
+   * Sets the frame-rate mode ('72' | '90' | 'auto', also 72 / 90 numbers) and, in a session, asks the runtime for it. A change of
+   * mode clears the 'auto' fallback. Returns the rate now requested (0 = none requested).
+   */
+  setFrameRate(mode) {
+    const m = normalizeFrameRateMode(mode);
+    if (m !== this._rateMode) this._rateFellBack = false;
+    this._rateMode = m;
+    if (this._session) {
+      this._rateRequested = false;
+      return this._requestFrameRate(this._session);
+    }
+    return 0;
+  }
+
+  get frameRateMode() {
+    return this._rateMode;
+  }
+
   _requestFrameRate(session) {
-    if (!session || this._rateRequested === session) return;
+    if (!session || this._rateRequested === session) return 0;
+    this._session = session;
     this._rateRequested = session;
+    const s = this.game && this.game.settings;
+    if (s && s.frameRate !== undefined) this._rateMode = normalizeFrameRateMode(s.frameRate);
+    let want = 0;
     try {
-      const rates = session.supportedFrameRates;
-      if (rates && typeof session.updateTargetFrameRate === 'function') {
-        let want = 0;
-        for (let i = 0; i < rates.length; i++) if (Math.abs(rates[i] - this.targetHz) < 0.5) want = rates[i];
-        if (want) {
-          const p = session.updateTargetFrameRate(want);
-          if (p && typeof p.catch === 'function') p.catch(() => {});
-          this.stats.requestedHz = want;
-        }
+      want = pickFrameRate(this._rateMode, session.supportedFrameRates, this._rateFellBack);
+      if (want && typeof session.updateTargetFrameRate === 'function') {
+        const p = session.updateTargetFrameRate(want);
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+        this.stats.requestedHz = want;
+      } else if (!want) {
+        want = 0;
       }
     } catch {
       /* optional */
     }
+    // the miss / recover rules measure against the rate the headset was asked for (72 if it was not asked for anything)
+    this._setTargetHz(want || 72);
+    return want;
+  }
+
+  _setTargetHz(hz) {
+    if (hz === this._rateHz && this.target === 1 / hz) return;
+    this._rateHz = hz;
+    this.targetHz = hz;
+    this.target = 1 / hz;
+    this._reset();
+    const r3d = this.game && this.game.renderer;
+    if (r3d && r3d.governor && typeof r3d.governor.setTargetHz === 'function') r3d.governor.setTargetHz(hz);
+    if (this.game && this.game.bus && typeof this.game.bus.emit === 'function') this.game.bus.emit('quality:rate', { hz, mode: this._rateMode, fellBack: this._rateFellBack });
   }
 
   /**
@@ -228,6 +304,15 @@ export class QualityGovernor {
 
     // degrade
     if (this._missCount >= MIN_MISSES && this._missCount / this._n >= MISS_RATIO && this._clock - this._lastDegrade >= DEGRADE_COOLDOWN) {
+      if (this._rateMode === 'auto' && this._rateHz === 90 && !this._rateFellBack && this._session) {
+        // sustained overrun at 90 Hz: 72 Hz at the current picture first (a steady 72 beats a ragged 90), no picture step yet
+        this._rateFellBack = true;
+        this._lastDegrade = this._clock;
+        this._rateRequested = false;
+        this._requestFrameRate(this._session);
+        this.stats.rateFallbacks = (this.stats.rateFallbacks || 0) + 1;
+        return true;
+      }
       if (this.level < GOVERNOR_STEPS.length - 1) {
         // a recover that did not hold: wait longer next time
         if (this._clock - this._recoveredAt < FLAPPING) this._recoverAfter = Math.min(MAX_RECOVER_AFTER, this._recoverAfter * 2);
@@ -374,6 +459,7 @@ export class QualityGovernor {
       fx: this._reduced() ? 'reduced' : st.fx,
       missRatio: this._n ? this._missCount / this._n : 0,
       recoverAfter: this._recoverAfter,
+      frameRate: { mode: this._rateMode, hz: this._rateHz, fellBack: this._rateFellBack, supported: this._session ? Array.from(this._session.supportedFrameRates || []) : [] },
       stats: Object.assign({}, this.stats),
       history: this.history.slice(-8),
     };

@@ -852,6 +852,31 @@ export class Renderer3D {
     C.w = want ? 1 : 0;
   }
 
+  /**
+   * What the XR path uses, for QA / the debug API: the canvas was created with antialias (three.js then allocates the XR layer with 4
+   * MSAA samples; the desktop canvas keeps the browser's default MSAA, no extra pass), the framebuffer scale the next session starts
+   * with (tier scale x settings.renderScale), the foveation cap of the tier (the platform governor's requests are clamped to it, only
+   * while a session is presenting) and whether a session is presenting now. Nothing here touches the desktop path.
+   */
+  xrSettings() {
+    const r = this.renderer;
+    let attrs = null;
+    try {
+      attrs = r.getContext().getContextAttributes();
+    } catch {
+      attrs = null;
+    }
+    const tier = this.lighting.tier;
+    return {
+      presenting: !!(r.xr && r.xr.isPresenting),
+      antialias: !!(attrs && attrs.antialias),
+      msaaSamplesXR: attrs && attrs.antialias ? 4 : 0,
+      framebufferScale: this.xrRenderScale,
+      foveationCap: XR_FOVEATION_CAP[tier] != null ? XR_FOVEATION_CAP[tier] : 0.66,
+      tier,
+    };
+  }
+
   get qualityTier() {
     return this.lighting.tier;
   }

@@ -294,7 +294,9 @@ void main() {
   vec3 Lp = ( viewMatrix * vec4( uLanW, 1.0 ) ).xyz - vP;
   float Ld = max( length( Lp ), 0.02 );
   vec3 L = Lp / Ld;
-  float att = pow2( clamp( 1.0 - pow4( Ld / uLanR.x ), 0.0, 1.0 ) ) / pow( Ld, uLanR.y );
+  float lr = Ld / uLanR.x;
+  float lw = clamp( 1.0 - lr * lr * lr * lr, 0.0, 1.0 );
+  float att = lw * lw / pow( Ld, uLanR.y );
   vec3 H = normalize( L + V );
   float nh = max( dot( N, H ), 0.0 );
   float spec = pow( nh, 220.0 ) * 3.0 + pow( nh, 28.0 ) * 0.22;             // front surface: a hot spot and a soft sheen

@@ -465,10 +465,10 @@ function def(name, cat, build, meta = {}) {
 // ---- bones -------------------------------------------------------------------------------------------------------------
 function femur(b, broken) {
   const L = broken ? 0.16 : 0.22;
-  b.tube([[-L, 0.02, 0], [-L * 0.3, 0.024, 0.004], [L * 0.4, 0.022, -0.003], [L, 0.02, 0]], [0.011, 0.0085, 0.009, 0.012], 5, BONE, BONE, P.BONE, { capEnd: !broken, capStart: false });
-  b.blob(-L - 0.004, 0.024, 0.006, 0.02, 0.019, 0.018, 0, 0.18, BONE, P.BONE);
-  if (!broken) b.blob(L + 0.004, 0.024, -0.006, 0.019, 0.018, 0.017, 0, 0.18, BONE, P.BONE);
-  else b.cone(L, 0.034, 0, 0.012, 0.0, 4, BONE_D, BONE_D, P.BONE, { segs: 1 }); // jagged broken end
+  b.tube([[-L, 0.026, 0], [-L * 0.3, 0.03, 0.004], [L * 0.4, 0.028, -0.003], [L, 0.026, 0]], [0.016, 0.0125, 0.013, 0.017], 5, BONE, BONE, P.BONE, { capEnd: !broken, capStart: false });
+  b.blob(-L - 0.004, 0.03, 0.006, 0.028, 0.026, 0.025, 0, 0.18, BONE, P.BONE);
+  if (!broken) b.blob(L + 0.004, 0.03, -0.006, 0.026, 0.025, 0.024, 0, 0.18, BONE, P.BONE);
+  else b.cone(L, 0.044, 0, 0.017, 0.0, 4, BONE_D, BONE_D, P.BONE, { segs: 1 }); // jagged broken end
 }
 def('femur', 'bone', (b) => femur(b, false));
 def('femurBroken', 'bone', (b) => femur(b, true));
@@ -477,8 +477,8 @@ def('rib', 'bone', (b) => {
   const r = [];
   for (let i = 0; i < 6; i++) {
     const a = (i / 5) * 2.2 - 0.2;
-    pts.push([Math.cos(a) * 0.16, 0.012 + Math.sin(a) * 0.1 * (i > 0 ? 1 : 0.3), Math.sin(a * 1.3) * 0.02]);
-    r.push(0.0085 - i * 0.0009);
+    pts.push([Math.cos(a) * 0.16, 0.016 + Math.sin(a) * 0.1 * (i > 0 ? 1 : 0.3), Math.sin(a * 1.3) * 0.02]);
+    r.push(0.0125 - i * 0.0013);
   }
   b.tube(pts, r, 4, BONE, BONE_D, P.BONE, { capStart: true });
 });
@@ -488,9 +488,9 @@ def('skull', 'bone', (b) => {
     if (z > 0.62 && y < -0.15 && y > -0.6 && Math.abs(x) < 0.16) return BLACK; // nose
     return null;
   };
-  b.blob(0, 0.07, 0, 0.075, 0.07, 0.085, 1, 0.06, BONE, P.BONE, paint);
-  b.box(0, 0.032, 0.062, 0.08, 0.026, 0.05, BONE_D, P.BONE, { taper: 0.8, jitter: 0.006 }); // upper jaw
-  b.box(0, 0.012, 0.05, 0.07, 0.016, 0.07, BONE_D, P.BONE, { taper: 0.9 }); // lower jaw
+  b.blob(0, 0.085, 0, 0.088, 0.08, 0.098, 1, 0.06, BONE, P.BONE, paint);
+  b.box(0, 0.04, 0.075, 0.09, 0.03, 0.058, BONE_D, P.BONE, { taper: 0.8, jitter: 0.006 }); // upper jaw
+  b.box(0, 0.016, 0.06, 0.08, 0.02, 0.08, BONE_D, P.BONE, { taper: 0.9 }); // lower jaw
 });
 def('jaw', 'bone', (b) => {
   b.tube([[-0.04, 0.012, 0.05], [-0.045, 0.01, -0.01], [0, 0.01, -0.045], [0.045, 0.01, -0.01], [0.04, 0.012, 0.05]], 0.0075, 4, BONE, BONE, P.BONE, { capStart: true, capEnd: true });

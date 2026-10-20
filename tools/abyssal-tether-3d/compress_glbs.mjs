@@ -5,6 +5,8 @@
 // What it does to each file (in place; the uncompressed originals are in git history):
 //   1. reorder (meshopt vertex cache / fetch order) for better compression and GPU cache use
 //   2. quantize POSITION (14 bit), NORMAL / TANGENT (10 bit), TEXCOORD_n (12 bit), WEIGHTS_n (8 bit) with KHR_mesh_quantization.
+//      player_arms and player_body keep float32 POSITION (meshopt still compresses it losslessly; +0.16 MB for both): their shaders
+//      (render/gearSurface.js wear maps) read the bind-pose position in METRES, which a quantised, scene-normalised position is not.
 //      The custom per-vertex attributes (_SPINE_S float, _PART float id, _MASK ubyte, _OWNER ubyte ...), JOINTS_n and COLOR_n are
 //      NOT touched: they are plain data the creature shaders / views read (a 12-bit normalised _SPINE_S or _PART id would corrupt them);
 //      meshopt's vertex codec still shrinks them losslessly.
@@ -59,6 +61,8 @@ await MeshoptDecoder.ready;
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 // everything except the custom attributes, JOINTS and COLOR (see header)
 const QUANT = /^(POSITION|NORMAL|TANGENT|TEXCOORD_\d+|WEIGHTS_\d+)$/;
+const QUANT_METRIC = /^(NORMAL|TANGENT|TEXCOORD_\d+|WEIGHTS_\d+)$/; // float32 positions (metres)
+const METRIC_POSITIONS = new Set(['player_arms', 'player_body']);
 
 fs.mkdirSync(outDir, { recursive: true });
 let before = 0;
@@ -83,7 +87,7 @@ for (const name of only) {
   await doc.transform(reorder({ encoder: MeshoptEncoder, target: 'size' }));
   await doc.transform(
     quantize({
-      pattern: QUANT,
+      pattern: METRIC_POSITIONS.has(name) ? QUANT_METRIC : QUANT,
       quantizationVolume: skinned ? 'scene' : 'mesh',
       quantizePosition: 14,
       quantizeNormal: 10,

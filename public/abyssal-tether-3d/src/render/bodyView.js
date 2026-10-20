@@ -32,6 +32,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../sim/config3d.js';
 import { buildGearEnvironment } from './handsView.js';
 import { loadGLB } from './glbLoad.js';
+import { patchGearSurface } from './gearSurface.js';
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -208,6 +209,7 @@ export class BodyView {
           .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uBodyLight;\n\treflectedLight.directSpecular *= uBodyLight;');
       };
       m.customProgramCacheKey = () => 'at3d-body-light';
+      patchGearSurface(m); // cloth weave + sheen, leather pores, dust (gearSurface.js)
       if (env) {
         m.envMap = env.texture;
         m.envMapIntensity = T.env;
