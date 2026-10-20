@@ -107,6 +107,50 @@ export const CONFIG = {
     checkpointHeal: 1, // hp restored on reaching a new checkpoint (fraction of full)
   },
 
+  // Grip climbing (sim/climb3d.js): authored climb zones (level data `climb`), hand-delta locomotion in VR (hold GRIP with a
+  // hand inside reach of a zone: the hand is anchored there and moving it pulls the body the other way; let go and the pull
+  // velocity is kept = a throw), cling-and-climb on the desktop (hold F; W/S/A/D climb, Space hops off). Grip STAMINA (0..1)
+  // drains while hanging unsupported, faster while moving and on wet zones, refills on solid ground; empty = the hands slip.
+  climb: {
+    reachVR: 0.24, // m from the hand (palm) to a climb zone that can be gripped
+    reachDesk: 0.62, // m from the body centre (the wall is ~0.38 away) on the desktop
+    hoverReachVR: 0.36, // handhold highlight appears a little before the grab works
+    track: 90, // 1/s: stiffness of the pull (v = stretch x track); 90 -> the body is on the hand within ~2 physics steps
+    maxPull: 9, // m/s: cap of the pull velocity (a hand thrown at a wall cannot catapult the body, nor hurt it)
+    maxStretch: 0.7, // m: a gripped hand this far from its hold (the body is blocked) lets go
+    throwSmooth: 0.07, // s: low-pass of the pull velocity (what a release inherits)
+    throwGain: 1.12, // x the smoothed pull velocity at release
+    throwMax: 11, // m/s
+    gripOn: 0.62, // grip squeeze that grabs (hysteresis: let go below gripOff)
+    gripOff: 0.4,
+    // stamina (1 = full), per second
+    hangDrain: 0.03, // hanging by a hand in the air (~33 s from full)
+    moveDrain: 0.05, // extra while the body moves at moveRef m/s (climbing; VR: pulling)
+    moveRef: 1.4,
+    twoHand: 0.62, // x the drain with both hands on holds
+    wetMul: 2, // x on a wet zone
+    regenGround: 0.4, // standing on solid ground (a full refill in ~2.5 s)
+    regenAir: 0.05, // swinging on a rope / falling (a slow breath)
+    regenGrip: 0.12, // gripping while standing (resting on a ledge)
+    minStart: 0.08, // stamina needed to take a hold
+    resumeAt: 0.25, // after the hands slipped (empty), stamina needed before gripping again
+    slipLock: 0.8, // s after a slip before a hold can be taken
+    warnAt: 0.28, // below this stamina the hold strains (haptics, strain sound, vignette)
+    // desktop cling
+    deskUp: 1.5, // m/s climbing up
+    deskDown: 2.2,
+    deskSide: 1.2,
+    deskHold: 0.44, // m: body centre to the wall surface while clinging (radius + a hand's width)
+    deskSnap: 9, // 1/s: how fast the body settles to the hold distance
+    hopUp: 6.2, // Space while clinging (desktop) / A while gripping (VR)
+    hopOut: 2.6,
+    hopLock: 0.25, // s after a hop before the next hold
+    scrapePeriod: 0.3, // s between 'climb:scrape' events while moving over a zone
+    strainPeriod: 1.1, // s between 'climb:strain' events at the start of the warning (shortens to strainFast)
+    strainFast: 0.45,
+    moveSound: 0.3, // m/s of body speed that counts as moving for scrapes
+  },
+
   // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
   // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
   bag: {
@@ -147,6 +191,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
     health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
+    climb: { drainMul: 1 },
   },
   nightmare: {
     key: 'nightmare',
@@ -164,6 +209,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
     health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
+    climb: { drainMul: 1.2 },
   },
   abyss: {
     key: 'abyss',
@@ -181,6 +227,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
     health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
+    climb: { drainMul: 1.4 },
   },
   sandbox: {
     key: 'sandbox',
@@ -198,6 +245,7 @@ export const DIFFICULTY = {
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
     health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 1, wallScale: 1 },
+    climb: { drainMul: 0.5 },
   },
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;

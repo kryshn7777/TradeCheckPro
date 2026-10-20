@@ -111,15 +111,24 @@ const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 // Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
 // the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
 const SURFACE_TIERS = {
-  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6 },
-  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1 },
-  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1 },
+  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1 },
 };
 // WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
 // governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
 const XR_RENDER_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
 // Foveation by governor level when the platform governor is absent (it sets 0.5 / 1 itself).
-const XR_FOVEATION = [0.5, 0.75, 1, 1, 1];
+const XR_FOVEATION = [0.5, 0.66, 0.66, 1, 1];
+// Highest foveation level any caller may set per tier. Quest Browser maps 0..1 onto low / medium / high; the high level is a
+// visible blur at the periphery on a 4K-class LCD panel, so the quest and high tiers cap at medium (0.66). Only the `low`
+// (emergency) tier may use full foveation. The platform governor / game call xr.setFoveation(1) directly: wrapped in the constructor.
+const XR_FOVEATION_CAP = { low: 1, quest: 0.66, high: 0.5 };
+// Near plane (m). The head-clearance fade (game.js HEAD_BLACK 0.1 m, eyes 0.032 m off the head centre) keeps solids beyond
+// ~0.1 m, so 0.08 never cuts the view; it doubles the depth resolution of the old 0.05 (24-bit depth, far 400).
+const CAMERA_NEAR = 0.08;
+// Cap of the lit surfaces' black-point lift (linear, before the tone mapper; the ACES curve has a slope of ~0.45 there).
+const BLACK_LIFT_MAX = 0.004;
 
 const _tmpC = new THREE.Color();
 
@@ -155,7 +164,14 @@ export class Renderer3D {
     r.shadowMap.enabled = false;
     r.xr.enabled = true;
     try {
-      r.xr.setFoveation(1);
+      // cap every foveation request at the tier's level (see XR_FOVEATION_CAP); `this` is not built yet: read the tier lazily
+      const setFov = r.xr.setFoveation.bind(r.xr);
+      r.xr.setFoveation = (v) => {
+        const tier = this.lighting ? this.lighting.tier : 'quest';
+        const cap = XR_FOVEATION_CAP[tier] != null ? XR_FOVEATION_CAP[tier] : 0.66;
+        return setFov(Math.min(num(v, 0.5), cap));
+      };
+      r.xr.setFoveation(0.5);
     } catch {
       /* older runtimes */
     }
@@ -170,7 +186,7 @@ export class Renderer3D {
     this.scene.background = this.fogColor.clone();
 
     this.baseFov = DESKTOP_FOV;
-    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.05, 400);
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, CAMERA_NEAR, 400);
     this.camera.name = 'HeadCamera';
     this.rig = new THREE.Group();
     this.rig.name = 'PlayerRig';
@@ -246,6 +262,8 @@ export class Renderer3D {
     this.lighting = new Lighting(this);
     this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1.15;
     this._applyXRRenderScale();
+    // the next session starts with the tier's scale again (a degraded tier during this one never reaches the swapchain)
+    if (r.xr.addEventListener) r.xr.addEventListener('sessionend', () => this._applyXRRenderScale());
     this.governor.on((ev) => this._applyXRFoveation(ev.level));
     this.lightingReady = Promise.resolve(false);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 12), this.materials.get('sky'));
@@ -723,7 +741,9 @@ export class Renderer3D {
    */
   setQualityTier(name, opts) {
     const r = this.lighting.setTier(name, opts);
-    this.setXRRenderScale(XR_RENDER_SCALE[this.lighting.tier] || this.xrRenderScale);
+    // The framebuffer scale is read once, when a session starts (a change mid-session resets the swapchain, or is ignored with a
+    // warning): a tier step made by the governor while presenting must not rewrite the value the NEXT session will start with.
+    if (!this.renderer.xr.isPresenting) this.setXRRenderScale(XR_RENDER_SCALE[this.lighting.tier] || this.xrRenderScale);
     return r;
   }
 
@@ -765,13 +785,19 @@ export class Renderer3D {
     const lvl = this.governor.level;
     const par = lvl >= 2 ? 0 : P.parallax; // parallax is the first thing the governor drops
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
-    LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, 0);
+    LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
     LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
     // Grade: a little contrast, the sections' warmth/cold in the highlights, slight desaturation, more with depth.
     const a = th.accent;
     const m = Math.max(a.r, a.g, a.b, 1e-3);
     LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
     LOOK.uGradeK.value.set(1.1 + 0.06 * tk, 0.94 - 0.1 * tk, 0.22, 0);
+    // LCD black point: a Quest 3 panel never reaches OLED black, so crushed pits read as a hole in the picture, not as depth. The
+    // darkest lit surfaces keep a trace (a third of the haze colour, so it follows the section's mood), never more than ~sRGB 8/255.
+    const fc = this.scene.fog.color;
+    const fl = Math.max(fc.r * 0.2126 + fc.g * 0.7152 + fc.b * 0.0722, 1e-4);
+    const lift = Math.min(0.3, BLACK_LIFT_MAX / fl);
+    LOOK.uBlack.value.setRGB(fc.r * lift, fc.g * lift, fc.b * lift);
   }
 
   get qualityTier() {

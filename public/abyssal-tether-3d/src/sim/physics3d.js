@@ -10,6 +10,7 @@
  *   3. semi-implicit Euler integration with clamps
  *   4. rope bookkeeping (tension total, catch jolt events)
  *   5. sphere-vs-box collisions, impacts, crumbling ledges, hazards
+ *   (2b. grip climbing, sim/climb3d.js: while a hand holds a climb zone it sets the velocity after the forces)
  *
  * A shot is a projectile (TetherSystem.launch): the hook flies for distance / CONFIG.rope.flightSpeed
  * and attaches on arrival; the pull then builds up over CONFIG.rope.attachRamp (Rope3D.pull, `grip`).
@@ -27,6 +28,7 @@
 
 import { CONFIG, U } from './config3d.js';
 import { Health3D } from './health3d.js';
+import { Climb3D } from './climb3d.js';
 
 const C = CONFIG;
 export const HANDS = ['left', 'right'];
@@ -72,6 +74,7 @@ export class Player3D {
     this.deathCause = null;
     this.landedThisStep = false;
     this.speedMul = 1; // adrenaline: set each frame by the game (sim/inventory3d.js)
+    this.climbing = false; // a hand holds a climb zone and drives the velocity (sim/climb3d.js)
   }
 
   get speed() {
@@ -638,6 +641,15 @@ export class Physics3D {
     this._hazards = [];
     // Fall / hazard damage (health3d.js). Death comes from hp reaching 0 (or the lethal speed, which is damage 1).
     this.health = new Health3D(diff, bus);
+    // Grip climbing (climb zones in the level data, grip stamina): see sim/climb3d.js.
+    this.climb = new Climb3D(level, diff, bus);
+  }
+
+  /** The climb model with the current bus (Sim swaps physics.bus for look-ahead frames). */
+  _climb() {
+    const c = this.climb;
+    c.bus = this.bus;
+    return c;
   }
 
   /** The health model with the current bus (Sim swaps physics.bus for look-ahead frames). */
@@ -775,14 +787,17 @@ export class Physics3D {
       player.vz *= f;
     }
 
-    // Jump (buffered + coyote). Not while hanging on a taut rope.
-    if (player.jumpBuffer > 0 && player.coyote > 0 && !anyTaut) {
+    // Jump (buffered + coyote). Not while hanging on a taut rope, nor while a hand holds on (A hops off instead: climb3d).
+    if (player.jumpBuffer > 0 && player.coyote > 0 && !anyTaut && !this.climb.holding) {
       player.vy = Math.max(player.vy, P.jumpSpeed);
       player.jumpBuffer = 0;
       player.coyote = 0;
       player.grounded = false;
       this.bus.emit('player:jump', { x: player.x, y: player.y, z: player.z });
     }
+
+    // ---- 2b. grip climbing: a hand on a climb zone drives the velocity (overrides gravity, the rope and the run) -----------
+    player.climbing = this._climb().step(player, intent, dt);
 
     // ---- 3. clamps & integration ---------------------------------------------
     if (!attached && player.vy < -P.maxFallSpeed) player.vy = -P.maxFallSpeed;
@@ -859,6 +874,7 @@ export class Physics3D {
     let maxImpact = 0;
     let impactNY = 0;
     const preDown = Math.max(0, -player.vy); // downward speed before contact
+    const climbing = player.climbing === true;
     let floorFall = 0;
     const solids = this.level.querySolids(player.x - r - 0.2, player.y - r - 0.2, player.z - r - 0.2, player.x + r + 0.2, player.y + r + 0.2, player.z + r + 0.2, this._solids);
 
@@ -944,6 +960,11 @@ export class Physics3D {
       }
     }
 
+    // A hand that holds a climb zone drives the body: pressing into the floor or a wall with the grip is not an impact.
+    if (climbing) {
+      maxImpact = 0;
+      floorFall = 0;
+    }
     if (maxImpact <= 0 && floorFall <= 0) {
       if (!wasGrounded && player.grounded) player.landedThisStep = true;
       return;
@@ -975,6 +996,7 @@ export class Physics3D {
   kill(player, tethers, cause, impact) {
     if (!player.alive) return;
     if (tethers) tethers.releaseAll(player, 'death');
+    this._climb().release(player, 'death');
     this.health.die();
     player.alive = false;
     player.deathCause = cause;

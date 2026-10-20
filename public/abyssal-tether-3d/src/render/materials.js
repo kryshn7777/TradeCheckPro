@@ -938,8 +938,9 @@ if ( uLanternC.a > 0.001 && atWet > 0.03 ) {
 		float atNH = saturate( dot( nonPerturbedNormal, atH ) );
 		float atNV = saturate( dot( nonPerturbedNormal, geometryViewDir ) );
 		float atVH = saturate( dot( geometryViewDir, atH ) );
-		float atAl = 0.0484;
+		float atAl = pow2( 0.22 + geometryRoughness ); // 0.0484 on flat stone, wider where the surface is curved or far (no crawling pinpoint)
 		float atSp = D_GGX( atAl, atNH ) * V_GGX_SmithCorrelated( atAl, atNL, atNV ) * F_Schlick( vec3( 0.04 ), 1.0, atVH ).x;
+		atSp = 4.0 * atSp / ( 4.0 + atSp ); // soft shoulder: the hand-held glint never blows out to a white dot
 		float atAt = pow2( saturate( 1.0 - pow4( atLd / uLanternR.x ) ) ) / max( pow( atLd, uLanternR.y ), 0.01 );
 		reflectedLight.directSpecular += uLanternC.rgb * ( atAt * atNL * atSp * uLanternC.a * atWet );
 	}

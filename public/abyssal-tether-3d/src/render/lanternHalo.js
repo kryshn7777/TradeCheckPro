@@ -12,6 +12,7 @@
  */
 
 import * as THREE from 'three';
+import { DITHER_GLSL } from './vrShade.js';
 
 const VERT = /* glsl */ `
 uniform vec3 uLanternPos;
@@ -28,6 +29,7 @@ void main() {
 `;
 
 const FRAG = /* glsl */ `
+${DITHER_GLSL}
 uniform sampler3D uNoise;
 uniform vec3 uLanternPos;
 uniform vec3 uLanternCol;
@@ -65,13 +67,12 @@ void main() {
   vec3 hue = uFog / max( dot( uFog, vec3( 0.2126, 0.7152, 0.0722 ) ), 1e-4 );
   vec3 tint = mix( vec3( 1.0 ), hue, uTint );
   vec3 col = uLanternCol * ( h * 0.9 ) * mix( vec3( 1.0 ), tint, 0.35 );
-  // dither: sub-LSB noise so the long gradient does not band in 8 bit
-  float d = fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
   gl_FragColor = vec4( col, 1.0 );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   // premultiplied: the colour is the light the haze adds, the alpha the little it veils
-  gl_FragColor.rgb += ( d - 0.5 ) * ( 1.0 / 255.0 ) * min( 1.0, h * 12.0 );
+  // dither (interleaved gradient noise, stable per eye): the long radial gradient would otherwise band in 8 bit on an LCD
+  gl_FragColor.rgb += atDither3( gl_FragCoord.xy ) * ( 1.0 / 255.0 ) * min( 1.0, h * 12.0 );
   gl_FragColor.a = h * 0.18;
 }
 `;

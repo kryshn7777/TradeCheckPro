@@ -200,6 +200,26 @@ export class Level3D {
       load: 0,
       life: num(o.life, 1),
     }));
+    // Grip zones (WP-CLIMB, sim/climb3d.js): thin boxes just off a climbable surface. `n` is the unit surface normal (the way the
+    // climber faces away from the wall; axis aligned, or none for a chain), `face` the surface's coordinate along that axis.
+    this.climb = this._build(d.climb, 'clm', (o, id) => {
+      const b = readBox(o);
+      if (!b) return null;
+      const n = o.n ? normalOf(o.n) : null;
+      const ax = n ? (Math.abs(n.x) > 0.5 ? 0 : Math.abs(n.y) > 0.5 ? 1 : 2) : -1; // 0 x, 1 y, 2 z, -1 none (chain)
+      return Object.assign(b, {
+        id,
+        kind: o.kind === 'chain' || o.kind === 'sinew' || o.kind === 'rebar' || o.kind === 'ledge' ? o.kind : 'masonry',
+        wet: o.wet === true,
+        nx: n && ax >= 0 ? (ax === 0 ? Math.sign(n.x) : 0) : 0,
+        ny: n && ax >= 0 ? (ax === 1 ? Math.sign(n.y) : 0) : 0,
+        nz: n && ax >= 0 ? (ax === 2 ? Math.sign(n.z) : 0) : 0,
+        ax,
+        face: num(o.face, 0),
+        section: this.sectionIndexAt((b.minY + b.maxY) / 2),
+        tag: o.tag || null,
+      });
+    });
     this.decor = this._build(d.decor, 'dec', (o, id) => {
       const built = Object.assign({}, o);
       delete built.omitIn;
@@ -266,11 +286,12 @@ export class Level3D {
     this._solidIndex = new YIndex(this.solids, (s) => s.minY, (s) => s.maxY);
     this._hazardIndex = new YIndex(this.hazards, (s) => s.minY, (s) => s.maxY);
     this._anchorIndex = new YIndex(this.anchors, (a) => a.y, (a) => a.y);
+    this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
     this._losScratch = [];
     this._rayScratch = [];
 
     this.byId = Object.create(null);
-    for (const list of [this.solids, this.hazards, this.anchors, this.decor]) {
+    for (const list of [this.solids, this.hazards, this.anchors, this.decor, this.climb]) {
       for (const o of list) this.byId[o.id] = o;
     }
   }
@@ -379,6 +400,11 @@ export class Level3D {
     }
     out.length = n;
     return out;
+  }
+
+  /** Climb zones whose box touches the sphere (x, y, z, r) (exact box distance); allocation-free (see sim/climb3d.js). */
+  climbNear(x, y, z, r, out) {
+    return this._queryBoxes(this._climbIndex, x - r, y - r, z - r, x + r, y + r, z + r, out);
   }
 
   /**

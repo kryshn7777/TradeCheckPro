@@ -851,6 +851,50 @@ function buildGlyphGeometry() {
   return shapeGeometry(parts, false);
 }
 
+/**
+ * A forged iron ring for the near field (VR: the eye lingers on the ring in reach; a 5-sided torus read as a pipe). Slightly
+ * oval, hand-forged thickness (swells where it was hammered, worn thin at the bottom where the line bears), indexed with smooth
+ * normals. XY plane, centred on the origin. ~450 triangles (the old torus: 140).
+ */
+function forgedRing(R, r, seg = 28, sides = 8) {
+  const pos = [];
+  const idx = [];
+  for (let i = 0; i < seg; i++) {
+    const th = (i / seg) * Math.PI * 2;
+    const worn = Math.exp(-Math.pow(Math.atan2(Math.sin(th + Math.PI / 2), Math.cos(th + Math.PI / 2)), 2) / 0.28);
+    const rr = r * (1 + 0.1 * Math.sin(th * 3 + 0.6) + 0.05 * Math.cos(th * 5) - 0.17 * worn);
+    const cx = R * 0.97 * Math.cos(th);
+    const cy = R * 1.04 * Math.sin(th);
+    // frame: radial direction and the ring's normal (z)
+    const rx = Math.cos(th);
+    const ry = Math.sin(th);
+    for (let j = 0; j < sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      // slightly squarer section (forged bar stock, not a pipe)
+      const f = 1 + 0.12 * Math.abs(Math.sin(2 * a));
+      pos.push(cx + rx * ca * rr * f, cy + ry * ca * rr * f, sa * rr * 0.95 * f);
+    }
+  }
+  for (let i = 0; i < seg; i++) {
+    const i1 = (i + 1) % seg;
+    for (let j = 0; j < sides; j++) {
+      const j1 = (j + 1) % sides;
+      const a = i * sides + j;
+      const b = i1 * sides + j;
+      const c = i1 * sides + j1;
+      const d = i * sides + j1;
+      idx.push(a, b, d, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Anchor mounts, one light geometry per shape: [ring, hook, fragile, stub]. Local +Z = mount normal. */
 function buildMountGeometries() {
   const plate = (parts, shape, s = 1) => {
@@ -858,7 +902,7 @@ function buildMountGeometries() {
     g.translate(0, 0, -0.2);
     parts.push({ geo: g, shape, glow: 0, plate: 1 });
     for (let i = 0; i < 4; i++) {
-      const b = new THREE.CylinderGeometry(0.018, 0.018, 0.03, 4, 1);
+      const b = new THREE.CylinderGeometry(0.019, 0.019, 0.03, 6, 1);
       b.rotateX(Math.PI / 2);
       b.translate((i % 2 ? 0.075 : -0.075) * s, (i < 2 ? 0.075 : -0.075) * s, -0.17);
       parts.push({ geo: b, shape, glow: 0, plate: 1 });
@@ -879,19 +923,24 @@ function buildMountGeometries() {
   {
     const parts = [];
     plate(parts, 0);
-    const bolt = new THREE.CylinderGeometry(0.024, 0.024, 0.2, 5, 1);
+    const bolt = new THREE.CylinderGeometry(0.024, 0.024, 0.2, 8, 1);
     bolt.rotateX(Math.PI / 2);
     bolt.translate(0, 0.13, -0.1);
     parts.push({ geo: bolt, shape: 0, glow: 0, plate: 1 });
     shackle(parts, 0, 0.15);
-    parts.push({ geo: new THREE.TorusGeometry(0.135, 0.028, 5, 14), shape: 0, glow: 0.6 });
+    parts.push({ geo: forgedRing(0.135, 0.028), shape: 0, glow: 0.6 });
+    // the collar where the ring hangs from its eye (a swollen weld) and a keeper pin through it
+    const collar = new THREE.CylinderGeometry(0.034, 0.04, 0.05, 8, 1);
+    collar.rotateZ(Math.PI / 2);
+    collar.translate(0, 0.152, 0);
+    parts.push({ geo: collar, shape: 0, glow: 0 });
     out.push(shapeGeometry(parts, true));
   }
   // 1 hook: bolt + J hook curling outward
   {
     const parts = [];
     plate(parts, 1);
-    const bolt = new THREE.CylinderGeometry(0.026, 0.026, 0.2, 5, 1);
+    const bolt = new THREE.CylinderGeometry(0.026, 0.026, 0.2, 8, 1);
     bolt.rotateX(Math.PI / 2);
     bolt.translate(0, 0.08, -0.1);
     parts.push({ geo: bolt, shape: 1, glow: 0, plate: 1 });
@@ -904,7 +953,11 @@ function buildMountGeometries() {
       new THREE.Vector3(0, -0.13, 0.15),
       new THREE.Vector3(0, -0.04, 0.16),
     ]);
-    parts.push({ geo: new THREE.TubeGeometry(curve, 10, 0.03, 5, false), shape: 1, glow: 0.6 });
+    parts.push({ geo: new THREE.TubeGeometry(curve, 16, 0.03, 8, false), shape: 1, glow: 0.6 });
+    // the forged point: a blunt ball on the end of the hook
+    const tip = new THREE.SphereGeometry(0.036, 8, 6);
+    tip.translate(0, -0.04, 0.16);
+    parts.push({ geo: tip, shape: 1, glow: 0.6 });
     out.push(shapeGeometry(parts, true));
   }
   // 2 fragile: corroded plate + stub + cracked diamond knob in two halves (they part under load)
@@ -2856,6 +2909,20 @@ class Dresser {
     const gearFirst = wantGear && (!wantSaint || (u.gears + u.saints + sec) % 2 === 1);
     for (const kind of gearFirst ? ['gear', 'saint'] : ['saint', 'gear']) {
       if (kind === 'saint' && wantSaint) {
+        // VR hero piece: every third bay gets a crumbling pointed-arch relief instead of a saint (when it fits)
+        const scA = Math.min((H - 0.2) / 1.0, (W - 0.4) / 1.22, 7);
+        if (scA >= 3.4 && (u.saints + sec) % 3 === 2) {
+          const szA = Math.min(scA * 0.8, 3);
+          const boxA = frameBox(F, cx - 0.61 * scA, cx + 0.61 * scA, y0, y0 + scA, 0, 0.42 * szA);
+          if (!S.blocked(boxA, hosts, true, DR.propClear)) {
+            this.kit(F, 'ch1_env_arch_fragment', cx, y0, g.stone, 'stone', scA, scA, szA, null, true);
+            u.saints++;
+            this.stats.saints = (this.stats.saints || 0) + 1;
+            this.stats.heroes = (this.stats.heroes || 0) + 1;
+            F.budget.icons--;
+            return true;
+          }
+        }
         const sc = Math.min((H - 0.2) / 1.28, (W - 0.4) / 0.42, 13);
         if (sc < 3.4) continue;
         const sz = sc * 0.72; // a shallow relief: 0.26 × 0.72 × scale deep
@@ -2868,6 +2935,22 @@ class Dresser {
         return true;
       }
       if (kind === 'gear' && wantGear) {
+        // VR hero piece: a machine-room gear train (three meshing cogs, iron housings, chain) in the bigger bays
+        const sT = Math.min((H - 0.3) / 3.05, (W - 0.4) / 3.2, 5.5);
+        if (sT >= 1.5 && (u.gears + sec) % 2 === 0) {
+          const szT = Math.min(sT * 0.55, 1.6);
+          const gx = cx - 0.35 * sT;
+          const gy = y0 + H / 2 - 0.22 * sT;
+          const boxT = frameBox(F, gx - 1.3 * sT, gx + 1.95 * sT, gy - 1.3 * sT, gy + 1.75 * sT, 0, 0.5 * szT);
+          if (!S.blocked(boxT, hosts, true, DR.propClear)) {
+            this.kit(F, 'ch1_env_geartrain', gx, gy, [0.95, 0.9, 0.86], 'metal', sT, sT, szT, null, true);
+            u.gears++;
+            this.stats.gears = (this.stats.gears || 0) + 1;
+            this.stats.heroes = (this.stats.heroes || 0) + 1;
+            F.budget.icons--;
+            return true;
+          }
+        }
         const r = Math.min(H / 2 - 0.3, W / 2 - 0.2, 6.5);
         if (r < 1.6) continue;
         const sz = Math.min(r * 0.55, 2); // ≤ 0.6 m deep
@@ -3478,6 +3561,17 @@ class Dresser {
             const u = off + i * step;
             const fig = !floor && span >= 6 && i % 3 === 1 && g.growth < 0.5 && figs < 2;
             if (fig) figs++;
+            // VR hero corbel: a carved head with a leaf cluster and a dead lantern, every fourth plain one on ledges you can reach
+            const heroSec = typeof this.level.sectionIndexAt === 'function' ? this.level.sectionIndexAt(W.o.y) | 0 : 0;
+            const heroUsed = this._heroCorbels || (this._heroCorbels = {});
+            const hero = !fig && !floor && i % 4 === 2 && (heroUsed[heroSec] || 0) < 6;
+            if (hero && !S.blocked(frameBox(W, u - 0.55, u + 0.55, -1.9, 0, 0, 1.15), hostsW, true, DR.propClear)) {
+              heroUsed[heroSec] = (heroUsed[heroSec] || 0) + 1;
+              this.kit(W, 'ch1_env_corbel_hero', u, 0, g.stone, 'stone');
+              this.stats.corbels++;
+              this.stats.heroes = (this.stats.heroes || 0) + 1;
+              continue;
+            }
             const part = fig ? 'ch1_env_corbel_figure' : 'ch1_env_corbel';
             const h = fig ? 2.1 : 1.1;
             const d = fig ? 0.86 : 0.8;

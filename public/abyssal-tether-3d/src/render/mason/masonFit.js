@@ -38,15 +38,15 @@ export class HeadFit {
       const list = level.querySolids(hx - R, hy - R, hz - R, hx + R, hy + R, hz + R, this.solids);
       for (let i = 0; i < list.length; i++) {
         const b = list[i];
-        if (!structural(b)) continue;
+        if (!structural(b) || b.minX < hx && hx < b.maxX && b.minY < hy && hy < b.maxY && b.minZ < hz && hz < b.maxZ) continue; // a box the head point sits inside is not a wall to fit against
         let t = castBox(hx, hy, hz, -ux, -uy, -uz, b, c[0]);
-        if (t >= 0 && t < c[0]) c[0] = t;
+        if (t > 0.05 && t < c[0]) c[0] = t;
         t = castBox(hx, hy, hz, ux, uy, uz, b, c[1]);
-        if (t >= 0 && t < c[1]) c[1] = t;
+        if (t > 0.05 && t < c[1]) c[1] = t;
         t = castBox(hx, hy, hz, rx, ry, rz, b, c[2]);
-        if (t >= 0 && t < c[2]) c[2] = t;
+        if (t > 0.05 && t < c[2]) c[2] = t;
         t = castBox(hx, hy, hz, -rx, -ry, -rz, b, c[3]);
-        if (t >= 0 && t < c[3]) c[3] = t;
+        if (t > 0.05 && t < c[3]) c[3] = t;
       }
     }
     // the shaft's inner faces (the sim clamps the head to them; the faces are not always solids)
