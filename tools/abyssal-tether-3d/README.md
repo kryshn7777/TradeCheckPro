@@ -73,6 +73,30 @@ Options: `--seed N`, `--samples`, `--res WxH`, `--shots hero,approach,full,silho
 `--grain 0|1`, `--omit ropes,strands,arms,tongue,tether`, `--nobake` (export dry run). `pack_glb.py` runs automatically on
 the exported GLBs (it packs `_MASK` / `_OWNER`).
 
+## The Mason rig (WP-CREATURE-RIG)
+
+`build_mason_rig.py` (+ `mason_rig_core.py` kit reader / rest-pose assembly / bone table / skin arrays, `mason_rig_clips.py` the
+clips authored in code, `mason_rig_gltf.py` the glTF writer, `mason_rig_preview.py` the Blender contact sheets) turns the rig-ready
+kit (`mason_kit.glb` + the leg template of `mason_hero.glb`) into `public/abyssal-tether-3d/assets/models/mason_rig.glb` (7.9 MB):
+no remodelling, the kit's per-vertex `_OWNER` attribute IS the skin (rigid stone / iron / bone / teeth = 100 % on the owner bone, flesh
+= 2 influences by `_SPINE_S`), the kit's two atlases are copied byte for byte (re-encoded JPEG q68 to stay under 8 MB).
+
+```bash
+python3 tools/abyssal-tether-3d/build_mason_rig.py                    # numpy + Pillow only, ~6 s: GLB + wip/creature/mason_rig_report.json
+flock /tmp/at3d-blender.lock BLENDER_VENV/bin/python tools/abyssal-tether-3d/build_mason_rig.py --out /tmp/x --render tools/abyssal-tether-3d/previews
+        # imports the EXPORTED glb into Blender and renders 8 key poses per clip into previews/mason_rig_<clip>.png (<= 2 GB, ~8 min)
+node tools/abyssal-tether-3d/tests/render/test-mason-rig.mjs          # structure + clip graph + IK + head fit
+```
+
+| | |
+|---|---|
+| Skeleton | 170 bones: `root`, `neck`, `spine_00..17` (one per sim block, flat under the root: the view writes their world frames), `tail_0/1`, the crown subtree (`crown`, `portal_arch_0..2`, `portal_comb_L0/L1/R0/R1`, `portal_hinge_0/1`, `gullet_0..2`, `pit_0..6`, `arm_0..4_0/1`) and 36 legs: 10 lead (`leg_{L,R}NN_0..3` = IK'd to the sim's planted hooks) + 26 followers (`_0..2`, metachronal wave). `extras.mason` carries P0, the leg chain, leg table, pit directions, clip table (kind, loop, events, phase) |
+| Meshes | `Mason_LOD0` 56.7 k tris, `Mason_LOD1` 20.7 k, one shared skin, 4 primitives (= draw calls) each: MasonCrown, MasonBody (spine) + MasonBody (legs), MasonEmissive. Attributes: `_MASK` (flesh, wet, thickness, class) kept for the shader |
+| Clips (30 fps, in place, root never keyed) | base: `crown_idle` `listen` `notice_snap` `rear_windup` (0.75 s, scrubbed over the sim wind-up) `strike` (0.40 s, portal slams at 0.16 s = the sim strike time) `roar_display` `linger_breathe` `take_close`; additive: `recoil` `plate_shiver` `breathe_seams` `portal_snap` `flinch` `retreat_fold`; parametric (time = value x duration): `arms_flare` `pit_dilate` `portal_open`; template `leg_probe` (the view taps the lead legs procedurally on re-plant) |
+
+Runtime: `src/render/masonRigView.js` + `src/render/mason/*` (clip graph, pose maths, legs, head fit, material patch); `game.js` loads
+the GLB after the kit and swaps views, with the kit `CreatureView` as the automatic fallback (`?mason=kit` forces it).
+
 ## Textures
 
 Seamless PBR sets (every map periodic by construction) live in `public/abyssal-tether-3d/assets/textures/` with a

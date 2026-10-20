@@ -64,7 +64,7 @@ Something vast lives in the walls of this place. It listens. It follows you down
 BUILT FOR THE HEADSET
 - Your real height is used 1:1, with a calibration step and a seated option.
 - Spatial audio: you will hear it before you see it.
-- Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 16 MB).
+- Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 65 MB).
 
 COMFORT
 Comfort rating: Intense. Abyssal Tether uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.

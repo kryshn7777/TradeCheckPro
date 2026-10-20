@@ -88,7 +88,9 @@ def build(args):
         clips=[dict(name=c.name, kind=c.kind, duration=c.duration, frames=c.F, loop=c.loop) for c in clips],
         gates=gates,
     )
-    with open(os.path.join(args.out, "mason_rig_report.json"), "w") as f:
+    rep_dir = args.report or os.path.join(HERE, "wip", "creature")
+    os.makedirs(rep_dir, exist_ok=True)
+    with open(os.path.join(rep_dir, "mason_rig_report.json"), "w") as f:
         json.dump(report, f, indent=1)
     log("wrote %s: %.2f MB, %d bones, LOD0 %d tris, LOD1 %d tris, %d clips" % (path, size / 1e6, len(rig), meta["lodTris"][0], meta["lodTris"][1], len(clips)))
     return dict(path=path, rig=rig, layout=layout, clips=clips, meta=meta, report=report)
@@ -100,6 +102,7 @@ def main():
     ap.add_argument("--kit", default=os.path.join(MODELS, "mason_kit.glb"))
     ap.add_argument("--hero", default=os.path.join(MODELS, "mason_hero.glb"))
     ap.add_argument("--render", default="", help="directory for the Blender preview contact sheets (needs bpy)")
+    ap.add_argument("--report", default="", help="directory for mason_rig_report.json (default tools/abyssal-tether-3d/wip/creature)")
     ap.add_argument("--clips", default="", help="comma list: only these clips")
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
     args = ap.parse_args(argv)

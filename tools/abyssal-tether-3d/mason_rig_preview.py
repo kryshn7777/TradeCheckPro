@@ -21,7 +21,7 @@ def _setup_scene(bpy):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
     sc.cycles.device = "CPU"
-    sc.cycles.samples = 20
+    sc.cycles.samples = 24
     sc.cycles.use_denoising = False
     sc.cycles.max_bounces = 3
     sc.view_settings.view_transform = "Standard"
@@ -30,10 +30,10 @@ def _setup_scene(bpy):
     sc.world = w
     w.use_nodes = True
     bg = w.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.012, 0.016, 0.022, 1)
+    bg.inputs["Color"].default_value = (0.05, 0.06, 0.075, 1)
     bg.inputs["Strength"].default_value = 1.0
     lights = []
-    for nm, loc, en, col in (("key", (-6.0, 15.0, 5.0), 9000, (1.0, 0.86, 0.66)), ("rim", (9.0, -2.0, 9.0), 6500, (0.62, 0.78, 1.0)), ("fill", (4.0, 14.0, -3.0), 1800, (0.8, 0.9, 1.0))):
+    for nm, loc, en, col in (("key", (-6.0, 15.0, 5.0), 30000, (1.0, 0.86, 0.66)), ("rim", (9.0, -2.0, 9.0), 20000, (0.62, 0.78, 1.0)), ("fill", (4.0, 14.0, -3.0), 9000, (0.8, 0.9, 1.0))):
         ld = bpy.data.lights.new(nm, "POINT")
         ld.energy = en
         ld.color = col
@@ -57,7 +57,7 @@ def _aim(cam, loc, target):
     cam.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
 
 
-def render_sheets(glb, res, outdir, tile=(320, 360), cols=4, rows=2):
+def render_sheets(glb, res, outdir, tile=(400, 330), cols=4, rows=2):
     import bpy
     os.makedirs(outdir, exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)

@@ -42,7 +42,7 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 | WP-GFX | GRAPHICS_PLAN work packages for Chapter I (baked lighting, trims, wetness, volume fog, tiers) | render/* | after ENV + FOG |
 | WP-AUDIO | audio3d + haptics + music | audio/*, input haptics hook | DONE 2026-10-20 22:35: light checks green, offline render peak 0.86/no NaN, voice caps 24/10; UNHEARD (headset listening pass needed: balance, haptic match, music taste, HRTF creature, reverb); creature clip sync waits for rig events |
 | WP-UX | ui3d menus, end card, comfort, accessibility | ui/*, game.js | to launch |
-| WP-RELEASE | PWA boot split, SW, context loss, saves, governor, store assets, docs | main.js, index.html, pwa/*, game.js boot | to launch |
+| WP-RELEASE | PWA boot split, SW, context loss, saves, governor, store assets, docs | main.js, index.html, pwa/*, game.js boot | DONE 2026-10-20 22:45: light checks green, release sanity 10/10 on a mock headset; precache core 63.5 MB (80 MB cap); store pack 13 MB; owner actions in RELEASE.md 18.0; TODO: re-capture store screenshots after graphics land; headset checks (first frame <4 s, 72 fps, offline relaunch) |
 | WP-QA | adversarial review, soak, video, final report | all | last |
 
 ## Restart log

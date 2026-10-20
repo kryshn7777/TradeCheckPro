@@ -72,6 +72,7 @@ const MAX_DEBUG_STEP_FRAMES = 60 * 600;
 const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before building the level view
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
+const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -82,6 +83,7 @@ const MODULES = {
   threat: './sim/threat3d.js',
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
+  masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
   bodyView: './render/bodyView.js',
@@ -1266,6 +1268,7 @@ export class Game3D {
             this.creatureView = cv;
             this._precompile(); // the creature's programs, while still on the menu
             this.bus.emit('assets:kit', { ok: true });
+            this._loadMasonRig(cv); // async: the rigged Mason replaces the kit view when it arrives (the kit view stays as the fallback)
             // Masonry / metal / flesh detail for the creature: the level's own texture
             // sets (same manifest key as buildLevel → the renderer's cached load), so
             // nothing is decoded or uploaded twice. Optional; degrades gracefully.
@@ -1296,6 +1299,60 @@ export class Game3D {
       this._fault('creatureKit', err);
       standIn();
     }
+  }
+
+  /**
+   * WP-CREATURE-RIG: loads the rigged, skinned Mason (mason_rig.glb) and swaps it in for the kit view. Any failure (module, asset,
+   * construction, a later update fault) leaves / returns the creature to the kit CreatureView. `?mason=kit` keeps the kit view.
+   */
+  _loadMasonRig(kitView) {
+    const M = this.modules;
+    if (!M.masonRigView || typeof M.masonRigView.MasonRigView !== 'function' || !M.gltf || typeof M.gltf.GLTFLoader !== 'function') return;
+    try {
+      if (typeof location !== 'undefined' && /[?&]mason=kit/.test(location.search || '')) return;
+    } catch {
+      /* no location */
+    }
+    try {
+      const loader = new M.gltf.GLTFLoader();
+      loader.load(
+        RIG_URL,
+        (gltf) => {
+          if (this.creatureView !== kitView) return;
+          try {
+            const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
+            rig.bindBus(this.bus);
+            this._kitView = kitView;
+            if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
+            this.creatureView = rig;
+            this._precompile(); // both LOD programs + atlases, on the menu
+            this.bus.emit('assets:rig', { ok: true });
+          } catch (err) {
+            this._fault('masonRigView', err);
+          }
+        },
+        undefined,
+        (err) => this._fault('masonRigAsset', err),
+      );
+    } catch (err) {
+      this._fault('masonRigAsset', err);
+    }
+  }
+
+  /** The rigged view failed at run time: back to the kit CreatureView. */
+  _fallbackToKit(rig) {
+    const kit = this._kitView;
+    if (this.creatureView !== rig) return;
+    try {
+      rig.dispose();
+    } catch {
+      /* already broken */
+    }
+    this._kitView = null;
+    if (kit) {
+      if (kit.root && !kit.root.parent && this.renderer && this.renderer.scene) this.renderer.scene.add(kit.root);
+      this.creatureView = kit;
+    } else this.creatureView = null;
   }
 
   /** Compiles every shader program the scene can need (Renderer3D.precompile; rare calls only). */
@@ -3047,6 +3104,7 @@ export class Game3D {
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);
+        if (cv.isRig) this._fallbackToKit(cv);
       }
     }
     // A HandsView the input manager created is updated by the input manager.
@@ -3545,6 +3603,21 @@ export class Game3D {
           return { id: it.id, x: it.x, y: it.y, z: it.z };
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
+      },
+      // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing
+      // them; play(clip) / pose(u, clip) force a clip (pose freezes it at normalised time u); stop() / clear() return to the sim; state() reads the rig.
+      creature: {
+        place: (o) => {
+          const d = this.creatureView && this.creatureView.debug;
+          return d ? d.place(Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {})) : null;
+        },
+        play: (name, o) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.play(String(name), o)),
+        pose: (u, name) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.pose(u, name)),
+        stop: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.stop()),
+        clear: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.clear()),
+        set: (patch) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.set(patch)),
+        state: () => (this.creatureView && this.creatureView.debug ? this.creatureView.debug.state() : { rig: false }),
+        view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
       },
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),

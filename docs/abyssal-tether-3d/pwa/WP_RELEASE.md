@@ -30,7 +30,7 @@ npm run test:at3d-release       # test-pwa.mjs (install / offline / update / bad
 # written but not run to completion (software GL is too slow / memory hungry on the shared machine; run on a quiet box):
 #   test-boot.mjs (throttled boot timing), test-resilience.mjs (longer resilience matrix), soak.mjs (45-minute soak)
 # always run browser jobs under:  flock /tmp/at3d-browser.lock <cmd>
-npm run capture:at3d-store && npm run art:at3d-store        # screenshots and art from the real game, then the cover set
+npm run capture:at3d-store && npm run art:at3d-store        # screenshots (packed to JPEG by pack-screens.py, store pack 13 MB) and art from the real game, then the cover set
 node tools/abyssal-tether-3d/release/check-listing.mjs      # listing text limits + art sizes
 ```
 
@@ -53,8 +53,10 @@ Timings are on `AT3D.debug.platform().bootTimes` (ms since navigation start: `mi
 
 ## Service worker (RELEASE section 9)
 
-Precache core = every runtime file (assets, code, vendor three.js, manifest, icons), SHA-256 per file, all-or-nothing
-install; unchanged files are copied from the previous cache on update; later chapters (`assets/chapters/chN/**`) are the
+Precache core = every runtime file generated from the tree (assets incl. `lighting/*.bin` and `.ktx2`, models, code, vendor
+three.js incl. the Basis transcoder, manifest, icons; today 106 files / 63.5 MB, cap `maxCoreMB` 80), SHA-256 per file,
+all-or-nothing install; JPEG/PNG texture fallbacks that have a `.ktx2` sibling are lazy (cached on first use, so textures are
+not downloaded twice); unchanged files are copied from the previous cache on update; later chapters (`assets/chapters/chN/**`) are the
 lazy tier; excluded: sw.js, docs, previews, `mason_hero.glb`, keystores. Works at any path (every URL resolves against
 the registration scope; cache names carry the scope path).
 
@@ -89,7 +91,9 @@ previous build. UI hook for the UX agent: a Settings > About row "Update ready: 
 (> 250 ms) and non-play states are ignored. Quality tiers use the semantics fx.js already has:
 `settings.reducedEffects === true` pins level >= 3 (fx tier 0), otherwise the governor writes `settings.fxQuality`
 (`'quest'` / `'low'`, in memory; removed on session end). `?gov=off` disables it, `?gov=N` pins level N (QA).
-`AT3D.debug.platform().governor` reports level, miss ratio and the last changes; bus event `quality:level`.
+Render side (2026-10-20): `Game3D._loop` now calls `renderer.governor.update(frameMs)` every frame (0 while not playing / menu / dead):
+in XR `render/renderGovernor.js` only mirrors this governor's level (lighting levers, `gfx:level`), on desktop it steps by itself,
+so the tiers exist once. `AT3D.debug.platform().governor` reports level, miss ratio and the last changes; bus event `quality:level`.
 Plug-in API for the render quality tiers: `game.governor.onFrame(frameMs)` (feed a frame time),
 `game.governor.onStep(fn)` -> unsubscribe, with `fn(tier, foveation, scale, level, why)` (`tier` is `'quest'` or `'low'`);
 when the renderer has `setQualityTier(tier)` it is called on every change as well.
