@@ -1457,6 +1457,7 @@ export class AudioManager3D {
     const level = game && game.level ? game.level : null;
     const playing = state === 'playing';
     const victory = state === 'victory' || this._victory;
+    this._applyTier();
     if (state === 'dead') this._dead = true;
     else if (playing && P && P.alive !== false) this._dead = false;
     const dead = this._dead;
@@ -2215,6 +2216,16 @@ export class AudioManager3D {
       'creature:strike': this._onCreatureStrike,
       'creature:retreat': this._onCreatureRetreat,
       'creature:sighting': this._onCreatureSighting,
+      'rope:slip': this._onRopeSlip,
+      'rope:cancel': this._onRopeCancel,
+      'creature:clip': this._onClipEvent,
+      'mason:anim': this._onClipEvent,
+      'creature:freeze': this._onCreatureFlag,
+      'creature:unfreeze': this._onCreatureFlag,
+      'creature:linger': this._onCreatureFlag,
+      'creature:hide': this._onCreatureFlag,
+      'mason:plant': this._onCreatureFlag,
+      'quality:level': this._onQuality,
       'game:start': this._onGameStart,
       'game:restart': this._onGameStart,
       'game:pause': this._onGamePause,
@@ -2231,6 +2242,7 @@ export class AudioManager3D {
     for (const type of Object.keys(map)) {
       const fn = map[type];
       bus.on(type, (payload) => {
+        this._logEvent(type);
         if (!this._built) {
           // Lifecycle flags still matter before the context exists.
           if (type === 'xr:start' || type === 'xr:sessionstart') this.unlock();
@@ -2243,12 +2255,22 @@ export class AudioManager3D {
           return;
         }
         try {
-          fn.call(this, payload && typeof payload === 'object' ? payload : EMPTY);
+          fn.call(this, payload && typeof payload === 'object' ? payload : EMPTY, type);
         } catch (err) {
           this._warn(type, err);
         }
       });
     }
+  }
+
+  /** Debug ring buffer of the last events seen: fixed slots, no allocation after the first lap. */
+  _logEvent(type) {
+    this._eventCount++;
+    const i = this._logN++ % LOG_LEN;
+    const e = this._log[i] || (this._log[i] = { type: '', n: 0, t: 0 });
+    e.type = type;
+    e.n = this._eventCount;
+    e.t = this.ctx ? +this.ctx.currentTime.toFixed(3) : 0;
   }
 
   // ---- lifecycle -----------------------------------------------------------------
@@ -2333,7 +2355,9 @@ export class AudioManager3D {
   _onSection(p) {
     const idx = num(p.index, this._secIndex);
     const now = this.ctx.currentTime;
+    this._firstEntry = !!p.first;
     if ((idx | 0) !== this._secIndex) this._applySection(idx, p.section || null, now, 2.5);
+    this._firstEntry = false;
     if (p.first) this._sfxSectionShift();
   }
 
@@ -2852,6 +2876,7 @@ export class AudioManager3D {
     const v = this._begin('land', hard ? 2 : 1, 0.06, hard ? 1.1 : 0.75, this.busPlayer, 0.5 + 0.4 * s, 0, 0.06 + 0.12 * s, 0);
     if (!v) return;
     const t = v.t0;
+    if (this._mov && !this._mov.broken) this._mov.landColor(v, t, s, this._game);
     const o = this._vOsc(v, 'sine', 90, t);
     o.frequency.setTargetAtTime(42, t, 0.04);
     const og = this._vGain(v, 0);
