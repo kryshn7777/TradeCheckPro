@@ -510,7 +510,9 @@ void main() {
     vec3 pb = p + v * min( 0.6 / max( abs( v.y ), 0.05 ), 4.0 );
     n0 = 0.5 * ( n0 + texture( uNoise, pb * sc + uWind * uTime ).r );
   }
-  float n = n0 * 0.62 + texture( uNoise, q * 2.37 + vec3( 0.31, 0.57, 0.13 ) - uWind * ( uTime * 1.7 ) ).r * 0.38;
+  float n = n0;
+  // the finer octave only on tiers that can afford its second fetch (a uniform branch: coherent)
+  if ( uDetail > 0.5 ) n = n0 * 0.62 + texture( uNoise, q * 2.37 + vec3( 0.31, 0.57, 0.13 ) - uWind * ( uTime * 1.7 ) ).r * 0.38;
   // a thin haze everywhere, thicker wisps and banks where the field is dense
   float dens = uFloor + ( 1.0 - uFloor ) * smoothstep( uCover, 0.95, n );
   a *= dens * ( 1.0 - 0.35 * vNear );
@@ -733,6 +735,7 @@ export class Atmosphere {
     U.uFloor.value = P.floor;
     U.uLanternGain.value = P.lantern;
     U.uLanternK.value = P.lanternK;
+    U.uDetail.value = tier >= 1 ? 1 : 0;
     U.uKeyGain.value = P.key;
     U.uTintSat.value = P.tint;
 
