@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """ABYSSAL TETHER 3D: store art builder (title typography + cover set from real game renders).
 
-Input : docs/abyssal-tether-3d/store/keyart/*.png      raw renders of the real game (tools/.../capture-screens.mjs)
+Input : docs/abyssal-tether-3d/store/screenshots/hero-2880x1600.png  a raw render of the real game (capture-screens.mjs --only hero);
+        keyart/vista-*-<size>.png renders override it per format when present
 Output: docs/abyssal-tether-3d/store/art/
           hero-3000x900.png               Hero (24-bit PNG)
           cover-landscape-2560x1440.png   Cover, landscape
@@ -249,9 +250,12 @@ def compose(bg, cap_px, center, stacked, tether=True, tether_x=None):
 
 
 def load_render(keyart, name):
+    """The raw game render the covers are cut from: keyart/<name> when present, else the 2880 x 1600 hero render."""
     p = os.path.join(keyart, name)
     if not os.path.exists(p):
-        raise SystemExit(f'missing key-art render {p}: run `npm run capture:at3d-store -- --only keyart` first')
+        p = os.path.join(os.path.dirname(keyart), 'screenshots', 'hero-2880x1600.png')
+    if not os.path.exists(p):
+        raise SystemExit(f'missing render {p}: run `npm run capture:at3d-store -- --only hero` first')
     return Image.open(p).convert('RGB')
 
 
@@ -287,7 +291,7 @@ def main():
     v = args.variant
 
     # hero 3000 x 900: one line, title centred in the safe area (20 % top/bottom, 10 % sides)
-    bg = grade(load_render(args.keyart, f'vista-{v}-hero.png').resize((3000, 900), Image.LANCZOS))
+    bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-hero.png'), 3000, 900, focus=(0.5, 0.55)))
     out, box = compose(bg, cap_px=190, center=(1500, 470), stacked=False, tether_x=1500)
     out.save(os.path.join(args.out, 'hero-3000x900.png'), optimize=True)
     print('hero', box)
@@ -311,7 +315,7 @@ def main():
     print('portrait', box)
 
     # mini 1080 x 360: one line, small
-    bg = grade(load_render(args.keyart, f'vista-{v}-hero.png').resize((1080, 324), Image.LANCZOS).resize((1080, 360), Image.LANCZOS))
+    bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-hero.png'), 1080, 360, focus=(0.5, 0.55)))
     out, box = compose(bg, cap_px=66, center=(540, 190), stacked=False, tether=False)
     out.save(os.path.join(args.out, 'mini-1080x360.png'), optimize=True)
     print('mini', box)
