@@ -163,17 +163,25 @@ await page.evaluate(
     };
     /** Fixed benchmark: same difficulty, section and frames every time. Returns ms per sim frame / per render. */
     window.__soakBench = () => {
+      const L = (m) => verbose && console.log('SOAK bench ' + m + ' state=' + G.state);
+      L('start');
       G.start('normal');
       D.warp(4);
       D.setInput(null);
+      L('warped');
       D.step(2, { render: false, state: false }); // settle
+      L('settled');
       const frames = 360;
       const t0 = performance.now();
       for (let i = 0; i < frames; i++) G._frame(1 / 60, false);
       const simMs = (performance.now() - t0) / frames;
+      L('frames');
       const t1 = performance.now();
       const renders = 3;
-      for (let i = 0; i < renders; i++) G._render(1 / 60);
+      for (let i = 0; i < renders; i++) {
+        G._render(1 / 60);
+        L('render ' + i);
+      }
       const renderMs = (performance.now() - t1) / renders;
       return { simMs, renderMs };
     };

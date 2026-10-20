@@ -4885,7 +4885,7 @@ KIT_FAMILY = {
     "Crown": ("Head", "Pit", "PitMembrane", "Frond_0", "Frond_1", "Frond_2"),
     "Body": ("Segment_0", "Segment_1", "Segment_2", "Tail", "LimbUpper", "LimbLower", "Hook"),
 }
-KIT_TRIS = {"Head": 17500, "Pit": 110, "PitMembrane": 70, "Frond_0": 64, "Frond_1": 64, "Frond_2": 64,
+KIT_TRIS = {"Head": 20000, "Pit": 110, "PitMembrane": 70, "Frond_0": 64, "Frond_1": 64, "Frond_2": 64,
             "Segment_0": 1150, "Segment_1": 1050, "Segment_2": 950, "Tail": 560,
             "LimbUpper": 640, "LimbLower": 420, "Hook": 150}
 LOD1_RATIO = 0.35
@@ -5612,7 +5612,8 @@ def export_glb(objs, fn, quality=88):
     kw = dict(filepath=fn, export_format="GLB", use_selection=True, export_yup=True, export_apply=False,
               export_texcoords=True, export_normals=True, export_tangents=False, export_attributes=True,
               export_extras=True, export_materials="EXPORT", export_cameras=False, export_lights=False,
-              export_animations=False, export_skins=False)
+              export_animations=False, export_skins=False, export_vertex_color="NONE",
+              export_all_vertex_colors=False, export_active_vertex_color_when_no_material=False)
     try:
         bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=quality, **kw)
     except TypeError as e:

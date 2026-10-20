@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mason kit harness</title>
+<style>html,body{margin:0;background:#05070a;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">
+{ "imports": { "three": "/vendor/three/three.module.min.js", "three/addons/": "/vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<script type="module">
+// Headless check of mason_kit.glb in three.js r170: (1) the raw modules, laid out, under a point light;
+// (2) the same kit assembled by the game's real CreatureView on a synthetic creature body.
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { CreatureView } from '/src/render/creatureView.js';
+
+const q = new URLSearchParams(location.search);
+const kitUrl = q.get('kit') || '/assets/models/mason_kit.glb';
+const mode = q.get('mode') || 'modules';          // modules | head | body | hero | far
+const W = +(q.get('w') || 1280), H = +(q.get('h') || 720);
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(1);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070a);
+scene.fog = new THREE.FogExp2(0x05070a, 0.012);
+const camera = new THREE.PerspectiveCamera(50, W / H, 0.05, 300);
+const light = new THREE.PointLight(0xbfd8ff, 900, 0, 2);
+const rim = new THREE.DirectionalLight(0x6688aa, 0.6);
+scene.add(light, rim, new THREE.AmbientLight(0x202833, 0.55));
+const out = { mode, kitUrl, errors: [] };
+window.addEventListener('error', (e) => out.errors.push(String(e.message)));
+
+function synthBody() {
+  const SEG = 20;
+  const spine = new Float32Array(SEG * 3), up = new Float32Array(SEG * 3), scale = new Float32Array(SEG);
+  let y = 0;
+  for (let i = 0; i < SEG; i++) {
+    const t = i / (SEG - 1);
+    scale[i] = 1 - 0.45 * t;
+    spine[i * 3] = Math.sin(t * 5.0) * 1.1;
+    spine[i * 3 + 1] = y;
+    spine[i * 3 + 2] = 0.2 * Math.sin(t * 3.0);
+    up.set([0, 0, 1], i * 3);
+    y += 1.5 * (1 - 0.45 * (i + 0.5) / SEG);
+  }
+  const limbs = [];
+  const defs = [[2, 1, 8.6], [3, -1, 8.3], [4, 1, 7.9], [6, -1, 7.5], [7, 1, 7.1], [9, -1, 6.8], [10, 1, 6.4], [12, -1, 6.1], [14, 1, 5.7], [15, -1, 5.4]];
+  for (const [seg, side, reach] of defs) {
+    const sx = spine[seg * 3], sy = spine[seg * 3 + 1];
+    limbs.push({ seg, side, reach, weight: 1, planted: true, lift: 0, foot: { x: sx + side * 4.8, y: sy - 1.2, z: -1.4 }, hip: { x: sx, y: sy, z: 0 } });
+  }
+  return {
+    visible: true, spine, up, scale, limbs, frondOpen: 0.55, glow: 0.6, lunge: 0, jitter: 0, listen: 0,
+    head: { x: spine[0], y: spine[1], z: spine[2], fx: 0, fy: -1, fz: 0, ux: 0, uy: 0, uz: 1 },
+    focus: { x: 0, y: -8, z: 3, amount: 0.7 },
+  };
+}
+
+new GLTFLoader().load(kitUrl, (gltf) => {
+  try {
+    out.names = [];
+    gltf.scene.traverse((o) => { if (o.userData.name && /^Mason_/.test(o.userData.name)) out.names.push(o.userData.name); });
+    if (mode === 'modules') {
+      const root = new THREE.Group();
+      scene.add(root);
+      const groups = {};
+      gltf.scene.traverse((o) => { const n = o.userData.name; if (n && /^Mason_/.test(n) && !/LOD1/.test(n) && !groups[n]) groups[n] = o; });
+      const order = ['Mason_Head', 'Mason_Segment_0', 'Mason_Segment_1', 'Mason_Segment_2', 'Mason_Tail', 'Mason_LimbUpper', 'Mason_LimbLower', 'Mason_Hook', 'Mason_Frond_0', 'Mason_Pit'];
+      let x = 0;
+      for (const n of order) {
+        const o = groups[n];
+        if (!o) continue;
+        const c = o.clone();
+        const s = n === 'Mason_Head' ? 0.5 : 1;
+        c.scale.setScalar(s);
+        const box = new THREE.Box3().setFromObject(c);
+        c.position.x = x - box.min.x;
+        c.position.y = -box.min.y * 0 - (box.min.y + box.max.y) / 2;
+        x += box.max.x - box.min.x + 0.8;
+        root.add(c);
+      }
+      const bb = new THREE.Box3().setFromObject(root);
+      const ctr = bb.getCenter(new THREE.Vector3());
+      const size = bb.getSize(new THREE.Vector3());
+      camera.position.set(ctr.x, ctr.y + 1.5, ctr.z + Math.max(size.x * 0.62, 12));
+      camera.lookAt(ctr);
+      light.position.set(ctr.x - size.x * 0.3, ctr.y + 6, ctr.z + 9);
+      light.intensity = 1500;
+      rim.position.set(0, 4, -6);
+    } else {
+      const view = new CreatureView(scene, gltf);
+      const body = synthBody();
+      const creature = { body, active: true, constructor: { TUNING: { spacing: 1.5 } } };
+      const cam = camera;
+      if (mode === 'head') cam.position.set(0, -9.5, 3.5);
+      else if (mode === 'body') cam.position.set(9, 10, 10);
+      else if (mode === 'far') cam.position.set(0, -60, 14);
+      else cam.position.set(14, 4, 8);
+      cam.lookAt(mode === 'head' ? new THREE.Vector3(0, -1.5, 0.5) : new THREE.Vector3(0, 11, -1));
+      light.position.copy(cam.position).add(new THREE.Vector3(0.5, 0.6, 0));
+      light.intensity = mode === 'far' ? 40000 : 1400;
+      for (let i = 0; i < 3; i++) view.update(creature, 1 / 30, cam);
+      out.view = JSON.parse(JSON.stringify(view.info));
+      out.viewTriangles = view.info.triangles;
+      out.drawCalls = view.info.drawCalls;
+      // scene stats
+      let meshes = 0, tris = 0;
+      scene.traverse((o) => { if (o.isMesh && o.visible && o.parent && o.parent.visible !== false) { meshes++; const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3; } });
+      out.visibleMeshes = meshes;
+    }
+    renderer.render(scene, camera);
+    out.ok = true;
+  } catch (e) {
+    out.errors.push(String(e && e.stack || e));
+  }
+  window.__out = out;
+  window.__done = true;
+}, undefined, (e) => { out.errors.push('load: ' + e); window.__out = out; window.__done = true; });
+</script>
+</body>
+</html>
