@@ -162,6 +162,9 @@ ok('plan: nothing that dangles or glows near a grapple anchor, nothing near a ch
       assert.ok(dmin >= (t.web ? 2.2 : t.cat === 'stal' ? 2.4 : 3.2) - 1e-6, `${t.name} hangs ${dmin.toFixed(2)} m from an anchor`);
     }
     if (t.lit) assert.ok(dmin >= 5.5 - 1e-6, `lit ${t.name} ${dmin.toFixed(2)} m from an anchor`);
+    if (!t.hang) {
+      for (const sct of level.sections) assert.ok(Math.hypot(sct.checkpoint.x - x, sct.checkpoint.y - y, sct.checkpoint.z - z) >= 1.0, `${t.name} on the checkpoint of ${sct.id}`);
+    }
   }
   assert.ok(hang > 200, `${hang} hanging items`);
 });

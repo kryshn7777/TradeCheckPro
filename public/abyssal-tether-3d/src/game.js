@@ -91,6 +91,7 @@ const MODULES = {
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
+  sceneDetail: './render/sceneDetail.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
@@ -803,6 +804,7 @@ export class Game3D {
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
+    this.sceneDetail = null; // seeded render-only scene dressing: bones, rubble, chains, puddles, decals (render/sceneDetail.js)
     this.lastDeath = null; // info handed to the death panel
     this.lastVictory = null; // info handed to the victory panel
     this.textures = null; // resolved texture manifest handed to renderer.buildLevel
@@ -1236,6 +1238,14 @@ export class Game3D {
       } catch (err) {
         this._fault('climbView', err);
         this.climbView = null;
+      }
+    }
+    if (!this.sceneDetail && M.sceneDetail && typeof M.sceneDetail.SceneDetail === 'function') {
+      try {
+        this.sceneDetail = new M.sceneDetail.SceneDetail(this);
+      } catch (err) {
+        this._fault('sceneDetail', err);
+        this.sceneDetail = null;
       }
     }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
@@ -3198,6 +3208,13 @@ export class Game3D {
         this.climbView.update(dt, this);
       } catch (err) {
         this._fault('climbView', err);
+      }
+    }
+    if (this.sceneDetail) {
+      try {
+        this.sceneDetail.update(dt, this);
+      } catch (err) {
+        this._fault('sceneDetail', err);
       }
     }
     if (this.pickupsView) {

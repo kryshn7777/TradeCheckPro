@@ -29,6 +29,7 @@ const suites = [
   ['release: XR governor (steps, hysteresis, reduced effects, no allocation)', 'release/test-governor.mjs'],
   ['render: baked GI (deterministic bake, level hash, asset size, format) + render governor hook', 'render/test-lighting.mjs'],
   ['render: surface detail (hq shader patch, KTX2 manifest, decal atlas)', 'render/test-surface.mjs'],
+  ['render: scene detail (WP-SCENE-DETAIL: kit soundness, seeded placement determinism, section mixes, vignettes, anchor clearance, tier budgets <= 3 calls / 15 k stereo triangles, view re-pack + shader patches)', 'render/test-scene-detail.mjs'],
   ['render: rigged Mason (mason_rig.glb structure: bones, skin, LODs, clips; clip graph phase lock; IK; head fit)', 'render/test-mason-rig.mjs'],
   ['release: platform (immersive launch, early XR request, SW policy, precache generator)', 'release/test-platform.mjs'],
   ['ux: WP-UX (settings persistence + sanitising, snap turn, comfort vignette rules, display helpers, caption mapping + tracker, first-run tutorial)', 'ux/unit.mjs'],

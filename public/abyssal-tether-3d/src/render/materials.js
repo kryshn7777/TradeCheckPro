@@ -112,6 +112,14 @@ export const LOOK = {
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
+  // Box edge bevel (WP-GFX-PARITY, unit-box solids): x strength (0 = off, branch-skipped), y bevel width (m), z fade-out distance (m).
+  uBevelK: { value: new THREE.Vector4(1, 0.035, 34, 0) },
+  // Parallax-corrected reflections: the current section's shaft as a box (xyz centre, w 1 = on) and its half extents; the shared
+  // probe is one cube rendered from a notional centre, so a ray from a floor puddle is intersected with this box before the fetch.
+  uProbeC: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uProbeH: { value: new THREE.Vector3(20, 20, 20) },
+  // Standing water: x puddle strength (0 = no puddles), y mirror roughness, z albedo darkening, w reflection boost.
+  uPudK: { value: new THREE.Vector4(1, 0.045, 0.5, 2.2) },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -826,11 +834,39 @@ uniform vec4 uEnvK;
 uniform vec3 uLanternW;
 uniform vec4 uLanternC;
 uniform vec2 uLanternR;
+uniform vec4 uProbeC;
+uniform vec3 uProbeH;
+uniform vec4 uPudK;
 #ifdef AT_LM
 uniform highp sampler2DArray uLM;
 uniform vec4 uLMK;
 uniform vec3 uLMLamp;
 uniform vec2 uLMLan;
+#endif
+`;
+
+/** Injected after envmap_physical_pars_fragment (needs envMap / textureCubeUV, which are declared there): see atIBLRadiance. */
+const LOOK_ENV_FN = `#if defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV )
+// Parallax-corrected environment fetch: the reflection ray from the world position is intersected with the section's shaft box
+// (uProbeC / uProbeH) and the probe is read toward that hit point, as if the cube had been rendered at the box centre. A puddle at the
+// shaft wall then reflects the far window from where it is, not as an infinitely distant sky. Same blur / mip selection as three's own.
+vec3 atIBLRadiance( const in vec3 viewDir, const in vec3 normal, const in float roughness, const in vec3 wpos ) {
+	vec3 rv = reflect( - viewDir, normal );
+	rv = normalize( mix( rv, normal, roughness * roughness ) );
+	rv = inverseTransformDirection( rv, viewMatrix );
+	if ( uProbeC.w > 0.5 ) {
+		vec3 inv = 1.0 / ( rv + vec3( 1e-5 ) * sign( rv + vec3( 1e-9 ) ) );
+		vec3 lo = ( uProbeC.xyz - uProbeH - wpos ) * inv;
+		vec3 hi = ( uProbeC.xyz + uProbeH - wpos ) * inv;
+		vec3 far = max( lo, hi );
+		float t = min( far.x, min( far.y, far.z ) );
+		if ( t > 0.0 ) {
+			vec3 corr = normalize( wpos + rv * t - uProbeC.xyz );
+			rv = normalize( mix( corr, rv, clamp( roughness * 1.6, 0.0, 0.85 ) ) ); // rough surfaces blur the parallax away
+		}
+	}
+	return textureCubeUV( envMap, envMapRotation * rv, roughness ).rgb * envMapIntensity;
+}
 #endif
 `;
 
@@ -925,7 +961,11 @@ const LIGHTS_MAPS_LIT = `
 #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
 	if ( uEnvK.x * envMapIntensity > 0.0005 ) {
 		vec3 atEn = normalize( mix( normal, nonPerturbedNormal, atWet * uEnvK.z ) );
+		#ifdef ENVMAP_TYPE_CUBE_UV
+		radiance += atIBLRadiance( geometryViewDir, atEn, material.roughness, vAtW ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y + atPud * uPudK.w ) * mix( 1.0, atGv.a, uGIK.y ) );
+		#else
 		radiance += getIBLRadiance( geometryViewDir, atEn, material.roughness ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y ) * mix( 1.0, atGv.a, uGIK.y ) );
+		#endif
 	}
 #endif
 if ( uLanternC.a > 0.001 && atWet > 0.03 ) {
@@ -1330,6 +1370,7 @@ ${LM_VERT_BODY}`,
     }
     if (lit) {
       fDecl += 'uniform vec3 uRimColor;\nuniform float uRim;\nuniform float uWet;\nuniform float uVG;\n' + LOOK_FRAG_DECL;
+      if (fs.includes('#include <envmap_physical_pars_fragment>')) fs = fs.replace('#include <envmap_physical_pars_fragment>', '#include <envmap_physical_pars_fragment>\n' + LOOK_ENV_FN);
       const dry = uvMode ? 'smoothstep( 0.55, 0.95, vAtTop )' : '0.0';
       // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
       fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
