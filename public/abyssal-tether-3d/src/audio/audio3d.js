@@ -1441,7 +1441,7 @@ export class AudioManager3D {
     const hushed = now < this._hushUntil;
     const dead = this._dead || state === 'dead';
     const tc = 0.15;
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * (ducked ? DUCKED.ambient : 1), now, tc);
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
     this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player, now, tc);
     this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature, now, tc);
     this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych, now, dead ? 0.08 : tc);
@@ -1499,11 +1499,18 @@ export class AudioManager3D {
       if (P.grounded && hspeed > 200 * SPEED_K) this._exertion = Math.min(1, this._exertion + dtc * 0.025);
     }
 
+    // After a hard effort a deep recovery breath (once per drop from the peak).
+    this._exPeak = Math.max(this._exPeak - dtc * 0.02, this._exertion);
+    if (this._exPeak > 0.65 && this._exertion < this._exPeak - 0.25) {
+      this._gasp = true;
+      this._exPeak = this._exertion;
+    }
+
     // ---- ambient bed -----------------------------------------------------
     const speedK = body ? U.smoothstep(200 * SPEED_K, 1400 * SPEED_K, speed) : 0;
     const gustL = 0.55 + 0.45 * U.noise1(c * 0.17, 3);
     const gustR = 0.55 + 0.45 * U.noise1(c * 0.15 + 40, 5);
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv);
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
     this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK), now, 0.4);
@@ -1521,6 +1528,31 @@ export class AudioManager3D {
     this.kPadB.set(root * (victory ? 1.5 : sec.iv) + det, now, victory ? 3 : 1.2);
     this.kPadC.set(root * (victory ? 3 : 2 * sec.iv) + det * 1.7, now, victory ? 3 : 1.2);
     this.kPadG.set(sec.pad * (victory ? 2.2 : 1 + 0.6 * tv), now, 1.5);
+
+    // ---- WP-AUDIO modules (creature sync first: it sets the silence / thin signal the others read) ----
+    const C = this._ctl;
+    C.tv = tv;
+    C.playing = playing;
+    C.dead = dead;
+    C.victory = victory;
+    C.menu = state === 'menu';
+    C.ducked = this._pauseFlag || state === 'paused' || state === 'menu';
+    C.speed = speed;
+    C.hspeed = hspeed;
+    C.lethal = lethal;
+    for (let i = 0; i < this._mods.length; i++) {
+      const mod = this._mods[i];
+      if (mod.broken || typeof mod.control !== 'function') continue;
+      if (i === 1) {
+        C.silence = this._silence;
+        C.thin = this._thin;
+      }
+      try {
+        mod.control(dtc, now, game, C);
+      } catch (err) {
+        this._warn('mod-control', err);
+      }
+    }
 
     // ---- player continuous layers (both hands) ------------------------------
     let attached = false;
@@ -1580,7 +1612,8 @@ export class AudioManager3D {
       this._stride += hspeed * dtc;
       if (this._stride > STRIDE) {
         this._stride = 0;
-        this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
+        if (this._mov && !this._mov.broken) this._mov.footstep(U.clamp(hspeed / 5.5, 0.3, 1), game);
+        else this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
       }
     } else {
       this._stride = STRIDE * 0.65; // the first step lands soon after starting to run
@@ -1604,19 +1637,22 @@ export class AudioManager3D {
 
     // ---- ambient events ---------------------------------------------------------
     if (now >= this._hushUntil) {
+      const thin = 0.35 + 0.65 * this._thin;
       this._creakT -= dtc;
       if (this._creakT <= 0) {
-        this._creakT = (rand(0.5, 1.6) * 60) / Math.max(0.5, sec.creaks * (1 + 0.8 * tv));
+        this._creakT = (rand(0.5, 1.6) * 60) / Math.max(0.5, sec.creaks * (1 + 0.8 * tv) * thin);
         this._sfxCreak();
       }
-      this._dripT -= dtc;
-      if (this._dripT <= 0) {
-        this._dripT = (rand(0.4, 1.7) * 60) / Math.max(0.5, sec.drips);
-        this._sfxDrip();
+      if (!this._amb || this._amb.broken) {
+        this._dripT -= dtc;
+        if (this._dripT <= 0) {
+          this._dripT = (rand(0.4, 1.7) * 60) / Math.max(0.5, sec.drips);
+          this._sfxDrip();
+        }
       }
       this._tickT -= dtc;
       if (this._tickT <= 0) {
-        this._tickT = rand(4, 14) / (1 + tv);
+        this._tickT = rand(4, 14) / ((1 + tv) * thin);
         this._sfxSettle();
       }
     }
