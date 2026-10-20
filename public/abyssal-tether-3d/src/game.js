@@ -26,6 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
+import { ropeHaptic } from './audio/dsp3d.js';
 
 const C = CONFIG;
 
@@ -1384,6 +1385,10 @@ export class Game3D {
       if (!this._inRun()) return;
       const k = U.clamp((finiteOr(e.speed, 0) - C.rope.joltFxSpeed) / 20, 0, 1);
       this._hapticTethered(0.35 + 0.5 * k, 60);
+    });
+    // The clutch paying line out: the first bite of a slip (the continuous buzz is in _updateHaptics, same curve as the audio).
+    bus.on('rope:slip', (e) => {
+      if (this._inRun()) this._haptic(e.hand, ropeHaptic(finiteOr(e.speed, 1), finiteOr(e.load, 2), this.time), 90);
     });
     bus.on('player:land', (e) => {
       if (!this._inRun()) return;
@@ -3000,7 +3005,8 @@ export class Game3D {
       if (!rope.attached) continue;
       const norm = U.clamp((rope.tension - 1.6 * g) / (3 * g), 0, 1);
       const stress = this.tethers.anchorStress(h);
-      const amt = Math.max(norm > 0 ? 0.06 + 0.45 * norm : 0, stress > 0 ? 0.1 + 0.55 * stress : 0);
+      const buzz = ropeHaptic(rope.slipSpeed, rope.tension / g, this.time); // friction buzz while the clutch pays out
+      const amt = Math.max(norm > 0 ? 0.06 + 0.45 * norm : 0, stress > 0 ? 0.1 + 0.55 * stress : 0, buzz);
       if (amt > 0) this._haptic(h, amt, Math.round(TENSION_HAPTIC_PERIOD * 1000) + 10);
     }
   }
@@ -3575,6 +3581,16 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
+      // WP-AUDIO: state() = voices, tier, music / ambience / rope / movement / creature-sync read-outs and the last events;
+      // emit(type, payload) fires a bus event (QA: 'creature:clip', 'rope:slip', ...); music(kind) plays a stinger.
+      audio: {
+        state: () => (this.audio && typeof this.audio.debugState === 'function' ? this.audio.debugState() : null),
+        emit: (type, payload) => {
+          this.bus.emit(String(type), payload && typeof payload === 'object' ? payload : {});
+          return true;
+        },
+        stinger: (kind) => !!(this.audio && this.audio._music && (this.audio._music.stinger(kind || 'sighting'), true)),
+      },
     };
   }
 }

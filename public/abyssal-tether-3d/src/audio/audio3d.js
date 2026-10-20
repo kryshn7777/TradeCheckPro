@@ -376,7 +376,7 @@ export class AudioManager3D {
     this._luz = 0;
     this._listenerSet = false;
     this._lastL = new Float64Array(9).fill(NaN); // last values written to the listener
-    this._sp = { d: 0, gain: 0, cutoff: 0, send: 0, ok: false, x: 0, y: 0, z: 0 }; // spatial scratch
+    this._sp = { d: 0, gain: 0, cutoff: 0, send: 0, delay: 0, ok: false, x: 0, y: 0, z: 0 }; // spatial scratch
     this._pos = { x: 0, y: 0, z: 0 }; // position scratch for one-shots
     this._hrtfCount = 0;
     this._peakHrtf = 0;
@@ -557,6 +557,8 @@ export class AudioManager3D {
       this._hushUntil = now + 0.3;
       this._victory = false;
       for (const k of [this.kAmbient, this.kPlayer, this.kCreature, this.kPsych, this.kStinger]) k.force(0, now, 0.015);
+      if (this._music && this._music.kBus) this._music.kBus.force(0, now, 0.015);
+      if (this._amb && this._amb.kWet) this._amb.kWet.force(0, now, 0.015);
       this._mixSpace(now, true, 0.015);
       this._silenceEnvelopes(now);
     } catch (err) {
@@ -1712,14 +1714,20 @@ export class AudioManager3D {
     // The HRTF panner's flat 'bed' curve does the distance attenuation (2D: presence^0.45);
     // fully silent far away (an inactive creature may report a huge distance) so the gates close.
     const farCut = U.smoothstep(CREATURE_FAR[1], CREATURE_FAR[0], d);
-    this.kCrG.set(farCut > 0.001 ? farCut : 0, now, 0.15);
-    this.kCrLP.set(280 + 11500 * Math.exp(-d / AIR_D), now, 0.15);
+    // Sync (creatureSync3d): the bed is cut on the freeze frame (listening / listen clip), the drone drops 12 dB while it
+    // hides, plates grind with body.jitter / the plate_shiver clip, and masonry between us dulls the whole bed.
+    const cs = this._cs;
+    const cut = !!(cs && cs.bedCut);
+    const jit = Math.max(cs ? cs.shiver : 0, CR.body && CR.body.jitter > 0 ? CR.body.jitter : 0) * U.smoothstep(55, 7, d);
+    const occ = cs ? cs.occ : 0;
+    this.kCrG.set(farCut > 0.001 ? farCut * (1 - 0.25 * occ) : 0, now, 0.15);
+    this.kCrLP.set((280 + 11500 * Math.exp(-d / AIR_D)) * (1 - 0.6 * occ), now, 0.15);
     this.kCrSend.set(0.15 + 0.5 * (1 - presence), now, 0.3);
-    this.kScrG.set(0.9 * move * stMul, now, 0.12);
+    this.kScrG.set(cut ? 0 : 0.9 * Math.max(move, 0.45 * jit) * stMul, now, cut ? 0.02 : 0.12);
     this.kScrF.set((210 + 300 * move) * (st === 'BURST' ? 1.5 : 1), now, 0.15);
     this.kScrLfo.set(2.2 + 7 * move + 2 * U.noise1(c * 0.9, 41), now, 0.1);
-    this.kCloseG.set(0.26 * move * U.smoothstep(47, 8, d) * stMul, now, 0.1);
-    this.kDroneG.set(0.22 * U.smoothstep(115, 11, d) * (0.5 + 0.5 * inten) * stMul, now, 0.4);
+    this.kCloseG.set(cut ? 0 : (0.26 * move * U.smoothstep(47, 8, d) + 0.2 * jit) * stMul, now, cut ? 0.02 : 0.1);
+    this.kDroneG.set(0.22 * U.smoothstep(115, 11, d) * (0.5 + 0.5 * inten) * stMul * (cs && cs.hide ? 0.25 : 1), now, 0.4);
     this.kDroneF1.set(surge ? 46 : 40.5, now, 0.5);
     this.kDroneF2.set(surge ? 47.1 : 41.2, now, 0.5);
     this.kListenG.set(st === 'OBSERVING' ? 0.14 * U.smoothstep(130, 12, d) : 0, now, 0.25);
@@ -1816,27 +1824,34 @@ export class AudioManager3D {
     if (!this._breathOn || this._dead) return;
     this._breathT -= dt;
     if (this._breathT > 0) return;
-    const ragged = this._tv > 0.5 ? 0.18 : 0.08;
-    const period = (60 / this._breathRate) * (1 + rand(-ragged, ragged));
+    // Exertion (health audio is separate): easy breathing → mouth-open panting (shorter pauses, brighter, fuller
+    // inhales); after a hard effort one deep, slow recovery breath.
+    const ex = this._exertion;
+    const pant = U.smoothstep(0.5, 0.95, ex);
+    const gasp = this._gasp;
+    this._gasp = false;
+    const ragged = this._tv > 0.5 ? 0.18 : 0.08 + 0.06 * pant;
+    let period = (60 / this._breathRate) * (1 + rand(-ragged, ragged));
+    if (gasp) period = Math.max(period, 2.6);
     this._breathT = period;
-    const lvl = this._breathLevel * rand(0.85, 1.1);
+    const lvl = this._breathLevel * rand(0.85, 1.1) * (gasp ? 1.4 : 1 + 0.25 * pant);
     const t = now + 0.02;
-    const inDur = period * 0.36;
-    const gap = period * 0.06;
-    const exDur = period * 0.46;
+    const inDur = period * (gasp ? 0.34 : 0.36 + 0.06 * pant);
+    const gap = period * 0.06 * (1 - 0.7 * pant);
+    const exDur = period * (gasp ? 0.5 : 0.46 - 0.06 * pant);
     const g = this.breathGain.gain;
     const f = this.breathBP.frequency;
     try {
       g.cancelScheduledValues(t);
       f.cancelScheduledValues(t);
-      // inhale: thinner, higher band
-      f.setTargetAtTime(1500 + 500 * this._tv, t, 0.05);
-      g.setTargetAtTime(lvl * 0.7, t, inDur * 0.3);
+      // inhale: thinner, higher band (a deeper one for the gasp)
+      f.setTargetAtTime((gasp ? 1100 : 1500 + 450 * pant) + 500 * this._tv, t, 0.05);
+      g.setTargetAtTime(lvl * (0.7 + 0.3 * pant), t, inDur * 0.3);
       g.setTargetAtTime(0, t + inDur * 0.7, inDur * 0.16);
       // exhale: fuller, falling band
       const te = t + inDur + gap;
-      f.setTargetAtTime(1000, te - 0.03, 0.03);
-      f.setTargetAtTime(650, te, exDur * 0.5);
+      f.setTargetAtTime(gasp ? 760 : 1000 + 250 * pant, te - 0.03, 0.03);
+      f.setTargetAtTime(gasp ? 480 : 650 + 200 * pant, te, exDur * 0.5);
       g.setTargetAtTime(lvl, te, exDur * 0.18);
       g.setTargetAtTime(0, te + exDur * 0.45, exDur * 0.22);
     } catch (err) {
@@ -1883,6 +1898,8 @@ export class AudioManager3D {
     S.gain = 1 / (1 + Math.pow(d / PRESENCE_D, 1.5)); // the 2D presence curve (in metres)
     S.cutoff = 260 + 12000 * Math.exp(-d / AIR_D);
     S.send = 0.12 + 0.55 * (1 - Math.exp(-d / SEND_D));
+    // Sound travels at 343 m/s: far events arrive late (capped at 0.6 s); near ones stay tight (A1/A2 of the sync rules).
+    S.delay = ok && d > 28 ? Math.min(0.6, d / 343) : 0;
     return S;
   }
 
@@ -2284,9 +2301,14 @@ export class AudioManager3D {
     this._killAll(now, 0.05, true);
     this.kMuffle.force(this._nyq, now, 0.05);
     this._exertion = 0.1;
+    this._exPeak = 0;
+    this._gasp = false;
     this._breathT = 0.8;
     this._beatClock = 0;
     this._prevAtt.left = this._prevAtt.right = false;
+    this._runs = (this._runs | 0) + 1;
+    if (this._cs) this._cs.reset();
+    if (this._music) this._music.reseed(this._runs * 7919);
     this._state = 'playing';
     this._mixBuses(now, 'playing');
   }
@@ -2321,6 +2343,8 @@ export class AudioManager3D {
     this.kMuffle.force(this._nyq, now, 0.45);
     this._exertion = Math.max(this._exertion, 0.4); // shaken: heavier breathing for a while
     this._breathT = 0.4;
+    if (this._cs) this._cs.reset();
+    if (this._music) this._music.duck(4);
     this._prevAtt.left = this._prevAtt.right = false;
     this._sfxRespawn();
   }
@@ -2522,11 +2546,113 @@ export class AudioManager3D {
   }
 
   _onCreatureStep(p) {
+    if (this._cs && this._cs.seen.plant) return; // the rig reports every leg plant (mason:plant): those sound instead
     this._sfxCreatureStep(p);
   }
 
   _onCreatureCall(p) {
-    this._sfxCall(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), U.clamp(num(p.intensity, 0.7), 0.1, 1), false, num(p.distance, NaN));
+    const x = num(p.x, NaN);
+    const y = num(p.y, NaN);
+    const z = num(p.z, NaN);
+    const inten = U.clamp(num(p.intensity, 0.7), 0.1, 1);
+    const d = num(p.distance, NaN);
+    if (this._cs && this._cs.route('roar', x, y, z, d, inten, false)) return; // roar_display clip drives it
+    this._sfxCall(x, y, z, inten, false, d);
+  }
+
+  // ---- WP-AUDIO: rope friction, clip sync, tier ----------------------------------------------
+
+  _onRopeSlip(p) {
+    if (this._rope && !this._rope.broken) this._rope.onSlip(p);
+  }
+
+  /** The hook is called back before it bit / the line is cut by the player: a short winch zip. */
+  _onRopeCancel(p) {
+    if (p.reason === 'reset' || p.reason === 'death') return;
+    this._sfxCancel(p);
+  }
+
+  _onClipEvent(p) {
+    if (this._cs) this._cs.onClip(p);
+  }
+
+  _onCreatureFlag(p, type) {
+    if (this._cs) this._cs.onFlag(type, p);
+  }
+
+  _onQuality(p) {
+    this._govLevel = num(p.level, 0) | 0;
+    this._applyTier();
+  }
+
+  /** Quality tier: reducedEffects (player setting) or governor level >= 3 → fewer voices, shorter reverb, thinner ambience. */
+  _applyTier() {
+    const red = !!(this.settings && this.settings.reducedEffects) || this._govLevel >= 3;
+    this._reduced = red;
+    this._maxVoices = red ? REDUCED.voices : MAX_VOICES;
+    this._maxHrtf = red ? REDUCED.hrtf : MAX_HRTF;
+    this._maxAmbHrtf = red ? REDUCED.ambientHrtf : HRTF_AMBIENT;
+  }
+
+  /** A deferred sim-event creature sound whose clip event never came (CreatureSync.control). */
+  _playSim(cat, p) {
+    if (cat === 'windup') this._sfxAttack(p.x, p.y, p.z, U.clamp(p.w, 0.03, 0.9), false, false);
+    else if (cat === 'strike') this._sfxStrike(p.x, p.y, p.z, p.d, p.w > 0.5);
+    else if (cat === 'roar') this._sfxCall(p.x, p.y, p.z, U.clamp(p.w, 0.1, 1), false, p.d);
+    else if (cat === 'snap') this._sfxCrownSnap(p.x, p.y, p.z, p.d, U.clamp(p.w, 0.1, 0.6), p.f);
+  }
+
+  /** Winch zip when a shot is cancelled in flight. */
+  _sfxCancel(p) {
+    const v = this._begin('cancel', 0, 0.1, 0.35, this.busPlayer, 0.5, HAND_PAN[p.hand] || 0, 0.05, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 3800, 1.5);
+    bp.frequency.exponentialRampToValueAtTime(1100, t + 0.16);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.4, 0.004, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    this._tickTrain(v, t, 5, 0.14, 0.25, 1500, 3200, 6, 0.008, 0.5);
+    this._commit(v);
+  }
+
+  /** Debug / QA read-out (AT3D.debug.audio.state()). Allocates; not for the frame loop. */
+  debugState() {
+    const out = {
+      enabled: this.enabled,
+      built: this._built,
+      context: this.ctx ? this.ctx.state : 'none',
+      sampleRate: this.ctx ? this.ctx.sampleRate : 0,
+      tier: this._reduced ? 'reduced' : 'full',
+      volume: this._volume,
+      paused: this._pauseFlag,
+      activeVoices: this.activeVoices,
+      peakVoices: this._peakVoices,
+      hrtfVoices: this._hrtfCount,
+      caps: { voices: this._maxVoices, hrtf: this._maxHrtf },
+      silence: +this._silence.toFixed(3),
+      thin: +this._thin.toFixed(3),
+      threat: +this._tv.toFixed(3),
+      section: this._secIndex,
+      exertion: +this._exertion.toFixed(3),
+      events: this._eventCount,
+      last: [],
+      music: this._music ? this._music.debug({}) : null,
+      ambience: this._amb ? this._amb.debug({}) : null,
+      rope: this._rope ? this._rope.debug({}) : null,
+      movement: this._mov ? this._mov.debug({}) : null,
+      creatureSync: this._cs ? this._cs.debug({}) : null,
+      broken: this._mods.filter((m) => m.broken).length,
+    };
+    const n = Math.min(this._logN, LOG_LEN);
+    for (let k = 0; k < n; k++) {
+      const e = this._log[(this._logN - 1 - k) % LOG_LEN];
+      out.last.push({ type: e.type, n: e.n, t: e.t });
+    }
+    return out;
   }
 
   /**
@@ -2544,7 +2670,8 @@ export class AudioManager3D {
     if (p.reason === 'heard' || p.reason === 'stall') {
       const cr = this._game && this._game.creature;
       hold = U.clamp(num(p.snap, num(cr && cr.k && cr.k.snap, 0.3)), 0.1, 0.6);
-      this._sfxCrownSnap(x, y, z, d, hold, p.reason === 'stall');
+      const stall = p.reason === 'stall';
+      if (!(this._cs && this._cs.route('snap', x, y, z, d, hold, stall))) this._sfxCrownSnap(x, y, z, d, hold, stall);
     }
     this._sfxBurst(x, y, z, d, hold, !!p.commit);
   }
@@ -2564,7 +2691,14 @@ export class AudioManager3D {
         w = cr && cr.attack ? num(cr.attack.windup, 0.5) : 0.5;
       }
     }
-    this._sfxAttack(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), U.clamp(w, 0.03, 0.9), !!p.gate, !strikeFollows);
+    const ax = num(p.x, NaN);
+    const ay = num(p.y, NaN);
+    const az = num(p.z, NaN);
+    const aw = U.clamp(w, 0.03, 0.9);
+    if (p.gate && this._music) this._music.stinger('gate');
+    // With the rig's rear_windup clip the grinding rise belongs to the clip; the sim sound is the fallback.
+    if (!p.gate && strikeFollows && this._cs && this._cs.route('windup', ax, ay, az, num(p.distance, NaN), aw, false)) return;
+    this._sfxAttack(ax, ay, az, aw, !!p.gate, !strikeFollows);
   }
 
   /**
@@ -2578,8 +2712,9 @@ export class AudioManager3D {
     const y = num(p.y, NaN);
     const z = num(p.z, NaN);
     const d = num(p.distance, NaN);
-    this._sfxStrike(x, y, z, d, !!p.hit);
+    if (!(this._cs && this._cs.route('strike', x, y, z, d, p.hit ? 1 : 0, false))) this._sfxStrike(x, y, z, d, !!p.hit);
     if (!p.hit) this._sfxNearMiss(x, y, z, d);
+    if (this._music && !this._music.broken) this._music.stinger('strike');
   }
 
   _onCreatureRetreat(p) {
@@ -2588,6 +2723,7 @@ export class AudioManager3D {
 
   _onCreatureSighting(p) {
     this._sfxSighting(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (this._music && !this._music.broken) this._music.stinger('sighting');
   }
 
   // -------------------------------------------------------------------------
@@ -3466,7 +3602,8 @@ export class AudioManager3D {
 
   /** Creature one-shot level: the panner does the distance loss when positioned (keep `floor`), else the 2D curve. */
   _cMul(sp, floor) {
-    return sp.ok ? this._floor('near', sp.d, floor) : Math.max(sp.gain, floor);
+    const occ = this._cs ? this._cs.levelMul : 1; // masonry between the crown and the head
+    return (sp.ok ? this._floor('near', sp.d, floor) : Math.max(sp.gain, floor)) * occ;
   }
 
   _cPos(sp) {
@@ -3480,9 +3617,9 @@ export class AudioManager3D {
     const inten = U.clamp(num(p.intensity, 0.6), 0.1, 1);
     const base = 2.2 * (0.4 + 0.6 * inten);
     if (base * sp.gain < 0.02) return; // inaudible: do not spend a voice
-    const v = this._begin('cstep', 0, 0.04, 0.4, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
+    const v = this._begin('cstep', 0, 0.04, 0.4 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     this._tickTrain(v, t, 2 + Math.floor(Math.random() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
     const o = this._vOsc(v, 'sine', rand(140, 210), t);
     o.frequency.setTargetAtTime(rand(85, 110), t, 0.03);
@@ -3508,9 +3645,9 @@ export class AudioManager3D {
   _sfxCall(x, y, z, inten, far, dHint) {
     const sp = this._spatial(x, y, z, dHint);
     const lvl = (0.3 + 0.7 * inten) * this._cMul(sp, far ? 0.1 : 0.06);
-    const v = this._begin('call', 2, 1.2, 4.2, this.busCreature, lvl, 0, Math.max(sp.send, 0.45), Math.min(sp.cutoff + 400, 7000), this._cPos(sp), 'near');
+    const v = this._begin('call', 2, 1.2, 4.2 + sp.delay, this.busCreature, lvl, 0, Math.max(sp.send, 0.45), Math.min(sp.cutoff + 400, 7000), this._cPos(sp), 'near');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     const f0 = rand(92, 128);
     const exc = this._vGain(v, 1);
     const o1 = this._vOsc(v, 'sawtooth', f0, t);
@@ -3565,7 +3702,7 @@ export class AudioManager3D {
   /** Burst: a rising surge of grinding noise, a heavy push-off and a flurry of limb clicks. */
   _sfxBurst(x, y, z, dHint, hold, commit) {
     const sp = this._spatial(x, y, z, dHint);
-    const delay = hold > 0 ? hold : 0;
+    const delay = (hold > 0 ? hold : 0) + sp.delay;
     const lvl = this._cMul(sp, 0.05) * 1.4 * (commit ? 1.15 : 1);
     const v = this._begin('burst', 2, 0.5, 1.9 + delay, this.busCreature, lvl, 0, sp.send, sp.cutoff + 600, this._cPos(sp), 'near');
     if (!v) return;
@@ -3880,9 +4017,9 @@ export class AudioManager3D {
   _sfxSighting(x, y, z) {
     const sp = this._spatial(x, y, z, NaN);
     // Direction only (no distance loss): one resonant tone at the edge of hearing, from where it is.
-    const v = this._begin('sighting', 2, 2, 7, this.busCreature, 0.2, 0, 0.65, 1300, sp.ok ? sp : null, 'flat');
+    const v = this._begin('sighting', 2, 2, 7 + sp.delay, this.busCreature, 0.2, 0, 0.65, 1300, sp.ok ? sp : null, 'flat');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     const f = rand(68, 78);
     const g = this._vGain(v, 0);
     this._swell(g.gain, t, 0.5, 1.2, 0.4, 1.0);

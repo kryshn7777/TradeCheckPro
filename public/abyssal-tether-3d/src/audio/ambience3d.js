@@ -80,7 +80,7 @@ export class Ambience {
       gOut.connect(this.wetOut);
       this.cv.push({ node, gIn, gOut, kIn: m._knob(gIn.gain, 0, 0.002), kOut: m._knob(gOut.gain, 0, 0.002), hasIR: false, idleSince: 0 });
     }
-    if (this.enabledReverb) this._installIR(0, new IRBuilder(ctx.sampleRate, reverbSpec(0, null, m._reduced)).all(), 0);
+    if (this.enabledReverb) this._installIR(0, new IRBuilder(ctx.sampleRate, reverbSpec(0, null, m._reduced)).all());
     if (this.enabledReverb) {
       this.cv[0].kIn.force(1, ctx.currentTime, 0.05);
       this.cv[0].kOut.force(1, ctx.currentTime, 0.05);
@@ -88,17 +88,17 @@ export class Ambience {
 
     // ---- drone / room-tone bank ----
     const bank = m._gainNode(1);
-    const mk = (type, f, level) => {
+    const mk = (type, f) => {
       const o = m._osc(type, f);
       const g = m._gainNode(0);
       o.connect(g);
       g.connect(bank);
       return { o, g, kf: m._knob(o.frequency, f, 0.05, 0.002), kg: m._knob(g.gain, 0, 0.0005) };
     };
-    this.d1 = mk('sine', 130, 0);
-    this.d2 = mk('sine', 130.4, 0);
-    this.d3 = mk('triangle', 196, 0);
-    this.dMetal = mk('sine', 720, 0);
+    this.d1 = mk('sine', 130);
+    this.d2 = mk('sine', 130.4);
+    this.d3 = mk('triangle', 196);
+    this.dMetal = mk('sine', 720);
     // organ / choir: sawtooth through a low-pass whose cutoff breathes
     const org = m._osc('sawtooth', 130);
     const orgLp = m._filter('lowpass', 300, 1.2);
@@ -147,7 +147,7 @@ export class Ambience {
     this.dMetal.kf.set(base * 5.52, now, tc);
     this.dOrg.kf.set(base * 0.5, now, tc);
     this.dNoise.kf.set(dr.form, now, tc);
-    if (this.enabledReverb) {
+    if (this.enabledReverb && !(this.spec && this.spec.index === i && !this.builder && this.irBuilt === 0)) {
       this.pendingIdx = i;
       this.builder = new IRBuilder(m.ctx.sampleRate, reverbSpec(i, section, m._reduced));
     }
@@ -241,7 +241,7 @@ export class Ambience {
         const cvI = this.cv[idle];
         // The idle convolver is silent (input and output faded long ago): safe to swap its buffer.
         if (this.swapAt < 0 || now >= this.swapAt) {
-          this._installIR(idle, b, now);
+          this._installIR(idle, b);
           cvI.kIn.force(1, now, FADE_TC);
           cvI.kOut.force(1, now, FADE_TC);
           const old = this.cv[this.active];
@@ -256,7 +256,7 @@ export class Ambience {
     }
   }
 
-  _installIR(k, b, now) {
+  _installIR(k, b) {
     const m = this.m;
     const cv = this.cv[k];
     try {

@@ -89,7 +89,7 @@ export class Music {
     this.gPad = m._gate(...this.pad.map((p) => [p.o, this.padLp]));
   }
 
-  setSection(index, first, now) {
+  setSection(index, first) {
     const m = this.m;
     this.root = m._sec.root;
     this.sectionIndex = index | 0;
@@ -168,7 +168,6 @@ export class Music {
   }
 
   _pulse(now, peak) {
-    const m = this.m;
     const g = this.subG.gain;
     const f = this.sub.frequency;
     const t = now + 0.01;
@@ -180,12 +179,11 @@ export class Music {
       g.setTargetAtTime(peak, t, 0.16);
       g.setTargetAtTime(0, t + 0.42, 0.32);
     } catch (err) {
-      m._warn('sub', err);
+      this.m._warn('sub', err);
     }
   }
 
   _begin(now, th) {
-    const m = this.m;
     const r = this.rng;
     // variant by threat
     let variant = 'full';
@@ -252,7 +250,7 @@ export class Music {
     const parts = bell ? [[1, 1], [1.0045, 0.8], [2.003, 0.3], [2.76, 0.16]] : [[1, 1], [1.0045, 0.85], [2.003, 0.22], [3.01, 0.07]];
     for (let k = 0; k < parts.length; k++) {
       const o = m._vOsc(v, 'sine', f * parts[k][0], t);
-      const pg = m._vGain(v, parts[k][1] * (k === 3 && bell ? 1 : 1));
+      const pg = m._vGain(v, parts[k][1]);
       o.connect(pg);
       pg.connect(g);
       if (bell && k >= 2) {
@@ -276,7 +274,7 @@ export class Music {
       : kind === 'strike'
         ? { lvl: 0.6, sub: [64, 26, 0.9], notes: [1, 16 / 15, 45 / 32], mul: 4, dur: 5 }
         : { lvl: 0.4, sub: [root, root * 0.9, 2.4], notes: [1, 45 / 32, 16 / 15], mul: 4, dur: 8 };
-    const v = m._begin('mstinger', 2, 0.8, spec.dur, m.busStinger, spec.lvl, 0, 0.7, 0, null);
+    const v = m._begin('mst_' + kind, 2, kind === 'gate' ? 3 : kind === 'strike' ? 1.2 : 4, spec.dur, m.busStinger, spec.lvl, 0, 0.7, 0, null);
     if (!v) return;
     const t = v.t0;
     // sub drop / swell
