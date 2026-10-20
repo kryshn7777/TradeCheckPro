@@ -1154,6 +1154,7 @@ const GRADE = [
 /** Organ-pipe banks per section (S1..S8). */
 const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
 const COG = [0, 2, 2, 3, 2, 3, 4, 3];
+const WET_RAMP = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const COG_MAX = 48;
 const DR = {
   wallMinH: 4.5, // solids taller than this are walls; lower ones are slabs
@@ -1425,6 +1426,18 @@ export function gearGeometry(teeth = 30, spokes = 6) {
   body.dispose();
   hub.dispose();
   return merged;
+}
+
+function streakGeo(w, L, aoTop, aoBot) {
+  const wb = w * 0.18;
+  const g = new THREE.BufferGeometry();
+  const z = 0.022;
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-wb, -L, z, wb, -L, z, w / 2, 0, z, -wb, -L, z, w / 2, 0, z, -w / 2, 0, z], 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+  const t = aoTop;
+  const b = aoBot;
+  g.setAttribute('color', new THREE.Float32BufferAttribute([b, b, b, b, b, b, t, t, t, b, b, b, t, t, t, t, t, t], 3));
+  return g;
 }
 
 /**
@@ -1767,6 +1780,11 @@ class Dresser {
     this._m = new THREE.Matrix4();
   }
 
+  /** Section wetness (0..1) at world height y, as the renderer's ramp. */
+  _wet(y) {
+    return WET_RAMP[Math.max(0, Math.min(WET_RAMP.length - 1, this.level.sectionIndexAt ? this.level.sectionIndexAt(y) | 0 : 0))];
+  }
+
   grade(y) {
     let i = 0;
     if (typeof this.level.sectionIndexAt === 'function') {
@@ -1985,6 +2003,15 @@ class Dresser {
           this._cat = 'course';
           this.put(F, geo, u0, yc - s.minY, 'stone', g.stone);
           this.stats.courses++;
+          // water stains run down from the course (wear obeys gravity): darker, tapering, in front of the wall only
+          const nSt = Math.floor((len / 3) * (0.5 + 0.8 * this._wet(yc)) + rng() * 0.9);
+          this._cat = 'stain';
+          for (let k = 0; k < nSt; k++) {
+            const su = u0 + 0.4 + rng() * Math.max(0.1, len - 0.8);
+            const sL = 1.2 + rng() * (2.5 + 5 * this._wet(yc));
+            if (yc - s.minY - 0.42 - sL < 0.5) continue;
+            this.put(F, streakGeo(0.12 + rng() * 0.3, sL, 0.42, 0.78), su, yc - s.minY - 0.42, 'stone', g.stone);
+          }
           // growth: roots hanging from the course, burls
           this._cat = null;
           if (g.growth > 0 && near) this._roots(F, u0, u1, yc - s.minY - 0.42, g, rng, hosts);

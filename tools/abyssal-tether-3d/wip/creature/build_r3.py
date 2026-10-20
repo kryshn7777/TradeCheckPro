@@ -2403,7 +2403,7 @@ def stone_arm(root, dirv, palm_n, L=1.5, size=1.0, owner=("arm_0_0", "arm_0_1"),
     bend = pn * 0.14 * L
     P = bezier([root, root + d * L * 0.5 + bend * 0.5, root + d * L + bend], n)
     t = np.linspace(0, 1, n)
-    rs = size * (0.3 - 0.13 * t + 0.1 * smoothstep(0.72, 1.0, t))
+    rs = size * (0.24 - 0.1 * t + 0.08 * smoothstep(0.72, 1.0, t))
     with tag("Own:" + owner[0], Mh if Mh is not None else np.eye(4)):
         V, F, uv, al = pleated_tube(P, rs, 7, 0.16, phase=rng.uniform(0, 6), cap0=True, cap1=False)
         A["Carved"].add(V, F, uv, m=0.0)
@@ -2412,7 +2412,7 @@ def stone_arm(root, dirv, palm_n, L=1.5, size=1.0, owner=("arm_0_0", "arm_0_1"),
         A["Carved"].add_tube(Pf, np.linspace(0.085, 0.06, len(Pf)) * size, sides=7, cap0=False, cap1=True, m=0.0)
     with tag("Own:" + owner[1], Mh if Mh is not None else np.eye(4)):
         pc = wr + d * 0.1 * size
-        bm = stone_bm((0.2 * size, 0.06 * size, 0.2 * size), chamfer=0.25, wear=0.008, chips=1, subdiv=1)
+        bm = stone_bm((0.28 * size, 0.07 * size, 0.28 * size), chamfer=0.25, wear=0.008, chips=1, subdiv=1)
         co = np.array([v.co[:] for v in bm.verts])
         Vw = pc + np.outer(co[:, 0], side) + np.outer(co[:, 1], pn) + np.outer(co[:, 2], d)
         place(bm, Vw)
@@ -2947,9 +2947,9 @@ def _build_crown():
     # asymmetric: three high on the left, two on the right, three low (on the dropped lip, hanging toward the player)
     lanO = Lancet(0.0)
     dout = NORD * W_ + 0.06
-    ARMS = [("L", lanO.Lj * 0.86, 1.0, 0.1, 0.45, 1.0, 0.7, False), ("L", lanO.Lj + lanO.La * 0.3, 0.9, 0.5, 0.45, 0.95, 0.65, False),
-            ("L", lanO.Lj + lanO.La * 0.82, 0.4, 0.95, 0.4, 1.15, 0.72, False),
-            ("R", lanO.Lj + lanO.La * 1.5, 0.8, 0.55, 0.45, 1.0, 0.68, False), ("R", lanO.L - 2.2, 1.0, 0.05, 0.5, 0.9, 0.62, False)]
+    ARMS = [("L", lanO.Lj * 0.78, 0.35, 0.95, 0.35, 1.05, 0.62, False), ("L", lanO.Lj + lanO.La * 0.3, 0.4, 0.9, 0.4, 1.0, 0.58, False),
+            ("L", lanO.Lj + lanO.La * 0.86, 0.25, 0.95, 0.45, 1.1, 0.64, False),
+            ("R", lanO.Lj + lanO.La * 1.55, 0.35, 0.9, 0.4, 1.0, 0.6, False), ("R", lanO.L - 2.1, 0.3, 0.95, 0.35, 0.95, 0.56, False)]
     for ai, (sd_, s_a, ox, oy, oz, La_, sz_, low_) in enumerate([] if 'arms' in OMIT else ARMS):
         if sd_ == "M":
             rootc = np.array([0.55, PORT_YB - 0.3, FACE[2] - 0.05])
@@ -4280,7 +4280,7 @@ def mat_pit():
     col = g.ramp(g.attr("m"), [(0.0, (0.3, 0.012, 0.008)), (0.5, (0.65, 0.06, 0.018)), (1.0, (1.0, 0.2, 0.035))])
     fl = g.maprange(n1, 0.3, 0.7, 0.45, 1.0)
     g.p(base=(0.01, 0.003, 0.003), rough=0.4, coat=1.0, coat_rough=0.05, emc=col,
-        ems=g.math("MULTIPLY", g.math("MULTIPLY", g.attr("glow"), fl), 7.0))
+        ems=g.math("MULTIPLY", g.math("MULTIPLY", g.attr("glow"), fl), 2.4))
     return m
 
 
@@ -5165,7 +5165,11 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
     bake("albedo", "DIFFUSE", pass_filter={"COLOR"})
     bake("normal", "NORMAL")
     bake("rough", "ROUGHNESS")
-    bake("ao", "AO", samples=samples_ao)
+    joined.hide_render = True
+    try:
+        bake("ao", "AO", samples=samples_ao)
+    finally:
+        joined.hide_render = False
     # metal class: flat emission masks on the hi groups (iron-class groups = 0.9, everything else 0)
     saved = []
     mm = {}
@@ -5201,7 +5205,6 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
     orm = np.ones((size, size, 4), np.float32)
     orm[..., 0], orm[..., 1], orm[..., 2] = ao[..., 0], ro[..., 0], me_[..., 0]
     paths = {}
-    sc.render.image_settings.file_format = "JPEG"
     for mp, q, res in (("albedo", 90, size), ("normal", 92, size), ("orm", 86, size // 2)):
         if mp == "orm":
             im = bpy.data.images.new("Mason_%s_orm" % fam, size, size, alpha=False, float_buffer=False)
@@ -5212,9 +5215,10 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
                 im.scale(res, res)
         else:
             im = imgs[mp]
-        sc.render.image_settings.quality = q
         fp = os.path.join(outdir, "Mason_%s_%s.jpg" % (fam, mp))
-        im.save_render(fp, scene=sc)
+        im.filepath_raw = fp
+        im.file_format = "JPEG"
+        im.save(quality=q)
         paths[mp] = fp
         imgs[mp + "_final"] = im
     return paths, imgs
@@ -5521,6 +5525,7 @@ def export_production():
         for m in mods:
             ids |= spec[m]["ids"]
         hi = hi_family_objects(hi_objs_all, ids, fam, game)
+        log("export: %s hi parts: %s" % (fam, ", ".join("%s %d" % (h.name.split('__')[0], len(h.data.polygons)) for h in hi)))
         for o in bpy.context.view_layer.objects:
             o.hide_render = True
         for h in hi:

@@ -27,7 +27,7 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 |---|---|---|---|
 | WP-FOG | fog cards, dust, grit, event rubble, drips | render/fx.js, atmosphere.js, debris.js | agent running |
 | WP-ARMS | Blender launcher + gloved arms + handsView integration | tools/build_hands.py, assets/models/player_arms.glb, render/handsView.js, ropeView.js | agent running |
-| WP-HEALTH | fall damage + health, red low-health vignette, ECG on gloves (owner request 2026-10-20) | sim/health3d.js, render/healthFx.js, narrow hooks in physics3d/config3d/game/audio3d/ui3d; ECG screen mount in handsView by WP-ARMS | agent running |
+| WP-HEALTH | fall damage + health, red low-health vignette, ECG on gloves (owner request 2026-10-20) | sim/health3d.js, render/healthFx.js, narrow hooks in physics3d/config3d/game/audio3d/ui3d; ECG screen mount in handsView by WP-ARMS | DONE 2026-10-20 18:20: lint/verify/routes/tests green; e2e NOT yet passed (OOM-killed, re-run at integration); ECG mount pending in WP-ARMS; headset check of vignette/ECG pending |
 | WP-BODY | owner request 2026-10-20: player body mesh linked to the arms; looking down shows legs/torso (Blender, skinned, 2-bone arm IK from controller hands to shoulders, legs/feet follow the sim body: planted when grounded, dangling/kicking/trailing when swinging, running cycle when moving), first-person safe (head/neck hidden, no clipping into the camera), uses the arms' elbow anchors | tools/build_body.py, assets/models/player_body.glb, render/bodyView.js | after WP-ARMS |
 | WP-ROPEFX | owner request 2026-10-20: realistic rope shot: smoke + spark burst from the nozzle, grapple head flies out with the line paying off the drum (visual rope with sag/wave, not a laser), SLOW attach: sim attaches on arrival (flight speed ~70 m/s tunable, deterministic delay), rope stiffness ramps up over ~0.15-0.25 s, impact puff/dust at the anchor, recoil; bot/routes updated for flight time; haptics; sound hooks | sim/physics3d.js TetherSystem, render/ropeView.js, fx.js (muzzle smoke), verify bot | after WP-ARMS + WP-FOG |
 | WP-GFX-LIGHT | owner request 2026-10-20: realistic lighting and reflections at consistent performance (baked GI/AO volume or lightmaps from Blender/Node, PMREM environment probes for metal/wet-stone reflections, clearcoat/wet specular response, lantern as the key dynamic light, no extra dynamic lights, shadow-free fake contact shadows, 72 fps governor tiers) | render/renderer3d.js, materials.js, levelView.js, tools bake | within WP-GFX, after WP-ENV |
@@ -40,6 +40,9 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 | WP-UX | ui3d menus, end card, comfort, accessibility | ui/*, game.js | to launch |
 | WP-RELEASE | PWA boot split, SW, context loss, saves, governor, store assets, docs | main.js, index.html, pwa/*, game.js boot | to launch |
 | WP-QA | adversarial review, soak, video, final report | all | last |
+
+## Machine notes
+- The container's memory cgroup OOM-kills big jobs (Blender ~6 GB, headless Chromium 1.5-4.4 GB). Every Blender run goes under `flock /tmp/at3d-blender.lock`, every headless Chromium/Playwright run under `flock /tmp/at3d-browser.lock`. Never broad `pkill`.
 
 ## Rules for every agent
 - Work in /home/user/TradeCheckPro on branch `claude/abyssal-tether-game-3zft6o`; edit only your owned files.

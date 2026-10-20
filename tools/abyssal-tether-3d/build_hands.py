@@ -3099,7 +3099,7 @@ def render_all(scene, R, poses, gear_mat):
         lp = place_lantern(5.0)
         lantern_light(lp, 60.0)
         hide.append(add_light("ShaftCool", "SPOT", (1.4, 1.2, 6.5), 900, (0.45, 0.62, 0.85), size=0.6, target=(0.2, 1.2, 1.0), spot=math.radians(50)))
-        hide.append(add_light("Bounce", "AREA", (0.0, 1.0, 0.5), 30.0, (0.9, 0.6, 0.38), size=1.2, target=(0, 0.5, 1.4)))
+        hide.append(add_light("Bounce", "AREA", (0.0, 1.6, 0.4), 12.0, (0.9, 0.6, 0.38), size=2.5, target=(0, 0.5, 1.4)))
         hide.append(add_light("Fill", "AREA", (0.0, -0.3, 2.2), 40.0, (0.55, 0.65, 0.8), size=1.5, target=(0, 0.6, 1.2)))
         cam = look_cam("CamFP", (0.0, 0.0, 1.60), (0.0, 1.0, 1.0), 17.0)
         cam.data.sensor_width = 36
