@@ -40,7 +40,7 @@ import { BUILD } from '../platform/buildInfo.js';
 import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
 import { ComfortOverlay, applyDisplay } from './comfort.js';
 import { Tutorial } from './tutorial.js';
-import { fmtDeg, fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
+import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
 
 // =============================================================================
 // Constants
@@ -83,6 +83,7 @@ const NOTE_LAG = 22 * U.DEG; // the cards start following once the head turns th
 const HINT = { cw: 1024, ch: 192, w: 1.2, dy: -0.36 };
 const TITLE = { cw: 1024, ch: 288, w: 1.2, dy: 0.2 };
 const TOAST = { cw: 512, ch: 80, w: 0.6, dy: 0.42 };
+const CAPTION = { cw: 1024, ch: 208, w: 1.2, dy: -0.64 }; // subtitle lines, under the hint card
 const RENDER_ORDER = 950; // UI draws over the world and the death fade (keep the fade sphere < 900)
 
 const COL = {
@@ -171,6 +172,8 @@ const SETTINGS_SCHEMA = [
   { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
+const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
 const HEIGHT_KEYS = ['heightMode', 'heightCal', 'heightOffset', 'heightMeasured'];
 
 /** [keys, full description, short VR description]. */
@@ -868,7 +871,7 @@ export class UI3D {
     // HUD caches (compared before every DOM write).
     this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1, bag: -1, apply: -1, applyKind: -1 };
     // Notes (hint / section title / toast), shared by DOM and VR.
-    this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false };
+    this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false, tutorial: false };
     this._title = { name: '', sub: '', num: '', t: 0, dirty: false };
     this._toast = { text: '', t: 0, dirty: false };
 
@@ -897,6 +900,7 @@ export class UI3D {
     this._hover = null;
     this._lastClickAt = -10;
     this._needRecenter = true;
+    this._capDirty = true;
     this._wristAcc = WRIST_INTERVAL;
     this._wristKey = '';
     this._gripCheckT = 0;
@@ -991,9 +995,7 @@ export class UI3D {
       vTime: q('.v-time'),
       vNew: q('.v-new'),
       vBest: q('.v-best'),
-      vPrev: q('.v-prev'),
       vDeaths: q('.v-deaths'),
-      vDeepest: q('.v-deepest'),
       vDiff: q('.v-diff'),
       vNote: q('.v-note'),
     };
@@ -1781,6 +1783,267 @@ export class UI3D {
     this._applySettings(partial);
   }
 
+  // ------------------------------------------------------------------ WP-UX: comfort, display, captions, hints, about
+  _startUx() {
+    const g = this.game || {};
+    this._comfort = new ComfortOverlay(g);
+    this._caps = new CaptionTracker({ captions: () => this._settings().captions === true, status: () => this._settings().colorSafe === true });
+    this._caps.attach(g.bus);
+    this._tut = new Tutorial(g, this);
+    this._tut.attach();
+  }
+
+  /** Text scale, display tier / exposure, colour-safe strip and captions visibility follow the live settings. */
+  _syncUx(s) {
+    const ts = textScaleOf(s);
+    if (ts !== this._textScale) {
+      this._textScale = ts;
+      this.root.style.setProperty('--ts', String(ts));
+      this._scaleVR();
+    }
+    applyDisplay(this.game, this._xrScaleApplied);
+    this.dom.hudStatus.hidden = s.colorSafe !== true;
+    this._statusKey = '';
+    this._wristKey = '';
+    if (s.captions !== true && s.colorSafe !== true && this._caps) this._caps.clear();
+    this._paintPatchesDom();
+  }
+
+  /** VR: panel, notes and captions grow with settings.textScale (notes are capped so a card still fits the view). */
+  _scaleVR() {
+    const vr = this._vr;
+    if (!vr) return;
+    vr.panel.scale.setScalar(this._textScale);
+    vr.notes.scale.setScalar(Math.min(this._textScale, 1.3));
+    this._vrDirty = true;
+  }
+
+  _privacyUrl() {
+    return this._pageUrl('../privacy/', 'Published with the store build');
+  }
+
+  _supportUrl() {
+    return this._pageUrl('../support/', 'Published with the store build');
+  }
+
+  _pageUrl(rel, fallback) {
+    if (BUILD.channel !== 'release' || typeof location === 'undefined') return fallback;
+    try {
+      return new URL(rel, location.href).href;
+    } catch {
+      return fallback;
+    }
+  }
+
+  _buildAbout() {
+    const d = this.dom;
+    d.aboutCredits.textContent =
+      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live, there are no samples. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
+  }
+
+  _versionLine() {
+    const c = BUILD.commit ? ` (${String(BUILD.commit).slice(0, 7)})` : '';
+    return `${BUILD.version}${c} · ${BUILD.channel === 'release' ? 'store build' : 'development build'}`;
+  }
+
+  /** The update row text for About (DOM + VR). */
+  _updateLine() {
+    const u = this.game && this.game.updates;
+    if (this._updateReady || (u && u.ready)) return this._xr ? 'Update ready. It installs the next time you start the game.' : 'Update ready. Restart to apply it.';
+    if (u && u.registered) return 'You have the latest version.';
+    return 'Running from the page.';
+  }
+
+  _fillAbout() {
+    const d = this.dom;
+    if (!d) return;
+    d.aboutVersion.textContent = this._versionLine();
+    d.aboutUpdate.textContent = this._updateLine();
+    const u = this.game && this.game.updates;
+    d.aboutUpdateBtn.hidden = !((this._updateReady || (u && u.ready)) && !this._xr);
+    for (const [el, url] of [[d.aboutPrivacy, this._privacyUrl()], [d.aboutSupport, this._supportUrl()]]) {
+      el.textContent = url;
+      if (/^https?:/.test(url)) el.href = url;
+      else el.removeAttribute('href');
+    }
+    this._disarm();
+    this._vrDirty = true;
+  }
+
+  _applyUpdate() {
+    const u = this.game && this.game.updates;
+    if (!u || !(u.ready || this._updateReady)) return;
+    if (this._xr) {
+      this.showToast('Installs on next launch', 3);
+      return;
+    }
+    let ok = false;
+    try {
+      ok = !!u.apply();
+    } catch {
+      ok = false;
+    }
+    if (!ok) this.showToast('Update will install on next launch', 3);
+  }
+
+  _disarm() {
+    if (!this._armed) return;
+    this._armed = '';
+    this._armedT = 0;
+    if (this.dom && this.dom.aboutErase) {
+      this.dom.aboutErase.classList.remove('is-armed');
+      this.dom.aboutErase.querySelector('.btn-label').textContent = 'Erase saved data';
+    }
+    this._vrDirty = true;
+  }
+
+  /** Two presses within 4 s: wipes settings, best times and the saved run from this device (Privacy.4: deleting your data). */
+  _eraseData() {
+    if (this._armed !== 'erase-data') {
+      this._armed = 'erase-data';
+      this._armedT = 4;
+      if (this.dom && this.dom.aboutErase) {
+        this.dom.aboutErase.classList.add('is-armed');
+        this.dom.aboutErase.querySelector('.btn-label').textContent = 'Press again to erase';
+      }
+      this._vrDirty = true;
+      return;
+    }
+    this._disarm();
+    const g = this.game || {};
+    try {
+      if (g.save && g.save.store && typeof g.save.store.reset === 'function') g.save.store.reset();
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('[AT3D] save reset failed', err);
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rm = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf('abyssalTether3d.') === 0) rm.push(k);
+        }
+        for (const k of rm) localStorage.removeItem(k);
+      }
+    } catch {
+      /* storage blocked: nothing to erase */
+    }
+    this._resetSettings();
+    if (this._tut) this._tut.reset();
+    this._applySettings({ brightnessChecked: false });
+    this.refreshMenu();
+    this.showToast('Saved data erased', 3);
+  }
+
+  // ---- DOM captions + colour-safe status strip ------------------------------------------------------------------
+  _buildCaptionLines() {
+    const box = this.dom.captions;
+    box.textContent = '';
+    this._capDom = [];
+    for (let i = 0; i < 3; i++) {
+      const row = make('div', 'cap');
+      row.hidden = true;
+      const icon = make('i');
+      const dir = make('span', 'cap-dir');
+      const text = make('span', 'cap-text');
+      row.append(icon, dir, text);
+      box.appendChild(row);
+      this._capDom.push({ row, icon, dir, text });
+    }
+    const st = this.dom.hudStatus;
+    st.textContent = '';
+    const mk = (cls, path, label) => {
+      const span = make('span', cls);
+      span.insertAdjacentHTML('beforeend', `<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`);
+      span.append(make('em', null, label), make('b', null, '—'));
+      st.appendChild(span);
+      return span;
+    };
+    this._statusDom = {
+      hp: mk('st-hp', 'M5 1h2v4h4v2H7v4H5V7H1V5h4z', 'HP'),
+      grip: mk('st-grip', 'M6 1.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9zM6 4v4', 'GRIP'),
+      bag: mk('st-bag', 'M2 3h8v7H2zM4 3V1.5h4V3', 'BAG'),
+    };
+  }
+
+  _dirGlyph(l) {
+    if (l.sector < 0) return l.vert > 0 ? '▲' : l.vert < 0 ? '▼' : '';
+    return DIR_ARROWS[l.sector] + (l.vert > 0 ? '▲' : l.vert < 0 ? '▼' : '');
+  }
+
+  _updateCaptionsDom() {
+    const caps = this._caps;
+    const lines = caps.lines;
+    let any = false;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      const dom = this._capDom[i];
+      dom.row.hidden = !l.on;
+      if (!l.on) continue;
+      any = true;
+      dom.row.dataset.sev = String(l.sev);
+      dom.icon.className = KIND_SHAPE[l.kind] || 'square';
+      dom.dir.textContent = this._dirGlyph(l);
+      dom.text.textContent = l.text;
+    }
+    this.dom.captions.hidden = !any;
+  }
+
+  /** HP / grip / bag as numbers next to their shapes (colour-safe strip), DOM HUD. Called at the HUD interval. */
+  _updateStatusDom(g) {
+    if (this._settings().colorSafe !== true) return;
+    const st = this._statusValues(g);
+    const key = `${st.hp}|${st.grip}|${st.bag}`;
+    if (key === this._statusKey) return;
+    this._statusKey = key;
+    const D = this._statusDom;
+    D.hp.querySelector('b').textContent = String(st.hp);
+    D.grip.querySelector('b').textContent = String(st.grip);
+    D.bag.querySelector('b').textContent = String(st.bag);
+    D.hp.classList.toggle('warn', st.hp < 40);
+    D.grip.classList.toggle('warn', st.grip < 25);
+  }
+
+  _statusValues(g) {
+    const hp = g.health && typeof g.health.hp === 'number' ? Math.round(g.health.hp * 100) : 100;
+    const cl = g.physics && g.physics.climb;
+    const grip = cl && typeof cl.stamina === 'number' ? Math.round(cl.stamina * 100) : 100;
+    let bag = 0;
+    if (g.bag && g.bag.counts) for (let i = 0; i < g.bag.counts.length; i++) bag += g.bag.counts[i];
+    const out = this._stv || (this._stv = { hp: 100, grip: 100, bag: 0 });
+    out.hp = hp;
+    out.grip = grip;
+    out.bag = bag;
+    return out;
+  }
+
+  // ---- black level patches (DOM canvas; the VR calibrate screen paints the same picture) ----------------------------
+  _paintPatchesDom() {
+    const c = this._patchesCanvas;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this._paintPatches(ctx, 0, 0, c.width, c.height);
+  }
+
+  /** Eight squares from 0.5 % to 10 % of white on black: the second should be just visible, the first not at all. */
+  _paintPatches(ctx, x, y, w, h) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x, y, w, h);
+    const n = PATCH_LEVELS.length;
+    const gap = 12;
+    const sw = (w - gap * (n + 1)) / n;
+    const sh = h - 44;
+    for (let i = 0; i < n; i++) {
+      const v = Math.round(PATCH_LEVELS[i] * 255);
+      const px = x + gap + i * (sw + gap);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(px, y + 10, sw, sh);
+      txt(ctx, String(i + 1), px + sw / 2, y + h - 12, `650 26px ${F_UI}`, '#9a948a', 'center', 0);
+    }
+  }
+
   // ------------------------------------------------------------------ pause / death / victory
   _canRespawn() {
     const g = this.game || {};
@@ -1892,7 +2155,18 @@ export class UI3D {
       deepestMeters: num(p && p.deepestMeters, U.depthMeters(num(g.deepest, g.player ? g.player.y : 0))),
       difficultyKey: key,
       label: diff.label,
+      falls: num(p && p.falls, num(p && p.deaths, num(g.deaths, 0))),
+      lowestHp: num(p && p.lowestHp, g.health && typeof g.health.minHp === 'number' ? g.health.minHp : 1),
+      itemsUsed: num(p && p.itemsUsed, this._itemsUsed(g)),
     };
+  }
+
+  /** Bag items applied this run (inventory stats), for the end card. */
+  _itemsUsed(g) {
+    const u = g && g.bag && g.bag.stats ? g.bag.stats.used : null;
+    let n = 0;
+    if (u) for (let i = 0; i < u.length; i++) n += u[i];
+    return n;
   }
 
   _fillVictory(info) {
@@ -1906,24 +2180,15 @@ export class UI3D {
     const d = this.dom;
     d.vTime.textContent = fmtTime(i.time);
     d.vNew.hidden = !(i.recorded && i.isNew);
-    d.vDeaths.textContent = String(i.deaths || 0);
-    d.vDeepest.textContent = fmtMeters(i.deepestMeters);
+    d.vDeaths.textContent = String(i.falls != null ? i.falls : i.deaths || 0);
+    d.vHealth.textContent = pct(U.clamp(num(i.lowestHp, 1), 0, 1));
+    d.vItems.textContent = String(i.itemsUsed | 0);
     d.vDiff.textContent = i.label;
-    d.vBest.textContent = '';
-    d.vPrev.textContent = '';
     if (!i.recorded) {
       d.vBest.textContent = '—';
-      d.vPrev.textContent = '—';
       d.vNote.textContent = 'Sandbox descents are not timed for the records.';
     } else {
       d.vBest.textContent = fmtTime(i.best != null ? i.best : i.time);
-      if (i.previous != null) {
-        d.vPrev.textContent = fmtTime(i.previous);
-        const delta = i.time - i.previous;
-        if (isFinite(delta) && delta !== 0) d.vPrev.appendChild(make('small', null, `${delta < 0 ? '−' : '+'}${Math.abs(delta).toFixed(2)} s`));
-      } else {
-        d.vPrev.textContent = 'First descent';
-      }
       d.vNote.textContent = '';
     }
   }
@@ -1947,6 +2212,7 @@ export class UI3D {
     if (!text) return;
     const h = this._hint;
     h.src = hint && typeof hint === 'object' ? hint : null;
+    h.tutorial = false;
     h.vr = this._forceVR || this._xrActive();
     h.text = String(text);
     h.t = seconds > 0 ? seconds : 5;
@@ -2056,7 +2322,33 @@ export class UI3D {
       case 'difficulty':
       case 'controls':
       case 'settings':
+      case 'about':
         this.show(action);
+        break;
+      case 'calibrate':
+        if (this.vrMode) this.show('calibrate');
+        else {
+          this.show('settings');
+          const c = this._ctl.brightness;
+          if (c && c.input && !fromVR) c.input.focus();
+        }
+        break;
+      case 'continue-run':
+        this._continueRun(fromVR);
+        break;
+      case 'apply-update':
+        this._applyUpdate();
+        break;
+      case 'erase-data':
+        this._eraseData();
+        break;
+      case 'tab':
+        this._vrTab = Math.max(0, Math.min(TABS.length - 1, parseInt(d.value, 10) || 0));
+        this._vrSetPage = 0;
+        this._vrDirty = true;
+        break;
+      case 'cal-reset':
+        this._applySettings({ brightness: SETTINGS_DEFAULTS.brightness, blackLevel: SETTINGS_DEFAULTS.blackLevel });
         break;
       case 'back':
         this._back();
@@ -2144,6 +2436,18 @@ export class UI3D {
       default:
         break;
     }
+  }
+
+  _continueRun(fromVR) {
+    const game = this.game || {};
+    const ok = this._call('continueRun');
+    if (ok === false || ok === undefined) {
+      this.showToast('Nothing to continue', 2.5);
+      this.refreshMenu();
+      return;
+    }
+    if (game.state === 'playing' && this.current !== null) this.show(null);
+    if (!fromVR) this._lockPointer();
   }
 
   _startRun(key, fromVR) {
@@ -2415,6 +2719,13 @@ export class UI3D {
     this._clock += step;
     const g = this.game || {};
     this._updateCalibration(step);
+    if (this._comfort) this._comfort.update(step);
+    if (this._tut) this._tut.update(step);
+    if (this._armedT > 0) {
+      this._armedT -= step;
+      if (this._armedT <= 0) this._disarm();
+    }
+    this._updateCaps(step);
 
     // XR session started / ended.
     const xr = this._xrActive();
@@ -2474,6 +2785,35 @@ export class UI3D {
 
     if (this.vrMode) this._updateVR(step);
     else if (this._vr && this._vr.visible) this._hideVR();
+  }
+
+  /** World-space head pose of the camera (x, y, z, yaw) for caption directions. */
+  _worldHead() {
+    const H = this._headW || (this._headW = { x: 0, y: 0, z: 0, yaw: 0, ok: false });
+    const R = this.game && this.game.renderer;
+    const cam = R && R.camera;
+    if (!cam || !cam.matrixWorld) {
+      H.ok = false;
+      return H;
+    }
+    const e = cam.matrixWorld.elements;
+    H.x = e[12];
+    H.y = e[13];
+    H.z = e[14];
+    H.yaw = Math.atan2(e[8], e[10]);
+    H.ok = isFinite(H.x + H.y + H.z + H.yaw);
+    return H;
+  }
+
+  _updateCaps(step) {
+    const caps = this._caps;
+    if (!caps) return;
+    caps.update(step, this._worldHead());
+    if (caps.rev !== this._capRev) {
+      this._capRev = caps.rev;
+      this._capDirty = true;
+      if (!this._xr && this._capDom) this._updateCaptionsDom();
+    }
   }
 
   // ------------------------------------------------------------------ desktop HUD
@@ -2556,6 +2896,7 @@ export class UI3D {
     h.acc += step;
     if (h.acc < HUD_INTERVAL) return;
     h.acc = 0;
+    this._updateStatusDom(g);
     const t = fmtTime(g.time || 0);
     if (t !== h.time) {
       h.time = t;
@@ -2695,11 +3036,14 @@ export class UI3D {
     vr.title = mkPlane(vr.titleC, TITLE.w, RENDER_ORDER - 5);
     vr.toastC = mkCanvas(TOAST.cw, TOAST.ch, true);
     vr.toast = mkPlane(vr.toastC, TOAST.w, RENDER_ORDER - 5);
+    vr.captionC = mkCanvas(CAPTION.cw, CAPTION.ch, true);
+    vr.caption = mkPlane(vr.captionC, CAPTION.w, RENDER_ORDER - 6);
     vr.hint.position.set(0, HINT.dy, 0);
     vr.title.position.set(0, TITLE.dy, 0);
     vr.toast.position.set(0, TOAST.dy, 0);
-    vr.hint.visible = vr.title.visible = vr.toast.visible = false;
-    vr.notes.add(vr.hint, vr.title, vr.toast);
+    vr.caption.position.set(0, CAPTION.dy, 0);
+    vr.hint.visible = vr.title.visible = vr.toast.visible = vr.caption.visible = false;
+    vr.notes.add(vr.hint, vr.title, vr.toast, vr.caption);
 
     // Wrist HUD (depth-tested: the hand / controller may cover it, like a real watch).
     // Mipmapped: ~1.6× minified at arm's length, the small text would shimmer otherwise
@@ -2720,6 +3064,7 @@ export class UI3D {
     vr.notes.visible = false;
     this._vr = vr;
     this._attachVR();
+    this._scaleVR();
     return vr;
   }
 
@@ -3102,6 +3447,8 @@ export class UI3D {
       else if (s === 'difficulty') this._paintDifficulty(ctx);
       else if (s === 'controls') this._paintControls(ctx);
       else if (s === 'settings') this._paintSettings(ctx);
+      else if (s === 'about') this._paintAbout(ctx);
+      else if (s === 'calibrate') this._paintCalibrate(ctx);
       else if (s === 'pause') this._paintPause(ctx);
       else if (s === 'death') this._paintDeath(ctx);
       else if (s === 'victory') this._paintVictory(ctx);
@@ -3244,14 +3591,27 @@ export class UI3D {
     const key = this._defaultDifficulty();
     const best = Storage.getBest(key);
     const sub = best != null ? `${DIFFICULTY[key].label} · best ${fmtTime(best)}` : DIFFICULTY[key].label;
+    const cont = this._continueInfo();
     const x0 = 212;
     const w = 600;
-    this._btn(ctx, this._region(x0, 330, w, 104, 'start'), 'Begin descent', sub, { primary: true, size: 34 });
     const hw = (w - 16) / 2;
-    this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'Difficulty', null, {});
+    if (cont) {
+      this._btn(ctx, this._region(x0, 330, w, 104, 'continue-run'), 'Continue', this._continueLine(cont), { primary: true, size: 34 });
+      this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'New descent', null, {});
+    } else {
+      this._btn(ctx, this._region(x0, 330, w, 104, 'start'), 'Begin descent', sub, { primary: true, size: 34 });
+      this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'Difficulty', null, {});
+    }
     this._btn(ctx, this._region(x0 + hw + 16, 448, hw, 84, 'sandbox'), 'Sandbox', 'No predator', {});
-    this._btn(ctx, this._region(x0, 546, hw, 76, 'controls'), 'Controls', null, {});
-    this._btn(ctx, this._region(x0 + hw + 16, 546, hw, 76, 'settings'), 'Settings', null, {});
+    const tw = (w - 24) / 3;
+    this._btn(ctx, this._region(x0, 546, tw, 76, 'settings'), 'Settings', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + tw + 12, 546, tw, 76, 'controls'), 'Controls', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + (tw + 12) * 2, 546, tw, 76, 'about'), 'About', null, { size: 28 });
+    if (this._updateReady) {
+      ctx.fillStyle = COL.amber;
+      diamond(ctx, x0 + (tw + 12) * 2 + tw - 18, 546 + 18, 9);
+      ctx.fill();
+    }
     // Best times strip.
     const items = DIFFICULTY_ORDER.map((k) => {
       const b = Storage.getBest(k);
@@ -3272,7 +3632,9 @@ export class UI3D {
       txt(ctx, v, x + measure(ctx, l, lf, 0.12) + 12, 680, vf, has ? COL.ink : COL.ink4, 'left', 0);
       x += widths[i] + 48;
     });
-    txt(ctx, 'Point and pull the trigger', cx, 734, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
+    if (this._updateReady) txt(ctx, 'Update ready: it installs next time you start the game', cx, 734, `500 28px ${F_UI}`, COL.amber, 'center', 0.02);
+    else if (!this._settings().brightnessChecked) txt(ctx, 'A dark game: check Settings › Display › Brightness', cx, 734, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02);
+    else txt(ctx, 'Point and pull the trigger', cx, 734, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
     if (this._xr) this._btn(ctx, this._region(CW - 168, 18, 148, 60, 'exit-vr'), 'Exit VR', null, { ghost: true, size: 28 });
   }
 
@@ -3371,7 +3733,7 @@ export class UI3D {
         ctx.fillRect(44, y + Math.round((rowH - 22) / 2), CW - 88, 1);
       }
     });
-    txt(ctx, 'Smooth turning, full-speed falls. Pause any time.', CW / 2, 740, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
+    txt(ctx, 'Comfort options are in Settings. Pause any time.', CW / 2, 740, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
   }
 
   _paintSettings(ctx) {
@@ -3379,16 +3741,29 @@ export class UI3D {
     const page = this._vrSetPage === 1;
     this._header(ctx, page ? 'Player height' : 'Settings');
     const s = this._settings();
-    const rows = SETTINGS_SCHEMA.filter((d) => d.key && !d.desktop && !d.page);
-    const rowH = 94;
     if (page) {
-      this._paintHeightPage(ctx, s, rowH);
+      this._paintHeightPage(ctx, s, 94);
       return;
     }
-    rows.forEach((def, i) => this._paintSettingRow(ctx, def, 116 + i * rowH, rowH, s));
-    const by = 116 + rows.length * rowH + 22;
-    this._btn(ctx, this._region(CW / 2 - 360, by, 340, 70, 'height-page', { value: 1 }), 'Player height  ›', null, { size: 28 });
-    this._btn(ctx, this._region(CW / 2 + 20, by, 340, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+    const gap = 12;
+    const tw = (CW - 88 - gap * (TABS.length - 1)) / TABS.length;
+    TABS.forEach((t, i) => {
+      this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 64, 'tab', { value: i }), t.label, null, { primary: i === this._vrTab, size: 28 });
+    });
+    const tab = TABS[this._vrTab] || TABS[0];
+    const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
+    const rowH = 88;
+    let y = 190;
+    for (const def of rows) {
+      if (def.type === 'link') {
+        this._btn(ctx, this._region(44, y + 4, CW - 88, 72, def.action, { value: def.value }), `${def.label}  ›`, null, { size: 30 });
+        y += 84;
+      } else {
+        this._paintSettingRow(ctx, def, y, rowH, s);
+        y += rowH;
+      }
+    }
+    if (tab.id === 'access') this._btn(ctx, this._region(CW / 2 - 200, y + 14, 400, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
   }
 
   /** One settings row at y: label + value, then a − slider + for ranges or option buttons. */
@@ -3419,9 +3794,12 @@ export class UI3D {
       this._btn(ctx, this._region(888, y + 14, 68, 68, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
     } else {
       const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
+      const many = opts.length > 2;
+      const bw = many ? (480 - 8 * (opts.length - 1)) / opts.length : 176;
       opts.forEach(([value, label], j) => {
         const on = value === v;
-        this._btn(ctx, this._region(588 + j * 188, y + 14, 176, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
+        const bx = many ? 500 + j * (bw + 8) : 588 + j * 188;
+        this._btn(ctx, this._region(bx, y + 14, bw, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
       });
     }
     ctx.fillStyle = COL.line;
@@ -3430,7 +3808,7 @@ export class UI3D {
 
   /** VR settings page 2: Standing / Seated, the fine trim, the eye height readout, Calibrate and Reset. */
   _paintHeightPage(ctx, s, rowH) {
-    const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'height');
+    const defs = SETTINGS_SCHEMA.filter((d) => d.key && (d.page === 'height' || d.key === 'heightMode'));
     defs.forEach((def, i) => this._paintSettingRow(ctx, def, 112 + i * rowH, rowH, s));
     const h = this._heightInfo();
     const y0 = 112 + defs.length * rowH + 10;
@@ -3446,6 +3824,61 @@ export class UI3D {
     this._btn(ctx, this._region(704, by, 276, 90, 'reset-height'), 'Reset height', null, { ghost: true, size: 28 });
   }
 
+  _paintAbout(ctx) {
+    this._frame(ctx);
+    this._header(ctx, 'About');
+    const cx = CW / 2;
+    txt(ctx, 'ABYSSAL TETHER', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
+    txt(ctx, 'CHAPTER I · THE UNDERSPIRE · FREE', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
+    const lab = `650 28px ${F_UI}`;
+    const val = `500 28px ${F_UI}`;
+    const row = (y, label, text, color) => {
+      txt(ctx, label, 44, y, lab, COL.ink3, 'left', 0.1);
+      txt(ctx, ellipsize(ctx, text, CW - 330, val), 290, y, val, color || COL.ink, 'left', 0);
+    };
+    row(262, 'VERSION', this._versionLine());
+    const u = this.game && this.game.updates;
+    const ready = this._updateReady || (u && u.ready);
+    txt(ctx, 'UPDATE', 44, 318, lab, COL.ink3, 'left', 0.1);
+    const ul = wrapLines(ctx, this._updateLine(), CW - 330, val);
+    ul.slice(0, 2).forEach((ln, i) => txt(ctx, ln, 290, 318 + i * 36, val, ready ? COL.amber : COL.ink, 'left', 0));
+    if (ready && !this._xr) this._btn(ctx, this._region(CW - 260, 288, 216, 60, 'apply-update'), 'Restart', null, { size: 28 });
+    row(410, 'PRIVACY', this._privacyUrl());
+    row(458, 'SUPPORT', this._supportUrl());
+    txt(ctx, 'No account. Nothing about you leaves this headset.', 44, 514, val, COL.ink2, 'left', 0);
+    const credits = 'Created by the Abyssal Tether team. Original world, creature, score and sound (synthesised live). Built with three.js (MIT) and Blender.';
+    wrapLines(ctx, credits, CW - 88, `400 28px ${F_UI}`)
+      .slice(0, 3)
+      .forEach((ln, i) => txt(ctx, ln, 44, 568 + i * 36, `400 28px ${F_UI}`, COL.ink3, 'left', 0));
+    const armed = this._armed === 'erase-data';
+    this._btn(ctx, this._region(CW / 2 - 220, 690, 440, 62, 'erase-data'), armed ? 'Press again to erase' : 'Erase saved data', null, { ghost: !armed, primary: armed, size: 28 });
+  }
+
+  _paintCalibrate(ctx) {
+    this._frame(ctx);
+    this._header(ctx, 'Brightness');
+    this._btn(ctx, this._region(CW - 190, 18, 170, 64, 'cal-reset'), 'Reset', null, { ghost: true, size: 28 });
+    const cx = CW / 2;
+    txt(ctx, 'Raise Black level until square 2 is just visible,', cx, 142, `500 28px ${F_UI}`, COL.ink2, 'center', 0);
+    txt(ctx, 'while square 1 stays black.', cx, 178, `500 28px ${F_UI}`, COL.ink2, 'center', 0);
+    this._paintPatches(ctx, 44, 196, CW - 88, 124);
+    // A window onto the world behind the panel, so Brightness can be judged on the real picture.
+    const wy = 338;
+    const wh = 150;
+    ctx.clearRect(44, wy, CW - 88, wh);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COL.line3;
+    ctx.strokeRect(44, wy, CW - 88, wh);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.95)';
+    ctx.shadowBlur = 8;
+    txt(ctx, 'The world, as it looks now', cx, wy + wh - 16, `500 28px ${F_UI}`, COL.ink, 'center', 0);
+    ctx.restore();
+    const s = this._settings();
+    const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'calibrate');
+    defs.forEach((def, i) => this._paintSettingRow(ctx, def, 504 + i * 94, 94, s));
+  }
+
   _paintPause(ctx) {
     this._frame(ctx);
     const g = this.game || {};
@@ -3457,8 +3890,8 @@ export class UI3D {
     if (this._ctrlLostShown) txt(ctx, 'Pick up both controllers to continue', CW / 2, 124, `650 30px ${F_UI}`, COL.amber, 'center', 0.02);
     else txt(ctx, this._runLine(), CW / 2, 124, `500 28px ${F_UI}`, COL.ink3, 'center', 0.04);
     const items = [['resume', 'Resume', { primary: true }]];
-    if (!won && this._canRespawn() && g.player) items.push(['respawn', 'Respawn at checkpoint', {}]);
-    items.push(['restart', 'Restart run', {}], ['settings', 'Settings', {}], ['controls', 'Controls', {}], ['quit', 'Quit to menu', { ghost: true }]);
+    if (!won && this._canRespawn() && g.player) items.push(['respawn', 'Restart section', {}]);
+    items.push(['restart', 'Restart descent', {}], ['settings', 'Settings', {}], ['controls', 'Controls', {}], ['quit', 'Quit to menu', { ghost: true }]);
     const bw = sections ? 440 : 520;
     const bx = sections ? 40 : (CW - bw) / 2;
     const bh = items.length > 5 ? 78 : 86;
@@ -3513,7 +3946,7 @@ export class UI3D {
       size: 34,
     });
     const hw = (bw - 16) / 2;
-    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'restart'), 'Restart run', null, {});
+    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'restart'), 'Restart descent', null, {});
     this._btn(ctx, this._region(bx + hw + 16, by + 118, hw, 80, 'quit'), 'Menu', null, { ghost: true });
     const pr = i.prompt || (i.canRespawn ? 'A (or point + trigger) to rise again · hold X to restart' : 'A (or point + trigger) to begin again');
     const pf = `500 ${fitSize(ctx, pr, CW - 80, 28, 22, (px) => `500 ${px}px ${F_UI}`, 0.02)}px ${F_UI}`;
@@ -3586,8 +4019,12 @@ export class UI3D {
     const ts = this._toast;
     const showHint = h.on && !panelUp;
     const showTitle = t.t > 0 && !panelUp;
-    const showToast = ts.t > 0 && !panelUp;
-    vr.notes.visible = (showHint || showTitle || showToast) && H.ok;
+    const showToast = ts.t > 0 && !panelUp && !showTitle; // (draw-call budget: title and toast share a slot)
+    const caps = this._caps;
+    let capLines = 0;
+    if (caps) for (let i = 0; i < caps.lines.length; i++) if (caps.lines[i].on) capLines++;
+    const showCaps = capLines > 0 && !panelUp;
+    vr.notes.visible = (showHint || showTitle || showToast || showCaps) && H.ok;
     if (!vr.notes.visible) return;
     // Lazy follow: position locked to the head, yaw catches up once the head turns away.
     if (!this._noteYawSet) {
@@ -3623,6 +4060,114 @@ export class UI3D {
     }
     vr.toast.visible = showToast;
     if (showToast) vr.toast.material.opacity = U.clamp(Math.min(ts.t / 0.3, 1), 0, 1);
+
+    vr.caption.visible = showCaps;
+    if (showCaps && this._capDirty) {
+      this._capDirty = false;
+      this._paintCaptions();
+    }
+  }
+
+  /** Subtitle lines: [shape] [direction] [text] in a dark pill each, newest-first order of the slots, up to 3. */
+  _paintCaptions() {
+    const c = this._vr.captionC;
+    const ctx = c.ctx;
+    ctx.setTransform(PX, 0, 0, PX, 0, 0);
+    ctx.clearRect(0, 0, c.cw, c.ch);
+    const lh = 64;
+    let row = 0;
+    const lines = this._caps.lines;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.on) continue;
+      const f = `${l.sev >= 2 ? 700 : 500} 32px ${F_UI}`;
+      const tw = measure(ctx, l.text, f, 0);
+      const hasDir = l.sector >= 0 || l.vert !== 0;
+      const w = Math.min(c.cw - 20, tw + 96 + (hasDir ? 64 : 0));
+      const x = (c.cw - w) / 2;
+      const y = 6 + row * lh;
+      rr(ctx, x, y, w, lh - 8, 10);
+      ctx.fillStyle = 'rgba(0,0,0,0.86)';
+      ctx.fill();
+      if (l.sev >= 2) {
+        ctx.fillStyle = COL.amber;
+        ctx.fillRect(x, y + 6, 6, lh - 20);
+      }
+      const cy = y + (lh - 8) / 2;
+      this._kindShape(ctx, l.kind, x + 34, cy, 11);
+      let tx = x + 62;
+      if (hasDir) {
+        this._dirDial(ctx, x + 90, cy, 19, l.sector, l.vert, l.near);
+        tx = x + 124;
+      }
+      txt(ctx, l.text, tx, cy + 11, f, '#ffffff', 'left', 0, w - (tx - x) - 14);
+      row++;
+    }
+    c.tex.needsUpdate = true;
+  }
+
+  /** Shape-coded source kind: diamond = creature, square = the world, circle = you, triangle = a status warning. */
+  _kindShape(ctx, kind, cx, cy, r) {
+    ctx.fillStyle = '#f2e6c9';
+    ctx.strokeStyle = '#f2e6c9';
+    ctx.lineWidth = 3;
+    if (kind === 'creature') {
+      diamond(ctx, cx, cy, r + 3);
+      ctx.fill();
+    } else if (kind === 'status') {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r - 2);
+      ctx.lineTo(cx + r + 3, cy + r);
+      ctx.lineTo(cx - r - 3, cy + r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.fillRect(cx - 1.5, cy - 4, 3, 7);
+      ctx.fillRect(cx - 1.5, cy + 5, 3, 3);
+    } else if (kind === 'player') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+  }
+
+  /** A small compass: a ring with a wedge toward the sound (0 = ahead = up), a bar above / below for vertical, bold when near. */
+  _dirDial(ctx, cx, cy, r, sector, vert, near) {
+    ctx.save();
+    ctx.strokeStyle = '#f2e6c9';
+    ctx.fillStyle = '#f2e6c9';
+    ctx.lineWidth = near ? 4 : 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (sector >= 0) {
+      const a = sector * (Math.PI / 4);
+      const sx = Math.sin(a);
+      const sy = -Math.cos(a);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * (r + 5), cy + sy * (r + 5));
+      ctx.lineTo(cx + sy * -7 + sx * (r - 8), cy + sx * 7 + sy * (r - 8));
+      ctx.lineTo(cx + sy * 7 + sx * (r - 8), cy - sx * 7 + sy * (r - 8));
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (vert !== 0) {
+      ctx.beginPath();
+      if (vert > 0) {
+        ctx.moveTo(cx, cy - 6);
+        ctx.lineTo(cx + 6, cy + 4);
+        ctx.lineTo(cx - 6, cy + 4);
+      } else {
+        ctx.moveTo(cx, cy + 6);
+        ctx.lineTo(cx + 6, cy - 4);
+        ctx.lineTo(cx - 6, cy - 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /**

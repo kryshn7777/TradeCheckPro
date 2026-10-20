@@ -716,13 +716,15 @@ def('tag', 'cloth', (b) => {
   b.reset();
   b.box(0, 0.006, 0, 0.012, 0.012, 0.012, IRON, P.RUST);
 }, { hang: true, wall: true });
-def('webCorner', 'web', (b) => {
-  // one sheet across a wall / ceiling corner: the corner point is the origin, the sheet fans out along +x and down the diagonal
-  b.sway = (x, yy, z) => 0.014 * clamp01((x - 0.1) * 0.9) * clamp01(z * 2.2) + yy * 0;
-  b.xf(0.4, 0, 0, 0, -0.785, 0);
-  b.card(0.8, 0.8, 4, 4, P.WEB, [0.55, 0.55, 0.55], { top: true });
+const webCorner = (mirror) => (b) => {
+  // one sheet across a wall / ceiling corner: the corner point is the origin, the sheet fans out along +x (-x mirrored) and down the diagonal
+  b.sway = (x, yy, z) => 0.014 * clamp01(Math.abs(x) * 0.9 - 0.1) * clamp01(z * 2.2) + yy * 0;
+  b.xf(mirror ? -0.4 : 0.4, 0, 0, 0, -0.785, 0);
+  b.card(0.8, 0.8, 4, 4, P.WEB, [0.55, 0.55, 0.55], { top: true, rect: mirror ? [1, 0, 0, 1] : [0, 0, 1, 1] });
   b.reset();
-}, { hang: true, web: true });
+};
+def('webCorner', 'web', webCorner(false), { hang: true, web: true });
+def('webCornerR', 'web', webCorner(true), { hang: true, web: true });
 def('webStrand', 'web', (b) => {
   b.sway = (x) => 0.02 * Math.sin(Math.PI * clamp01((x + 0.35) / 0.7));
   b.xf(0, -0.15, 0);
