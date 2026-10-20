@@ -313,7 +313,7 @@ def build_rig(kit, tpl, followers="all"):
 
 
 # ---- assembly -----------------------------------------------------------------------------------------------------------------
-def _instance(mod, M, ctx, rig, out):
+def _instance(mod, M, ctx, rig, out, grp=0):
     """Transforms one module by M (4x4, may mirror/scale) into the rest pose and appends its arrays to `out`."""
     M3 = M[:3, :3]
     det = np.linalg.det(M3)
@@ -340,7 +340,7 @@ def _instance(mod, M, ctx, rig, out):
         drop = has2 & ((jb < 0) | (jb == ja))
         jb = np.where(drop, -1, jb)
         wb = np.where(drop, 0.0, wb)
-        out.append(dict(P=P, N=Nn, UV=pr["UV"], I=I, mat=MAT_NAMES.index(pr["mat"]), ja=ja, jb=jb, wb=wb, mask=pr["mask"]))
+        out.append(dict(P=P, N=Nn, UV=pr["UV"], I=I, mat=MAT_NAMES.index(pr["mat"]), grp=grp, ja=ja, jb=jb, wb=wb, mask=pr["mask"]))
 
 
 def assemble(kit, rig, layout, tpl, lod):
@@ -348,15 +348,15 @@ def assemble(kit, rig, layout, tpl, lod):
     key = "lod%d" % lod
     out = []
     # crown
-    _instance(kit["Head"][key], np.eye(4), {n: n for n in kit["Head"][key]["owners"].values()}, rig, out)
+    _instance(kit["Head"][key], np.eye(4), {n: n for n in kit["Head"][key]["owners"].values()}, rig, out, 0)
     # vertebrae (variants normalised to a common rest pitch P0)
     fq = {q: P0 / vertebra_pitch(kit["Segment_%d" % q]["lod0"]) for q in range(3)}
     for k in range(NVERT - 1):
         q = int(hash1((k + 1) * 7 + 3) * 3)
         ctx = {"spine_k": "spine_%02d" % k, "spine_k1": "spine_%02d" % (k + 1)}
-        _instance(kit["Segment_%d" % q][key], T(0, 0, (k + 1) * P0) @ S(fq[q]), ctx, rig, out)
+        _instance(kit["Segment_%d" % q][key], T(0, 0, (k + 1) * P0) @ S(fq[q]), ctx, rig, out, 1)
     f_tail = P0 / vertebra_pitch(kit["Tail"]["lod0"])
-    _instance(kit["Tail"][key], T(0, 0, NVERT * P0) @ S(f_tail), {"spine_k": "spine_%02d" % (NVERT - 1), "spine_k1": "tail_0", "tail_0": "tail_0"}, rig, out)
+    _instance(kit["Tail"][key], T(0, 0, NVERT * P0) @ S(f_tail), {"spine_k": "spine_%02d" % (NVERT - 1), "spine_k1": "tail_0", "tail_0": "tail_0"}, rig, out, 1)
     layout["fq"] = fq
     layout["f_tail"] = f_tail
     # legs
@@ -377,14 +377,15 @@ def assemble(kit, rig, layout, tpl, lod):
         cu = {"leg_0": b[0], "spine_k": sp}
         cl = {"leg_0": b[0], "leg_1": b[1], "leg_2": b[2] if lead else b[1]}
         ch = {"leg_3": b[3] if lead else b[2]}
-        _instance(kit["LimbUpper"][lk], M @ Ru, cu, rig, out)
-        _instance(kit["LimbLower"][lk], M @ Rl, cl, rig, out)
-        _instance(kit["Hook"][lk], M @ Rh, ch, rig, out)
+        _instance(kit["LimbUpper"][lk], M @ Ru, cu, rig, out, 2)
+        _instance(kit["LimbLower"][lk], M @ Rl, cl, rig, out, 2)
+        _instance(kit["Hook"][lk], M @ Rh, ch, rig, out, 2)
     cat = lambda k: np.concatenate([o[k] for o in out])
     offs = np.cumsum([0] + [len(o["P"]) for o in out])
     faces = np.concatenate([o["I"] + offs[i] for i, o in enumerate(out)])
     fmat = np.concatenate([np.full(len(o["I"]), o["mat"], np.int64) for o in out])
-    return dict(P=cat("P"), N=cat("N"), UV=cat("UV"), I=faces, fmat=fmat, ja=cat("ja"), jb=cat("jb"), wb=cat("wb"), mask=cat("mask"))
+    fgrp = np.concatenate([np.full(len(o["I"]), o["grp"], np.int64) for o in out])
+    return dict(P=cat("P"), N=cat("N"), UV=cat("UV"), I=faces, fmat=fmat, fgrp=fgrp, ja=cat("ja"), jb=cat("jb"), wb=cat("wb"), mask=cat("mask"))
 
 
 def skin_arrays(asm, nbones):
