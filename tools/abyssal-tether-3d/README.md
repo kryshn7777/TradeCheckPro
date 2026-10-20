@@ -10,6 +10,7 @@ Verification and tests (each folder has its own README):
 | [`verify/`](verify/README.md) | `npm run verify:at3d -- --chapter ch1 --variant all` | the route-bot harness: integrity, every route on every variant, determinism, sim budget per system (ENGINE_EXTENSIONS E28 / E29 / §8) |
 | [`e2e/`](e2e/README.md) | `npm run e2e:at3d` | the real game in headless Chromium: desktop input, the whole descent with the creature live, persistence, mock WebXR |
 | [`tests/`](tests/README.md) | `npm run test:at3d` | Node unit tests (input, VR UX fixes, creature) and the creature pacing / perf tools |
+| [`bake/`](bake/bake_gi.mjs) | `node tools/abyssal-tether-3d/bake/bake_gi.mjs` (`--verify` checks the asset against the level) | bakes the static lighting (AO, lamp/shaft bounce, key visibility) of Chapter I into `public/abyssal-tether-3d/assets/lighting/gi_ch1.bin` (~1 MB, ~10 s, deterministic, no Blender); re-run after any change to level solids or lights (the runtime ignores a stale bake and tests/render/test-lighting.mjs fails) |
 
 ## The Mason (predator)
 
@@ -38,7 +39,7 @@ pivots are the contract `CreatureView` loads by name; every module also has a `<
 | `Mason_Tail` | 0.56 k / 0.2 k | block centre of the last vertebra | `spine_k` / `tail_0` |
 | `Mason_LimbUpper` / `Mason_LimbLower` / `Mason_Hook` | 0.64/0.42/0.15 k | joint pin at the origin, bone along +Z | `leg_0` (strut + knee pier) / `leg_1` shank + `leg_2` metatarsus / `leg_3` grapnel; flesh at the strut root blends with `spine_k` |
 | `Mason_Frond_0..2` | ~55 / ~18 | root; grows along +Y, curls about +X | `frond` |
-| `Mason_Pit` | ~40 | pit centre, opening +Y | glowing coal only (emissive material); the full pits are part of the head |
+| `Mason_Pit` | ~20 / 6 | pit centre, opening +Y | glowing coal only (emissive material); the full pits are part of the head |
 | `Mason_PitMembrane` | 87 | pit centre | eardrum (ignored by the legacy view) |
 
 Vertex attributes on every module (underscore names; GLTFLoader lower-cases them): `_SPINE_S` (float, module-local rest

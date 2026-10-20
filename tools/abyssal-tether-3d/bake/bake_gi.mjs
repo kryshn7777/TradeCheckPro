@@ -48,7 +48,7 @@ export const BAKE = {
   aoRelief: 0.38, // mean occlusion of an open flat wall (subtracted)
   aoGain: 1.9,
   aoStrength: 0.9,
-  aoTarget: 0.88,
+  aoTarget: 0.93,
   aoFloor: 0.22, // tight gaps keep a little ambient (the lantern and bounce still reach them)
   keyRange: 90,
   keyFloor: 0.35, // the shaft key is a slanted fill, not a sun: blocked regions keep this much of it
