@@ -25,7 +25,12 @@ export const CONFIG = {
     brakeFactor: 2.4,
     airAccel: 7,
     airMaxSpeed: 7.5,
-    airDrag: 0.03,
+    airDrag: 0.03, // linear horizontal air brake while free (no rope pulling)
+    // Quadratic air drag, a = -dragQuad |v| v, applied in the air with or without a rope: realistic
+    // for a body in a harness (k = rho Cd A / 2m ~ 0.005 /m). Terminal fall speed
+    // sqrt(gravity / dragQuad) = 52 m/s = 1.37 x maxFallSpeed, so the maxFallSpeed clamp stays the ceiling
+    // (at 38 m/s the drag is 7.2 m/s^2, 53 % of gravity: a long fall visibly stops gaining speed).
+    dragQuad: 0.005,
     jumpSpeed: 5.6,
     coyoteTime: 0.1,
     jumpBuffer: 0.12,
@@ -39,7 +44,20 @@ export const CONFIG = {
   },
 
   rope: {
-    minLength: 1.2,
+    minLength: 1.6, // the head sits ~1.25 m above the body centre: it must stay below the anchor
+    // Slip clutch + elastic catch (physics3d.js Rope3D.pull). Loads are in units of player.gravity
+    // and include gravity along the line; tension is a force per unit mass (m/s^2).
+    maxTensionG: 4.2, // the winch's holding load: beyond it the line pays out
+    catchPeakG: 5.5, // ceiling of the transient load of a catch (elastic zone and fast slip), so a 20 m fall stops in ~4 m
+    slipBrakeG: 0.3, // extra clutch load per m/s of outward radial speed while slipping (fall arrest), up to catchPeakG
+    strainAtMax: 0.03, // elastic strain of the line at maxTensionG (stiffness = load / (strain x length))
+    catchDamping: 1.7, // damping ratio of the catch spring-damper at catch speeds (>= 1: no rebound; overdamped recoil)
+    restDamping: 0.2, // ... and for small stretch rates (a steady swing breathes a little: keep its energy)
+    catchDampingSpeed: 5, // m/s of stretch rate at which the damping reaches catchDamping
+    slipFxSmooth: 0.05, // s: smoothing of the reported pay-out speed (feedback only)
+    slipFxMin: 0.6, // m/s of line paying out that counts as slipping (rope:slip)
+    slipFxSpeed: 8, // m/s of pay-out that is intensity 1
+    slipFxPeriod: 0.16, // s between rope:slip events while a slip goes on
     maxLengthBonus: 4,
     reelInSpeed: 9.5,
     reelOutSpeed: 11,
@@ -139,7 +157,58 @@ export const SETTINGS_DEFAULTS = {
   dominantHand: 'right',
   haptics: true,
   lastDifficulty: 'normal',
+  // Player height (CONTRACT3D §8 "Rig and eye height"). Old saved settings lack these keys and migrate to the defaults.
+  heightMode: 'standing', // 'standing' = real height 1:1; 'seated' = eyes lifted by heightCal to a standing eye height
+  heightCal: 0, // metres added in Seated mode, set by the calibration press (standEye − measured eye height)
+  heightOffset: 0, // fine trim, ±VIEW.offsetMax in VIEW.offsetStep steps (VR and desktop)
+  heightMeasured: 0, // eye height above the real floor at the last calibration press (0 = never), shown in the panel
 };
+
+/**
+ * Player height tuning. The collision sphere (CONFIG.player.radius) rests on the floor, so the ground under the
+ * player's feet is `body.y − radius` and a standing person's eyes are `eye − radius` above the sphere centre.
+ * XR (local-floor) maps the real floor onto that ground: rig.y = body.y − radius + lift, real eye height = game eye height.
+ */
+export const VIEW = {
+  standEye: 1.62, // eye height above the feet (m): the desktop camera, the Seated reference, the 'local' space assumption
+  offsetMax: 0.3, // fine trim limit (m)
+  offsetStep: 0.025,
+  calMin: -0.5, // limits of the Seated calibration offset (m)
+  calMax: 1.2,
+  calCountdown: 3, // seconds between the Calibrate press and the measurement
+  measureMin: 0.6, // plausible eye heights (m above the real floor) for a calibration
+  measureMax: 2.3,
+};
+
+/** Eye height above the collision-sphere centre for a person standing 1:1 (1.62 − 0.38 = 1.24 m). */
+export function eyeAboveBody() {
+  return VIEW.standEye - CONFIG.player.radius;
+}
+
+/**
+ * The settings a calibration press stores for a measured eye height (m above the real floor), or null when the
+ * reading is implausible. Standing records the measurement only (the rig is 1:1); Seated also stores the offset that
+ * lifts the eyes to VIEW.standEye.
+ */
+export function heightCalibration(mode, eye) {
+  if (typeof eye !== 'number' || !(eye >= VIEW.measureMin && eye <= VIEW.measureMax)) return null;
+  const out = { heightMeasured: +eye.toFixed(3) };
+  if (mode === 'seated') out.heightCal = +Math.min(VIEW.calMax, Math.max(VIEW.calMin, VIEW.standEye - eye)).toFixed(3);
+  return out;
+}
+
+/** Clamps / snaps the player-height keys of a settings object in place (validation after load or apply). */
+export function sanitizeHeightSettings(s) {
+  const D = SETTINGS_DEFAULTS;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  if (s.heightMode !== 'standing' && s.heightMode !== 'seated') s.heightMode = D.heightMode;
+  s.heightCal = Math.min(VIEW.calMax, Math.max(VIEW.calMin, num(s.heightCal, D.heightCal)));
+  const o = Math.round(num(s.heightOffset, D.heightOffset) / VIEW.offsetStep) * VIEW.offsetStep;
+  s.heightOffset = Math.min(VIEW.offsetMax, Math.max(-VIEW.offsetMax, +o.toFixed(4)));
+  const m = num(s.heightMeasured, D.heightMeasured);
+  s.heightMeasured = m >= VIEW.measureMin && m <= VIEW.measureMax ? m : 0;
+  return s;
+}
 
 // -----------------------------------------------------------------------------
 // Maths helpers (plain {x,y,z} objects; no allocation in hot paths when `out` is passed)
@@ -301,6 +370,7 @@ export const Storage = {
       }
     }
     if (!DIFFICULTY[out.lastDifficulty]) out.lastDifficulty = 'normal';
+    sanitizeHeightSettings(out);
     return out;
   },
   saveSettings: (s) => Storage.set('settings', s),

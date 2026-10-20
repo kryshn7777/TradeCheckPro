@@ -22,7 +22,7 @@
  */
 
 import * as THREE from 'three';
-import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage } from './sim/config3d.js';
+import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings } from './sim/config3d.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 
 const C = CONFIG;
@@ -38,7 +38,7 @@ const HINT_QUEUE_MAX = 3;
 const ATTRACT_SPEED = 3.2; // menu camera descent (m/s)
 const ATTRACT_FADE_OUT = 1.6;
 const ATTRACT_FADE_IN = 2.0;
-const ATTRACT_EYE = 1.4; // attract camera height above the path
+const ATTRACT_EYE = eyeAboveBody(); // attract camera height above the path: a standing person's eyes (1.62 m above the feet)
 const ATTRACT_STEP = 1; // attract path sample spacing (m of descent)
 const ATTRACT_CLEAR = 0.7; // free radius the attract camera keeps around itself
 const ATTRACT_MAX_SLIDE = 0.8; // max sideways drift per metre of descent
@@ -49,14 +49,15 @@ const RESPAWN_FADE = 0.95;
 const START_FADE = 1;
 const RESTART_FADE = 0.7;
 const FADE_IN_RATE = 1.5; // fade units per second when clearing
-// XR: the head is free of the body (lean / step in the room). Within HEAD_CLEAR
-// of a solid it starts to fade, black by HEAD_BLACK (≈ the camera near plane):
-// a wall never opens onto the void outside the level or the predator behind it.
-const HEAD_CLEAR = 0.15;
-const HEAD_BLACK = 0.05;
+// The head is free of the body (XR: lean / step in the room) and sits 1.24 m above the sphere centre (1:1 height), so
+// it can meet an overhang the body passes under. Within HEAD_CLEAR of a solid the view starts to fade, black by
+// HEAD_BLACK: the near plane is 0.05 m and each eye sits 0.032 m off the head centre, so geometry within ~0.09 m of
+// the head can cut the near plane. A wall never opens onto the void outside the level or the predator behind it.
+// The head-clearance audit (tools/abyssal-tether-3d/verify/headclear.mjs) keeps every route ≥ 0.25 m clear of it.
+const HEAD_CLEAR = 0.2;
+const HEAD_BLACK = 0.1;
 const HEAD_FADE_IN = 10; // fade units per second while entering geometry
 const HEAD_FADE_OUT = 4;
-const XR_HEAD_OFFSET = 1.1; // XR: rig = body − (0, 1.1, 0) → a standing user's eyes sit at the body
 const XR_BLUR_GRACE = 3; // ignore window blur this long after an XR session starts (Quest focus juggling)
 const XR_RECENTRE_FRAMES = 3; // wait for a few posed XR frames before reading the head pose
 const TENSION_HAPTIC_PERIOD = 0.12;
@@ -250,7 +251,8 @@ export class FallbackRenderer3D {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x07090a);
     this.scene.fog = new THREE.Fog(0x07090a, 5, 70);
-    this.camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
+    this.baseFov = 70; // desktop fov; resize() restores it after an XR session
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 1, 0.05, 400);
     this.rig = new THREE.Group();
     this.rig.name = 'rig';
     this.rig.add(this.camera);
@@ -469,6 +471,9 @@ export class FallbackRenderer3D {
     const el = this.container;
     const w = Math.max(1, (el && el.clientWidth) || window.innerWidth || 800);
     const h = Math.max(1, (el && el.clientHeight) || window.innerHeight || 600);
+    // An XR session leaves its own fov/zoom on the user camera (WebXRManager.updateUserCamera).
+    this.camera.fov = this.baseFov;
+    this.camera.zoom = 1;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (!this.renderer.xr.isPresenting) this.renderer.setSize(w, h, true);
@@ -1317,7 +1322,8 @@ export class Game3D {
   /** Game-level fallback when the input module cannot start the session itself. */
   async _requestXRSession() {
     if (typeof navigator === 'undefined' || !navigator.xr) throw new Error('WebXR is not available in this browser.');
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking'] });
+    // No 'hand-tracking' (as xrInput.js): the game needs controllers (sticks, grips, A–B).
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
     const xr = this.renderer.renderer.xr;
     xr.setReferenceSpaceType('local-floor');
     await xr.setSession(session);
@@ -1477,6 +1483,13 @@ export class Game3D {
     if (this.state !== 'paused') return false;
     this._acc = 0;
     this._lastTs = null;
+    // A pause clears the input's held state (pointer-lock loss, an XR blur), while the
+    // tethers still think the button is down: their safety net would drop every
+    // attached rope on the first frame. Ropes stay attached until a fresh
+    // press / release on that hand (the same rule as debugAttach); a trigger held
+    // through a plain pause still lets go on its release edge.
+    const t = this.tethers;
+    if (t) for (let k = 0; k < 2; k++) t.hands[HANDS[k]].held = false;
     this._setState('playing');
     this._try('audio', () => this.audio.setPaused(false));
     this._try('ui', () => this.ui.show(null));
@@ -1507,6 +1520,9 @@ export class Game3D {
 
   _warp(i) {
     if (!this.level || !this.player) return false;
+    // Not during the victory gate slam: victoryT would keep counting and open the
+    // victory screen in the section warped to (respawn() refuses for the same reason).
+    if (this.victoryT >= 0) return false;
     if (this.state !== 'playing' && this.state !== 'paused' && this.state !== 'dead') return false;
     const lvl = this.level;
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
@@ -1558,6 +1574,7 @@ export class Game3D {
     s.mouseSensitivity = U.clamp(finiteOr(s.mouseSensitivity, D.mouseSensitivity), 0.3, 3);
     if (s.dominantHand !== 'left' && s.dominantHand !== 'right') s.dominantHand = D.dominantHand;
     if (!DIFFICULTY[s.lastDifficulty]) s.lastDifficulty = 'normal';
+    sanitizeHeightSettings(s);
     Storage.saveSettings(s);
     this._try('audio', () => this.audio.setVolume(s.volume));
     this._try('input', () => this.input.applySettings && this.input.applySettings(s));
@@ -2148,7 +2165,7 @@ export class Game3D {
       label: this.diff.label,
       prompt: this.xrActive
         ? canRespawn
-          ? 'A (or point + trigger) to rise again · X to restart'
+          ? 'A (or point + trigger) to rise again · hold X to restart'
           : 'A (or point + trigger) to begin again'
         : canRespawn
           ? 'Click or Enter to rise again · R to restart'
@@ -2385,7 +2402,10 @@ export class Game3D {
     }
   }
 
-  /** Rig follows the player: XR → the room's floor 1.1 m under the body; desktop → eyes at the body. */
+  /**
+   * Rig follows the player. XR: 1:1 scale, the real floor is the ground under the body (rig.y = body.y − radius + height lift),
+   * see InputManager.xrRigPosition. Desktop: the camera sits at a standing person's eye height (VIEW.standEye above the feet).
+   */
   _updateRig() {
     const r = this.renderer;
     if (!r || !this.player) return;
@@ -2433,15 +2453,21 @@ export class Game3D {
       const hx = this._headLocal.x;
       const hz = this._headLocal.z;
       // Head offset in the rig rotated into the world (rotation about +Y).
-      rig.position.set(p.rx - (hx * c + hz * s), p.ry - XR_HEAD_OFFSET, p.rz - (-hx * s + hz * c));
+      rig.position.set(p.rx - (hx * c + hz * s), p.ry - C.player.radius + this._heightTrim(), p.rz - (-hx * s + hz * c));
     } else if (desktopAttract) {
       rig.position.set(p.x, p.y + ATTRACT_EYE, p.z);
     } else {
-      rig.position.set(p.rx, p.ry + C.player.eyeHeight, p.rz);
+      rig.position.set(p.rx, p.ry + eyeAboveBody() + this._heightTrim(), p.rz);
     }
   }
 
-  /** Flash / fade lifecycle, then the XR head-in-wall darkening (`headOnly`: just that — debug freeze). */
+  /** The fine player-height trim (m) from the settings (also applies to the desktop camera). */
+  _heightTrim() {
+    const v = this.settings ? this.settings.heightOffset : 0;
+    return typeof v === 'number' && isFinite(v) ? U.clamp(v, -0.3, 0.3) : 0;
+  }
+
+  /** Flash / fade lifecycle, then the head-in-wall darkening (`headOnly`: just that — debug freeze). */
   _updateFeedback(dt, headOnly) {
     // Take back last frame's head-in-wall darkening (unless something set the fade since).
     if (this.fade === this._fadeOut) this.fade = this._fadeBase;
@@ -2461,14 +2487,15 @@ export class Game3D {
   }
 
   /**
-   * XR: darkens the view while the head is inside (or within HEAD_CLEAR of) level
-   * geometry — leaning or stepping into a wall from a ledge. Not a comfort
-   * vignette: it only hides what the player must never see (the outside of the level).
+   * Darkens the view while the head is inside (or within HEAD_CLEAR of) level
+   * geometry — leaning or stepping into a wall from a ledge in XR, or walking a
+   * standing-height desktop camera under a low overhang. Not a comfort vignette:
+   * it only hides what the player must never see (the outside of the level).
    */
   _updateHeadBlock(dt) {
     let target = 0;
     const input = this.input;
-    if (this.xrActive && this.level && input && typeof input.headPose === 'function') {
+    if ((this.xrActive || this.state !== 'menu') && this.level && input && typeof input.headPose === 'function') {
       let h = null;
       try {
         h = input.headPose();

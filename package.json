@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:at3d": "node tools/abyssal-tether-3d/verify/verify.mjs",
+    "budget:at3d": "node tools/abyssal-tether-3d/verify/budget.mjs",
+    "test:at3d": "node tools/abyssal-tether-3d/tests/run-tests.mjs",
+    "e2e:at3d": "node tools/abyssal-tether-3d/e2e/e2e.cjs"
   },
   "dependencies": {
     "@studio-freight/lenis": "^1.0.42",

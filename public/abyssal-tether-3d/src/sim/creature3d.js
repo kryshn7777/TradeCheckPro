@@ -738,7 +738,7 @@ export class Creature3D {
     this.listening = false;
     this.creeping = false;
     this.attack.phase = null;
-    this.victory = { phase: 'charge', t: 0, gx, gy, gz, ox, oy, oz };
+    this.victory = { phase: 'charge', t: 0, hits: 0, gx, gy, gz, ox, oy, oz };
     if (!this.inPlay || len3(this.x - gx, this.y - gy, this.z - gz) > 56) {
       // Bring it in from just out of sight so the slam lands while the player is still there.
       this.inPlay = true;
@@ -1563,7 +1563,9 @@ export class Creature3D {
       const ty = v.gy + v.oy * 1.1;
       const tz = v.gz + v.oz * 1.1;
       this._moveToward(tx, ty, tz, 38, 7, dt, 0);
-      if (len3(tx - this.x, ty - this.y, tz - this.z) < 2 || v.t > 1.5) {
+      // Hit no earlier than 0.35 s: LevelView's gate takes about that long to drop,
+      // so the creature strikes iron that is already down.
+      if ((v.t >= 0.35 && len3(tx - this.x, ty - this.y, tz - this.z) < 2) || v.t > 1.5) {
         v.phase = 'slam';
         v.t = 0;
         this.vx *= -0.25;
@@ -1573,6 +1575,7 @@ export class Creature3D {
         this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, gate: true, distance: this.distance });
         this._emitStep(v.gx, v.gy, v.gz, 1, this.distance, true);
         this.nearMiss = 1;
+        v.hits = 1;
       }
     } else if (v.phase === 'slam') {
       // Recoil off the grating, crown thrashing (shake across the struck face).
@@ -1580,7 +1583,15 @@ export class Creature3D {
       const px = Math.abs(v.oy) > 0.5 ? 1 : 0;
       const py = Math.abs(v.oy) > 0.5 ? 0 : 1;
       this._moveToward(v.gx + v.ox * 3.6 + px * shake, v.gy + v.oy * 3.6 + py * shake, v.gz + v.oz * 3.6, 6.5, 5, dt, 0);
-      if (v.t > 0.6) {
+      if (v.hits === 1 && v.t >= 0.9) {
+        // A second blow: it is still thrashing at the bars when the player turns round.
+        v.hits = 2;
+        this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, gate: true, distance: this.distance });
+        this._emitStep(v.gx, v.gy, v.gz, 1, this.distance, true);
+        this.nearMiss = 1;
+      }
+      // Withdraws only as the victory panel comes up (Game VICTORY_DELAY 2.8 s).
+      if (v.t > 1.8) {
         v.phase = 'retreat';
         v.t = 0;
         this.stateDur = 3;
@@ -2826,7 +2837,11 @@ export class Creature3D {
         lunge = wk * 0.8;
       } else if (a.phase === 'strike') lunge = 1;
       else lunge = 1 - U.clamp(a.t / T.postStrike, 0, 1);
-    } else if (this.victory && this.victory.phase === 'slam') lunge = 1;
+    } else if (this.victory && this.victory.phase === 'slam') {
+      // Two blows on the bars (slam t 0 and 0.9 s): it draws back between them.
+      const vt = this.victory.t;
+      lunge = vt < 0.9 ? 1 - 0.6 * Math.sin((Math.PI * vt) / 0.9) : 1;
+    }
     this._rear = rear;
     this._lunge += (lunge - this._lunge) * (dt > 0 ? 1 - Math.exp(-14 * dt) : 1);
     const jt = st === S.ATTACK ? 1 : st === S.BURST ? 0.55 : 0;
