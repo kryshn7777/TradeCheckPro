@@ -42,7 +42,7 @@ import build_textures as bt  # noqa: E402
 from build_textures import Field, col, lerp_rgb, sstep  # noqa: E402
 
 try:
-    from PIL import Image, ImageFile
+    from PIL import Image, ImageDraw, ImageFile
 
     ImageFile.MAXBLOCK = max(ImageFile.MAXBLOCK, 1 << 24)
 except ImportError:  # pragma: no cover
@@ -294,6 +294,182 @@ def bake_detail(work, out):
             "description": "shared micro normal (RG) + grain (B), layered over every macro normal"}
 
 
+# =============================================================================
+# Decal atlas (cracks, grime, moss, blood smear, burn, claw scratches, impact): 2048 x 1024 RGBA + normal, 4 x 2 cells of 512.
+# RGB is the decal colour everywhere (no dark halo in the mips), A the coverage; the normal comes from a height field
+# (cracks and scratches are cut INTO the surface, moss and scabs stand proud). Cell edges fade to alpha 0.
+# =============================================================================
+DECAL_NAMES = ["crackA", "crackB", "grime", "moss", "blood", "burn", "scratch", "impact"]
+CELL = 512
+
+
+def _blur(a, sigma):
+    from PIL import ImageFilter
+
+    im = Image.fromarray(np.clip(a, 0, 1).astype(np.float32), "F")
+    return np.asarray(im.filter(ImageFilter.GaussianBlur(sigma)), dtype=np.float64)
+
+
+def _line_mask(draw_fn, S=1024):
+    im = Image.new("L", (S, S), 0)
+    draw_fn(ImageDraw.Draw(im), S)
+    im = im.resize((CELL, CELL), Image.LANCZOS)
+    return np.asarray(im, dtype=np.float64) / 255.0
+
+
+def _vignette(n=CELL, a=0.62, b=0.97):
+    y, x = np.mgrid[0:n, 0:n].astype(np.float64)
+    r = np.maximum(np.abs(x - n / 2), np.abs(y - n / 2)) / (n / 2)
+    return 1.0 - sstep(a, b, r)
+
+
+def _crack(rng, branchy=1.0, width=8):
+    import math
+
+    def draw(d, S):
+        def walk(x, y, ang, length, w, level):
+            steps = max(2, int(length / 9))
+            px, py = x, y
+            for i in range(steps):
+                ang += rng.normal(0, 0.2)
+                x += math.cos(ang) * 9
+                y += math.sin(ang) * 9
+                ww = max(1, int(w * (1 - i / steps) ** 0.7 + 1))
+                d.line([(px, py), (x, y)], fill=255, width=ww)
+                px, py = x, y
+                if level < 3 and rng.random() < 0.075 * branchy:
+                    walk(x, y, ang + rng.choice([-1, 1]) * rng.uniform(0.5, 1.3), length * 0.55 * (1 - i / steps) + 30, w * 0.55, level + 1)
+
+        a0 = rng.uniform(0, 6.283)
+        walk(S / 2, S / 2, a0, S * 0.5, width, 0)
+        walk(S / 2, S / 2, a0 + math.pi, S * 0.5, width, 0)
+
+    return _line_mask(draw)
+
+
+def make_decals(seed=9909):
+    rng = np.random.default_rng(seed)
+    F = Field(CELL, seed, 1.0)
+    cells = {}
+    vig = _vignette()
+
+    def tone(rgb, var=0.12):
+        base = np.array(rgb, dtype=np.float64) / 255.0
+        n = 1.0 + var * F.spectral(beta=2.2, fmin=4, fmax=60)
+        return base[None, None, :] * n[..., None]
+
+    # crack A: one long branching fracture; crack B: a hairline web of many short ones
+    m = _crack(rng, 1.0, 9) * vig
+    cells["crackA"] = (tone((14, 12, 11)), np.clip(_blur(m, 1.2) * 1.5, 0, 1), -_blur(m, 3.0) * 0.03 - 0.5 * _blur(m, 1.0) * 0.01)
+    m = np.maximum(_crack(rng, 2.2, 4), np.maximum(_crack(rng, 2.0, 3), _crack(rng, 1.6, 3))) * vig
+    cells["crackB"] = (tone((16, 14, 12)), np.clip(_blur(m, 0.9) * 1.4, 0, 1), -_blur(m, 2.0) * 0.02)
+    # grime streak: a dark run that starts wide at the top and drips down in filaments
+    y, x = np.mgrid[0:CELL, 0:CELL].astype(np.float64)
+    u = (x / CELL - 0.5) * 2
+    v = y / CELL
+    fil = F.spectral(beta=1.8, fmin=6, fmax=140, sx=1.0, sy=9.0)
+    wob = 0.08 * F.spectral(beta=3.0, fmin=1, fmax=8)
+    wid = 0.62 * (1 - v) ** 0.6 + 0.08
+    prof = 1 - sstep(0.0, 1.0, np.abs(u + wob) / np.maximum(wid, 1e-3))
+    a = np.clip(prof * (0.45 + 0.35 * np.tanh(fil)) * (1 - 0.35 * v), 0, 1) * vig
+    cells["grime"] = (tone((22, 19, 15)), a, 0.002 * _blur(a, 2))
+    # moss: blobby patches with a fuzzy fringe, greens
+    blob = F.spectral(beta=2.6, fmin=2, fmax=26)
+    edge = F.spectral(beta=1.5, fmin=60, fmax=240)
+    mo = sstep(0.1, 0.7, blob + 0.25 * edge - 0.2 + (1 - np.hypot(u, v * 2 - 1) * 1.1))
+    mo = np.clip(mo, 0, 1) * vig
+    green = tone((38, 58, 30), 0.35)
+    cells["moss"] = (green, np.clip(mo * (0.75 + 0.25 * np.tanh(edge)), 0, 1), 0.012 * mo * (0.6 + 0.4 * np.tanh(edge)))
+    # blood: a dried drag smear (dark red, streaked along the drag), tails and a few drops. Stylised, never gory.
+    ang = 0.35
+    du = (x - CELL / 2) / CELL
+    dv = (y - CELL / 2) / CELL
+    along = du * np.cos(ang) + dv * np.sin(ang)
+    across = -du * np.sin(ang) + dv * np.cos(ang)
+    st = F.spectral(beta=1.6, fmin=6, fmax=160, sx=7.0, sy=1.0, angle=ang)
+    body = (1 - sstep(0.0, 0.2 + 0.1 * np.tanh(st), np.abs(across) + 0.18 * (along + 0.45))) * sstep(-0.45, -0.35, along) * (1 - sstep(0.1, 0.45, along))
+    drops = np.zeros((CELL, CELL))
+    for _ in range(9):
+        cx, cy, r = rng.uniform(0.1, 0.9) * CELL, rng.uniform(0.1, 0.9) * CELL, rng.uniform(3, 10)
+        drops = np.maximum(drops, 1 - sstep(r * 0.7, r, np.hypot(x - cx, y - cy)))
+    ba = np.clip(body * (0.55 + 0.35 * np.tanh(st)) + 0.8 * drops, 0, 1) * vig
+    cells["blood"] = (tone((58, 9, 9), 0.2), ba, 0.0015 * _blur(ba, 1.5))
+    # burn: soot cloud + radial lick upward
+    rr = np.hypot(u * 1.0, (v - 0.62) * 1.1)
+    soot = F.spectral(beta=2.2, fmin=3, fmax=70)
+    bu = (1 - sstep(0.1, 0.78 + 0.18 * np.tanh(soot), rr + 0.25 * np.clip(v - 0.62, 0, 1) * 0)) * (0.55 + 0.35 * np.tanh(soot + 0.3))
+    lick = (1 - sstep(0.0, 0.42, np.abs(u + 0.15 * soot))) * (1 - sstep(0.1, 0.95, v)) * sstep(0.0, 0.5, 1 - v) * 0.5
+    bm = np.clip(np.maximum(bu, lick * (0.6 + 0.4 * np.tanh(F.spectral(beta=1.8, fmin=8, fmax=120, sx=1.0, sy=5.0)))), 0, 1) * vig
+    cells["burn"] = (tone((9, 8, 7), 0.15), bm, 0.004 * _blur(bm, 3))
+    # claw scratches: a hand of 4-6 gouges, slightly curved, each a bright cut
+    def scr(d, S):
+        import math
+
+        n = int(rng.integers(4, 7))
+        a0 = rng.uniform(-0.5, 0.5) + 1.2
+        for k in range(n):
+            off = (k - (n - 1) / 2) * 62 + rng.normal(0, 6)
+            x0 = S / 2 + off * math.cos(a0 + 1.57) - S * 0.38 * math.cos(a0)
+            y0 = S / 2 + off * math.sin(a0 + 1.57) - S * 0.38 * math.sin(a0)
+            pts = []
+            L = S * (0.55 + 0.25 * rng.random())
+            bend = rng.normal(0, 0.18)
+            for i in range(40):
+                t = i / 39
+                pts.append((x0 + math.cos(a0 + bend * t) * L * t, y0 + math.sin(a0 + bend * t) * L * t))
+            for i in range(39):
+                w = int(max(1, 9 * math.sin(math.pi * (i / 39)) ** 0.6))
+                d.line([pts[i], pts[i + 1]], fill=255, width=w)
+
+    sm = _line_mask(scr) * vig
+    pale = tone((118, 108, 94), 0.2)
+    cells["scratch"] = (pale, np.clip(_blur(sm, 0.8) * 1.5, 0, 1), -_blur(sm, 1.6) * 0.02)
+    # impact: crater with radial cracks and a pale dust ring
+    rr = np.hypot(u, (v - 0.5) * 2)
+    ang_n = np.arctan2((v - 0.5) * 2, u)
+    spokes = np.abs(np.sin(ang_n * 5.5 + 3 * F.spectral(beta=3, fmax=6))) ** 14
+    crater = 1 - sstep(0.12, 0.3 + 0.05 * np.tanh(F.spectral(beta=2, fmin=4, fmax=40)), rr)
+    ring = np.exp(-(((rr - 0.34) / 0.08) ** 2)) * 0.6
+    rad = spokes * (1 - sstep(0.15, 0.85, rr)) * sstep(0.1, 0.2, rr)
+    am = np.clip(np.maximum(crater * 0.9, np.maximum(ring * 0.5, rad * 0.85)), 0, 1) * vig
+    cells["impact"] = (np.where((crater[..., None] > 0.4), tone((24, 22, 20)), tone((98, 90, 80), 0.2)), am, -0.02 * crater - 0.006 * rad + 0.004 * ring)
+    return cells
+
+
+def bake_decals(work, out):
+    cells = make_decals()
+    W, H = CELL * 4, CELL * 2
+    alb = np.zeros((H, W, 4))
+    hgt = np.zeros((H, W))
+    layout = {}
+    for i, nm in enumerate(DECAL_NAMES):
+        cx, cy = (i % 4) * CELL, (i // 4) * CELL
+        rgb, a, h = cells[nm]
+        alb[cy : cy + CELL, cx : cx + CELL, :3] = rgb
+        alb[cy : cy + CELL, cx : cx + CELL, 3] = a
+        hgt[cy : cy + CELL, cx : cx + CELL] = h
+        layout[nm] = [cx / W, 1 - (cy + CELL) / H, CELL / W, CELL / H]  # u0, v0 (bottom), du, dv in GL texture space
+    # normal from the height field (metres; the cell spans ~1 m); alpha-weighted so empty areas stay flat
+    px = 1.0 / CELL
+    dhdu = (np.roll(hgt, -1, axis=1) - np.roll(hgt, 1, axis=1)) / (2 * px)
+    dhdv = (np.roll(hgt, 1, axis=0) - np.roll(hgt, -1, axis=0)) / (2 * px)
+    nx, ny, nz = -dhdu * 3.0, -dhdv * 3.0, np.ones_like(hgt)
+    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
+    nrm = np.stack([nx * inv, ny * inv, nz * inv], axis=-1) * 0.5 + 0.5
+    os.makedirs(work, exist_ok=True)
+    Image.fromarray(u8(alb), "RGBA").save(os.path.join(work, "decals_albedo.png"), compress_level=4)
+    Image.fromarray(u8(nrm), "RGB").save(os.path.join(work, "decals_normal.png"), compress_level=4)
+    # 1024 x 512 fallback PNG (alpha kept) for browsers without KTX2
+    small = Image.fromarray(u8(alb), "RGBA").resize((W // 2, H // 2), Image.LANCZOS)
+    small.save(os.path.join(out, "decals_albedo.png"), optimize=True)
+    nsm = Image.fromarray(u8(nrm), "RGB").resize((W // 2, H // 2), Image.LANCZOS)
+    nsm.save(os.path.join(out, "decals_normal.png"), optimize=True)
+    print(f"[hq] decals   {W}x{H}  cells={DECAL_NAMES}", flush=True)
+    return {"albedo": "decals_albedo.png", "normal": "decals_normal.png", "tileMeters": 1.0, "size": W, "layout": layout,
+            "names": DECAL_NAMES, "source": "baked:build_textures_hq.py",
+            "description": "decal atlas 4x2: cracks, grime, moss, blood smear, burn, claw scratches, impact (RGBA + normal)"}
+
+
 def write_manifest(out, entries):
     path = os.path.join(out, "manifest.json")
     data = {}
@@ -339,21 +515,21 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--work", required=True, help="directory for the lossless masters (PNG)")
     ap.add_argument("--out", default=DEFAULT_OUT)
-    ap.add_argument("--sets", default=",".join(list(SETS) + ["detail"]))
+    ap.add_argument("--sets", default=",".join(list(SETS) + ["detail", "decals"]))
     ap.add_argument("--tilecheck", default="")
     ap.add_argument("--no-bake", action="store_true")
     args = ap.parse_args()
     names = [s.strip() for s in args.sets.split(",") if s.strip()]
     for n in names:
-        if n != "detail" and n not in SETS:
+        if n not in ("detail", "decals") and n not in SETS:
             sys.exit(f"unknown set {n}")
     if not args.no_bake:
         entries = {}
         for n in names:
-            entries[n] = bake_detail(args.work, args.out) if n == "detail" else bake(n, args.work, args.out)
+            entries[n] = bake_detail(args.work, args.out) if n == "detail" else bake_decals(args.work, args.out) if n == "decals" else bake(n, args.work, args.out)
         print("[hq] manifest ->", write_manifest(args.out, entries))
     if args.tilecheck:
-        tilecheck(args.work, args.tilecheck, [n for n in names if n != "detail"])
+        tilecheck(args.work, args.tilecheck, [n for n in names if n not in ("detail", "decals")])
 
 
 if __name__ == "__main__":
