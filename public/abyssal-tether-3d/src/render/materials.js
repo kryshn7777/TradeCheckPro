@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import { LM_RANGE_LAMP, LM_RANGE_STATIC } from './lightmapFormat.js';
+import { installDither } from './vrShade.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -108,6 +109,9 @@ export const LOOK = {
   // (0 at y = 0 m .. full at y = -300 m), w unused; uGradeTint multiplies the linear colour (per-section warmth).
   uGradeK: { value: new THREE.Vector4(1.1, 1.0, 0.2, 0) },
   uGradeTint: { value: new THREE.Color(1, 1, 1) },
+  // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
+  // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
+  uBlack: { value: new THREE.Color(0, 0, 0) },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -1010,13 +1014,15 @@ const HQ_PARALLAX = `vec2 atPUv = vAtUv;
 float atHN = 0.5;
 vec4 atDt = vec4( 0.5, 0.5, 0.5, 1.0 );
 float atDist = length( vViewPosition );
-float atDf = uDetailAmt * uDetailK.x * ( 1.0 - smoothstep( uDetailK.y, uDetailK.z, atDist ) );
+// VR: fine relief shimmers at grazing angles and at distance (the eyes move constantly); fade it with both
+float atNv = abs( dot( normalize( vNormal ), vViewPosition ) ) / max( atDist, 1e-3 );
+float atDf = uDetailAmt * uDetailK.x * ( 1.0 - smoothstep( uDetailK.y, uDetailK.z, atDist ) ) * smoothstep( 0.06, 0.34, atNv );
 vec2 atGx = dFdx( vAtUv );
 vec2 atGy = dFdy( vAtUv );
 #ifdef USE_NORMALMAP
 if ( uHeightM > 0.0 ) {
 	atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
-	float atPf = uParallaxK.x * ( 1.0 - smoothstep( uParallaxK.y - uParallaxK.z, uParallaxK.y, atDist ) );
+	float atPf = uParallaxK.x * ( 1.0 - smoothstep( uParallaxK.y - uParallaxK.z, uParallaxK.y, atDist ) ) * smoothstep( 0.16, 0.5, atNv );
 	if ( atPf > 0.001 ) {
 		mat3 atTbn = getTangentFrame( - vViewPosition, normalize( vNormal ), vAtUv );
 		vec3 atV = normalize( vViewPosition );
@@ -1028,6 +1034,10 @@ if ( uHeightM > 0.0 ) {
 }
 #endif
 if ( atDf > 0.002 ) atDt = textureGrad( uDetailMap, atPUv * uDetailScale, atGx * uDetailScale, atGy * uDetailScale );
+// near field (floor, ledge lip, wall within arm's reach at 1:1 scale): a second, finer octave of the same detail texture
+float atNear = uDetailK.w * ( 1.0 - smoothstep( 1.2, 3.6, atDist ) ) * smoothstep( 0.1, 0.4, atNv ) * uDetailAmt;
+vec4 atDt2 = vec4( 0.5, 0.5, 0.5, 1.0 );
+if ( atNear > 0.01 ) atDt2 = textureGrad( uDetailMap, atPUv * ( uDetailScale * 3.7 ) + vec2( 0.31, 0.77 ), atGx * ( uDetailScale * 3.7 ), atGy * ( uDetailScale * 3.7 ) );
 #define vMapUv atPUv
 #define vNormalMapUv atPUv
 #define vAoMapUv atPUv
@@ -1049,7 +1059,9 @@ function buildHQNormalChunk() {
     `vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
 	mapN.xy *= normalScale;
 	if ( uHeightM > 0.0 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.05 ) );
+	mapN.xy *= 1.0 - 0.45 * smoothstep( 22.0, 70.0, atDist );
 	if ( atDf > 0.002 ) mapN.xy += ( atDt.xy * 2.0 - 1.0 ) * atDf;
+	if ( atNear > 0.01 ) mapN.xy += ( atDt2.xy * 2.0 - 1.0 ) * ( 0.55 * atNear );
 	normal = normalize( tbn * mapN );`,
   );
 }
@@ -1074,15 +1086,37 @@ const HQ_CREVICE = `  float atMossV = 0.0;
   }
 `;
 
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\n';
-/** Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth. */
+/**
+ * Specular anti-aliasing for normal-mapped surfaces (Kaplanyan / Tokuyoshi style roughness widening): the screen-space variance
+ * of the normal-map-perturbed part of the normal (the shading normal minus the geometric one, so box edges are not counted twice:
+ * three's own geometryRoughness already covers those) is added to the GGX alpha^2, so sub-pixel relief turns into a wider, dimmer
+ * highlight instead of a crawling sparkle. Runs after lights_physical_fragment; ~15 ALU, no fetches.
+ */
+const SPEC_AA = `  {
+    vec3 atDnx = dFdx( normal - nonPerturbedNormal );
+    vec3 atDny = dFdy( normal - nonPerturbedNormal );
+    float atVar = min( 0.159 * ( dot( atDnx, atDnx ) + dot( atDny, atDny ) ), 0.18 );
+    float atA = material.roughness * material.roughness;
+    material.roughness = sqrt( sqrt( atA * atA + atVar ) );
+  }
+`;
+
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\n';
+/**
+ * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
+ * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
+ * tone mapper's shoulder instead of clipping to a white blob (the knee bounds the HDR input at ~5).
+ */
 const GRADE_FRAG = `  {
     vec3 atC = max( gl_FragColor.rgb, vec3( 0.0 ) );
     float atL = dot( atC, vec3( 0.2126, 0.7152, 0.0722 ) );
     float atSat = uGradeK.y * ( 1.0 - uGradeK.z * smoothstep( 0.0, - 300.0, vAtW.y ) );
     atC = mix( vec3( atL ), atC, atSat );
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
-    gl_FragColor.rgb = atC * uGradeTint;
+    atC = atC * uGradeTint + uBlack;
+    float atHi = max( atC.r, max( atC.g, atC.b ) );
+    if ( atHi > 3.0 ) atC *= ( 3.0 + 2.0 * ( 1.0 - exp( 0.5 * ( 3.0 - atHi ) ) ) ) / atHi;
+    gl_FragColor.rgb = atC;
   }`;
 
 const UV_TARGETS = ['MAP', 'NORMALMAP', 'AOMAP', 'ROUGHNESSMAP', 'METALNESSMAP', 'ALPHAMAP', 'EMISSIVEMAP'];
@@ -1318,7 +1352,10 @@ ${
   roughnessFactor = mix( roughnessFactor, 0.92, atMossV );
 `
     : ''
-}  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
+}  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );
+  // VR: a mirror-sharp wet film sparkles in motion (every head tremor moves the glint across a pixel): floor the roughness
+  roughnessFactor = max( roughnessFactor, 0.14 * clamp( atWet * 3.0, 0.0, 1.0 ) );`);
+      fs = fs.replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n' + SPEC_AA);
       if (aniso > 0) {
         // Brushed-metal look without tangents or MeshPhysicalMaterial: a fine grain across the surface's v axis
         // tilts the normal along v, so the lantern's highlight stretches into a short streak across the grain.
@@ -1456,6 +1493,7 @@ export function installRadialFog() {
   if (THREE.ShaderChunk.fog_pars_fragment !== pars) THREE.ShaderChunk.fog_pars_fragment = pars;
   if (THREE.ShaderChunk.fog_fragment !== frag) THREE.ShaderChunk.fog_fragment = frag;
   installLookChunks();
+  installDither();
 }
 
 /** JS twin of the shader fog curve (0..1) for CPU-side fades. */
@@ -1606,6 +1644,9 @@ export class MaterialLibrary {
     // Shared reflection probe (render/lighting.js assigns the texture): the stock-chunk materials get AT_LOOK_ENV
     // (no diffuse IBL term, branch-skipped when the tier turns reflections off); the lit-patched ones carry their own chunk.
     for (const k of ['grate', 'mount', 'hazard', 'plaque']) m[k].defines = Object.assign({}, m[k].defines, { AT_LOOK_ENV: '' });
+    // VR: every library material dithers its 8-bit output (interleaved gradient noise, vrShade.js): fog, sky, light shafts
+    // and the dark lit gradients band badly on an LCD headset. Exact black stays black (additive shafts).
+    for (const k of Object.keys(m)) m[k].dithering = true;
   }
 
   /** Hands the shared environment probe (a PMREM texture) to every standard material of the library. */
