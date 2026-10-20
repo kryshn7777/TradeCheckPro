@@ -42,7 +42,7 @@ const { encodeToKTX2 } = await import(pathToFileURL(path.join(nm, 'ktx2-encoder'
 const sharp = createRequire(path.join(nm, 'x.js'))('sharp');
 
 const HERO = new Set(['rock', 'masonry', 'metal']);
-const ALL = ['rock', 'masonry', 'metal', 'rockFar', 'flesh', 'rubble', 'roots', 'detail'];
+const ALL = ['rock', 'masonry', 'metal', 'rockFar', 'flesh', 'rubble', 'roots', 'detail', 'decals'];
 const sets = opt('sets', ALL.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
 
 const imageDecoder = async (buf) => {
@@ -93,6 +93,14 @@ for (const name of sets) {
   if (name === 'detail') {
     total += await enc(path.join(work, 'detail_normal.png'), path.join(out, 'detail_normal.ktx2'), { uastc: true, srgb: false, rdo: 0.8 });
     ent.ktx2.normal = 'detail_normal.ktx2';
+    saveEntry(name, ent);
+    continue;
+  }
+  if (name === 'decals') {
+    // RGBA atlas: ETC1S with an alpha slice (small), normals UASTC
+    total += await enc(path.join(work, 'decals_albedo.png'), path.join(out, 'decals_albedo.ktx2'), { uastc: false, srgb: true });
+    total += await enc(path.join(work, 'decals_normal.png'), path.join(out, 'decals_normal.ktx2'), { uastc: true, srgb: false, rdo: 0.8 });
+    ent.ktx2 = { albedo: 'decals_albedo.ktx2', normal: 'decals_normal.ktx2' };
     saveEntry(name, ent);
     continue;
   }

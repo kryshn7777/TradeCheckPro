@@ -14,7 +14,8 @@
       "normal": "rock_normal.ktx2",
       "orm": "rock_orm.ktx2",
       "normalHeightInB": true
-    }
+    },
+    "meanLuma": 0.02777
   },
   "masonry": {
     "albedo": "masonry_albedo.jpg",
@@ -31,7 +32,8 @@
       "normal": "masonry_normal.ktx2",
       "orm": "masonry_orm.ktx2",
       "normalHeightInB": true
-    }
+    },
+    "meanLuma": 0.03952
   },
   "metal": {
     "albedo": "metal_albedo.jpg",
@@ -48,7 +50,8 @@
       "normal": "metal_normal.ktx2",
       "orm": "metal_orm.ktx2",
       "normalHeightInB": true
-    }
+    },
+    "meanLuma": 0.02945
   },
   "rockFar": {
     "albedo": "rockFar_albedo.jpg",
@@ -65,7 +68,8 @@
       "normal": "rockFar_normal.ktx2",
       "orm": "rockFar_orm.ktx2",
       "normalHeightInB": true
-    }
+    },
+    "meanLuma": 0.01742
   },
   "flesh": {
     "albedo": "flesh_albedo.jpg",
@@ -82,41 +86,8 @@
       "normal": "flesh_normal.ktx2",
       "orm": "flesh_orm.ktx2",
       "normalHeightInB": true
-    }
-  },
-  "rubble": {
-    "albedo": "rubble_albedo.jpg",
-    "normal": "rubble_normal.jpg",
-    "orm": "rubble_orm.jpg",
-    "tileMeters": 2,
-    "size": 1024,
-    "hero": false,
-    "heightM": 0.06939,
-    "source": "baked:build_textures_hq.py",
-    "description": "broken stone and dust: gravel, chips, damp gaps",
-    "ktx2": {
-      "albedo": "rubble_albedo.ktx2",
-      "normal": "rubble_normal.ktx2",
-      "orm": "rubble_orm.ktx2",
-      "normalHeightInB": true
-    }
-  },
-  "roots": {
-    "albedo": "roots_albedo.jpg",
-    "normal": "roots_normal.jpg",
-    "orm": "roots_orm.jpg",
-    "tileMeters": 2,
-    "size": 1024,
-    "hero": false,
-    "heightM": 0.0543,
-    "source": "baked:build_textures_hq.py",
-    "description": "root cords and bark fibre: twisted strands, fissures, damp moss",
-    "ktx2": {
-      "albedo": "roots_albedo.ktx2",
-      "normal": "roots_normal.ktx2",
-      "orm": "roots_orm.ktx2",
-      "normalHeightInB": true
-    }
+    },
+    "meanLuma": 0.00763
   },
   "detail": {
     "normal": "detail_normal.png",
@@ -126,6 +97,78 @@
     "description": "shared micro normal (RG) + grain (B), layered over every macro normal",
     "ktx2": {
       "normal": "detail_normal.ktx2"
+    }
+  },
+  "decals": {
+    "albedo": "decals_albedo.png",
+    "normal": "decals_normal.png",
+    "tileMeters": 1,
+    "size": 2048,
+    "layout": {
+      "crackA": [
+        0,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "crackB": [
+        0.25,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "grime": [
+        0.5,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "moss": [
+        0.75,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "blood": [
+        0,
+        0,
+        0.25,
+        0.5
+      ],
+      "burn": [
+        0.25,
+        0,
+        0.25,
+        0.5
+      ],
+      "scratch": [
+        0.5,
+        0,
+        0.25,
+        0.5
+      ],
+      "impact": [
+        0.75,
+        0,
+        0.25,
+        0.5
+      ]
+    },
+    "names": [
+      "crackA",
+      "crackB",
+      "grime",
+      "moss",
+      "blood",
+      "burn",
+      "scratch",
+      "impact"
+    ],
+    "source": "baked:build_textures_hq.py",
+    "description": "decal atlas 4x2: cracks, grime, moss, blood smear, burn, claw scratches, impact (RGBA + normal)",
+    "ktx2": {
+      "albedo": "decals_albedo.ktx2",
+      "normal": "decals_normal.ktx2"
     }
   }
 }

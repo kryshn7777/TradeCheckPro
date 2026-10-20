@@ -33,7 +33,9 @@ export const LM_VERSION = 1;
 export const LM_HEADER_BYTES = 32;
 export const LM_CODEC_ZLIB_DELTA = 1;
 /** Bump when the bake's meaning changes (encoding, light model): old files then count as stale. */
-export const LM_BAKE_REV = 1;
+export const LM_BAKE_REV = 3;
+/** Decor the bake depends on: light shafts (emitters) and shadow casters. */
+export const LM_DECOR_TYPES = new Set(['shaft-light', 'statue', 'machinery', 'cage', 'pipe']);
 export const LM_RANGE_STATIC = 4.0;
 export const LM_RANGE_LAMP = 8.0;
 export const LM_PAGE = [1024, 1024];
@@ -124,13 +126,16 @@ export function levelLmHash(level, coreIds) {
     m.num(l.flicker ? 1 : 0);
     m.str(l.color);
   }
+  // anchors (baked as small glows) differ per variant, so they are not part of the hash: moving one only shifts a glow
   for (const d of (level && level.decor) || []) {
-    if (d.type !== 'shaft-light') continue;
+    if (!LM_DECOR_TYPES.has(d.type)) continue; // light shafts (emitters) and the shadow-casting decor
+    m.str(d.type);
     m.num(d.x);
     m.num(d.y);
     m.num(d.z);
     m.num(d.sx);
     m.num(d.sy);
+    m.num(d.sz);
     m.str(d.color);
   }
   return m.value;

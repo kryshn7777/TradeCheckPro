@@ -11,7 +11,7 @@
  * times baked ambient occlusion, so the pit falls into near-black). Diffuse GI: three gather passes (cosine-weighted rays,
  * the previous pass's lightmap read at the hit) → three bounces with colour bleeding.
  * Charts: every visible face of every solid (rays from eye points along the route decide what is visible), texel density
- * 0.15-0.7 m adaptive to the distance to the route under a global texel budget, MaxRects-packed into 1024² pages,
+ * 0.1-0.6 m adaptive to the distance to the route under a global texel budget, MaxRects-packed into 1024² pages,
  * cross-bilateral denoise + dilation, sqrt-encoded RGBA8 (see src/render/lightmapFormat.js).
  *
  * Output (public/abyssal-tether-3d/assets/lighting/): lm_ch1_index.json, lm_ch1_p<N>.bin.
@@ -49,21 +49,26 @@ const ROOT = path.resolve(HERE, '../../..');
 const DEFAULT_OUT = path.join(ROOT, 'public/abyssal-tether-3d/assets/lighting');
 
 export const QUALITY = {
-  final: { gather: [16, 10, 8], lampSamples: 3, shaftSamples: 4, keySamples: 6, budget: 4000000, eyeRays: 3000 },
+  final: { gather: [32, 16, 12], lampSamples: 6, shaftSamples: 6, keySamples: 12, budget: 5000000, eyeRays: 4000 },
   draft: { gather: [6, 4, 4], lampSamples: 2, shaftSamples: 2, keySamples: 3, budget: 1200000, eyeRays: 1200 },
 };
 const BASE_QUALITY = {
   keyRange: 150,
-  keyFloor: 0.5, // the share of the key that blocked regions keep (the runtime's old slanted-fill behaviour)
+  keyFloor: 0.22, // the share of the key that blocked regions keep (the runtime's old slanted-fill behaviour was 0.55)
   gatherRange: 120,
-  aoRange: 6,
-  aoRelief: 0.12,
-  aoGain: 1.7,
-  aoStrength: 0.9,
-  aoFloor: 0.15,
-  aoTarget: 0.86,
-  shaftGain: 0.5, // linear intensity of a light shaft's emitter (E ≈ 2·J/d next to an infinite line)
-  ambientGain: 1.0,
+  aoRange: 7,
+  aoShort: 1.2, // contact occlusion radius (m): crisp dark lines where floors meet walls and under ledges
+  aoContact: 0.75,
+  aoRelief: 0.06,
+  aoGain: 2.3,
+  aoStrength: 1.0,
+  aoFloor: 0.1,
+  aoTarget: 0.78,
+  shaftGain: 0.8, // linear intensity of a light shaft's emitter (E ≈ 2·J/d next to an infinite line)
+  ambientGain: 0.6, // the flat hemisphere fill was the "2010" look; the sources and their bounces carry the picture now
+  bounceGain: 1.5, // artistic: stone is brighter than the albedo estimate says, so bounces and colour bleeding read
+  anchorCandela: 5.5, // each grapple point's baked glow (cd; range 6.5 × 1.5 m)
+  lampGain: 2.0, // the lamps are the warm heart of the picture: baked pools are brighter than the old runtime lamps
 };
 
 // Albedo estimates (linear): the level's stone is dark grey-brown, metal cold, bridges warm, pillars pale, flesh dark.
@@ -273,7 +278,7 @@ export async function bakeLightmaps(level, opts = {}) {
 
   // ---- charts -------------------------------------------------------------------------------------------------------
   const cc = buildCharts(level, LEVEL_DATA_3D.solids, { budget, eyeRays: Q.eyeRays });
-  const { charts, solids, boxes, grid, cfg } = cc;
+  const { charts, solids, boxes, cfg } = cc;
   const fit = fitBudget(charts, cfg);
   const pack = packPages(charts, cfg);
   const N = fit.texels;
@@ -298,14 +303,21 @@ export async function bakeLightmaps(level, opts = {}) {
   });
   const themes = parseThemes(level);
   // lights
-  const lights = level.lights || [];
+  const lights = (level.lights || []).slice();
+  // Anchors glow in the game (warm white rings, amber hooks, rust-red fragile ones): baked as small steady lights hung a
+  // little in front of the mount, so every grapple point sits in its own pool of light (costs nothing at run time).
+  const ANCHOR_COL = { ring: '#e8dcc0', hook: '#e0a050', fragile: '#b05040' };
+  for (const a of level.anchors || []) {
+    const n = a.normal || { x: 0, y: -1, z: 0 };
+    lights.push({ x: a.x + n.x * 0.5, y: a.y + n.y * 0.5, z: (a.z || 0) + n.z * 0.5, color: ANCHOR_COL[a.kind] || ANCHOR_COL.ring, intensity: 1, range: 6.5, flicker: 0, anchor: true });
+  }
   const lightsT = sab(Float64Array, lights.length * 12);
   const flame = [];
   lights.forEach((l, i) => {
     const col = hexToLinear(l.color, '#e0a050');
     const range = Math.max(2, l.range || 12);
-    const candela = Math.max(0, l.intensity == null ? 1 : l.intensity) * Math.max(6, 0.06 * range * range) * 1.6;
-    const rad = Math.min(2.5, Math.max(0.25, range * 0.03));
+    const candela = l.anchor ? Q.anchorCandela : Math.max(0, l.intensity == null ? 1 : l.intensity) * Math.max(6, 0.06 * range * range) * 1.6 * Q.lampGain;
+    const rad = l.anchor ? 0.2 : Math.min(2.5, Math.max(0.25, range * 0.03));
     const isFlame = l.flicker && l.flicker > 0 ? 1 : 0;
     lightsT.set([l.x, l.y, l.z || 0, col[0], col[1], col[2], candela, range * 1.5, rad, isFlame, lum(col), 0], i * 12);
     if (isFlame) flame.push({ section: Math.max(0, level.sectionIndexAt(l.y) | 0), col, w: candela });
@@ -351,24 +363,40 @@ export async function bakeLightmaps(level, opts = {}) {
   const D = sab(Float32Array, N * 3);
   const DL = sab(Float32Array, N);
   const AO = sab(Float32Array, N);
+  const AOS = sab(Float32Array, N);
   const B0 = sab(Float32Array, N * 3);
   const B1 = sab(Float32Array, N * 3);
   const valid = sab(Uint8Array, N);
+  // Decor that casts shadows (statues, machinery, cages, pipes): shrunk boxes appended after the solids. They occlude and
+  // darken (AO) but carry no lightmap of their own.
+  const OCC = { statue: 0.6, machinery: 0.8, cage: 0.55, pipe: 0.8 };
+  const occ = [];
+  for (const d of level.decor || []) {
+    const k = OCC[d.type];
+    if (!k) continue;
+    const hx = (Math.max(d.sx, d.sz) * k) / 2;
+    occ.push([d.x - hx, d.y - d.sy / 2, d.z - hx, d.x + hx, d.y + d.sy / 2, d.z + hx]);
+  }
+  const allBoxes = new Float64Array(boxes.length + occ.length * 6);
+  allBoxes.set(boxes);
+  occ.forEach((b, i) => allBoxes.set(b, boxes.length + i * 6));
+  const boxesS = sab(Float64Array, allBoxes.length);
+  boxesS.set(allBoxes);
+  const gridAll = new BoxGrid(allBoxes, cfg.min, cfg.size, cfg.cell);
   const gridShared = (() => {
-    const s = grid.exportShared();
+    const s = gridAll.exportShared();
     const start = sab(Uint32Array, s.start.length);
     start.set(s.start);
     const items = sab(Uint32Array, s.items.length);
     items.set(s.items);
     return { start, items };
   })();
-  const boxesS = sab(Float64Array, boxes.length);
-  boxesS.set(boxes);
+  log(`  ${occ.length} decor shadow casters`);
 
   const pool = new Pool(nWorkers, {
     boxes: boxesS,
     gridShared,
-    cfg: { gridMin: cfg.min, gridSize: cfg.size, cell: cfg.cell, lift: 0.04, seed: 0x1b873593 },
+    cfg: { gridMin: cfg.min, gridSize: cfg.size, cell: cfg.cell, lift: 0.04, seed: 0x1b873593, nSolids: solids.length },
     charts: chartsT,
     faceChart,
     albedo,
@@ -378,12 +406,13 @@ export async function bakeLightmaps(level, opts = {}) {
     D,
     DL,
     AO,
+    AOS,
     valid,
     B0,
     B1,
     themes,
     keyDir: KEY_DIR,
-    quality: { lampSamples: Q.lampSamples, shaftSamples: Q.shaftSamples, keySamples: Q.keySamples, keyRange: Q.keyRange, keyFloor: Q.keyFloor, gatherRange: Q.gatherRange, aoRange: Q.aoRange },
+    quality: { lampSamples: Q.lampSamples, shaftSamples: Q.shaftSamples, keySamples: Q.keySamples, keyRange: Q.keyRange, keyFloor: Q.keyFloor, gatherRange: Q.gatherRange, aoRange: Q.aoRange, aoShort: Q.aoShort },
   });
   const CHUNK = 4096;
 
@@ -409,9 +438,9 @@ export async function bakeLightmaps(level, opts = {}) {
     const dst = 1 - src;
     await pool.run(N, CHUNK, { op: 'gather', pass: p, K: Q.gather[p], src, dst });
     const Bd = dst === 0 ? B0 : B1;
-    fillInvalid(charts, valid, [{ a: Bd, n: 3 }, ...(p === 0 ? [{ a: AO, n: 1 }] : [])]);
+    fillInvalid(charts, valid, [{ a: Bd, n: 3 }, ...(p === 0 ? [{ a: AO, n: 1 }, { a: AOS, n: 1 }] : [])]);
     for (let t = 0; t < N; t++) guide[t] = lum([D[t * 3] + Bd[t * 3], D[t * 3 + 1] + Bd[t * 3 + 1], D[t * 3 + 2] + Bd[t * 3 + 2]]) + 0.6 * DL[t];
-    denoise(charts, [{ a: Bd, n: 3 }, ...(p === 0 ? [{ a: AO, n: 1 }] : [])], guide, 0.9);
+    denoise(charts, [{ a: Bd, n: 3 }, ...(p === 0 ? [{ a: AO, n: 1 }, { a: AOS, n: 1 }] : [])], guide, 0.9);
     src = dst;
     stamp(`gather pass ${p + 1}/${Q.gather.length} (${Q.gather[p]} rays)`);
   }
@@ -431,7 +460,7 @@ export async function bakeLightmaps(level, opts = {}) {
         const sv = c.s0 + ((i + 0.5) / c.w) * (c.s1 - c.s0);
         const tv = c.t0 + ((j + 0.5) / c.h) * (c.t1 - c.t0);
         posY[t] = c.sa === 1 ? sv : c.ta === 1 ? tv : c.p;
-        const v = 1 - Math.min(1, Math.max(0, (AO[t] - Q.aoRelief) * Q.aoGain)) * Q.aoStrength;
+        const v = (1 - Math.min(1, Math.max(0, (AO[t] - Q.aoRelief) * Q.aoGain)) * Q.aoStrength) * (1 - Math.min(1, AOS[t] * 1.6) * Q.aoContact);
         vis[t] = v;
         secSum[c.section] += v;
         secCnt[c.section]++;
@@ -452,7 +481,7 @@ export async function bakeLightmaps(level, opts = {}) {
         const k = 0.5 + 0.5 * nrm;
         for (let ch = 0; ch < 3; ch++) {
           const amb = (look.ground[ch] + (look.sky[ch] - look.ground[ch]) * k) * look.hemiK * v * Q.ambientGain;
-          staticE[t * 3 + ch] = amb + D[t * 3 + ch] + Bf[t * 3 + ch];
+          staticE[t * 3 + ch] = amb + D[t * 3 + ch] + Bf[t * 3 + ch] * Q.bounceGain;
         }
       }
     }
@@ -461,7 +490,9 @@ export async function bakeLightmaps(level, opts = {}) {
   const [PW, PH] = LM_PAGE;
   const g = cfg.gutter;
   const pagesData = pack.pages.map(() => new Uint8Array(PW * PH * 4));
-  const enc = (e, range) => Math.round(255 * Math.sqrt(Math.min(1, Math.max(0, e / range))));
+  // deterministic dither (±½ level) breaks the banding of the 8-bit sqrt encoding in smooth gradients
+  const dith = (t, ch) => ((Math.imul(t * 4 + ch + 1, 0x9e3779b1) ^ Math.imul(t + 0x7f4a7c15, 0x85ebca6b)) >>> 8) / 16777216 - 0.5;
+  const enc = (e, range, t, ch) => Math.min(255, Math.max(0, Math.round(255 * Math.sqrt(Math.min(1, Math.max(0, e / range))) + dith(t, ch))));
   for (const c of charts) {
     const pd = pagesData[c.page];
     for (let y = -g; y < c.h + g; y++) {
@@ -474,10 +505,10 @@ export async function bakeLightmaps(level, opts = {}) {
         const gg = staticE[t * 3 + 1];
         const b = staticE[t * 3 + 2];
         const l = DL[t];
-        pd[o] = enc(r, LM_RANGE_STATIC);
-        pd[o + 1] = enc(gg, LM_RANGE_STATIC);
-        pd[o + 2] = enc(b, LM_RANGE_STATIC);
-        pd[o + 3] = enc(l, LM_RANGE_LAMP);
+        pd[o] = enc(r, LM_RANGE_STATIC, t, 0);
+        pd[o + 1] = enc(gg, LM_RANGE_STATIC, t, 1);
+        pd[o + 2] = enc(b, LM_RANGE_STATIC, t, 2);
+        pd[o + 3] = enc(l, LM_RANGE_LAMP, t, 3);
         if (x >= 0 && x < c.w && y >= 0 && y < c.h) {
           stats.meanS += (r + gg + b) / 3;
           stats.meanL += l;

@@ -49,7 +49,7 @@ export const QUALITY_TIERS = Object.freeze({
 export const GI_URL = new URL('../../assets/lighting/gi_ch1.bin', import.meta.url).href;
 export const LM_BASE_URL = new URL('../../assets/lighting/', import.meta.url).href;
 /** Lightmap grading defaults: exposure multiplies the baked irradiance, floor adds a little ambient everywhere (so the darkest corners stay readable). */
-export const LM_TUNE = { exposure: 1.0, floor: 0.012 };
+export const LM_TUNE = { exposure: 1.5, floor: 0.012, lanternGain: 1.05, lanternFalloff: 0.38 };
 
 const FLAME = new THREE.Color(1.0, 0.56, 0.22);
 const _c = new THREE.Color();
@@ -321,10 +321,12 @@ export class Lighting {
     return true;
   }
 
-  /** Live grading of the lightmapped surfaces: exposure (× baked irradiance) and floor (irradiance added everywhere). */
+  /** Live grading of the lightmapped surfaces: exposure (× baked irradiance), floor (irradiance added everywhere), lanternGain / lanternFalloff (the lantern's extra d^-falloff on them). */
   setLightmapTune(t) {
     if (t && isFinite(t.exposure)) this.lmTune.exposure = t.exposure;
     if (t && isFinite(t.floor)) this.lmTune.floor = t.floor;
+    if (t && isFinite(t.lanternGain)) this.lmTune.lanternGain = t.lanternGain;
+    if (t && isFinite(t.lanternFalloff)) this.lmTune.lanternFalloff = t.lanternFalloff;
     this._applyUniforms(true);
     return this.lmTune;
   }
@@ -424,6 +426,7 @@ export class Lighting {
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
     LOOK.uLMK.value.y = this.lmTune.exposure;
     LOOK.uLMK.value.w = this.lmTune.floor;
+    LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);
   }

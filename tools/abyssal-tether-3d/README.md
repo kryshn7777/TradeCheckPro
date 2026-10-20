@@ -11,6 +11,7 @@ Verification and tests (each folder has its own README):
 | [`e2e/`](e2e/README.md) | `npm run e2e:at3d` | the real game in headless Chromium: desktop input, the whole descent with the creature live, persistence, mock WebXR |
 | [`tests/`](tests/README.md) | `npm run test:at3d` | Node unit tests (input, VR UX fixes, creature) and the creature pacing / perf tools |
 | [`bake/`](bake/bake_gi.mjs) | `node tools/abyssal-tether-3d/bake/bake_gi.mjs` (`--verify` checks the asset against the level) | bakes the static lighting (AO, lamp/shaft bounce, key visibility) of Chapter I into `public/abyssal-tether-3d/assets/lighting/gi_ch1.bin` (~1 MB, ~10 s, deterministic, no Blender); re-run after any change to level solids or lights (the runtime ignores a stale bake and tests/render/test-lighting.mjs fails) |
+| [`bake/`](bake/bake_lightmaps.mjs) | `node tools/abyssal-tether-3d/bake/bake_lightmaps.mjs [--draft] [--budget N] [--workers N] [--preview DIR] [--verify]` | bakes Chapter I's LIGHTMAPS (Quest look): per-face charts on every visible static solid (0.1-0.6 m texels under a 5M-texel budget), direct light from the 13 lamps, light shafts and the shaft key (soft shadows), sky/abyss ambient with baked occlusion, 3 gather bounces with colour bleeding, denoise + dilation, sqrt RGBA8 pages (RGB static irradiance, A flame-lamp direct light that the runtime flickers) into `assets/lighting/lm_ch1_index.json` + `lm_ch1_p<N>.bin` (5 pages, 20 MB of GPU memory, ~3 MB on disk, ~1 min on 4 cores, deterministic for any worker count). Helpers: `lmCharts.mjs` (visibility, density, MaxRects packing), `lmTrace.mjs` (box-grid ray tracer), `lmTheme.mjs`, `lmWorker.mjs`. Re-run after any change to core solids, lamps, light shafts or shadow-casting decor (the runtime ignores a stale bake; tests/render/test-lighting.mjs fails). Format and design notes: `src/render/lightmapFormat.js`, `src/render/lighting.js` |
 
 ## The Mason (predator)
 
@@ -74,20 +75,68 @@ the exported GLBs (it packs `_MASK` / `_OWNER`).
 
 ## Textures
 
-Original tileable PBR sets (1024², seamless by construction) are baked by `build_textures.py` into
-`public/abyssal-tether-3d/assets/textures/` with a `manifest.json`:
+Seamless PBR sets (every map periodic by construction) live in `public/abyssal-tether-3d/assets/textures/` with a
+`manifest.json`. Two generations of tooling:
 
-| Set | Tile | Use |
+* `build_textures.py` - the original 1024 height-field sculpts (rock strata, ashlar masonry, corroded iron, far rock, sinew).
+* `build_textures_hq.py` - the Quest-tier pass (WP-GFX-QUEST-MAT): reuses those sculpts at **2048 px for the hero sets**
+  (`rock` 4 m, `masonry` 4 m, `metal` 2 m), adds an extra micro-relief octave, curvature wear (pale arrises, grime in cavities,
+  bare-metal edges), wet streaks, low-frequency colour / roughness variation inside the tile, and bakes the new 1024 sets
+  `rockFar` (16 m), `flesh` (1.5 m), a shared 512 `detail` micro-normal (0.5 m) and the **decal atlas**
+  `decals` (2048 x 1024 RGBA + normal, 4 x 2 cells: two crack types, grime run, moss, blood smear, burn, claw scratches,
+  impact). `rubble` and `roots` (`mat_rubble`, `mat_roots`) can be baked on demand (`--sets rubble`) but are not shipped: rubble piles
+  reuse the masonry set so they merge into the existing stone draw call.
+
+| Set | Size | Tile | Use |
+|---|---|---|---|
+| `rock` | 2048 | 4 m | shaft walls, ledges |
+| `masonry` | 2048 | 4 m | Lanternwright ashlar: built walls, bridges, the creature's stone |
+| `metal` | 2048 | 2 m | corroded iron: girders, bands, grates |
+| `rockFar` | 1024 | 16 m | distant structures |
+| `flesh` | 1024 | 1.5 m | the creature's exposed tissue |
+| `detail` | 512 | 0.5 m | micro normal layered over every macro normal (shader, near only) |
+| `decals` | 2048 x 1024 | atlas | instanced-free merged quad decals (one draw call) |
+
+Each set has `albedo` (sRGB), `normal` (OpenGL +Y) and `orm` (R = AO, G = roughness, B = metalness).
+
+Run (the Blender venv python has numpy + Pillow; ~2.8 GB for a 2048 set, one process at a time):
+
+```bash
+PY=.../blender-venv/bin/python
+$PY -I tools/abyssal-tether-3d/build_textures_hq.py --work <masters dir> --tilecheck <masters dir>/tilecheck      # all sets (~6 min)
+$PY -I tools/abyssal-tether-3d/build_textures_hq.py --work <masters dir> --sets rock,decals                        # some
+```
+
+It writes lossless masters to `--work` (PNG; `<set>_normal_h.png` has the **height field in the blue channel**, `_height16.png`
+is the same height at 16 bit) and into the game folder only: `manifest.json` (merged) and the **1024 px JPEG fallbacks**
+(`<set>_albedo/normal/orm.jpg`, the normal's blue = true z). `--tilecheck` writes 2x2 seam-check sheets.
+
+### GPU compression (KTX2 / Basis Universal)
+
+`encode_ktx2.mjs` turns the masters into `.ktx2` files (full mip chain, bottom-row-first so they match the TextureLoader
+orientation) and records them under `"ktx2"` in each manifest entry (`normalHeightInB: true` = blue channel carries height):
+
+| Map | Codec | Notes |
 |---|---|---|
-| `rock` | 4 m | shaft walls, ledges |
-| `masonry` | 4 m | Lanternwright ashlar: built walls, bridges, the creature's stone |
-| `metal` | 2 m | corroded iron: girders, bands, grates |
-| `rockFar` | 16 m | distant structures |
-| `flesh` | 1.5 m | the creature's exposed tissue (fibres run along v) |
+| hero albedo (rock, masonry, metal) | UASTC + zstd + RDO 1.5 | 2048; transcodes to ASTC 4x4 (8 bpp) on Quest |
+| normals (all sets, B = height) | UASTC + zstd + RDO 0.8 | 2048 for the hero sets, no "normal map mode" (blue is data) |
+| ORM | UASTC + zstd + RDO 0.8 | **1024 for the hero sets** (AO / roughness / metal are low frequency), 1024 for the rest |
+| other albedo | ETC1S (quality 150) | 1024, ~0.15 MB each |
+| decals albedo | ETC1S with alpha slice | 2048 x 1024 |
 
-Each set has `albedo` (sRGB), `normal` (OpenGL +Y, linear) and `orm` (R = AO, G = roughness, B = metalness, linear),
-so one ORM texture feeds three.js `aoMap`, `roughnessMap` and `metalnessMap`. Run with the Blender venv Python;
-`--preview` renders `previews/textures.png`, `--tilecheck <dir>` writes 2×2 seam-check sheets.
+```bash
+mkdir -p $TOOLS && cd $TOOLS && npm init -y && npm i ktx2-encoder@0.6.0 sharp      # once; not shipped
+KTX2_TOOLS=$TOOLS node tools/abyssal-tether-3d/encode_ktx2.mjs --work <masters dir> [--sets rock,masonry]
+```
+
+(single-threaded WASM: a 2048 UASTC map takes ~100 s; run one process per set side by side.) With Khronos' `toktx`:
+`toktx --t2 --encode uastc --uastc_quality 2 --zcmp 19 --genmipmap --assign_oetf srgb out.ktx2 in.png` (`linear` for
+normal / ORM; ETC1S: `--encode etc1s --clevel 4 --qlevel 160`; add `--lower_left_maps_to_s0t0` for the bottom-row-first order).
+
+Runtime: `src/render/materials.js` `loadTextureManifest()` uses the vendored `KTX2Loader` + Basis transcoder
+(`vendor/three/addons/libs/basis/`, licence notes in `vendor/three/README.txt`) when the manifest entry has `ktx2` and the
+browser has Worker + WebAssembly, otherwise (or if any map of a set fails) the JPEG fallbacks load, with no parallax
+(the packed height is only used with the KTX2 normals). Memory (ASTC, with mips): a 2048 map = 5.6 MB, a 1024 map = 1.4 MB.
 
 `fetch_polyhaven.py` swaps in CC0 Poly Haven sets (same manifest format) when the network allows
 (`polyhaven.com`, `api.polyhaven.com`, `dl.polyhaven.org`); `--list <category>` and `--set name=id` choose assets.

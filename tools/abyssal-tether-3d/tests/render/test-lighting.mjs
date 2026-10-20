@@ -12,6 +12,20 @@ import { LEVEL_DATA_3D } from '../../../../public/abyssal-tether-3d/src/data/lev
 import { levelGiHash, readHeader, voxelIndex } from '../../../../public/abyssal-tether-3d/src/render/giFormat.js';
 import { RenderGovernor } from '../../../../public/abyssal-tether-3d/src/render/renderGovernor.js';
 import { bake, packBake, unpackBake, BAKE } from '../../bake/bake_gi.mjs';
+import { bakeLightmaps, packPage } from '../../bake/bake_lightmaps.mjs';
+import zlib from 'node:zlib';
+import {
+  LM_FACE_FLOATS,
+  LM_FACES,
+  LM_HEADER_BYTES,
+  LM_INDEX_NAME,
+  LM_PAGE,
+  buildChartTable,
+  isCoreSolid,
+  levelLmHash,
+  lmUndelta,
+  readLmHeader,
+} from '../../../../public/abyssal-tether-3d/src/render/lightmapFormat.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ASSET = path.resolve(HERE, '../../../../public/abyssal-tether-3d/assets/lighting/gi_ch1.bin');
@@ -87,6 +101,85 @@ ok('the hash ignores crumbling ledges but not walls', () => {
   assert.equal(levelGiHash(l2), h0);
   l2.solids.find((s) => s.kind === 'wall').minX += 1;
   assert.notEqual(levelGiHash(l2), h0);
+});
+
+
+// ---- lightmaps ---------------------------------------------------------------------------------------------------
+const LM_DIR = path.resolve(HERE, '../../../../public/abyssal-tether-3d/assets/lighting');
+const lmIndex = JSON.parse(fs.readFileSync(path.join(LM_DIR, LM_INDEX_NAME), 'utf8'));
+const rawById = new Map(LEVEL_DATA_3D.solids.map((s) => [s.id, s]));
+const coreExpected = level.solids.filter((s) => isCoreSolid(s, rawById)).map((s) => s.id);
+
+ok('shipped lightmaps: index matches the level (a stale bake fails here: re-run tools/abyssal-tether-3d/bake/bake_lightmaps.mjs)', () => {
+  assert.equal(lmIndex.format, 'AT3DLM01');
+  assert.deepEqual(Object.keys(lmIndex.solids).sort(), coreExpected.slice().sort(), 'the set of baked solids changed');
+  assert.equal(lmIndex.hash, levelLmHash(level, Object.keys(lmIndex.solids)), 'stale lightmaps');
+  for (const s of level.solids) {
+    const b = lmIndex.boxes[s.id];
+    if (!b) continue;
+    assert.deepEqual(b, [s.minX, s.minY, s.minZ, s.maxX, s.maxY, s.maxZ].map((v) => Math.round(v * 100)), 'box moved: ' + s.id);
+  }
+});
+ok('lightmap hash: ignores crumbling ledges and variant-only solids, notices walls and lamps', () => {
+  const ids = Object.keys(lmIndex.solids);
+  const base = levelLmHash(level, ids);
+  const nm = new Level3D(LEVEL_DATA_3D, 'nightmare');
+  const ab = new Level3D(LEVEL_DATA_3D, 'abyss');
+  assert.equal(levelLmHash(nm, ids), base, 'nightmare variant');
+  assert.equal(levelLmHash(ab, ids), base, 'abyss variant');
+  const l2 = new Level3D(LEVEL_DATA_3D, 'normal');
+  l2.solids.find((s) => s.kind === 'crumble').minX += 5;
+  assert.equal(levelLmHash(l2, ids), base);
+  l2.solids.find((s) => s.id === ids[0]).maxY += 1;
+  assert.notEqual(levelLmHash(l2, ids), base);
+  const l3 = new Level3D(LEVEL_DATA_3D, 'normal');
+  l3.lights[0].x += 1;
+  assert.notEqual(levelLmHash(l3, ids), base);
+});
+ok('shipped lightmaps: pages decode, GPU budget <= 32 MB, charts index real pages, rects inside the page', () => {
+  const [W, H] = lmIndex.page;
+  assert.deepEqual([W, H], LM_PAGE);
+  assert.ok(lmIndex.layers === lmIndex.pages.length && lmIndex.layers >= 1);
+  const gpu = W * H * 4 * lmIndex.layers;
+  assert.ok(gpu <= 32 * 1048576, `GPU bytes ${gpu}`);
+  let disk = 0;
+  lmIndex.pages.forEach((pg) => {
+    const buf = fs.readFileSync(path.join(LM_DIR, pg.file));
+    disk += buf.length;
+    const h = readLmHeader(buf);
+    assert.ok(h && h.w === W && h.h === H && h.pages === 1, 'header ' + pg.file);
+    const raw = zlib.inflateSync(buf.subarray(LM_HEADER_BYTES));
+    assert.equal(raw.length, h.rawLength);
+    lmUndelta(raw);
+    let lit = 0;
+    for (let i = 0; i < raw.length; i += 4) if (raw[i] + raw[i + 1] + raw[i + 2] > 0) lit++;
+    assert.ok(lit > raw.length / 4 / 20, 'page holds charts: ' + pg.file);
+  });
+  assert.ok(disk < 14 * 1048576, `disk ${disk}`);
+  assert.equal(lmIndex.rows.length, Object.keys(lmIndex.solids).length);
+  let charts = 0;
+  for (const row of lmIndex.rows) {
+    assert.equal(row.length, LM_FACES * LM_FACE_FLOATS);
+    for (let f = 0; f < LM_FACES; f++) {
+      const q = row.slice(f * LM_FACE_FLOATS, (f + 1) * LM_FACE_FLOATS);
+      if (q[0] < 0) continue;
+      charts++;
+      assert.ok(q[0] < lmIndex.layers);
+      assert.ok(q[1] >= 0 && q[2] >= 0 && q[3] <= 1 && q[4] <= 1 && q[1] < q[3] && q[2] < q[4], 'atlas rect');
+      assert.ok(q[5] >= 0 && q[6] >= 0 && q[7] <= 1.000001 && q[8] <= 1.000001 && q[5] < q[7] && q[6] < q[8], 'crop');
+    }
+  }
+  assert.ok(charts > 200, 'charts ' + charts);
+  const t = buildChartTable(lmIndex.rows);
+  assert.equal(t.data.length, t.width * t.height * 4);
+});
+const q1 = await bakeLightmaps(level, { draft: true, budget: 260000, workers: 2 });
+const q2 = await bakeLightmaps(level, { draft: true, budget: 260000, workers: 3 });
+ok('lightmap bake: identical pages for different worker counts', () => {
+  assert.equal(q1.pages.length, q2.pages.length);
+  for (let i = 0; i < q1.pages.length; i++) assert.ok(Buffer.from(q1.pages[i]).equals(Buffer.from(q2.pages[i])), 'page ' + i);
+  assert.equal(q1.index.hash, q2.index.hash);
+  assert.ok(packPage(q1.pages[0]).length > 1000);
 });
 
 // ---- governor hook -----------------------------------------------------------------------------------------------

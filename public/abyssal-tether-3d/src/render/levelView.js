@@ -54,6 +54,7 @@ const DETAIL_BAND_H = 32; // finer bands for small dressing (kit parts, arcades,
 const DETAIL_DIST = 38; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
 const SMALL_ITEM = 1.6; // m: items smaller than this on every axis
 const NEIGHBOUR_DIST = 40; // m: chunks of the neighbouring sections
+const NEAR_DIST = 26; // 'near' tier (rubble: sub-pixel and fogged past this)
 const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhouettes against the haze, not as relief)
 // Dressing categories that live in the finer, nearer tiers whatever they are placed on (the Quest trim of the
 // densest sections): small relief that is sub-pixel past a few tens of metres.
@@ -68,7 +69,7 @@ const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel /
 const PLAQUE_DIST = 26;
 const GATE_ACCEL = 120; // m/s²: the portcullis falls 7.5 m in ~0.35 s
 const GATE_LIP = 0.5; // metres of the raised gate (spiked lip) left showing below the opening
-const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', rubble: 'decorRubble', glow: 'decorGlow', shaft: 'lightShaft' };
+const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', glow: 'decorGlow', shaft: 'lightShaft' };
 
 const BUCKET_OF = {
   wall: 'rock',
@@ -1021,7 +1022,7 @@ function buildHighlightGeometry(hand) {
 }
 
 /** Radial glow sprite for Points. */
-function glowTexture(size = 64) {
+export function glowTexture(size = 128) {
   let c = null;
   if (typeof document !== 'undefined') {
     c = document.createElement('canvas');
@@ -1030,13 +1031,31 @@ function glowTexture(size = 64) {
   }
   if (!c) return null;
   const ctx = c.getContext('2d');
+  // soft bloom: a hot core, a wide skirt
   const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.18, 'rgba(255,255,255,0.55)');
-  g.addColorStop(0.45, 'rgba(255,255,255,0.14)');
+  g.addColorStop(0.1, 'rgba(255,255,255,0.7)');
+  g.addColorStop(0.22, 'rgba(255,255,255,0.32)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.09)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
+  // gentle anamorphic streak: a thin horizontal flare through the centre, fading to nothing at both ends
+  const sg = ctx.createLinearGradient(0, 0, size, 0);
+  sg.addColorStop(0, 'rgba(255,255,255,0)');
+  sg.addColorStop(0.28, 'rgba(255,255,255,0.12)');
+  sg.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+  sg.addColorStop(0.72, 'rgba(255,255,255,0.12)');
+  sg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = sg;
+  const th = Math.max(1, size / 64);
+  ctx.globalAlpha = 0.07;
+  ctx.fillRect(0, size / 2 - th * 4, size, th * 8);
+  ctx.globalAlpha = 0.14;
+  ctx.fillRect(0, size / 2 - th * 1.5, size, th * 3);
+  ctx.globalAlpha = 0.26;
+  ctx.fillRect(0, size / 2 - th * 0.5, size, th);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -1770,7 +1789,7 @@ class DressSpace {
  *
  * rubbleGeo: a cluster of fractured stone chunks (jittered icosahedra, 20 triangles each) resting on y = baseY in world space.
  */
-const _ico = new THREE.IcosahedronGeometry(1, 0).toNonIndexed().attributes.position.array;
+const _ico = new THREE.IcosahedronGeometry(1, 0).attributes.position.array;
 function _vhash(x, y, z, k) {
   let h = Math.imul(Math.round(x * 997) ^ 0x9e3779b9, 73856093) ^ Math.imul(Math.round(y * 991) + k, 19349663) ^ Math.imul(Math.round(z * 983), 83492791);
   h ^= h >>> 13;
@@ -1875,6 +1894,44 @@ function blockPatchGeo(rng, cols, rows, bw, bh) {
   return g;
 }
 
+/**
+ * Decals (WP-GFX-QUEST-MAT): one merged, alpha-blended, lit quad mesh for the whole level (a single draw call), cut from
+ * the 4 x 2 atlas assets/textures/decals_*.{ktx2,png} (tools/abyssal-tether-3d/build_textures_hq.py). Types in atlas order;
+ * W = quad size range [width], [height] in metres; `sec` = relative weight per section S1..S8 (cracks and impacts everywhere,
+ * moss in the wet sections, claw scratches and smears deeper where the Mason has been).
+ */
+const DECAL_TYPES = [
+  { name: 'crackA', w: [1.8, 3.4], h: null, rot: true, a: [0.8, 1], sec: [3, 3, 3, 3, 3, 3, 3, 3] },
+  { name: 'crackB', w: [1.4, 2.6], h: null, rot: true, a: [0.7, 1], sec: [1, 2, 3, 2, 2, 3, 2, 2] },
+  { name: 'grime', w: [0.9, 1.9], h: [2.2, 4.2], rot: false, a: [0.5, 0.9], sec: [2, 3, 4, 3, 4, 4, 3, 4] },
+  { name: 'moss', w: [1.2, 2.5], h: null, rot: true, a: [0.6, 1], sec: [0, 0, 2, 1, 3, 4, 2, 4] },
+  { name: 'blood', w: [1.2, 2.4], h: null, rot: false, a: [0.6, 0.95], sec: [0, 0, 0, 0, 1, 1, 2, 2] },
+  { name: 'burn', w: [1.2, 2.0], h: [1.5, 2.6], rot: false, a: [0.7, 1], sec: [0, 0, 1, 1, 0, 2, 1, 0] },
+  { name: 'scratch', w: [0.9, 1.6], h: null, rot: true, a: [0.8, 1], sec: [0, 0, 0, 1, 2, 2, 3, 3] },
+  { name: 'impact', w: [0.5, 1.1], h: null, rot: true, a: [0.7, 1], sec: [1, 1, 1, 1, 1, 1, 1, 1] },
+];
+const DECAL_PAD = 0.006; // atlas inset (uv) so mips / filtering never bleed a neighbouring cell
+function decalCell(i) {
+  const col = i % 4;
+  const row = (i / 4) | 0;
+  return [col * 0.25 + DECAL_PAD, 1 - (row + 1) * 0.5 + DECAL_PAD, 0.25 - 2 * DECAL_PAD, 0.5 - 2 * DECAL_PAD];
+}
+function pickDecal(rng, sec, floor) {
+  let tot = 0;
+  for (const t of DECAL_TYPES) tot += t.sec[sec] || 0;
+  if (tot <= 0) return 0;
+  let r = rng() * tot;
+  for (let i = 0; i < DECAL_TYPES.length; i++) {
+    r -= DECAL_TYPES[i].sec[sec] || 0;
+    if (r <= 0) {
+      // drips and burn tongues belong on walls, not on the floor: they become a smear / crack there
+      if (floor && (i === 2 || i === 5)) return i === 2 ? 4 : 0;
+      return i;
+    }
+  }
+  return 0;
+}
+
 /** World AABB of an item-local box [x0,x1]×[y0,y1]×[z0,z1] placed by a face frame (axis-aligned faces only). */
 function frameBox(F, x0, x1, y0, y1, z0, z1) {
   // U = Y × N (horizontal), N horizontal or vertical not supported here (walls only)
@@ -1902,6 +1959,7 @@ class Dresser {
     this.gears = []; // colossal turning cogs: { m (Matrix4, unit-radius → world), spin (rad/s), phase, tint, sec }
     this.stats = { faces: 0, piers: 0, courses: 0, crowns: 0, corbels: 0, roots: 0, arches: 0, braces: 0, burls: 0, lancets: 0, cords: 0 };
     this._m = new THREE.Matrix4();
+    this.dec = { p: [], n: [], uv: [], c: [] }; // decal quads (world space), drained by LevelView._flushDecals
   }
 
   /** Section wetness (0..1) at world height y, as the renderer's ramp. */
@@ -2212,20 +2270,102 @@ class Dresser {
     }
     if (!near) this._farWall(F, hosts, rng);
     else if (F.s.kind === 'wall' || F.s.kind === 'stone') this._blocks(F, hosts, makeRng(hashStr(`blk${s.id}|${F.N.x},${F.N.z}`)));
+    this._decalsWall(F, hosts, makeRng(hashStr(`dec${s.id}|${F.N.x},${F.N.z}`)));
     this._cogs(F, hosts, rng);
   }
 
 
+  /** Appends one decal quad: centre, in-plane axes A (right) / B (up), normal N (A x B), half sizes, rotation, atlas cell. */
+  _decalQuad(cx, cy, cz, A, B, N, hw, hh, th, type, alpha, tint) {
+    const D = this.dec;
+    const cs = Math.cos(th);
+    const sn = Math.sin(th);
+    const ax = A[0] * cs + B[0] * sn;
+    const ay = A[1] * cs + B[1] * sn;
+    const az = A[2] * cs + B[2] * sn;
+    const bx = -A[0] * sn + B[0] * cs;
+    const by = -A[1] * sn + B[1] * cs;
+    const bz = -A[2] * sn + B[2] * cs;
+    const [u0, v0, du, dv] = decalCell(type);
+    const cr = [
+      [-1, -1, u0, v0],
+      [1, -1, u0 + du, v0],
+      [1, 1, u0 + du, v0 + dv],
+      [-1, 1, u0, v0 + dv],
+    ];
+    for (const k of [0, 1, 2, 0, 2, 3]) {
+      const [sx, sy, u, v] = cr[k];
+      D.p.push(cx + ax * hw * sx + bx * hh * sy, cy + ay * hw * sx + by * hh * sy, cz + az * hw * sx + bz * hh * sy);
+      D.n.push(N[0], N[1], N[2]);
+      D.uv.push(u, v);
+      D.c.push(tint, tint, tint, alpha);
+    }
+    this.stats.decals = (this.stats.decals || 0) + 1;
+  }
+
+  /** Decals on a wall face: cracks, grime runs, moss in the wet sections, smears and claw marks deeper, impacts. */
+  _decalsWall(F, hosts, rng) {
+    const S = this.S;
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    const n = Math.max(2, Math.min(22, Math.round((span * F.H) / 110)));
+    const ux = F.N.z;
+    const uz = -F.N.x;
+    for (let i = 0, put = 0; i < n * 3 && put < n; i++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 2.6 || F.H < 3) continue;
+      const y = 0.7 + rng() * (F.H - 1.4);
+      const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(F.o.y + y) | 0)) : 0;
+      const ti = pickDecal(rng, sec, false);
+      const T = DECAL_TYPES[ti];
+      const w = T.w[0] + rng() * (T.w[1] - T.w[0]);
+      const h = T.h ? T.h[0] + rng() * (T.h[1] - T.h[0]) : w;
+      const u = a + 1 + rng() * (b - a - 2);
+      const box = frameBox(F, u - w / 2, u + w / 2, y - h / 2, y + h / 2, 0, 0.25);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const wet = this._wet(F.o.y + y);
+      const al = (T.a[0] + rng() * (T.a[1] - T.a[0])) * (ti === 2 || ti === 3 ? 0.55 + 0.6 * wet : 1);
+      const c = this._facePt(F, u, y, 0.012);
+      const th = T.rot ? rng() * 6.283 : (rng() - 0.5) * 0.12;
+      this._decalQuad(c[0], c[1], c[2], [ux, 0, uz], [0, 1, 0], [F.N.x, 0, F.N.z], w / 2, h / 2, th, ti, Math.min(1, al), 0.85 + 0.15 * rng());
+      put++;
+    }
+  }
+
+  /** Decals on a walkable top: wear, stains and the marks of what has been dragged across it. */
+  _decalsFloor(s, rng) {
+    const W = s.maxX - s.minX;
+    const D = s.maxZ - s.minZ;
+    if (W < 1.5 || D < 1.5) return;
+    const S = this.S;
+    const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(s.maxY) | 0)) : 0;
+    const n = Math.max(2, Math.min(18, Math.round((W * D) / 60 + (W + D) / 14)));
+    for (let i = 0, put = 0; i < n * 3 && put < n; i++) {
+      const ti = pickDecal(rng, sec, true);
+      const T = DECAL_TYPES[ti];
+      const w = T.w[0] + rng() * (T.w[1] - T.w[0]);
+      const h = T.h ? T.h[0] + rng() * (T.h[1] - T.h[0]) : w;
+      const x = s.minX + 0.4 + rng() * Math.max(0.01, W - 0.8);
+      const z = s.minZ + 0.4 + rng() * Math.max(0.01, D - 0.8);
+      if (S.inSolid(x, s.maxY + 0.25, z)) continue;
+      const wet = this._wet(s.maxY);
+      const al = (T.a[0] + rng() * (T.a[1] - T.a[0])) * (ti === 2 || ti === 3 ? 0.55 + 0.6 * wet : 1);
+      // atlas up (v) points toward -z; any yaw
+      this._decalQuad(x, s.maxY + 0.008, z, [1, 0, 0], [0, 0, -1], [0, 1, 0], w / 2, h / 2, rng() * 6.283, ti, Math.min(1, al), 0.85 + 0.15 * rng());
+      put++;
+    }
+  }
+
   /**
    * Chipped ashlar patches proud of a wall face (sparse, near tier only): the flat box face stops being a texture alone, and
-   * stereo parallax finally has edges to work with. Budget: <= 14 patches per face, ~80 triangles each.
+   * stereo parallax finally has edges to work with. Budget: <= 8 patches per face, ~80 triangles each.
    */
   _blocks(F, hosts, rng) {
     const S = this.S;
     if (F.H < 4) return;
     let span = 0;
     for (const [a, b] of F.spans) span += b - a;
-    let n = Math.min(14, Math.floor((span * F.H) / 90 + rng()));
+    let n = Math.min(8, Math.floor((span * F.H) / 160 + rng()));
     for (let tries = 0; tries < n * 4 + 2 && n > 0; tries++) {
       const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
       const cols = 2 + Math.floor(rng() * 3);
@@ -2249,7 +2389,7 @@ class Dresser {
     }
   }
 
-  /** Rubble on a walkable top: clusters of fractured stone near the edges and wall feet (near tier only). */
+  /** Rubble on a walkable top: clusters of broken ashlar near the edges and wall feet (detail tier only). */
   _rubble(s, rng) {
     const W = s.maxX - s.minX;
     const D = s.maxZ - s.minZ;
@@ -2287,7 +2427,7 @@ class Dresser {
       tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
       worldUV(geo);
       this._count('rubble', s.maxY, geo.attributes.position.count / 3);
-      this.emit(geo, 'rubble', true);
+      this.emit(geo, 'stone', true); // broken ashlar: same list / draw as the other near stone dressing (no extra call)
       this.stats.rubble = (this.stats.rubble || 0) + 1;
       left--;
     }
@@ -3184,6 +3324,7 @@ class Dresser {
     const metal = s.kind === 'metal' || s.kind === 'bridge' || s.kind === 'grate';
     if (metal && s.kind !== 'grate') this._dressIron(s);
     if (!metal && s.kind !== 'crumble') this._rubble(s, makeRng(hashStr(`rub${s.id}`)));
+    if (s.kind !== 'grate' && s.kind !== 'crumble') this._decalsFloor(s, makeRng(hashStr(`dcf${s.id}`)));
     const sides = [
       { N: { x: 1, y: 0, z: 0 }, c: s.maxX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
       { N: { x: -1, y: 0, z: 0 }, c: s.minX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
@@ -3430,7 +3571,7 @@ export class LevelView {
     this._mountGeos = buildMountGeometries();
     this._hazGeos = buildHazardGeometries();
     this._shared = new Set([this._unitBox, this._glyphGeo, ...this._hazGeos, ...this._mountGeos]);
-    this._glowTex = glowTexture(64);
+    this._glowTex = glowTexture(128);
     this.highlights = {
       left: this._makeHighlight('left', PALETTE.handLeft),
       right: this._makeHighlight('right', PALETTE.handRight),
@@ -3480,6 +3621,7 @@ export class LevelView {
     this._kitPlan = null;
     this._dressJob = null;
     this._cogs = null;
+    this._decals = null;
     this._colossal = null;
     this._colossalParts = [];
     this._lightGlow = null;
@@ -4070,8 +4212,8 @@ export class LevelView {
 
   /** The decor lists of the band holding y (created on demand); detail → the finer, nearer tier. */
   _bandLists(bands, y, detail = false) {
-    const bi = detail ? `${detail === 'mid' ? 'm' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
-    if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], rubble: [], glow: [], shaft: [] });
+    const bi = detail ? `${detail === 'mid' ? 'm' : detail === 'near' ? 'n' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
+    if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] });
     return bands.get(bi);
   }
 
@@ -4103,6 +4245,7 @@ export class LevelView {
     const tris = this.stats.dressTris;
     const job = { bands: new Map(), it: null, sec: -1, merge: [] };
     this._makeCogMesh();
+    this._makeDecalMesh();
     const emit = (geo, list, detail) => {
       geo.computeBoundingBox();
       const bb = geo.boundingBox;
@@ -4131,6 +4274,54 @@ export class LevelView {
     }
   }
 
+
+  /** The decal mesh (one draw for the whole level), created empty so the renderer compiles its program on the menu. */
+  _makeDecalMesh() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(18), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(18), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(12), 2));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(24), 4));
+    const mesh = new THREE.Mesh(g, this.mats.get('decal'));
+    mesh.name = 'decals';
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.renderOrder = 2;
+    mesh.visible = false;
+    this.root.add(mesh);
+    this._decals = { mesh, count: 0 };
+  }
+
+  /** Moves the decal quads the Dresser has planned so far into the decal mesh. */
+  _flushDecals() {
+    const job = this._dressJob;
+    const D = job && job.D && job.D.dec;
+    const dm = this._decals;
+    if (!D || !dm || !D.p.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(D.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(D.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(D.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(D.c, 4));
+    const prev = dm.mesh.geometry;
+    let merged = g;
+    if (dm.count > 0) {
+      try {
+        merged = mergeGeometries([prev, g], false) || g;
+      } catch {
+        merged = g;
+      }
+      if (merged !== g) g.dispose();
+    }
+    prev.dispose();
+    dm.mesh.geometry = merged;
+    dm.count = merged.attributes.position.count / 3;
+    this.stats.decalTris = dm.count;
+    D.p.length = 0;
+    D.n.length = 0;
+    D.uv.length = 0;
+    D.c.length = 0;
+  }
 
   /**
    * One InstancedMesh for every colossal cog (turned and distance-culled in
@@ -4188,7 +4379,7 @@ export class LevelView {
         // merges queued by a flush go first, one band per step (each is a big copy)
         if (job.merge.length) {
           const [bi, k, list] = job.merge.shift();
-          const lists = { stone: [], metal: [], rock: [], flesh: [], rubble: [], glow: [], shaft: [] };
+          const lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] };
           lists[k] = list;
           this._mergeBands(new Map([[bi, lists]]), true);
           continue;
@@ -4200,12 +4391,16 @@ export class LevelView {
         const r = job.it.next();
         if (r.done) {
           this._flushDressing(Infinity);
+          this._flushDecals();
           this._buildCogs(job.D && job.D.gears);
           job.finished = true;
           continue;
         }
         if (r.value > job.sec) {
-          if (job.sec >= 0) this._flushDressing(r.value - 1);
+          if (job.sec >= 0) {
+            this._flushDressing(r.value - 1);
+            this._flushDecals();
+          }
           job.sec = r.value;
         }
       } while (now() - t0 < ms);
@@ -4291,7 +4486,7 @@ export class LevelView {
   _mergeBands(bands, append) {
     if (!this._chunkByKey) this._chunkByKey = new Map();
     for (const [bi, lists] of bands) {
-      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : '';
+      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : String(bi).startsWith('n') ? 'n' : '';
       const detail = kind !== '';
       for (const k of Object.keys(lists)) {
         const list = lists[k];
@@ -4330,7 +4525,7 @@ export class LevelView {
           mesh.name = sl < 0 ? `decor_${k}_${bi}` : `decor_${k}_${bi}_s${sl}`;
           mesh.matrixAutoUpdate = false;
           if (k === 'shaft') mesh.renderOrder = 10;
-          this._addChunk(mesh, kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi, kind);
+          this._addChunk(mesh, kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : kind === 'n' ? NEAR_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi, kind);
           this._chunkByKey.set(key, this._chunks[this._chunks.length - 1]);
         }
         lists[k] = [];
@@ -4784,6 +4979,7 @@ export class LevelView {
   update(dt, game, head, viewDist, fogInfo) {
     if (!this.level) return;
     if (this._dressJob) this._pumpDressing(game && game.state === 'playing' ? 2 : 8);
+    if (this._decals) this._decals.mesh.visible = this._decals.count > 0 && !!this.mats.get('decal').map;
     this.time += dt;
     const t = this.time;
     // Chunk culling: the head's band (section) and its neighbours only (the
@@ -4793,12 +4989,13 @@ export class LevelView {
     const vd = fogNear + (viewDist - fogNear) * this._cullT + VIEW_MARGIN;
     const dd = DETAIL_DIST * this._detailScale;
     const dm = MID_DIST * this._detailScale;
+    const dn = NEAR_DIST * this._detailScale;
     const nd = NEIGHBOUR_DIST * this._detailScale;
     const hb = this._band(head.y);
     for (let i = 0; i < this._chunks.length; i++) {
       const ch = this._chunks[i];
       const near = ch.band < 0 || (ch.band >= hb - 1 && ch.band <= hb + 1);
-      let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.maxDist;
+      let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.kind === 'n' ? dn : ch.maxDist;
       // the neighbouring sections lie behind their floors: only what is near the opening is in sight
       if (ch.band !== hb && ch.band >= 0 && md > nd) md = nd;
       ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);

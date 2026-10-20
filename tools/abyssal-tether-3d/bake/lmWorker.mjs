@@ -20,6 +20,7 @@ const nCharts = CH.length / CS;
 const D = W.D;
 const DL = W.DL;
 const AO = W.AO;
+const AOS = W.AOS;
 const VALID = W.valid;
 const BUF = [W.B0, W.B1];
 const FACE_CHART = W.faceChart;
@@ -34,6 +35,7 @@ const themes = W.themes;
 const KEY = W.keyDir;
 const LIFT = W.cfg.lift;
 const CAP = 3.0;
+const NSOL = W.cfg.nSolids;
 
 // ---------------------------------------------------------------------------------------------------------------------
 let rs = 1;
@@ -271,7 +273,9 @@ function gatherAt(tid, pass, K, src, out) {
   let sg2 = 0;
   let sb = 0;
   let occ = 0;
+  let occS = 0;
   const aoR = Q.aoRange;
+  const aoS = Q.aoShort;
   for (let k = 0; k < K; k++) {
     const u = (k + r1) / K;
     const v = (k * 0.6180339887 + r2) % 1;
@@ -286,7 +290,9 @@ function gatherAt(tid, pass, K, src, out) {
     const t = grid.trace(px, py, pz, dir[0], dir[1], dir[2], Q.gatherRange);
     if (t === Infinity) continue;
     if (t < aoR) occ += 1 - t / aoR;
+    if (t < aoS) occS += 1 - t / aoS;
     const bi = grid.hitBox;
+    if (bi >= NSOL) continue; // decor shadow caster: occludes (counted above), no lightmap to read
     const f = grid.hitAxis * 2 + (grid.hitSign > 0 ? 0 : 1);
     const cid = FACE_CHART[bi * 6 + f];
     if (cid < 0) continue;
@@ -318,10 +324,11 @@ function gatherAt(tid, pass, K, src, out) {
   out[1] = sg2 / K;
   out[2] = sb / K;
   out[3] = occ / K;
+  out[4] = occS / K;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-const tmp = [0, 0, 0, 0];
+const tmp = [0, 0, 0, 0, 0];
 parentPort.on('message', (m) => {
   if (m.op === 'exit') {
     process.exit(0);
@@ -352,7 +359,10 @@ parentPort.on('message', (m) => {
       Bd[tid * 3] = tmp[0];
       Bd[tid * 3 + 1] = tmp[1];
       Bd[tid * 3 + 2] = tmp[2];
-      if (pass === 0) AO[tid] = tmp[3];
+      if (pass === 0) {
+        AO[tid] = tmp[3];
+        AOS[tid] = tmp[4];
+      }
     }
   }
   parentPort.postMessage({ id: m.id });

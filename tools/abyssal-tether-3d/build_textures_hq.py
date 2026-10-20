@@ -8,7 +8,7 @@ and adds what a headset needs when a surface is half a metre from your face:
   * curvature-driven wear (pale worn arrises, soot/grime in cavities, bare-metal edges), wet streaks that darken
     and gloss the stone below leaks, and low-frequency colour / roughness variation inside the tile so the repeat
     never reads;
-  * new 1024 sets: `rubble` (broken stone and dust), `roots` (bark-like root cords), and a shared 512 `detail`
+  * a shared 512 `detail` (rubble / roots sets exist for on-demand baking, not shipped)
     micro-normal that the shader layers over every macro normal;
   * the height field is baked into the BLUE channel of the *_normal.ktx2 maps (normal xy in RG, z is rebuilt in the
     shader), which gives parallax offset mapping a height tap for free; `heightM` in the manifest is the height
@@ -23,7 +23,7 @@ Outputs
   KTX2 (GPU-compressed, UASTC / ETC1S) is produced by tools/abyssal-tether-3d/encode_ktx2.mjs from the masters.
 
 Run (the Blender venv python has numpy + Pillow; a set needs ~2.8 GB at 2048, keep one process):
-  python build_textures_hq.py --work <dir> --sets rock,masonry,metal,rockFar,flesh,rubble,roots,detail
+  python build_textures_hq.py --work <dir> --sets rock,masonry,metal,rockFar,flesh,detail,decals
   python build_textures_hq.py --work <dir> --tilecheck <dir>/tilecheck --no-bake
 """
 
@@ -131,14 +131,16 @@ def mat_roots(F):
 
 
 # name: (builder, tile metres, size, seed, hero, hq micro amp m, kind, description)
+EXTRA_SETS = {  # built on demand (--sets rubble,roots), not shipped: nothing draws them (rubble reuses the masonry set)
+    "rubble": (mat_rubble, 2.0, 1024, 6606, False, 0.0004, "stone", "broken stone and dust: gravel, chips, damp gaps"),
+    "roots": (mat_roots, 2.0, 1024, 7707, False, 0.0003, "organic", "root cords and bark fibre: twisted strands, fissures, damp moss"),
+}
 SETS = {
     "rock": (bt.mat_rock, 4.0, 2048, 1101, True, 0.00035, "stone", "shaft rock: bedded strata, jointed blocks, faults, veins, seeps, micro grain"),
     "masonry": (bt.mat_masonry, 4.0, 2048, 2202, True, 0.00030, "stone", "Lanternwright ashlar: dressed courses, chipped arrises, eroded mortar, grime runs, micro peck"),
     "metal": (bt.mat_metal, 2.0, 2048, 3303, True, 0.00010, "metal", "corroded iron plate: scale, flaking rust, pitting, runs, edge wear"),
     "rockFar": (bt.mat_rock_far, 16.0, 1024, 4404, False, 0.0010, "stone", "distant rock: dark massive beds, big joints"),
     "flesh": (bt.mat_flesh, 1.5, 1024, 5505, False, 0.00006, "flesh", "dark wet sinew: fibre bundles, raised veins, capillaries"),
-    "rubble": (mat_rubble, 2.0, 1024, 6606, False, 0.0004, "stone", "broken stone and dust: gravel, chips, damp gaps"),
-    "roots": (mat_roots, 2.0, 1024, 7707, False, 0.0003, "organic", "root cords and bark fibre: twisted strands, fissures, damp moss"),
 }
 
 
@@ -227,7 +229,7 @@ def save_png(path, arr):
 
 
 def bake(name, work, out):
-    builder, tile, size, seed, hero, amp, kind, desc = SETS[name]
+    builder, tile, size, seed, hero, amp, kind, desc = (SETS.get(name) or EXTRA_SETS[name])
     t0 = time.time()
     F = Field(size, seed, tile)
     m = builder(F)
@@ -262,6 +264,8 @@ def bake(name, work, out):
         nb = nrm
     Image.fromarray(u8(nb * 0.5 + 0.5)).save(os.path.join(out, f"{name}_normal.jpg"), quality=92, subsampling=0, optimize=True, progressive=True)
     down(r["orm"]).save(os.path.join(out, f"{name}_orm.jpg"), quality=90, subsampling=0, optimize=True, progressive=True)
+    lin = np.where(r["albedo"] <= 0.04045, r["albedo"] / 12.92, ((r["albedo"] + 0.055) / 1.055) ** 2.4)
+    mean_luma = float((0.2126 * lin[..., 0] + 0.7152 * lin[..., 1] + 0.0722 * lin[..., 2]).mean())
     a8 = u8(r["albedo"]).astype(np.float64)
     s_h, s_v = bt.seam_report(a8.mean(axis=2))
     print(f"[hq] {name:8s} {size}px {tile:4.1f} m  {time.time() - t0:5.1f}s  heightM={hi - lo:.4f}  seam z=({s_h:+.1f},{s_v:+.1f})  "
@@ -275,6 +279,7 @@ def bake(name, work, out):
         "size": size,
         "hero": hero,
         "heightM": round(float(hi - lo), 5),
+        "meanLuma": round(mean_luma, 5),  # linear mean luminance of the albedo (CreatureView normalises its detail texture by it)
         "source": "baked:build_textures_hq.py",
         "description": desc,
     }
@@ -304,10 +309,10 @@ CELL = 512
 
 
 def _blur(a, sigma):
-    from PIL import ImageFilter
-
-    im = Image.fromarray(np.clip(a, 0, 1).astype(np.float32), "F")
-    return np.asarray(im.filter(ImageFilter.GaussianBlur(sigma)), dtype=np.float64)
+    n = a.shape[0]
+    f = np.fft.fftfreq(n)
+    k = np.exp(-2.0 * (np.pi * sigma) ** 2 * (f[None, :] ** 2 + f[:, None] ** 2))
+    return np.fft.ifft2(np.fft.fft2(a) * k).real
 
 
 def _line_mask(draw_fn, S=1024):
@@ -392,7 +397,7 @@ def make_decals(seed=9909):
     for _ in range(9):
         cx, cy, r = rng.uniform(0.1, 0.9) * CELL, rng.uniform(0.1, 0.9) * CELL, rng.uniform(3, 10)
         drops = np.maximum(drops, 1 - sstep(r * 0.7, r, np.hypot(x - cx, y - cy)))
-    ba = np.clip(body * (0.55 + 0.35 * np.tanh(st)) + 0.8 * drops, 0, 1) * vig
+    ba = np.clip(body * (0.85 + 0.45 * np.tanh(st)) + 0.8 * drops, 0, 1) * vig
     cells["blood"] = (tone((58, 9, 9), 0.2), ba, 0.0015 * _blur(ba, 1.5))
     # burn: soot cloud + radial lick upward
     rr = np.hypot(u * 1.0, (v - 0.62) * 1.1)
@@ -521,7 +526,7 @@ def main():
     args = ap.parse_args()
     names = [s.strip() for s in args.sets.split(",") if s.strip()]
     for n in names:
-        if n not in ("detail", "decals") and n not in SETS:
+        if n not in ("detail", "decals") and n not in SETS and n not in EXTRA_SETS:
             sys.exit(f"unknown set {n}")
     if not args.no_bake:
         entries = {}

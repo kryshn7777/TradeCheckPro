@@ -40,7 +40,7 @@
 
 import * as THREE from 'three';
 import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
-import { LevelView } from './levelView.js';
+import { LevelView, glowTexture } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
@@ -212,6 +212,16 @@ export class Renderer3D {
     );
     this.lanternBulb.name = 'LanternBulb';
     this.lanternGroup.add(this.lanternBulb);
+    // Fake bloom on the lantern (no post pass): one additive sprite with a soft skirt and a gentle anamorphic streak. It is
+    // drawn over whatever is in front of it (depthTest off), so it blooms across the glass and the fingers like a real flare.
+    this.lanternFlare = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: glowTexture(128), color: 0xffb46a, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false, toneMapped: false, opacity: 0.0 }),
+    );
+    this.lanternFlare.name = 'LanternFlare';
+    this.lanternFlare.scale.set(0.42, 0.42, 1);
+    this.lanternFlare.renderOrder = 70;
+    this.lanternFlare.material.userData.noLook = true;
+    this.lanternGroup.add(this.lanternFlare);
     this.lanternBase = LANTERN_CANDELA;
     this.setLanternParent(this.camera);
 
@@ -680,6 +690,7 @@ export class Renderer3D {
       1 + 0.05 * Math.sin(t * 11.3) * Math.sin(t * 2.9 + 0.7) + 0.035 * Math.sin(t * 23.7 + Math.sin(t * 1.3) * 2) - (Math.sin(t * 0.61) > 0.992 ? 0.18 : 0);
     const dead = game && game.player && game.player.alive === false;
     this.lantern.intensity = this.lanternBase * flick * (dead ? 0.35 : 1);
+    this.lanternFlare.material.opacity = 0.26 * flick * (dead ? 0.3 : 1);
     this.lantern.position.set(Math.sin(t * 7.1) * 0.006, Math.sin(t * 5.3) * 0.006, 0);
     _tmpC.setHex(PALETTE.lantern);
     this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08);
@@ -813,6 +824,8 @@ export class Renderer3D {
     this.levelView.dispose();
     this.materials.dispose();
     this.lanternBulb.geometry.dispose();
+    if (this.lanternFlare.material.map) this.lanternFlare.material.map.dispose();
+    this.lanternFlare.material.dispose();
     this.lanternBulb.material.dispose();
     if (this.sky) this.sky.geometry.dispose();
     this.renderer.setAnimationLoop(null);

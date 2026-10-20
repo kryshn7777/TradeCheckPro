@@ -97,6 +97,7 @@ export const LOOK = {
   uLMTab: { value: null },
   uLMK: { value: new THREE.Vector4(0, 1, 1, 0) },
   uLMLamp: { value: new THREE.Color(1.0, 0.55, 0.22) },
+  uLMLan: { value: new THREE.Vector2(1.05, 0.38) }, // lantern on lightmapped surfaces: gain, extra distance falloff exponent (see LIGHTS_BEGIN_GI)
   // Surface detail (WP-GFX-QUEST-MAT): x detail-normal strength, y / z distance (m) over which it fades out.
   uDetailK: { value: new THREE.Vector4(0.9, 5, 16, 0) },
   // Parallax offset mapping: x on/off, y max distance (m), z fade length (m), w depth scale. Driven by the quality tier.
@@ -585,6 +586,7 @@ export function makeProceduralTextureSets(size = 512) {
 const ROLE_MATCH = [
   // role, test(name)
   ['detail', (n) => n === 'detail'],
+  ['decals', (n) => n === 'decals'],
   ['rubble', (n) => n === 'rubble'],
   ['roots', (n) => n === 'roots'],
   ['distant', (n) => /dist|far|dark|deep/.test(n) && !/mason|ashlar|brick|metal|iron|rust/.test(n)],
@@ -670,6 +672,7 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
     if (base == null) base = manifestOrUrl.replace(/[^/]*$/, '');
   }
   if (!manifest || typeof manifest !== 'object') return null;
+  if (base == null && typeof manifest.base === 'string') base = manifest.base; // game.js resolved manifest: { url, base, sets }
   if (base == null) base = 'assets/textures/';
   const sets = manifest.sets && typeof manifest.sets === 'object' ? manifest.sets : manifest;
   const loader = new THREE.TextureLoader();
@@ -727,9 +730,9 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
     let normalMap = null;
     let ormMap = null;
     let packed = false;
-    if (ktx && k && k.albedo && k.normal && k.orm) {
+    if (ktx && k && k.albedo && (k.normal || role === 'decals')) {
       [map, normalMap, ormMap] = await Promise.all([loadK(ktx, k.albedo, true), loadK(ktx, k.normal, false), loadK(ktx, k.orm, false)]);
-      if (map && normalMap && ormMap) {
+      if (map && (normalMap || !k.normal) && (ormMap || !k.orm)) {
         packed = !!k.normalHeightInB && Number(s.heightM) > 0;
       } else {
         dispose([map, normalMap, ormMap]);
@@ -744,7 +747,8 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
       ]);
     }
     if (!map) continue;
-    result[role] = { map, normalMap, ormMap, tileMeters, heightM: packed ? Number(s.heightM) : 0, ktx2: packed || (!!ktx && !!k && map.isCompressedTexture === true), name };
+    const mean = Number(s.meanLuma);
+    result[role] = { map, normalMap, ormMap, tileMeters, mean: mean > 0 ? mean : undefined, heightM: packed ? Number(s.heightM) : 0, ktx2: packed || (!!ktx && !!k && map.isCompressedTexture === true), name };
   }
   if (wantsKtx) releaseKTX2Loader();
   return Object.keys(result).length ? result : null;
@@ -822,6 +826,7 @@ uniform vec2 uLanternR;
 uniform highp sampler2DArray uLM;
 uniform vec4 uLMK;
 uniform vec3 uLMLamp;
+uniform vec2 uLMLan;
 #endif
 `;
 
@@ -842,8 +847,21 @@ function buildLightsBeginGI() {
   if (!c || !c.includes(mDir) || !c.includes(mTail)) return null;
   c = c.replace(mDir, mDir + '\n\t\tdirectLight.color *= atKeyVis;');
   // lightmapped fragments: the pooled dynamic lamps (decay 2; the lantern keeps 1.6, lighting.js sets both) are baked
+  // (the BRDF call itself is skipped there, not just zeroed: two of the three point lights and the key cost nothing)
   const mPoint = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
-  if (c.includes(mPoint)) c = c.replace(mPoint, mPoint + '\n\t\tdirectLight.color *= ( atLmOn > 0.5 && pointLight.decay > 1.8 ) ? 0.0 : 1.0;');
+  const reDirect = 'RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );';
+  const skipNext = (src, marker, cond) => {
+    const i = src.indexOf(marker);
+    const j = i < 0 ? -1 : src.indexOf(reDirect, i);
+    return j < 0 ? src : src.slice(0, j) + `if ( ${cond} ) { ${reDirect} }` + src.slice(j + reDirect.length);
+  };
+  // the lantern's range was stretched (decay 1.6) to stand in for the missing ambient: on lightmapped surfaces, where the
+  // baked light supplies the far field, it gets an extra distance falloff (d^-uLMLan.y) so it reads as a pool, not a wash
+  if (c.includes(mPoint)) {
+    c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && pointLight.decay <= 1.8 ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
+  }
+  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && pointLight.decay > 1.8 )');
+  c = skipNext(c, mDir, 'atLmOn < 0.5');
   c = c.replace(
     mTail,
     `#if defined( RE_IndirectDiffuse )
@@ -871,7 +889,8 @@ if ( uLMK.x > 0.5 && vLmLayer > - 0.5 ) {
 	vec3 atLs = atLm.rgb * atLm.rgb * ${LM_RANGE_STATIC.toFixed(1)};
 	float atLl = atLm.a * atLm.a * ${LM_RANGE_LAMP.toFixed(1)} * uLMK.z;
 	atLmE = ( atLs + uLMLamp * atLl ) * uLMK.y + vec3( uLMK.w );
-	atLmE *= mix( 1.0, clamp( dot( normal, nonPerturbedNormal ), 0.0, 1.0 ), 0.5 );
+	// relief under baked light: the flat irradiance is tilted with the perturbed normal's "up" (what the hemisphere fill did)
+	atLmE *= clamp( 1.0 + 0.85 * dot( normal - nonPerturbedNormal, viewMatrix[ 1 ].xyz ), 0.3, 1.8 );
 	atLmOn = 1.0;
 	atKeyVis = 0.0;
 	atGv.a = clamp( 0.3 + 0.7 * sqrt( dot( atLs, vec3( 0.3333 ) ) * uLMK.y ), 0.0, 1.0 );
@@ -992,21 +1011,23 @@ float atHN = 0.5;
 vec4 atDt = vec4( 0.5, 0.5, 0.5, 1.0 );
 float atDist = length( vViewPosition );
 float atDf = uDetailAmt * uDetailK.x * ( 1.0 - smoothstep( uDetailK.y, uDetailK.z, atDist ) );
+vec2 atGx = dFdx( vAtUv );
+vec2 atGy = dFdy( vAtUv );
 #ifdef USE_NORMALMAP
 if ( uHeightM > 0.0 ) {
-	vec2 atGx = dFdx( vAtUv );
-	vec2 atGy = dFdy( vAtUv );
 	atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
-	mat3 atTbn = getTangentFrame( - vViewPosition, normalize( vNormal ), vAtUv );
 	float atPf = uParallaxK.x * ( 1.0 - smoothstep( uParallaxK.y - uParallaxK.z, uParallaxK.y, atDist ) );
-	vec3 atV = normalize( vViewPosition );
-	vec2 atVt = vec2( dot( atV, atTbn[ 0 ] ), dot( atV, atTbn[ 1 ] ) );
-	float atVz = max( dot( atV, atTbn[ 2 ] ), 0.3 );
-	atPUv = vAtUv + atVt / atVz * ( ( atHN - 0.5 ) * uHeightM * uParallaxK.w * atPf * uTexScale );
-	atHN = textureGrad( normalMap, atPUv, atGx, atGy ).b;
+	if ( atPf > 0.001 ) {
+		mat3 atTbn = getTangentFrame( - vViewPosition, normalize( vNormal ), vAtUv );
+		vec3 atV = normalize( vViewPosition );
+		vec2 atVt = vec2( dot( atV, atTbn[ 0 ] ), dot( atV, atTbn[ 1 ] ) );
+		float atVz = max( dot( atV, atTbn[ 2 ] ), 0.3 );
+		atPUv = vAtUv + atVt / atVz * ( ( atHN - 0.5 ) * uHeightM * uParallaxK.w * atPf * uTexScale );
+		atHN = textureGrad( normalMap, atPUv, atGx, atGy ).b;
+	}
 }
 #endif
-if ( atDf > 0.002 ) atDt = textureGrad( uDetailMap, atPUv * uDetailScale, dFdx( vAtUv ) * uDetailScale, dFdy( vAtUv ) * uDetailScale );
+if ( atDf > 0.002 ) atDt = textureGrad( uDetailMap, atPUv * uDetailScale, atGx * uDetailScale, atGy * uDetailScale );
 #define vMapUv atPUv
 #define vNormalMapUv atPUv
 #define vAoMapUv atPUv
@@ -1044,9 +1065,11 @@ const HQ_CREVICE = `  float atMossV = 0.0;
     #endif
     diffuseColor.rgb *= mix( 1.0, 0.82 + 0.36 * atDt.b, clamp( atDf * 1.4, 0.0, 1.0 ) );
     diffuseColor.rgb *= 1.0 - uCrevK.x * atCav * ( 0.35 + 0.65 * ( 1.0 - atAoV ) ) * 0.6;
-    float atMn = texture2D( uMacroMap, vAtUv * 0.37 + vec2( 0.7, 0.2 ) ).r;
-    atMossV = clamp( atCav * smoothstep( 0.35, 0.8, atMn ) * ( 0.3 + 0.7 * smoothstep( 0.2, 0.9, vAtTop ) ) * uCrevK.y * ( 0.2 + uWet * 1.6 ), 0.0, 0.85 );
-    diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.04, 0.07, 0.03 ) * ( 0.6 + atMn ), atMossV );
+    if ( atDist < 28.0 && atCav > 0.02 ) { // moss only where there is a crevice, and only near enough to read
+      float atMn = textureGrad( uMacroMap, vAtUv * 0.37 + vec2( 0.7, 0.2 ), atGx * 0.37, atGy * 0.37 ).r;
+      atMossV = clamp( atCav * smoothstep( 0.35, 0.8, atMn ) * ( 0.3 + 0.7 * smoothstep( 0.2, 0.9, vAtTop ) ) * uCrevK.y * ( 0.2 + uWet * 1.6 ) * ( 1.0 - smoothstep( 18.0, 28.0, atDist ) ), 0.0, 0.85 );
+      diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.04, 0.07, 0.03 ) * ( 0.6 + atMn ), atMossV );
+    }
     atWet = max( atWet, atCav * uWet * uCrevK.z * ( 1.0 - atMossV ) );
   }
 `;
@@ -1536,9 +1559,6 @@ export class MaterialLibrary {
     m.decorFlesh.userData.matte = 0.82;
     m.decorFlesh.roughnessMap = null;
     m.decorFlesh.roughness = 0.82;
-    // Rubble piles and root cords (levelView surface geometry): the new 1K sets, same shader as the other decor.
-    m.decorRubble = this._std(S.rubble || S.rock, { vertexColors: true, envMapIntensity: 0.4 }, { uv: 'metric', ash: 0.2, macro, role: 'rubble', lit: true, hq: true, grade: true, detail: 0.9 });
-    m.decorRoots = this._std(S.roots || S.rock, { vertexColors: true, envMapIntensity: 0.4 }, { uv: 'metric', macro, role: 'roots', lit: true, hq: true, grade: true, detail: 0.7, wetK: 1.2 });
     // Emissive bits of decor (lamp bulbs, inlays, statue lanterns): vertex colours.
     m.decorGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
     patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.55 });
@@ -1578,6 +1598,11 @@ export class MaterialLibrary {
     m.plaque = this._std(S.masonry, { emissive: new THREE.Color(PALETTE.phos), emissiveIntensity: 0.0, envMapIntensity: 0.4 }, { uv: 'metric', role: 'masonry' });
     // Sky dome (Renderer3D): fully fogged, so it shows exactly the graded fog colour.
     m.sky = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: true });
+    // Decals (levelView): alpha-blended lit quads cut from the decal atlas; rgb = colour, a = coverage, vertex colour
+    // (rgb tint, a strength). The atlas only exists as baked sets: nothing is drawn until it loads (LevelView checks .map).
+    m.decal = this._std(null, { vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, roughness: 0.92, metalness: 0, envMapIntensity: 0.25 }, { role: 'decals', lit: true, grade: true });
+    m.decal.roughness = 0.92;
+    m.decal.metalness = 0;
     // Shared reflection probe (render/lighting.js assigns the texture): the stock-chunk materials get AT_LOOK_ENV
     // (no diffuse IBL term, branch-skipped when the tier turns reflections off); the lit-patched ones carry their own chunk.
     for (const k of ['grate', 'mount', 'hazard', 'plaque']) m[k].defines = Object.assign({}, m[k].defines, { AT_LOOK_ENV: '' });
@@ -1614,9 +1639,10 @@ export class MaterialLibrary {
       const s = sets[role] || (role === 'distant' ? sets.rock : null);
       if (!s || !s.map) continue;
       if (mat.map !== s.map) changed = true;
+      if (!mat.map || (mat.userData.setRole === 'decals' && !mat.normalMap && s.normalMap)) mat.needsUpdate = true; // a define appears (USE_MAP / USE_NORMALMAP)
       mat.map = s.map;
       if (role === 'flesh') mat.color.copy(mat.userData.matte ? FLESH_GRADE : _white);
-      if (mat.normalMap && s.normalMap) {
+      if (s.normalMap && (mat.normalMap || mat.userData.setRole === 'decals')) {
         if (mat.normalMap !== s.normalMap) changed = true;
         mat.normalMap = s.normalMap;
       }
