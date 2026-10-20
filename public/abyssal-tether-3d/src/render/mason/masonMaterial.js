@@ -19,8 +19,8 @@ export function makeMasonUniforms() {
     uWet: { value: 1 },
     uNear: { value: new THREE.Vector2(0.55, 1.3) }, // dissolve starts at x metres, fully solid beyond y
     uTint: { value: new THREE.Color(1, 1, 1) },
-    uAmb: { value: new THREE.Color(0.15, 0.18, 0.2) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
-    uRim: { value: new THREE.Color(0.2, 0.26, 0.29) }, // grazing rim that separates the outline from the haze
+    uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
+    uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze
   };
 }
 
