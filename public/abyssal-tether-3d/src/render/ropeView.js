@@ -235,9 +235,20 @@ export class RopeView {
     this._anchor = new THREE.Vector3();
   }
 
-  /** World position of a hand (input.handPose) with a sensible fallback near the body. */
+  /**
+   * Where a hand's line starts: the launcher's muzzle (HandsView.muzzlePosition, the GLB's
+   * muzzle crown) when the hands model is up, else input.handPose, else near the body.
+   */
   handPosition(game, hand, out) {
     const input = game && game.input;
+    const hv = game && game.handsView;
+    if (hv && typeof hv.muzzlePosition === 'function') {
+      try {
+        if (hv.muzzlePosition(hand, out) && isFinite(out.x) && isFinite(out.y) && isFinite(out.z)) return out;
+      } catch {
+        // fall through to the input pose
+      }
+    }
     let pose = null;
     if (input && typeof input.handPose === 'function') {
       try {

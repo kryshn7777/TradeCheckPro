@@ -3094,7 +3094,7 @@ def main():
     # --- glove + sleeve ---------------------------------------------------------
     bm = build_glove_volume(REST_CURL)
     gh = new_obj("Glove_High_R", bm, build)
-    remesh(gh, 0.0007 if args.bake >= 2048 else 0.0009, smooth_iter=6, smooth_fac=0.6)
+    remesh(gh, 0.0009, smooth_iter=6, smooth_fac=0.6)
     gl = gh.copy()
     gl.data = gh.data.copy()
     gl.name = "Glove_Low_R"

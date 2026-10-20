@@ -382,13 +382,15 @@ const VOL_R = 16; // horizontal radius of the card volume around the head (m)
 const VOL_UP = 9; // above the head
 const VOL_DOWN = 20; // below the head (looking down the shaft is the main view)
 const RESPAWNS_PER_FRAME = 4;
+const NEAR_K = 0.42; // the near-field cards (every third) live in a smaller volume around the head
+const isNear = (i) => i % 3 === 2;
 const SHEET_HALF = 7; // m: half size cap of a ledge/floor mist sheet
 const NOISE_PERIOD = 18; // metres per noise tile (horizontal)
 
 const VERT = /* glsl */ `
 attribute vec4 aCard;  // xyz centre at spawn, w radius (card) / half size x (sheet)
 attribute vec4 aDrift; // xyz drift velocity (m/s), w spawn time
-attribute vec4 aMisc;  // x type (0 card, 1 sheet), y alpha, z half size z (sheet), w seed
+attribute vec4 aMisc;  // x type (0 card, 1 sheet), y alpha, z half size z (sheet) / volume scale (card), w seed
 uniform float uTime;
 uniform vec3 uHead;
 uniform vec3 uVol; // x horizontal radius, y up, z down
@@ -415,7 +417,7 @@ void main() {
     float rad = aCard.w;
     // Close to a card its slice fills the view and shows nothing new: fade, then collapse.
     float nearK = smoothstep( uNearK.x, uNearK.y, dist / max( rad, 0.1 ) );
-    vec3 q = ( c - uHead ) / vec3( uVol.x, c.y > uHead.y ? uVol.y : uVol.z, uVol.x );
+    vec3 q = ( c - uHead ) / ( vec3( uVol.x, c.y > uHead.y ? uVol.y : uVol.z, uVol.x ) * aMisc.z );
     float volK = 1.0 - smoothstep( 0.72, 1.0, length( q ) );
     a *= nearK * volK;
     if ( a <= 0.0 ) rad = 0.0;
@@ -450,6 +452,8 @@ uniform float uBase;
 uniform float uAmb;
 uniform float uFloor;
 uniform float uLanternGain;
+uniform float uLanternK;
+uniform float uDetail;
 uniform float uKeyGain;
 uniform float uTintSat;
 varying vec3 vWorld;
@@ -516,7 +520,7 @@ void main() {
   vec3 air = max( mix( vec3( 1.0 ), hue, uTintSat ), vec3( 0.0 ) );
   // The lantern lights the haze around the player (soft, multiply-scattered falloff);
   // lamps glow through it; the creature's sensory glow tints it when it is close.
-  vec3 lit = atLantern( p, v, 0.15, 1.35 ) * uLanternGain + atEnvLights( p, v, 0.2 ) + atGlow( p );
+  vec3 lit = atLantern( p, v, 0.15, uLanternK ) * uLanternGain + atEnvLights( p, v, 0.2 ) + atGlow( p );
   vec3 col = base * uBase + ( uAmbient * uAmb + atKey( v, 0.4 ) * ( uKeyGain * uScatter ) ) * air + lit * uScatter;
   #ifdef USE_FOG
     col = mix( col, fogColor, ff );
@@ -588,6 +592,7 @@ export class Atmosphere {
       vz: new Float32Array(MAX_CARDS),
       t0: new Float32Array(MAX_CARDS),
       r: new Float32Array(MAX_CARDS), // 0 = inactive
+      k: new Float32Array(MAX_CARDS).fill(1), // volume scale: 1 far cards, NEAR_K near (lantern) cards
     };
     // Sheet slots: the ledge (or pit key) they currently show.
     this._sheetKey = new Array(MAX_LEDGE + MAX_PIT).fill(null);
@@ -610,11 +615,13 @@ export class Atmosphere {
       uAmb: { value: 0.35 },
       uFloor: { value: 0.2 },
       uLanternGain: { value: 1 },
+      uLanternK: { value: 1.9 },
+      uDetail: { value: 1 },
       uKeyGain: { value: 0.06 },
       uTintSat: { value: 1.3 },
     });
     /** Look parameters (tuned on screenshots; per-section mood multiplies density/mist). */
-    this.params = { density: 0.22, mist: 0.3, scatter: 0.8, base: 1.4, ambient: 0.5, cover: 0.25, floor: 0.28, lantern: 2.0, key: 0.06, tint: 1.3 };
+    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, key: 0.06, tint: 1.3 };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dFog',
       uniforms: this.uniforms,
@@ -720,6 +727,7 @@ export class Atmosphere {
     U.uCover.value = P.cover;
     U.uFloor.value = P.floor;
     U.uLanternGain.value = P.lantern;
+    U.uLanternK.value = P.lanternK;
     U.uKeyGain.value = P.key;
     U.uTintSat.value = P.tint;
 
@@ -756,10 +764,11 @@ export class Atmosphere {
       let out = this._fillAll || c.r[i] <= 0;
       if (!out) {
         const age = t - c.t0[i];
-        const dx = (c.x[i] + c.vx[i] * age - head.x) / VOL_R;
+        const kv = c.k[i];
+        const dx = (c.x[i] + c.vx[i] * age - head.x) / (VOL_R * kv);
         const dyRaw = c.y[i] + c.vy[i] * age - head.y;
-        const dy = dyRaw / (dyRaw > 0 ? VOL_UP : VOL_DOWN);
-        const dz = (c.z[i] + c.vz[i] * age - head.z) / VOL_R;
+        const dy = dyRaw / ((dyRaw > 0 ? VOL_UP : VOL_DOWN) * kv);
+        const dz = (c.z[i] + c.vz[i] * age - head.z) / (VOL_R * kv);
         out = dx * dx + dy * dy + dz * dz > 1.03;
       }
       if (!out || budget <= 0) continue;
@@ -785,17 +794,20 @@ export class Atmosphere {
     const c = this.c;
     const b = level.bounds;
     const list = this._scratch;
+    const near = isNear(i);
+    const kv = near ? NEAR_K : 1;
+    c.k[i] = kv;
     for (let attempt = 0; attempt < 6; attempt++) {
-      const rad = (5.5 - attempt * 0.6) * (0.75 + r() * 0.45) * T.radius;
+      const rad = (near ? 2.6 - attempt * 0.3 : 5.5 - attempt * 0.6) * (0.75 + r() * 0.45) * T.radius;
       const ang = r() * Math.PI * 2;
-      const rr = VOL_R * Math.sqrt(r()) * 0.92;
+      const rr = VOL_R * kv * Math.sqrt(r()) * 0.92;
       const x = head.x + Math.cos(ang) * rr;
       const z = head.z + Math.sin(ang) * rr;
       // Mostly below the head (the view down the shaft); falling fast → well below.
       let y;
-      if (!initial && this._headVy < -2.5) y = head.y - VOL_DOWN * (0.45 + r() * 0.5);
-      else if (!initial && this._headVy > 2.5) y = head.y + VOL_UP * (0.3 + r() * 0.6);
-      else y = head.y + (r() < 0.3 ? r() * VOL_UP * 0.9 : -r() * VOL_DOWN * 0.92);
+      if (!initial && this._headVy < -2.5) y = head.y - VOL_DOWN * kv * (0.45 + r() * 0.5);
+      else if (!initial && this._headVy > 2.5) y = head.y + VOL_UP * kv * (0.3 + r() * 0.6);
+      else y = head.y + (r() < (near ? 0.4 : 0.3) ? r() * VOL_UP * kv * 0.9 : -r() * VOL_DOWN * kv * 0.92);
       if (b && (x < b.minX || x > b.maxX || z < b.minZ || z > b.maxZ || y < b.minY || y > b.maxY)) continue;
       const clear = rad * 0.72;
       level.querySolids(x - clear, y - clear, z - clear, x + clear, y + clear, z + clear, list);
@@ -843,7 +855,7 @@ export class Atmosphere {
     D[o + 3] = c.t0[i];
     M[o] = 0;
     M[o + 1] = alpha;
-    M[o + 2] = 0;
+    M[o + 2] = c.k[i];
     M[o + 3] = i * 0.137;
   }
 

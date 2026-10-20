@@ -417,7 +417,9 @@ float atRockNoise( vec3 x ) {
 // =============================================================================
 
 const MAX_STREAMS = 8;
-const GRAINS = 24;
+const GRAINS = 32;
+const RIBBON = 99; // aGrain.w of the veil instance (one per stream)
+const STRIDE = GRAINS + 1;
 const DRIP_DROPS = 3;
 const GRIT = 0;
 const DRIP = 1;
@@ -426,7 +428,7 @@ const DRIP = 1;
 const STREAMS_BY_TIER = [3, 6, 8];
 
 const TRICKLE_VERT = /* glsl */ `
-attribute vec4 aGrain; // x stream, y phase 0..1, z seed 0..1, w index in the stream
+attribute vec4 aGrain; // x stream, y phase 0..1, z seed 0..1, w index in the stream (${RIBBON} = the veil)
 uniform vec4 uStreamA[ ${MAX_STREAMS} ]; // xyz source, w fall length
 uniform vec4 uStreamB[ ${MAX_STREAMS} ]; // x alpha, y grains shown, z kind (0 grit, 1 drip), w spread
 uniform float uTime;
@@ -435,6 +437,8 @@ varying vec2 vQ;
 varying float vAlpha;
 varying vec3 vCol;
 varying float vKind;
+varying vec3 vWorld;
+varying float vFall; // veil: metres below the source
 #include <fog_pars_vertex>
 void main() {
   int si = int( aGrain.x + 0.5 );
@@ -442,46 +446,71 @@ void main() {
   vec4 B = uStreamB[ si ];
   float L = max( A.w, 0.05 );
   float kind = B.z;
-  float T = sqrt( 2.0 * L / ${G.toFixed(2)} );
-  float show = step( aGrain.w + 0.5, B.y ) * B.x;
-  float t;
-  float len;
-  if ( kind < 0.5 ) {
-    float period = T * ( 1.0 + 0.45 * aGrain.z ) + 0.08;
-    t = fract( uTime / period + aGrain.y ) * period;
-    float u = t / T;
-    show *= step( t, T ) * smoothstep( 0.0, 0.08, u ) * ( 1.0 - smoothstep( 0.82, 1.0, u ) );
-    len = clamp( ${G.toFixed(2)} * t * 0.05, 0.03, 0.6 );
-  } else {
-    float period = T + 0.9 + 2.2 * aGrain.z;
-    float tc = fract( uTime / period + aGrain.y ) * period;
-    float hang = period - T;
-    t = max( 0.0, tc - hang );
-    show *= 1.0 - smoothstep( 0.9, 1.0, t / T );
-    // a bead swelling under the lip, then a falling glint
-    len = t > 0.0 ? clamp( ${G.toFixed(2)} * t * 0.032, 0.014, 0.5 ) : 0.004 + 0.012 * smoothstep( 0.0, hang, tc );
-  }
-  float fall = min( 0.5 * ${G.toFixed(2)} * t * t, L );
-  vec3 c = A.xyz - vec3( 0.0, fall, 0.0 );
-  float ang = aGrain.z * 41.3 + aGrain.w * 2.1;
-  float spread = B.w * ( kind < 0.5 ? ( 0.25 + 0.75 * clamp( fall / 4.0, 0.0, 1.0 ) ) * ( 0.3 + aGrain.z ) : 0.0 );
-  c.xz += vec2( cos( ang ), sin( ang ) ) * spread;
-  vec3 toCam = cameraPosition - c;
-  float dist = max( length( toCam ), 1e-3 );
-  vec3 side = vec3( toCam.z, 0.0, -toCam.x );
-  float sl = length( side );
-  side = sl > 1e-4 ? side / sl : vec3( 1.0, 0.0, 0.0 );
-  float wid = kind < 0.5 ? 0.008 + 0.009 * aGrain.z : 0.0065;
-  // Never thinner than ~1 px: widen and fade instead (no shimmering sub-pixel lines).
-  float minW = dist * 0.0014;
-  show *= min( 1.0, wid / minW );
-  wid = max( wid, minW );
-  vec3 wp = c + side * ( position.x * wid ) + vec3( 0.0, position.y * len, 0.0 );
-  vec3 light = min( uAmbient + atLightAt( c, toCam / -dist, 0.0 ) * 0.5, vec3( 1.5 ) );
-  vCol = kind < 0.5 ? vec3( 0.42, 0.38, 0.32 ) * light : vec3( 0.75, 0.85, 0.92 ) * ( light * 4.0 + 0.03 ); // water glints: specular, brighter than stone
-  vAlpha = show;
-  vKind = kind;
   vQ = position.xy;
+  vFall = 0.0;
+  vec3 wp;
+  if ( aGrain.w > 50.0 ) {
+    // The veil: the fine dust between the grains, a faint column that fans out as it falls.
+    // (Drips have none.) It is lit per fragment: the lantern's pool is far too uneven for vertices.
+    float Lr = min( L, 12.0 );
+    float u = 1.0 - position.y; // 0 at the source, 1 at the bottom
+    vec3 c = vec3( A.x, A.y - Lr * u, A.z );
+    vec3 toCam = cameraPosition - c;
+    vec3 side = vec3( toCam.z, 0.0, -toCam.x );
+    float sl = length( side );
+    side = sl > 1e-4 ? side / sl : vec3( 1.0, 0.0, 0.0 );
+    float hw = 0.012 + B.w * ( 0.4 + 1.8 * pow( u, 0.7 ) ) + 0.05 * u;
+    wp = c + side * ( position.x * hw );
+    vFall = Lr * u;
+    vAlpha = ( 1.0 - kind ) * B.x * 0.11 * smoothstep( 0.0, 0.05, u ) * ( 1.0 - 0.75 * u );
+    vCol = vec3( 0.0 );
+    vKind = 2.0;
+  } else {
+    float T = sqrt( 2.0 * L / ${G.toFixed(2)} );
+    float show = step( aGrain.w + 0.5, B.y ) * B.x;
+    float t;
+    float len;
+    if ( kind < 0.5 ) {
+      float period = T * ( 1.0 + 0.45 * aGrain.z ) + 0.08;
+      // grains bunch into clumps: the phase is pulled toward a slowly travelling set of waves
+      float ph = aGrain.y + 0.22 * sin( 6.2832 * ( aGrain.y * 3.0 + uTime * 0.07 ) );
+      t = fract( uTime / period + ph ) * period;
+      float u = t / T;
+      show *= step( t, T ) * smoothstep( 0.0, 0.08, u ) * ( 1.0 - smoothstep( 0.82, 1.0, u ) );
+      len = clamp( ${G.toFixed(2)} * t * 0.04, 0.025, 0.45 );
+    } else {
+      float period = T + 0.9 + 2.2 * aGrain.z;
+      float tc = fract( uTime / period + aGrain.y ) * period;
+      float hang = period - T;
+      t = max( 0.0, tc - hang );
+      show *= 1.0 - smoothstep( 0.9, 1.0, t / T );
+      // a bead swelling under the lip, then a falling glint
+      len = t > 0.0 ? clamp( ${G.toFixed(2)} * t * 0.032, 0.014, 0.5 ) : 0.004 + 0.012 * smoothstep( 0.0, hang, tc );
+    }
+    float fall = min( 0.5 * ${G.toFixed(2)} * t * t, L );
+    vec3 c = A.xyz - vec3( 0.0, fall, 0.0 );
+    float ang = aGrain.z * 41.3 + aGrain.w * 2.1;
+    float spread = B.w * ( kind < 0.5 ? ( 0.25 + 0.75 * clamp( fall / 4.0, 0.0, 1.0 ) ) * ( 0.3 + aGrain.z ) : 0.0 );
+    c.xz += vec2( cos( ang ), sin( ang ) ) * spread;
+    vec3 toCam = cameraPosition - c;
+    float dist = max( length( toCam ), 1e-3 );
+    vec3 side = vec3( toCam.z, 0.0, -toCam.x );
+    float sl = length( side );
+    side = sl > 1e-4 ? side / sl : vec3( 1.0, 0.0, 0.0 );
+    float wid = kind < 0.5 ? 0.006 + 0.008 * aGrain.z : 0.0065;
+    // Never thinner than ~1 px: widen and fade instead (no shimmering sub-pixel lines).
+    float minW = dist * 0.0014;
+    show *= min( 1.0, wid / minW );
+    wid = max( wid, minW );
+    wp = c + side * ( position.x * wid ) + vec3( 0.0, position.y * len, 0.0 );
+    vec3 light = min( uAmbient + atLightAt( c, toCam / -dist, 0.0 ) * 0.5, vec3( 1.5 ) );
+    // grit is grey stone dust: the lantern warms it, it does not turn it orange
+    light = mix( vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), light, 0.45 );
+    vCol = kind < 0.5 ? vec3( 0.42, 0.40, 0.37 ) * light : vec3( 0.75, 0.85, 0.92 ) * ( light * 4.0 + 0.03 ); // water glints: specular, brighter than stone
+    vAlpha = show;
+    vKind = kind;
+  }
+  vWorld = wp;
   vec4 mvPosition = viewMatrix * vec4( wp, 1.0 );
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -489,27 +518,44 @@ void main() {
 `;
 
 const TRICKLE_FRAG = /* glsl */ `
+uniform float uTime;
 varying vec2 vQ;
 varying float vAlpha;
 varying vec3 vCol;
 varying float vKind;
+varying vec3 vWorld;
+varying float vFall;
+${FX_LIGHT_GLSL}
 #include <common>
 #include <fog_pars_fragment>
 void main() {
-  float across = 1.0 - vQ.x * vQ.x;
-  float along = vKind < 0.5 ? 1.0 - vQ.y * 0.85 : 1.0 - vQ.y * 0.6;
-  float a = clamp( vAlpha * across * along, 0.0, 1.0 );
   vec3 col = vCol;
+  float a;
+  if ( vKind > 1.5 ) {
+    // the veil: soft across, streaky along, drifting down with the grains
+    float across = 1.0 - vQ.x * vQ.x;
+    float f = vFall * 5.0 + vQ.x * 3.0;
+    float streak = 0.55 + 0.25 * sin( f - uTime * 6.0 ) + 0.2 * sin( f * 2.7 - uTime * 9.3 + vQ.x * 4.0 );
+    a = clamp( vAlpha * across * across * streak, 0.0, 1.0 );
+    vec3 v = normalize( vWorld - cameraPosition );
+    vec3 light = min( uAmbient + atLightAt( vWorld, v, 0.0 ) * 0.5, vec3( 1.5 ) );
+    light = mix( vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), light, 0.45 );
+    col = vec3( 0.46, 0.44, 0.41 ) * light;
+  } else {
+    float across = 1.0 - vQ.x * vQ.x;
+    float along = vKind < 0.5 ? 1.0 - vQ.y * 0.85 : 1.0 - vQ.y * 0.6;
+    a = clamp( vAlpha * across * along, 0.0, 1.0 );
+  }
   #ifdef USE_FOG
     float ff = atFogFactor( vFogDepth );
-    if ( vKind < 0.5 ) col = mix( col, fogColor, ff );
+    if ( vKind < 0.5 || vKind > 1.5 ) col = mix( col, fogColor, ff );
     else col *= 1.0 - ff;
   #endif
   gl_FragColor = vec4( col, a );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
-  // premultiplied: grit blends over, drips add (alpha 0)
-  gl_FragColor = vec4( gl_FragColor.rgb * a, vKind < 0.5 ? a : 0.0 );
+  // premultiplied: grit and veil blend over, drips add (alpha 0)
+  gl_FragColor = vec4( gl_FragColor.rgb * a, vKind > 0.5 && vKind < 1.5 ? 0.0 : a );
 }
 `;
 
@@ -529,7 +575,7 @@ export class Trickles {
     this._hit = { t: 0, solid: null, x: 0, y: 0, z: 0 };
     this._pickT = 0;
 
-    const n = MAX_STREAMS * GRAINS;
+    const n = MAX_STREAMS * STRIDE;
     const base = new THREE.PlaneGeometry(2, 1, 1, 1);
     base.translate(0, 0.5, 0);
     const g = new THREE.InstancedBufferGeometry();
@@ -540,14 +586,14 @@ export class Trickles {
     this._seed = new Float32Array(n);
     this._prev = new Float32Array(n); // drips: last cycle time (splash detection)
     for (let s = 0; s < MAX_STREAMS; s++) {
-      for (let k = 0; k < GRAINS; k++) {
-        const i = s * GRAINS + k;
+      for (let k = 0; k <= GRAINS; k++) {
+        const i = s * STRIDE + k;
         const ph = rand(); // irregular: grains bunch into clumps like a real trickle
         const sd = rand();
         grain[i * 4] = s;
         grain[i * 4 + 1] = ph;
         grain[i * 4 + 2] = sd;
-        grain[i * 4 + 3] = k;
+        grain[i * 4 + 3] = k === GRAINS ? RIBBON : k;
         this._phase[i] = ph;
         this._seed[i] = sd;
       }
@@ -661,7 +707,7 @@ export class Trickles {
           s.life = 7 + this.rand() * 9;
           if (kind === DRIP) nDrip++;
           A.set(s.x, s.y, s.z, s.L);
-          for (let k = 0; k < GRAINS; k++) this._prev[i * GRAINS + k] = -1;
+          for (let k = 0; k < GRAINS; k++) this._prev[i * STRIDE + k] = -1;
         }
       }
       if (!s.active) {
@@ -669,7 +715,7 @@ export class Trickles {
         continue;
       }
       any = true;
-      s.grains = s.kind === DRIP ? DRIP_DROPS : clamp(Math.round(13 + heavy * 11), 4, GRAINS);
+      s.grains = s.kind === DRIP ? DRIP_DROPS : clamp(Math.round(16 + heavy * 14), 5, GRAINS);
       B.set(s.alpha * (s.kind === DRIP ? 1 : 0.8 + 0.2 * heavy), s.grains, s.kind, s.kind === DRIP ? 0 : 0.035 + 0.05 * heavy);
       this._landings(dt, i, s, head);
     }
@@ -694,7 +740,7 @@ export class Trickles {
     }
     const T = Math.sqrt((2 * s.L) / G);
     for (let k = 0; k < DRIP_DROPS; k++) {
-      const j = i * GRAINS + k;
+      const j = i * STRIDE + k;
       const period = T + 0.9 + 2.2 * this._seed[j];
       let u = this.time / period + this._phase[j];
       u -= Math.floor(u);
