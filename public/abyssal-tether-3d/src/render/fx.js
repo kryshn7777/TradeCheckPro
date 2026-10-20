@@ -105,6 +105,8 @@ export class FX {
     this._shedAcc = 0;
     this._stressAcc = 0;
     this._joltT = 0;
+    this._rains = [];
+    for (let i = 0; i < 4; i++) this._rains.push({ left: 0, rate: 0, acc: 0, x: 0, y: 0, z: 0 });
     this._gateObj = null;
     this._gateFindT = 0;
     this._gateY = NaN;
@@ -476,9 +478,14 @@ export class FX {
         this.trickles.agitate(0.35 * (1 - d / 40));
       }
     });
+    // Level trigger: debris raining past at data.x/y/z (the same spot the audio places it). A column of
+    // stones falls there for ~2 s with dust where it breaks away; without a position it rains above the head.
     on('trigger:debris', (e) => {
-      this._rain(THREE.MathUtils.clamp(num(e.data && e.data.count, 16), 1, 50));
-      this.trickles.agitate(1);
+      const d = (e && e.data) || {};
+      const inten = THREE.MathUtils.clamp(num(d.intensity, 0.5), 0.1, 1.5);
+      if (isFinite(num(d.x, NaN)) && isFinite(num(d.y, NaN)) && isFinite(num(d.z, NaN))) this._startRain(d.x, d.y, d.z, 12 + Math.round(inten * 26), 1.9);
+      else this._rain(THREE.MathUtils.clamp(num(d.count, 16), 1, 50));
+      this.trickles.agitate(0.6 + inten * 0.6);
     });
     on('trigger:rumble', (e) => {
       this._rain(THREE.MathUtils.clamp(num(e.data && e.data.count, 9), 1, 40));
@@ -514,6 +521,7 @@ export class FX {
     this.bursts.visible = false;
     this._slamT = -1;
     this._slammed = false;
+    for (let i = 0; i < this._rains.length; i++) this._rains[i].left = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -674,6 +682,41 @@ export class FX {
     }
   }
 
+  /** A timed column of n falling stones at (x, y, z) over `dur` seconds (a free emitter slot, else the oldest). */
+  _startRain(x, y, z, n, dur) {
+    let q = null;
+    const rains = this._rains;
+    for (let i = 0; i < rains.length; i++) if (rains[i].left <= 0) q = rains[i];
+    if (!q) {
+      q = rains[0];
+      for (let i = 1; i < rains.length; i++) if (rains[i].left < q.left) q = rains[i];
+    }
+    q.x = x;
+    q.y = y;
+    q.z = z;
+    q.left = dur;
+    q.rate = (n * (this.reduced ? 0.5 : 1)) / dur;
+    q.acc = 0;
+    this.burst('puff', x, y, z, { count: 5, spread: 1.2 });
+  }
+
+  _updateRains(dt) {
+    const r = this._rng;
+    const rains = this._rains;
+    for (let ri = 0; ri < rains.length; ri++) {
+      const q = rains[ri];
+      if (q.left <= 0) continue;
+      q.left -= dt;
+      q.acc += q.rate * dt;
+      while (q.acc >= 1) {
+        q.acc -= 1;
+        const sz = 0.04 + r() * r() * 0.2;
+        this._spawnDebris(q.x + (r() - 0.5) * 2.2, q.y + r() * 1.6, q.z + (r() - 0.5) * 2.2, (r() - 0.5) * 0.8, -1 - r() * 3, (r() - 0.5) * 0.8, sz);
+        if (r() < 0.25) this._spawnPoint(K_PUFF, q.x + (r() - 0.5) * 2, q.y + r(), q.z + (r() - 0.5) * 2, 0, -2.5, 0, 1.6, 0.4, 0.34, 0.33, 0.31);
+      }
+    }
+  }
+
   /** Stones and grit breaking off the stone above the player (rumbles, bursts, the slam). */
   _rain(n) {
     const h = this._head;
@@ -736,6 +779,7 @@ export class FX {
     this._updateCreatureShed(dt, game);
     this._updateAnchorStress(dt, game);
     this._updateGate(dt, game, level);
+    this._updateRains(dt);
 
     this._updateDust(dt, head);
     this._updateBursts(dt);
@@ -786,7 +830,8 @@ export class FX {
   _updateAnchorStress(dt, game) {
     const t = game && game.tethers;
     if (!t || typeof t.anchorStress !== 'function' || !t.hands) return;
-    for (const h of HANDS) {
+    for (let hi = 0; hi < 2; hi++) {
+      const h = HANDS[hi];
       const st = t.hands[h];
       const an = st && st.rope && st.rope.anchor;
       if (!an || an.kind !== 'fragile' || !isFinite(an.x)) continue;

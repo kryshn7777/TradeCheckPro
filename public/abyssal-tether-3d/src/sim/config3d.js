@@ -78,6 +78,28 @@ export const CONFIG = {
     losEndClearance: 0.6,
     minAimLength: 1e-3,
   },
+
+  // Health and fall damage (sim/health3d.js). hp is 0..1 (100 hp). Per-difficulty values live in
+  // DIFFICULTY[k].health (fall threshold, regeneration, hazard damage, wall scale).
+  health: {
+    lowEnter: 0.35, // hp at or below this is "low": the heartbeat, the ECG turns red, the pulse starts
+    lowExit: 0.5, // ... until hp climbs back to this (hysteresis)
+    vignetteStart: 0.5, // the red screen-edge vignette fades in below this hp
+    fallExp: 2, // landing damage = ((v/vLethal - threshold) / (1 - threshold))^fallExp: 0 at the threshold, 1 (dead) at the lethal speed
+    wallThreshold: 0.5, // side impacts: no damage below this fraction of the lethal speed
+    wallMax: 0.45, // ... damage at the lethal speed (the normal-component speed)
+    wallExp: 2,
+    wallCap: 0.7, // ... and the most a single wall hit can take
+    wallSpeedCap: 1.5, // speed ratio at which the wall curve stops growing
+    hitCooldown: 0.35, // s: one landing is not counted twice (a bigger second hit pays only the excess)
+    hazardCooldown: 1.2, // s between hazard (spikes / blades / rebar) hits
+    bpmCalm: 60, // heartbeat at full health
+    bpmMax: 140, // ... near zero hp
+    bpmExp: 1.5,
+    adrenalineBpm: 25, // extra bpm right after a hit, fading over adrenalineTime
+    adrenalineTime: 4,
+    checkpointHeal: 1, // hp restored on reaching a new checkpoint (fraction of full)
+  },
 };
 
 export const DIFFICULTY = {
@@ -96,6 +118,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
+    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
   },
   nightmare: {
     key: 'nightmare',
@@ -112,6 +135,7 @@ export const DIFFICULTY = {
     checkpoints: 'alternate',
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
+    health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
   },
   abyss: {
     key: 'abyss',
@@ -128,6 +152,7 @@ export const DIFFICULTY = {
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
+    health: { fallThreshold: 0.3, regenDelay: 15, regenRate: 0.01, hazardDamage: 1, wallScale: 1.25 },
   },
   sandbox: {
     key: 'sandbox',
@@ -144,6 +169,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
+    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 1, wallScale: 1 },
   },
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;
