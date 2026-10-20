@@ -1228,9 +1228,10 @@ export function patchMaterial(mat, opts = {}) {
   const gi = lit && opts.gi !== false && LIGHTS_BEGIN_GI !== null;
   const hq = lit && !!uvMode && macro && !!opts.hq && HQ_NORMAL !== null;
   const grade = lit && !!opts.grade;
+  const bevel = lit && uvMode === 'box' && !!opts.bevel;
   mat.userData.hq = hq;
   mat.userData.hqDetail = opts.detail != null ? opts.detail : 1;
-  const key = `at3d|hq:${hq ? 1 : 0}|gr:${grade ? 1 : 0}|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
+  const key = `at3d|hq:${hq ? 1 : 0}|gr:${grade ? 1 : 0}|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|bv:${bevel ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -1243,6 +1244,11 @@ export function patchMaterial(mat, opts = {}) {
     if (uvMode) {
       vDecl += 'uniform float uTexScale;\nvarying float vAtTop;\nvarying vec2 vAtUv;\n';
       fDecl += 'varying float vAtTop;\nvarying vec2 vAtUv;\n';
+      if (bevel) {
+        // unit-box solids: the fragment's box-local position in metres, the box half extents and the face axis (see BEVEL_FRAG)
+        vDecl += 'varying vec3 vAtBp;\nflat varying vec3 vAtBh;\nflat varying vec3 vAtFN;\n';
+        fDecl += 'varying vec3 vAtBp;\nflat varying vec3 vAtBh;\nflat varying vec3 vAtFN;\nuniform vec4 uBevelK;\n';
+      }
       const uvSrc =
         uvMode === 'box'
           ? `
@@ -1255,7 +1261,14 @@ export function patchMaterial(mat, opts = {}) {
     vec3 atP = position * atS + atM[ 3 ].xyz + modelMatrix[ 3 ].xyz;
     vec3 atN = abs( normal );
     vec2 atUv = ( atN.x > atN.y && atN.x > atN.z ) ? atP.zy : ( ( atN.y > atN.z ) ? atP.xz : atP.xy );
-    atUv *= uTexScale;`
+    atUv *= uTexScale;${
+      bevel
+        ? `
+    vAtBp = position * atS;
+    vAtBh = atS * 0.5;
+    vAtFN = vec3( atN.x > 0.5 ? 1.0 : 0.0, atN.y > 0.5 ? 1.0 : 0.0, atN.z > 0.5 ? 1.0 : 0.0 );`
+        : ''
+    }`
           : `
     vec2 atUv = uv * uTexScale;`;
       vs = vs.replace(
