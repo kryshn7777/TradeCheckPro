@@ -172,15 +172,28 @@ async function setScene(page, r) {
   }, r);
 }
 
-async function snap(page, file, w, h) {
+async function snap(page, file, w, h, { grab = false } = {}) {
   await sleep(700); // a few frozen frames so fx and the lantern settle
-  await page.evaluate(() => {
-    const G = window.AT3D.game;
-    G.fade = 0;
-    G.flash = 0;
-  });
-  await sleep(300);
-  await page.screenshot({ path: file, clip: { x: 0, y: 0, width: w, height: h }, timeout: 600000 }); // software GL: a frame can take minutes at this size
+  if (grab) {
+    // desktop: read the canvas in the same task as a render (a WebGL canvas without preserveDrawingBuffer can show
+    // black to a page screenshot taken between frames)
+    const b64 = await page.evaluate(() => {
+      const G = window.AT3D.game;
+      G.fade = 0;
+      G.flash = 0;
+      G._render(1 / 60);
+      return G.renderer.renderer.domElement.toDataURL('image/png').split(',')[1];
+    });
+    fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+  } else {
+    await page.evaluate(() => {
+      const G = window.AT3D.game;
+      G.fade = 0;
+      G.flash = 0;
+    });
+    await sleep(300);
+    await page.screenshot({ path: file, clip: { x: 0, y: 0, width: w, height: h }, timeout: 600000 }); // software GL: a frame can take minutes at this size
+  }
   console.log(`  ${path.relative(REPO, file)}  ${w}x${h}`);
 }
 
@@ -191,7 +204,7 @@ try {
     for (const r of RECIPES.filter((x) => !RECIPE || x.id === RECIPE)) {
       const info = await setScene(page, r);
       if (info.state !== 'playing') console.log('   note: state', info.state);
-      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080);
+      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
     }
     await ctx.close();
   }
@@ -199,7 +212,7 @@ try {
     console.log('hero 2880x1600');
     const hero = await newGamePage(2880, 1600);
     await setScene(hero.page, { section: 6, yaw: 0.2, pitch: -0.16, ropes: 30, run: 1.5 });
-    await snap(hero.page, path.join(SHOTS, 'hero-2880x1600.png'), 2880, 1600);
+    await snap(hero.page, path.join(SHOTS, 'hero-2880x1600.png'), 2880, 1600, { grab: true });
     await hero.ctx.close();
   }
   if (ONLY === 'all' || ONLY === 'vr') {
@@ -228,7 +241,7 @@ try {
       const info = await setScene(page, r);
       await sleep(400);
       void info;
-      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080);
+      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
     }
     await ctx.close();
   }

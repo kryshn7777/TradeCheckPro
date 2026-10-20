@@ -1316,12 +1316,12 @@ def build_scarf(lv):
     path = []
     for k in range(n):
         a = 2 * math.pi * k / n
-        path.append(V(0.084 * math.cos(a), -0.004 + 0.080 * math.sin(a), 1.478 + 0.004 * math.sin(2 * a + 0.8)))
+        path.append(V(0.080 * math.cos(a), -0.004 + 0.076 * math.sin(a), 1.466 + 0.003 * math.sin(2 * a + 0.8)))
     rings = []
     frames = transport_frames(path + [path[0]], V(0, 0, 1))
     for i, p in enumerate(path):
         T, N, B = frames[i]
-        rr = 0.0165 + 0.0025 * math.sin(i * 0.7)
+        rr = 0.0125 + 0.0020 * math.sin(i * 0.7)
         ring = []
         for k in range(nring):
             a = 2 * math.pi * k / nring
@@ -1336,7 +1336,7 @@ def build_scarf(lv):
         for k in range(nring):
             bm.faces.new((a[k], a[(k + 1) % nring], b[(k + 1) % nring], b[k]))
     # lid closing the neck hole
-    cap_z = 1.490
+    cap_z = 1.476
     cv = bm.verts.new(V(0, -0.004, cap_z))
     inner = [bm.verts.new(V(0.066 * math.cos(2 * math.pi * k / (n if not lv.hi else 36)), -0.004 + 0.062 * math.sin(2 * math.pi * k / (n if not lv.hi else 36)), cap_z)) for k in range(n if not lv.hi else 36)]
     m = len(inner)

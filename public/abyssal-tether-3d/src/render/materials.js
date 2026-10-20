@@ -982,6 +982,16 @@ ${UV_ASSIGN}
       // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
       fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
   float atWet = max( uWet * ${wetK.toFixed(3)}, ${wetMin.toFixed(3)} ) * ( 1.0 - ${dry} );
+${
+  macro
+    ? `  {
+    // floors and ledge tops are dusty, but in the wet sections water stands on them in patches: a film that
+    // darkens the stone and turns it glossy, so the lantern and the lamps glint in it
+    float atPn = texture2D( uMacroMap, vAtUv * 0.13 + vec2( 0.37, 0.11 ) ).r + 0.25 * ( texture2D( uMacroMap, vAtUv * 0.41 ).r - 0.5 );
+    atWet = max( atWet, clamp( uWet * ${wetK.toFixed(3)} * 1.7, 0.0, 1.0 ) * smoothstep( 0.4, 0.62, atPn ) * ${dry} );
+  }`
+    : ''
+}
   diffuseColor.rgb *= 1.0 - 0.32 * atWet;
   diffuseColor.rgb *= 1.0 + uVG * clamp( ( vAtW.y - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );`);
       fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
