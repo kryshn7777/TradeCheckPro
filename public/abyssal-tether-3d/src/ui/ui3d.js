@@ -150,6 +150,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   { key: 'haptics', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
+  { key: 'showBody', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
   // Player height (VR panel: its own page, "Player height ›" on the settings page).
   { group: 'Player height' },
   {

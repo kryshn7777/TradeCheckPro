@@ -378,7 +378,10 @@ const TIERS = [
 
 // Section mood (index = section): fog thickness, mist on ledges, abyss smoke.
 const SECTION_DENSITY = [0.8, 0.85, 1.0, 0.9, 1.15, 1.0, 0.95, 1.1];
-const SECTION_MIST = [0.6, 0.7, 0.9, 0.8, 1.1, 1.0, 0.9, 1.2];
+// S5 / S8: the brown-amber fog hue sat over every floor as a flat orange wash; their sheets are thinner now
+// air hue saturation: the brown-amber S5 / S8 fog read as an orange wash at full saturation
+const SECTION_TINT = [1, 1, 1, 1, 0.55, 1, 1, 0.55];
+const SECTION_MIST = [0.6, 0.7, 0.9, 0.8, 0.62, 0.95, 0.9, 0.66];
 
 const VOL_R = 16; // horizontal radius of the card volume around the head (m)
 const VOL_UP = 9; // above the head
@@ -490,6 +493,9 @@ void main() {
     // A thin layer: thicker at grazing angles, gone when exactly edge-on.
     float s = abs( v.y );
     a = uMist * smoothstep( 0.015, 0.09, s ) * min( 2.2, 0.45 / max( s, 0.2 ) );
+    // Seen from standing height the sheet over the floor in front of you covers the whole floor: thin it
+    // out near the eye (the haze belongs to the far ledges and the pit, not to the ground at your feet).
+    a *= mix( 0.4, 1.0, smoothstep( 1.2, 9.0, abs( cameraPosition.y - p.y ) ) ) * mix( 0.5, 1.0, smoothstep( 2.0, 14.0, d ) );
   }
   #ifdef USE_FOG
     float ff = atFogFactor( vFogDepth );
@@ -527,7 +533,7 @@ void main() {
   // The air's own colour: the section fog hue, a little more saturated (cool stone dust up
   // in the shaft, warm rust and peat-brown in the deep), on the ambient and the shaft light.
   vec3 hue = base / max( dot( base, vec3( 0.2126, 0.7152, 0.0722 ) ), 1e-4 );
-  vec3 air = max( mix( vec3( 1.0 ), hue, uTintSat ), vec3( 0.0 ) );
+  vec3 air = max( mix( vec3( 1.0 ), hue, uTintSat * ( vType > 0.5 ? 0.45 : 1.0 ) ), vec3( 0.0 ) );
   // The lantern lights the haze around the player (soft, multiply-scattered falloff);
   // lamps glow through it; the creature's sensory glow tints it when it is close.
   vec3 lit = atLantern( p, v, 0.15, uLanternK ) * uLanternGain + atEnvLights( p, v, 0.2 ) + atGlow( p ) * uGlowGain;
@@ -575,6 +581,7 @@ export class Atmosphere {
     this._fillAll = true;
     this.density = 1;
     this.mist = 1;
+    this.tintK = 1;
     this._section = -1;
 
     // An octagon: a card's soft disc wastes ~10 % of its fragments instead of a quad's ~30 %;
@@ -730,6 +737,7 @@ export class Atmosphere {
     const k = jumped ? 1 : 1 - Math.exp(-1.2 * dt);
     this.density += ((SECTION_DENSITY[si] || 1) - this.density) * k;
     this.mist += ((SECTION_MIST[si] || 1) - this.mist) * k;
+    this.tintK += ((SECTION_TINT[si] || 1) - this.tintK) * k;
     // Threat thickens the air a little and stirs it upward (the shaft breathes in).
     const P = this.params;
     U.uDensity.value = P.density * this.density * (1 + threat * 0.25);
@@ -745,7 +753,7 @@ export class Atmosphere {
     U.uGlowGain.value = P.glow;
     U.uDetail.value = tier >= 1 ? 1 : 0;
     U.uKeyGain.value = P.key;
-    U.uTintSat.value = P.tint;
+    U.uTintSat.value = P.tint * this.tintK;
 
     if (!level) {
       for (let i = 0; i < MAX_CARDS; i++) this._setCard(i, 0);

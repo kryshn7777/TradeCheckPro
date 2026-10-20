@@ -83,6 +83,7 @@ const MODULES = {
   creatureView: './render/creatureView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
+  bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
   input: './input/inputManager.js',
@@ -784,6 +785,7 @@ export class Game3D {
     this.creatureView = null;
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
+    this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -979,6 +981,7 @@ export class Game3D {
 
     this._setupHandsView();
     this._setupHealthFx();
+    this._setupBodyView();
     this._setupBagViews();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
@@ -1220,6 +1223,18 @@ export class Game3D {
         this._fault('pickupsView', err);
         this.pickupsView = null;
       }
+    }
+  }
+
+  /** The player's body (jacket, harness, legs, boots; no head). Async GLB; a failure leaves the game without a body. */
+  _setupBodyView() {
+    const M = this.modules;
+    if (this.bodyView || !M.bodyView || typeof M.bodyView.BodyView !== 'function' || !this.renderer) return;
+    try {
+      this.bodyView = new M.bodyView.BodyView(this);
+    } catch (err) {
+      this._fault('bodyView', err);
+      this.bodyView = null;
     }
   }
 
@@ -3029,6 +3044,15 @@ export class Game3D {
         hv.update(dt, this);
       } catch (err) {
         this._fault('handsView', err);
+      }
+    }
+    // The body last: it reads the rig, the hands' elbow anchors and the sim state of this frame.
+    const bv = this.bodyView;
+    if (bv && bv.ready) {
+      try {
+        bv.update(dt, this);
+      } catch (err) {
+        this._fault('bodyView', err);
       }
     }
   }

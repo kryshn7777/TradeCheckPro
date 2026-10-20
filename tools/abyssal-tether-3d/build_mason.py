@@ -4776,7 +4776,7 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
 
     ao, ro, me_ = px(imgs["ao"]), px(imgs["rough"]), px(imgs["metal"])
     orm = np.ones((size, size, 4), np.float32)
-    orm[..., 0], orm[..., 1], orm[..., 2] = ao[..., 0], ro[..., 0], me_[..., 0]
+    orm[..., 0], orm[..., 1], orm[..., 2] = 0.4 + 0.6 * ao[..., 0], ro[..., 0], me_[..., 0]   # AO lifted: it only dims ambient
     paths = {}
     for mp, q, res in (("albedo", 76, size), ("normal", 78, size), ("orm", 80, size // 4)):
         if mp == "orm":
@@ -5339,6 +5339,13 @@ def render_kit_sheet(prod, fn, res=(1280, 720), samples=32):
     return fn
 
 
+def _pack_glb(fn):
+    """Pack the rig-contract vertex attributes (wip/creature/pack_glb.py) to keep the kit within its size budget."""
+    import subprocess
+    pk = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wip", "creature", "pack_glb.py")
+    subprocess.run([sys.executable, pk, fn], check=True)
+
+
 def run_production(creature, env):
     """Bake + export the kit and the hero, report budgets."""
     outd = args.export
@@ -5357,11 +5364,15 @@ def run_production(creature, env):
     kit_objs = list(final.values()) + list(lod1.values())
     fk = os.path.join(outd, "mason_kit.glb")
     report["files"]["mason_kit.glb"] = export_glb(kit_objs, fk)
+    _pack_glb(fk)
+    report["files"]["mason_kit.glb"] = os.path.getsize(fk)
     log("export: kit %.2f MB" % (report["files"]["mason_kit.glb"] / 1e6))
     roots, made, total = assemble_hero(prod, game)
     report["hero"] = dict(lod0_tris=total[0], lod1_tris=total[1], nodes_lod0=len(made[0]), nodes_lod1=len(made[1]))
     fh = os.path.join(outd, "mason_hero.glb")
     report["files"]["mason_hero.glb"] = export_glb(roots + made[0] + made[1], fh)
+    _pack_glb(fh)
+    report["files"]["mason_hero.glb"] = os.path.getsize(fh)
     log("export: hero %.2f MB, LOD0 %d tris, LOD1 %d tris" % (report["files"]["mason_hero.glb"] / 1e6, total[0], total[1]))
     with open(os.path.join(outd, "export_report.json"), "w") as fh_:
         json.dump(report, fh_, indent=2)

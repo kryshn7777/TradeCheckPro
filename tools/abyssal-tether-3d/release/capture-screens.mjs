@@ -30,6 +30,7 @@ const arg = (n, d) => {
 };
 const OUT = path.resolve(REPO, arg('--out', 'docs/abyssal-tether-3d/store'));
 const ONLY = arg('--only', 'all');
+const RECIPE = arg('--recipe', null); // capture a single desktop shot (a fresh process per shot keeps memory bounded)
 const ROOT = path.resolve(arg('--root', path.join(REPO, 'public', 'abyssal-tether-3d')));
 const SHOTS = path.join(OUT, 'screenshots');
 const KEYART = path.join(OUT, 'keyart');
@@ -82,7 +83,7 @@ async function newGamePage(w, h, { xr = false } = {}) {
   }
   await page.addInitScript(() => {
     const css = document.createElement('style');
-    css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal{display:none!important}';
+    css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal,#at3d-gpu-banner,[id^=at3d-panel]{display:none!important}';
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
   await page.goto(srv.base + '?sw=0&gov=off', { waitUntil: 'domcontentloaded' });
@@ -179,7 +180,7 @@ async function snap(page, file, w, h) {
     G.flash = 0;
   });
   await sleep(300);
-  await page.screenshot({ path: file, clip: { x: 0, y: 0, width: w, height: h } });
+  await page.screenshot({ path: file, clip: { x: 0, y: 0, width: w, height: h }, timeout: 600000 }); // software GL: a frame can take minutes at this size
   console.log(`  ${path.relative(REPO, file)}  ${w}x${h}`);
 }
 
@@ -187,12 +188,14 @@ try {
   if (ONLY === 'all' || ONLY === 'shots') {
     console.log('desktop screenshots 1920x1080');
     const { ctx, page } = await newGamePage(1920, 1080);
-    for (const r of RECIPES) {
+    for (const r of RECIPES.filter((x) => !RECIPE || x.id === RECIPE)) {
       const info = await setScene(page, r);
       if (info.state !== 'playing') console.log('   note: state', info.state);
       await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080);
     }
     await ctx.close();
+  }
+  if (ONLY === 'all' || ONLY === 'hero') {
     console.log('hero 2880x1600');
     const hero = await newGamePage(2880, 1600);
     await setScene(hero.page, { section: 6, yaw: 0.2, pitch: -0.16, ropes: 30, run: 1.5 });
@@ -229,7 +232,7 @@ try {
     }
     await ctx.close();
   }
-  if (ONLY === 'all' || ONLY === 'keyart') {
+  if (ONLY === 'keyart') {
     for (const [name, w, h] of KEYART_SIZES) {
       console.log(`key art renders ${name} ${w}x${h}`);
       const { ctx, page } = await newGamePage(w, h);

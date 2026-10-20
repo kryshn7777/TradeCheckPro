@@ -52,7 +52,17 @@ function hyp(x, y, z = 0) {
 const BAND_H = 64; // metres per decor culling band (levels without sections)
 const DETAIL_BAND_H = 32; // finer bands for small dressing (kit parts, arcades, rings) ...
 const DETAIL_DIST = 38; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
-const VIEW_MARGIN = 6; // metres beyond fog far still drawn
+const SMALL_ITEM = 1.6; // m: items smaller than this on every axis
+const NEIGHBOUR_DIST = 40; // m: chunks of the neighbouring sections
+const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhouettes against the haze, not as relief)
+// Dressing categories that live in the finer, nearer tiers whatever they are placed on (the Quest trim of the
+// densest sections): small relief that is sub-pixel past a few tens of metres.
+const DETAIL_CATS = new Set(['stain', 'organ', 'bead']);
+const MID_CATS = new Set(['farlancet']);
+const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
+const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
+// slabs within sight are drawn: a section is 40-140 m tall and drew whole whenever any of it was in view
+const SLAB_KINDS = new Set(['stone', 'metal', 'flesh']);
 const GLYPH_MAX_DIST = 110;
 const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel / fogged: glyphs carry them
 const PLAQUE_DIST = 26;
@@ -184,10 +194,11 @@ function scaleUV(geo, su, sv) {
 /** Collects decor parts per material while an item is being built (item-local coords). */
 class Parts {
   constructor() {
-    this.lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] };
+    // metalM: metal that only needs to exist near (chain links): the 'mid' tier, see _bandLists
+    this.lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [], metalM: [] };
     this.rng = Math.random;
     /** Vertex colour per lit list (the section grade); glow / shaft carry their own colours. */
-    this.tint = { stone: [1, 1, 1], metal: [1, 1, 1], rock: [1, 1, 1], flesh: [1, 1, 1] };
+    this.tint = { stone: [1, 1, 1], metal: [1, 1, 1], rock: [1, 1, 1], flesh: [1, 1, 1], metalM: [1, 1, 1] };
   }
   _push(list, geo, matrix) {
     if (matrix) geo.applyMatrix4(matrix);
@@ -336,7 +347,7 @@ const DECOR = {
       _m4.makeScale(0.6, 1, 1);
       if (i % 2) _m4.premultiply(rot);
       _m4.premultiply(m.makeTranslation(0, y, 0));
-      P.torus('metal', R, tube, 3, 6, Math.PI * 2, _m4);
+      P.torus('metalM', R, tube, 3, 6, Math.PI * 2, _m4);
     }
     const top = -sy / 2 + pitch * n;
     if (top < sy / 2 - 0.1) {
@@ -1814,6 +1825,7 @@ class Dresser {
     if (list !== 'glow') worldUV(geo);
     else geo.deleteAttribute('normal');
     this._count(this._cat || list, F.o.y + y, geo.attributes.position.count / 3);
+    if (!detail && list !== 'glow') detail = DETAIL_CATS.has(this._cat) ? true : MID_CATS.has(this._cat) ? 'mid' : false;
     this.emit(geo, list, detail);
   }
 
@@ -3236,6 +3248,8 @@ export class LevelView {
     this._attachPulse = new Map(); // anchor → time of attach
     this.gate = null; // the chamber portcullis (see _buildGate)
     this.fx = null; // optional FX (set by Renderer3D): grit trickles from loaded crumbling ledges
+    this._detailScale = 1;
+    this._cullT = 0.78;
   }
 
   _makeHighlight(hand, color) {
@@ -3277,6 +3291,7 @@ export class LevelView {
     this._dressJob = null;
     this._cogs = null;
     this._colossal = null;
+    this._colossalParts = [];
     this._lightGlow = null;
     this.gate = null;
     this.level = null;
@@ -3348,7 +3363,19 @@ export class LevelView {
     return Math.max(0, Math.floor((this._topY - y) / BAND_H));
   }
 
-  _addChunk(obj, maxDist = Infinity, band = -1) {
+  /**
+   * Quality hook (Renderer3D lighting tier): scales the far-detail distance and the fog cull distance.
+   * 1 = Quest. Chunks are re-tested every frame, so nothing is rebuilt.
+   */
+  setDetailScale(f, force) {
+    f = Math.max(0.3, Math.min(1.6, num(f, 1)));
+    if (!force && f === this._detailScale) return;
+    this._detailScale = f;
+    // fraction of the fog range past which geometry is dropped: fog is ≥ 97 % opaque at 0.72, 99 % at 0.85, 99.7 % at 0.9
+    this._cullT = f <= 1 ? 0.66 + 0.12 * Math.max(0, Math.min(1, (f - 0.55) / 0.45)) : Math.min(0.96, 0.78 + 0.18 * (f - 1));
+  }
+
+  _addChunk(obj, maxDist = Infinity, band = -1, kind = '') {
     obj.updateMatrixWorld(true);
     const box = new THREE.Box3();
     if (obj.isInstancedMesh) {
@@ -3358,7 +3385,7 @@ export class LevelView {
     } else {
       box.setFromObject(obj);
     }
-    this._chunks.push({ obj, box, maxDist, band });
+    this._chunks.push({ obj, box, maxDist, band, kind });
     this.root.add(obj);
   }
 
@@ -3686,6 +3713,7 @@ export class LevelView {
       const g = this._grade(y);
       P.tint.stone = g.stone;
       P.tint.rock = g.stone;
+      P.tint.metalM = P.tint.metal;
       buildFn();
       let t = 0;
       for (const k of Object.keys(P.lists)) for (const g of P.lists[k]) t += g.attributes.position.count / 3;
@@ -3693,10 +3721,12 @@ export class LevelView {
       itemM.makeRotationY(rotY || 0);
       itemM.setPosition(x, y, z);
       const band = getBand(y);
+      const mid = this._bandLists(bands, y, 'mid');
       for (const k of Object.keys(P.lists)) {
         for (const g of P.lists[k]) {
           g.applyMatrix4(itemM);
-          band[k].push(g);
+          if (k === 'metalM') mid.metal.push(g);
+          else band[k].push(g);
         }
       }
     };
@@ -3806,7 +3836,7 @@ export class LevelView {
 
   /** The decor lists of the band holding y (created on demand); detail → the finer, nearer tier. */
   _bandLists(bands, y, detail = false) {
-    const bi = detail ? `d${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
+    const bi = detail ? `${detail === 'mid' ? 'm' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
     if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] });
     return bands.get(bi);
   }
@@ -3841,6 +3871,9 @@ export class LevelView {
     this._makeCogMesh();
     const emit = (geo, list, detail) => {
       geo.computeBoundingBox();
+      const bb = geo.boundingBox;
+      // small relief (every extent under SMALL_ITEM) is sub-pixel past a few tens of metres: the near tier
+      if (!detail && list !== 'glow' && list !== 'shaft' && Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) < SMALL_ITEM) detail = true;
       const y = (geo.boundingBox.min.y + geo.boundingBox.max.y) / 2;
       this._bandLists(job.bands, y, detail)[list].push(geo);
       const n = geo.attributes.position.count / 3;
@@ -4024,35 +4057,49 @@ export class LevelView {
   _mergeBands(bands, append) {
     if (!this._chunkByKey) this._chunkByKey = new Map();
     for (const [bi, lists] of bands) {
+      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : '';
+      const detail = kind !== '';
       for (const k of Object.keys(lists)) {
         const list = lists[k];
         if (!list.length) continue;
-        const key = `${bi}|${k}`;
-        const prev = append ? this._chunkByKey.get(key) : null;
-        let merged = null;
-        try {
-          merged = mergeGeometries(prev ? [prev.obj.geometry, ...list] : list, false);
-        } catch {
-          merged = null;
+        // large section chunks: one group per vertical slab (by the part's centre height)
+        const groups = new Map();
+        if (!detail && SLAB_KINDS.has(k)) {
+          for (const g of list) {
+            if (!g.boundingBox) g.computeBoundingBox();
+            const cy = (g.boundingBox.min.y + g.boundingBox.max.y) / 2;
+            const sl = Math.floor((this._topY - cy) / SLAB_H);
+            if (!groups.has(sl)) groups.set(sl, []);
+            groups.get(sl).push(g);
+          }
+        } else groups.set(-1, list);
+        for (const [sl, items] of groups) {
+          const key = sl < 0 ? `${bi}|${k}` : `${bi}|${k}|${sl}`;
+          const prev = append ? this._chunkByKey.get(key) : null;
+          let merged = null;
+          try {
+            merged = mergeGeometries(prev ? [prev.obj.geometry, ...items] : items, false);
+          } catch {
+            merged = null;
+          }
+          for (const g of items) g.dispose();
+          if (!merged) continue;
+          merged.computeBoundingSphere();
+          merged.computeBoundingBox();
+          if (prev) {
+            prev.obj.geometry.dispose();
+            prev.obj.geometry = merged;
+            prev.box.copy(merged.boundingBox);
+            continue;
+          }
+          const mesh = new THREE.Mesh(merged, this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone'));
+          mesh.name = sl < 0 ? `decor_${k}_${bi}` : `decor_${k}_${bi}_s${sl}`;
+          mesh.matrixAutoUpdate = false;
+          if (k === 'shaft') mesh.renderOrder = 10;
+          this._addChunk(mesh, kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi, kind);
+          this._chunkByKey.set(key, this._chunks[this._chunks.length - 1]);
         }
-        for (const g of list) g.dispose();
         lists[k] = [];
-        if (!merged) continue;
-        merged.computeBoundingSphere();
-        merged.computeBoundingBox();
-        if (prev) {
-          prev.obj.geometry.dispose();
-          prev.obj.geometry = merged;
-          prev.box.copy(merged.boundingBox);
-          continue;
-        }
-        const mesh = new THREE.Mesh(merged, this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone'));
-        mesh.name = `decor_${k}_${bi}`;
-        mesh.matrixAutoUpdate = false;
-        if (k === 'shaft') mesh.renderOrder = 10;
-        const detail = String(bi).startsWith('d');
-        this._addChunk(mesh, detail ? DETAIL_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi);
-        this._chunkByKey.set(key, this._chunks[this._chunks.length - 1]);
       }
     }
   }
@@ -4089,13 +4136,14 @@ export class LevelView {
   _rebuildFar() {
     const level = this.level;
     if (!level) return;
-    for (const o of [this._colossal, this._lightGlow]) {
+    for (const o of [...(this._colossalParts || []).map((c) => c.mesh), this._lightGlow]) {
       if (!o) continue;
       this.root.remove(o);
       o.geometry.dispose();
       if (o.userData.ownMaterial && o.material) o.material.dispose();
     }
     this._colossal = null;
+    this._colossalParts = [];
     this._lightGlow = null;
     const b = level.bounds || { minX: -20, maxX: 20, minY: -600, maxY: 20, minZ: -20, maxZ: 20 };
     this._buildColossal(level, b);
@@ -4396,15 +4444,28 @@ export class LevelView {
     }
     const list = P.lists.stone;
     if (list.length) {
-      const merged = mergeGeometries(list, false);
-      for (const g of list) g.dispose();
-      merged.computeBoundingSphere();
-      const mesh = new THREE.Mesh(merged, this.mats.get('colossal'));
-      mesh.name = 'colossal';
-      mesh.matrixAutoUpdate = false;
-      mesh.renderOrder = -5;
-      this.root.add(mesh);
-      this._colossal = mesh;
+      // one mesh per culling band (a section and its neighbours ±2 are drawn: the silhouettes seen across the vault
+      // never pop, but the dozens of sections away are not paid for); the first one is the colour-driven handle
+      const groups = new Map();
+      for (const g of list) {
+        g.computeBoundingBox();
+        const bi = this._band((g.boundingBox.min.y + g.boundingBox.max.y) / 2);
+        if (!groups.has(bi)) groups.set(bi, []);
+        groups.get(bi).push(g);
+      }
+      this._colossalParts = [];
+      for (const [bi, items] of groups) {
+        const merged = mergeGeometries(items, false);
+        for (const g of items) g.dispose();
+        merged.computeBoundingSphere();
+        const mesh = new THREE.Mesh(merged, this.mats.get('colossal'));
+        mesh.name = 'colossal';
+        mesh.matrixAutoUpdate = false;
+        mesh.renderOrder = -5;
+        this.root.add(mesh);
+        this._colossalParts.push({ mesh, band: bi });
+        if (!this._colossal) this._colossal = mesh;
+      }
     }
     // Distant lit windows join the light-glow Points (one draw call for every glow).
     const sizes = [];
@@ -4493,13 +4554,23 @@ export class LevelView {
     const t = this.time;
     // Chunk culling: the head's band (section) and its neighbours only (the
     // floors between sections hide the rest), then by fog distance.
-    const vd = viewDist + VIEW_MARGIN;
+    // Past ~85 % of the fog range (Quest tier) the haze is ≥ 99 % opaque: nothing there can be seen, so it is not drawn.
+    const fogNear = fogInfo && typeof fogInfo.near === 'number' ? fogInfo.near : 0;
+    const vd = fogNear + (viewDist - fogNear) * this._cullT + VIEW_MARGIN;
+    const dd = DETAIL_DIST * this._detailScale;
+    const dm = MID_DIST * this._detailScale;
+    const nd = NEIGHBOUR_DIST * this._detailScale;
     const hb = this._band(head.y);
     for (let i = 0; i < this._chunks.length; i++) {
       const ch = this._chunks[i];
       const near = ch.band < 0 || (ch.band >= hb - 1 && ch.band <= hb + 1);
-      ch.obj.visible = near && ch.box.distanceToPoint(head) < (ch.maxDist < vd ? ch.maxDist : vd);
+      let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.maxDist;
+      // the neighbouring sections lie behind their floors: only what is near the opening is in sight
+      if (ch.band !== hb && ch.band >= 0 && md > nd) md = nd;
+      ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
     }
+    const cp = this._colossalParts;
+    if (cp) for (let i = 0; i < cp.length; i++) cp[i].mesh.visible = cp[i].band >= hb - 2 && cp[i].band <= hb + 2;
     for (let i = 0; i < this._plaques.length; i++) {
       const p = this._plaques[i];
       p.mesh.visible = p.pos.distanceTo(head) < PLAQUE_DIST;

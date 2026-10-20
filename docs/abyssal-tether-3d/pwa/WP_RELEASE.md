@@ -88,6 +88,9 @@ previous build. UI hook for the UX agent: a Settings > About row "Update ready: 
 `settings.reducedEffects === true` pins level >= 3 (fx tier 0), otherwise the governor writes `settings.fxQuality`
 (`'quest'` / `'low'`, in memory; removed on session end). `?gov=off` disables it, `?gov=N` pins level N (QA).
 `AT3D.debug.platform().governor` reports level, miss ratio and the last changes; bus event `quality:level`.
+Plug-in API for the render quality tiers: `game.governor.onFrame(frameMs)` (feed a frame time),
+`game.governor.onStep(fn)` -> unsubscribe, with `fn(tier, foveation, scale, level, why)` (`tier` is `'quest'` or `'low'`);
+when the renderer has `setQualityTier(tier)` it is called on every change as well.
 **Tune on device**: the thresholds and the level-0 foveation 0.5 are educated defaults.
 
 ## Saves (E05, Chapter I scope)

@@ -210,6 +210,7 @@ export const SETTINGS_DEFAULTS = {
   mouseSensitivity: 1.0, // desktop look (0.3..3)
   dominantHand: 'right',
   haptics: true,
+  showBody: true, // draw the player's own body (jacket, belt, legs, boots, backpack) when looking down
   lastDifficulty: 'normal',
   // Player height (CONTRACT3D §8 "Rig and eye height"). Old saved settings lack these keys and migrate to the defaults.
   heightMode: 'standing', // 'standing' = real height 1:1; 'seated' = eyes lifted by heightCal to a standing eye height

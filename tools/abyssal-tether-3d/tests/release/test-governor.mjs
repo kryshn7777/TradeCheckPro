@@ -153,6 +153,23 @@ function run(g, gov, seconds, dt, frame) {
   gov.onSessionEnd();
   ok(f.game.settings.fxQuality === undefined && !gov.active, 'session end removes the fx override');
 }
+// plug-in API: onFrame / onStep / renderer.setQualityTier
+{
+  const f = fakeGame();
+  const tiers = [];
+  f.game.renderer.setQualityTier = (t) => tiers.push(t);
+  const gov = new QualityGovernor(f.game);
+  const calls = [];
+  const off = gov.onStep((tier, fov, scale, level, why) => calls.push([tier, fov, scale, level, why]));
+  gov.onSessionStart(f.session);
+  for (let i = 0; i < 72 * 14; i++) gov.onFrame(i < 80 ? 13.9 : 25);
+  ok(calls.length >= 3 && calls[0][3] === 1 && calls[0][4] === 'degrade', 'onStep fires on every level change');
+  ok(calls.some((c) => c[0] === 'low') && tiers.includes('low') && tiers[0] === 'quest', 'tier names reach onStep and renderer.setQualityTier');
+  off();
+  const n = calls.length;
+  gov.setLevel(0, 'test');
+  ok(calls.length === n, 'unsubscribe works');
+}
 // no allocation in sample(): the heap does not grow over 2M calls
 {
   const f = fakeGame();

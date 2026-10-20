@@ -39,7 +39,7 @@ const TILT = 0.28; // rad: the props are tipped toward the viewer a little so th
 const col = (hex) => new THREE.Color(hex);
 
 /** Merges parts {geo, pos:[x,y,z], rot:[x,y,z], color} into flat arrays (indexed, vertex-coloured). */
-function mergeParts(parts) {
+function mergeParts(parts, size = 1) {
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
@@ -61,7 +61,7 @@ function mergeParts(parts) {
     const na = g.attributes.normal;
     for (let i = 0; i < pa.count; i++) {
       v.fromBufferAttribute(pa, i).applyMatrix4(m);
-      pos.push(v.x, v.y, v.z);
+      pos.push(v.x * size, v.y * size, v.z * size);
       v.fromBufferAttribute(na, i).applyMatrix3(nm).normalize();
       nor.push(v.x, v.y, v.z);
       colr.push(p.color.r, p.color.g, p.color.b);
@@ -118,7 +118,7 @@ function buildTemplates() {
     { geo: cyl(0.032, 0.032, 0.01, 10), pos: [0.19, 0.0, 0], rot: [0, 0, Math.PI / 2 + rz], color: plastic }, // thumb plate
     { geo: cyl(0.0, 0.007, 0.085, 6), pos: [-0.1, 0, 0], rot: [0, 0, Math.PI / 2 + rz + Math.PI], color: metal }, // needle
     { geo: cyl(0.011, 0.011, 0.02, 6), pos: [-0.088, 0, 0], rot: [0, 0, Math.PI / 2 + rz], color: plastic },
-  ]);
+  ], 1.55);
   // BATTERY: an upright cell
   const body = col(0x34383c);
   const band = col(0xd9a441);
@@ -128,7 +128,7 @@ function buildTemplates() {
     { geo: cyl(0.0565, 0.0565, 0.06, 12), pos: [0, -0.02, 0], color: band },
     { geo: cyl(0.022, 0.022, 0.035, 8), pos: [0, 0.1, 0], color: cap },
     { geo: cyl(0.056, 0.056, 0.012, 12), pos: [0, 0.085, 0], color: cap },
-  ]);
+  ], 1.15);
   return t;
 }
 
@@ -154,11 +154,11 @@ void main() {
   float alpha;
   if (aTaken > -1.0e8) {
     float puff = clamp((uTime - aTaken) / ${PUFF_S.toFixed(2)}, 0.0, 1.0);
-    scale = 0.5 + puff * 1.3;
-    alpha = (1.0 - puff) * (1.0 - puff) * 0.95;
+    scale = 0.4 + puff * 1.2;
+    alpha = (1.0 - puff) * (1.0 - puff) * 0.8;
   } else {
-    scale = 0.5 + 0.07 * pulse;
-    alpha = 0.34 + 0.22 * pulse;
+    scale = 0.4 + 0.06 * pulse;
+    alpha = 0.2 + 0.16 * pulse;
   }
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
@@ -176,9 +176,9 @@ varying float vKind;
 void main() {
   vec2 p = vUv - 0.5;
   float r = length(p) * 2.0;
-  float core = exp(-r * r * 5.5);
-  float halo = exp(-r * 2.2) * 0.35;
-  float edge = 1.0 - smoothstep(0.8, 1.0, r);
+  float core = exp(-r * r * 8.0);
+  float halo = exp(-r * 3.2) * 0.2;
+  float edge = 1.0 - smoothstep(0.45, 1.0, r);
   vec3 tint = vKind < 0.5 ? vec3(1.0, 0.55, 0.45) : vKind < 1.5 ? vec3(1.0, 0.86, 0.55) : vKind < 2.5 ? vec3(0.5, 0.95, 0.9) : vec3(1.0, 0.78, 0.3);
   gl_FragColor = vec4(tint * (core + halo) * edge * vA, 1.0);
   #include <colorspace_fragment>

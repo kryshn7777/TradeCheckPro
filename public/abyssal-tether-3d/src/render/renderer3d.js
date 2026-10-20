@@ -21,6 +21,13 @@
  *   applyTextures(textures) → Promise    precompile()  headPosition(out)  themeAt(y, out)
  *   .fx.burst(kind, x, y, z, opts)       kind: 'sparks' | 'puff' | 'chips' | 'debris'
  *   .stats {calls, triangles, points, programs, frameMs}   (after render())
+ *   .lighting                       reflections (envProbe.js) + baked GI (lighting.js) + wet glint; see lighting.js
+ *   setQualityTier('low'|'quest'|'high'|null) · .qualityTier        lighting/detail tier (null = automatic: ?fx=, settings,
+ *                                   reducedEffects, XR); uniforms and distances only, never a recompile
+ *   .governor.update(frameMs) · .governor.level · .governor.on(fn)  frame-time hook (mirrors platform/governor.js when
+ *                                   the Game runs one, otherwise steps by itself)
+ *   applyLookTo(material, {env})    shared reflection for another module's MeshStandardMaterial
+ *   lightingReady: Promise<boolean>  the baked GI volume loaded and valid for the level
  *   envKit: Promise<boolean>              the environment kit (dressing parts, far colossi) loaded and applied
  * Reads from game: level, player (rx/ry/rz), tethers.hands, threat.value, diff
  * (aimRange, fragileTime, crumbleTime), fade, flash, state, input.handPose(h),
@@ -36,6 +43,8 @@ import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, installRadialFog, loadTextureM
 import { LevelView } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
+import { Lighting } from './lighting.js';
+import { RenderGovernor } from './renderGovernor.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -206,6 +215,12 @@ export class Renderer3D {
     this._envScratch = [];
 
     this.materials = new MaterialLibrary(r);
+    this._game = null;
+    this._bus = null;
+    this._lampFlick = 1;
+    this.governor = new RenderGovernor(this);
+    this.lighting = new Lighting(this);
+    this.lightingReady = Promise.resolve(false);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 12), this.materials.get('sky'));
     this.sky.name = 'SkyDome';
     this.sky.renderOrder = -1000;
@@ -241,6 +256,9 @@ export class Renderer3D {
       ambient: 0,
       wet: 0,
       rim: 0,
+      ia: 0,
+      ib: 0,
+      w: 0,
     };
     this._themeInit = false;
     this._fogInfo = { color: this.scene.fog.color, light: this._theme.light };
@@ -315,6 +333,8 @@ export class Renderer3D {
   buildLevel(level, textures) {
     this.level = level || null;
     this._parseThemes(level);
+    this.lighting.setLevel(level, this.themes);
+    this.lightingReady = this.lighting.loadGI();
     this._prepareEnvLights(level);
     this.levelView.build(level);
     this._themeInit = false;
@@ -332,6 +352,7 @@ export class Renderer3D {
   precompile() {
     const hidden = [];
     const textures = new Set();
+    this.lighting.sweep(this.scene); // other modules' standard materials get the shared reflection before they compile
     this.scene.traverse((o) => {
       if (!o.visible) {
         hidden.push(o);
@@ -440,17 +461,23 @@ export class Renderer3D {
       out.ambient = DEFAULT_THEME.ambient;
       out.wet = DEFAULT_THEME.wet;
       out.rim = DEFAULT_THEME.rim;
+      out.ia = out.ib = 0;
+      out.w = 0;
       return out;
     }
     const i = Math.max(0, this._sectionIndexAt(y));
     let a = th[i];
     let b = th[i];
+    let ia = i;
+    let ib = i;
     let yb = NaN;
     if (i > 0 && isFinite(th[i].yTop) && y > th[i].yTop - THEME_BLEND) {
       a = th[i - 1]; // boundary above: section i-1 over section i
+      ia = i - 1;
       yb = th[i].yTop;
     } else if (i < th.length - 1 && isFinite(th[i].yBottom) && y < th[i].yBottom + THEME_BLEND) {
       b = th[i + 1]; // boundary below: section i over section i+1
+      ib = i + 1;
       yb = th[i].yBottom;
     }
     let w = 0;
@@ -467,6 +494,9 @@ export class Renderer3D {
     out.ambient = THREE.MathUtils.lerp(a.ambient, b.ambient, w);
     out.wet = THREE.MathUtils.lerp(a.wet, b.wet, w);
     out.rim = THREE.MathUtils.lerp(a.rim, b.rim, w);
+    out.ia = ia; // the two sections whose looks are blended, and the weight of the second (reflection probe)
+    out.ib = ib;
+    out.w = w;
     return out;
   }
 
@@ -529,6 +559,7 @@ export class Renderer3D {
         if (fading) fading.want = s;
       }
     }
+    let flickMin = 1;
     for (let k = 0; k < this.envLights.length; k++) {
       const e = this.envLights[k];
       if (e.src !== e.want) {
@@ -554,7 +585,9 @@ export class Renderer3D {
         if (Math.sin(t * 0.73) > 0.985) f *= 0.4;
       }
       e.light.intensity = e.src.candela * e.level * f;
+      if (f < flickMin) flickMin = f;
     }
+    this._lampFlick += (flickMin - this._lampFlick) * 0.2;
   }
 
   // ---------------------------------------------------------------------------
@@ -634,6 +667,9 @@ export class Renderer3D {
     this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08);
 
     this._updateEnvLights(d, head);
+    this._game = game || this._game;
+    this.lighting.update(d, game, th, tgt, this._lampFlick);
+    this._fogInfo.near = fog.near;
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.update(d, game, head, this.threat);
@@ -646,6 +682,27 @@ export class Renderer3D {
     if (this._busOff) this._busOff();
     this._bus = bus;
     this._busOff = typeof bus.on === 'function' ? bus.on('grapple:attach', (e) => this.levelView.pulseAnchor(e && e.anchor)) : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Quality + look API
+  // ---------------------------------------------------------------------------
+  /**
+   * Pins the lighting / detail tier ('low' | 'quest' | 'high'); null returns to automatic (?fx=, settings.fxQuality,
+   * settings.reducedEffects, XR → quest, else high). opts.live keeps the current reflection-probe resolution (what a
+   * governor does); without it a pin that needs another resolution rebuilds the probe (do it behind a fade).
+   */
+  setQualityTier(name, opts) {
+    return this.lighting.setTier(name, opts);
+  }
+
+  get qualityTier() {
+    return this.lighting.tier;
+  }
+
+  /** Shared reflection + wet-stone look for another module's MeshStandardMaterial (see Lighting.applyLookTo). */
+  applyLookTo(material, opts) {
+    return this.lighting.applyLookTo(material, opts);
   }
 
   render() {
@@ -683,6 +740,7 @@ export class Renderer3D {
   dispose() {
     if (typeof window !== 'undefined') window.removeEventListener('resize', this.resize);
     if (this._busOff) this._busOff();
+    this.lighting.dispose();
     this.fx.dispose();
     this.ropeView.dispose();
     this.levelView.dispose();

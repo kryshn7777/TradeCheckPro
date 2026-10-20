@@ -996,6 +996,8 @@ export class HandsView {
     const rope = st ? st.rope : null;
     const attached = !!(rope && rope.anchor) && !!showHands;
     const miss = !!(st && st.miss) && !attached && !!showHands;
+    // The hook is a projectile now: it has left the muzzle from the shot until it bites (rope:fire already kicked the slide).
+    const flying = !!(st && st.flying) && !attached && !!showHands;
     const pad = this._readPad(hand, xr, st);
     G.poseFingers(dt, pad.squeeze, pad.trigger, pad.point);
 
@@ -1018,12 +1020,17 @@ export class HandsView {
     R.speed += (pay - R.speed) * (1 - Math.exp(-30 * dt));
     R.paid = paid;
     R.hadRope = attached;
-    const out = attached || miss;
+    const out = attached || miss || flying;
+    if (flying) R.flew = true;
     if (out !== R.headOut) {
       R.headOut = out;
       G.setHeadOut(out); // head leaves / re-seats in the muzzle
-      if (out) this.onFire(hand, attached ? 1 : 0.8);
-      else G.kick(-0.35);
+      if (out) {
+        if (!R.flew) this.onFire(hand, attached ? 1 : 0.8);
+      } else {
+        G.kick(-0.35);
+        R.flew = false;
+      }
     }
     const g = (CONFIG.player && CONFIG.player.gravity) || 9.81;
     G.animate(dt, {

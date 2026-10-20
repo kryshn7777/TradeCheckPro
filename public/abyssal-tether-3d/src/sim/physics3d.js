@@ -11,6 +11,9 @@
  *   4. rope bookkeeping (tension total, catch jolt events)
  *   5. sphere-vs-box collisions, impacts, crumbling ledges, hazards
  *
+ * A shot is a projectile (TetherSystem.launch): the hook flies for distance / CONFIG.rope.flightSpeed
+ * and attaches on arrival; the pull then builds up over CONFIG.rope.attachRamp (Rope3D.pull, `grip`).
+ *
  * Ropes are forces, not projections (Rope3D.pull): a taut line is a stiff spring-damper
  * (stretch of a few % of its length, over-damped at catch speeds: no rebound) on the semi-implicit
  * Euler step, so a swing is a symplectic pendulum and a central pull conserves angular

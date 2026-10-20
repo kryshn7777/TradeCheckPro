@@ -34,11 +34,11 @@
  */
 
 export const GOVERNOR_STEPS = Object.freeze([
-  Object.freeze({ level: 0, foveation: 0.5, scale: 1.0, fx: 'quest' }),
-  Object.freeze({ level: 1, foveation: 1.0, scale: 1.0, fx: 'quest' }),
-  Object.freeze({ level: 2, foveation: 1.0, scale: 0.9, fx: 'quest' }),
-  Object.freeze({ level: 3, foveation: 1.0, scale: 0.8, fx: 'low' }),
-  Object.freeze({ level: 4, foveation: 1.0, scale: 0.7, fx: 'low' }),
+  Object.freeze({ level: 0, tier: 'quest', foveation: 0.5, scale: 1.0, fx: 'quest' }),
+  Object.freeze({ level: 1, tier: 'quest', foveation: 1.0, scale: 1.0, fx: 'quest' }),
+  Object.freeze({ level: 2, tier: 'quest', foveation: 1.0, scale: 0.9, fx: 'quest' }),
+  Object.freeze({ level: 3, tier: 'low', foveation: 1.0, scale: 0.8, fx: 'low' }),
+  Object.freeze({ level: 4, tier: 'low', foveation: 1.0, scale: 0.7, fx: 'low' }),
 ]);
 export const REDUCED_FLOOR = 3;
 
@@ -88,6 +88,7 @@ export class QualityGovernor {
     this._frameForScale = null;
     this._pendingScale = false;
     this._rateRequested = false;
+    this._stepListeners = [];
   }
 
   /** Reads ?gov= . Pure (Node-testable). */
@@ -120,6 +121,27 @@ export class QualityGovernor {
   _xr() {
     const r = this.game && this.game.renderer && this.game.renderer.renderer;
     return r && r.xr ? r.xr : null;
+  }
+
+  /**
+   * Plug-in API for the render quality tiers (WP-GFX):
+   *   game.governor.onFrame(frameMs)            feed one frame time in milliseconds (the game loop already calls
+   *                                             sample(dt, frame) in XR; call this instead when you own the timing)
+   *   game.governor.onStep(fn) -> unsubscribe   fn(tier, foveation, scale, level, why) on every level change;
+   *                                             tier is 'quest' | 'low' (the render tier names fx.js / renderer use)
+   * When the renderer has setQualityTier(tier) it is called on every change too, in addition to settings.fxQuality.
+   */
+  onFrame(frameMs) {
+    return this.sample(frameMs / 1000, null);
+  }
+
+  onStep(fn) {
+    if (typeof fn !== 'function') return () => {};
+    this._stepListeners.push(fn);
+    return () => {
+      const i = this._stepListeners.indexOf(fn);
+      if (i >= 0) this._stepListeners.splice(i, 1);
+    };
   }
 
   /** XR session started: begin governing, request the frame rate, apply the current level. */
@@ -266,6 +288,22 @@ export class QualityGovernor {
     this._pendingScale = true;
     const g = this.game;
     if (g && g.bus) g.bus.emit('quality:level', { level, from, why, step: GOVERNOR_STEPS[level] });
+    const st = GOVERNOR_STEPS[level];
+    const r3d = g && g.renderer;
+    if (r3d && typeof r3d.setQualityTier === 'function') {
+      try {
+        r3d.setQualityTier(st.tier);
+      } catch {
+        /* optional hook */
+      }
+    }
+    for (const fn of this._stepListeners.slice()) {
+      try {
+        fn(st.tier, st.foveation, st.scale, level, why);
+      } catch {
+        /* a listener must not break the governor */
+      }
+    }
   }
 
   /** Applies foveation + fx tier of the current level (cheap; scale waits for a frame). */
