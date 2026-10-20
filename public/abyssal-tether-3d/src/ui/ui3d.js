@@ -36,12 +36,17 @@
 import * as THREE from 'three';
 import { DIFFICULTY, DIFFICULTY_ORDER, SETTINGS_DEFAULTS, Storage, U, VIEW, heightCalibration } from '../sim/config3d.js';
 import { ITEM_NAMES } from '../sim/inventory3d.js';
+import { BUILD } from '../platform/buildInfo.js';
+import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
+import { ComfortOverlay, applyDisplay } from './comfort.js';
+import { Tutorial } from './tutorial.js';
+import { fmtDeg, fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
 
 // =============================================================================
 // Constants
 // =============================================================================
-const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'pause', 'death', 'victory'];
-const SUB_SCREENS = { difficulty: true, controls: true, settings: true };
+const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'about', 'calibrate', 'pause', 'death', 'victory'];
+const SUB_SCREENS = { difficulty: true, controls: true, settings: true, about: true, calibrate: true };
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const HANDS = ['left', 'right'];
 
@@ -109,76 +114,64 @@ const DEATH_COPY = {
   creature: { kicker: 'Closer than it sounded', message: 'The Underspire closed its hand.' },
 };
 
-const pct = (v) => `${Math.round(v * 100)}%`;
-const mul = (v) => `${v.toFixed(2)}×`;
-/** Settings schema (keys of SETTINGS_DEFAULTS). `desktop` rows are hidden in VR. No comfort options by design. */
+const pct = fmtPct;
+const mul = fmtMul;
+const mTxt = (v) => `${v.toFixed(2)} m`;
+const cm = (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`;
+/** Settings tabs (VR: one tab per page of rows; desktop: one heading per tab). */
+const TABS = [
+  { id: 'comfort', label: 'Comfort', title: 'Comfort and movement' },
+  { id: 'display', label: 'Display', title: 'Display' },
+  { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
+  { id: 'access', label: 'Access', title: 'Accessibility and hands' },
+];
+/**
+ * Settings schema (keys of SETTINGS_DEFAULTS). `tab` places a row; `desktop` rows are hidden in VR; `vr` rows (links) are
+ * hidden on the desktop; `page` rows live on a sub page in VR ('height' = the Player height page, 'calibrate' = the Brightness
+ * screen). Numeric `choice` options keep their number type. The comfort options are OFF / smooth by default (the owner's design
+ * is full-speed swings and falls; they are there for the players who need them).
+ */
 const SETTINGS_SCHEMA = [
-  { group: 'Sound' },
-  { key: 'volume', type: 'range', label: 'Master volume', min: 0, max: 1, step: 0.05, fmt: pct },
-  { group: 'Aim and movement' },
-  {
-    key: 'aimAssist',
-    type: 'range',
-    label: 'Aim assist',
-    desc: 'How generously a tether picks an anchor near your aim.',
-    min: 0.6,
-    max: 1.4,
-    step: 0.05,
-    fmt: pct,
-  },
-  { key: 'turnSpeed', type: 'range', label: 'Turn speed', desc: 'Right-stick smooth turning in VR.', min: 0.5, max: 2, step: 0.05, fmt: mul },
-  {
-    key: 'mouseSensitivity',
-    type: 'range',
-    label: 'Mouse sensitivity',
-    desc: 'Mouse look on desktop.',
-    min: 0.3,
-    max: 3,
-    step: 0.05,
-    fmt: mul,
-    desktop: true,
-  },
-  { group: 'Controllers' },
-  {
-    key: 'dominantHand',
-    type: 'choice',
-    label: 'Dominant hand',
-    desc: 'The hand that points at menus.',
-    options: [
-      ['left', 'Left'],
-      ['right', 'Right'],
-    ],
-  },
-  { key: 'haptics', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
-  { key: 'showBody', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
-  // Player height (VR panel: its own page, "Player height ›" on the settings page).
-  { group: 'Player height' },
+  { key: 'vignette', tab: 'comfort', type: 'range', label: 'Comfort vignette', desc: 'Darkens the edge of your view while you move fast, swing or turn. Off by default.', min: 0, max: 1, step: 0.1, fmt: fmtOff },
+  { key: 'turnMode', tab: 'comfort', type: 'choice', label: 'Turning', desc: 'Smooth turning with the right stick, or snap in steps.', options: [['smooth', 'Smooth'], ['snap', 'Snap']] },
+  { key: 'snapAngle', tab: 'comfort', type: 'choice', label: 'Snap angle', desc: 'Degrees per snap step.', options: [[30, '30°'], [45, '45°'], [60, '60°'], [90, '90°']] },
+  { key: 'turnSpeed', tab: 'comfort', type: 'range', label: 'Turn speed', desc: 'Right-stick smooth turning in VR.', min: 0.5, max: 2, step: 0.05, fmt: mul },
+  { key: 'mouseSensitivity', tab: 'comfort', type: 'range', label: 'Mouse sensitivity', desc: 'Mouse look on desktop.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   {
     key: 'heightMode',
+    tab: 'comfort',
     type: 'choice',
-    label: 'Player height',
+    label: 'Seated or standing',
     desc: 'Standing: your real height, 1:1. Seated: lifts your eyes to a standing eye height.',
-    page: 'height',
-    options: [
-      ['standing', 'Standing'],
-      ['seated', 'Seated'],
-    ],
+    options: [['standing', 'Standing'], ['seated', 'Seated']],
   },
-  {
-    key: 'heightOffset',
-    type: 'range',
-    label: 'Fine height',
-    desc: 'Raise or lower your eyes a little.',
-    page: 'height',
-    min: -VIEW.offsetMax,
-    max: VIEW.offsetMax,
-    step: VIEW.offsetStep,
-    fmt: (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`,
-  },
-  { type: 'height', page: 'height' },
+  { key: 'heightOffset', tab: 'comfort', type: 'range', label: 'Fine height', desc: 'Raise or lower your eyes a little.', page: 'height', min: -VIEW.offsetMax, max: VIEW.offsetMax, step: VIEW.offsetStep, fmt: cm },
+  { type: 'height', tab: 'comfort', page: 'height' },
+  { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
+
+  { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
+  { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },
+  { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
+  { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
+  { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
+  { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
+  { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
+  { type: 'patches', tab: 'display', page: 'calibrate' },
+  { type: 'link', tab: 'display', vr: true, label: 'Brightness and black level', action: 'calibrate' },
+
+  { key: 'volume', tab: 'audio', type: 'range', label: 'Master volume', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'musicVolume', tab: 'audio', type: 'range', label: 'Music', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'sfxVolume', tab: 'audio', type: 'range', label: 'Effects', desc: 'The world, the rope and the creature.', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'haptics', tab: 'audio', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
+  { key: 'hapticStrength', tab: 'audio', type: 'range', label: 'Haptic strength', min: 0.25, max: 1.5, step: 0.05, fmt: pct },
+
+  { key: 'captions', tab: 'access', type: 'toggle', label: 'Captions', desc: 'Text for the sounds that warn you: where it came from, how close.' },
+  { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
+  { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
+  { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
 const HEIGHT_KEYS = ['heightMode', 'heightCal', 'heightOffset', 'heightMeasured'];
-const mTxt = (v) => `${v.toFixed(2)} m`;
 
 /** [keys, full description, short VR description]. */
 const CONTROLS_QUEST = [
@@ -434,6 +427,7 @@ const MARKUP = `
     <div class="hud-row hud-sub"><span class="hud-depth">0 m</span><span class="hud-dot" aria-hidden="true">·</span><span class="hud-diff">Normal</span></div>
     <div class="hud-best" hidden></div>
     <div class="hud-section"></div>
+    <div class="hud-status" hidden aria-label="Status"></div>
     <canvas class="hud-ecg" width="256" height="128" aria-label="Heart monitor"></canvas>
     <canvas class="hud-bag" width="256" height="128" aria-label="Bag"></canvas>
   </div>
@@ -444,6 +438,7 @@ const MARKUP = `
 <div class="capture" role="status">Click to look around <span>·</span> <kbd>Esc</kbd> pauses</div>
 <button class="btn-pause" type="button" data-action="pause" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
 <div class="section-card" aria-live="polite"><div class="section-num"></div><div class="section-name"></div><div class="section-rule" aria-hidden="true"></div><div class="section-sub"></div></div>
+<div class="captions" aria-live="off" hidden></div>
 <div class="hint" role="status" aria-live="polite"></div>
 <div class="toast" role="status" aria-live="polite"><span class="toast-glyph" aria-hidden="true"></span><span class="toast-text"></span></div>
 <div class="xr-note" role="status"><span class="xr-note-glyph" aria-hidden="true">${HEADSET_SVG}</span><span>Playing in VR — the menus are in the headset.</span></div>
@@ -456,14 +451,17 @@ const MARKUP = `
       <p class="tagline">A lantern, a line, and a very long way down.</p>
     </header>
     <nav class="menu-actions" aria-label="Main menu">
-      <button class="btn btn-primary btn-start" type="button" data-action="start" data-autofocus><span class="btn-label">Begin descent</span><span class="btn-sub menu-start-sub">Normal</span></button>
+      <button class="btn btn-primary btn-continue" type="button" data-action="continue-run" hidden data-autofocus><span class="btn-label">Continue</span><span class="btn-sub menu-continue-sub"></span></button>
+      <button class="btn btn-primary btn-start" type="button" data-action="start" data-autofocus><span class="btn-label menu-start-label">Begin descent</span><span class="btn-sub menu-start-sub">Normal</span></button>
       <button class="btn btn-vr" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Enter VR</span><span class="btn-sub">Put on the headset · Meta Quest</span></button>
-      <button class="btn" type="button" data-action="difficulty"><span class="btn-label">Difficulty</span></button>
+      <button class="btn menu-diff" type="button" data-action="difficulty"><span class="btn-label">Difficulty</span></button>
       <button class="btn" type="button" data-action="sandbox"><span class="btn-label">Sandbox</span><span class="btn-sub">No predator</span></button>
       <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
       <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
+      <button class="btn menu-about" type="button" data-action="about"><span class="btn-label">About</span><span class="btn-sub menu-about-sub" hidden>Update ready</span></button>
     </nav>
     <div class="menu-foot">
+      <button class="menu-update" type="button" data-action="apply-update" hidden><span aria-hidden="true">◆</span> Update ready — restart to apply</button>
       <dl class="best-strip" aria-label="Best times"></dl>
       <p class="vr-note" hidden></p>
       <p class="menu-hint">Click to look · hold <kbd>Left</kbd>/<kbd>Right</kbd> mouse for each hand’s tether · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> swing · <kbd>Space</kbd> reel in</p>
@@ -486,7 +484,7 @@ const MARKUP = `
         <div class="ctl-col"><h3 class="group-title">Meta Quest controllers</h3><ul class="bind-list ctl-quest"></ul></div>
         <div class="ctl-col"><h3 class="group-title">Mouse &amp; keyboard</h3><ul class="bind-list ctl-desktop"></ul></div>
       </div>
-      <p class="panel-note">Full movement, smooth turning, no comfort filters: the swings and the falls are the experience. Take a break whenever you need one — the game pauses with <kbd>B</kbd> / <kbd>≡</kbd> or <kbd>Esc</kbd>.</p>
+      <p class="panel-note">Full-speed swings and falls are the experience, and smooth turning is the default. A comfort vignette, snap turning, seated play, captions and more are in Settings. Take a break whenever you need one — the game pauses with <kbd>B</kbd> / <kbd>≡</kbd> or <kbd>Esc</kbd>.</p>
     </div>
   </div>
 </section>
@@ -498,6 +496,25 @@ const MARKUP = `
   </div>
 </section>
 
+<section class="screen" data-screen="about" hidden aria-labelledby="at3d-about-title">
+  <div class="panel panel-wide">
+    <div class="panel-head">${backBtn()}<h2 id="at3d-about-title">About</h2></div>
+    <div class="panel-body about-body">
+      <p class="kicker">The Underspire · Chapter I · free</p>
+      <dl class="about-list">
+        <div><dt>Version</dt><dd class="about-version"></dd></div>
+        <div><dt>Update</dt><dd><span class="about-update"></span> <button class="btn btn-ghost btn-inline" type="button" data-action="apply-update" hidden><span class="btn-label">Restart to update</span></button></dd></div>
+        <div><dt>Privacy</dt><dd><a class="about-privacy" target="_blank" rel="noopener noreferrer"></a></dd></div>
+        <div><dt>Support</dt><dd><a class="about-support" target="_blank" rel="noopener noreferrer"></a></dd></div>
+        <div><dt>Your data</dt><dd>Settings, best times and one saved run stay on this device. The game has no account and sends nothing about you.</dd></div>
+      </dl>
+      <h3 class="group-title">Credits</h3>
+      <p class="about-credits"></p>
+      <div class="set-actions"><button class="btn btn-ghost about-erase" type="button" data-action="erase-data"><span class="btn-label">Erase saved data</span></button></div>
+    </div>
+  </div>
+</section>
+
 <section class="screen screen-pause" data-screen="pause" hidden aria-labelledby="at3d-pause-title">
   <div class="panel panel-pause">
     <div class="panel-head panel-head-center"><h2 id="at3d-pause-title">Paused</h2><p class="run-line pause-stats"></p></div>
@@ -506,11 +523,11 @@ const MARKUP = `
         <div class="pause-actions">
           <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Continue this run in the headset</span></button>
           <button class="btn btn-primary" type="button" data-action="resume" data-autofocus><span class="btn-label">Resume</span></button>
-          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Respawn at checkpoint</span></button>
-          <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
+          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Restart section</span><span class="btn-sub">Back to the last checkpoint</span></button>
+          <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span><span class="btn-sub">From the top</span></button>
           <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
           <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
-          <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Quit to menu</span></button>
+          <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Quit to menu</span><span class="btn-sub">Your progress is saved</span></button>
         </div>
         <div class="pause-warp" hidden><h3 class="group-title">Warp to section</h3><div class="warp-grid"></div></div>
       </div>
@@ -526,7 +543,7 @@ const MARKUP = `
     <div class="death-actions">
       <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
       <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">from the last checkpoint</span></button>
-      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
+      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
     </div>
     <p class="death-prompt"><kbd>Enter</kbd> continue · <kbd>R</kbd> restart</p>
@@ -537,17 +554,22 @@ const MARKUP = `
   <div class="panel panel-victory">
     <div class="panel-body">
       <div class="victory-lamp" aria-hidden="true"></div>
-      <p class="kicker">The Still Lamp</p>
+      <p class="kicker">Chapter I · The Underspire</p>
       <h2 id="at3d-victory-title" class="victory-title">You reached the bottom</h2>
       <div class="victory-time"><span class="victory-time-label">Descent time</span><span class="victory-time-value v-time">0:00.00</span><span class="badge-new v-new" hidden>★ New best</span></div>
       <dl class="stat-grid">
+        <div><dt>Falls</dt><dd class="v-deaths">0</dd></div>
+        <div><dt>Lowest health</dt><dd class="v-health">100%</dd></div>
+        <div><dt>Items used</dt><dd class="v-items">0</dd></div>
         <div><dt>Best</dt><dd class="v-best">—</dd></div>
-        <div><dt>Previous best</dt><dd class="v-prev">—</dd></div>
-        <div><dt>Deaths</dt><dd class="v-deaths">0</dd></div>
-        <div><dt>Deepest point</dt><dd class="v-deepest">0 m</dd></div>
         <div><dt>Difficulty</dt><dd class="v-diff">Normal</dd></div>
       </dl>
       <p class="panel-note victory-note v-note"></p>
+      <div class="teaser">
+        <p class="teaser-kicker">Chapters II–V · coming soon</p>
+        <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
+        <p class="teaser-line">The Underspire goes deeper than the light does. The descent continues.</p>
+      </div>
       <div class="victory-actions">
         <button class="btn btn-primary" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
         <button class="btn" type="button" data-action="menu"><span class="btn-label">Menu</span></button>
@@ -558,7 +580,7 @@ const MARKUP = `
 
 const CSS = `
 .at3d-ui{--u:clamp(14px,calc(7px + 0.4vmin + 0.35vmax),26px);--bg:#08090a;--stone-600:#30363a;--ink:#ddd5c4;--ink-2:#b3ac9e;--ink-3:#868074;--ink-4:#5e5b54;--phosphor:#e8dcc0;--amber:#e0a050;--amber-2:#b67a3a;--verdigris:#3f6b63;--verdigris-2:#6a9c90;--line:rgba(232,220,192,.11);--line-2:rgba(232,220,192,.2);--line-3:rgba(232,220,192,.34);--panel-a:rgba(21,24,25,.95);--panel-b:rgba(10,11,12,.97);--focus:#f2e6c9;--fd:${F_DISPLAY};--fu:${F_UI};--tap:44px;--ease:cubic-bezier(.2,.7,.2,1);--gut:16px;
-position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font-size:var(--u);line-height:1.4;color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font-size:calc(var(--u) * var(--ts,1));line-height:1.4;color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 .at3d-ui *,.at3d-ui *::before,.at3d-ui *::after{box-sizing:border-box}
 .at3d-ui [hidden]{display:none!important}
 .at3d-ui button,.at3d-ui input{font:inherit;color:inherit}
@@ -777,6 +799,36 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .xr-note-glyph svg{display:block;width:100%;fill:none;stroke:currentColor;stroke-width:1.6}
 .at3d-ui.is-xr .xr-note{display:flex}
 .at3d-ui.is-xr .screen,.at3d-ui.is-xr .hud,.at3d-ui.is-xr .hint,.at3d-ui.is-xr .toast,.at3d-ui.is-xr .section-card,.at3d-ui.is-xr .crosshair,.at3d-ui.is-xr .capture,.at3d-ui.is-xr .btn-pause{display:none!important}
+.at3d-ui .menu-update{display:flex;align-items:center;justify-content:center;gap:.5em;min-height:var(--tap);padding:.3em 1em;color:#fbe7c2;background:rgba(74,52,27,.55);border:1px solid rgba(224,160,80,.6);border-radius:3px;font:650 .8em var(--fu);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.at3d-ui .menu-update span{color:var(--amber)}
+.at3d-ui .btn-inline{display:inline-flex;width:auto;min-height:var(--tap);margin-left:.6em;align-items:center;vertical-align:middle}
+.at3d-ui .menu-about-sub{color:var(--amber)}
+.at3d-ui .about-body{display:flex;flex-direction:column;gap:.7em}
+.at3d-ui .about-list{display:flex;flex-direction:column;margin:0}
+.at3d-ui .about-list>div{display:grid;grid-template-columns:7em 1fr;gap:.8em;align-items:baseline;padding:.45em 0;border-bottom:1px solid var(--line);font-size:.9em}
+.at3d-ui .about-list dt{font:650 .74em var(--fu);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.at3d-ui .about-list dd{margin:0;color:var(--ink-2);word-break:break-word}
+.at3d-ui .about-list a{color:var(--phosphor);text-decoration-color:var(--line-3)}
+.at3d-ui .about-credits{margin:0;font-size:.86em;line-height:1.55;color:var(--ink-2)}
+.at3d-ui .btn.is-armed{border-color:rgba(194,122,92,.8)}
+.at3d-ui .patches{display:block;width:100%;height:auto;margin-top:.4em;border-radius:3px;background:#000}
+.at3d-ui .teaser{width:100%;margin:1em 0 0;padding:.75em .9em;text-align:center;border:1px solid var(--line-2);border-radius:3px;background:linear-gradient(180deg,rgba(255,240,210,.045),rgba(255,240,210,.01))}
+.at3d-ui .teaser p{margin:0}
+.at3d-ui .teaser-kicker{font:400 .86em var(--fd);font-variant:small-caps;letter-spacing:.34em;text-transform:lowercase;color:var(--amber)}
+.at3d-ui .teaser-names{display:flex;flex-wrap:wrap;justify-content:center;gap:.2em 1.2em;margin-top:.45em!important;font:700 .9em var(--fd);letter-spacing:.06em;color:var(--ink)}
+.at3d-ui .teaser-line{margin-top:.4em!important;font:italic 400 .86em var(--fd);color:var(--ink-3)}
+.at3d-ui .hud-status{display:flex;gap:.7em;justify-content:center;font:650 .74em var(--fu);letter-spacing:.06em;color:var(--ink);font-variant-numeric:tabular-nums}
+.at3d-ui .hud-status span{display:inline-flex;align-items:center;gap:.3em}
+.at3d-ui .hud-status svg{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2}
+.at3d-ui .hud-status .warn{color:#ffd9a0;text-decoration:underline}
+.at3d-ui .captions{position:absolute;z-index:15;left:50%;bottom:calc(10px + 6.2em);display:flex;flex-direction:column;align-items:center;gap:.3em;width:min(34em,calc(100% - 3em));transform:translateX(-50%);pointer-events:none}
+.at3d-ui .cap{display:flex;align-items:center;gap:.6em;max-width:100%;padding:.3em .8em;font-size:.95em;line-height:1.3;color:#fff;background:rgba(0,0,0,.82);border-radius:3px;border-left:3px solid var(--ink-3)}
+.at3d-ui .cap[data-sev="2"]{font-weight:700;border-left-color:var(--amber)}
+.at3d-ui .cap i{flex:none;width:.7em;height:.7em;background:currentColor}
+.at3d-ui .cap i.diamond{transform:rotate(45deg)}
+.at3d-ui .cap i.circle{border-radius:50%}
+.at3d-ui .cap .cap-dir{flex:none;min-width:2.4em;font:650 .7em var(--fu);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.at3d-ui.is-xr .captions{display:none!important}
 @media (max-width:760px){.at3d-ui .diff-grid,.at3d-ui .ctl-cols{grid-template-columns:1fr}.at3d-ui .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.at3d-ui .pause-cols{flex-direction:column}.at3d-ui .set-row{grid-template-columns:1fr}.at3d-ui .set-control{justify-content:flex-start}.at3d-ui .hud-gauge{display:none}.at3d-ui .menu-hint{display:none}}
 @media (max-height:560px){.at3d-ui .menu-wrap{gap:.7em}.at3d-ui .tagline,.at3d-ui .menu-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.at3d-ui .screen,.at3d-ui .screen>*{animation:none!important}}
@@ -824,6 +876,19 @@ export class UI3D {
     this._vr = null;
     this._vrDirty = true;
     this._vrSetPage = 0; // VR settings: 0 = general, 1 = player height
+    this._vrTab = 0; // VR settings: index into TABS
+    this._armed = ''; // a destructive button pressed once ('erase-data'): the second press within 4 s does it
+    this._armedT = 0;
+    this._eraseMsg = '';
+    this._xrScaleApplied = { tier: undefined, scale: NaN, baseExposure: 0, expMul: 1 };
+    this._textScale = 1;
+    this._capRev = -1;
+    this._capShown = 0;
+    this._statusKey = '';
+    this._tut = null;
+    this._caps = null;
+    this._comfort = null;
+    this._updateReady = false;
     this._cal = null; // height calibration countdown { t } while running
     this._calMsg = ''; // result / error line of the last calibration press
     this._heightKey = ''; // the status text last painted (a change repaints the panel)
@@ -887,7 +952,24 @@ export class UI3D {
       toast: q('.toast'),
       toastText: q('.toast-text'),
       startSub: q('.menu-start-sub'),
+      startLabel: q('.menu-start-label'),
       startBtn: q('.btn-start'),
+      continueBtn: q('.btn-continue'),
+      continueSub: q('.menu-continue-sub'),
+      diffBtn: q('.menu-diff'),
+      aboutSub: q('.menu-about-sub'),
+      updateBtn: q('.menu-update'),
+      hudStatus: q('.hud-status'),
+      captions: q('.captions'),
+      aboutVersion: q('.about-version'),
+      aboutUpdate: q('.about-update'),
+      aboutUpdateBtn: q('.about-body [data-action="apply-update"]'),
+      aboutPrivacy: q('.about-privacy'),
+      aboutSupport: q('.about-support'),
+      aboutCredits: q('.about-credits'),
+      aboutErase: q('.about-erase'),
+      vHealth: q('.v-health'),
+      vItems: q('.v-items'),
       vrBtn: q('.menu-actions [data-action="enter-vr"]'),
       vrReturn: [...this.root.querySelectorAll('.btn-vr-return')],
       vrNote: q('.vr-note'),
@@ -919,8 +1001,11 @@ export class UI3D {
     this._buildDifficultyCards();
     this._buildControls();
     this._buildSettings();
+    this._buildAbout();
+    this._buildCaptionLines();
     this._bindDom();
     this._bindBus();
+    this._startUx();
     this.syncSettings();
     this._checkVR();
     this._ready = true;
@@ -1029,6 +1114,12 @@ export class UI3D {
     });
     on('checkpoint', () => this.showToast('Checkpoint', 2.2));
     on('hint', (p) => this.showHint(p.hint && typeof p.hint === 'object' ? p.hint : p.text || p, num(p.duration, num(p.seconds, 0))));
+    on('continue:changed', () => this.refreshMenu());
+    on('app:update-ready', () => {
+      this._updateReady = true;
+      this.refreshMenu();
+      if (this.current === 'about') this._fillAbout();
+    });
     on('xr:recenter', () => this.recenter());
     on('xr:recentered', () => this.recenter());
     on('input:recenter', () => this.recenter());
@@ -1089,7 +1180,7 @@ export class UI3D {
     const start = d.startBtn;
     if (start && d.vrBtn.parentNode === start.parentNode) {
       if (this._vrFirst()) {
-        if (d.vrBtn.nextElementSibling !== start) start.parentNode.insertBefore(d.vrBtn, start);
+        if (d.vrBtn.nextElementSibling !== d.continueBtn) start.parentNode.insertBefore(d.vrBtn, d.continueBtn);
         d.vrBtn.classList.add('btn-primary');
         d.vrBtn.setAttribute('data-autofocus', '');
         start.classList.remove('btn-primary');
@@ -1133,6 +1224,7 @@ export class UI3D {
   show(name, info) {
     if (name === undefined || name === 'none' || name === 'game') name = null;
     if (name === 'title' || name === 'main') name = 'menu';
+    if (name === 'end') name = 'victory';
     if (name !== null && SCREENS.indexOf(name) < 0) {
       if (typeof console !== 'undefined') console.warn(`[AT3D] UI.show: unknown screen "${name}"`);
       return;
@@ -1143,8 +1235,10 @@ export class UI3D {
       this.current = name;
       return;
     }
+    if (name === 'calibrate' && !this.vrMode) name = 'settings'; // the desktop shows the sliders inline
     if (name === 'death') this._fillDeath(info);
     else if (name === 'victory') this._fillVictory(info);
+    else if (name === 'about') this._fillAbout();
 
     const prev = this.current;
     const game = this.game || {};
@@ -1155,6 +1249,7 @@ export class UI3D {
       this._opener = prev === 'menu' || prev === 'pause' ? { screen: prev, el: active && this.screens[prev].contains(active) ? active : null } : null;
     }
     this.current = name;
+    this._disarm();
     for (const n of SCREENS) {
       const el = this.screens[n];
       if (el && el.hidden === (n === name)) el.hidden = n !== name;
@@ -1162,6 +1257,7 @@ export class UI3D {
     if (name === 'menu') this.refreshMenu();
     else if (name === 'difficulty') this._refreshDifficulty();
     else if (name === 'settings') this.syncSettings();
+    if (name === 'calibrate' && !this._settings().brightnessChecked) this._applySettings({ brightnessChecked: true });
     if (name !== 'settings') {
       this._vrSetPage = 0;
       if (this._cal) {
@@ -1242,6 +1338,10 @@ export class UI3D {
       this._vrDirty = true;
       return;
     }
+    if (this.current === 'calibrate') {
+      this.show('settings');
+      return;
+    }
     const state = this.game && this.game.state;
     let target = this._returnTo || 'menu';
     if (state === 'paused') target = 'pause';
@@ -1263,8 +1363,31 @@ export class UI3D {
     const key = this._defaultDifficulty();
     const diff = DIFFICULTY[key];
     const best = Storage.getBest(key);
+    const cont = this._continueInfo();
+    const d = this.dom;
+    // Continue (the saved run) leads when there is one; 'New descent' then opens the difficulty chooser instead of starting at once.
+    d.continueBtn.hidden = !cont;
+    d.diffBtn.hidden = !!cont;
+    if (cont) {
+      d.continueSub.textContent = this._continueLine(cont);
+      d.startLabel.textContent = 'New descent';
+      d.startBtn.dataset.action = 'difficulty';
+      d.startBtn.classList.remove('btn-primary');
+      d.startSub.textContent = 'Choose a difficulty · replaces the saved run';
+      d.startBtn.removeAttribute('data-autofocus');
+      d.continueBtn.setAttribute('data-autofocus', '');
+    } else {
+      d.startLabel.textContent = 'Begin descent';
+      d.startBtn.dataset.action = 'start';
+      d.continueBtn.removeAttribute('data-autofocus');
+      if (!this._vrFirst()) d.startBtn.classList.add('btn-primary');
+    }
+    d.updateBtn.hidden = !this._updateReady || this._xr;
+    d.aboutSub.hidden = !this._updateReady;
     // With VR first on the menu, the flat run says what it is.
-    if (this._vrFirst()) this.dom.startSub.textContent = `Flat screen · mouse & keyboard · ${diff.label}`;
+    if (cont) {
+      // (sub-label set above)
+    } else if (this._vrFirst()) this.dom.startSub.textContent = `Flat screen · mouse & keyboard · ${diff.label}`;
     else this.dom.startSub.textContent = best != null ? `${diff.label} · best ${fmtTime(best)}` : diff.label;
     if (this._bestCells) {
       for (const k of DIFFICULTY_ORDER) {
@@ -1276,6 +1399,23 @@ export class UI3D {
     }
     this._refreshDifficulty();
     this._vrDirty = true;
+  }
+
+  /** The saved run for the Continue button (game.canContinue / save.continueInfo), or null. */
+  _continueInfo() {
+    const g = this.game || {};
+    try {
+      if (typeof g.canContinue === 'function' && !g.canContinue()) return null;
+      const info = g.save && typeof g.save.continueInfo === 'function' ? g.save.continueInfo() : null;
+      return info && typeof info === 'object' ? info : null;
+    } catch {
+      return null;
+    }
+  }
+
+  _continueLine(info) {
+    const sec = info.sectionName ? info.sectionName : `Section ${(info.section | 0) + 1}`;
+    return `${info.label || 'Normal'} · ${sec} · ${fmtTime(num(info.time, 0))}`;
   }
 
   _buildBestStrip() {
@@ -1359,61 +1499,70 @@ export class UI3D {
   _buildSettings() {
     const body = this.dom.settingsBody;
     body.textContent = '';
-    let group = null;
-    for (const def of SETTINGS_SCHEMA) {
-      if (def.group) {
-        group = make('div', 'set-group');
-        group.appendChild(make('h3', 'group-title', def.group));
-        body.appendChild(group);
-        continue;
-      }
-      if (def.type === 'height') {
-        this._buildHeightBlock(group || body);
-        continue;
-      }
-      const row = make('div', 'set-row');
-      const label = make('div', 'set-label');
-      const id = `at3d-set-${def.key}`;
-      const name = make('label', 'set-name', def.label);
-      name.htmlFor = id;
-      label.appendChild(name);
-      if (def.desc) label.appendChild(make('p', 'set-desc', def.desc));
-      const ctl = make('div', 'set-control');
-      if (def.type === 'range') {
-        const wrap = make('div', 'range-wrap');
-        const input = make('input');
-        input.type = 'range';
-        input.id = id;
-        input.min = String(def.min);
-        input.max = String(def.max);
-        input.step = String(def.step);
-        input.dataset.key = def.key;
-        const out = make('output');
-        out.htmlFor = id;
-        wrap.append(input, out);
-        ctl.appendChild(wrap);
-        this._ctl[def.key] = { def, input, out };
-      } else {
-        const seg = make('div', 'seg');
-        seg.setAttribute('role', 'group');
-        seg.setAttribute('aria-label', def.label);
-        const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
-        const btns = [];
-        for (const [value, text] of opts) {
-          const b = make('button', null, text);
-          b.type = 'button';
-          b.dataset.action = 'set';
-          b.dataset.key = def.key;
-          b.dataset.value = String(value);
-          if (btns.length === 0) b.id = id;
-          seg.appendChild(b);
-          btns.push([value, b]);
+    for (const tab of TABS) {
+      const group = make('div', 'set-group');
+      group.appendChild(make('h3', 'group-title', tab.title));
+      body.appendChild(group);
+      for (const def of SETTINGS_SCHEMA) {
+        if (def.tab !== tab.id || def.vr) continue;
+        if (def.type === 'height') {
+          this._buildHeightBlock(group);
+          continue;
         }
-        ctl.appendChild(seg);
-        this._ctl[def.key] = { def, btns };
+        if (def.type === 'patches') {
+          const c = make('canvas', 'patches');
+          c.width = 936;
+          c.height = 120;
+          c.setAttribute('role', 'img');
+          c.setAttribute('aria-label', 'Black level test: eight dark squares; the second should be just visible.');
+          group.appendChild(c);
+          this._patchesCanvas = c;
+          continue;
+        }
+        const row = make('div', 'set-row');
+        const label = make('div', 'set-label');
+        const id = `at3d-set-${def.key}`;
+        const name = make('label', 'set-name', def.label);
+        name.htmlFor = id;
+        label.appendChild(name);
+        if (def.desc) label.appendChild(make('p', 'set-desc', def.desc));
+        const ctl = make('div', 'set-control');
+        if (def.type === 'range') {
+          const wrap = make('div', 'range-wrap');
+          const input = make('input');
+          input.type = 'range';
+          input.id = id;
+          input.min = String(def.min);
+          input.max = String(def.max);
+          input.step = String(def.step);
+          input.dataset.key = def.key;
+          const out = make('output');
+          out.htmlFor = id;
+          wrap.append(input, out);
+          ctl.appendChild(wrap);
+          this._ctl[def.key] = { def, input, out };
+        } else {
+          const seg = make('div', 'seg');
+          seg.setAttribute('role', 'group');
+          seg.setAttribute('aria-label', def.label);
+          const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
+          const btns = [];
+          for (const [value, text] of opts) {
+            const b = make('button', null, text);
+            b.type = 'button';
+            b.dataset.action = 'set';
+            b.dataset.key = def.key;
+            b.dataset.value = String(value);
+            if (btns.length === 0) b.id = id;
+            seg.appendChild(b);
+            btns.push([value, b]);
+          }
+          ctl.appendChild(seg);
+          this._ctl[def.key] = { def, btns };
+        }
+        row.append(label, ctl);
+        group.appendChild(row);
       }
-      row.append(label, ctl);
-      (group || body).appendChild(row);
     }
     const actions = make('div', 'set-actions');
     const reset = make('button', 'btn btn-ghost');
@@ -1573,6 +1722,7 @@ export class UI3D {
     if (!this.dom) return;
     const s = this._settings();
     this._refreshHeight();
+    this._syncUx(s);
     for (const key of Object.keys(this._ctl)) {
       const c = this._ctl[key];
       const v = key in s ? s[key] : SETTINGS_DEFAULTS[key];
@@ -1594,7 +1744,10 @@ export class UI3D {
     let v = value;
     if (def.type === 'range') v = U.clamp(Math.round(num(+value, def.min) / def.step) * def.step, def.min, def.max);
     else if (def.type === 'toggle') v = value === true || value === 'true';
-    else if (!def.options.some((o) => o[0] === value)) return;
+    else {
+      if (typeof def.options[0][0] === 'number') v = Number(value);
+      if (!def.options.some((o) => o[0] === v)) return;
+    }
     v = def.type === 'range' ? +v.toFixed(4) : v;
     this._applySettings({ [key]: v });
   }

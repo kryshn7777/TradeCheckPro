@@ -280,6 +280,7 @@ export const SETTINGS_DEFAULTS = {
   brightness: 1.0, // 0.6..1.6 exposure multiplier (calibration screen)
   blackLevel: 0, // 0..1 lifts the darkest pixels by up to 6/255 (calibration screen)
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
+  reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
 };
 
@@ -318,6 +319,7 @@ export function sanitizeUxSettings(s) {
   s.colorSafe = s.colorSafe === true;
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
+  s.reducedEffects = s.reducedEffects === true;
   return s;
 }
 

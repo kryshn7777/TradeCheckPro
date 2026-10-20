@@ -18,7 +18,7 @@ const MAX_LINES = 3;
 const DIR_REFRESH = 0.15;
 
 /** Caption kinds → the shape drawn next to the line. */
-export const KIND_SHAPE = { creature: 'diamond', world: 'square', player: 'circle' };
+export const KIND_SHAPE = { creature: 'diamond', world: 'square', player: 'circle', status: 'triangle' };
 
 const R = (text, kind, sev, group, cd, ttl) => Object.freeze({ text, kind, sev, group, cd, ttl: ttl || TTL });
 
@@ -53,6 +53,17 @@ export const RULES = Object.freeze({
   gripLost: R('[Grip lost]', 'player', 2, 'grip', 1.5),
   heart: R('[Heartbeat pounding]', 'player', 1, 'heart', 8),
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
+});
+
+// ---- colour-safe status cues (settings.colorSafe): a shape and words for what colour alone says elsewhere --------------------
+const S = (text, sev, group, cd) => Object.freeze({ text, kind: 'status', sev, group, cd, ttl: 3.6, status: true });
+export const STATUS_RULES = Object.freeze({
+  lowHealth: S('LOW HEALTH', 2, 's-health', 6),
+  hazard: S('HAZARD HIT', 2, 's-hazard', 1.5),
+  gripWeak: S('GRIP WEAK', 1, 's-grip', 4),
+  gripLost: S('GRIP LOST', 2, 's-grip', 1.5),
+  lantern: S('LANTERN LOW', 1, 's-lantern', 15),
+  picked: Object.freeze([S('+ FIRST AID KIT', 0, 's-pick', 0.8), S('+ BANDAGE', 0, 's-pick', 0.8), S('+ ADRENALINE', 0, 's-pick', 0.8), S('+ BATTERY', 0, 's-pick', 0.8)]),
 });
 
 /** creature:clip rules by `${name}:${event}` ('start' is also used when the rig sends no event). */
@@ -125,6 +136,27 @@ export function captionForEvent(type, p) {
   }
 }
 
+/** The colour-safe status cue for a bus event, or null. Pure. */
+export function statusForEvent(type, p) {
+  const e = p || {};
+  switch (type) {
+    case 'health:low':
+      return STATUS_RULES.lowHealth;
+    case 'health:damage':
+      return e.cause === 'hazard' ? STATUS_RULES.hazard : null;
+    case 'climb:strain':
+      return finite(e.level) && e.level >= 1 ? STATUS_RULES.gripWeak : null;
+    case 'climb:slip':
+      return STATUS_RULES.gripLost;
+    case 'lantern:low':
+      return STATUS_RULES.lantern;
+    case 'pickup:collect':
+      return finite(e.kind) && e.kind >= 0 && e.kind < 4 ? STATUS_RULES.picked[e.kind | 0] : null;
+    default:
+      return null;
+  }
+}
+
 /** Every bus event the tracker listens to. */
 export const CAPTION_EVENTS = Object.freeze([
   'creature:clip',
@@ -145,6 +177,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'lantern:low',
   'trigger:rumble',
   'trigger:debris',
+  'health:damage',
+  'pickup:collect',
 ]);
 
 /** Direction sector names (0 = straight ahead, clockwise). */
@@ -173,9 +207,10 @@ function makeLine() {
  * visible text or a direction changes, so the UI repaints only then.
  */
 export class CaptionTracker {
-  /** @param {{enabled?: () => boolean}} [opts] */
+  /** @param {{captions?: () => boolean, status?: () => boolean}} [opts] which kinds are wanted right now (settings.captions / settings.colorSafe) */
   constructor(opts) {
-    this.enabled = (opts && opts.enabled) || (() => true);
+    this.wantCaptions = (opts && opts.captions) || (() => true);
+    this.wantStatus = (opts && opts.status) || (() => true);
     this.lines = [];
     for (let i = 0; i < MAX_LINES; i++) this.lines.push(makeLine());
     this.rev = 0;
@@ -206,11 +241,21 @@ export class CaptionTracker {
     this.rev++;
   }
 
-  /** Feeds one bus event. Returns the line it produced / refreshed, or null. */
+  /** Feeds one bus event. Returns the (last) line it produced / refreshed, or null. */
   push(type, p) {
-    if (!this.enabled()) return null;
-    const rule = captionForEvent(type, p);
-    if (!rule) return null;
+    let out = null;
+    if (this.wantCaptions()) {
+      const rule = captionForEvent(type, p);
+      if (rule) out = this._take(rule, type, p) || out;
+    }
+    if (this.wantStatus()) {
+      const rule = statusForEvent(type, p);
+      if (rule) out = this._take(rule, type, p) || out;
+    }
+    return out;
+  }
+
+  _take(rule, type, p) {
     const last = this._groups[rule.group];
     if (last !== undefined && this.clock - last < rule.cd) return null;
     this._groups[rule.group] = this.clock;
