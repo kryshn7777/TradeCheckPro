@@ -298,19 +298,19 @@ def main():
 
     # landscape 2560 x 1440: stacked
     bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-16x9.png'), 2560, 1440))
-    out, box = compose(bg, cap_px=250, center=(1280, 800), stacked=True, tether_x=1280)
+    out, box = compose(bg, cap_px=250, center=(1280, 660), stacked=True, tether_x=1280)
     out.save(os.path.join(args.out, 'cover-landscape-2560x1440.png'), optimize=True)
     print('landscape', box)
 
     # square 1440 x 1440
     bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-square.png'), 1440, 1440))
-    out, box = compose(bg, cap_px=170, center=(720, 860), stacked=True, tether_x=720)
+    out, box = compose(bg, cap_px=170, center=(720, 700), stacked=True, tether_x=720)
     out.save(os.path.join(args.out, 'cover-square-1440x1440.png'), optimize=True)
     print('square', box)
 
     # portrait 1008 x 1440
     bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-portrait.png'), 1008, 1440))
-    out, box = compose(bg, cap_px=118, center=(504, 960), stacked=True, tether_x=504)
+    out, box = compose(bg, cap_px=118, center=(504, 800), stacked=True, tether_x=504)
     out.save(os.path.join(args.out, 'cover-portrait-1008x1440.png'), optimize=True)
     print('portrait', box)
 

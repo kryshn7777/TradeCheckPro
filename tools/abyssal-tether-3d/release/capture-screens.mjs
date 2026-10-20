@@ -86,7 +86,7 @@ async function newGamePage(w, h, { xr = false } = {}) {
     css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal,#at3d-gpu-banner,[id^=at3d-panel]{display:none!important}';
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
-  await page.goto(srv.base + '?sw=0&gov=off', { waitUntil: 'domcontentloaded' });
+  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off', { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 240000, label: 'boot' });
   await sleep(2500); // textures, env kit, creature kit, gear GLB finish loading
   return { ctx, page };
@@ -182,7 +182,9 @@ async function snap(page, file, w, h, { grab = false } = {}) {
       G.fade = 0;
       G.flash = 0;
       G._render(1 / 60);
-      return G.renderer.renderer.domElement.toDataURL('image/png').split(',')[1];
+      const c = G.renderer.renderer.domElement;
+      if (c.width !== window.innerWidth) throw new Error(`canvas is ${c.width}x${c.height}, expected ${window.innerWidth}x${window.innerHeight}`);
+      return c.toDataURL('image/png').split(',')[1];
     });
     fs.writeFileSync(file, Buffer.from(b64, 'base64'));
   } else {

@@ -123,9 +123,12 @@ async function bootstrap() {
 /** After the menu is up: service worker, persistent storage, desktop perf safety net. All optional. */
 function startPlatformServices(game) {
   // Desktop perf safety net (GPU warning, adaptive resolution, ?perf overlay); optional.
-  import('./ui/perfDiag.js')
-    .then((m) => m.installPerfDiag(game))
-    .catch(() => {});
+  if (!/[?&]perfdiag=off\b/.test(window.location.search)) {
+    // (?perfdiag=off: tests and store captures that need a fixed render resolution)
+    import('./ui/perfDiag.js')
+      .then((m) => m.installPerfDiag(game))
+      .catch(() => {});
+  }
   import('./platform/pwaBoot.js')
     .then(async (pwa) => {
       pwa.requestPersistentStorage().then((persisted) => (game.persisted = persisted));

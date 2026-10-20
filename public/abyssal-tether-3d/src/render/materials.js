@@ -992,7 +992,7 @@ ${
   }`
     : ''
 }
-  diffuseColor.rgb *= 1.0 - 0.32 * atWet;
+  diffuseColor.rgb *= 1.0 - ( 0.32 - 0.14 * ${dry} ) * atWet;
   diffuseColor.rgb *= 1.0 + uVG * clamp( ( vAtW.y - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );`);
       fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
   roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);

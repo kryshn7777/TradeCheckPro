@@ -71,26 +71,32 @@ new GLTFLoader().load(kitUrl, (gltf) => {
       const groups = {};
       gltf.scene.traverse((o) => { const n = o.userData.name; if (n && /^Mason_/.test(n) && !/LOD1/.test(n) && !groups[n]) groups[n] = o; });
       const order = ['Mason_Head', 'Mason_Segment_0', 'Mason_Segment_1', 'Mason_Segment_2', 'Mason_Tail', 'Mason_LimbUpper', 'Mason_LimbLower', 'Mason_Hook', 'Mason_Frond_0', 'Mason_Pit'];
-      let x = 0;
-      for (const n of order) {
+      const cols = 5, cell = 9;
+      order.forEach((n, i) => {
         const o = groups[n];
-        if (!o) continue;
+        if (!o) return;
+        const holder = new THREE.Group();
         const c = o.clone();
-        const s = n === 'Mason_Head' ? 0.5 : 1;
-        c.scale.setScalar(s);
-        const box = new THREE.Box3().setFromObject(c);
-        c.position.x = x - box.min.x;
-        c.position.y = -box.min.y * 0 - (box.min.y + box.max.y) / 2;
-        x += box.max.x - box.min.x + 0.8;
-        root.add(c);
-      }
-      const bb = new THREE.Box3().setFromObject(root);
-      const ctr = bb.getCenter(new THREE.Vector3());
-      const size = bb.getSize(new THREE.Vector3());
-      camera.position.set(ctr.x, ctr.y + 1.5, ctr.z + Math.max(size.x * 0.62, 12));
-      camera.lookAt(ctr);
-      light.position.set(ctr.x - size.x * 0.3, ctr.y + 6, ctr.z + 9);
-      light.intensity = 1500;
+        holder.add(c);
+        holder.rotation.y = n === 'Mason_Head' ? Math.PI * 0.85 : (/Limb|Hook/.test(n) ? 0.5 : 0.7);
+        holder.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(holder);
+        const sz = box.getSize(new THREE.Vector3());
+        const k = (n === 'Mason_Pit' || /Frond/.test(n)) ? 4 : 7.5 / Math.max(sz.x, sz.y, sz.z);
+        holder.scale.setScalar(k);
+        holder.updateMatrixWorld(true);
+        const b2 = new THREE.Box3().setFromObject(holder);
+        const ctr = b2.getCenter(new THREE.Vector3());
+        holder.position.set((i % cols) * cell - ctr.x - (cols - 1) * cell / 2, -Math.floor(i / cols) * cell - ctr.y, -ctr.z);
+        root.add(holder);
+      });
+      camera.fov = 40;
+      camera.updateProjectionMatrix();
+      camera.position.set(0, -4.5, 46);
+      camera.lookAt(0, -4.5, 0);
+      light.position.set(-14, 8, 30);
+      light.intensity = 14000;
+      scene.fog.density = 0.0;
       rim.position.set(0, 4, -6);
     } else {
       const view = new CreatureView(scene, gltf);

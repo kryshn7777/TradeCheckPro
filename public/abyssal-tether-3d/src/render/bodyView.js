@@ -30,6 +30,7 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../sim/config3d.js';
+import { buildGearEnvironment } from './handsView.js';
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -50,6 +51,13 @@ const T = {
   fade: 11, // clip weight fade rate (1/s)
   ikFade: 12,
   stand: 1.62, // standEye
+  // Looking down pushes the feet this far forward (along the torso heading) while the neck stays under the camera: the body
+  // leans back a little, so the chest, belt, thighs, knees and boots are inside the view (the desktop camera is a narrow
+  // 70-degree window; a real person sees them with peripheral vision).
+  shiftDesk: 0.3,
+  shiftXr: 0.16,
+  light: 0.5, // x the direct (lantern) light on the body: it is lit like the hands, not blown out
+  env: 1.1, // image based light (the hands' lit-room reflection)
 };
 
 // scratch (module level: no allocation in update)
@@ -123,6 +131,7 @@ export class BodyView {
     this._runDir = 1;
     this._stature = 0;
     this._k = 1;
+    this._shift = 0;
     this._lastX = 0;
     this._lastZ = 0;
     this._pvx = 0;
@@ -178,8 +187,34 @@ export class BodyView {
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    this._lightU = { value: T.light };
+    const hvEnv = this.game.handsView && this.game.handsView._gearEnv;
+    let env = hvEnv || null;
+    if (!env) {
+      try {
+        const r = this.game.renderer && this.game.renderer.renderer;
+        if (r && typeof r.getContext === 'function') {
+          env = buildGearEnvironment(r);
+          this._ownEnv = env;
+        }
+      } catch {
+        env = null;
+      }
+    }
     for (const m of mats) {
       m.side = THREE.FrontSide;
+      const u = this._lightU;
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uBodyLight = u;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uBodyLight;')
+          .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uBodyLight;\n\treflectedLight.directSpecular *= uBodyLight;');
+      };
+      m.customProgramCacheKey = () => 'at3d-body-light';
+      if (env) {
+        m.envMap = env.texture;
+        m.envMapIntensity = T.env;
+      }
       m.needsUpdate = true;
     }
     // rest data
@@ -262,6 +297,7 @@ export class BodyView {
   dispose() {
     this._disposed = true;
     if (this.root.parent) this.root.parent.remove(this.root);
+    if (this._ownEnv && this._ownEnv.dispose) this._ownEnv.dispose();
     if (this.mesh) {
       this.mesh.geometry.dispose();
       const mats = Array.isArray(this.mesh.material) ? this.mesh.material : [this.mesh.material];
@@ -369,6 +405,12 @@ export class BodyView {
       if (this._stillT > 0.5) this._yaw = wrapPi(this._yaw + wrapPi(headYaw - this._yaw) * Math.min(1, dt * T.idleRecentre));
     }
 
+    // ---- look-down forward shift ----
+    const pitchDown = Math.asin(clamp(-_fwd.y, -1, 1));
+    const shT = (xr ? T.shiftXr : T.shiftDesk) * sstep(0.3, 1.1, pitchDown);
+    this._shift += (shT - this._shift) * Math.min(1, dt * 9);
+    if (first) this._shift = shT;
+
     // ---- clip selection ----
     if (!p.grounded) {
       this._airT += dt;
@@ -415,7 +457,8 @@ export class BodyView {
 
     // ---- root ----
     const root = this.root;
-    root.position.set(p.rx, feetY, p.rz);
+    _bfwd.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw));
+    root.position.set(p.rx + _bfwd.x * this._shift, feetY, p.rz + _bfwd.z * this._shift);
     root.rotation.set(0, this._yaw, 0);
     root.scale.setScalar(k);
     root.updateMatrixWorld(true);
