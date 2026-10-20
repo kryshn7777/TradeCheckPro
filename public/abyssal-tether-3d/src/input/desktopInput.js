@@ -12,6 +12,9 @@
  *   Space                   → jump · reel in while tethered (held)
  *   Shift                   → reel out          C → brake          F → yank both ropes
  *   Esc / P                 → pause             R → restart         Enter → confirm
+ *   1 2 3 4                 → bag: apply first aid kit / bandage / adrenaline / battery (quick use)
+ *   mouse wheel             → bag: select the previous / next item      G → apply the selected item
+ *   X                       → bag: stop applying (taking damage stops it too)
  *
  * Losing pointer lock during play (the browser's own Esc handling) counts as
  * one pause press. Window blur / tab hide release every key and button.
@@ -71,6 +74,12 @@ const KEY_TO_CODE = {
   f: 'KeyF',
   p: 'KeyP',
   r: 'KeyR',
+  g: 'KeyG',
+  x: 'KeyX',
+  1: 'Digit1',
+  2: 'Digit2',
+  3: 'Digit3',
+  4: 'Digit4',
 };
 
 export function codeOf(e) {
@@ -84,7 +93,18 @@ export function codeOf(e) {
 const PREVENT_IN_GAME = { Space: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1 };
 
 /** Keys the game reacts to (anything else is ignored entirely). */
+const BAG_SLOT_KEYS = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3 };
 const GAME_KEYS = {
+  Digit1: 1,
+  Digit2: 1,
+  Digit3: 1,
+  Digit4: 1,
+  Numpad1: 1,
+  Numpad2: 1,
+  Numpad3: 1,
+  Numpad4: 1,
+  KeyG: 1,
+  KeyX: 1,
   KeyW: 1,
   KeyA: 1,
   KeyS: 1,
@@ -151,6 +171,7 @@ export class DesktopInput {
       mousedown: (ev) => this.onMouseDown(ev),
       mouseup: (ev) => this.onMouseUp(ev),
       mousemove: (ev) => this.onMouseMove(ev),
+      wheel: (ev) => this.onWheel(ev),
       contextmenu: (ev) => this.onContextMenu(ev),
       lockchange: () => this.onLockChange(),
       lockerror: () => this.onLockError(),
@@ -172,6 +193,7 @@ export class DesktopInput {
       w.addEventListener('mousedown', h.mousedown);
       w.addEventListener('mouseup', h.mouseup);
       w.addEventListener('mousemove', h.mousemove);
+      w.addEventListener('wheel', h.wheel, { passive: false });
       w.addEventListener('blur', h.blur);
       w.addEventListener('pagehide', h.blur);
     }
@@ -195,6 +217,7 @@ export class DesktopInput {
       w.removeEventListener('mousedown', h.mousedown);
       w.removeEventListener('mouseup', h.mouseup);
       w.removeEventListener('mousemove', h.mousemove);
+      w.removeEventListener('wheel', h.wheel);
       w.removeEventListener('blur', h.blur);
       w.removeEventListener('pagehide', h.blur);
     }
@@ -341,6 +364,15 @@ export class DesktopInput {
     const wasDown = this.keys[code] === true;
     this.keys[code] = true;
     if (e.repeat || wasDown) return;
+    // The bag keys act on the run only (the Game ignores them elsewhere); they are not a "press any key".
+    if (code in BAG_SLOT_KEYS || code === 'KeyG' || code === 'KeyX') {
+      if (!ui && !xr) {
+        if (code === 'KeyG') im._bagEdge('use');
+        else if (code === 'KeyX') im._bagEdge('cancel');
+        else im._bagEdge('slot', BAG_SLOT_KEYS[code]);
+      }
+      return;
+    }
     im._edge('any');
     switch (code) {
       case 'Space':
@@ -455,6 +487,16 @@ export class DesktopInput {
     if (Math.abs(mx) > 400 || Math.abs(my) > 400) return;
     this.lookX += mx;
     this.lookY += my;
+  }
+
+  /** Mouse wheel: previous / next bag item while the view is captured during a run. */
+  onWheel(e) {
+    const im = this.im;
+    if (im.xrActive || im.uiMode || !im._inPlay() || !this.mouseActive) return;
+    const d = Number(e.deltaY) || Number(e.deltaX) || 0;
+    if (d === 0) return;
+    if (e.preventDefault) e.preventDefault();
+    im._bagEdge('cycle', d > 0 ? 1 : -1);
   }
 
   onContextMenu(e) {

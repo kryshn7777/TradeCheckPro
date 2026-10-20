@@ -39,6 +39,7 @@ import { Group, Matrix4, Quaternion, Vector3 } from 'three';
 import { CONFIG, U, VIEW } from '../sim/config3d.js';
 import { XRInput, tetherDown } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
+import { makeBagGesture, updateBagGesture } from './bagGesture.js';
 
 export const HANDS = ['left', 'right'];
 
@@ -102,6 +103,10 @@ export function makeIntent() {
     confirmPressed: false,
     backPressed: false,
     ui: { ray: null, click: false },
+    // The bag (WP-BAG): slot 0..3 = quick-use that item (desktop 1-4, VR radial release), use = apply the selected one
+    // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
+    // hip-bag gesture state (bagGesture.js; null on the desktop).
+    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     // extras (not in the contract; harmless to ignore)
     anyPressed: false,
     source: 'desktop',
@@ -247,6 +252,14 @@ export class InputManager {
 
     this.intent = makeIntent();
     this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false };
+    this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
+    this._bagGesture = makeBagGesture();
+    this._bagHands = [
+      { ok: false, x: 0, y: 0, z: 0, grip: 0 },
+      { ok: false, x: 0, y: 0, z: 0, grip: 0 },
+    ];
+    this._bagState = { live: false, applying: false, hx: 0, hy: 0, hz: 0, yaw: 0, hands: this._bagHands, counts: null };
+    this._noCounts = new Int8Array(4);
     this._ht = { left: makeTrigger(), right: makeTrigger() };
     this._btn = { a: makeButton(), b: makeButton(), x: makeButton(), y: makeButton(), l3: makeButton() };
     this._aim = { left: makeRay(), right: makeRay() };
@@ -371,6 +384,13 @@ export class InputManager {
     I.backPressed = E.back;
     I.anyPressed = E.any;
     I.ui.click = E.click;
+    const BE = this._bagEdges;
+    const IB = I.bag;
+    IB.slot = BE.slot;
+    IB.use = BE.use;
+    IB.cycle = BE.cycle;
+    IB.cancel = BE.cancel;
+    IB.vr = xr ? this._bagGesture : null;
     if (this._override) applyOverride(I, this._override);
     return I;
   }
@@ -385,6 +405,11 @@ export class InputManager {
     E.back = false;
     E.any = false;
     E.click = false;
+    const BE = this._bagEdges;
+    BE.slot = -1;
+    BE.use = false;
+    BE.cycle = 0;
+    BE.cancel = false;
     for (const h of HANDS) {
       const ht = this._ht[h];
       ht.pressEdge = false;
@@ -701,6 +726,12 @@ export class InputManager {
     return this.sockets[hand] || null;
   }
 
+  /** Grip squeeze 0..1 of a hand (XR; 0 on the desktop). */
+  gripValue(hand) {
+    const st = this.xrActive ? this.xrIn.hands[hand] : null;
+    return st ? st.grip : 0;
+  }
+
   /** True when the hand's controller (or tracked hand) currently has a pose. */
   handTracked(hand) {
     return this.xrActive ? this._handTracked(hand) : true;
@@ -791,6 +822,15 @@ export class InputManager {
 
   _edge(name) {
     if (name in this._edges) this._edges[name] = true;
+  }
+
+  /** Bag key edges from the desktop: 'slot' (value 0..3), 'use', 'cancel', 'cycle' (value +-1, accumulates). */
+  _bagEdge(name, value) {
+    const B = this._bagEdges;
+    if (name === 'slot') B.slot = value | 0;
+    else if (name === 'use') B.use = true;
+    else if (name === 'cancel') B.cancel = true;
+    else if (name === 'cycle') B.cycle += value < 0 ? -1 : 1;
   }
 
   /**
@@ -1049,7 +1089,10 @@ export class InputManager {
         this._edges.pause = true;
         if (this.uiMode) this._edges.back = true;
       }
-      if (pollButton(B.x, L.primary)) this._edges.any = true;
+      if (pollButton(B.x, L.primary)) {
+        this._edges.any = true;
+        if (!this.uiMode) this._bagEdges.cancel = true; // a tap of X stops applying a bag item (hold X still restarts when paused / dead)
+      }
       pollButton(B.y, L.secondary);
       pollButton(B.l3, L.stickClick);
     }
@@ -1129,6 +1172,9 @@ export class InputManager {
       I.hands[h].yank = g <= T.gripDeadzone ? 0 : Math.min(1, (g - T.gripDeadzone) / (1 - T.gripDeadzone));
     }
 
+    // 5b. the bag at the hip: a hand in the zone + grip opens the radial; release on an icon applies it (bagGesture.js)
+    this._updateBagGesture();
+
     // 6. aim rays (world space, from each controller's target ray)
     for (const h of HANDS) I.hands[h].aim = this._xrAim(h, this._aim[h]) ? this._aim[h] : null;
 
@@ -1148,6 +1194,43 @@ export class InputManager {
     } else {
       I.ui.ray = null;
     }
+  }
+
+  /** Feeds the bag gesture with this frame's head / hand poses and turns its edges into intent.bag (+ no yank at the bag). */
+  _updateBagGesture() {
+    const I = this.intent;
+    const g = this._bagGesture;
+    const S = this._bagState;
+    const bag = this.game ? this.game.bag : null;
+    S.live = !!bag && !this.uiMode && this._liveState() === 'playing';
+    S.applying = !!(bag && bag.applying && bag.applying.active);
+    S.counts = bag && bag.counts ? bag.counts : this._noCounts;
+    const hm = this._m3.elements; // the head matrix of this frame (set for the left stick)
+    S.hx = hm[12];
+    S.hy = hm[13];
+    S.hz = hm[14];
+    S.yaw = yawOfMatrix(hm);
+    for (let i = 0; i < 2; i++) {
+      const h = HANDS[i];
+      const o = this._bagHands[i];
+      const sock = this.sockets[h];
+      o.ok = this._handTracked(h) && !!sock && !!sock.parent;
+      o.grip = this.xrIn.hands[h].grip;
+      if (o.ok) {
+        sock.updateWorldMatrix(true, false);
+        const e = sock.matrixWorld.elements;
+        o.x = e[12];
+        o.y = e[13];
+        o.z = e[14];
+      }
+    }
+    updateBagGesture(g, S);
+    const BE = this._bagEdges;
+    if (g.chosen >= 0) BE.slot = g.chosen;
+    if (g.cancel) BE.cancel = true;
+    if (g.entered) this.haptic(HANDS[g.zone] || 'right', 0.18, 25);
+    // A grip at the bag is not a rope yank.
+    for (let i = 0; i < 2; i++) if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) I.hands[HANDS[i]].yank = 0;
   }
 
   // ---- desktop frame ----------------------------------------------------------

@@ -99,7 +99,6 @@ const SPEED_K = 1 / 60; // 2D px/s → m/s for loudness thresholds
 const TENSION_K = 1 / 115; // 2D tension (px/s²) → 3D (m/s²)
 const STRIDE = 1.5; // metres per footstep
 const HAND_PAN = { left: -0.35, right: 0.35 };
-const FIRE_SPEED = CONFIG.rope.fireSpeed || 220; // tether travel speed (m/s): delay before the hook bites
 
 const BUS_LEVEL = { ambient: 0.85, player: 1, creature: 1, psych: 1, ui: 0.5, stinger: 1 };
 const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus (other gameplay buses → 0)
@@ -386,6 +385,7 @@ export class AudioManager3D {
     this._breathLevel = 0;
     this._heartLevel = 0;
     this._heartHealth = 0; // the share of the heartbeat that comes from low health (0..1)
+    this._bagVoice = null; // the voice of the bag channel in progress (killed on cancel)
     this._heartThreat = 0;
     this._hitT = 0; // s of muffled hearing left after a big hit
     this._prevBeat = -1;
@@ -2078,6 +2078,7 @@ export class AudioManager3D {
     if (!bus || typeof bus.on !== 'function') return;
     const map = {
       'grapple:fire': this._onFire,
+      'rope:fire': this._onFire,
       'grapple:attach': this._onAttach,
       'grapple:miss': this._onMiss,
       'grapple:release': this._onRelease,
@@ -2088,6 +2089,15 @@ export class AudioManager3D {
       'player:land': this._onLand,
       'player:wallhit': this._onWallHit,
       'health:damage': this._onHealthDamage,
+      'pickup:collect': this._onPickup,
+      'pickup:full': this._onBagRefuse,
+      'bag:apply': this._onBagApply,
+      'bag:cancel': this._onBagCancel,
+      'bag:done': this._onBagDone,
+      'bag:refuse': this._onBagRefuse,
+      'bag:effect': this._onBagEffect,
+      'lantern:low': this._onLanternLow,
+      'lantern:empty': this._onLanternEmpty,
       'player:death': this._onDeath,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
@@ -2237,12 +2247,11 @@ export class AudioManager3D {
     const heavy = U.smoothstep(380 * SPEED_K, 1250 * SPEED_K, num(p.speed, 0));
     this._exertion = Math.min(1, this._exertion + 0.03 + 0.08 * heavy);
     const now = this.ctx.currentTime;
-    // Attachment is immediate in 3D (no separate fire event): the zip leaves the hand,
-    // the hook bites the anchor out in the world after the line's travel time.
-    if (now - this._lastFireAt > 0.08) this._sfxFire(p);
-    const delay = U.clamp(num(p.distance, 10) / FIRE_SPEED, 0.012, 0.15);
-    this._sfxCatch(p, heavy, delay);
-    this._sfxAttach(p, heavy, delay);
+    // The shot is a projectile (rope:fire at the trigger, grapple:attach when the hook ARRIVES): the zip and the
+    // chuff already played at the fire; only an attach with no shot before it (the debug API) plays them now.
+    if (now - this._lastFireAt > 0.9) this._sfxFire(p);
+    this._sfxCatch(p, heavy, 0.012);
+    this._sfxAttach(p, heavy, 0.012);
     if (p.previous || p.chained) this._sfxRelease(0.6, p.hand);
   }
 
@@ -2291,6 +2300,42 @@ export class AudioManager3D {
   }
 
   /** Fall / hazard damage: a body thump (no voice), and above ~25 hp a ringing in the ears with dulled hearing. */
+  // ---- the bag (WP-BAG): pickup chime, bandage rustle, injector hiss, battery click, first-aid ratchet, low-battery warning ----
+
+  _onPickup(p) {
+    this._sfxPickup(num(p.kind, 1));
+  }
+
+  _onBagApply(p) {
+    this._sfxBagApply(num(p.kind, 1), num(p.dur, 1.5));
+  }
+
+  _onBagCancel(p) {
+    this._stopBagVoice();
+    if (!p || (p.reason !== 'inactive' && p.reason !== 'dead')) this._sfxBagFumble();
+  }
+
+  _onBagDone(p) {
+    this._stopBagVoice();
+    this._sfxBagDone(num(p.kind, 1));
+  }
+
+  _onBagRefuse() {
+    this._sfxBagFumble(true);
+  }
+
+  _onBagEffect(p) {
+    if (p && p.on === false) this._sfxBoostEnd();
+  }
+
+  _onLanternLow() {
+    this._sfxLanternWarn(false);
+  }
+
+  _onLanternEmpty() {
+    this._sfxLanternWarn(true);
+  }
+
   _onHealthDamage(p) {
     const a = U.clamp(num(p.amount, 0.1), 0, 1);
     this._exertion = Math.min(1, this._exertion + 0.15 + 0.4 * a);
@@ -2421,12 +2466,34 @@ export class AudioManager3D {
   // Synthesis recipes — player
   // -------------------------------------------------------------------------
 
-  /** Tether fire: a fast whip-zip (rising band of noise + a short chirp). */
+  /**
+   * Tether fire: the pneumatic chuff of the launcher (a burst of noise through a closing low-pass + a low
+   * thump), the whip-zip of the head leaving (rising band of noise + a short chirp) and, for a shot at a
+   * target (p.target), the drum ratcheting as the line pays out for the flight time (p.dur).
+   */
   _sfxFire(p) {
-    const v = this._begin('fire', 1, 0.035, 0.24, this.busPlayer, 1.6, HAND_PAN[p.hand] || 0, 0.05, 0);
+    const flight = p && p.target ? U.clamp(num(p.dur, 0.25), 0.05, 0.45) : 0;
+    const v = this._begin('fire', 1, 0.035, 0.3 + flight, this.busPlayer, 1.6, HAND_PAN[p.hand] || 0, 0.05, 0);
     if (!v) return;
     this._lastFireAt = v.t0;
     const t = v.t0;
+    // chuff: a puff of compressed air + the plunger thump
+    const cn = this._vNoise(v, this._white, t, 1);
+    const clp = this._vFilter(v, 'lowpass', 2600, 0.7);
+    clp.frequency.setValueAtTime(2600, t);
+    clp.frequency.exponentialRampToValueAtTime(260, t + 0.16);
+    const cg = this._vGain(v, 0);
+    this._perc(cg.gain, t, 0.9, 0.003, 0.05);
+    cn.connect(clp);
+    clp.connect(cg);
+    cg.connect(v.out);
+    const th = this._vOsc(v, 'sine', 150, t);
+    th.frequency.exponentialRampToValueAtTime(52, t + 0.1);
+    const tg = this._vGain(v, 0);
+    this._perc(tg.gain, t, 0.55, 0.002, 0.05);
+    th.connect(tg);
+    tg.connect(v.out);
+    if (flight > 0) this._tickTrain(v, t + 0.04, Math.max(4, Math.round(flight * 36)), flight * 0.9, 0.18, 1500, 3400, 4, 0.006, 0.55);
     const n = this._vNoise(v, this._white, t, 1);
     const bp = this._vFilter(v, 'bandpass', 900, 2.2);
     bp.frequency.setValueAtTime(900, t);
@@ -2477,6 +2544,22 @@ export class AudioManager3D {
     n.connect(hp);
     hp.connect(ng);
     ng.connect(v.out);
+    // The hook's thunk into the stone, then the creak of the line taking the load.
+    const tk = this._vOsc(v, 'sine', 118, t);
+    tk.frequency.setTargetAtTime(58, t, 0.04);
+    const tkg = this._vGain(v, 0);
+    this._perc(tkg.gain, t, 0.55, 0.002, 0.07);
+    tk.connect(tkg);
+    tkg.connect(v.out);
+    const cr = this._vNoise(v, this._brown, t, 1.1);
+    const crf = this._vFilter(v, 'bandpass', 330, 5);
+    crf.frequency.setValueAtTime(330, t + 0.02);
+    crf.frequency.exponentialRampToValueAtTime(190, t + 0.4);
+    const crg = this._vGain(v, 0);
+    this._swell(crg.gain, t + 0.02, 0.2 + 0.2 * heavy, 0.05, 0.12, 0.1);
+    cr.connect(crf);
+    crf.connect(crg);
+    crg.connect(v.out);
     if (kind === 'fragile') {
       // Crumbly grit: the anchor is not sound.
       const b = this._vNoise(v, this._brown, t, 1.3);
@@ -2914,6 +2997,197 @@ export class AudioManager3D {
     n.connect(hp);
     hp.connect(ng);
     ng.connect(v.out);
+    this._commit(v);
+  }
+
+  _stopBagVoice() {
+    const v = this._bagVoice;
+    this._bagVoice = null;
+    if (v && v.alive && this.ctx) this._kill(v, this.ctx.currentTime, 0.03);
+  }
+
+  /** A short bell on collection: pitch and timbre by item (first aid low and warm, adrenaline bright, battery with a click). */
+  _sfxPickup(kind) {
+    const v = this._begin('pickup', 1, 0.05, 1.6, this.busPlayer, 0.5, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    const base = [392, 523.25, 784, 440][kind] || 523.25;
+    const parts = [
+      [base, 0.34, 0.26],
+      [base * 1.5, 0.2, 0.22],
+      [base * 2.01, 0.1, 0.16],
+    ];
+    for (let i = 0; i < parts.length; i++) {
+      const o = this._vOsc(v, kind === 2 ? 'triangle' : 'sine', parts[i][0], t + i * 0.045);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t + i * 0.045, parts[i][1], 0.006, parts[i][2]);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    if (kind === 1 || kind === 3) {
+      const n = this._vNoise(v, this._white, t, 1);
+      const bp = this._vFilter(v, 'bandpass', kind === 1 ? 3200 : 5200, 1.2);
+      const ng = this._vGain(v, 0);
+      this._perc(ng.gain, t, kind === 1 ? 0.1 : 0.16, 0.002, kind === 1 ? 0.07 : 0.012);
+      n.connect(bp);
+      bp.connect(ng);
+      ng.connect(v.out);
+    }
+    this._commit(v);
+  }
+
+  /** The channel of a use: a first-aid ratchet, a bandage rustle, an injector hiss, a battery click-clack. */
+  _sfxBagApply(kind, dur) {
+    this._stopBagVoice();
+    const v = this._begin('bagApply', 2, 0, dur + 0.5, this.busPlayer, 0.55, 0, 0.12, 0);
+    if (!v) return;
+    this._bagVoice = v;
+    const t = v.t0;
+    if (kind === 0) {
+      // case snaps open, then a slow ratchet of clicks over the whole channel
+      this._tickTrain(v, t, 3, 0.18, 0.5, 900, 1800, 2, 0.01, 0);
+      this._tickTrain(v, t + 0.3, Math.max(8, Math.round(dur * 6)), dur - 0.4, 0.32, 1500, 2600, 3, 0.006, 0.3);
+      const o = this._vOsc(v, 'sine', 150, t + 0.3);
+      const g = this._vGain(v, 0);
+      g.gain.setValueAtTime(0, t + 0.3);
+      g.gain.linearRampToValueAtTime(0.05, t + 0.8);
+      g.gain.setTargetAtTime(0, t + dur - 0.2, 0.1);
+      o.connect(g);
+      g.connect(v.out);
+    } else if (kind === 1) {
+      // bandage: paper-and-cloth rustle in two passes
+      const n = this._vNoise(v, this._pink, t, 1);
+      const bp = this._vFilter(v, 'bandpass', 2600, 0.8);
+      const hp = this._vFilter(v, 'highpass', 1200, 0);
+      const g = this._vGain(v, 0);
+      for (let i = 0; i < 2; i++) {
+        const a = t + i * dur * 0.5;
+        g.gain.setValueAtTime(0, a);
+        g.gain.linearRampToValueAtTime(0.5, a + 0.12);
+        g.gain.setTargetAtTime(0, a + dur * 0.28, 0.08);
+        bp.frequency.setValueAtTime(2000, a);
+        bp.frequency.linearRampToValueAtTime(3600, a + dur * 0.4);
+      }
+      n.connect(bp);
+      bp.connect(hp);
+      hp.connect(g);
+      g.connect(v.out);
+      this._tickTrain(v, t + 0.1, 6, dur - 0.3, 0.12, 2000, 4200, 2, 0.004, 0);
+    } else if (kind === 2) {
+      // injector: a click, then the pneumatic hiss as it fires at the end
+      this._tickTrain(v, t, 2, 0.12, 0.45, 1400, 2200, 3, 0.008, 0);
+      const n = this._vNoise(v, this._white, t + dur - 0.38, 1);
+      const hp = this._vFilter(v, 'highpass', 4500, 0.7);
+      const g = this._vGain(v, 0);
+      this._swell(g.gain, t + dur - 0.38, 0.5, 0.02, 0.14, 0.12);
+      n.connect(hp);
+      hp.connect(g);
+      g.connect(v.out);
+      const o = this._vOsc(v, 'sine', 90, t + dur - 0.38);
+      o.frequency.setTargetAtTime(48, t + dur - 0.38, 0.08);
+      const og = this._vGain(v, 0);
+      this._perc(og.gain, t + dur - 0.38, 0.5, 0.004, 0.09);
+      o.connect(og);
+      og.connect(v.out);
+    } else {
+      // battery: the old cell clicks out, the new one clacks in, a short rising whine
+      this._tickTrain(v, t, 2, 0.12, 0.5, 700, 1300, 2, 0.01, 0);
+      this._tickTrain(v, t + dur * 0.55, 3, 0.16, 0.6, 1100, 2400, 2.5, 0.008, 0.2);
+      const o = this._vOsc(v, 'sawtooth', 280, t + dur * 0.7);
+      o.frequency.linearRampToValueAtTime(980, t + dur * 0.7 + 0.3);
+      const f = this._vFilter(v, 'lowpass', 1400, 0.5);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t + dur * 0.7, 0.05, 0.08, 0.1);
+      o.connect(f);
+      f.connect(g);
+      g.connect(v.out);
+    }
+    this._commit(v);
+  }
+
+  /** A use completed: a soft chord of relief (adrenaline: a thump of the heart and a rush). */
+  _sfxBagDone(kind) {
+    const v = this._begin('bagDone', 2, 0.05, 2.2, this.busStinger, 0.34, 0, 0.35, 0);
+    if (!v) return;
+    const t = v.t0;
+    if (kind === 2) {
+      for (let i = 0; i < 2; i++) {
+        const o = this._vOsc(v, 'sine', 70, t + i * 0.2);
+        o.frequency.setTargetAtTime(38, t + i * 0.2, 0.06);
+        const g = this._vGain(v, 0);
+        this._perc(g.gain, t + i * 0.2, i ? 0.55 : 0.8, 0.005, 0.1);
+        o.connect(g);
+        g.connect(v.out);
+      }
+      const n = this._vNoise(v, this._pink, t, 1);
+      const bp = this._vFilter(v, 'bandpass', 600, 0.6);
+      bp.frequency.linearRampToValueAtTime(3200, t + 0.9);
+      const ng = this._vGain(v, 0);
+      this._swell(ng.gain, t, 0.3, 0.3, 0.2, 0.3);
+      n.connect(bp);
+      bp.connect(ng);
+      ng.connect(v.out);
+    } else {
+      const notes = kind === 0 ? [196, 246.94, 392] : kind === 3 ? [329.63, 493.88] : [261.63, 392];
+      for (let i = 0; i < notes.length; i++) {
+        const o = this._vOsc(v, 'sine', notes[i], t + i * 0.09);
+        const g = this._vGain(v, 0);
+        this._perc(g.gain, t + i * 0.09, kind === 0 ? 0.4 : 0.3, 0.012, kind === 0 ? 0.6 : 0.35);
+        o.connect(g);
+        g.connect(v.out);
+      }
+    }
+    this._commit(v);
+  }
+
+  /** A cancelled or refused use: a dull little fumble. */
+  _sfxBagFumble(refuse) {
+    const v = this._begin('bagFumble', 1, 0.15, 0.3, this.busUi, 0.4, 0, 0, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'triangle', refuse ? 210 : 300, t);
+    o.frequency.setTargetAtTime(refuse ? 150 : 180, t, 0.03);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.25, 0.002, 0.04);
+    o.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The adrenaline wearing off: a low sigh. */
+  _sfxBoostEnd() {
+    const v = this._begin('boostEnd', 1, 0.5, 1.4, this.busPlayer, 0.4, 0, 0.2, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._brown, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 900, 0);
+    lp.frequency.linearRampToValueAtTime(220, t + 1);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.45, 0.08, 0.1, 0.3);
+    n.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** Low battery: two soft descending beeps (the lantern at zero: one long fading one). */
+  _sfxLanternWarn(empty) {
+    const v = this._begin('lanternWarn', 2, 1, 1.6, this.busStinger, 0.22, 0, 0.15, 0);
+    if (!v) return;
+    const t = v.t0;
+    const beeps = empty ? [[330, 0, 0.9]] : [[880, 0, 0.18], [660, 0.28, 0.18]];
+    for (let i = 0; i < beeps.length; i++) {
+      const [f, at, len] = beeps[i];
+      const o = this._vOsc(v, 'sine', f, t + at);
+      if (empty) o.frequency.linearRampToValueAtTime(110, t + at + len);
+      const g = this._vGain(v, 0);
+      g.gain.setValueAtTime(0, t + at);
+      g.gain.linearRampToValueAtTime(0.5, t + at + 0.015);
+      g.gain.setValueAtTime(0.5, t + at + len * 0.6);
+      g.gain.linearRampToValueAtTime(0, t + at + len);
+      o.connect(g);
+      g.connect(v.out);
+    }
     this._commit(v);
   }
 

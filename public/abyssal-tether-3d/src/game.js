@@ -24,6 +24,8 @@
 import * as THREE from 'three';
 import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings } from './sim/config3d.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
+import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
+import { Pickups3D } from './sim/pickups3d.js';
 
 const C = CONFIG;
 
@@ -81,6 +83,8 @@ const MODULES = {
   creatureView: './render/creatureView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
+  pickupsView: './render/pickupsView.js',
+  bagFx: './render/bagFx.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
@@ -146,6 +150,7 @@ export function blankIntent() {
     confirmPressed: false,
     backPressed: false,
     ui: { ray: null, click: false },
+    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
   };
 }
 
@@ -779,6 +784,10 @@ export class Game3D {
     this.creatureView = null;
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
+    this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
+    this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
+    this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
+    this.pickupsView = null; // glowing item props (render/pickupsView.js)
     this.lastDeath = null; // info handed to the death panel
     this.lastVictory = null; // info handed to the victory panel
     this.textures = null; // resolved texture manifest handed to renderer.buildLevel
@@ -832,6 +841,10 @@ export class Game3D {
     this._uiFallback = false;
     this._uiMode = null;
     this._hapticT = 0;
+    this._bagHapticT = 0;
+    this._lantern0 = null; // { renderer, base, range }: the lantern as the renderer made it (WP-BAG dims it with the charge)
+    this._handA = { x: 0, y: 0, z: 0, grip: 0, ok: false };
+    this._handB = { x: 0, y: 0, z: 0, grip: 0, ok: false };
     this._headLocal = { x: 0, z: 0 }; // XR: head offset in the rig (cancelled at recentre)
     this._recentre = { pending: false, yaw: NaN, frames: 0 };
     this._xrFrames = 0;
@@ -966,6 +979,7 @@ export class Game3D {
 
     this._setupHandsView();
     this._setupHealthFx();
+    this._setupBagViews();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -1187,6 +1201,28 @@ export class Game3D {
     }
   }
 
+  /** The bag's icon strip + VR radial and the pickup props; optional (a failure leaves the game without them). */
+  _setupBagViews() {
+    const M = this.modules;
+    if (!this.renderer) return;
+    if (!this.bagFx && M.bagFx && typeof M.bagFx.BagFx === 'function') {
+      try {
+        this.bagFx = new M.bagFx.BagFx(this);
+      } catch (err) {
+        this._fault('bagFx', err);
+        this.bagFx = null;
+      }
+    }
+    if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
+      try {
+        this.pickupsView = new M.pickupsView.PickupsView(this);
+      } catch (err) {
+        this._fault('pickupsView', err);
+        this.pickupsView = null;
+      }
+    }
+  }
+
   _loadCreatureKit() {
     const M = this.modules;
     const hasView = M.creatureView && typeof M.creatureView.CreatureView === 'function';
@@ -1314,11 +1350,15 @@ export class Game3D {
   _wireBus() {
     const bus = this.bus;
     bus.on('player:death', (e) => this._onPlayerDeath(e));
+    // The shot is a projectile: a sharp kick when it leaves the nozzle (a whiff is lighter), a thunk when the hook bites.
+    bus.on('rope:fire', (e) => {
+      if (this._inRun()) this._haptic(e.hand, e.target ? 0.5 : 0.25, e.target ? 32 : 20);
+    });
     bus.on('grapple:attach', (e) => {
       if (this._inRun()) this._haptic(e.hand, 0.45, 40);
     });
     bus.on('grapple:miss', (e) => {
-      if (this._inRun()) this._haptic(e.hand, 0.12, 25);
+      if (this._inRun()) this._haptic(e.hand, e.fell ? 0.2 : 0.12, 25);
     });
     bus.on('grapple:break', (e) => {
       if (!this._inRun()) return;
@@ -1377,9 +1417,41 @@ export class Game3D {
       const k = U.clamp(finiteOr(e.amount, 0.1) * 2.2, 0, 1);
       this._hapticBoth(0.3 + 0.7 * k, Math.round(70 + 260 * k));
     });
+    bus.on('pickup:collect', (e) => {
+      if (!this._inRun()) return;
+      this._hapticBoth(e && e.hand ? 0.5 : 0.3, 45);
+      this._toast(`${ITEM_NAMES[e.kind] || 'Supplies'} taken`, 1.6);
+    });
+    bus.on('pickup:full', (e) => {
+      if (this._inRun()) this._toast(`${ITEM_NAMES[e && e.kind] || 'Bag'}: bag is full`, 1.6);
+    });
+    bus.on('bag:apply', () => {
+      if (this._inRun()) this._hapticBoth(0.2, 40);
+      this._bagHapticT = 0;
+    });
+    bus.on('bag:done', (e) => {
+      if (!this._inRun()) return;
+      const k = e ? e.kind : -1;
+      this._hapticBoth(k === ITEM.ADRENALINE ? 0.9 : 0.55, k === ITEM.ADRENALINE ? 160 : 110);
+    });
+    bus.on('bag:cancel', (e) => {
+      if (this._inRun() && e && e.reason !== 'inactive') this._hapticBoth(0.25, 50);
+    });
+    bus.on('bag:refuse', (e) => {
+      if (!this._inRun() || !e) return;
+      const why = { empty: 'None left', full: e.kind === ITEM.BATTERY ? 'Lantern is charged' : 'Nothing to heal', active: 'Already boosted', busy: 'Already applying', dead: '' }[e.reason];
+      if (why) this._toast(why, 1.3);
+    });
+    bus.on('lantern:low', () => {
+      if (this._inRun()) this._toast('Lantern running low', 3);
+    });
+    bus.on('lantern:empty', () => {
+      if (this._inRun()) this._toast('The lantern is nearly spent', 3);
+    });
     bus.on('checkpoint', () => {
       const h = this.health;
-      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal); // reaching a checkpoint patches you up
+      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
+      if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
     });
     bus.on('xr:recenter', () => this.recenter());
   }
@@ -1633,6 +1705,7 @@ export class Game3D {
     this._acc = 0;
     this._pendingJump = false;
     this._resetProgress();
+    this._resetBag();
 
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
@@ -1707,6 +1780,7 @@ export class Game3D {
     this.level.reset();
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset(); // a respawn restores full health
+    this._restoreBag(); // ... and the bag as it was at the checkpoint (supplies taken since lie there again)
     this.tethers.reset();
     this._acc = 0;
     this._pendingJump = false;
@@ -1886,6 +1960,9 @@ export class Game3D {
     tc.tethers = this.tethers;
     tc.diff = diff;
     tc.level = lvl;
+    // The bag and the supplies of this run (empty / unseeded until start() resets them).
+    this.bag = new Inventory3D(this._runBus);
+    this.pickups = new Pickups3D(lvl, this._runBus);
     this._ensureLevelView();
   }
 
@@ -1900,6 +1977,110 @@ export class Game3D {
       if (game._godMode || game.victoryT >= 0 || game.state !== 'playing') return;
       original.call(this, player, tethers, cause, impact);
     };
+  }
+
+  // ---- the bag (sim/inventory3d.js, sim/pickups3d.js) -------------------------------------------------------------
+
+  /** A new run: an empty bag, a full lantern and this run's supplies (seeded from a saved run counter: a new layout each run). */
+  _resetBag() {
+    if (!this.bag) return;
+    this.bag.reset();
+    if (this.pickups) {
+      const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
+      Storage.set('supplyRuns', n);
+      this.pickups.setLevel(this.level);
+      this.pickups.reset((Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0);
+      this.pickups.snapshot();
+    }
+    this.player.speedMul = 1;
+  }
+
+  _snapshotBag() {
+    if (this.bag) this.bag.snapshot();
+    if (this.pickups) this.pickups.snapshot();
+  }
+
+  _restoreBag() {
+    if (this.bag) this.bag.restore();
+    if (this.pickups) this.pickups.restore();
+    if (this.player) this.player.speedMul = 1;
+  }
+
+  /** Bag input, the apply channel, adrenaline, the lantern charge and the pickups, once per run frame. */
+  _updateBag(dt, intent, live) {
+    const bag = this.bag;
+    const p = this.player;
+    if (!bag || !p) return;
+    const health = this.health;
+    if (live) {
+      const ib = intent.bag;
+      if (ib) {
+        if (ib.cycle) {
+          const n = Math.min(4, Math.abs(ib.cycle | 0));
+          for (let i = 0; i < n; i++) bag.cycle(ib.cycle > 0 ? 1 : -1);
+        }
+        if (ib.cancel) bag.cancel('cancel');
+        if (ib.slot >= 0 && ib.slot < 4) {
+          bag.select(ib.slot);
+          bag.use(ib.slot, health);
+        } else if (ib.use) bag.use(bag.selected, health);
+      }
+    }
+    bag.update(dt, health, live);
+    p.speedMul = bag.speedMul;
+    if (live && this.pickups) {
+      let a = null;
+      let b = null;
+      const input = this.input;
+      if (this.xrActive && input && typeof input.handPose === 'function' && typeof input.gripValue === 'function') {
+        const hp = input.handPose('left');
+        const A = this._handA;
+        A.x = hp.x;
+        A.y = hp.y;
+        A.z = hp.z;
+        A.grip = input.gripValue('left');
+        A.ok = typeof input.handTracked === 'function' ? input.handTracked('left') : true;
+        const hq = input.handPose('right');
+        const Bh = this._handB;
+        Bh.x = hq.x;
+        Bh.y = hq.y;
+        Bh.z = hq.z;
+        Bh.grip = input.gripValue('right');
+        Bh.ok = typeof input.handTracked === 'function' ? input.handTracked('right') : true;
+        a = A;
+        b = Bh;
+      }
+      this.pickups.update(dt, p, bag, a, b);
+    }
+    // First aid ratchet: a soft tick in the hands while a long channel runs.
+    const ap = bag.applying;
+    if (ap.active && ap.dur >= 1.2) {
+      this._bagHapticT -= dt;
+      if (this._bagHapticT <= 0) {
+        this._bagHapticT = 0.28;
+        this._hapticBoth(0.1 + 0.12 * (ap.t / ap.dur), 22);
+      }
+    }
+  }
+
+  /** Dims the lantern with its charge through the renderer's public fields (lanternBase, lantern.distance). */
+  _updateLantern() {
+    const r = this.renderer;
+    const bag = this.bag;
+    if (!r || !r.lantern) return;
+    let L = this._lantern0;
+    if (!L || L.renderer !== r) L = this._lantern0 = { renderer: r, base: typeof r.lanternBase === 'number' ? r.lanternBase : NaN, range: finiteOr(r.lantern.distance, 0) };
+    const st = this.state;
+    const inRun = !!bag && !this.hidePlayer && (st === 'playing' || st === 'paused' || st === 'dead' || st === 'victory');
+    let f = inRun ? bag.lanternFactor : 1;
+    if (inRun && bag.lanternCharge <= C.bag.lanternLow && st === 'playing') {
+      // a low battery stutters (bounded, never a strobe)
+      const t = this.realTime;
+      f *= 1 - 0.14 * Math.max(0, Math.sin(t * 13.1) * Math.sin(t * 4.3 + 1));
+    }
+    if (L.base === L.base) r.lanternBase = L.base * f;
+    else r.lantern.intensity *= f;
+    if (L.range > 0) r.lantern.distance = L.range * (0.6 + 0.4 * f);
   }
 
   /** Menu background: the level of the last difficulty, the view drifting down the shaft. */
@@ -2170,6 +2351,7 @@ export class Game3D {
   _updateRun(dt, intent) {
     const p = this.player;
     const t = this.tethers;
+    this._updateBag(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
@@ -2817,6 +2999,21 @@ export class Game3D {
         this._fault('healthFx', err);
       }
     }
+    if (this.bagFx) {
+      try {
+        this.bagFx.update(dt, this);
+      } catch (err) {
+        this._fault('bagFx', err);
+      }
+    }
+    if (this.pickupsView) {
+      try {
+        this.pickupsView.update(dt, this);
+      } catch (err) {
+        this._fault('pickupsView', err);
+      }
+    }
+    this._updateLantern();
     const cv = this.creatureView;
     if (cv) {
       try {
@@ -2961,6 +3158,11 @@ export class Game3D {
 
   get rig() {
     return this.renderer ? this.renderer.rig : null;
+  }
+
+  /** Lantern charge 0..1 (sim/inventory3d.js; drains while playing, a battery restores 50 %); 1 before a world exists. */
+  get lanternCharge() {
+    return this.bag ? this.bag.lanternCharge : 1;
   }
 
   /** The player's health model (sim/health3d.js: hp 0..1, low, dead, heartbeatRate) or null before a world exists. */
@@ -3240,6 +3442,7 @@ export class Game3D {
       fps: r(this.fps),
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
+      bag: this.bag ? this.debugBag() : null,
       checkpoint: Object.assign({}, this.checkpoint),
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
@@ -3263,9 +3466,50 @@ export class Game3D {
     };
   }
 
+  /** Bag read-out for tests, QA and the debug state. */
+  debugBag() {
+    const b = this.bag;
+    if (!b) return null;
+    const r = (v) => Math.round(v * 1000) / 1000;
+    const pk = this.pickups;
+    return {
+      counts: Array.from(b.counts),
+      selected: b.selected,
+      applying: b.applying.active ? { kind: b.applying.kind, t: r(b.applying.t), dur: b.applying.dur } : null,
+      adrenaline: b.adrenaline.active ? { t: r(b.adrenaline.t), dur: b.adrenaline.dur } : null,
+      speedMul: b.speedMul,
+      lanternCharge: r(b.lanternCharge),
+      lanternFactor: r(b.lanternFactor),
+      refusal: b.lastRefusal,
+      pickups: pk ? { total: pk.items.length, remaining: pk.remaining, seed: pk.seed } : null,
+    };
+  }
+
   /** The window.AT3D.debug object (contract §8). */
   debugApi() {
     return {
+      // Bag (tests, QA, screenshots): give(kind, n) adds items (kind 0 FIRST_AID .. 3 BATTERY), use(kind) starts applying, cancel(),
+      // lantern(charge 0..1), spawn(kind, dx, dy, dz) drops a pickup near the player, pickups() lists the supplies of the run.
+      bag: {
+        state: () => this.debugBag(),
+        give: (kind, n) => (this.bag ? this.bag.add(kind, n === undefined ? 1 : n) : 0),
+        use: (kind) => (this.bag ? this.bag.use(kind === undefined ? this.bag.selected : kind, this.health) : false),
+        cancel: () => (this.bag ? this.bag.cancel('debug') : false),
+        lantern: (c) => {
+          if (this.bag && typeof c === 'number') {
+            this.bag.lanternCharge = U.clamp(c, 0, 1);
+            this.bag.lanternFactor = lanternLevelOf(this.bag.lanternCharge);
+          }
+          return this.lanternCharge;
+        },
+        spawn: (kind, dx, dy, dz) => {
+          const p = this.player;
+          if (!this.pickups || !p) return null;
+          const it = this.pickups.spawnAt(kind | 0, p.x + finiteOr(dx, 0), p.y + finiteOr(dy, 0), p.z + finiteOr(dz, -2));
+          return { id: it.id, x: it.x, y: it.y, z: it.z };
+        },
+        pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
+      },
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),
       setInput: (partial) => this.debugSetInput(partial),

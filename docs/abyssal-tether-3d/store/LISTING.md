@@ -132,7 +132,7 @@ First release. Chapter I: a complete descent in eight sections, four difficultie
 checkpoints, best-time records. Plays offline after the first launch.
 ```
 
-## Art and screenshot manifest (all generated from the real game; see `art/README.md`)
+## Art and screenshot manifest (all generated from the real game; `keyart/` holds the raw renders the covers are built from)
 
 | File | Size | Dashboard slot |
 |---|---|---|

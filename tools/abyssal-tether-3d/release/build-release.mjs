@@ -243,7 +243,7 @@ if (problems.length) {
 
 if (flag('--smoke')) {
   console.log('== smoke: test-pwa.mjs on the built game');
-  const r = spawnSync(process.execPath, [path.join(HERE, 'test-pwa.mjs'), '--dist', PLAY, '--root-host'], { stdio: 'inherit' });
+  const r = spawnSync(process.execPath, [path.join(HERE, 'test-pwa.mjs'), '--dist', PLAY, '--only', 'install', '--paths', 'root'], { stdio: 'inherit' });
   if (r.status !== 0) {
     console.error('SMOKE FAILED');
     process.exit(1);

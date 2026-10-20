@@ -35,6 +35,7 @@
  *   'health:damage' { amount, hp, cause: 'fall'|'wall'|'hazard', speed, lethal }
  *   'health:low'    { hp }                      crossing down through lowEnter (0.35)
  *   'health:recover'{ hp, full }                low ended (hp >= lowExit) or hp back to full
+ *   'health:heal'   { amount, hp }              a bag item (heal()) restored health
  *
  * Read-only for the presentation: hp, low, dead, heartbeatRate (bpm; 60 calm .. 140 near zero,
  * 0 once dead), adrenaline (0..1 after a hit), sinceHurt (s), lastDamage, totalDamage, hits, minHp.
@@ -224,12 +225,20 @@ export class Health3D {
     this.heartbeatRate = heartRate(this.hp, this.adrenaline);
   }
 
-  /** Restores `fraction` of full health (a checkpoint, a pickup). */
-  heal(fraction = 1) {
-    if (this.dead || !(fraction > 0)) return;
+  /**
+   * Restores `fraction` of full health (a checkpoint, a bag item), never above full. Returns the fraction actually
+   * gained (0 when dead or already full). Emits 'health:heal' { amount, hp } for a real gain unless `silent`
+   * ('health:low' ends / 'health:recover' come from _settle as usual).
+   */
+  heal(fraction = 1, silent = false) {
+    if (this.dead || !(fraction > 0)) return 0;
+    const before = this.hp;
     this.hp = Math.min(1, this.hp + fraction);
+    const gained = this.hp - before;
     this._settle();
     this.heartbeatRate = heartRate(this.hp, this.adrenaline);
+    if (gained > 0 && !silent && this.bus) this.bus.emit('health:heal', { amount: gained, hp: this.hp });
+    return gained;
   }
 
   _impact(amount, cause, speed) {

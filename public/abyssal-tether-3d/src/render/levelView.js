@@ -51,7 +51,7 @@ function hyp(x, y, z = 0) {
 
 const BAND_H = 64; // metres per decor culling band (levels without sections)
 const DETAIL_BAND_H = 32; // finer bands for small dressing (kit parts, arcades, rings) ...
-const DETAIL_DIST = 46; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
+const DETAIL_DIST = 38; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
 const VIEW_MARGIN = 6; // metres beyond fog far still drawn
 const GLYPH_MAX_DIST = 110;
 const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel / fogged: glyphs carry them

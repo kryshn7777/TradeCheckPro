@@ -20,7 +20,9 @@ import { Bot } from './bot.mjs';
 import { CHAPTERS, chapterIds, variantKeys } from './chapters.mjs';
 import { measureBudget, formatBudget } from './budget.mjs';
 import { compareReports } from './compare.mjs';
-import { argValue, hasFlag } from './root.mjs';
+import { argValue, hasFlag, srcUrl } from './root.mjs';
+// WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
+const { pickSupplies, checkFairness } = await import(srcUrl('sim/pickups3d.js')).catch(() => ({}));
 
 const argv = process.argv.slice(2);
 if (hasFlag(argv, '-h', '--help')) {
@@ -110,6 +112,9 @@ function integrity(ch, v) {
     }
     if (!mounted) P(`anchor ${a.id} is not mounted (no solid 0.45 m behind its normal / no chain)`);
   }
+  // Supplies (WP-BAG): the candidate spots of the bag's consumables sit on ledges, never in solids, clear of anchors and of
+  // the checkpoint -> route-anchor sight lines; 6-10 per section; the seeded picker is fair and deterministic.
+  out.supplies = supplyChecks(L, P);
   // Hazards / spikes never overlap a checkpoint or the goal.
   for (const h of L.hazards) {
     for (const s of L.sections) {
@@ -144,6 +149,102 @@ function integrity(ch, v) {
   out.recovery = L.anchors.filter((a) => a.tag === 'recovery').map((a) => `${a.id}:${a.kind}`);
   out.ids = idChecks(L, P);
   out.ok = out.problems.length === 0;
+  return out;
+}
+
+/** Distance from point (px,py,pz) to the segment a-b. */
+function distPointSegment(px, py, pz, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dz = b.z - a.z;
+  const l2 = dx * dx + dy * dy + dz * dz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy + (pz - a.z) * dz) / l2)) : 0;
+  return Math.hypot(px - (a.x + dx * t), py - (a.y + dy * t), pz - (a.z + dz * t));
+}
+
+/** WP-BAG: validates level.data.supplies against the live level of this variant (see level-data-3d.js SUPPLIES). */
+function supplyChecks(L, P) {
+  if (!pickSupplies) return null;
+  const sup = Array.isArray(L.data.supplies) ? L.data.supplies : [];
+  const out = { spots: sup.length, perSection: [], picks: 0 };
+  if (!sup.length) {
+    P('no supplies authored (level.data.supplies)');
+    return out;
+  }
+  const scratch = [];
+  const ids = new Set();
+  const perSec = L.sections.map(() => 0);
+  const routeAnchors = L.anchors.filter((a) => a.tag !== 'risk');
+  for (const s of sup) {
+    if (ids.has(s.id)) P(`supply ${s.id}: duplicate id`);
+    ids.add(s.id);
+    if (![s.x, s.y, s.z].every(Number.isFinite)) {
+      P(`supply ${s.id}: non-finite position`);
+      continue;
+    }
+    const si = L.sectionIndexAt(s.y);
+    if (si < 0) {
+      P(`supply ${s.id}: outside every section (y ${s.y})`);
+      continue;
+    }
+    perSec[si]++;
+    if (!Array.isArray(s.w) || s.w.length !== 4 || s.w.some((v) => !(v >= 0)) || !(s.w[0] + s.w[1] + s.w[2] + s.w[3] > 0)) P(`supply ${s.id}: bad kind weights`);
+    // Not inside (or touching) a solid, and resting on a floor 0.25-0.8 m below.
+    let resting = false;
+    for (const o of L.querySolids(s.x - 0.3, s.y - 1, s.z - 0.3, s.x + 0.3, s.y + 0.3, s.z + 0.3, scratch)) {
+      const dx = Math.max(o.minX - s.x, 0, s.x - o.maxX);
+      const dy = Math.max(o.minY - s.y, 0, s.y - o.maxY);
+      const dz = Math.max(o.minZ - s.z, 0, s.z - o.maxZ);
+      if (Math.hypot(dx, dy, dz) < 0.2) P(`supply ${s.id} is inside / touching solid ${o.id}`);
+      const inX = s.x >= o.minX + 0.1 && s.x <= o.maxX - 0.1 && s.z >= o.minZ + 0.1 && s.z <= o.maxZ - 0.1;
+      if (inX && o.kind !== 'crumble' && s.y - o.maxY >= 0.25 && s.y - o.maxY <= 0.8) resting = true;
+    }
+    if (!resting) P(`supply ${s.id} does not rest on a solid floor 0.25-0.8 m below`);
+    for (const a of L.anchors) {
+      const d = Math.hypot(a.x - s.x, a.y - s.y, a.z - s.z);
+      if (d < 1.5) P(`supply ${s.id} is ${d.toFixed(2)} m from anchor ${a.id} (min 1.5)`);
+    }
+    for (const h of L.hazards) {
+      const dx = Math.max(h.minX - s.x, 0, s.x - h.maxX);
+      const dy = Math.max(h.minY - s.y, 0, s.y - h.maxY);
+      const dz = Math.max(h.minZ - s.z, 0, s.z - h.maxZ);
+      if (Math.hypot(dx, dy, dz) < 2) P(`supply ${s.id} is within 2 m of hazard ${h.id}`);
+    }
+    const cp = L.sections[si].checkpoint;
+    if (Math.hypot(cp.x - s.x, cp.y - s.y, cp.z - s.z) < 1.2) P(`supply ${s.id} is on top of the checkpoint of ${L.sections[si].id}`);
+    // Anchor sight lines: the segment from the checkpoint eye to each route anchor of the section, and between consecutive route anchors.
+    const eye = { x: cp.x, y: cp.y + 1.24, z: cp.z };
+    const inSec = routeAnchors.filter((a) => a.section === si).sort((a, b) => b.y - a.y);
+    for (let i = 0; i < inSec.length; i++) {
+      const d1 = distPointSegment(s.x, s.y, s.z, eye, inSec[i]);
+      if (d1 < 0.75) P(`supply ${s.id} sits on the sight line checkpoint -> ${inSec[i].id} (${d1.toFixed(2)} m)`);
+      if (i > 0) {
+        const d2 = distPointSegment(s.x, s.y, s.z, inSec[i - 1], inSec[i]);
+        if (d2 < 0.75) P(`supply ${s.id} sits on the sight line ${inSec[i - 1].id} -> ${inSec[i].id} (${d2.toFixed(2)} m)`);
+      }
+    }
+  }
+  out.perSection = perSec;
+  perSec.forEach((n, i) => {
+    if (n < 6 || n > 10) P(`section ${L.sections[i].id} has ${n} supply spots (want 6-10)`);
+  });
+  // The picker: deterministic per seed, ~1/3 of the spots, fair, and different seeds differ.
+  const spots = sup.map((s) => ({ x: s.x, y: s.y, z: s.z, section: Math.max(0, L.sectionIndexAt(s.y)), tier: s.tier, w: s.w }));
+  let counts = 0;
+  let distinct = new Set();
+  for (let seed = 1; seed <= 60; seed++) {
+    const a = pickSupplies(spots, seed, { sections: L.sections.length });
+    const b = pickSupplies(spots, seed, { sections: L.sections.length });
+    if (JSON.stringify(a) !== JSON.stringify(b)) P(`supply picker is not deterministic for seed ${seed}`);
+    const probs = checkFairness(spots, a, L.sections.length);
+    if (probs.length) P(`supply picker seed ${seed} is unfair: ${probs.join('; ')}`);
+    counts += a.length;
+    distinct.add(a.map((c) => `${c.spot}:${c.kind}`).join(','));
+  }
+  out.picks = +(counts / 60).toFixed(1);
+  out.distinctRuns = distinct.size;
+  if (out.picks < sup.length * 0.25 || out.picks > sup.length * 0.5) P(`supply picker picks ${out.picks} of ${sup.length} spots on average (want about a third)`);
+  if (distinct.size < 40) P(`supply picker gives only ${distinct.size} different layouts in 60 seeds`);
   return out;
 }
 

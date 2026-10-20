@@ -34,6 +34,7 @@ const arg = (n, d) => {
 };
 const DIST = arg('--dist', null);
 const QUICK = argv.includes('--quick');
+const PATHS = arg('--paths', 'both'); // sub | root | both
 const ONLY = (arg('--only', '') || '').split(',').filter(Boolean); // install,update,purge,policy
 const want = (n) => (ONLY.length ? ONLY.includes(n) : n === 'install' || !QUICK);
 const SRC = DIST ? path.resolve(DIST) : path.join(REPO, 'public', 'abyssal-tether-3d');
@@ -298,8 +299,8 @@ let code = 1;
 try {
   console.log(`PWA test on ${DIST ? 'built game ' + DIST : 'source tree'} (scratch: ${tmpRoot})`);
   if (want('install')) {
-    await scenarioInstallOffline('subpath', SUB, browser);
-    await scenarioInstallOffline('root', '/', browser);
+    if (PATHS !== 'root') await scenarioInstallOffline('subpath', SUB, browser);
+    if (PATHS !== 'sub') await scenarioInstallOffline('root', '/', browser);
   }
   if (want('update')) await scenarioUpdate(browser);
   if (want('purge')) await scenarioPurge(browser);

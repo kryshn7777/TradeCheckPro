@@ -35,6 +35,7 @@
  */
 import * as THREE from 'three';
 import { DIFFICULTY, DIFFICULTY_ORDER, SETTINGS_DEFAULTS, Storage, U, VIEW, heightCalibration } from '../sim/config3d.js';
+import { ITEM_NAMES } from '../sim/inventory3d.js';
 
 // =============================================================================
 // Constants
@@ -190,6 +191,7 @@ const CONTROLS_QUEST = [
   [['X'], 'Hold to restart the run while paused or after a fall.', 'Hold: restart (paused / fallen)'],
   [['Y'], 'Hold to re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Hold: re-centre'],
   [['Left stick click'], 'Brake on the ground.', 'Brake'],
+  [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
   [['Mouse'], 'Look around. Click the view first to capture the mouse.'],
@@ -203,6 +205,9 @@ const CONTROLS_DESKTOP = [
   [['Esc'], 'Pause.'],
   [['R'], 'Restart the run.'],
   [['Enter'], 'Confirm · continue after a fall.'],
+  [['1', '2', '3', '4'], 'Bag: apply the first aid kit, bandage, adrenaline shot or lantern battery.'],
+  [['Wheel', 'G'], 'Bag: select the previous / next item · apply the selected item.'],
+  [['X'], 'Stop applying a bag item (taking damage stops it too).'],
 ];
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]';
@@ -429,10 +434,12 @@ const MARKUP = `
     <div class="hud-best" hidden></div>
     <div class="hud-section"></div>
     <canvas class="hud-ecg" width="256" height="128" aria-label="Heart monitor"></canvas>
+    <canvas class="hud-bag" width="256" height="128" aria-label="Bag"></canvas>
   </div>
   <div class="hud-gauge" aria-hidden="true"><div class="hud-gauge-ticks"></div><div class="hud-gauge-marker"></div></div>
 </div>
 <div class="crosshair" aria-hidden="true"><i></i></div>
+<div class="bag-apply" aria-hidden="true"><span class="bag-apply-label"></span><b><i></i></b></div>
 <div class="capture" role="status">Click to look around <span>·</span> <kbd>Esc</kbd> pauses</div>
 <button class="btn-pause" type="button" data-action="pause" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
 <div class="section-card" aria-live="polite"><div class="section-num"></div><div class="section-name"></div><div class="section-rule" aria-hidden="true"></div><div class="section-sub"></div></div>
@@ -721,6 +728,11 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .hud-section{font:400 .82em var(--fd);font-variant:small-caps;letter-spacing:.14em;color:var(--amber);text-align:center;opacity:0;transition:opacity .6s}
 .at3d-ui .hud-section.is-on{opacity:.9}
 .at3d-ui .hud-ecg{display:block;width:9.4em;height:auto;aspect-ratio:2/1;margin-top:.3em;border-radius:2px;background:#020a06}
+.at3d-ui .hud-bag{display:block;width:9.4em;height:auto;aspect-ratio:2/1;margin-top:.3em;border-radius:2px;background:#020a06}
+.at3d-ui .bag-apply{position:absolute;left:50%;top:calc(50% + 2.6em);transform:translateX(-50%);display:none;flex-direction:column;align-items:center;gap:.3em;min-width:14em;padding:.4em .8em;font:650 .76em var(--fu);letter-spacing:.14em;text-transform:uppercase;color:var(--amber);background:rgba(8,9,10,.7);border:1px solid rgba(224,160,80,.45);border-radius:2px;pointer-events:none}
+.at3d-ui .bag-apply b{display:block;width:100%;height:6px;border:1px solid rgba(224,160,80,.7)}
+.at3d-ui .bag-apply i{display:block;height:100%;width:var(--p,0%);background:var(--amber)}
+.at3d-ui.in-run.screen-none .bag-apply.is-on{display:flex}
 .at3d-ui .tglyph{position:relative;display:inline-flex;width:1.75em;height:1.75em}
 .at3d-ui .tglyph[data-hand=left]{color:#8fc1b4}
 .at3d-ui .tglyph[data-hand=right]{color:#f0b468}
@@ -801,7 +813,7 @@ export class UI3D {
     this._lastToast = { text: '', t: -10 };
 
     // HUD caches (compared before every DOM write).
-    this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1 };
+    this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1, bag: -1, apply: -1, applyKind: -1 };
     // Notes (hint / section title / toast), shared by DOM and VR.
     this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false };
     this._title = { name: '', sub: '', num: '', t: 0, dirty: false };
@@ -859,6 +871,10 @@ export class UI3D {
       hudBest: q('.hud-best'),
       hudSection: q('.hud-section'),
       hudEcg: q('.hud-ecg'), // heart monitor: a copy of healthFx.ecgCanvas (the same picture as the wrist screen in VR)
+      hudBag: q('.hud-bag'), // the bag: a copy of bagFx.iconCanvas (the same picture as the wrist screen in VR)
+      bagApply: q('.bag-apply'),
+      bagApplyLabel: q('.bag-apply-label'),
+      bagApplyFill: q('.bag-apply i'),
       glyph: { left: q('.tglyph[data-hand="left"]'), right: q('.tglyph[data-hand="right"]') },
       gaugeMarker: q('.hud-gauge-marker'),
       gaugeTicks: q('.hud-gauge-ticks'),
@@ -2363,6 +2379,25 @@ export class UI3D {
       h.ecg = fx.ecgFrame;
       if (!this._ecgCtx) this._ecgCtx = this.dom.hudEcg.getContext('2d');
       if (this._ecgCtx) this._ecgCtx.drawImage(fx.ecgCanvas, 0, 0);
+    }
+    const bfx = g.bagFx;
+    if (bfx && bfx.iconFrame !== h.bag && this.dom.hudBag) {
+      h.bag = bfx.iconFrame;
+      if (!this._bagCtx) this._bagCtx = this.dom.hudBag.getContext('2d');
+      if (this._bagCtx) this._bagCtx.drawImage(bfx.iconCanvas, 0, 0);
+    }
+    // Apply progress next to the crosshair (the channel of a first aid kit lasts 5 s: it must be seen).
+    const ap = g.bag ? g.bag.applying : null;
+    const pq = ap && ap.active ? Math.round((ap.t / ap.dur) * 50) : -1;
+    if (pq !== h.apply || (ap && ap.active && ap.kind !== h.applyKind)) {
+      h.apply = pq;
+      h.applyKind = ap && ap.active ? ap.kind : -1;
+      const on = pq >= 0;
+      this.dom.bagApply.classList.toggle('is-on', on);
+      if (on) {
+        this.dom.bagApplyLabel.textContent = `Applying ${ITEM_NAMES[ap.kind] || ''} · ${Math.max(0, ap.dur - ap.t).toFixed(1)} s`;
+        this.dom.bagApply.style.setProperty('--p', `${pq * 2}%`);
+      }
     }
     h.acc += step;
     if (h.acc < HUD_INTERVAL) return;

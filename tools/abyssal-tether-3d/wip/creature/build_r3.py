@@ -5150,8 +5150,9 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
         target(mp)
         for o in bpy.context.view_layer.objects:
             o.select_set(False)
-        for h in hi_objs:
-            h.select_set(True)
+        if kw.get("use_selected_to_active", True):
+            for h in hi_objs:
+                h.select_set(True)
         joined.select_set(True)
         bpy.context.view_layer.objects.active = joined
         sc.cycles.samples = samples
@@ -5167,11 +5168,13 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
     bake("albedo", "DIFFUSE", pass_filter={"COLOR"})
     bake("normal", "NORMAL")
     bake("rough", "ROUGHNESS")
-    joined.hide_render = True
+    for h in hi_objs:
+        h.hide_render = True
     try:
-        bake("ao", "AO", samples=samples_ao)
+        bake("ao", "AO", samples=samples_ao, use_selected_to_active=False)
     finally:
-        joined.hide_render = False
+        for h in hi_objs:
+            h.hide_render = False
     # metal class: flat emission masks on the hi groups (iron-class groups = 0.9, everything else 0)
     saved = []
     mm = {}

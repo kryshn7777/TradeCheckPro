@@ -29,6 +29,13 @@ Every script takes `--root DIR` (or `AT3D_ROOT`) like the harness; by default it
 |---|---|
 | `unit.mjs` | `Health3D` / fall damage (`src/sim/health3d.js`): the damage curve per difficulty (0 up to the threshold, convex, 1 at the lethal speed) and the wall curve, the hit cooldown, regeneration (delay + rate, per difficulty), the `health:damage` / `health:low` / `health:recover` events and the low-state hysteresis, hazards (60 hp, cooldown, death on the repeat), Sandbox, god mode, the heartbeat (60 -> 140 bpm), determinism and snapshot / restore, then `Physics3D` on the real level: drops from known heights onto the spawn ledge, the lethal fall still killing, accumulation, a hazard and a creature kill. Pass / fail. |
 
+
+## bag/
+
+| Script | What it checks |
+|---|---|
+| `unit.mjs` | The player bag (`src/sim/inventory3d.js`, `pickups3d.js`, `input/bagGesture.js`): apply times (first aid 5 s, bandage 1.5 s, adrenaline 0.6 s, battery 1 s) and heals, `Health3D.heal` (never above full, `health:heal`), cancel on damage / death / input / an inactive run, capacities (1/5/2/3) and refusals, the adrenaline x2 for 10 s and its `Physics3D` multiplier (run cap and acceleration x2, gravity and fall damage unchanged), the authored supply spots (6-10 per section), deterministic seeded picks (~1/3, rarity order, one first aid / adrenaline per section, fairness guarantees over 400 seeds), pickup radius 0.9 m, hand reach 0.35 m + grip, a full bag, checkpoint snapshots, the lantern charge (drain, never dark, low warning, battery) and the VR hip gesture. Pass / fail. |
+
 ## release/
 
 | File | |

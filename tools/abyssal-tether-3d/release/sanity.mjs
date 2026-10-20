@@ -32,12 +32,26 @@ try {
   // short accelerated loop, stable memory
   const sample = () => ev(() => { const r = window.AT3D.game.renderer.renderer.info; let o = 0; window.AT3D.game.renderer.scene.traverse(() => o++); let l = 0; const h = window.AT3D.game.bus._h; for (const k of Object.keys(h)) l += h[k].length; return { geo: r.memory.geometries, tex: r.memory.textures, prog: r.programs.length, obj: o, lst: l }; });
   const loop = () => ev(() => { const G = window.AT3D.game, D = window.AT3D.debug; for (const [diff, sec] of [['normal', 1], ['normal', 3], ['normal', 5]]) { G.start(diff); D.warp(sec); for (let i = 0; i < 3; i++) { D.step(7, { render: true, state: false }); if (G.state === 'dead' && G.deathT > 0.7) G.respawn(); } } G.quitToMenu(); G.start('normal'); D.step(3, { render: true, state: false }); });
+  // let the asynchronous assets finish first (arms GLB, environment kit, creature kit): they are one-time loads, not growth
+  let prev = '';
+  let same = 0;
+  for (let i = 0; i < 60 && same < 3; i++) {
+    const cur = JSON.stringify(await sample());
+    same = cur === prev ? same + 1 : 0;
+    prev = cur;
+    await sleep(5000);
+  }
   await loop(); // warm-up: every lazily created GPU object exists after this
+  await loop();
   const a = await sample();
+  const names = () => ev(() => { const m = {}; window.AT3D.game.renderer.scene.traverse((o) => { const k = (o.type || '?') + ':' + (o.name || ''); m[k] = (m[k] || 0) + 1; }); return m; });
+  const n1 = await names();
   await loop();
   await loop();
   const b = await sample();
-  check('60+ simulated seconds x3: renderer.info geometries / textures / programs / scene objects / bus listeners do not grow', JSON.stringify(a) === JSON.stringify(b), { before: a, after: b });
+  const n2 = await names();
+  const grown = Object.keys(n2).filter((k) => n2[k] !== (n1[k] || 0)).map((k) => `${k} ${n1[k] || 0}->${n2[k]}`);
+  check('60+ simulated seconds x3: renderer.info geometries / textures / programs / scene objects / bus listeners do not grow', JSON.stringify(a) === JSON.stringify(b), { before: a, after: b, grown });
 
   // context loss
   await ev(() => { window.AT3D.game.start('normal'); window.AT3D.debug.warp(2); window.AT3D.debug.step(2, { render: true, state: false }); });

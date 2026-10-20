@@ -7,6 +7,11 @@
 // and only releases when the clone lands on the intended platform below
 // 0.85 × lethal impact.
 //
+// Flight: a shot is a projectile (TetherSystem.fire / launch): the hook is IN FLIGHT for distance / CONFIG.rope.flightSpeed
+// (<= flightMax) and the line attaches on arrival, then builds its pull over attachRamp. The bot therefore presses once, keeps
+// holding while the hook flies (steering / pumping on as before, no second press), and a chain (the next hook before letting go of
+// the previous one) lets go of the old line only when the new one has bitten (chainRelease), never during the flight.
+//
 // Route steps:
 //   { a: 'anchorId', mode?: 'apex'|'asap'|'near', near?: m, walk?: [x,z], reel?: r, jump?: bool, t?: s }
 //   { p: 'solidId', mode?: 'swing'|'lower'|'walk'|'auto', at?: [x,z], reel?: r, jump?: bool, ok?: [ids], t?: s }
@@ -16,6 +21,11 @@
 import { makeIntent, FRAME, HANDS, CONFIG } from './sim.mjs';
 
 const G = CONFIG.player.gravity;
+/** Frames of the longest hook flight (+ one for the arrival frame): the look-ahead windows are this much longer. */
+const SPIN_LIMIT = 6; // rad/s about the anchor above which the bot stops reeling in
+const MIN_BITE_LENGTH = 3.2; // m: a chained hook must bite with at least this much line (see testChain)
+const HP_RESERVE = 0.25; // landings are planned to leave this much health (fraction of full)
+const FLIGHT_FRAMES = Math.ceil(CONFIG.rope.flightMax * 60) + 1;
 // The bot plans its releases and catches so that no landing comes close to lethal. With fall damage (health3d.js) a
 // landing at 85 % of the lethal speed costs ~60 hp, so the bot now plans at 68 % (at most ~27 hp a landing). The look-ahead
 // takes no damage itself (it only judges the landing speed), so a line is the same on every difficulty; the real run shows
@@ -41,6 +51,7 @@ export class Bot {
     this.okStreak = 0;
     this.prevAlong = null;
     this.pendingRelease = [];
+    this.chainRelease = null; // { hand, others }: let go of `others` once `hand`'s hook has bitten
     this.fail = null;
     this.log = [];
     this.maxFrames = opts.maxFrames || 60 * 400;
@@ -128,10 +139,20 @@ export class Bot {
     return best;
   }
 
+  /** The hand whose hook is in the air towards anchor `an` (or any anchor when `an` is omitted), else null. */
+  flyingHand(an) {
+    const T = this.sim.tethers;
+    for (const h of HANDS) {
+      const st = T.hands[h];
+      if (st.flying && (!an || st.flightObj.target === an)) return h;
+    }
+    return null;
+  }
+
   freeHand() {
     const T = this.sim.tethers;
-    const l = T.hands.left.rope.attached;
-    const r = T.hands.right.rope.attached;
+    const l = T.hands.left.rope.attached || T.hands.left.flying;
+    const r = T.hands.right.rope.attached || T.hands.right.flying;
     if (l && !r) return 'right';
     if (r && !l) return 'left';
     return this.lastHand === 'right' ? 'left' : 'right';
@@ -290,7 +311,21 @@ export class Bot {
 
   /** Is the look-ahead's landing unacceptable (a landing above LAND_LIMIT of the lethal speed)? */
   landBad() {
-    return this.sim.ghostMaxLand >= LAND_LIMIT;
+    return this.sim.ghostMaxLand >= this.landLimit();
+  }
+
+  /**
+   * The planning limit on a landing (fraction of the lethal speed): LAND_LIMIT while healthy; as health drops it shrinks so the
+   * expected fall damage ((r - threshold) / (1 - threshold))^fallExp leaves HP_RESERVE of full health (a bot on a no-recovery
+   * difficulty must not spend its health as if it were refilled at every landing).
+   */
+  landLimit() {
+    const sim = this.sim;
+    const hp = sim.physics && sim.physics.health ? sim.physics.health.hp : 1;
+    const th = sim.diff.health ? sim.diff.health.fallThreshold : 0.35;
+    const room = hp - HP_RESERVE;
+    const r = th + (1 - th) * Math.pow(Math.max(0.02, room), 1 / CONFIG.health.fallExp);
+    return r < LAND_LIMIT ? r : LAND_LIMIT;
   }
 
   // -------------------------------------------------------------------------
@@ -381,8 +416,8 @@ export class Bot {
           else this.airSteer(it, tx, tz, P.maxY);
         }
       },
-      hold + 100,
-      (k) => (this.landBad() ? false : k >= hold + 99 ? true : undefined),
+      hold + 100 + FLIGHT_FRAMES,
+      (k) => (this.landBad() ? false : k >= hold + 99 + FLIGHT_FRAMES ? true : undefined),
     );
   }
 
@@ -390,17 +425,28 @@ export class Bot {
   testChain(an, hand) {
     const others = HANDS.filter((h) => h !== hand && this.holding[h]);
     const horizon = an.kind === 'fragile' ? Math.round(this.sim.diff.fragileTime * 0.85 * 60) : 135;
+    // The hook flies first (the old line is kept until it bites), then the horizon counts from the bite.
+    let bitAt = -1;
+    let tooShort = false;
     return this.lookahead(
       (it) => this.press(it, hand, an),
       (it, k) => {
-        if (k === 0) for (const h of others) this.releaseHand(it, h);
+        const st = this.sim.tethers.hands[hand];
+        if (bitAt < 0 && st.rope.attached) {
+          bitAt = k;
+          for (const h of others) this.releaseHand(it, h);
+          // The body keeps moving while the hook flies: a bite on a line that is nearly spent (the hook lands under / beside
+          // the body) is a fast tight spin around the anchor. Not a line a player would take.
+          if (st.rope.length < MIN_BITE_LENGTH) tooShort = true;
+        }
       },
-      horizon,
+      horizon + FLIGHT_FRAMES,
       (k) => {
         const T = this.sim.tethers;
-        if (!T.hands[hand].rope.attached) return false;
-        if (this.landBad()) return false;
-        if (k >= horizon - 1) return true;
+        const st = T.hands[hand];
+        if (!st.rope.attached && !st.flying) return false;
+        if (tooShort || this.landBad()) return false;
+        if (bitAt >= 0 && k - bitAt >= horizon - 1) return true;
         return undefined;
       },
     );
@@ -425,8 +471,17 @@ export class Bot {
       this.prepIntent(it, this.holding);
       for (const h of this.pendingRelease) this.releaseHand(it, h);
       this.pendingRelease.length = 0;
-      // A rope that broke while held: let go of the trigger.
-      for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached) this.releaseHand(it, h);
+      // A chain: the new hook has bitten, now let go of the old line(s). (If the hook missed, keep the old line.)
+      const cr = this.chainRelease;
+      if (cr) {
+        const cst = sim.tethers.hands[cr.hand];
+        if (cst.rope.attached) {
+          for (const h of cr.others) this.releaseHand(it, h);
+          this.chainRelease = null;
+        } else if (!cst.flying) this.chainRelease = null;
+      }
+      // A rope that broke (or a hook that fell off) while held: let go of the trigger.
+      for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached && !sim.tethers.hands[h].flying) this.releaseHand(it, h);
       const step = this.route[this.i];
       const limit = step.t || 25;
       if (this.stepT > limit) {
@@ -485,6 +540,7 @@ export class Bot {
     const N = this.anchor(step.a);
     const T = this.sim.tethers;
     for (const h of HANDS) if (T.hands[h].rope.anchor === N && this.holding[h]) return true;
+    const flying = this.flyingHand(N) !== null; // our hook is already on its way to N: no second press
     const att = this.attachedHands();
     const hand = step.hand && !T.hands[step.hand].rope.attached ? step.hand : this.freeHand();
     if (att.length === 0) {
@@ -498,6 +554,11 @@ export class Bot {
       const belowOk = step.mode !== 'below' || p.y < N.y - (step.below || 0.6);
       // Airborne catch: only when the look-ahead says the rope arrests us clear of the floor.
       const catchOk = p.grounded || (step.mode === 'below' ? this.testCatch(N, hand, this.route[this.i + 1]) : this.testChain(N, hand));
+      if (flying) {
+        // The hook is in the air: keep moving as the step does (a human does not stop to watch it fly).
+        if (!p.grounded) this.airSteer(it, step.walk ? step.walk[0] : N.x, step.walk ? step.walk[1] : N.z, N.y - 30);
+        return false;
+      }
       if (belowOk && this.targetable(N, hand) && (!step.jump || !p.grounded) && catchOk) {
         this.press(it, hand, N);
         return false;
@@ -539,10 +600,10 @@ export class Bot {
         good = (prev !== null && prev > 0.3 && along <= 0.3) || d < (step.near || 6) || (p.speed < 1.2 && this.stepT > 1.5) || this.stepT > 9;
       }
       this.prevAlong = along;
-      if (good && this.targetable(N, hand) && this.testChain(N, hand)) {
+      if (good && !flying && this.targetable(N, hand) && this.testChain(N, hand)) {
         const others = HANDS.filter((h) => h !== hand && this.holding[h]);
         this.press(it, hand, N);
-        for (const h of others) this.pendingRelease.push(h);
+        this.chainRelease = { hand, others };
       }
     }
     return false;
@@ -591,6 +652,7 @@ export class Bot {
       } else {
         this.hover(it, tx, tz);
         it.reel = over || h > 4 ? this.lowerReel(A, h, step.lowerReel || 0.6) : 0;
+        this.spinGuard(it, A);
         const rr = this.ropeOf(A);
         if (over && rr && rr.L >= this.sim.tethers.maxRopeLength() - 0.05 && h < 2.5 && Math.abs(p.vy) < 1) this.releaseAll(it);
       }
@@ -598,6 +660,7 @@ export class Bot {
     }
     this.pump(it, A, tx, tz);
     it.reel = step.reel !== undefined ? step.reel : this.autoReel(A, P);
+    this.spinGuard(it, A);
     this.unstick(it, A, tx, tz);
     this.governor(it, A, tx, tz, it.reel);
     const fragile = A.kind === 'fragile';
@@ -638,6 +701,24 @@ export class Bot {
       this.governed = (this.governed || 0) + 1;
     }
     return !safe;
+  }
+
+  /**
+   * Reeling in on a fast swing spins the body up (angular momentum about the anchor is conserved): above SPIN_LIMIT rad/s the bot
+   * stops reeling in (a player would not wind a fast line in to a short radius either).
+   */
+  spinGuard(it, A) {
+    if (!(it.reel > 0)) return;
+    const p = this.p;
+    const dx = p.x - A.x;
+    const dy = p.y - A.y;
+    const dz = p.z - A.z;
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 < 1e-6) return;
+    const cx = dy * p.vz - dz * p.vy;
+    const cy = dz * p.vx - dx * p.vz;
+    const cz = dx * p.vy - dy * p.vx;
+    if (Math.sqrt(cx * cx + cy * cy + cz * cz) / d2 > SPIN_LIMIT) it.reel = 0;
   }
 
   /** Rope state of the newest attached hand: {L, d, taut}. */

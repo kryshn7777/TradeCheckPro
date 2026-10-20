@@ -9,7 +9,7 @@
  *
  * Outputs (all PNG):
  *   screenshots/shot-01..10.png     1920 x 1080 desktop renders of the descent (no HUD, no text, VRC.Quest.Asset.5)
- *   screenshots/vr-01..04.png       1920 x 1080 single-eye crops of the mock headset view: gauntlets, tethers, lantern
+ *   screenshots/vr-01..03.png       1920 x 1080 single-eye crops of the mock headset view: gauntlets, tethers, lantern
  *   screenshots/hero-2880x1600.png  2880 x 1600 hero render
  *   keyart/*.png                    raw renders at each cover aspect ratio, input of tools/.../make-art.py
  * The stereo shots use the e2e mock WebXR with a 16:9-per-eye projection; they are what a Quest eye sees, rendered
@@ -57,16 +57,13 @@ const RECIPES = [
   { id: 'shot-09', section: 7, yaw: 0.4, pitch: -0.1, run: 0.6, note: 'the last throat' },
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
 ];
-const KEYART_RECIPES = [
-  { id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 },
-  { id: 'vista-b', section: 1, yaw: -0.5, pitch: -0.12, ropes: 28, run: 1.6 },
-  { id: 'vista-c', section: 3, yaw: 0.9, pitch: -0.05, run: 6, creature: [14, 140] },
-];
+const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
+// rendered at the final cover sizes (make-art.py crops / resizes from these)
 const KEYART_SIZES = [
-  ['16x9', 3200, 1800],
-  ['hero', 3600, 1080],
-  ['square', 2000, 2000],
-  ['portrait', 1440, 2000],
+  ['16x9', 2560, 1440],
+  ['hero', 3000, 900],
+  ['square', 1440, 1440],
+  ['portrait', 1008, 1440],
 ];
 
 const srv = await createStaticServer({ root: ROOT, prefix: '/', prodHeaders: false }).start();
@@ -75,6 +72,10 @@ const browser = await launch();
 async function newGamePage(w, h, { xr = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
   const page = await newPage(ctx, { viewport: { width: w, height: h }, xr: false });
+  page.on('crash', () => {
+    console.error('PAGE CRASHED (out of memory?): lower the viewport or free memory, then re-run');
+    process.exit(2);
+  });
   if (xr) {
     await page.addInitScript({ path: XR_MOCK_PATH });
     await page.addInitScript(wideProjection, { fovY: 78 });
@@ -208,7 +209,6 @@ try {
       { id: 'vr-01', section: 0, yaw: 0, pitch: 0, run: 0.6, head: { x: 0, y: 1.62, z: 0, yaw: 0 }, ctrl: { left: [-0.22, 1.2, -0.4], right: [0.22, 1.2, -0.4] } },
       { id: 'vr-02', section: 1, yaw: -0.5, pitch: 0, ropes: 28, run: 1.6, head: { x: 0, y: 1.62, z: 0, yaw: 0 }, ctrl: { left: [-0.3, 1.45, -0.45], right: [0.3, 1.5, -0.5] } },
       { id: 'vr-03', section: 4, yaw: 0, pitch: 0, ropes: 24, run: 2, creature: [8, 70], head: { x: 0, y: 1.62, z: 0, yaw: 0 }, ctrl: { left: [-0.25, 1.1, -0.35], right: [0.3, 1.5, -0.5] } },
-      { id: 'vr-04', section: 6, yaw: 0.2, pitch: 0, ropes: 30, run: 1.5, head: { x: 0, y: 1.62, z: 0, yaw: 0 }, ctrl: { left: [-0.3, 1.3, -0.45], right: [0.32, 1.55, -0.55] } },
     ];
     for (const r of VR) {
       await page.evaluate((v) => {

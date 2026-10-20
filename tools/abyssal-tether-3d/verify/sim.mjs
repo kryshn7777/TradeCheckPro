@@ -17,6 +17,14 @@ const { Player3D, TetherSystem, Physics3D, HANDS } = await import(srcUrl('sim/ph
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
 
+// Experiments: AT3D_ROPE='flightSpeed=80,attachRamp=0.15' overrides CONFIG.rope keys for this process.
+if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
+  for (const kv of process.env.AT3D_ROPE.split(',')) {
+    const [k, v] = kv.split('=');
+    if (k in CONFIG.rope && isFinite(Number(v))) CONFIG.rope[k] = Number(v);
+  }
+}
+
 export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT };
 
 export const FRAME = 1 / 60;
@@ -52,8 +60,8 @@ export function makeIntent() {
   };
 }
 
-const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim'];
-const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension'];
+const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim', 'flying'];
+const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT', 'grip'];
 
 // -----------------------------------------------------------------------------
 // E29: per-system timers
@@ -465,6 +473,9 @@ export class Sim {
       const o = {};
       for (const k of HAND_KEYS) o[k] = st[k];
       o.miss = st.miss ? Object.assign({}, st.miss) : null;
+      o.flT = st.flightObj.t;
+      o.flDur = st.flightObj.dur;
+      o.flTarget = st.flightObj.target;
       for (const k of ROPE_KEYS) o['r_' + k] = st.rope[k];
       s.hands[h] = o;
     }
@@ -484,6 +495,9 @@ export class Sim {
       const o = s.hands[h];
       for (const k of HAND_KEYS) st[k] = o[k];
       st.miss = o.miss ? Object.assign({}, o.miss) : null;
+      st.flightObj.t = o.flT;
+      st.flightObj.dur = o.flDur;
+      st.flightObj.target = o.flTarget;
       for (const k of ROPE_KEYS) st.rope[k] = o['r_' + k];
     }
     let j = 0;
