@@ -46,7 +46,7 @@ const MODE_VR = 1;
 const MODE_DESK = 2;
 
 function makeHand() {
-  return { gripping: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null };
+  return { needRelease: false, gripping: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null };
 }
 
 /** Closest point of a zone box to (x, y, z) and the distance, written into out. */
@@ -108,6 +108,7 @@ export class Climb3D {
     this.sv.z = 0;
     for (const h of CLIMB_HANDS) {
       const st = this.hands[h];
+      st.needRelease = false;
       st.gripping = false;
       st.hover = false;
       st.hoverIn = false;
@@ -243,6 +244,8 @@ export class Climb3D {
       this._emit('climb:slip', { x: p.x, y: p.y, z: p.z });
       this.exhausted = true;
       this.lock = K.slipLock;
+      this.hands.left.needRelease = true;
+      this.hands.right.needRelease = true;
       this._endAll(p, 'slip', false);
       ctl = false;
     }
@@ -257,7 +260,9 @@ export class Climb3D {
       const h = CLIMB_HANDS[i];
       const st = this.hands[h];
       const hi = ci.hands[h];
-      const want = ci.grab[h] && hi.ok;
+      let want = ci.grab[h] && hi.ok;
+      if (!want) st.needRelease = false;
+      else if (st.needRelease) want = false; // a hold lost by force is not retaken until the grip has been let go of
       if (st.gripping) {
         if (!want) {
           this._letGo(p, h, 'input');
@@ -265,7 +270,10 @@ export class Climb3D {
           const dx = st.ax - hi.rx - p.x;
           const dy = st.ay - hi.ry - p.y;
           const dz = st.az - hi.rz - p.z;
-          if (dx * dx + dy * dy + dz * dz > K.maxStretch * K.maxStretch) this._letGo(p, h, 'stretch');
+          if (dx * dx + dy * dy + dz * dz > K.maxStretch * K.maxStretch) {
+            st.needRelease = true;
+            this._letGo(p, h, 'stretch');
+          }
         }
       } else if (want && canGrip) {
         const hx = p.x + hi.rx;
@@ -340,7 +348,10 @@ export class Climb3D {
 
   // ---- desktop --------------------------------------------------------------------------------------------------
   _stepDesk(p, intent, ci, dt) {
-    const want = ci.grab.left || ci.grab.right;
+    const raw = ci.grab.left || ci.grab.right;
+    const latch = this.hands.right; // after a hop or a slip F must be let go of before the next cling
+    if (!raw) latch.needRelease = false;
+    const want = raw && !latch.needRelease;
     if (!this.holding) {
       if (!want || this.lock > 0 || this.hopLock > 0 || this.exhausted || this.stamina < K.minStart) return false;
       const z = this._nearest(p.x, p.y, p.z, K.reachDesk);
@@ -510,6 +521,8 @@ export class Climb3D {
     p.coyote = 0;
     p.grounded = false;
     this.hopLock = K.hopLock;
+    this.hands.left.needRelease = true;
+    this.hands.right.needRelease = true;
     this._emit('climb:hop', { x: p.x, y: p.y, z: p.z });
     this.mode = MODE_NONE;
   }
@@ -549,11 +562,13 @@ export class Climb3D {
   _endAll(p, reason, throws, hand) {
     const sp = Math.sqrt(this.sv.x * this.sv.x + this.sv.y * this.sv.y + this.sv.z * this.sv.z);
     const wasVR = this.mode === MODE_VR;
-    this._emit('climb:release', { hand: hand || 'right', reason, speed: sp, last: true, x: p.x, y: p.y, z: p.z });
-    for (const h of CLIMB_HANDS) {
-      const st = this.hands[h];
-      if (st.gripping && h !== hand) this._emit('climb:release', { hand: h, reason, speed: 0, last: false, x: p.x, y: p.y, z: p.z });
-    }
+    // one event per hand that was still holding (the others first), the last of them carries last: true
+    const L = this.hands.left.gripping;
+    const R = this.hands.right.gripping;
+    const primary = hand || (R ? 'right' : 'left');
+    if (L && primary !== 'left') this._emit('climb:release', { hand: 'left', reason, speed: 0, last: false, x: p.x, y: p.y, z: p.z });
+    if (R && primary !== 'right') this._emit('climb:release', { hand: 'right', reason, speed: 0, last: false, x: p.x, y: p.y, z: p.z });
+    this._emit('climb:release', { hand: primary, reason, speed: sp, last: true, x: p.x, y: p.y, z: p.z });
     this._clear();
     this.mode = MODE_NONE;
     if (wasVR && p.alive) {

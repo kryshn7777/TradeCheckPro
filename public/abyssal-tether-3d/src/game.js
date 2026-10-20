@@ -3473,6 +3473,17 @@ export class Game3D {
       dst.released = !!(src && src.released);
       dst.yank = src ? U.clamp(finiteOr(src.yank, 0), 0, 1) : 0;
     }
+    // Grip climbing (desktop style): { grab: true, fwd: -1..1, side: -1..1 } clings to a zone in reach (tests, QA)
+    const oc = o.climb || null;
+    const ic = it.climb;
+    ic.vr = false;
+    ic.grab.left = ic.grab.right = !!(oc && oc.grab);
+    ic.fwd = oc ? U.clamp(finiteOr(oc.fwd, 0), -1, 1) : 0;
+    ic.side = oc ? U.clamp(finiteOr(oc.side, 0), -1, 1) : 0;
+    ic.rx = 1;
+    ic.rz = 0;
+    ic.fx = 0;
+    ic.fz = -1;
     const ui = o.ui || {};
     it.ui.ray = ui.ray || null;
     it.ui.click = !!ui.click;

@@ -51,7 +51,7 @@ export class HeadFit {
     }
     // the shaft's inner faces (the sim clamps the head to them; the faces are not always solids)
     const sh = level && typeof level.shaftAt === 'function' ? level.shaftAt(hy) : null;
-    if (sh) {
+    if (sh && hx > sh.minX && hx < sh.maxX && hz > sh.minZ && hz < sh.maxZ) {
       c[0] = Math.min(c[0], shaftExit(sh, hx, hz, -ux, -uz));
       c[1] = Math.min(c[1], shaftExit(sh, hx, hz, ux, uz));
       c[2] = Math.min(c[2], shaftExit(sh, hx, hz, rx, rz));

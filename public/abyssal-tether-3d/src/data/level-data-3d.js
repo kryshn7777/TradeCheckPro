@@ -783,8 +783,8 @@ function CLC(id, x, z, y0, y1, extra) {
   climb.push(Object.assign(o, extra));
   return o;
 }
-// S1 · The Threshold: back up out of the pocket (the swing is retried from the lip), and a practice wall by the spawn.
-CL('c-s1-pocket', 'w', -11, -3.6, 3.6, -7.7, -0.5);
+// S1 · The Threshold: back along the west wall from the sill to the lip (to retry the swing), and a practice wall by the spawn.
+CL('c-s1-west', 'w', -11, -8, 4.5, -4.9, -0.6);
 CL('c-s1-practice', 'w', -11, 6.6, 8.2, 0.3, 5.2);
 // S2 · The Long Swing: from the hall floor back up beside the landing (to try the swing again); out of the floor opening.
 CL('c-s2-east', 'e', 11, -0.3, 8.5, -34.6, -21.8);

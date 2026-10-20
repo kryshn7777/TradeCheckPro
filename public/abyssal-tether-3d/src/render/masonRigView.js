@@ -32,6 +32,7 @@ const DEFAULTS = {
   bodyScale: 0.93, // vertebra scale = link / rest pitch x this (a hair under, so the mortar-flesh joints show)
 };
 const SEG = 20;
+const CLIP_LISTS = [BASE_CLIPS, ADDITIVE_CLIPS];
 const LIFT_FALLOFF = [1, 0.6, 0.3, 0.12];
 const _v0 = new THREE.Vector3();
 const _m3a = new Float64Array(9);
@@ -232,7 +233,8 @@ export class MasonRigView {
         events: (mi.events || []).map((e) => ({ name: e.name, t: e.u * clip.duration })),
         prevT: -1,
         weight: 0,
-        started: false,
+        active: false,
+        on: false,
       };
       // desynchronise the loops
       if (mi.loop && mi.kind === 'base') a.time = (clip.name.length * 0.37) % clip.duration;
@@ -262,6 +264,7 @@ export class MasonRigView {
    */
   update(creature, dt, camera) {
     const C = this._dbg ? this._dbg.creature : creature;
+    if (this._dbg && dt > 0 && C.speed) advanceSynthetic(C, Math.min(dt, 0.1));
     if (creature) this._lastCreature = creature;
     const B = C && C.body;
     if (!B || !B.visible || C.active === false) {
@@ -413,12 +416,14 @@ export class MasonRigView {
       a.reset();
       a.setEffectiveWeight(0);
       a.play();
-      info[tr[i]].prevT = -1;
-      this._emitClip(tr[i], 'start', 0, C);
+      const ci = info[tr[i]];
+      ci.prevT = -1;
+      ci.active = true; // the start event goes out now (not when the envelope has faded in)
+      ci.on = false;
+      this._emitClip(tr[i], 'start', 0, C, 0);
     }
-    const lists = [BASE_CLIPS, ADDITIVE_CLIPS];
     for (let li = 0; li < 2; li++) {
-      const list = lists[li];
+      const list = CLIP_LISTS[li];
       for (let i = 0; i < list.length; i++) {
         const n = list[i];
         const a = act[n];
@@ -458,6 +463,18 @@ export class MasonRigView {
 
   _events(name, a, weight, C) {
     const ci = this.clipInfo[name];
+    // start / end edges (the audio sync starts and stops its layers on these)
+    if (weight > 0.3) {
+      if (!ci.active) {
+        ci.active = true;
+        this._emitClip(name, 'start', 0, C, name === 'rear_windup' ? this.graph.snapshot.atkWindup : name === 'plate_shiver' ? weight : 0);
+      }
+      ci.on = true;
+    } else if (ci.active && ci.on && weight < 0.08) {
+      ci.active = false;
+      ci.on = false;
+      this._emitClip(name, 'end', ci.duration, C, 0);
+    }
     const ev = ci.events;
     const t = a.time;
     const prev = ci.prevT;
@@ -468,14 +485,19 @@ export class MasonRigView {
     for (let i = 0; i < ev.length; i++) {
       const et = ev[i].t;
       const hit = wrapped ? et > prev || et <= t : et > prev && et <= t;
-      if (hit) this._emitClip(name, ev[i].name, et, C);
+      if (hit) this._emitClip(name, ev[i].name, et, C, 0);
     }
   }
 
-  _emitClip(name, event, t, C) {
+  _emitClip(name, event, t, C, extra) {
     if (!this.bus) return;
     const h = C && C.body && C.body.head;
-    this.bus.emit('creature:clip', { name, event, t, x: h ? h.x : 0, y: h ? h.y : 0, z: h ? h.z : 0 });
+    const p = { name, event, t, x: h ? h.x : 0, y: h ? h.y : 0, z: h ? h.z : 0 };
+    if (extra) {
+      if (name === 'rear_windup') p.dur = extra;
+      else p.weight = extra;
+    }
+    this.bus.emit('creature:clip', p);
   }
 
   // ---- crown aim ------------------------------------------------------------------------------------------------
@@ -709,8 +731,19 @@ export class MasonRigView {
         ffx /= fl;
         ffy /= fl;
         ffz /= fl;
+        if (o.faceYaw) {
+          // turn the facing about the world vertical (90 = crawling across the player's view)
+          const a = (o.faceYaw * Math.PI) / 180;
+          const ca = Math.cos(a);
+          const sa = Math.sin(a);
+          const nx = ffx * ca + ffz * sa;
+          const nz = -ffx * sa + ffz * ca;
+          ffx = nx;
+          ffz = nz;
+        }
         const up = o.up || [0, 1, 0];
         self._dbg = { creature: makeSyntheticCreature(hx, hy, hz, ffx, ffy, ffz, up, o.state || 'OBSERVING', o.hug || 1.45, self._lastCreature) };
+        self._dbg.creature.speed = o.speed || 0;
         self.legs.reset();
         self.fit.reset();
         return { x: hx, y: hy, z: hz };
@@ -833,6 +866,9 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
       weight: 1,
       planted: true,
       lift: 0,
+      k: -1,
+      o: { x: 0, y: 0, z: 0 },
+      t: { x: 0, y: 0, z: 0 },
       hip: { x: hipx, y: hipy, z: hipz },
       foot: {
         x: hipx + rx * out - u2x * (hug + 0.6),
@@ -846,6 +882,11 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
     synthetic: true,
     state,
     attack: { phase: null, t: 0, windup: 0.75, hit: false },
+    speed: 0,
+    hug,
+    f: [fx, fy, fz],
+    u: [u2x, u2y, u2z],
+    r: [rx, ry, rz],
     listening: false,
     creeping: false,
     distance: 12,
@@ -869,4 +910,67 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
       focus: { x: 0, y: 0, z: 0, amount: 0 },
     },
   };
+}
+
+/** Walks the synthetic Mason forward (a rigid shift) with sim-like lead-leg stepping, so a screenshot shows the gait in motion. */
+function advanceSynthetic(C, dt) {
+  const B = C.body;
+  const f = C.f;
+  const d = C.speed * dt;
+  const sp = B.spine;
+  for (let i = 0; i < SEG; i++) {
+    sp[i * 3] += f[0] * d;
+    sp[i * 3 + 1] += f[1] * d;
+    sp[i * 3 + 2] += f[2] * d;
+  }
+  B.head.x = sp[0];
+  B.head.y = sp[1];
+  B.head.z = sp[2];
+  B.time += dt;
+  for (const L of B.limbs) {
+    const i = L.seg;
+    const hx = sp[i * 3];
+    const hy = sp[i * 3 + 1];
+    const hz = sp[i * 3 + 2];
+    L.hip.x = hx;
+    L.hip.y = hy;
+    L.hip.z = hz;
+    const out = L.reach * 0.42 * L.side;
+    const down = C.hug + 0.6;
+    const ix = hx + C.r[0] * out - C.u[0] * down + f[0] * L.reach * 0.2;
+    const iy = hy + C.r[1] * out - C.u[1] * down + f[1] * L.reach * 0.2;
+    const iz = hz + C.r[2] * out - C.u[2] * down + f[2] * L.reach * 0.2;
+    if (L.k < 0) {
+      const dx = L.foot.x - ix;
+      const dy = L.foot.y - iy;
+      const dz = L.foot.z - iz;
+      if (dx * dx + dy * dy + dz * dz > L.reach * L.reach * 0.2) {
+        L.k = 0;
+        L.o.x = L.foot.x;
+        L.o.y = L.foot.y;
+        L.o.z = L.foot.z;
+        L.t.x = ix + f[0] * L.reach * 0.3;
+        L.t.y = iy + f[1] * L.reach * 0.3;
+        L.t.z = iz + f[2] * L.reach * 0.3;
+        L.planted = false;
+      }
+    } else {
+      L.k += dt / 0.28;
+      if (L.k >= 1) {
+        L.k = -1;
+        L.planted = true;
+        L.lift = 0;
+        L.foot.x = L.t.x;
+        L.foot.y = L.t.y;
+        L.foot.z = L.t.z;
+      } else {
+        const e = L.k * L.k * (3 - 2 * L.k);
+        const lift = Math.sin(Math.PI * L.k) * L.reach * 0.14;
+        L.lift = Math.sin(Math.PI * L.k);
+        L.foot.x = L.o.x + (L.t.x - L.o.x) * e + C.u[0] * lift;
+        L.foot.y = L.o.y + (L.t.y - L.o.y) * e + C.u[1] * lift;
+        L.foot.z = L.o.z + (L.t.z - L.o.z) * e + C.u[2] * lift;
+      }
+    }
+  }
 }

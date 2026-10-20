@@ -21,6 +21,7 @@ const suites = [
   ['creature: behaviour units', 'creature/unit.mjs'],
   ['health: fall damage curve, cooldown, regen, events, difficulty scaling, determinism, Physics3D drops and hazards', 'health/unit.mjs'],
   ['bag: apply times, cancel on damage, caps, adrenaline timing + speed multiplier, heal API, deterministic fair spawns, pickups, lantern charge, VR gesture', 'bag/unit.mjs'],
+  ['climb: WP-CLIMB (zones, VR hand-delta pull + throw, alternating hands, stretch, collision safety, grip stamina drain / slip / refill / difficulty, desktop cling + hop, rope + grip, determinism)', 'climb/unit.mjs'],
   ['audio: WP-AUDIO (impulse responses, rope/footstep/music/creature-clip modules, voice cap, reduced tier, 10 simulated minutes no growth, NaN-free)', 'audio/unit.mjs'],
   ['physics: swing bench checks (near grab, pendulum, catches, two ropes, bot routes, reel)', 'physics/swingbench.mjs', ['--check']],
   ['release: save data (E05: schema, migration, adapters, SaveService, Continue slot)', 'release/test-save.mjs'],

@@ -6,6 +6,7 @@
  *   - a wet film from the baked per-vertex mask (_MASK.g: flesh and mortar glisten, stone barely): roughness drops where wet;
  *   - the near-eye dissolve: fragments closer than ~1.3 m to the eye dither away (interleaved gradient noise), so the crown can
  *     never fill the headset or clip the near plane;
+ *   - a faint cold ambient (x albedo) + a grazing fresnel rim so the mostly unlit mass keeps its form and its outline against the haze;
  *   - the sensory glow level and the stone ramp live in uniforms (no recompiles).
  * `reduced` (settings.reducedEffects) drops the wet film.
  */
@@ -18,6 +19,8 @@ export function makeMasonUniforms() {
     uWet: { value: 1 },
     uNear: { value: new THREE.Vector2(0.55, 1.3) }, // dissolve starts at x metres, fully solid beyond y
     uTint: { value: new THREE.Color(1, 1, 1) },
+    uAmb: { value: new THREE.Color(0.15, 0.18, 0.2) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
+    uRim: { value: new THREE.Color(0.2, 0.26, 0.29) }, // grazing rim that separates the outline from the haze
   };
 }
 
@@ -44,7 +47,9 @@ uniform float uFogCap;
 uniform float uGlowPierce;
 uniform float uWet;
 uniform vec2 uNear;
-uniform vec3 uTint;`,
+uniform vec3 uTint;
+uniform vec3 uAmb;
+uniform vec3 uRim;`,
       )
       .replace(
         '#include <clipping_planes_fragment>',
@@ -56,6 +61,15 @@ uniform vec3 uTint;`,
     float mIgn = fract( 52.9829189 * fract( dot( gl_FragCoord.xy, vec2( 0.06711056, 0.00583715 ) ) ) );
     if ( mNf < mIgn ) discard;
   }
+}`,
+      )
+      .replace(
+        '#include <lights_fragment_end>',
+        `#include <lights_fragment_end>
+{
+  float mFr = 1.0 - clamp( dot( normal, normalize( vViewPosition ) ), 0.0, 1.0 );
+  reflectedLight.indirectDiffuse += diffuseColor.rgb * uAmb;
+  reflectedLight.directSpecular += uRim * ( mFr * mFr * mFr ) * ( 0.45 + 0.55 * vMasonMask.g );
 }`,
       )
       .replace(
@@ -80,5 +94,5 @@ vec3 mPreFog = gl_FragColor.rgb;
 #endif`,
       );
   };
-  mat.customProgramCacheKey = () => 'mason-rig-v1' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
+  mat.customProgramCacheKey = () => 'mason-rig-v2' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }
