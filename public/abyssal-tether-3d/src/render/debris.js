@@ -82,8 +82,9 @@ export class Rubble {
    * @param {THREE.Scene} scene
    * @param {number} max pool size
    * @param {() => number} rand
+   * @param {object} [lightUniforms] FxLighting.uniforms (the creature's glow lights the stones near it)
    */
-  constructor(scene, max, rand) {
+  constructor(scene, max, rand, lightUniforms) {
     this.scene = scene;
     this.max = max;
     this.rand = rand;
@@ -96,11 +97,15 @@ export class Rubble {
     // height in metres so it reads the same on a pebble at the feet and a chunk 5 m away):
     // a stone near the lantern reads as rough stone, not as a smooth low-poly lump.
     mat.onBeforeCompile = (shader) => {
+      if (lightUniforms) {
+        shader.uniforms.uGlowPos = lightUniforms.uGlowPos;
+        shader.uniforms.uGlowCol = lightUniforms.uGlowCol;
+      }
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vRockP;\nvarying float vRockS;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRockP;\nvarying float vRockS;\nvarying vec3 vRockW;')
         .replace(
           '#include <begin_vertex>',
-          '#include <begin_vertex>\n  vRockP = position;\n#ifdef USE_INSTANCING\n  vRockS = length( instanceMatrix[ 0 ].xyz );\n#else\n  vRockS = 0.05;\n#endif',
+          '#include <begin_vertex>\n  vRockP = position;\n#ifdef USE_INSTANCING\n  vRockS = length( instanceMatrix[ 0 ].xyz );\n  vRockW = ( modelMatrix * instanceMatrix * vec4( transformed, 1.0 ) ).xyz;\n#else\n  vRockS = 0.05;\n  vRockW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;\n#endif',
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -108,6 +113,9 @@ export class Rubble {
           `#include <common>
 varying vec3 vRockP;
 varying float vRockS;
+varying vec3 vRockW;
+uniform vec4 uGlowPos;
+uniform vec3 uGlowCol;
 float atRockHash( vec3 p ) {
   p = fract( p * 0.3183099 + 0.1 );
   p *= 17.0;
@@ -125,6 +133,11 @@ float atRockNoise( vec3 x ) {
           '#include <color_fragment>',
           '#include <color_fragment>\n  float atG = atRockNoise( vRockP * 5.0 ) * 0.6 + atRockNoise( vRockP * 13.0 ) * 0.4;\n  diffuseColor.rgb *= 0.55 + 0.75 * atG;',
         )
+        // the creature's sensory glow washes over the stones it sheds (they would be invisible in the dark)
+        .replace(
+          '#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\n  {\n    vec3 atD = vRockW - uGlowPos.xyz;\n    float atQ = dot( atD, atD ) / ( uGlowPos.w * uGlowPos.w );\n    totalEmissiveRadiance += diffuseColor.rgb * uGlowCol * ( 1.6 / ( 1.0 + atQ * 3.0 ) );\n  }',
+        )
         .replace(
           '#include <normal_fragment_maps>',
           `#include <normal_fragment_maps>
@@ -140,7 +153,7 @@ float atRockNoise( vec3 x ) {
   }`,
         );
     };
-    mat.customProgramCacheKey = () => 'at3d-rubble-bump';
+    mat.customProgramCacheKey = () => 'at3d-rubble-bump2';
     this.mesh = new THREE.InstancedMesh(rockGeometry(), mat, max);
     this.mesh.name = 'fxDebris';
     this.mesh.count = 0;
@@ -206,7 +219,7 @@ float atRockNoise( vec3 x ) {
     // Weathered ashlar greys and browns, a few darker (soot / wet) stones.
     const v = 0.6 + r() * 0.45;
     const dark = r() < 0.2 ? 0.6 : 1;
-    _c.setRGB(0.22 * v * dark, 0.205 * v * dark, 0.185 * v * dark).multiply(this.tint);
+    _c.setRGB(0.3 * v * dark, 0.285 * v * dark, 0.26 * v * dark).multiply(this.tint);
     this.mesh.setColorAt(i, _c);
     this.mesh.instanceColor.needsUpdate = true;
   }

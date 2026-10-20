@@ -304,7 +304,7 @@ export class FX {
   }
 
   _buildDebris() {
-    this.rubble = new Rubble(this.scene, DEBRIS_MAX, this._rng);
+    this.rubble = new Rubble(this.scene, DEBRIS_MAX, this._rng, this.lighting.uniforms);
     this.debris = this.rubble.mesh; // the pooled stones (name 'fxDebris')
     // First hard knocks of a falling stone: a little grit and dust where it hits.
     this.rubble.onImpact = (x, y, z, speed, size) => {
@@ -451,6 +451,30 @@ export class FX {
       if (n > 0) this._pebbles(e.x, num(e.y, 0), num(e.z, 0), n, 0.03, 0.11);
       if (k > 0.15) this.burst('chips', e.x, num(e.y, 0), num(e.z, 0), { count: Math.round(2 + k * 4) });
       if (k > 0.3) this.burst('dust', e.x, num(e.y, 0), num(e.z, 0), { count: 1 });
+    });
+    // A lunge lands: stone breaks off where the limbs strike, more the closer it is to the player.
+    on('creature:strike', (e) => {
+      const d = num(e.distance, 1e9);
+      const x = num(e.x, NaN);
+      if (!isFinite(x) || d > 40) return;
+      const k = 1 - d / 40;
+      this._pebbles(x, num(e.y, 0), num(e.z, 0), Math.round(3 + k * 7), 0.04, 0.16);
+      this.burst('chips', x, num(e.y, 0), num(e.z, 0), { count: Math.round(4 + k * 8) });
+      this.burst('puff', x, num(e.y, 0), num(e.z, 0), { count: 3 });
+      this.trickles.agitate(0.5 * k);
+    });
+    // The windup of an attack (or the blows on the sealed gate): the shaft shudders and sheds.
+    on('creature:attack', (e) => {
+      const d = num(e.distance, 1e9);
+      if (e.gate) {
+        this._rain(10);
+        this.trickles.agitate(1);
+        const x = num(e.x, NaN);
+        if (isFinite(x)) this._pebbles(x, num(e.y, 0), num(e.z, 0), 8, 0.04, 0.18);
+      } else if (d < 40) {
+        this._rain(Math.round(2 + 5 * (1 - d / 40)));
+        this.trickles.agitate(0.35 * (1 - d / 40));
+      }
     });
     on('trigger:debris', (e) => {
       this._rain(THREE.MathUtils.clamp(num(e.data && e.data.count, 16), 1, 50));
@@ -751,7 +775,7 @@ export class FX {
       x += (r() - 0.5) * 0.8;
       y += (r() - 0.5) * 0.5;
       z += (r() - 0.5) * 0.8;
-      const s = 0.03 + r() * r() * 0.14;
+      const s = r() < 0.1 ? 0.16 + r() * 0.16 : 0.03 + r() * r() * 0.14;
       this._spawnDebris(x, y, z, num(c.vx, 0) * 0.3 + (r() - 0.5) * 1.5, num(c.vy, 0) * 0.3 + r() * 0.8, num(c.vz, 0) * 0.3 + (r() - 0.5) * 1.5, s);
       if (r() < 0.35) this.burst('chips', x, y, z, { count: 2 });
       if (r() < 0.2) this.burst('dust', x, y, z, { count: 1 });
