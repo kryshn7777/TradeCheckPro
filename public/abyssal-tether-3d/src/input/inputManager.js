@@ -1247,6 +1247,7 @@ export class InputManager {
     const bag = this.game ? this.game.bag : null;
     S.live = !!bag && !this.uiMode && this._liveState() === 'playing';
     S.applying = !!(bag && bag.applying && bag.applying.active);
+    S.left = !!(this.settings && this.settings.dominantHand === 'left');
     S.counts = bag && bag.counts ? bag.counts : this._noCounts;
     const hm = this._m3.elements; // the head matrix of this frame (set for the left stick)
     S.hx = hm[12];

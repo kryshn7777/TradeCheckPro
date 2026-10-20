@@ -31,6 +31,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../sim/config3d.js';
 import { buildGearEnvironment } from './handsView.js';
+import { loadGLB } from './glbLoad.js';
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -151,13 +152,7 @@ export class BodyView {
 
   _load() {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
-    return import('three/addons/loaders/GLTFLoader.js')
-      .then(
-        (M) =>
-          new Promise((resolve, reject) => {
-            new M.GLTFLoader().load(BODY_URL, resolve, undefined, reject);
-          }),
-      )
+    return loadGLB(BODY_URL)
       .then((gltf) => {
         this._setup(gltf);
         return true;

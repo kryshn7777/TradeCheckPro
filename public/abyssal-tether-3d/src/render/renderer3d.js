@@ -45,6 +45,7 @@ import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
 import { RenderGovernor } from './renderGovernor.js';
+import { createGLTFLoader } from './glbLoad.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -343,11 +344,11 @@ export class Renderer3D {
    */
   _loadEnvKit() {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
-    return import('three/addons/loaders/GLTFLoader.js')
+    return createGLTFLoader()
       .then(
-        (M) =>
+        (loader) =>
           new Promise((resolve) => {
-            new M.GLTFLoader().load(
+            loader.load(
               ENV_KIT_URL,
               (gltf) => resolve(gltf),
               undefined,

@@ -823,6 +823,8 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .hud-status{display:flex;gap:.7em;justify-content:center;font:650 .74em var(--fu);letter-spacing:.06em;color:var(--ink);font-variant-numeric:tabular-nums}
 .at3d-ui .hud-status span{display:inline-flex;align-items:center;gap:.3em}
 .at3d-ui .hud-status svg{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2}
+.at3d-ui .hud-status em{font-style:normal;font-size:.8em;color:var(--ink-3)}
+.at3d-ui .hud-status b{font-weight:700}
 .at3d-ui .hud-status .warn{color:#ffd9a0;text-decoration:underline}
 .at3d-ui .captions{position:absolute;z-index:15;left:50%;bottom:calc(10px + 6.2em);display:flex;flex-direction:column;align-items:center;gap:.3em;width:min(34em,calc(100% - 3em));transform:translateX(-50%);pointer-events:none}
 .at3d-ui .cap{display:flex;align-items:center;gap:.6em;max-width:100%;padding:.3em .8em;font-size:.95em;line-height:1.3;color:#fff;background:rgba(0,0,0,.82);border-radius:3px;border-left:3px solid var(--ink-3)}
@@ -1267,7 +1269,7 @@ export class UI3D {
         this._calMsg = '';
       }
     }
-    else if (name === 'pause') this._preparePause();
+    if (name === 'pause') this._preparePause();
     else if (name === 'death') this._deathArmedAt = this._clock + DEATH_ARM;
     if (name !== null) this._deathTimer = -1;
     this._syncRootClasses();
@@ -3603,13 +3605,13 @@ export class UI3D {
       this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'Difficulty', null, {});
     }
     this._btn(ctx, this._region(x0 + hw + 16, 448, hw, 84, 'sandbox'), 'Sandbox', 'No predator', {});
-    const tw = (w - 24) / 3;
-    this._btn(ctx, this._region(x0, 546, tw, 76, 'settings'), 'Settings', null, { size: 28 });
-    this._btn(ctx, this._region(x0 + tw + 12, 546, tw, 76, 'controls'), 'Controls', null, { size: 28 });
-    this._btn(ctx, this._region(x0 + (tw + 12) * 2, 546, tw, 76, 'about'), 'About', null, { size: 28 });
+    const th = (w - 24) / 3;
+    this._btn(ctx, this._region(x0, 546, th, 76, 'settings'), 'Settings', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + th + 12, 546, th, 76, 'controls'), 'Controls', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + (th + 12) * 2, 546, th, 76, 'about'), 'About', null, { size: 28 });
     if (this._updateReady) {
       ctx.fillStyle = COL.amber;
-      diamond(ctx, x0 + (tw + 12) * 2 + tw - 18, 546 + 18, 9);
+      diamond(ctx, x0 + (th + 12) * 2 + th - 18, 546 + 18, 9);
       ctx.fill();
     }
     // Best times strip.
@@ -3953,6 +3955,7 @@ export class UI3D {
     txt(ctx, pr, cx, Math.min(CH - 30, by + 250), pf, COL.ink3, 'center', 0.02);
   }
 
+  /** The end card after Chapter I: the result, then the hook (no purchase button, no store link: it is a teaser). */
   _paintVictory(ctx) {
     this._frame(ctx, 'victory');
     const i = this._victoryInfo || this._victoryFrom(null);
@@ -3961,54 +3964,63 @@ export class UI3D {
     ctx.shadowColor = 'rgba(224,160,80,0.9)';
     ctx.shadowBlur = 30;
     ctx.fillStyle = COL.amber;
-    diamond(ctx, cx, 54, 14);
+    diamond(ctx, cx, 44, 13);
     ctx.fill();
     ctx.restore();
-    txt(ctx, 'THE STILL LAMP', cx, 116, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.42);
-    txt(ctx, 'You reached the bottom', cx, 172, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
-    txt(ctx, 'DESCENT TIME', cx, 222, `650 28px ${F_UI}`, COL.ink3, 'center', 0.2);
-    txt(ctx, fmtTime(i.time), cx, 300, `650 78px ${F_UI}`, COL.warm, 'center', 0.02);
+    txt(ctx, 'CHAPTER I · THE UNDERSPIRE', cx, 100, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.34);
+    txt(ctx, 'You reached the bottom', cx, 154, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
+    txt(ctx, 'DESCENT TIME', cx, 200, `650 28px ${F_UI}`, COL.ink3, 'center', 0.2);
+    txt(ctx, fmtTime(i.time), cx, 278, `650 78px ${F_UI}`, COL.warm, 'center', 0.02);
     const recorded = i.recorded !== false && i.difficultyKey !== 'sandbox';
     if (recorded && i.isNew) {
       const bf = `750 28px ${F_UI}`;
       const bw = measure(ctx, '★ NEW BEST', bf, 0.14) + 32;
-      rr(ctx, cx - bw / 2, 318, bw, 42, 4);
+      rr(ctx, cx - bw / 2, 292, bw, 42, 4);
       ctx.fillStyle = COL.amber;
       ctx.fill();
-      txt(ctx, '★ NEW BEST', cx, 349, bf, '#1a1206', 'center', 0.14);
+      txt(ctx, '★ NEW BEST', cx, 323, bf, '#1a1206', 'center', 0.14);
     }
     const cells = [
-      ['BEST', !recorded ? '—' : fmtTime(i.best != null ? i.best : i.time), null],
-      ['PREVIOUS', !recorded ? '—' : i.previous != null ? fmtTime(i.previous) : 'First', null],
-      ['DEATHS', String(i.deaths || 0), null],
-      ['DEEPEST', fmtMeters(i.deepestMeters), null],
-      ['MODE', i.label || (DIFFICULTY[i.difficultyKey] || DIFFICULTY.normal).label, null],
+      ['FALLS', String(i.falls != null ? i.falls : i.deaths || 0)],
+      ['LOWEST HP', pct(U.clamp(num(i.lowestHp, 1), 0, 1))],
+      ['ITEMS USED', String(i.itemsUsed | 0)],
+      [recorded ? 'BEST' : i.label ? i.label.toUpperCase() : 'MODE', recorded ? fmtTime(i.best != null ? i.best : i.time) : '—'],
     ];
-    if (recorded && i.previous != null && isFinite(i.time - i.previous) && i.time !== i.previous) {
-      const delta = i.time - i.previous;
-      cells[1][2] = `${delta < 0 ? '−' : '+'}${Math.abs(delta).toFixed(2)} s`;
-    }
     const gap = 12;
-    const cw = (CW - 48 - gap * 4) / 5;
-    cells.forEach(([dt, dd, small], k) => {
+    const cw = (CW - 48 - gap * 3) / 4;
+    cells.forEach(([dt, dd], k) => {
       const x = 24 + k * (cw + gap);
-      const y = 382;
-      rr(ctx, x, y, cw, 128, 5);
+      const y = 352;
+      rr(ctx, x, y, cw, 112, 5);
       ctx.fillStyle = 'rgba(255,240,210,0.04)';
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = COL.line2;
       ctx.stroke();
-      txt(ctx, dt, x + cw / 2, y + 40, `650 28px ${F_UI}`, COL.ink3, 'center', 0.06);
-      const vf = `650 ${fitSize(ctx, dd, cw - 16, 32, 28, (px) => `650 ${px}px ${F_UI}`, 0)}px ${F_UI}`;
-      txt(ctx, dd, x + cw / 2, y + 84, vf, COL.ink, 'center', 0);
-      if (small) txt(ctx, small, x + cw / 2, y + 116, `500 28px ${F_UI}`, COL.ink3, 'center', 0);
+      txt(ctx, dt, x + cw / 2, y + 40, `650 28px ${F_UI}`, COL.ink3, 'center', 0.04, cw - 12);
+      const vf = `650 ${fitSize(ctx, dd, cw - 16, 44, 28, (px) => `650 ${px}px ${F_UI}`, 0)}px ${F_UI}`;
+      txt(ctx, dd, x + cw / 2, y + 90, vf, COL.ink, 'center', 0);
     });
-    if (!recorded) txt(ctx, 'Sandbox descents are not timed for the records.', cx, 556, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
+    // The hook.
+    const ty = 484;
+    rr(ctx, 24, ty, CW - 48, 168, 8);
+    const tg = ctx.createLinearGradient(0, ty, 0, ty + 168);
+    tg.addColorStop(0, 'rgba(255,240,210,0.07)');
+    tg.addColorStop(1, 'rgba(255,240,210,0.015)');
+    ctx.fillStyle = tg;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(224,160,80,0.45)';
+    ctx.stroke();
+    txt(ctx, 'CHAPTERS II–V · COMING SOON', cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+    const names = 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
+    const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
+    txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
+    txt(ctx, 'The Underspire goes deeper than the light does.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
     const bw = 680;
     const bx = (CW - bw) / 2;
-    this._btn(ctx, this._region(bx, 600, 400, 96, 'restart'), 'Descend again', null, { primary: true, size: 32 });
-    this._btn(ctx, this._region(bx + 416, 600, bw - 416, 96, 'menu'), 'Menu', null, {});
+    this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });
+    this._btn(ctx, this._region(bx + 416, 670, bw - 416, 82, 'menu'), 'Menu', null, {});
   }
 
   // ---- notes ---------------------------------------------------------------------------------
@@ -4317,7 +4329,9 @@ export class UI3D {
     const time = fmtTime(g.time || 0);
     const depth = g.player ? U.depthMeters(num(g.player.y, 0)) : 0;
     const si = g.sectionIndex | 0;
-    const key = `${time.slice(0, -1)}|${depth}|${si}|${tl}|${tr}|${fragile ? (this._clock * 20) | 0 : 0}`;
+    const safe = this._settings().colorSafe === true;
+    const stv = safe ? this._statusValues(g) : null;
+    const key = `${time.slice(0, -1)}|${depth}|${si}|${tl}|${tr}|${fragile ? (this._clock * 20) | 0 : 0}${safe ? `|${stv.hp}|${stv.grip}|${stv.bag}` : ''}`;
     if (key === this._wristKey) return;
     this._wristKey = key;
     this._paintWrist(g, time, depth, si, tl, tr);
@@ -4379,7 +4393,34 @@ export class UI3D {
     txt(ctx, time.slice(0, -1), c.cw / 2, 62, `700 40px ${F_UI}`, COL.warm, 'center', 0.02);
     txt(ctx, `${depth} m`, c.cw / 2, 102, `650 30px ${F_UI}`, COL.phosphor, 'center', 0.02);
     const sec = this._sections() ? this._sections()[si] : null;
-    if (sec) {
+    if (this._settings().colorSafe === true) {
+      // Colour-safe strip: a shape and a number per resource (the section name gives way to it).
+      const st = this._statusValues(g);
+      const items = [
+        [st.hp < 40, 'HP', st.hp, 0],
+        [st.grip < 25, 'GRIP', st.grip, 1],
+        [false, 'BAG', st.bag, 2],
+      ];
+      items.forEach(([warn, name, value, shape], k) => {
+        const x = 18 + k * 100;
+        ctx.strokeStyle = warn ? '#ffd9a0' : COL.ink2;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = 3;
+        const cy = 134;
+        if (shape === 0) {
+          ctx.fillRect(x + 5, cy - 10, 6, 20);
+          ctx.fillRect(x - 2, cy - 3, 20, 6);
+        } else if (shape === 1) {
+          ctx.beginPath();
+          ctx.arc(x + 8, cy, 9, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, cy - 9, 17, 18);
+        }
+        txt(ctx, warn ? `${value}!` : String(value), x + 24, cy + 8, `700 22px ${F_UI}`, warn ? '#ffd9a0' : COL.phosphor, 'left', 0);
+        txt(ctx, name, x + 24, cy + 28, `600 14px ${F_UI}`, COL.ink3, 'left', 0.06);
+      });
+    } else if (sec) {
       const label = `${ROMAN[si] || si + 1} · ${sec.name}`;
       const size = fitSize(ctx, label, c.cw - 24, 22, 16, (px) => `400 ${px}px ${F_DISPLAY}`, 0.04);
       txt(ctx, label, c.cw / 2, 142, `400 ${size}px ${F_DISPLAY}`, COL.amber, 'center', 0.04);

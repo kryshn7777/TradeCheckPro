@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readGLB } from './glbRead.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MODELS = path.resolve(HERE, '../../../../public/abyssal-tether-3d/assets/models');
@@ -16,36 +17,8 @@ const ok = (name, fn) => {
 };
 
 // ---- GLB reader --------------------------------------------------------------------------------------------------------
-const buf = fs.readFileSync(path.join(MODELS, 'mason_rig.glb'));
-let js = null;
-let bin = null;
-for (let off = 12; off < buf.length; ) {
-  const len = buf.readUInt32LE(off);
-  const type = buf.readUInt32LE(off + 4);
-  const data = buf.subarray(off + 8, off + 8 + len);
-  if (type === 0x4e4f534a) js = JSON.parse(data.toString('utf8'));
-  else if (type === 0x004e4942) bin = data;
-  off += 8 + len;
-}
-const NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
-const CT = { 5126: Float32Array, 5123: Uint16Array, 5125: Uint32Array, 5121: Uint8Array, 5120: Int8Array };
-function acc(i) {
-  const a = js.accessors[i];
-  const bv = js.bufferViews[a.bufferView];
-  const T = CT[a.componentType];
-  const nc = NC[a.type];
-  const stride = bv.byteStride || nc * T.BYTES_PER_ELEMENT;
-  const base = (bv.byteOffset || 0) + (a.byteOffset || 0);
-  const out = new T(a.count * nc);
-  const dv = new DataView(bin.buffer, bin.byteOffset + base);
-  for (let k = 0; k < a.count; k++) {
-    for (let c = 0; c < nc; c++) {
-      const o = k * stride + c * T.BYTES_PER_ELEMENT;
-      out[k * nc + c] = T === Float32Array ? dv.getFloat32(o, true) : T === Uint16Array ? dv.getUint16(o, true) : T === Uint32Array ? dv.getUint32(o, true) : T === Uint8Array ? dv.getUint8(o) : dv.getInt8(o);
-    }
-  }
-  return out;
-}
+const glb = await readGLB(path.join(MODELS, 'mason_rig.glb'));
+const { buf, js, acc } = glb; // acc(i): raw accessor values (EXT_meshopt_compression bufferViews are decoded with the game's own decoder)
 
 const meta = js.extras.mason;
 const skin = js.skins[0];

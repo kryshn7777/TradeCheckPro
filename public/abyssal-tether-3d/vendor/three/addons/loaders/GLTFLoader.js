@@ -65,6 +65,7 @@ import {
 	SRGBColorSpace,
 	InstancedBufferAttribute
 } from 'three';
+import { MeshoptDecoder } from '../libs/meshopt_decoder.module.js';
 import { toTrianglesDrawMode } from '../utils/BufferGeometryUtils.js';
 
 class GLTFLoader extends Loader {
@@ -75,7 +76,8 @@ class GLTFLoader extends Loader {
 
 		this.dracoLoader = null;
 		this.ktx2Loader = null;
-		this.meshoptDecoder = null;
+		// AT3D: the vendored meshopt decoder is the default (the shipped GLBs use EXT_meshopt_compression); setMeshoptDecoder() still overrides
+		this.meshoptDecoder = MeshoptDecoder;
 
 		this.pluginCallbacks = [];
 

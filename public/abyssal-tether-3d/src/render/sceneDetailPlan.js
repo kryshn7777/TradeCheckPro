@@ -30,7 +30,7 @@ export const DECAL_STRIDE = 16;
 export const PUDDLE_STRIDE = 10;
 
 /** Per-section caps (memory and a ceiling on the work done in the window selection). */
-export const PLAN_CAPS = { items: 1100, decals: 170, puddles: 26 };
+export const PLAN_CAPS = { items: 520, decals: 150, puddles: 20 };
 
 export const CAT_NAMES = ['bone', 'stone', 'wood', 'tool', 'chain', 'rope', 'root', 'sinew', 'stal', 'cloth', 'web', 'camp', 'candle', 'fungus', 'paper'];
 
@@ -310,7 +310,7 @@ const chooseChip = (rng) => {
 };
 
 function emitRubble(C, rng, x, y, z, base, mix) {
-  const n = base ? 3 + ((rng() * 4) | 0) : 1 + ((rng() * 3) | 0);
+  const n = base ? 2 + ((rng() * 3) | 0) : 1 + ((rng() * 2) | 0);
   scatter(C, rng, x, y, z, 0.25 + rng() * 0.3 + (base ? 0.1 : 0), n, chooseChip);
   if (rng() < 0.12 * mix.rubble) C.add('block', x + (rng() - 0.5) * 0.5, y, z + (rng() - 0.5) * 0.5, rng, { s: 0.8 + rng() * 0.8 });
 }
@@ -386,9 +386,9 @@ function emitPuddle(C, rng, x, y, z, fit, wet) {
 // Floors
 // -----------------------------------------------------------------------------
 const FLOOR_W = {
-  open: { rubble: 3.0, bone: 1.5, wood: 1.3, tool: 0.7, paper: 0.9, cloth: 0.5, candle: 0.45, puddle: 1.6, fungus: 0.6, slime: 0.6, rope: 0.45, stal: 0.4, root: 0 },
-  base: { rubble: 4.0, bone: 2.0, wood: 2.0, tool: 0.9, paper: 1.0, cloth: 0.7, candle: 0.6, puddle: 0.5, fungus: 1.2, slime: 1.2, rope: 0.5, stal: 0.4, root: 1.5 },
-  lip: { rubble: 2.2, bone: 0.8, wood: 0.7, tool: 0.2, paper: 0.5, cloth: 0.7, candle: 0.2, puddle: 0.2, fungus: 0.2, slime: 0.3, rope: 0.2, stal: 0, root: 0 },
+  open: { rubble: 1.7, bone: 1.5, wood: 1.3, tool: 0.7, paper: 0.9, cloth: 0.5, candle: 0.45, puddle: 1.6, fungus: 0.6, slime: 0.6, rope: 0.45, stal: 0.4, root: 0 },
+  base: { rubble: 2.6, bone: 2.0, wood: 2.0, tool: 0.9, paper: 1.0, cloth: 0.7, candle: 0.6, puddle: 0.5, fungus: 1.2, slime: 1.2, rope: 0.5, stal: 0.4, root: 1.5 },
+  lip: { rubble: 1.5, bone: 0.8, wood: 0.7, tool: 0.2, paper: 0.5, cloth: 0.7, candle: 0.2, puddle: 0.2, fungus: 0.2, slime: 0.3, rope: 0.2, stal: 0, root: 0 },
 };
 
 function floorContext(C, s, x, y, z) {
@@ -422,13 +422,14 @@ function dressFloor(C, s, si, rng) {
   const d = s.maxZ - s.minZ;
   const area = w * d;
   if (area < 1.2 || Math.min(w, d) < 0.6) return;
+  if (s.maxY - s.minY > 12 && Math.min(w, d) <= 3.5) return; // the top of a tall shaft wall: nobody stands there
   const mix = C.mix(si);
   const narrow = Math.min(w, d) < 3.2;
-  const n = Math.round(clamp(area * 0.7, 3, 60) * mix.density);
+  const n = Math.round(clamp(area * 0.3, 2, 24) * mix.density);
   const y = s.maxY;
   const wet = mix.puddle;
   let placed = 0;
-  for (let k = 0; k < n && placed < 70; k++) {
+  for (let k = 0; k < n && placed < 40; k++) {
     let x;
     let z;
     if (rng() < 0.42) {
@@ -565,7 +566,7 @@ function dressWalls(C, s, si, rng) {
     const L = a1 - a0;
     if (L < 0.8) continue;
     const area = L * H;
-    let n = Math.round(clamp(area * 0.045 * mix.density, metal ? 0.6 : 0, 28));
+    let n = Math.round(clamp(area * 0.02 * mix.density, metal ? 0.6 : 0, 14));
     if (n === 0 && area > 2.5 && rng() < 0.4) n = 1;
     const fp = F.pos(s);
     const nx = F.n[0];
@@ -648,8 +649,9 @@ function dressUnder(C, s, si, rng) {
   const d = s.maxZ - s.minZ;
   const area = w * d;
   if (area < 1.0 || Math.min(w, d) < 0.5) return;
+  if (s.maxY - s.minY > 12 && Math.min(w, d) <= 3.5) return;
   const mix = C.mix(si);
-  const n = Math.round(clamp(area * 0.3, 2, 26) * mix.density);
+  const n = Math.round(clamp(area * 0.12, 1, 14) * mix.density);
   const y = s.minY;
   for (let k = 0; k < n; k++) {
     let x;
@@ -806,7 +808,7 @@ const PALE = [0.95, 0.92, 0.85];
 const VIGNETTES = [
   {
     // a climber's camp: bedroll, candle cluster, dead lantern, rope, tools, soot on the wall
-    id: 'camp', secs: [2, 3], kind: 'wall',
+    id: 'camp', secs: [2, 3, 1], kind: 'wall',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       const at = frame(site);
@@ -827,7 +829,7 @@ const VIGNETTES = [
   },
   {
     // a dropped bag at a lip: the satchel and what spilled
-    id: 'bag', secs: [1, 0], kind: 'lip',
+    id: 'bag', secs: [1, 0, 2], kind: 'lip',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       put('satchel', 0, 0, { yaw: 0.6, tz: 0.08 });
@@ -841,7 +843,7 @@ const VIGNETTES = [
   },
   {
     // a shrine of wax and paper round a skull
-    id: 'shrine', secs: [3, 2], kind: 'wall',
+    id: 'shrine', secs: [3, 4, 2], kind: 'wall',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       const at = frame(site);
@@ -866,7 +868,7 @@ const VIGNETTES = [
   },
   {
     // a hand-scratched tally with a candle stub and the climber's bones
-    id: 'tally', secs: [4, 5], kind: 'wall',
+    id: 'tally', secs: [4, 5, 3], kind: 'wall',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       wallMark(C, rng, site, D.TALLY, 0, 1.45, 1.2, 1.2, [PALE[0], PALE[1], PALE[2], 0.95]);
@@ -882,7 +884,7 @@ const VIGNETTES = [
   },
   {
     // a fallen scaffold: smashed crates, planks, rusted tools
-    id: 'scaffold', secs: [5, 4], kind: 'open',
+    id: 'scaffold', secs: [5, 4, 2], kind: 'open',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       put('crateSmash', 0, 0, { yaw: 0.3 });
@@ -904,7 +906,7 @@ const VIGNETTES = [
   },
   {
     // a climber slumped against the wall
-    id: 'remains', secs: [6, 7], kind: 'wall',
+    id: 'remains', secs: [6, 7, 5], kind: 'wall',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       put('skull', 0.0, -0.62, { dy: 0.5, yaw: Math.PI + 0.3, tx: 0.4 });
@@ -924,7 +926,7 @@ const VIGNETTES = [
   },
   {
     // the last tally, deep down
-    id: 'tally2', secs: [7, 6], kind: 'wall',
+    id: 'tally2', secs: [7, 6, 5], kind: 'wall',
     build(C, rng, site) {
       const put = makePut(C, rng, site);
       wallMark(C, rng, site, D.TALLY, 0, 1.3, 1.4, 1.4, [PALE[0], PALE[1], PALE[2], 0.95]);
@@ -937,77 +939,66 @@ const VIGNETTES = [
   },
 ];
 
+/**
+ * Feasible sites of one vignette in one section: scanned systematically over the floors of that section (walls: along each side of
+ * a ledge that meets a wall; lips: along each side that falls away; open: a few interior spots), then picked by the seed.
+ */
 function findSite(C, rng, v, si) {
-  // candidate floors of that section, big enough, shuffled by the seed
-  const cands = [];
-  for (const s of C.sites) if (C.secOf((s.minY + s.maxY) / 2) === si || C.secOf(s.maxY) === si) cands.push(s);
-  if (!cands.length) return null;
-  for (let tries = 0; tries < 60; tries++) {
-    const s = cands[(rng() * cands.length) | 0];
-    const w = s.maxX - s.minX;
-    const d = s.maxZ - s.minZ;
-    let x;
-    let z;
-    let wallK = -1;
-    if (v.kind === 'open') {
-      x = s.minX + 1.5 + rng() * Math.max(0, w - 3);
-      z = s.minZ + 1.5 + rng() * Math.max(0, d - 3);
-    } else {
-      // against a wall or at a lip: start from the edge of the floor and walk 0.9 m in
-      const side = (rng() * 4) | 0;
-      const off = v.kind === 'lip' ? 0.8 : 0.95;
-      x = side === 0 ? s.maxX - off : side === 1 ? s.minX + off : s.minX + 1 + rng() * Math.max(0, w - 2);
-      z = side === 2 ? s.maxZ - off : side === 3 ? s.minZ + off : s.minZ + 1 + rng() * Math.max(0, d - 2);
-      x = clamp(x, s.minX + 0.5, s.maxX - 0.5);
-      z = clamp(z, s.minZ + 0.5, s.maxZ - 0.5);
-      if (v.kind === 'wall') {
-        C.rej.tryWall = (C.rej.tryWall || 0) + 1;
-        for (let q = 0; q < 4; q++) {
-          const dd = C.wallFace(x, s.maxY + 0.6, z, DIRS[q][0], DIRS[q][1], 1.3);
-          if (dd < 1.3) {
-            wallK = q;
-            x += DIRS[q][0] * (dd - 0.9); // the wall ends up exactly 0.9 m behind the site
-            z += DIRS[q][1] * (dd - 0.9);
-            break;
-          }
-        }
-        if (wallK < 0) {
-          C.rej.noWall = (C.rej.noWall || 0) + 1;
-          continue;
-        }
-      } else {
-        // lip: the void side must be near
-        let lipK = -1;
-        for (let q = 0; q < 4; q++) {
-          const ex = x + DIRS[q][0] * 1.1;
-          const ez = z + DIRS[q][1] * 1.1;
-          if (C.free(ex - 0.1, s.maxY - 0.8, ez - 0.1, ex + 0.1, s.maxY - 0.08, ez + 0.1)) {
-            lipK = q;
-            break;
-          }
-        }
-        if (lipK < 0) continue;
-        wallK = lipK; // for a lip the "back" is the void, so the items face away from it
-      }
-    }
-    const y = s.maxY;
-    if (!C.free(x - 1.4, y + 0.06, z - 1.4, x + 1.4, y + 2.0, z + 1.4)) {
+  const found = [];
+  const accept = (x, y, z, yaw, wdx = 0, wdz = 0) => {
+    // the box over the site, clipped at the wall behind it (which is 0.9 m away)
+    const x0 = wdx < 0 ? x - 0.85 : x - 1.4;
+    const x1 = wdx > 0 ? x + 0.85 : x + 1.4;
+    const z0 = wdz < 0 ? z - 0.85 : z - 1.4;
+    const z1 = wdz > 0 ? z + 0.85 : z + 1.4;
+    if (!C.free(x0, y + 0.06, z0, x1, y + 2.0, z1)) {
       C.rej.blocked = (C.rej.blocked || 0) + 1;
-      continue;
+      return;
     }
     if (C.nearAnchor(x, y, z, 2.5) || C.nearCp(x, y, z, 3.0) || C.nearClimb(x, y, z, 1.2)) {
       C.rej.near = (C.rej.near || 0) + 1;
-      continue;
+      return;
     }
     if (!C.nearRoute(x, y, z, 30)) {
       C.rej.far = (C.rej.far || 0) + 1;
+      return;
+    }
+    found.push({ x, y, z, yaw });
+  };
+  for (const s of C.level.solids) {
+    if (s.kind === 'crumble' || s.active === false) continue;
+    const w = s.maxX - s.minX;
+    const d = s.maxZ - s.minZ;
+    if (w * d < 6 || Math.min(w, d) < 2 || w * d > 2500) continue;
+    if (s.maxY - s.minY > 12) continue;
+    if (C.secOf(s.maxY) !== si) continue;
+    const y = s.maxY;
+    if (v.kind === 'open') {
+      for (let k = 0; k < 4; k++) accept(s.minX + 1.6 + ((k + 0.5) / 4) * Math.max(0, w - 3.2), y, s.minZ + 1.6 + (((k * 3 + 1) % 4) / 4) * Math.max(0, d - 3.2), 0);
       continue;
     }
-    // the frame: local -z points at the wall (or the void)
-    const yaw = wallK >= 0 ? Math.atan2(-DIRS[wallK][0], -DIRS[wallK][1]) : rng() * TAU;
-    return { x, y, z, yaw, solid: s };
+    for (let q = 0; q < 4; q++) {
+      const dx = DIRS[q][0];
+      const dz = DIRS[q][1];
+      for (let t = 1; t <= 5; t++) {
+        const f = t / 6;
+        // a point 0.95 m in from side q, at fraction f along it
+        const x = dx !== 0 ? (dx > 0 ? s.maxX - 0.95 : s.minX + 0.95) : s.minX + 0.9 + f * Math.max(0, w - 1.8);
+        const z = dz !== 0 ? (dz > 0 ? s.maxZ - 0.95 : s.minZ + 0.95) : s.minZ + 0.9 + f * Math.max(0, d - 1.8);
+        if (v.kind === 'wall') {
+          const dd = C.wallFace(x, y + 0.6, z, dx, dz, 1.3);
+          if (dd < 1.3) accept(x + dx * (dd - 0.9), y, z + dz * (dd - 0.9), Math.atan2(-dx, -dz), dx, dz); // the wall ends up exactly 0.9 m behind
+        } else if (C.free(x + dx * 1.25 - 0.1, y - 0.8, z + dz * 1.25 - 0.1, x + dx * 1.25 + 0.1, y - 0.08, z + dz * 1.25 + 0.1)) {
+          accept(x, y, z, Math.atan2(-dx, -dz)); // a lip: the void behind
+        }
+      }
+    }
   }
-  return null;
+  // keep the vignettes apart (one per ledge, 30 m between them)
+  const apart = found.filter((f) => C.vignettes.every((q) => (q.x - f.x) ** 2 + (q.y - f.y) ** 2 + (q.z - f.z) ** 2 > 30 * 30));
+  const list = apart.length ? apart : found;
+  if (!list.length) return null;
+  return list[(rng() * list.length) | 0];
 }
 
 function placeVignettes(C, rngSeed) {
@@ -1017,7 +1008,7 @@ function placeVignettes(C, rngSeed) {
   for (let i = 0; i < VIGNETTES.length; i++) {
     if (i === drop) continue;
     const v = VIGNETTES[i];
-    const order = rng() < 0.65 ? v.secs : [v.secs[1], v.secs[0]];
+    const order = rng() < 0.65 ? v.secs : [v.secs[1], v.secs[0], v.secs[2]];
     let site = null;
     let used = -1;
     for (const si of order) {
@@ -1133,63 +1124,90 @@ export function planSceneDetail(level, seed, kit) {
 // -----------------------------------------------------------------------------
 // Window selection (shared by the view and the tests)
 // -----------------------------------------------------------------------------
+const NB = 16;
+const _bins = new Float32Array(NB);
+
 /**
- * Picks the items to draw around the head: those with rank <= rankMax within the radius, shrinking the radius until their
- * triangles fit maxTris. Writes item indices into `out` (Int32Array, length >= plan.nItems). Returns the triangle sum; the final
- * radius and count are left in `win`.
+ * Picks the items to draw around the head: those with rank <= rankMax within `radius`, nearest first, as many as fit `maxTris`
+ * (16 distance bins: the farthest bins that would overflow are dropped whole, so what you see near you never depends on what is
+ * far away). Writes item indices into `out` (Int32Array, length >= plan.nItems); returns the triangle sum; win.n / win.radius
+ * report the count and the radius actually used. Allocation-free.
  */
 export function selectItems(plan, hx, hy, hz, radius, rankMax, maxTris, out, win) {
   const items = plan.items;
   const tt = plan.kit.templates;
-  let r = radius;
+  const nItems = plan.nItems;
+  _bins.fill(0);
+  const inv = NB / radius;
+  const r2 = radius * radius;
+  for (let i = 0; i < nItems; i++) {
+    const o = i * ITEM_STRIDE;
+    const dy = items[o + 1] - hy;
+    if (dy > radius || dy < -radius || items[o + 11] > rankMax) continue;
+    const dx = items[o] - hx;
+    const dz = items[o + 2] - hz;
+    const q = dx * dx + dy * dy + dz * dz;
+    if (q >= r2) continue;
+    _bins[(Math.sqrt(q) * inv) | 0] += tt[items[o + 12]].tris;
+  }
+  let acc = 0;
+  let k = 0;
+  while (k < NB && acc + _bins[k] <= maxTris) acc += _bins[k++];
+  if (k === 0) {
+    k = 1;
+    acc = _bins[0];
+  }
+  const lim = k / inv;
+  const l2 = lim * lim;
   let n = 0;
-  let tris = 0;
-  for (let pass = 0; pass < 7; pass++) {
-    n = 0;
-    tris = 0;
-    const r2 = r * r;
-    for (let i = 0; i < plan.nItems; i++) {
-      const o = i * ITEM_STRIDE;
-      const dy = items[o + 1] - hy;
-      if (dy > r || dy < -r) continue;
-      if (items[o + 11] > rankMax) continue;
-      const dx = items[o] - hx;
-      const dz = items[o + 2] - hz;
-      if (dx * dx + dy * dy + dz * dz > r2) continue;
-      out[n++] = i;
-      tris += tt[items[o + 12]].tris;
-    }
-    if (tris <= maxTris) break;
-    r *= 0.82;
+  for (let i = 0; i < nItems; i++) {
+    const o = i * ITEM_STRIDE;
+    const dy = items[o + 1] - hy;
+    if (dy > lim || dy < -lim || items[o + 11] > rankMax) continue;
+    const dx = items[o] - hx;
+    const dz = items[o + 2] - hz;
+    if (dx * dx + dy * dy + dz * dz >= l2) continue;
+    out[n++] = i;
   }
   if (win) {
     win.n = n;
-    win.radius = r;
+    win.radius = lim;
   }
-  return tris;
+  return acc;
 }
 
-/** Same for decals / puddles (flat records, x y z first, rank at `rankAt`): at most `maxN` nearest within the radius. */
+/** Same for decals / puddles (flat records, x y z first, rank at `rankAt`): the nearest `maxN` within the radius. */
 export function selectRecords(arr, stride, rankAt, count, hx, hy, hz, radius, rankMax, maxN, out) {
-  let r = radius;
-  let n = 0;
-  for (let pass = 0; pass < 7; pass++) {
-    n = 0;
-    const r2 = r * r;
-    for (let i = 0; i < count; i++) {
-      const o = i * stride;
-      const dy = arr[o + 1] - hy;
-      if (dy > r || dy < -r) continue;
-      if (arr[o + rankAt] > rankMax) continue;
-      const dx = arr[o] - hx;
-      const dz = arr[o + 2] - hz;
-      if (dx * dx + dy * dy + dz * dz > r2) continue;
-      out[n++] = i;
-    }
-    if (n <= maxN) break;
-    r *= 0.82;
+  _bins.fill(0);
+  const inv = NB / radius;
+  const r2 = radius * radius;
+  for (let i = 0; i < count; i++) {
+    const o = i * stride;
+    const dy = arr[o + 1] - hy;
+    if (dy > radius || dy < -radius || arr[o + rankAt] > rankMax) continue;
+    const dx = arr[o] - hx;
+    const dz = arr[o + 2] - hz;
+    const q = dx * dx + dy * dy + dz * dz;
+    if (q >= r2) continue;
+    _bins[(Math.sqrt(q) * inv) | 0]++;
   }
-  return Math.min(n, maxN);
+  let acc = 0;
+  let k = 0;
+  while (k < NB && acc + _bins[k] <= maxN) acc += _bins[k++];
+  if (k === 0) k = 1;
+  const lim = k / inv;
+  const l2 = lim * lim;
+  let n = 0;
+  for (let i = 0; i < count && n < maxN; i++) {
+    const o = i * stride;
+    const dy = arr[o + 1] - hy;
+    if (dy > lim || dy < -lim || arr[o + rankAt] > rankMax) continue;
+    const dx = arr[o] - hx;
+    const dz = arr[o + 2] - hz;
+    if (dx * dx + dy * dy + dz * dz >= l2) continue;
+    out[n++] = i;
+  }
+  return n;
 }
 
 export { D, P };

@@ -28,6 +28,7 @@
  */
 
 import { Quaternion, Vector3 } from 'three';
+import { loadGLB } from './glbLoad.js';
 
 export const GEAR_URL = new URL('../../assets/models/player_arms.glb', import.meta.url).href;
 
@@ -63,12 +64,7 @@ function chainQuat(node, root, out) {
 
 /** Loads the GLB (GLTFLoader imported lazily so a missing loader only costs the fallback hands). */
 export function loadGearGLTF(url = GEAR_URL) {
-  return import('three/addons/loaders/GLTFLoader.js').then(
-    (M) =>
-      new Promise((resolve, reject) => {
-        new M.GLTFLoader().load(url, resolve, undefined, reject);
-      }),
-  );
+  return loadGLB(url);
 }
 
 /** One launcher-bone driver: converts a socket-space axis into the bone's parent frame once. */
