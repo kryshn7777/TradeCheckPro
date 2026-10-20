@@ -39,6 +39,11 @@ const PLOT_W = PLOT_X1 - PLOT_X0;
 const PLOT_Y = 80; // baseline
 const PLOT_AMP = 30; // px for an R wave
 const GAP = 14; // px erased ahead of the sweep head
+const BANDS = [
+  { from: 0, to: 70, a: 1, w: 3.2 }, // the trace in three age bands: phosphor fading behind the sweep head
+  { from: 70, to: 150, a: 0.72, w: 2.8 },
+  { from: 150, to: PLOT_W - GAP, a: 0.42, w: 2.4 },
+];
 const MAX_FLASH = 0.34;
 const PULSE_ALPHA = 0.14;
 const PULSE_RADIUS = 0.05;
@@ -163,6 +168,7 @@ export class HealthFx {
     this._ecgT = 0;
     this._lowAmt = 0; // 0..1 how red / jittery the trace is
     this._color = [70, 255, 138]; // current trace colour (rgb 0..255)
+    this._st = null;
     this._dead = false;
     this._deadT = 0;
     this._lastFlashAt = -1;
@@ -294,6 +300,28 @@ export class HealthFx {
   // ECG drawing
   // -----------------------------------------------------------------------------------------------
 
+  /** Canvas style strings for a trace colour, rebuilt only when the colour changes (no string churn at 30 Hz). */
+  _styles(r, g, b) {
+    const key = (r << 16) | (g << 8) | b;
+    let st = this._st;
+    if (st && st.key === key) return st;
+    const c = `${r},${g},${b}`;
+    st = this._st = {
+      key,
+      grid: `rgba(${c},0.10)`,
+      axis: `rgba(${c},0.22)`,
+      bands: [`rgba(${c},${BANDS[0].a})`, `rgba(${c},${BANDS[1].a})`, `rgba(${c},${BANDS[2].a})`],
+      head: `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 80)},${Math.min(255, b + 80)})`,
+      solid: `rgb(${c})`,
+      a75: `rgba(${c},0.75)`,
+      a60: `rgba(${c},0.6)`,
+      a80: `rgba(${c},0.8)`,
+      a90: `rgba(${c},0.9)`,
+      frame: `rgba(${c},0.35)`,
+    };
+    return st;
+  }
+
   _drawEcg(step, idle, hp) {
     const ctx = this._g;
     const W = ECG_W;
@@ -349,8 +377,8 @@ export class HealthFx {
     // Background + grid
     ctx.fillStyle = '#020a06';
     ctx.fillRect(0, 0, W, Hh);
-    const rgb = `${tR | 0},${tG | 0},${tB | 0}`;
-    ctx.strokeStyle = `rgba(${rgb},0.10)`;
+    const st = this._styles(tR | 0, tG | 0, tB | 0);
+    ctx.strokeStyle = st.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = PLOT_X0; x <= PLOT_X1; x += 16) {
@@ -362,7 +390,7 @@ export class HealthFx {
       ctx.lineTo(PLOT_X1, y + 0.5);
     }
     ctx.stroke();
-    ctx.strokeStyle = `rgba(${rgb},0.22)`;
+    ctx.strokeStyle = st.axis;
     ctx.beginPath();
     ctx.moveTo(PLOT_X0, PLOT_Y + 0.5);
     ctx.lineTo(PLOT_X1, PLOT_Y + 0.5);
@@ -372,14 +400,9 @@ export class HealthFx {
     const head = Math.floor(this._head);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    const bands = [
-      { from: 0, to: 70, a: 1, w: 3.2 },
-      { from: 70, to: 150, a: 0.72, w: 2.8 },
-      { from: 150, to: PLOT_W - GAP, a: 0.42, w: 2.4 },
-    ];
     for (let b = 2; b >= 0; b--) {
-      const band = bands[b];
-      ctx.strokeStyle = `rgba(${rgb},${band.a})`;
+      const band = BANDS[b];
+      ctx.strokeStyle = st.bands[b];
       ctx.lineWidth = band.w;
       ctx.beginPath();
       let prevC = -1;
@@ -395,7 +418,7 @@ export class HealthFx {
     }
     // Sweep head dot
     const hy = PLOT_Y - ys[head % PLOT_W] * PLOT_AMP;
-    ctx.fillStyle = `rgba(${Math.min(255, tR + 80) | 0},${Math.min(255, tG + 80) | 0},${Math.min(255, tB + 80) | 0},1)`;
+    ctx.fillStyle = st.head;
     ctx.beginPath();
     ctx.arc(PLOT_X0 + head + 0.5, hy, 2.6, 0, Math.PI * 2);
     ctx.fill();
@@ -406,7 +429,7 @@ export class HealthFx {
     ctx.save();
     ctx.translate(26, 24);
     ctx.scale(hs, hs);
-    ctx.fillStyle = `rgb(${rgb})`;
+    ctx.fillStyle = st.solid;
     ctx.beginPath();
     ctx.moveTo(0, 9);
     ctx.bezierCurveTo(-16, -3, -8, -15, 0, -6);
@@ -415,14 +438,14 @@ export class HealthFx {
     ctx.restore();
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'right';
-    ctx.fillStyle = `rgb(${rgb})`;
+    ctx.fillStyle = st.solid;
     ctx.font = '700 38px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.fillText(dead ? '--' : String(Math.round(bpm)), W - 52, 36);
     ctx.font = '600 13px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-    ctx.fillStyle = `rgba(${rgb},0.75)`;
+    ctx.fillStyle = st.a75;
     ctx.textAlign = 'left';
     ctx.fillText(dead ? 'FLAT' : 'BPM', W - 46, 34);
-    ctx.fillStyle = `rgba(${rgb},0.6)`;
+    ctx.fillStyle = st.a60;
     ctx.font = '600 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.fillText(dead ? 'NO SIGNAL' : low ? 'CRITICAL' : hpv < 0.8 ? 'INJURED' : 'STABLE', 52, 14);
 
@@ -430,12 +453,12 @@ export class HealthFx {
     const bx = 8;
     const by = 112;
     const bw = W - 16 - 56;
-    ctx.strokeStyle = `rgba(${rgb},0.8)`;
+    ctx.strokeStyle = st.a80;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(bx + 0.5, by + 0.5, bw, 10);
-    ctx.fillStyle = `rgb(${rgb})`;
+    ctx.fillStyle = st.solid;
     ctx.fillRect(bx + 2, by + 2, Math.max(0, (bw - 3) * U.clamp(hpv, 0, 1)), 7);
-    ctx.fillStyle = `rgba(${rgb},0.9)`;
+    ctx.fillStyle = st.a90;
     ctx.fillRect(bx + 0.5 + bw * H.lowEnter, by - 2, 1.5, 14); // low threshold tick
     ctx.font = '700 15px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'right';
@@ -444,7 +467,7 @@ export class HealthFx {
     // CRT scanlines + a dim frame
     ctx.fillStyle = 'rgba(0,0,0,0.16)';
     for (let y = 1; y < Hh; y += 3) ctx.fillRect(0, y, W, 1);
-    ctx.strokeStyle = `rgba(${rgb},0.35)`;
+    ctx.strokeStyle = st.frame;
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, W - 2, Hh - 2);
 
