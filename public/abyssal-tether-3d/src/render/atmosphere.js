@@ -399,6 +399,7 @@ varying vec3 vWorld;
 varying vec2 vLocal;
 varying float vAlpha;
 varying float vType;
+varying float vNear;
 #include <fog_pars_vertex>
 void main() {
   float age = uTime - aDrift.w;
@@ -433,6 +434,7 @@ void main() {
   vLocal = local;
   vAlpha = a;
   vType = aMisc.x;
+  vNear = aMisc.x < 0.5 && aMisc.z < 0.9 ? 1.0 : 0.0;
   vec4 mvPosition = viewMatrix * vec4( wp, 1.0 );
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
@@ -460,6 +462,7 @@ varying vec3 vWorld;
 varying vec2 vLocal;
 varying float vAlpha;
 varying float vType;
+varying float vNear;
 ${FX_LIGHT_GLSL}
 #include <common>
 #include <fog_pars_fragment>
@@ -474,7 +477,7 @@ void main() {
   if ( vType < 0.5 ) {
     float r2 = dot( vLocal, vLocal );
     mask = max( 0.0, 1.0 - r2 );
-    mask *= mask;
+    mask *= mask * ( 1.0 - 0.45 * vNear + 0.45 * vNear * mask );
     near = smoothstep( 0.9, 3.2, d );
     a = uDensity;
   } else {
@@ -497,18 +500,20 @@ void main() {
     gl_FragColor = vec4( 0.0 );
     return;
   }
-  vec3 q = p * uScale + uWind * uTime;
+  // the small near-field cards need finer detail or they read as smooth discs
+  vec3 sc = uScale * ( 1.0 + 1.7 * vNear );
+  vec3 q = p * sc + uWind * uTime;
   float n0 = texture( uNoise, q ).r;
   if ( vType > 0.5 ) {
     // A layer has depth: average the field at the top and bottom of a ~0.6 m slab along the
     // view ray (parallax as you move, never a flat decal).
     vec3 pb = p + v * min( 0.6 / max( abs( v.y ), 0.05 ), 4.0 );
-    n0 = 0.5 * ( n0 + texture( uNoise, pb * uScale + uWind * uTime ).r );
+    n0 = 0.5 * ( n0 + texture( uNoise, pb * sc + uWind * uTime ).r );
   }
   float n = n0 * 0.62 + texture( uNoise, q * 2.37 + vec3( 0.31, 0.57, 0.13 ) - uWind * ( uTime * 1.7 ) ).r * 0.38;
   // a thin haze everywhere, thicker wisps and banks where the field is dense
   float dens = uFloor + ( 1.0 - uFloor ) * smoothstep( uCover, 0.95, n );
-  a *= dens;
+  a *= dens * ( 1.0 - 0.35 * vNear );
   #ifdef USE_FOG
     vec3 base = fogColor;
   #else
