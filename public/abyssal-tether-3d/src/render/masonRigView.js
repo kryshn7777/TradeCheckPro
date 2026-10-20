@@ -17,7 +17,7 @@
  * Debug (AT3D.debug.creature): view.debug.place / clear / play / pose / state.
  */
 import * as THREE from 'three';
-import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS, STRIKE_CONTACT } from './mason/masonClipGraph.js';
+import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
 import { HeadFit } from './mason/masonFit.js';
 import { MasonLegs } from './mason/masonLegs.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
@@ -33,12 +33,12 @@ const DEFAULTS = {
 };
 const SEG = 20;
 const LIFT_FALLOFF = [1, 0.6, 0.3, 0.12];
-const ZERO3 = [0, 0, 0];
 const _v0 = new THREE.Vector3();
 const _m3a = new Float64Array(9);
 const _m3b = new Float64Array(9);
 const _m3c = new Float64Array(9);
 const _m3d = new Float64Array(9);
+const _m3e = new Float64Array(9);
 
 function len3(x, y, z) {
   return Math.sqrt(x * x + y * y + z * z);
@@ -290,7 +290,7 @@ export class MasonRigView {
       }
     }
     this.root.visible = true;
-    const lodWant = camD > o.lodDistance + (this._lod === 1 ? -o.lodHysteresis : o.lodHysteresis * 0) ? 1 : 0;
+    const lodWant = camD > (this._lod === 1 ? o.lodDistance - o.lodHysteresis : o.lodDistance) ? 1 : 0;
     this._setLod(lodWant);
     const lodFar = this._lod === 1;
 
@@ -354,7 +354,7 @@ export class MasonRigView {
     }
 
     // ---- crown aim (spring) ----
-    this._aim(dt, B, F, g, C);
+    this._aim(dt, B, F);
 
     // ---- bones ----
     this._poseSpine(F, S);
@@ -416,45 +416,30 @@ export class MasonRigView {
       info[tr[i]].prevT = -1;
       this._emitClip(tr[i], 'start', 0, C);
     }
-    for (let i = 0; i < BASE_CLIPS.length; i++) {
-      const n = BASE_CLIPS[i];
-      const a = act[n];
-      if (!a) continue;
-      let wt = f ? (f.name === n ? 1 : 0) : w[n];
-      const ci = info[n];
-      if (n === 'rear_windup') {
-        if (f && f.name === n) a.time = f.u * ci.duration;
-        else if (!f && g.windupTime >= 0) a.time = g.windupTime;
-        else if (wt < 0.001) a.time = 0;
-      } else if (n === 'strike') {
-        if (f && f.name === n) a.time = f.u * ci.duration;
-        else if (!f && g.strikeTime >= 0) a.time = g.strikeTime;
-        else if (wt < 0.001) a.time = 0;
-      } else if (f && f.name === n) {
-        if (f.hold) {
+    const lists = [BASE_CLIPS, ADDITIVE_CLIPS];
+    for (let li = 0; li < 2; li++) {
+      const list = lists[li];
+      for (let i = 0; i < list.length; i++) {
+        const n = list[i];
+        const a = act[n];
+        if (!a) continue;
+        const ci = info[n];
+        const isF = !!f && f.name === n;
+        const wt = f ? (isF ? 1 : 0) : w[n];
+        if (n === 'rear_windup' || n === 'strike') {
+          // phase lock: always paused, scrubbed by the sim's own attack timer
+          a.paused = true;
+          const t = isF ? f.u * ci.duration : n === 'rear_windup' ? g.windupTime : g.strikeTime;
+          if (t >= 0 && (isF || !f)) a.time = t;
+          else if (wt < 0.001) a.time = 0;
+        } else if (isF && f.hold) {
           a.paused = true;
           a.time = f.u * ci.duration;
         } else a.paused = false;
-      } else if (a.paused && !(n === 'rear_windup' || n === 'strike')) a.paused = false;
-      a.setEffectiveWeight(wt);
-      ci.weight = wt;
-      this._events(n, a, wt, C);
-    }
-    for (let i = 0; i < ADDITIVE_CLIPS.length; i++) {
-      const n = ADDITIVE_CLIPS[i];
-      const a = act[n];
-      if (!a) continue;
-      let wt = f ? (f.name === n ? 1 : 0) : w[n];
-      const ci = info[n];
-      if (f && f.name === n) {
-        if (f.hold) {
-          a.paused = true;
-          a.time = f.u * ci.duration;
-        } else a.paused = false;
-      } else if (a.paused) a.paused = false;
-      a.setEffectiveWeight(wt);
-      ci.weight = wt;
-      this._events(n, a, wt, C);
+        a.setEffectiveWeight(wt);
+        ci.weight = wt;
+        this._events(n, a, wt, C);
+      }
     }
     for (let i = 0; i < PARAM_CLIPS.length; i++) {
       const n = PARAM_CLIPS[i];
@@ -469,7 +454,6 @@ export class MasonRigView {
       if (v > 0.5) this._events(n, a, 1, C);
       else ci.prevT = -1;
     }
-    this.mixer.timeScale = 1;
   }
 
   _events(name, a, weight, C) {
@@ -495,7 +479,7 @@ export class MasonRigView {
   }
 
   // ---- crown aim ------------------------------------------------------------------------------------------------
-  _aim(dt, B, F, g, C) {
+  _aim(dt, B, F) {
     const fc = this._focus;
     const foc = B.focus;
     let ty = 0;
@@ -552,12 +536,11 @@ export class MasonRigView {
       quat3(_m3b, q.x, q.y, q.z, q.w);
       let M = R;
       if (i === 0) {
-        // yaw about +Y then pitch about +X (the aim spring), then the clip's neck delta
+        // the aim spring: yaw about +Y, then pitch about +X (Ry * Rx), then the clip's neck delta
         const cy = Math.cos(fc.yaw);
         const sy = Math.sin(fc.yaw);
         const cp = Math.cos(fc.pitch);
         const sp2 = Math.sin(fc.pitch);
-        // Ry * Rx
         _m3c[0] = cy;
         _m3c[1] = sy * sp2;
         _m3c[2] = sy * cp;
@@ -570,9 +553,8 @@ export class MasonRigView {
         mul3(_m3d, R, _m3c);
         M = _m3d;
       }
-      const out = i === 0 ? _m3a : _m3d;
-      mul3(out === M ? _m3c : out, M, _m3b);
-      const Rm = out === M ? _m3c : out;
+      mul3(_m3e, M, _m3b);
+      const Rm = _m3e;
       const s = S[i];
       // delta translation (the clip's heave) in the bone frame
       const dx = (b.position.x - rp[i * 3]) * s;
@@ -888,5 +870,3 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
     },
   };
 }
-
-export { STRIKE_CONTACT, ZERO3 };
