@@ -131,7 +131,7 @@ const PROCEDURAL_SIZE = 256;
 // Procedural tileable textures (fallback until the baked sets load)
 // -----------------------------------------------------------------------------
 
-function makeRng(seed) {
+export function makeRng(seed) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -143,7 +143,7 @@ function makeRng(seed) {
 }
 
 /** Periodic value-noise fBm over a size×size canvas (tiles seamlessly). */
-function makeFbm(seed, basePeriod, octaves, gain = 0.5) {
+export function makeFbm(seed, basePeriod, octaves, gain = 0.5) {
   const rng = makeRng(seed);
   const layers = [];
   let period = basePeriod;
@@ -1076,9 +1076,11 @@ if ( uHeightM > 0.0 ) {
 #endif
 if ( atDf > 0.002 ) atDt = textureGrad( uDetailMap, atPUv * uDetailScale, atGx * uDetailScale, atGy * uDetailScale );
 // near field (floor, ledge lip, wall within arm's reach at 1:1 scale): a second, finer octave of the same detail texture
-float atNear = uDetailK.w * ( 1.0 - smoothstep( 1.2, 3.6, atDist ) ) * smoothstep( 0.1, 0.4, atNv ) * uDetailAmt;
+// (VR-POLISH read 'crumpled foil' on the close floor: the octave is now half the amplitude, 2.4x instead of 3.7x the base frequency
+// and gone by 2.2 m, so it reads as fine stone grain at arm's length and nothing beyond)
+float atNear = uDetailK.w * ( 1.0 - smoothstep( 0.7, 2.2, atDist ) ) * smoothstep( 0.12, 0.45, atNv ) * uDetailAmt;
 vec4 atDt2 = vec4( 0.5, 0.5, 0.5, 1.0 );
-if ( atNear > 0.01 ) atDt2 = textureGrad( uDetailMap, atPUv * ( uDetailScale * 3.7 ) + vec2( 0.31, 0.77 ), atGx * ( uDetailScale * 3.7 ), atGy * ( uDetailScale * 3.7 ) );
+if ( atNear > 0.01 ) atDt2 = textureGrad( uDetailMap, atPUv * ( uDetailScale * 2.4 ) + vec2( 0.31, 0.77 ), atGx * ( uDetailScale * 2.4 ), atGy * ( uDetailScale * 2.4 ) );
 #define vMapUv atPUv
 #define vNormalMapUv atPUv
 #define vAoMapUv atPUv
@@ -1102,7 +1104,7 @@ function buildHQNormalChunk() {
 	if ( uHeightM > 0.0 ) mapN.z = sqrt( max( 1.0 - dot( mapN.xy, mapN.xy ), 0.05 ) );
 	mapN.xy *= 1.0 - 0.45 * smoothstep( 22.0, 70.0, atDist );
 	if ( atDf > 0.002 ) mapN.xy += ( atDt.xy * 2.0 - 1.0 ) * atDf;
-	if ( atNear > 0.01 ) mapN.xy += ( atDt2.xy * 2.0 - 1.0 ) * ( 0.55 * atNear );
+	if ( atNear > 0.01 ) mapN.xy += ( atDt2.xy * 2.0 - 1.0 ) * ( 0.24 * atNear );
 	normal = normalize( tbn * mapN );`,
   );
 }
@@ -1159,6 +1161,37 @@ const GRADE_FRAG = `  {
     if ( atHi > 3.0 ) atC *= ( 3.0 + 2.0 * ( 1.0 - exp( 0.5 * ( 3.0 - atHi ) ) ) ) / atHi;
     gl_FragColor.rgb = atC;
   }`;
+
+/**
+ * Shader edge bevel for the unit-box solids (no geometry): the box-local position gives the distance to each edge of the face in
+ * metres, and within uBevelK.y (3.5 cm) of an edge the shading normal rolls toward the neighbouring face (a rounded profile, the
+ * strength squared of the distance to the edge), so every block catches a thin highlight on its lit edge and a shadow line on the
+ * other. The band fades out when it is narrower than about a pixel (screen-space footprint of the distance, so it never shimmers at
+ * range) and beyond uBevelK.z metres; uBevelK.x = 0 (the `low` tier / governor level >= 3) skips it. The tilt only touches the
+ * view-space normal AFTER the lightmap's face / uv lookup (vertex stage) and the baked-light sample, which read the geometric
+ * face, so lightmapped and volume-lit surfaces take it identically: the baked relief term (normal - nonPerturbedNormal tilted toward
+ * "up") brightens upward-rolling edges and darkens downward ones, which is the intended edge light. The instanced solids are axis
+ * aligned (scale + translation only), so box axes are world axes. The edge is also a hair lighter and glossier (worn corners).
+ */
+const BEVEL_FRAG = `
+  float atBev = 0.0;
+  {
+    vec3 atBe = max( vAtBh - abs( vAtBp ), vec3( 0.0 ) ) + vAtFN * 1.0e3;
+    vec3 atBw = min( vec3( uBevelK.y ), vAtBh * 0.9 );
+    vec3 atBfw = fwidth( atBe );
+    if ( uBevelK.x > 0.001 && dot( vViewPosition, vViewPosition ) < uBevelK.z * uBevelK.z ) {
+      vec3 atBs = 1.0 - smoothstep( 0.45 * atBw, 1.1 * atBw, atBfw );
+      vec3 atBk = ( 1.0 - clamp( atBe / atBw, 0.0, 1.0 ) ) * atBs;
+      atBk *= atBk;
+      vec3 atSg = sign( vAtBp );
+      mat3 atV = mat3( viewMatrix );
+      normal = normalize( normal + ( atV[ 0 ] * ( atSg.x * atBk.x ) + atV[ 1 ] * ( atSg.y * atBk.y ) + atV[ 2 ] * ( atSg.z * atBk.z ) ) * ( 1.1 * uBevelK.x ) );
+      atBev = max( atBk.x, max( atBk.y, atBk.z ) ) * uBevelK.x;
+    }
+  }
+  diffuseColor.rgb *= 1.0 + 0.1 * atBev;
+  roughnessFactor *= 1.0 - 0.18 * atBev;
+`;
 
 const UV_TARGETS = ['MAP', 'NORMALMAP', 'AOMAP', 'ROUGHNESSMAP', 'METALNESSMAP', 'ALPHAMAP', 'EMISSIVEMAP'];
 const UV_VARY = {
@@ -1388,17 +1421,28 @@ ${LM_VERT_BODY}`,
       // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
       fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
   float atWet = max( uWet * ${wetK.toFixed(3)}, ${wetMin.toFixed(3)} ) * ( 1.0 - ${dry} );
+  float atPud = 0.0;
 ${
   macro
     ? `  {
-    // floors and ledge tops are dusty, but in the wet sections water stands on them in patches: a film that
-    // darkens the stone and turns it glossy, so the lantern and the lamps glint in it
+    // floors and ledge tops are dusty, but in the wet sections water stands on them: a broad damp film that darkens the stone
+    // and turns it glossy, and, where the macro noise rises above a wetness-driven level, real puddles (crisp edge, a mirror-flat
+    // surface that reflects the probe with parallax correction, deepest where the relief dips; see uPudK). A darker damp ring
+    // follows each puddle's edge.
     float atPn = texture2D( uMacroMap, vAtUv * 0.13 + vec2( 0.37, 0.11 ) ).r + 0.25 * ( texture2D( uMacroMap, vAtUv * 0.41 ).r - 0.5 );
-    atWet = max( atWet, clamp( uWet * ${wetK.toFixed(3)} * 1.7, 0.0, 1.0 ) * smoothstep( 0.4, 0.62, atPn ) * ${dry} );
+    float atPw = clamp( uWet * ${wetK.toFixed(3)} * 1.7, 0.0, 1.0 );
+    atWet = max( atWet, atPw * smoothstep( 0.4, 0.62, atPn ) * ${dry} );
+    if ( uPudK.x > 0.001 && atPw > 0.12 ) {
+      float atPl = 0.70 - 0.26 * atPw;
+      atWet = max( atWet, 0.8 * smoothstep( atPl - 0.09, atPl, atPn ) * ${dry} * atPw );
+      atPud = smoothstep( atPl, atPl + 0.03, atPn ) * ${dry} * uPudK.x;
+${hq ? '      if ( uHeightM > 0.0 ) atPud *= 1.0 - 0.75 * smoothstep( 0.4, 0.62, atHN );\n' : ''}      atWet = max( atWet, atPud );
+    }
   }`
     : ''
 }
 ${hq ? HQ_CREVICE : ''}  diffuseColor.rgb *= 1.0 - ( 0.32 - 0.14 * ${dry} ) * atWet;
+  diffuseColor.rgb *= 1.0 - uPudK.z * atPud;
   diffuseColor.rgb *= 1.0 + uVG * clamp( ( vAtW.y - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );`);
       fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
 ${
@@ -1408,16 +1452,18 @@ ${
 `
     : ''
 }  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );
+  roughnessFactor = mix( roughnessFactor, uPudK.y, atPud );
   // VR: a mirror-sharp wet film sparkles in motion (every head tremor moves the glint across a pixel): floor the roughness
-  roughnessFactor = max( roughnessFactor, 0.14 * clamp( atWet * 3.0, 0.0, 1.0 ) );`);
+  // (standing water is flat, so its floor is lower: the probe reflection stays crisp but never a pinpoint)
+  roughnessFactor = max( roughnessFactor, ( 0.14 - 0.08 * atPud ) * clamp( atWet * 3.0, 0.0, 1.0 ) );`);
       fs = fs.replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n' + SPEC_AA);
+      // everything that reshapes the shading normal, in order, right after the normal map: brushed grain, mirror-flat puddles, box bevels
+      const nrmAnchor = hq ? HQ_NORMAL : '#include <normal_fragment_maps>';
+      let post = '';
       if (aniso > 0) {
         // Brushed-metal look without tangents or MeshPhysicalMaterial: a fine grain across the surface's v axis
         // tilts the normal along v, so the lantern's highlight stretches into a short streak across the grain.
-        const nrmAnchor = hq ? HQ_NORMAL : '#include <normal_fragment_maps>';
-        fs = fs.replace(
-          nrmAnchor,
-          `${nrmAnchor}
+        post += `
   {
     vec3 atQ0 = dFdx( - vViewPosition );
     vec3 atQ1 = dFdy( - vViewPosition );
@@ -1429,9 +1475,12 @@ ${
       float atG = texture2D( uMacroMap, vAtUv * vec2( 1.7, 53.0 ) ).r + 0.5 * texture2D( uMacroMap, vAtUv * vec2( 4.1, 131.0 ) ).r - 0.75;
       normal = normalize( normal + atB * ( inversesqrt( atBl ) * atG * ${aniso.toFixed(3)} ) );
     }
-  }`,
-        );
+  }`;
       }
+      // standing water is flat: the stone's relief (and the detail normal) is flattened inside a puddle
+      if (macro) post += '\n  normal = normalize( mix( normal, nonPerturbedNormal, atPud * 0.92 ) );';
+      if (bevel) post += BEVEL_FRAG;
+      if (post) fs = fs.replace(nrmAnchor, nrmAnchor + post);
       if (gi) {
         fs = fs.replace('#include <lights_fragment_begin>', LIGHTS_BEGIN_GI);
         fs = fs.replace('#include <lights_fragment_maps>', LIGHTS_MAPS_LIT);
@@ -1626,11 +1675,11 @@ export class MaterialLibrary {
     const m = this.m;
     const macro = S.macro && S.macro.map;
     // Level solids (InstancedMesh, box-projected world UVs, ash on tops).
-    m.rock = this._std(S.rock, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true, hq: true, grade: true });
-    m.masonry = this._std(S.masonry, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true, hq: true, grade: true });
+    m.rock = this._std(S.rock, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true, hq: true, grade: true, bevel: true });
+    m.masonry = this._std(S.masonry, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true, hq: true, grade: true, bevel: true });
     // Crumbling ledges read differently by PATTERN (dense dark cracks) and value (paler, dusty), not hue alone.
-    m.crumble = this._std(S.masonry, { color: 0xf0e2c8, envMapIntensity: 0.4 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true, hq: true, grade: true });
-    m.metal = this._std(S.metal, { envMapIntensity: 1.25 }, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.4, hq: true, grade: true, detail: 0.6 });
+    m.crumble = this._std(S.masonry, { color: 0xf0e2c8, envMapIntensity: 0.4 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true, hq: true, grade: true, bevel: true });
+    m.metal = this._std(S.metal, { envMapIntensity: 1.25 }, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.6, aniso: 0.4, hq: true, grade: true, detail: 0.6, bevel: true });
     m.grate = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: S.grate && S.grate.map,

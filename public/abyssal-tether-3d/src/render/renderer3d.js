@@ -21,6 +21,9 @@
  *   applyTextures(textures) → Promise    precompile()  headPosition(out)  themeAt(y, out)
  *   .fx.burst(kind, x, y, z, opts)       kind: 'sparks' | 'puff' | 'chips' | 'debris'
  *   .stats {calls, triangles, points, programs, frameMs}   (after render())
+ *   .contactShadows                 dynamic blob shadows (contactShadows.js): 1 draw call, <= 24 quads, hidden outside a run
+ *   .droppedProps                   thrown / dropped bag items with weight (droppedProps.js); .spawn(kind, x,y,z, vx,vy,vz);
+ *                                   bus 'prop:impact' {kind,x,y,z,speed,surface} is the impact-sound hook
  *   .lighting                       reflections (envProbe.js) + baked GI (lighting.js) + wet glint; see lighting.js
  *   setQualityTier('low'|'quest'|'high'|null) · .qualityTier        lighting/detail tier (null = automatic: ?fx=, settings,
  *                                   reducedEffects, XR); uniforms and distances only, never a recompile
@@ -46,6 +49,8 @@ import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
 import { RenderGovernor } from './renderGovernor.js';
 import { createGLTFLoader } from './glbLoad.js';
+import { ContactShadows } from './contactShadows.js';
+import { DroppedProps } from './droppedProps.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -112,10 +117,13 @@ const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 // Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
 // the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
 const SURFACE_TIERS = {
-  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0 },
-  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1 },
-  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1 },
+  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
 };
+// Parallax-corrected probe box: the shaft box is inflated a little so the far window overhead and the lancets ring stay beyond the walls.
+const PROBE_BOX_GROW = 1.25;
+const PROBE_BOX_EASE = 3; // 1/s: the box eases between sections (the theme blend band is ~18 m wide)
 // WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
 // governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
 const XR_RENDER_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
@@ -277,6 +285,10 @@ export class Renderer3D {
     this.ropeView = new RopeView(this.scene);
     this.fx = new FX(this.scene, this.camera);
     this.levelView.fx = this.fx;
+    // WP-GFX-PARITY: contact shadows (one instanced batch: body, hands, creature feet, supplies, rope end, dropped items) and the
+    // dropped / thrown bag items with weight (one dynamic mesh, hidden while nothing is in flight)
+    this.contactShadows = new ContactShadows(this.scene);
+    this.droppedProps = new DroppedProps(this.scene);
 
     this.level = null;
     this.time = 0;
@@ -702,6 +714,7 @@ export class Renderer3D {
     LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3);
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
     this._driveSurfaceLook(th, tk);
+    this._driveProbeBox(d, head);
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;
@@ -721,6 +734,8 @@ export class Renderer3D {
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.update(d, game, head, this.threat);
+    this.droppedProps.update(d, game);
+    this.contactShadows.update(d, game, head, this);
 
     // Pulse the glyph of an anchor the moment a tether bites.
     if (game && game.bus && game.bus !== this._bus) this._bindBus(game.bus);
@@ -730,6 +745,7 @@ export class Renderer3D {
     if (this._busOff) this._busOff();
     this._bus = bus;
     this._busOff = typeof bus.on === 'function' ? bus.on('grapple:attach', (e) => this.levelView.pulseAnchor(e && e.anchor)) : null;
+    this.droppedProps.bind(bus, () => this._game);
   }
 
   // ---------------------------------------------------------------------------
@@ -788,6 +804,9 @@ export class Renderer3D {
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
     LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
     LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
+    // edge bevel (box solids) and standing water: tier levers; the governor drops the bevel first at level 2 (pure ALU)
+    LOOK.uBevelK.value.set(lvl >= 2 ? 0 : P.bevel, 0.035, lvl >= 1 ? P.bevelFar * 0.7 : P.bevelFar, 0);
+    LOOK.uPudK.value.x = (lvl >= 3 ? 0.5 : 1) * P.pud;
     // Grade: a little contrast, the sections' warmth/cold in the highlights, slight desaturation, more with depth.
     const a = th.accent;
     const m = Math.max(a.r, a.g, a.b, 1e-3);
@@ -799,6 +818,38 @@ export class Renderer3D {
     const fl = Math.max(fc.r * 0.2126 + fc.g * 0.7152 + fc.b * 0.0722, 1e-4);
     const lift = Math.min(0.3, BLACK_LIFT_MAX / fl);
     LOOK.uBlack.value.setRGB(fc.r * lift, fc.g * lift, fc.b * lift);
+  }
+
+  /**
+   * Parallax-corrected reflections: the shared probe box follows the head's section (its shaft: inner faces x/z, section y range),
+   * eased in time so the section change never pops. No shaft (a chamber without walls) = no correction for that section.
+   */
+  _driveProbeBox(dt, head) {
+    const lv = this.level;
+    const C = LOOK.uProbeC.value;
+    const H = LOOK.uProbeH.value;
+    let want = false;
+    if (lv && typeof lv.sectionAt === 'function') {
+      const sec = lv.sectionAt(head.y);
+      const sh = sec && sec.shaft;
+      if (sh && isFinite(sh.minX) && isFinite(sh.maxX) && isFinite(sh.minZ) && isFinite(sh.maxZ) && isFinite(sec.yTop) && isFinite(sec.yBottom)) {
+        const cx = (sh.minX + sh.maxX) * 0.5;
+        const cy = (sec.yTop + sec.yBottom) * 0.5;
+        const cz = (sh.minZ + sh.maxZ) * 0.5;
+        const hx = Math.max(4, (sh.maxX - sh.minX) * 0.5) * PROBE_BOX_GROW;
+        const hy = Math.max(6, (sec.yTop - sec.yBottom) * 0.5) * PROBE_BOX_GROW;
+        const hz = Math.max(4, (sh.maxZ - sh.minZ) * 0.5) * PROBE_BOX_GROW;
+        const k = C.w > 0.5 ? 1 - Math.exp(-PROBE_BOX_EASE * dt) : 1;
+        C.x += (cx - C.x) * k;
+        C.y += (cy - C.y) * k;
+        C.z += (cz - C.z) * k;
+        H.x += (hx - H.x) * k;
+        H.y += (hy - H.y) * k;
+        H.z += (hz - H.z) * k;
+        want = true;
+      }
+    }
+    C.w = want ? 1 : 0;
   }
 
   get qualityTier() {
@@ -846,6 +897,8 @@ export class Renderer3D {
     if (typeof window !== 'undefined') window.removeEventListener('resize', this.resize);
     if (this._busOff) this._busOff();
     this.lighting.dispose();
+    this.contactShadows.dispose();
+    this.droppedProps.dispose();
     this.fx.dispose();
     this.ropeView.dispose();
     this.levelView.dispose();

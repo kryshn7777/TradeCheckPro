@@ -39,12 +39,12 @@ const TILT = 0.28; // rad: the props are tipped toward the viewer a little so th
 const col = (hex) => new THREE.Color(hex);
 
 /** Merges parts {geo, pos:[x,y,z], rot:[x,y,z], color} into flat arrays (indexed, vertex-coloured). */
-function mergeParts(parts, size = 1) {
+function mergeAll(parts, size = 1, tiltAngle = TILT) {
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   const nm = new THREE.Matrix3();
-  const tilt = new THREE.Matrix4().makeRotationX(TILT);
+  const tilt = new THREE.Matrix4().makeRotationX(tiltAngle);
   const v = new THREE.Vector3();
   const pos = [];
   const nor = [];
@@ -76,8 +76,10 @@ function mergeParts(parts, size = 1) {
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r0, r1, h, seg = 10) => new THREE.CylinderGeometry(r0, r1, h, seg, 1);
 
-function buildTemplates() {
+/** The four item silhouettes (templates[kind] = {pos, nor, col, idx, verts}); tilt = rad about X (the world props lean toward the viewer; dropped props use 0). */
+export function buildTemplates(tilt = TILT) {
   const t = [];
+  const mergeParts = (parts, size) => mergeAll(parts, size, tilt);
   // FIRST_AID: case + handle + proud cross (front and back) + latch
   const caseC = col(0xd9d4c4);
   const red = col(0xb8281f);
@@ -162,8 +164,13 @@ void main() {
   }
   vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-  vec3 wp = c + (right * position.x + up * position.y) * scale;
   float dist = length(cameraPosition - c);
+  // The halo is a camera-facing quad: a floor or wall within its radius used to slice it in half (a hard line through the glow).
+  // Pushing the quad toward the eye by its own radius (never past 55 % of the way) puts the whole disc in front of whatever lies
+  // within that radius behind the item, so the soft falloff is never cut by geometry; the shape is unchanged for the eye.
+  float R = 0.5 * scale;
+  c += (cameraPosition - c) / max(dist, 1.0e-3) * min(R * 1.15, dist * 0.55);
+  vec3 wp = c + (right * position.x + up * position.y) * scale;
   vA = alpha * (1.0 - smoothstep(uFar * 0.5, uFar * 0.92, dist));
   vKind = aKind;
   gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);

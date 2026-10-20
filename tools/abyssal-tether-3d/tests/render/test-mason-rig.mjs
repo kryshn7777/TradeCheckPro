@@ -1,7 +1,6 @@
 // Node test of the rigged Mason (WP-CREATURE-RIG): the shipped mason_rig.glb has the skeleton, skin, LODs, attributes and clips the
 // view reads, and the pure clip graph / IK maths behave (phase lock, state -> clip mapping, no NaN, 2-bone reach).
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readGLB } from './glbRead.mjs';
