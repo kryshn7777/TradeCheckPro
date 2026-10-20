@@ -27,6 +27,7 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 |---|---|---|---|
 | WP-FOG | fog cards, dust, grit, event rubble, drips | render/fx.js, atmosphere.js, debris.js | agent running |
 | WP-ARMS | Blender launcher + gloved arms + handsView integration | tools/build_hands.py, assets/models/player_arms.glb, render/handsView.js, ropeView.js | agent running |
+| WP-HEALTH | fall damage + health, red low-health vignette, ECG on gloves (owner request 2026-10-20) | sim/health3d.js, render/healthFx.js, narrow hooks in physics3d/config3d/game/audio3d/ui3d; ECG screen mount in handsView by WP-ARMS | agent running |
 | WP-ENV | carved-stone environment kit + level dressing, critic loop | render/levelView.js, materials.js, renderer3d.js, tools/build_env_kit.py, assets/models/env | partial in tree; to launch |
 | WP-CREATURE-ART | finish Ossuary Column design (critic loop) + rig-ready production export | tools/wip/creature, assets/models/mason_* | partial; to launch |
 | WP-CREATURE-RIG | armature, skinning, clips, MasonRigView, sim mapping | render/mason/*, render/creatureView.js | after CREATURE-ART |
