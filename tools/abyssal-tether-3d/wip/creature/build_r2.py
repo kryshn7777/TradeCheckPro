@@ -1,0 +1,4921 @@
+"""OSSUARY COLUMN (refinement round 2) - concept build of the Mason (ABYSSAL TETHER 3D, Quest 3 / WebXR).
+
+Round-2 changes (critic 4/10 -> fixes):
+  * Crown: no more dartboard / four-petal flower. The rose window is now a tall Gothic LANCET PORTAL (ogival point,
+    taller than wide) built of three stepped archivolt orders of small wedge voussoirs with coursed roll mouldings,
+    funnelling back into the throat. Its stone tracery mullions are the teeth: two combs of rounded, hooked stone
+    fangs reach in from both jambs and leave a black vertical slit (a few cross and interlock); the ventral third
+    has cracked off and hinges open asymmetrically (torn pale membrane, sinew, drool, fronds boil out of the crack).
+    No sickle tips anywhere.
+  * Listening pits: 7 (one huge, clustered asymmetrically), each a deep ribbed wet ear-canal bored (boolean) into
+    the stone with a flesh lip draped over the step, a coal of its own hue far down, 3 sealed by translucent
+    eardrums; one broken soot-black came. Emission ~70% lower.
+  * Throat: a deep near-black gullet bored straight back through the first vertebrae; 150 back-hooked teeth in
+    golden-angle staggered rows (no rings), darkening with depth; ONE glow at the bottom.
+  * Palette/wetness: soot-black ashlar (+-30% per block, worn arrises, grime, streaks, pocks, hairline cracks, no
+    speckle); bruised maroon / grey-pink / liver flesh with red only in fresh wounds; heavy clear coat + coat-normal
+    breakup; pale translucent fiddlehead fronds in clusters; thin pale membranes; ember only in throat and pits.
+  * Pose & mass: the front third rears ~7 m off the wall and curls toward the shaft; segments 1.4x thicker with
+    bulging discs; a dorsal row of raked pinnacles growing toward the head.
+  * Legs: 44+ harvestman-tall cathedral legs (flying-buttress strut -> free knee pier 2.5-4 m above the dorsal line
+    -> knobbly bowed bone tibia -> wrong-way iron ankle -> grapnel), ~1/3 lifted mid-step, broken / torn-off /
+    stunted / doubled ones, wall cracks + rubble + grit at every bite; forelegs raised beside the crown.
+  * Set-pieces: spire shrunk/snapped/sooted with flesh climbing it, I-beam rusted, torn and bent; cage with a
+    skeleton on the camera-facing flank, ladder skewering the neck, church bell half-swallowed in the flank,
+    previous climber's remains roped to a crown thorn, a live climber for scale in full.png.
+  * Shaft: Lanternwright ashlar courses (per-block setback/tilt, chipped arrises, eroded joints, broken-out blocks)
+    with wet run-off and puddles; diegetic lighting (cold helmet lamp key, throat glow, cold rim), mist-pass haze.
+  * Game export (--export DIR): identical-layout rebuild at game tessellation -> 4 atlas materials -> LOD0/1/2
+    glb with baked base colour / roughness / normal / AO / emissive (see export_game).
+
+Direction A. The predator is a spine of stacked masonry vertebrae fused with
+real bone and wet sinew. Every block is split along a jagged fracture that is
+held open by marrow-dark tissue and bridged by tendons. Carved stone ribs arc
+out like flying buttresses (voussoir arches strung with tendon "bowstrings")
+and end in far-too-long, wrong-jointed bone legs with iron grapnel feet driven
+into the shaft wall. The crown is a cathedral rose window: a ring of voussoirs
+studded with oculi whose lights are glowing listening pits; its window has
+split into a four-way maw of tracery-backed stone jaws lined with stone-shard
+teeth, pale fiddlehead fronds unfurling from the gaps, saliva strands across
+the opening and a ribbed lamprey throat lit from inside like a forge. Chains
+pierce the flesh and hang; a rusted Lanternwright cage is fused into its back
+and an iron ladder skewers its neck (human-scale cues).
+
+No insect head, no antennae, no mandibles, no eyes.
+
+Fully procedural and deterministic (seeded, 1313). Renders:
+  hero.png              low, looming worm's-eye view of the rearing head and its open portal-maw
+  approach.png          first-person VR view, 18 mm, ~3 m from the crown, player's cold helmet lamp, DOF on the fangs
+  full.png              the whole creature rearing off the shaft wall in fog, a live climber for scale
+  silhouette.png        flat black creature on mid grey from the full camera (readability test)
+  silhouette_below.png  the player's real viewpoint: looking straight up the shaft from ~50 m below
+  detail.png            1-3 m VR-distance close-up of a vertebra + leg root (texture/detail check)
+
+Run (bpy module or Blender):
+  python build_r2.py [--out DIR] [--shots hero,approach,full,silhouette,below,detail] [--samples 48]
+                     [--res 1280x720] [--seed 1313] [--fog 0.008] [--hero-haze 0.55] [--blend]
+                     [--export DIR]   (Quest game meshes: mason_hero_lods.glb + mason_kit.glb + textures/)
+                     [--fullcam x,y,z,tx,ty,tz,lens] [--herocam fwd,dz,side,tfwd,tdz,tside,lens]
+                     [--approachcam ...] [--belowcam ...] [--border xmin,xmax,ymin,ymax]
+  blender -b -P build_r2.py -- [same options]
+
+Also writes stats.json (spine length, vertebra/leg counts, evaluated render-mesh triangles per material group).
+The render mesh is NOT the game mesh: --export rebuilds the identical layout at game tessellation and bakes.
+"""
+
+import bpy  # must be imported before bmesh / mathutils with the bpy module
+import bmesh
+from mathutils import Matrix, Vector
+
+import argparse
+import json
+import math
+import os
+import random
+import sys
+import time
+from math import comb
+
+import numpy as np
+
+T_START = time.time()
+
+argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
+ap = argparse.ArgumentParser()
+ap.add_argument("--out", default=os.path.dirname(os.path.abspath(__file__)))
+ap.add_argument("--shots", default="hero,approach,full,silhouette,below")
+ap.add_argument("--samples", type=int, default=48)
+ap.add_argument("--res", default="1280x720")
+ap.add_argument("--seed", type=int, default=1313)
+ap.add_argument("--fog", type=float, default=0.008, help="world volume density (full shot only)")
+ap.add_argument("--hero-haze", type=float, default=0.55, help="mist-pass depth haze strength (hero/approach)")
+ap.add_argument("--blend", action="store_true", help="also save ossuary.blend")
+ap.add_argument("--export", default="", help="directory: also write the Quest LOD0/1/2 game meshes (glb)")
+ap.add_argument("--threads", type=int, default=0)
+ap.add_argument("--exposure", type=float, default=0.0)
+ap.add_argument("--border", default="", help="xmin,xmax,ymin,ymax crop (0-1) for quick detail checks")
+ap.add_argument("--fullcam", default="1.73,-17.12,-6.0,-0.93,-2.02,13.0,22", help="x,y,z,tx,ty,tz,lens")
+ap.add_argument("--herocam", default="6.0,-2.5,0.4,0.0,0.3,0.0,22", help="fwd,dz,side,tfwd,tdz,tside,lens")
+ap.add_argument("--approachcam", default="3.5,-0.35,0.0,0.0,-1.0,0.0,0.0,18",
+                help="fwd,dz,side,dors,tfwd,tdz,tside,lens (relative to the crown)")
+ap.add_argument("--belowcam", default="2.0,-44.0,9.0,0.0,14.0,2.0,40",
+                help="arc-x,z,height-off-wall of camera, then of target, lens (player's view from 50 m below)")
+ap.add_argument("--hero-light", type=float, default=3500.0)
+ap.add_argument("--climber-at", type=float, default=0.8, help="climber position along full cam -> crown")
+ap.add_argument("--climber-side", type=float, default=3.4)
+ap.add_argument("--app-light", type=float, default=550.0)
+ap.add_argument("--app-fstop", type=float, default=2.8)
+ap.add_argument("--wall-res", type=float, default=1.0, help="shaft wall grid density (lower = less RAM)")
+ap.add_argument("--detail-cam", type=lambda t: [float(x) for x in t.split(",")], default=[2.0, 3.4, -1.6, 220.0],
+                help="side,dorsal,along offsets from the segment centre and lamp watts for detail.png")
+args = ap.parse_args(argv)
+OUT = args.out
+os.makedirs(OUT, exist_ok=True)
+RES = tuple(int(v) for v in args.res.lower().split("x"))
+SHOTS = [s.strip() for s in args.shots.split(",") if s.strip()]
+
+SEED = args.seed
+rng = random.Random(SEED)
+UP = np.array([0.0, 0.0, 1.0])
+DOWN = -UP
+# LOW = True rebuilds the identical creature (same RNG stream) with game tessellation: capped tube sides, thinned
+# loft rings, low-subdivision blobs, unsubdivided blocks, chains as plain strips. Used for the Quest LOD0 mesh.
+LOW = False
+
+
+def log(*a):
+    print(f"[{time.time() - T_START:7.1f}s]", *a, flush=True)
+
+
+# =============================================================================
+# Math helpers
+# =============================================================================
+def nrm(v):
+    v = np.asarray(v, float)
+    n = np.linalg.norm(v, axis=-1, keepdims=True)
+    return v / np.maximum(n, 1e-12)
+
+
+def smoothstep(a, b, x):
+    t = np.clip((np.asarray(x, float) - a) / (b - a), 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def rot(axis, ang):
+    axis = nrm(axis)
+    x, y, z = axis
+    c, s, C = math.cos(ang), math.sin(ang), 1 - math.cos(ang)
+    return np.array([[c + x * x * C, x * y * C - z * s, x * z * C + y * s],
+                     [y * x * C + z * s, c + y * y * C, y * z * C - x * s],
+                     [z * x * C - y * s, z * y * C + x * s, c + z * z * C]])
+
+
+def perp(v):
+    v = nrm(v)
+    a = np.array([0, 0, 1.0]) if abs(v[2]) < 0.9 else np.array([1.0, 0, 0])
+    return nrm(a - a.dot(v) * v)
+
+
+def bezier(ctrl, n):
+    ctrl = np.asarray(ctrl, float)
+    k = len(ctrl) - 1
+    t = np.linspace(0, 1, n)[:, None]
+    out = np.zeros((n, 3))
+    for i, c in enumerate(ctrl):
+        out += comb(k, i) * (t ** i) * ((1 - t) ** (k - i)) * c
+    return out
+
+
+def catmull(ctrl, n_per=16):
+    P = np.asarray(ctrl, float)
+    E = np.vstack([2 * P[0] - P[1], P, 2 * P[-1] - P[-2]])
+    out = []
+    t = np.linspace(0, 1, n_per, endpoint=False)[:, None]
+    for i in range(1, len(E) - 2):
+        p0, p1, p2, p3 = E[i - 1], E[i], E[i + 1], E[i + 2]
+        out.append(0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t ** 2
+                          + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    out.append(P[-1:])
+    return np.vstack(out)
+
+
+def arclen(P):
+    return np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))])
+
+
+def resample(P, n=None, step=None):
+    L = arclen(P)
+    if n is None:
+        n = max(2, int(math.ceil(L[-1] / step)) + 1)
+    tt = np.linspace(0, L[-1], n)
+    return np.stack([np.interp(tt, L, P[:, i]) for i in range(3)], -1)
+
+
+def sag_path(a, b, sag, n=24, toward=None):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    t = np.linspace(0, 1, n)[:, None]
+    P = a + (b - a) * t
+    P[:, 2] -= sag * 4 * t[:, 0] * (1 - t[:, 0])
+    if toward is not None:
+        P += np.asarray(toward) * (4 * t * (1 - t))
+    return P
+
+
+# =============================================================================
+# Deterministic gradient noise (numpy, vectorised)
+# =============================================================================
+class Perlin:
+    def __init__(self, seed):
+        r = np.random.default_rng(seed + 991)
+        p = r.permutation(256).astype(np.int64)
+        self.p = np.concatenate([p, p])
+        g = r.normal(size=(256, 3))
+        self.g = g / np.linalg.norm(g, axis=1, keepdims=True)
+
+    def noise(self, P):
+        P = np.asarray(P, float).reshape(-1, 3)
+        Pf = np.floor(P)
+        f = P - Pf
+        Pi = Pf.astype(np.int64)
+        u = f * f * f * (f * (f * 6 - 15) + 10)
+        p, g = self.p, self.g
+        out = np.zeros(len(P))
+        for dx in (0, 1):
+            X = p[(Pi[:, 0] + dx) & 255]
+            wx = u[:, 0] if dx else 1 - u[:, 0]
+            for dy in (0, 1):
+                XY = p[X + ((Pi[:, 1] + dy) & 255)]
+                wy = u[:, 1] if dy else 1 - u[:, 1]
+                for dz in (0, 1):
+                    h = p[XY + ((Pi[:, 2] + dz) & 255)]
+                    wz = u[:, 2] if dz else 1 - u[:, 2]
+                    gg = g[h]
+                    d = gg[:, 0] * (f[:, 0] - dx) + gg[:, 1] * (f[:, 1] - dy) + gg[:, 2] * (f[:, 2] - dz)
+                    out += wx * wy * wz * d
+        return out * 1.6
+
+    def fbm(self, P, octaves=4, lac=2.03, gain=0.5):
+        P = np.asarray(P, float).reshape(-1, 3)
+        tot = np.zeros(len(P))
+        amp, norm, f = 1.0, 0.0, 1.0
+        for o in range(octaves):
+            tot += amp * self.noise(P * f + o * 17.31)
+            norm += amp
+            amp *= gain
+            f *= lac
+        return tot / norm
+
+    def vec(self, P, octaves=3):
+        P = np.asarray(P, float).reshape(-1, 3)
+        return np.stack([self.fbm(P + o, octaves) for o in (0.0, 31.7, 77.1)], -1)
+
+
+NZ = Perlin(SEED)
+
+
+# =============================================================================
+# Mesh accumulation (numpy -> one Blender mesh per material group)
+# =============================================================================
+class Acc:
+    def __init__(self, name):
+        self.name = name
+        self.V, self.flat, self.sizes, self.uv, self.m, self.g, self.d, self.p = [], [], [], [], [], [], [], []
+        self.n = 0
+
+    def add(self, V, faces, uv=None, m=None, g=None, d=None):
+        V = np.asarray(V, float).reshape(-1, 3)
+        if len(V) == 0:
+            return
+        if isinstance(faces, np.ndarray):
+            faces = [faces]
+        elif len(faces) and not (isinstance(faces[0], np.ndarray) and faces[0].ndim == 2):
+            faces = [faces]
+        for F in faces:
+            if isinstance(F, np.ndarray):
+                if F.size == 0:
+                    continue
+                self.flat.append(F.ravel().astype(np.int64) + self.n)
+                self.sizes.append(np.full(len(F), F.shape[1], np.int64))
+            else:
+                if not F:
+                    continue
+                self.flat.append(np.fromiter((i for f in F for i in f), np.int64) + self.n)
+                self.sizes.append(np.array([len(f) for f in F], np.int64))
+        self.V.append(V)
+        self.uv.append(np.zeros((len(V), 2)) if uv is None else np.asarray(uv, float).reshape(-1, 2))
+        if m is None:
+            mm = np.zeros(len(V))
+        else:
+            mm = np.broadcast_to(np.asarray(m, float), (len(V),)).copy()
+        self.m.append(mm)
+        if g is None:
+            gg = np.zeros(len(V))
+        else:
+            gg = np.broadcast_to(np.asarray(g, float), (len(V),)).copy()
+        self.g.append(gg)
+        self.d.append(np.zeros(len(V)) if d is None else np.broadcast_to(np.asarray(d, float), (len(V),)).copy())
+        self.p.append(np.full(len(V), float(PART_STACK[-1])))
+        self.n += len(V)
+
+    def add_bm(self, bm, m=0.0, free=True, g=None, d=None):
+        V, F = bm_arrays(bm)
+        self.add(V, F, m=m, g=g, d=d)
+        if free:
+            bm.free()
+
+    @staticmethod
+    def _along(P, V, al, m):
+        if isinstance(m, str):
+            return al
+        m = np.asarray(m, float)
+        if m.ndim and len(m) == len(P) and len(P) != len(V):
+            Ln = arclen(np.asarray(P, float))
+            return np.interp(al, Ln / max(Ln[-1], 1e-9), m)
+        return m
+
+    def add_tube(self, P, r, m="along", g=None, d=None, **kw):
+        V, F, uv, al = tube(P, r, **kw)
+        mv = self._along(P, V, al, m)
+        gv = None if g is None else self._along(P, V, al, g)
+        dv = None if d is None else self._along(P, V, al, d)
+        self.add(V, F, uv, mv, gv, dv)
+        return V
+
+    def build(self, mat, coll, smooth=True, sharp=None):
+        if self.n == 0:
+            return None
+        V = np.vstack(self.V)
+        flat = np.concatenate(self.flat)
+        sizes = np.concatenate(self.sizes)
+        starts = np.concatenate([[0], np.cumsum(sizes)[:-1]])
+        me = bpy.data.meshes.new(self.name)
+        me.vertices.add(len(V))
+        me.vertices.foreach_set("co", V.astype(np.float32).ravel())
+        me.loops.add(len(flat))
+        me.loops.foreach_set("vertex_index", flat.astype(np.int32))
+        me.polygons.add(len(sizes))
+        me.polygons.foreach_set("loop_start", starts.astype(np.int32))
+        me.polygons.foreach_set("loop_total", sizes.astype(np.int32))
+        me.update(calc_edges=True)
+        uv = np.vstack(self.uv)[flat]
+        lay = me.uv_layers.new(name="UVMap")
+        lay.data.foreach_set("uv", uv.astype(np.float32).ravel())
+        at = me.attributes.new("m", "FLOAT", "POINT")
+        at.data.foreach_set("value", np.concatenate(self.m).astype(np.float32))
+        # per-vertex glow (bakes straight to an emissive map) + spine coordinate (drives the headward pulse)
+        at = me.attributes.new("glow", "FLOAT", "POINT")
+        at.data.foreach_set("value", np.concatenate(self.g).astype(np.float32))
+        at = me.attributes.new("aux", "FLOAT", "POINT")
+        at.data.foreach_set("value", np.concatenate(self.d).astype(np.float32))
+        at = me.attributes.new("part", "FLOAT", "POINT")
+        at.data.foreach_set("value", np.concatenate(self.p).astype(np.float32))
+        if self.name.startswith("Ossuary_"):
+            at = me.attributes.new("spine_s", "FLOAT", "POINT")
+            at.data.foreach_set("value", spine_param(V).astype(np.float32))
+        me.polygons.foreach_set("use_smooth", np.full(len(sizes), bool(smooth)))
+        if smooth and sharp:
+            me.set_sharp_from_angle(angle=sharp)
+        me.materials.append(mat)
+        ob = bpy.data.objects.new(self.name, me)
+        coll.objects.link(ob)
+        return ob
+
+
+def bm_arrays(bm):
+    bm.verts.index_update()
+    V = np.array([v.co[:] for v in bm.verts]) if len(bm.verts) else np.zeros((0, 3))
+    F = [[v.index for v in f.verts] for f in bm.faces]
+    return V, F
+
+
+# =============================================================================
+# Primitive generators
+# =============================================================================
+def frames(P, up=None):
+    P = np.asarray(P, float)
+    n = len(P)
+    T = nrm(np.gradient(P, axis=0))
+    if up is not None:
+        U = np.broadcast_to(np.asarray(up, float), P.shape)
+        N = U - (U * T).sum(1, keepdims=True) * T
+        N = nrm(N)
+    else:
+        N = np.zeros_like(P)
+        N[0] = perp(T[0])
+        for i in range(1, n):
+            v = N[i - 1] - N[i - 1].dot(T[i]) * T[i]
+            ln = np.linalg.norm(v)
+            N[i] = v / ln if ln > 1e-9 else N[i - 1]
+    B = np.cross(T, N)
+    return T, N, B
+
+
+def circle_prof(sides, phase=0.0):
+    if LOW:
+        sides = min(sides, 10)
+    th = np.linspace(0, 2 * math.pi, sides, endpoint=False) + phase
+    return np.stack([np.cos(th), np.sin(th)], -1)
+
+
+def loft(P, prof, up=None, cap0=True, cap1=True, nz_amp=0.0, nz_freq=3.0, nz_seed=0.0, fr=None,
+         flip=False):
+    """Sweep a closed CCW profile (n,K,2) in the (N,B) frame along path P (n,3)."""
+    P = np.asarray(P, float)
+    n = len(P)
+    prof = np.asarray(prof, float)
+    if prof.ndim == 2:
+        prof = np.broadcast_to(prof, (n,) + prof.shape)
+    T, N, B = fr if fr is not None else frames(P, up)
+    if LOW and n > 6:
+        L0 = arclen(P)
+        step = max(L0[-1] / 5.0, min(0.12, L0[-1] / 3.0))
+        keep = [0]
+        for i in range(1, n - 1):
+            if L0[i] - L0[keep[-1]] >= step:
+                keep.append(i)
+        keep.append(n - 1)
+        keep = np.array(keep)
+        P, prof, T, N, B = P[keep], prof[keep], T[keep], N[keep], B[keep]
+        n = len(P)
+    K = prof.shape[1]
+    ring = P[:, None, :] + prof[:, :, 0:1] * N[:, None, :] + prof[:, :, 1:2] * B[:, None, :]
+    if nz_amp:
+        f = 1 + nz_amp * NZ.fbm(ring.reshape(-1, 3) * nz_freq + nz_seed, 3)
+        ring = P[:, None, :] + (ring - P[:, None, :]) * f.reshape(n, K, 1)
+    ring = np.concatenate([ring, ring[:, :1]], 1)
+    V = ring.reshape(-1, 3)
+    idx = np.arange(n * (K + 1)).reshape(n, K + 1)
+    quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+    if flip:
+        quads = quads[:, ::-1]
+    L = arclen(P)
+    uv = np.stack([np.tile(np.arange(K + 1) / K, n), np.repeat(L, K + 1)], -1)
+    along = np.repeat(L / max(L[-1], 1e-9), K + 1)
+    faces, Vs, uvs, als = [quads], [V], [uv], [along]
+    base = len(V)
+    if cap0:
+        Vs.append(P[:1]); uvs.append([[0.5, 0.0]]); als.append([0.0])
+        faces.append(np.stack([np.full(K, base), idx[0, 1:], idx[0, :-1]], -1))
+        base += 1
+    if cap1:
+        Vs.append(P[-1:]); uvs.append([[0.5, L[-1]]]); als.append([1.0])
+        faces.append(np.stack([np.full(K, base), idx[-1, :-1], idx[-1, 1:]], -1))
+        base += 1
+    return np.vstack(Vs), faces, np.vstack(uvs), np.concatenate(als)
+
+
+def tube(P, r, sides=8, up=None, ry=None, cap0=True, cap1=True, nz_amp=0.0, nz_freq=3.0, seed=0.0,
+         fr=None, flip=False, phase=0.0):
+    P = np.asarray(P, float)
+    n = len(P)
+    if LOW:
+        sides = min(sides, 5 if np.max(r) < 0.04 else 7)
+    rx = np.broadcast_to(np.asarray(r, float), (n,))
+    ryy = rx if ry is None else np.broadcast_to(np.asarray(ry, float), (n,))
+    c = circle_prof(sides, phase)
+    prof = np.stack([c[None, :, 0] * rx[:, None], c[None, :, 1] * ryy[:, None]], -1)
+    return loft(P, prof, up=up, cap0=cap0, cap1=cap1, nz_amp=nz_amp, nz_freq=nz_freq, nz_seed=seed,
+                fr=fr, flip=flip)
+
+
+_ICO = {}
+
+
+def ico(sub):
+    if sub not in _ICO:
+        bm = bmesh.new()
+        bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=1.0)
+        V, F = bm_arrays(bm)
+        bm.free()
+        _ICO[sub] = (V, np.array(F))
+    return _ICO[sub]
+
+
+def blob(center, axes, sub=3, amp=0.15, freq=1.5, seed=0.0):
+    if LOW:
+        sub = min(sub, 1 if np.max(np.abs(axes)) < 0.25 else 2)
+    V, F = ico(sub)
+    d = 1 + amp * NZ.fbm(V * freq + seed, 3)
+    W = (V * d[:, None]) @ np.asarray(axes, float)
+    return W + np.asarray(center, float), F
+
+
+def basis_axes(x, y, z, sx, sy, sz):
+    return np.stack([nrm(x) * sx, nrm(y) * sy, nrm(z) * sz])
+
+
+def shard(root, direction, length, base_r, hook_dir=None, hook=0.25, sides=5, rings=7, flat=1.0,
+          rr=None, sink=0.04, fang=False, trunc=1.0):
+    """Tapered, faceted stone/bone spike with an irregular cross-section and a hook (trunc<1: snapped)."""
+    rr = rr or rng
+    d = nrm(direction)
+    hd = nrm(hook_dir - np.dot(hook_dir, d) * d) if hook_dir is not None else perp(d)
+    t = np.linspace(0, trunc, rings)
+    root = np.asarray(root, float) - d * sink
+    P = root[None] + d[None] * (length * t)[:, None] + hd[None] * (length * hook * t ** 2.2)[:, None]
+    jit, lo, hi, ex = (0.1, 0.9, 1.1, 0.8) if fang else (0.35, 0.65, 1.3, 1.15)
+    th = np.sort(np.array([2 * math.pi * i / sides + rr.uniform(-jit, jit) for i in range(sides)]))
+    rad = np.array([rr.uniform(lo, hi) for _ in range(sides)])
+    base = np.stack([np.cos(th) * rad, np.sin(th) * rad * flat], -1)
+    taper = base_r * (1 - t) ** ex
+    prof = base[None] * taper[:, None, None]
+    V, F, uv, al = loft(P, prof, up=hd, cap0=True, cap1=trunc < 1.0)
+    return V, F, uv, al * trunc
+
+
+# -----------------------------------------------------------------------------
+# Stone blocks (bmesh): chamfered, worn, chipped, split along jagged fractures
+# -----------------------------------------------------------------------------
+def bm_cut(bm, co, no, keep_neg=True):
+    geom = bm.verts[:] + bm.edges[:] + bm.faces[:]
+    r = bmesh.ops.bisect_plane(bm, geom=geom, plane_co=Vector(co), plane_no=Vector(no),
+                               clear_outer=keep_neg, clear_inner=not keep_neg, dist=1e-6)
+    return [e for e in r["geom_cut"] if isinstance(e, bmesh.types.BMEdge) and e.is_valid and e.is_boundary]
+
+
+def stone_bm(dims, chamfer=0.18, wear=0.025, chips=3, subdiv=1, rr=None):
+    rr = rr or rng
+    if LOW:
+        subdiv, wear = 0, 0
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    bmesh.ops.scale(bm, vec=Vector(dims), verts=bm.verts)
+    if chamfer > 0:
+        ed = [e for e in bm.edges if abs((e.verts[0].co - e.verts[1].co).normalized().y) > 0.9]
+        bmesh.ops.bevel(bm, geom=ed, offset=chamfer * min(dims[0], dims[2]), offset_type="OFFSET",
+                        segments=1, profile=0.5, affect="EDGES", clamp_overlap=True)
+    if wear > 0:
+        bmesh.ops.bevel(bm, geom=bm.edges[:], offset=wear, offset_type="OFFSET", segments=1,
+                        profile=0.5, affect="EDGES", clamp_overlap=True)
+    if subdiv:
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=subdiv, use_grid_fill=True)
+    for _ in range(chips):
+        d = Vector((rr.choice((-1, 1)) * rr.uniform(0.3, 1.0), rr.uniform(-1, 1),
+                    rr.choice((-1, 1)) * rr.uniform(0.3, 1.0))).normalized()
+        sup = max(v.co.dot(d) for v in bm.verts)
+        depth = rr.uniform(0.05, 0.17) * min(dims)
+        edges = bm_cut(bm, d * (sup - depth), d, True)
+        if edges:
+            bmesh.ops.holes_fill(bm, edges=edges, sides=0)
+    return bm
+
+
+def order_loops(edges):
+    adj = {}
+    for e in edges:
+        a, b = e.verts
+        adj.setdefault(a, []).append(b)
+        adj.setdefault(b, []).append(a)
+    loops, seen = [], set()
+    for start in adj:
+        if start in seen:
+            continue
+        loop = [start]
+        seen.add(start)
+        prev, cur = None, start
+        while True:
+            nxt = None
+            for v in adj[cur]:
+                if v is not prev and v not in seen:
+                    nxt = v
+                    break
+            if nxt is None:
+                break
+            loop.append(nxt)
+            seen.add(nxt)
+            prev, cur = cur, nxt
+        if len(loop) >= 3:
+            loops.append(loop)
+    return loops
+
+
+def polar_cap(bm, loop, rings=4):
+    co = [v.co.copy() for v in loop]
+    c = sum(co, Vector()) / len(co)
+    prev, allv = loop, list(loop)
+    for k in range(1, rings):
+        t = 1 - k / rings
+        ring = [bm.verts.new(c + (p - c) * t) for p in co]
+        for i in range(len(ring)):
+            j = (i + 1) % len(ring)
+            try:
+                bm.faces.new((prev[i], prev[j], ring[j], ring[i]))
+            except ValueError:
+                pass
+        prev = ring
+        allv += ring
+    cv = bm.verts.new(c)
+    allv.append(cv)
+    for i in range(len(prev)):
+        j = (i + 1) % len(prev)
+        try:
+            bm.faces.new((prev[i], prev[j], cv))
+        except ValueError:
+            pass
+    return allv
+
+
+def split_stone(bm, p, n, g, amp, freq, nseed):
+    """Split a stone along plane (p, n), removing a slab of width g. Both fracture faces get the
+    same jagged relief, so the halves read as one stone broken and pulled apart."""
+    n = Vector(n).normalized()
+    p = Vector(p)
+    nn, pp = np.array(n[:]), np.array(p[:])
+    out = []
+    for side in (-1, 1):
+        b = bm.copy()
+        edges = bm_cut(b, p + n * (side * g / 2), n, keep_neg=(side < 0))
+        if len(b.verts) == 0:
+            b.free()
+            continue
+        capv = []
+        for lp in order_loops(edges):
+            capv += polar_cap(b, lp)
+        bmesh.ops.recalc_face_normals(b, faces=b.faces[:])
+        if capv and amp > 0:
+            X = np.array([v.co[:] for v in capv])
+            proj = X - np.outer((X - pp) @ nn, nn)
+            off = amp * NZ.fbm(proj * freq + nseed, 3)
+            for v, o in zip(capv, off):
+                v.co += n * float(o)
+        out.append(b)
+    return out
+
+
+def box_support(dims, u):
+    """Distance from the centre of a box (dims) to its surface along unit direction u."""
+    u = np.abs(np.asarray(u, float))
+    h = np.asarray(dims, float) / 2
+    with np.errstate(divide="ignore"):
+        t = np.where(u > 1e-6, h / np.maximum(u, 1e-6), 1e9)
+    return float(t.min())
+
+
+def mat4(S, T, D, O):
+    M = np.eye(4)
+    M[:3, 0], M[:3, 1], M[:3, 2], M[:3, 3] = S, T, D, O
+    return M
+
+
+def xf(V, M):
+    return np.asarray(V, float) @ M[:3, :3].T + M[:3, 3]
+
+
+def xd(v, M):
+    return M[:3, :3] @ np.asarray(v, float)
+
+
+def bm_xf(bm, M):
+    bmesh.ops.transform(bm, matrix=Matrix(M.tolist()), verts=bm.verts)
+
+
+# =============================================================================
+# Accumulators (material groups)
+# =============================================================================
+# -----------------------------------------------------------------------------
+# Part tags: every vertex remembers which kit part built it (vertebra segment, head, pit, frond, upper / lower
+# limb, hook) and each part keeps its pivot frame, so the game export can cut README-contract kit parts out of
+# the baked LOD0 mesh. Tagging changes no geometry and consumes no RNG.
+# -----------------------------------------------------------------------------
+PARTS = [dict(name="", M=np.eye(4), parent=0)]
+PART_STACK = [0]
+
+
+class tag:
+    def __init__(self, name, M=None):
+        self.name, self.M = name, (np.eye(4) if M is None else np.asarray(M, float))
+
+    def __enter__(self):
+        PARTS.append(dict(name=self.name, M=self.M, parent=PART_STACK[-1]))
+        PART_STACK.append(len(PARTS) - 1)
+        return self
+
+    def __exit__(self, *exc):
+        PART_STACK.pop()
+        return False
+
+
+def retag(name, M):
+    """Switch the innermost open tag to a new sibling part."""
+    PARTS.append(dict(name=name, M=np.asarray(M, float), parent=PARTS[PART_STACK[-1]].get("parent", 0)))
+    PART_STACK[-1] = len(PARTS) - 1
+
+
+def frame_zx(origin, z, x_hint):
+    """Right-handed pivot frame with +Z along z and +X as close to x_hint as possible."""
+    z = nrm(z)
+    x = nrm(x_hint - np.dot(x_hint, z) * z) if np.linalg.norm(x_hint - np.dot(x_hint, z) * z) > 1e-6 else perp(z)
+    return mat4(x, np.cross(z, x), z, origin)
+
+
+A = {k: Acc("Ossuary_" + k) for k in
+     ("Stone", "Carved", "Flesh", "Tendon", "Marrow", "Bone", "Iron", "Teeth", "Ember", "Frond",
+      "Mucus", "Vein", "Membrane", "Gum", "Pit", "Bronze", "Seam", "Glass", "Rope", "Oil", "IronTooth", "Soot")}
+ENV = {k: Acc("Shaft_" + k) for k in ("Rock", "Masonry", "Iron", "Glow", "Rubble", "Oil", "Crack", "Puddle", "Climber",
+                                     "Rope")}
+
+
+# =============================================================================
+# The shaft wall (interior of a 30 m radius cylinder) and the spine path
+# =============================================================================
+R_SHAFT = 30.0
+
+
+def ihash(*keys):
+    """Deterministic integer hash of int arrays -> float in [0, 1)."""
+    h = np.full(np.broadcast(*[np.asarray(k) for k in keys]).shape, (SEED * 2654435761) & 0x7FFFFFFF, np.int64)
+    for i, k in enumerate(keys):
+        k = np.asarray(k, np.int64)
+        h = (h ^ ((k + 0x9E37 * (i + 1)) * 0x45D9F3B)) & 0xFFFFFFFF
+        h = ((h ^ (h >> 16)) * 0x45D9F3B) & 0xFFFFFFFF
+        h = h ^ (h >> 16)
+    return (h & 0xFFFFFF) / float(0x1000000)
+
+
+_COURSES = {}
+
+
+def courses():
+    """Lanternwright ashlar courses lining the shaft (the Underspire is a BUILT shaft): course boundaries in z
+    and, per course, block boundaries along the arc. Computed once so wall_info stays vectorised."""
+    if not _COURSES:
+        _COURSES["z"] = np.cumsum(np.r_[-40.0, 0.82 + 0.62 * ihash(np.arange(140), 7)])
+        _COURSES["b"] = [np.cumsum(np.r_[-62.0 - 2.5 * float(ihash(c, 3)), 1.25 + 2.1 * ihash(c, np.arange(90), 11)])
+                         for c in range(len(_COURSES["z"]) - 1)]
+    return _COURSES["z"], _COURSES["b"]
+
+
+def wall_info(px, z):
+    """Masonry wall: returns (displacement toward the shaft centre, per-block random, joint factor 0..1, broken)."""
+    px = np.asarray(px, float).ravel()
+    z = np.broadcast_to(np.asarray(z, float).ravel(), px.shape)
+    q = np.stack([px, z, np.zeros_like(px)], -1)
+    # slight warping of the courses (old masonry settles), so joints are not ruler-straight
+    zw = z + 0.07 * NZ.fbm(q * 0.11 + 3.0, 2)
+    pw = px + 0.1 * NZ.fbm(q * 0.09 + 8.0, 2)
+    _CZ, _CB = courses()
+    ci = np.clip(np.searchsorted(_CZ, zw) - 1, 0, len(_CZ) - 2)
+    z0, z1 = _CZ[ci], _CZ[ci + 1]
+    b0 = np.empty_like(px)
+    b1 = np.empty_like(px)
+    bi = np.empty(px.shape, np.int64)
+    for c in np.unique(ci):
+        sel = ci == c
+        B = _CB[c]
+        j = np.clip(np.searchsorted(B, pw[sel]) - 1, 0, len(B) - 2)
+        b0[sel], b1[sel], bi[sel] = B[j], B[j + 1], j
+    rnd = ihash(ci, bi, 1)
+    rnd2 = ihash(ci, bi, 2)
+    rnd3 = ihash(ci, bi, 3)
+    e = np.minimum.reduce([pw - b0, b1 - pw, zw - z0, z1 - zw])
+    u = (pw - b0) / (b1 - b0)
+    v = (zw - z0) / (z1 - z0)
+    # block face: own setback + tilt + low relief; eroded blocks get rougher faces
+    ero = (rnd3 < 0.22).astype(float)
+    face = (0.07 * (rnd - 0.5) + 0.035 * (rnd2 - 0.5) * (u - 0.5) * 2 + 0.03 * (rnd3 - 0.5) * (v - 0.5) * 2
+            + (0.022 + 0.035 * ero) * NZ.fbm(q * 1.7 + rnd[:, None] * 40.0, 3)
+            + 0.009 * NZ.fbm(q * 6.0, 2))
+    # chipped, irregular arrises: a hard, narrow chamfer (not a pillow) whose width jumps along the edge
+    bev = (0.03 + 0.055 * np.clip(0.5 + NZ.fbm(q * 2.3 + 5.0, 2), 0, 1)
+           + 0.05 * np.clip(NZ.fbm(q * 7.0 + 2.0, 2) * 3.0, 0, 1) + 0.04 * ero)
+    arris = np.clip(1.0 - e / bev, 0.0, 1.0)
+    d = face - 0.075 * arris
+    # eroded mortar joints
+    joint = 1.0 - smoothstep(0.012, 0.05, e)
+    d = d - 0.05 * joint
+    # broken-out blocks: deep ragged sockets showing the rubble core behind the ashlar
+    broken = ((rnd2 < 0.075) & (z > -6)).astype(float)
+    core = -0.3 + 0.12 * NZ.fbm(q * 1.3 + 2.0, 3) + 0.05 * NZ.fbm(q * 4.0, 2)
+    rim = smoothstep(0.0, 0.22, e)
+    d = d * (1 - broken * rim) + core * broken * rim
+    # large-scale settling of the shaft lining
+    d = d + 0.22 * NZ.fbm(q * 0.035 + 1.0, 2) + 0.05 * NZ.fbm(q * 0.12 + 4.0, 2)
+    g = np.maximum(joint, 0.6 * arris * (1 - broken))
+    return d, rnd, g, broken
+
+
+def wall_disp(px, z):
+    return wall_info(px, z)[0]
+
+
+def wall_point(px, z, h=0.0, disp=True):
+    px = np.atleast_1d(np.asarray(px, float))
+    z = np.broadcast_to(np.asarray(z, float), px.shape)
+    phi = px / R_SHAFT
+    d = wall_disp(px, z).reshape(px.shape) if disp else 0.0
+    r = R_SHAFT - d - h
+    return np.stack([r * np.sin(phi), -R_SHAFT + r * np.cos(phi), z], -1)
+
+
+def wall_coords(p):
+    phi = math.atan2(p[0], p[1] + R_SHAFT)
+    return R_SHAFT * phi, p[2], phi
+
+
+def project_wall(p, embed=0.0):
+    px, z, phi = wall_coords(p)
+    w = wall_point(px, z, -embed, disp=True)[0]
+    nout = np.array([math.sin(phi), math.cos(phi), 0.0])
+    return w, nout
+
+
+# Spine control points in wall coordinates (arc-x, z, height off the wall), head -> tail.
+# Round 2: the front third REARS off the wall (head ~7 m out) and curls toward the shaft so the crown faces a
+# climber hanging below; the rest of the body is a heavy S-curve pressed to the masonry.
+SPINE_CTRL = np.array([
+    (4.7, 5.9, 7.3),
+    (4.3, 6.75, 6.35),
+    (3.75, 7.8, 5.25),
+    (3.05, 9.15, 4.1),
+    (2.15, 10.75, 3.05),
+    (1.05, 12.55, 2.3),
+    (-0.25, 14.55, 1.95),
+    (-1.45, 16.75, 1.85),
+    (-2.1, 19.15, 1.8),
+    (-3.1, 21.45, 1.75),
+    (-5.05, 23.45, 1.65),
+    (-7.45, 24.9, 1.55),
+    (-10.05, 25.85, 1.45),
+    (-12.6, 26.5, 1.4),
+])
+_dense = catmull(SPINE_CTRL, 40)
+SP = wall_point(_dense[:, 0], _dense[:, 1], _dense[:, 2], disp=False)
+SP = resample(SP, step=0.02)
+SL = arclen(SP)
+L_TOTAL = float(SL[-1])
+
+
+def spine_pos(s):
+    s = np.atleast_1d(np.asarray(s, float))
+    out = np.stack([np.interp(np.clip(s, 0, L_TOTAL), SL, SP[:, i]) for i in range(3)], -1)
+    T0 = nrm(SP[0] - SP[5])
+    T1 = nrm(SP[-1] - SP[-6])
+    lo, hi = s < 0, s > L_TOTAL
+    out[lo] = SP[0] + T0 * (-s[lo])[:, None]
+    out[hi] = SP[-1] + T1 * (s[hi] - L_TOTAL)[:, None]
+    return out
+
+
+def spine_frame(s):
+    s = float(s)
+    P = spine_pos(s)[0]
+    ss = min(max(s, 0.06), L_TOTAL - 0.06)
+    a, b = spine_pos([ss - 0.06, ss + 0.06])
+    T = nrm(a - b)
+    phi = math.atan2(P[0], P[1] + R_SHAFT)
+    nin = np.array([-math.sin(phi), -math.cos(phi), 0.0])
+    D = nrm(nin - nin.dot(T) * T)
+    S = np.cross(T, D)
+    return P, T, D, S
+
+
+def spine_frames(svals):
+    out = [spine_frame(s) for s in svals]
+    return [np.array([o[i] for o in out]) for i in range(4)]
+
+
+_SPK = None
+
+
+def spine_param(V):
+    """Arc-length coordinate of the nearest spine sample for each point (head = 0)."""
+    global _SPK
+    if _SPK is None:
+        idx = np.arange(0, len(SP), 5)
+        _SPK = (SP[idx], SL[idx])
+    Pk, Sk = _SPK
+    V = np.asarray(V, float).reshape(-1, 3)
+    out = np.empty(len(V))
+    for a in range(0, len(V), 20000):
+        blk = V[a:a + 20000]
+        d2 = ((blk[:, None, :] - Pk[None, :, :]) ** 2).sum(-1)
+        out[a:a + 20000] = Sk[np.argmin(d2, 1)]
+    return out
+
+
+def kprof(s):
+    """Segment scale along the body: a heavy neck right behind the crown (the head is the biggest end),
+    full girth through the thorax, tapering to the tail."""
+    if s < 4.0:
+        return 0.86 + 0.14 * float(smoothstep(0.8, 4.0, s))
+    if s < 12.0:
+        return 1.0
+    return 1.0 - 0.55 * ((s - 12.0) / (L_TOTAL - 12.0)) ** 1.15
+
+
+SEG_W, SEG_H, SEG_L, SEG_STEP = 2.6, 1.9, 1.08, 1.24
+
+
+def vertebra_positions():
+    out, s = [], 1.95
+    while s < L_TOTAL - 0.8:
+        out.append(s)
+        s += SEG_STEP * kprof(s + 0.6)
+    return out
+
+
+VERT_S = vertebra_positions()
+# tall, irregular skyline set-pieces along the dorsal line (cathedral vocabulary breaks the bug read)
+SKYLINE_AT = {"belfry": 7.6, "spire": 15.3, "ibeam": 17.8, "cluster": 20.2, "fin": 23.0, "pipe": 26.8}
+SKYLINE = {name: int(np.argmin([abs(v - t) for v in VERT_S])) for name, t in SKYLINE_AT.items()}
+SKYLINE_IDX = set(SKYLINE.values())
+
+RING_S = 0.55          # crown ring centre along the spine
+RING_RI, RING_RO, RING_DEPTH = 1.3, 2.15, 1.05
+_o, _t, _d, _s = spine_frame(RING_S)
+CROWN_PRE = dict(C=_o, T=_t, D=_d, S=_s)
+CROWN_SPL = 0.9         # the window's three archivolt orders step back this far in all (a stepped funnel)
+GULLET_L = 4.7
+THROAT_RINGS = [0.32, 0.72, 1.12, 1.55, 2.0, 2.48, 2.98, 3.5]   # depths of the eight rings of throat fangs
+GULLET_S0 = RING_S - (RING_DEPTH / 2 - CROWN_SPL) + 0.05
+
+
+def gullet_frame(dz):
+    """Frame along the gullet: it runs nearly straight back from the mouth so the glow at its bottom stays in
+    view; the first vertebrae are bored through to let it pass."""
+    O_, T_, D_, S_ = spine_frame(GULLET_S0 + dz)
+    Os_ = CROWN_PRE["C"] - CROWN_PRE["T"] * (GULLET_S0 - RING_S + dz)
+    return O_ * 0.45 + Os_ * 0.55, T_, D_, S_
+
+
+_GCUT = []
+
+
+def gullet_cutter():
+    if not _GCUT:
+        P = np.array([gullet_frame(dz)[0] for dz in np.linspace(-1.0, GULLET_L + 0.4, 30)])
+        V, F, uv, al = tube(P, 0.64, sides=20)
+        _GCUT.append((V, F))
+    return _GCUT[0]
+
+
+def add_cut(acc, V, F, **kw):
+    """Add closed geometry, bored through by the gullet when it lies on the gullet's path."""
+    V = np.asarray(V, float)
+    bm = bmesh.new()
+    vs = [bm.verts.new(v) for v in V]
+    for f in faces_list(F):
+        try:
+            bm.faces.new([vs[i] for i in f])
+        except ValueError:
+            pass
+    bm = bool_cut(bm, [gullet_cutter()], "gul")
+    acc.add_bm(bm, **kw)
+
+
+# =============================================================================
+# Body: vertebrae
+# =============================================================================
+def crack_tendons(M, p, n, g, dims, count, k, acc=None):
+    """Tendons bridging a fracture near its rim, plus the bulging marrow slab inside it."""
+    acc = acc or A["Tendon"]
+    n = nrm(n)
+    u = perp(n)
+    w = np.cross(n, u)
+    for _ in range(count):
+        th = rng.uniform(0, 2 * math.pi)
+        dirr = math.cos(th) * u + math.sin(th) * w
+        sup = box_support(dims, dirr) * rng.uniform(0.78, 0.93)
+        q = p + dirr * sup
+        a = q - n * (g / 2 + 0.05 * k)
+        b = q + n * (g / 2 + 0.05 * k)
+        P = sag_path(a, b, 0.0, 8, toward=dirr * rng.uniform(0.0, 0.05) * k)
+        r = rng.uniform(0.012, 0.03) * k * (1 + 0.35 * np.sin(np.linspace(0, math.pi, 8)))
+        acc.add_tube(xf(P, M), r, sides=6, cap0=False, cap1=False)
+
+
+def marrow_slab(M, p, n, g, dims, k, bulge=1.06, bore=False):
+    n = nrm(n)
+    u = perp(n)
+    w = np.cross(n, u)
+    su = box_support(dims, u) * bulge
+    sw = box_support(dims, w) * bulge
+    axes = basis_axes(u, w, n, su, sw, g / 2 + 0.05 * k)
+    V, F = blob(p, axes, sub=3, amp=0.12, freq=2.2 / k, seed=rng.random() * 50)
+    gl_ = 0.55 if rng.random() < 0.6 else 0.0
+    if bore:
+        add_cut(A["Marrow"], xf(V, M), F, g=gl_)
+    else:
+        A["Marrow"].add(xf(V, M), F, g=gl_)
+    # a second, smaller wet tissue layer bulging out of the crack mouth
+    V, F = blob(p, basis_axes(u, w, n, su * 1.02, sw * 1.02, g * 0.32), sub=3, amp=0.18,
+                freq=3.0 / k, seed=rng.random() * 50)
+    if bore:
+        add_cut(A["Flesh"], xf(V, M), F, m=0.0)
+    else:
+        A["Flesh"].add(xf(V, M), F, m=0.0)
+
+
+def surface_veins(M, dims, k, count=3):
+    """Random-walk veins crawling over the flat faces of a block (lateral and dorsal)."""
+    W, Lb, H = dims
+    for _ in range(count):
+        face = rng.choice(("+x", "-x", "+z"))
+        pts = []
+        if face == "+z":
+            p = np.array([rng.uniform(-0.3, 0.3) * W, rng.choice((-0.5, 0.5)) * Lb, H / 2 + 0.012])
+            d = np.array([rng.uniform(-0.5, 0.5), -np.sign(p[1]), 0.0])
+        else:
+            sx = 1 if face == "+x" else -1
+            p = np.array([sx * (W / 2 + 0.012), rng.choice((-0.5, 0.5)) * Lb, rng.uniform(-0.2, 0.2) * H])
+            d = np.array([0.0, -np.sign(p[1]), rng.uniform(-0.5, 0.5)])
+        d = nrm(d)
+        steps = rng.randint(10, 22)
+        for i in range(steps):
+            pts.append(p.copy())
+            ang = rng.uniform(-0.6, 0.6)
+            if face == "+z":
+                R2 = rot(UP, ang)
+            else:
+                R2 = rot(np.array([1.0, 0, 0]), ang)
+            d = R2 @ d
+            p = p + d * 0.05 * k
+            if face == "+z":
+                p[0] = np.clip(p[0], -0.33 * W, 0.33 * W)
+                p[1] = np.clip(p[1], -0.5 * Lb, 0.5 * Lb)
+            else:
+                p[2] = np.clip(p[2], -0.28 * H, 0.28 * H)
+                p[1] = np.clip(p[1], -0.5 * Lb, 0.5 * Lb)
+        P = np.array(pts)
+        if len(P) < 4:
+            continue
+        r = np.linspace(0.016, 0.004, len(P)) * k
+        A["Vein"].add_tube(xf(P, M), r, sides=5, g=float(rng.random() < 0.45))
+
+
+def rebar(start, direction, length, bend_dir, bend=0.3, r=0.016, acc=None):
+    acc = acc or A["Iron"]
+    d = nrm(direction)
+    P = bezier([start, start + d * length * 0.5, start + d * length + nrm(bend_dir) * length * bend], 14)
+    t = np.linspace(0, 1, len(P))
+    rad = r * (1 + 0.12 * np.sin(t * arclen(P)[-1] * 70)) * np.where(t > 0.86, (1 - t) / 0.14 * 0.85 + 0.15, 1)
+    acc.add_tube(P, rad, sides=6, cap0=False)
+
+
+def iron_band(M, dims, chamfer, y0, k, broken=False):
+    W, Lb, H = dims
+    c = chamfer * min(W, H)
+    hw, hh = W / 2 + 0.03 * k, H / 2 + 0.03 * k
+    oct_ = np.array([(hw, -(hh - c)), (hw, hh - c), (hw - c, hh), (-(hw - c), hh), (-hw, hh - c),
+                     (-hw, -(hh - c)), (-(hw - c), -hh), (hw - c, -hh)])
+    loop = np.vstack([oct_, oct_[:1]])
+    pts = np.stack([loop[:, 0], np.full(len(loop), y0), loop[:, 1]], -1)
+    P = resample(pts, step=0.05 * k)
+    if broken:
+        a = rng.uniform(0.0, 0.5)
+        n0 = int(len(P) * a)
+        P = np.vstack([P[n0:], P[1:n0]])[: int(len(P) * 0.78)]
+        # pry the free ends outward
+        t = np.linspace(0, 1, len(P))
+        out = nrm(P * np.array([1, 0, 1]))
+        P = P + out * (0.18 * k * (np.clip(0.15 - t, 0, 1) / 0.15) ** 2 + 0.22 * k * (np.clip(t - 0.85, 0, 1) / 0.15) ** 2)[:, None]
+    else:
+        P = P[:-1]
+        P = np.vstack([P, P[:1]])
+    yax = np.array([0, 1.0, 0])
+    T, N, B = frames(P, up=yax)
+    prof = np.array([(-0.075, -0.02), (0.075, -0.02), (0.075, 0.02), (-0.075, 0.02)]) * np.array([k, k])
+    V, F, uv, al = loft(P, prof, fr=(T, N, B), cap0=broken, cap1=broken)
+    A["Iron"].add(xf(V, M), F, uv, m=0.0)
+    # rivets
+    for i in range(0, len(P) - 1, 3):
+        outd = nrm(np.cross(T[i], N[i]))
+        if outd.dot(nrm(P[i] * np.array([1, 0, 1]))) < 0:
+            outd = -outd
+        V, F = blob(P[i] + outd * 0.022 * k, basis_axes(N[i], T[i], outd, 0.03 * k, 0.03 * k, 0.022 * k),
+                    sub=1, amp=0.0)
+        A["Iron"].add(xf(V, M), F, m=0.0)
+
+
+def pinnacle(M, base, direction, height, r0, k, broken=False, crockets=True, acc=None):
+    """Raked stone pinnacle (neural spine) with hooked Gothic crockets."""
+    acc = acc or A["Carved"]
+    d = nrm(direction)
+    hook = nrm(np.array([0.0, -1.0, 0.25]))
+    frac = rng.uniform(0.5, 0.7) if broken else 1.0
+    n = 12
+    t = np.linspace(0, frac, n)
+    P = base[None] + d[None] * (height * t)[:, None] + hook[None] * (height * 0.22 * t ** 2.4)[:, None]
+    sides = 5
+    th = np.sort(np.array([2 * math.pi * i / sides + rng.uniform(-0.3, 0.3) for i in range(sides)]))
+    rad = np.array([rng.uniform(0.7, 1.25) for _ in range(sides)])
+    prof0 = np.stack([np.cos(th) * rad, np.sin(th) * rad * 1.35], -1)
+    taper = r0 * (1 - t) ** 1.1 + (0.0 if not broken else 0.015)
+    prof = prof0[None] * taper[:, None, None]
+    V, F, uv, al = loft(P, prof, up=np.array([1.0, 0, 0]), cap0=True, cap1=True)
+    acc.add(xf(V, M), F, uv, m=0.0)
+    if broken:
+        for _ in range(rng.randint(1, 3)):
+            rebar(xf(P[-1:], M)[0] - xd(d, M) * 0.2, xd(d + np.array([rng.uniform(-0.6, 0.6), rng.uniform(-0.6, 0.3), 0]), M),
+                  rng.uniform(0.35, 0.9) * k, xd(np.array([rng.uniform(-1, 1), -1, 0]), M), 0.25, 0.014 * k)
+    if crockets:
+        for j in range(rng.randint(3, 5)):
+            tt = rng.uniform(0.15, 0.8) * frac
+            i = int(tt / frac * (n - 1))
+            side = np.array([rng.choice((-1, 1)), rng.uniform(-0.3, 0.3), 0.0])
+            root = P[i] + nrm(side) * taper[i] * 0.8
+            V, F, uv, al = shard(root, nrm(side * 0.9 + d * 0.8), rng.uniform(0.16, 0.32) * k,
+                                 0.06 * k, hook_dir=-d + np.array([0, -0.4, 0]), hook=0.55, rings=6)
+            acc.add(xf(V, M), F, uv, m=0.0)
+
+
+def ray_box(p, d, half):
+    """Distance from p (inside the box) along unit d to the box surface."""
+    p, d = np.asarray(p, float), np.asarray(d, float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.where(np.abs(d) > 1e-6, (np.sign(d) * half - p) / np.where(np.abs(d) > 1e-6, d, 1.0), 1e9)
+    return float(np.min(t))
+
+
+def crack_seam(M, p, n, dims, k, strength=1.0):
+    """A dim ember line along the mouth of a fracture (the rim where plane (p, n) meets the block)."""
+    n = nrm(n)
+    u = perp(n)
+    w = np.cross(n, u)
+    half = np.asarray(dims, float) / 2
+    th = np.linspace(0, 2 * math.pi, 64)
+    pts = []
+    for a in th:
+        d = math.cos(a) * u + math.sin(a) * w
+        pts.append(p + d * ray_box(p, d, half) * 0.965)
+    P = np.array(pts)
+    P = P + NZ.vec(P * 3.0 / k + 5.0) * 0.03 * k
+    gl = strength * np.clip(0.25 + 1.2 * NZ.fbm(P * 1.3 + 2.0, 2), 0.0, 1.0)
+    A["Seam"].add_tube(xf(P, M), 0.03 * k, sides=6, cap0=False, cap1=False, g=gl)
+
+
+def lancet_niche(M, face_c, nrm_out, up, width, height, k, inner="Marrow"):
+    """Carved lancet window on a block face: moulded frame + cusps, dark flesh showing through."""
+    nrm_out, up = nrm(nrm_out), nrm(up)
+    ax = np.cross(up, nrm_out)
+    R = width * 1.45
+    thp = math.acos((R - width / 2) / R)
+    rise = R * math.sin(thp)
+    hs = height - rise
+    pts = [(-width / 2, 0.0), (-width / 2, hs)]
+    pts += [(-width / 2 + R + R * math.cos(a), hs + R * math.sin(a)) for a in np.linspace(math.pi, math.pi - thp, 8)[1:]]
+    pts += [(width / 2 - R + R * math.cos(a), hs + R * math.sin(a)) for a in np.linspace(thp, 0, 8)[1:]]
+    pts += [(width / 2, 0.0), (-width / 2, 0.0)]
+    Q = np.array([face_c + ax * x + up * (y - height / 2) + nrm_out * 0.035 * k for x, y in pts])
+    Q = resample(Q, step=0.03)
+    A["Carved"].add_tube(xf(Q, M), 0.042 * k, sides=4, cap0=False, cap1=False, phase=math.pi / 4)
+    # recessed panel: dark wet tissue where the window was pierced through
+    ny = 10
+    ys = np.linspace(0.02, height - 0.05, ny)
+    rows = []
+    for y in ys:
+        if y <= hs:
+            hw = width / 2 - 0.03
+        else:
+            xx = R - width / 2
+            hw = max(math.sqrt(max(R * R - (y - hs) ** 2, 0.0)) - xx - 0.03, 0.01)
+        xs = np.linspace(-hw, hw, 6)
+        rows.append([face_c + ax * x + up * (y - height / 2) + nrm_out * 0.012 * k for x in xs])
+    G = np.array(rows)
+    G += nrm_out[None, None] * (0.02 * k * NZ.fbm(G.reshape(-1, 3) * 6.0, 2).reshape(G.shape[:2]))[..., None]
+    idx = np.arange(G.shape[0] * G.shape[1]).reshape(G.shape[:2])
+    quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+    if np.dot(np.cross(ax, up), nrm_out) < 0:
+        quads = quads[:, ::-1]
+    A[inner].add(xf(G.reshape(-1, 3), M), quads, g=0.0)
+    # cusp thorns on the intrados
+    for sx in (-1, 1):
+        q = face_c + ax * sx * width * 0.36 + up * (hs + rise * 0.35 - height / 2) + nrm_out * 0.03 * k
+        V, F, uv, al = shard(q, nrm(-ax * sx + up * 0.2), 0.11 * k, 0.03 * k, sides=4, rings=4, hook=0.0)
+        A["Carved"].add(xf(V, M), F, uv)
+
+
+VERTS = []
+
+
+def glyphs(M, c, k, n=None):
+    """Soot-filled Lanternwright glyphs cut shallowly into a block face (lateral face at local x = c[0])."""
+    for gi in range(n or rng.randint(2, 4)):
+        o = c + np.array([0.0, (gi - 1) * 0.2 * k, rng.uniform(-0.03, 0.03) * k])
+        h = rng.uniform(0.13, 0.21) * k
+        strokes = [[o + np.array([0, 0, -h / 2]), o + np.array([0, 0, h / 2])]]
+        for _ in range(rng.randint(1, 3)):
+            z = rng.uniform(-0.4, 0.4) * h
+            sg = rng.choice((-1, 1))
+            strokes.append([o + np.array([0, 0, z]), o + np.array([0, sg * 0.07 * k, z + rng.uniform(-0.06, 0.06) * k])])
+        if rng.random() < 0.5:
+            th = np.linspace(0, 2 * math.pi, 12)
+            strokes.append(list(o + np.stack([np.zeros(12), np.cos(th) * 0.035 * k, h / 2 + 0.045 * k + np.sin(th) * 0.035 * k], -1)))
+        for st_ in strokes:
+            A["Soot"].add_tube(xf(resample(np.array(st_), 5), M), 0.008 * k, sides=4)
+
+
+def build_flank_bell(v, sgn=1.0):
+    """A cracked Lanternwright church bell half swallowed into the flank, chains pierced through the flesh."""
+    O, T, D, S = spine_frame(v["s"])
+    side = S * sgn
+    axis = nrm(-side * 0.85 + D * 0.15 + UP * 0.35)
+    c = O + side * (v["W"] * 0.5) - D * 0.15
+    top = c + axis * 0.55
+    build_bell_at(top, 1.35, 0.72, axis=axis)
+    e1 = perp(axis)
+    e2 = np.cross(axis, e1)
+    mouth_c = top - axis * 1.35 * 1.1
+    waist = top - axis * 0.75
+    th = np.linspace(0, 2 * math.pi, 40)
+    lip = waist + 0.62 * (np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2)
+    A["Flesh"].add_tube(lip, 0.16 * (1 + 0.4 * np.sin(th * 3)), sides=10, cap0=False, cap1=False, nz_amp=0.2,
+                        nz_freq=4.0, m=0.4)
+    for j in range(3):
+        a = 2 * math.pi * j / 3 + 0.4
+        p_in = waist + 0.6 * (math.cos(a) * e1 + math.sin(a) * e2)
+        pierce(p_in, nrm(math.cos(a) * e1 + math.sin(a) * e2) + DOWN * 0.8, rng.uniform(1.2, 2.6), hook=j == 1)
+    CROWN["bell"] = mouth_c
+
+
+def _build_vertebra(idx, s, k):
+    O, T, D, S = spine_frame(s)
+    M = mat4(S, T, D, O)
+    W, H, Lb = SEG_W * k, SEG_H * k, SEG_L * k
+    dims = (W, Lb, H)
+    chamfer = 0.28
+    bm = stone_bm(dims, chamfer=chamfer, wear=0.035 * k, chips=rng.randint(3, 6), subdiv=2)
+    pieces = [bm]
+    cracks = []
+    ncr = 2 if rng.random() < 0.4 else 1
+    for c in range(ncr):
+        a = rng.uniform(0.15, math.pi - 0.15) if c == 0 else rng.uniform(-0.5, 0.5)
+        if c == 0:
+            n = np.array([math.cos(a), rng.uniform(-0.3, 0.3), math.sin(a)])
+        else:
+            n = np.array([rng.uniform(-0.3, 0.3), 1.0, rng.uniform(-0.4, 0.4)])
+        n = nrm(n)
+        p = np.array([rng.uniform(-0.18, 0.18) * W, rng.uniform(-0.12, 0.12) * Lb, rng.uniform(-0.15, 0.15) * H])
+        g = rng.uniform(0.07, 0.15) * k
+        new = []
+        for pc in pieces:
+            new += split_stone(pc, p, n, g, amp=0.075 * k, freq=2.6 / k, nseed=rng.random() * 100)
+            pc.free()
+        pieces = new
+        cracks.append((p, n, g))
+    pull = {}
+    for pc in pieces:
+        if len(pc.verts) == 0:
+            continue
+        cen = np.mean([v.co[:] for v in pc.verts], axis=0)
+        off = np.zeros(3)
+        for (p, n, g) in cracks:
+            off += np.sign(np.dot(cen - p, n)) * n * rng.uniform(0.015, 0.05) * k
+        Rm = rot(np.array([rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)]), math.radians(rng.uniform(0.5, 3.0)))
+        Mp = np.eye(4)
+        Mp[:3, :3] = Rm
+        Mp[:3, 3] = cen - Rm @ cen + off
+        bm_xf(pc, M @ Mp)
+        if s < GULLET_S0 + GULLET_L + 0.8:
+            pc = bool_cut(pc, [gullet_cutter()], "gul")
+        A["Stone"].add_bm(pc)
+    for (p, n, g) in cracks:
+        marrow_slab(M, p, n, g + 0.06 * k, dims, k, bore=s < GULLET_S0 + GULLET_L + 0.8)
+        crack_tendons(M, p, n, g + 0.06 * k, dims, rng.randint(4, 8), k)
+        if rng.random() < 0.8:
+            crack_seam(M, p, n, dims, k, rng.uniform(0.6, 1.0))
+        # ember glints deep in some fractures
+        if rng.random() < 0.55:
+            q = p + perp(n) * box_support(dims, perp(n)) * 0.7
+            V, F = blob(q, basis_axes(perp(n), np.cross(n, perp(n)), n, 0.09 * k, 0.05 * k, 0.03 * k), sub=2, amp=0.2)
+            A["Ember"].add(xf(V, M), F, g=0.03)
+    # neural spine: short raked stubs, often snapped; the tall skyline set-pieces are built separately
+    # rhythmic dorsal row of raked pinnacles, growing taller and sharper toward the crown (the head is the
+    # biggest, sharpest end, so the silhouette has a direction)
+    hmul = 0.55 + 1.05 * max(0.0, 1.0 - s / (0.75 * L_TOTAL)) ** 1.25
+    base = np.array([rng.uniform(-0.06, 0.06) * W, rng.uniform(-0.08, 0.08) * Lb, H / 2 - 0.12 * k])
+    dirr = nrm(np.array([rng.uniform(-0.12, 0.12), -0.7 - rng.uniform(0, 0.3), 1.0]))
+    if idx not in SKYLINE_IDX and rng.random() < 0.93:
+        pinnacle(M, base, dirr, rng.uniform(1.0, 1.5) * k * hmul, 0.27 * k * (0.8 + 0.3 * hmul), k,
+                 broken=rng.random() < 0.4)
+    # secondary lateral thorns on the dorsal shoulders (sparse)
+    for sx in (-1, 1):
+        if rng.random() < 0.3:
+            root = np.array([sx * W * 0.36, rng.uniform(-0.2, 0.2) * Lb, H / 2 - 0.05])
+            V, F, uv, al = shard(root, nrm(np.array([sx * 0.6, -0.5, 1.0])), rng.uniform(0.35, 0.75) * k * hmul,
+                                 0.12 * k, hook_dir=np.array([0, -1.0, 0]), hook=0.3, rings=8)
+            A["Carved"].add(xf(V, M), F, uv)
+    # carved lancet windows on the flanks of the big blocks (cathedral read at mid range)
+    if k > 0.72 and rng.random() < 0.45:
+        for sx in (-1, 1):
+            if rng.random() < 0.7:
+                fc = np.array([sx * W / 2, rng.uniform(-0.06, 0.06) * Lb, -0.02 * H])
+                lancet_niche(M, fc, np.array([sx, 0.0, 0.0]), np.array([0, 0, 1.0]), 0.27 * k, 0.56 * k, k)
+    # rebar bursting through the fractures
+    for _ in range(rng.randint(0, 3)):
+        p, n, g = rng.choice(cracks)
+        st = p + perp(n) * rng.uniform(-0.3, 0.3) * W
+        dd = nrm(n * rng.choice((-1, 1)) * 0.3 + np.array([rng.uniform(-1, 1), rng.uniform(-0.8, 0.2), 1.0]))
+        rebar(xf(st[None], M)[0], xd(dd, M), rng.uniform(0.5, 1.5) * k, xd(np.array([0, -1.0, 0.2]), M),
+              rng.uniform(0.1, 0.5), 0.016 * k)
+    if rng.random() < 0.45:
+        iron_band(M, dims, chamfer, rng.uniform(-0.28, 0.28) * Lb, k, broken=rng.random() < 0.45)
+    surface_veins(M, dims, k, rng.randint(2, 5))
+    if rng.random() < 0.35:
+        glyphs(M, np.array([rng.choice((-1, 1)) * (W / 2 + 0.004), 0.0, rng.uniform(-0.1, 0.15) * H]), k)
+    VERTS.append(dict(idx=idx, s=s, k=k, W=W, H=H, Lb=Lb, M=M))
+
+
+def _build_disc(va, vb):
+    """Wet intervertebral sinew between two blocks: lumpy flesh collar + tendon cords + veins."""
+    s0 = va["s"] + va["Lb"] / 2 - 0.16 * va["k"]
+    s1 = vb["s"] - vb["Lb"] / 2 + 0.16 * vb["k"]
+    if s1 <= s0:
+        return
+    ss = np.linspace(s0, s1, 14)
+    O, T, D, S = spine_frames(ss)
+    t = np.linspace(0, 1, len(ss))
+    kk = va["k"] + (vb["k"] - va["k"]) * t
+    bul = 1 + 0.12 * np.sin(math.pi * t)
+    rx = 0.47 * SEG_W * kk * bul
+    rz = 0.47 * SEG_H * kk * bul
+    th = np.linspace(0, 2 * math.pi, 22, endpoint=False)
+    # rounded-rect profile, in (S, D)
+    cx = np.sign(np.cos(th)) * np.abs(np.cos(th)) ** 0.6
+    cz = np.sign(np.sin(th)) * np.abs(np.sin(th)) ** 0.6
+    prof = np.stack([cx[None] * rx[:, None], cz[None] * rz[:, None]], -1)
+    Bv = np.cross(T, S)
+    V, F, uv, al = loft(O, prof, fr=(T, S, Bv), cap0=False, cap1=False, nz_amp=0.1, nz_freq=2.4,
+                        nz_seed=rng.random() * 40)
+    A["Flesh"].add(V, F, uv, m=0.05, g=0.12)
+    # tendon cords bridging block to block around the perimeter
+    nt = rng.randint(9, 14)
+    sa = va["s"] + va["Lb"] * 0.25
+    sb = vb["s"] - vb["Lb"] * 0.25
+    sss = np.linspace(sa, sb, 12)
+    O2, T2, D2, S2 = spine_frames(sss)
+    t2 = np.linspace(0, 1, 12)
+    k2 = va["k"] + (vb["k"] - va["k"]) * t2
+    for j in range(nt):
+        a = 2 * math.pi * j / nt + rng.uniform(-0.15, 0.15)
+        ex = np.sign(math.cos(a)) * abs(math.cos(a)) ** 0.6
+        ez = np.sign(math.sin(a)) * abs(math.sin(a)) ** 0.6
+        rr_ = rng.uniform(0.42, 0.5)
+        b = 1 + rng.uniform(0.05, 0.2) * np.sin(math.pi * t2)
+        P = O2 + S2 * (ex * rr_ * SEG_W * k2 * b)[:, None] + D2 * (ez * rr_ * SEG_H * k2 * b)[:, None]
+        r = rng.uniform(0.025, 0.055) * k2 * (1 + 0.4 * np.sin(math.pi * t2))
+        A["Tendon"].add_tube(P, r, sides=7, cap0=False, cap1=False)
+    # veins over the collar
+    for _ in range(rng.randint(2, 4)):
+        a = rng.uniform(0, 2 * math.pi)
+        drift = rng.uniform(-1.2, 1.2)
+        aa = a + drift * t
+        ex = np.cos(aa)
+        ez = np.sin(aa)
+        P = O + S * (np.sign(ex) * np.abs(ex) ** 0.6 * rx * 1.08)[:, None] + D * (np.sign(ez) * np.abs(ez) ** 0.6 * rz * 1.08)[:, None]
+        A["Vein"].add_tube(P, 0.014 * kk, sides=5, g=float(rng.random() < 0.55))
+
+
+# =============================================================================
+# Dorsal skyline set-pieces (built in a vertebra's local frame: x = lateral, y = head-ward, z = dorsal)
+# =============================================================================
+def stone_at(dims, X, Y, Z, c, chamfer=0.18, wear=0.02, chips=2, subdiv=0, acc=None, M=None):
+    acc = acc or A["Stone"]
+    bm = stone_bm(dims, chamfer=chamfer, wear=wear, chips=chips, subdiv=subdiv)
+    Mb = mat4(nrm(X), nrm(Y), nrm(Z), c)
+    bm_xf(bm, Mb if M is None else M @ Mb)
+    acc.add_bm(bm)
+
+
+def octa_frame(up, lat=np.array([1.0, 0, 0])):
+    a1 = nrm(lat - lat.dot(up) * up)
+    a2 = np.cross(up, a1)
+    return a1, a2
+
+
+def spire_loft(M, base, up, r0, height, frac=1.0, sides=8, crockets=True, k=1.0, acc=None, rebars=3):
+    """Octagonal crocketed spire; frac<1 snaps it (flat break + rebar)."""
+    acc = acc or A["Carved"]
+    a1, a2 = octa_frame(up)
+    n = 18
+    t = np.linspace(0, frac, n)
+    P = base[None] + up[None] * (height * t)[:, None]
+    th = np.linspace(0, 2 * math.pi, sides, endpoint=False) + math.pi / sides
+    taper = r0 * (1 - t) ** 1.05 + 0.006
+    prof = np.stack([np.cos(th), np.sin(th)], -1)[None] * taper[:, None, None]
+    fr = (np.broadcast_to(up, P.shape), np.broadcast_to(a1, P.shape), np.broadcast_to(a2, P.shape))
+    V, F, uv, al = loft(P, prof, fr=fr, cap0=True, cap1=True, nz_amp=0.04, nz_freq=3.0, nz_seed=rng.random() * 9)
+    acc.add(xf(V, M), F, uv)
+    if crockets:
+        for e in range(sides):
+            ang = th[e]
+            for tt in np.arange(0.12, frac - 0.04, 0.085 + 0.02 * rng.random()):
+                i = tt / max(frac, 1e-6) * (n - 1)
+                rr_ = r0 * (1 - tt) ** 1.05
+                root = base + up * height * tt + (math.cos(ang) * a1 + math.sin(ang) * a2) * rr_ * 0.92
+                outd = math.cos(ang) * a1 + math.sin(ang) * a2
+                V, F, uv, al = shard(root, nrm(outd * 0.9 + up * 0.7), (0.12 + 0.12 * (1 - tt)) * k, 0.045 * k,
+                                     hook_dir=-up + outd * 0.2, hook=0.6, rings=5, sides=4)
+                acc.add(xf(V, M), F, uv)
+    if frac < 1.0:
+        top = base + up * height * frac
+        for _ in range(rebars):
+            dd = nrm(up + np.array([rng.uniform(-0.8, 0.8), rng.uniform(-0.8, 0.4), 0.0]))
+            rebar(xf(top[None], M)[0] - xd(up, M) * 0.15, xd(dd, M), rng.uniform(0.4, 1.1) * k,
+                  xd(np.array([rng.uniform(-1, 1), -1.0, -0.3]), M), rng.uniform(0.15, 0.5), 0.02 * k)
+    return base + up * height * frac
+
+
+def build_belfry(v):
+    """Open octagonal lantern turret: lancet bays between piers, coal pits on the floor, snapped spire."""
+    k, H, M = v["k"], v["H"], v["M"]
+    up = nrm(np.array([0.3, -0.3, 1.0]))
+    a1, a2 = octa_frame(up)
+    base = np.array([0.0, 0.0, H / 2 - 0.2 * k])
+    Rb = 0.95 * k
+
+    def P(r, ang, h):
+        return base + (math.cos(ang) * a1 + math.sin(ang) * a2) * r + up * h
+
+    side_len = 2 * Rb * math.sin(math.pi / 8)
+    for i in range(8):  # plinth ring
+        ang = (i + 0.5) * math.pi / 4
+        rad = math.cos(ang) * a1 + math.sin(ang) * a2
+        tg = np.cross(up, rad)
+        stone_at((side_len * 0.97, 0.36 * k, 0.6 * k), tg, rad, up, P(Rb * 0.9, ang, 0.3 * k), 0.15, 0.015 * k,
+                 rng.randint(1, 3), acc=A["Stone"], M=M)
+    V, F = blob(base + up * 0.42 * k, basis_axes(a1, a2, up, Rb * 0.82, Rb * 0.82, 0.12 * k), sub=3, amp=0.1)
+    A["Marrow"].add(xf(V, M), F, g=0.0)
+    hp0, hp1 = 0.6 * k, 2.55 * k
+    for i in range(8):  # piers
+        ang = i * math.pi / 4
+        rad = math.cos(ang) * a1 + math.sin(ang) * a2
+        tg = np.cross(up, rad)
+        if i == 5:  # one pier snapped off
+            stone_at((0.26 * k, 0.26 * k, 0.8 * k), tg, rad, up, P(Rb * 0.9, ang, hp0 + 0.4 * k), 0.2, 0.015 * k, 3, M=M)
+            continue
+        stone_at((0.27 * k, 0.27 * k, hp1 - hp0), tg, rad, up, P(Rb * 0.9, ang, (hp0 + hp1) / 2), 0.22, 0.015 * k,
+                 rng.randint(1, 2), M=M)
+    for i in range(8):  # pointed arch heads on every bay
+        if i in (4, 5):
+            continue
+        a0, a1_ = i * math.pi / 4, (i + 1) * math.pi / 4
+        pa, pb = P(Rb * 0.88, a0, 1.95 * k), P(Rb * 0.88, a1_, 1.95 * k)
+        mid = (pa + pb) / 2
+        wv = np.linalg.norm(pb - pa)
+        ex = nrm(pb - pa)
+        R = wv * 1.0
+        th = math.acos((R - wv / 2) / R)
+        pts = [mid - ex * wv / 2 + ex * (R + R * math.cos(a)) + up * R * math.sin(a)
+               for a in np.linspace(math.pi, math.pi - th, 8)]
+        pts += [mid + ex * wv / 2 - ex * (R - R * math.cos(a)) + up * R * math.sin(a)
+                for a in np.linspace(th, 0, 8)[1:]]
+        A["Carved"].add_tube(xf(np.array(pts), M), 0.075 * k, sides=4, phase=math.pi / 4, m=0.0)
+        if rng.random() < 0.6:
+            q = mid + up * (R * math.sin(th) * 0.55)
+            V, F, uv, al = shard(q, -up, 0.16 * k, 0.04 * k, sides=4, rings=4, hook=0.0)
+            A["Carved"].add(xf(V, M), F, uv)
+    hc = 2.72 * k
+    for i in range(8):  # cornice
+        ang = (i + 0.5) * math.pi / 4
+        if i == 4:
+            continue
+        rad = math.cos(ang) * a1 + math.sin(ang) * a2
+        tg = np.cross(up, rad)
+        stone_at((side_len * 1.04, 0.4 * k, 0.3 * k), tg, rad, up, P(Rb * 0.98, ang, hc), 0.25, 0.015 * k, 2, M=M)
+    for i in range(0, 8, 2):  # corner pinnacles on the parapet
+        if i == 4:
+            continue
+        ang = i * math.pi / 4
+        pinnacle(M, P(Rb * 1.02, ang, hc + 0.1 * k), nrm(up + (math.cos(ang) * a1 + math.sin(ang) * a2) * 0.15),
+                 rng.uniform(0.7, 1.1) * k, 0.12 * k, k, broken=rng.random() < 0.3)
+    top = spire_loft(M, base + up * (hc + 0.12 * k), up, Rb * 0.72, 3.6 * k, frac=0.62, k=k)
+    # coal pits glowing on the belfry floor + a hanging chain and hook in the open bay
+    for j in range(3):
+        q = base + up * 0.62 * k + (a1 * rng.uniform(-0.3, 0.3) + a2 * rng.uniform(-0.3, 0.3)) * k
+        V, F = blob(q, basis_axes(a1, a2, up, 0.17 * k, 0.17 * k, 0.06 * k), sub=2, amp=0.25)
+        A["Pit"].add(xf(V, M), F)
+    cp = xf((base + up * (hc - 0.05 * k))[None], M)[0]
+    chain(np.array([cp, cp + DOWN * 1.3 * k]), 0.8)
+    meat_hook(cp + DOWN * 1.32 * k, 1.4)
+    for _ in range(5):  # tendons hauling the turret down onto the vertebra
+        ang = rng.uniform(0, 2 * math.pi)
+        a = P(Rb * 0.95, ang, rng.uniform(0.2, 0.5) * k)
+        b = np.array([math.cos(ang) * 0.9, rng.uniform(-0.4, 0.4), H / 2 - 0.1 * k]) * np.array([v["W"] / 2, v["Lb"], 1.0])
+        A["Tendon"].add_tube(xf(sag_path(a, b, 0.05, 10), M), 0.035 * k, sides=6, cap0=False, cap1=False)
+
+
+def build_great_spire(v):
+    """A steeple snapped off two-thirds up, toppling sideways out of the body line; soot-black, flesh and
+    tendons crawling up its base, a chain swinging from the break."""
+    k, H, M = v["k"], v["H"], v["M"]
+    up = nrm(np.array([-0.85, -0.35, 1.0]))
+    a1, a2 = octa_frame(up)
+    base = np.array([0.0, 0.0, H / 2 - 0.15 * k])
+    stone_at((1.0 * k, 1.0 * k, 0.8 * k), a1, a2, up, base + up * 0.35 * k, 0.12, 0.02 * k, 3, M=M)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            if rng.random() < 0.7:
+                c = base + (a1 * sx + a2 * sy) * 0.45 * k + up * 0.75 * k
+                pinnacle(M, c, nrm(up + (a1 * sx + a2 * sy) * 0.15), rng.uniform(0.7, 1.2) * k, 0.12 * k, k,
+                         broken=rng.random() < 0.5)
+    top = spire_loft(M, base + up * 0.75 * k, up, 0.48 * k, 4.4 * k, frac=0.6, k=k, rebars=4)
+    tw = xf(top[None], M)[0]
+    stone_at((0.2 * k, 0.42 * k, 0.16 * k), xd(a1, M), xd(nrm(a2 - up * 0.6), M), xd(up, M),
+             tw + xd(a2, M) * 0.3 * k + DOWN * 0.3 * k, 0.2, 0.01, 2)
+    ch0 = xf((base + up * 2.4 * k + a2 * 0.25 * k)[None], M)[0]
+    chain(hanging_chain_path(ch0, xd(a2, M) + DOWN, 2.6, 0.3), 1.0)
+    V, F = blob(base + up * 0.1 * k, basis_axes(a1, a2, up, 0.85 * k, 0.85 * k, 0.4 * k), sub=3, amp=0.25, freq=2.5)
+    A["Flesh"].add(xf(V, M), F, m=0.1)
+    # flesh sheath and tendons climbing the shaft of the spire
+    P = base[None] + up[None] * np.linspace(0.3, 1.9, 12)[:, None] * k
+    A["Flesh"].add_tube(xf(P, M), np.linspace(0.62, 0.36, 12) * k, sides=12, nz_amp=0.2, nz_freq=2.0,
+                        seed=rng.random() * 9, m=0.1)
+    for j in range(5):
+        a = 2 * math.pi * j / 5 + rng.uniform(-0.3, 0.3)
+        hh = np.linspace(0.2, rng.uniform(1.8, 2.8), 26) * k
+        rr_ = 0.47 * k * (1 - hh / (4.4 * k)) + 0.03
+        P = base[None] + up[None] * hh[:, None] + (np.cos(a + hh * 1.3)[:, None] * a1 + np.sin(a + hh * 1.3)[:, None] * a2) * rr_[:, None]
+        A["Tendon"].add_tube(xf(P, M), np.linspace(0.04, 0.012, 26) * k, sides=6, cap0=False)
+
+
+def build_cluster(v):
+    k, H, M = v["k"], v["H"], v["M"]
+    base = np.array([0.0, 0.0, H / 2 - 0.15 * k])
+    stone_at((0.85 * k, 0.75 * k, 0.5 * k), np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), np.array([0, 0, 1.0]),
+             base + np.array([0, 0, 0.2 * k]), 0.15, 0.02 * k, 3, M=M)
+    spec = [(0.0, 0.0, 3.9, 0.26, False), (0.32, 0.15, 2.7, 0.19, True), (-0.3, -0.12, 2.2, 0.17, False),
+            (0.18, -0.3, 1.5, 0.14, False), (-0.22, 0.3, 3.1, 0.2, True)]
+    for (x, y, h, r0, br) in spec:
+        d = nrm(np.array([x * 0.6 + rng.uniform(-0.08, 0.08), -0.55 + y * 0.4, 1.0]))
+        pinnacle(M, base + np.array([x * k, y * k, 0.35 * k]), d, h * k, r0 * k, k, broken=br)
+    V, F = blob(base + np.array([0, 0, 0.05 * k]), basis_axes(np.array([1.0, 0, 0]), np.array([0, 1.0, 0]),
+                np.array([0, 0, 1.0]), 0.7 * k, 0.65 * k, 0.25 * k), sub=3, amp=0.25)
+    A["Flesh"].add(xf(V, M), F, m=0.0)
+
+
+def build_fin(v, vnext):
+    """Stepped buttress fin with lancet panels, and a true flying arch springing to the next vertebra."""
+    k, H, M = v["k"], v["H"], v["M"]
+    X, Y, Z = np.array([1.0, 0, 0]), nrm(np.array([0, 1.0, 0.18])), nrm(np.array([0, -0.18, 1.0]))
+    z0 = H / 2 - 0.15 * k
+    steps = [(1.5, 1.25, 0.48), (1.15, 1.15, 0.42), (0.78, 1.05, 0.36)]
+    zc = z0
+    for i, (ly, hz, wx) in enumerate(steps):
+        c = np.array([0.0, -0.1 * k * i, 0.0]) + Z * (zc + hz * k / 2)
+        stone_at((wx * k, ly * k, hz * k), X, Y, Z, c, 0.12, 0.02 * k, 2, M=M)
+        if i < 2:
+            for sx in (-1, 1):
+                lancet_niche(M, c + X * sx * wx * k / 2, X * sx, Z, 0.32 * k, 0.86 * k, k)
+        zc += hz * k
+    topc = np.array([0.0, -0.25 * k, 0.0]) + Z * zc
+    pinnacle(M, topc, nrm(Z - Y * 0.4), 1.9 * k, 0.2 * k, k)
+    # flying arch: from the fin's back down onto the next vertebra (negative space underneath)
+    F1 = xf((Z * (zc - 0.35 * k) - Y * 0.6 * k)[None], M)[0]
+    O2, T2, D2, S2 = spine_frame(vnext["s"])
+    P2 = O2 + D2 * (vnext["H"] / 2 - 0.05)
+    Ctl = P2 + D2 * np.linalg.norm(F1 - P2) * 0.8
+    arc = bezier([F1, Ctl, P2], 40)
+    La = arclen(arc)
+    nb = 7
+    Sx = xd(X, M)
+    for i in range(nb):
+        a0, a1_ = La[-1] * i / nb, La[-1] * (i + 1) / nb - 0.05
+        j = min(max(int(np.searchsorted(La, (a0 + a1_) / 2)), 1), len(arc) - 2)
+        ty = nrm(arc[j + 1] - arc[j - 1])
+        zz = nrm(np.cross(Sx, ty))
+        if zz.dot(D2) < 0:
+            zz = -zz
+        xx = np.cross(ty, zz)
+        stone_at((0.34 * k, a1_ - a0, 0.42 * k * (1 - 0.25 * i / nb)), xx, ty, zz, arc[j], 0.2, 0.015, 1)
+    A["Flesh"].add_tube(arc, 0.12 * k, sides=8, nz_amp=0.15, seed=rng.random() * 10, m=0.0)
+    for _ in range(2):
+        off = Sx * rng.uniform(-0.1, 0.1)
+        A["Tendon"].add_tube(sag_path(F1 + off, P2 + off, 0.35, 16), 0.03 * k, sides=6, cap0=False, cap1=False)
+
+
+def ibeam_parts(path, wf, dp, tf, tw, up):
+    """I-beam as three swept boxes (web + 2 flanges) along a path; returns list of (V, F, uv, al)."""
+    T_, N_, B_ = frames(path, up=up)
+    out = []
+    rect = lambda a, b: np.array([(-a, -b), (a, -b), (a, b), (-a, b)])
+    out.append(loft(path, rect(tw / 2, dp / 2), fr=(T_, N_, B_)))
+    for sg in (-1, 1):
+        out.append(loft(path + B_ * sg * (dp / 2 - tf / 2), rect(wf / 2, tf / 2), fr=(T_, N_, B_)))
+    return out
+
+
+def build_ibeam(v):
+    """A rusted, heat-blued I-beam driven through the back, its far end torn and bent."""
+    k, H, M = v["k"], v["H"], v["M"]
+    O, T, D, S = spine_frame(v["s"])
+    st = O + D * (H / 2 - 0.45 * k) + S * 0.35 * k
+    d1 = nrm(D * 1.0 - T * 0.65 + S * 0.35)
+    d2 = nrm(d1 + S * 0.9 - T * 0.3 + DOWN * 0.4)
+    P = np.vstack([st + d1 * np.linspace(0, 1.7, 12)[:, None] * k,
+                   st + d1 * 1.7 * k + bezier([np.zeros(3), d1 * 0.4 * k, d1 * 0.5 * k + d2 * 0.7 * k], 10)[1:]])
+    al = arclen(P) / arclen(P)[-1]
+    for i, (V, F, uv, a) in enumerate(ibeam_parts(P, 0.28 * k, 0.34 * k, 0.035 * k, 0.03 * k, S)):
+        if i > 0:
+            # flanges: dented, peeled outward near the torn end
+            fl = np.clip((a - 0.6) / 0.4, 0, 1)
+            V = V + (NZ.vec(V * 4.0) * 0.03 * k) * (0.3 + fl[:, None]) + d2[None] * (fl ** 2 * 0.12 * k)[:, None] * (1 if i == 1 else -1)
+        A["Iron"].add(V, F, uv, m=0.0, g=np.clip((a - 0.78) / 0.22, 0, 1) * 0.8)
+    V, F = blob(st + d1 * 0.15, basis_axes(S, T, D, 0.6 * k, 0.55 * k, 0.4 * k), sub=3, amp=0.3)
+    A["Flesh"].add(V, F, m=0.5, g=0.0)
+    for j in range(7):
+        q = st + d1 * (0.35 + 0.15 * j) * k
+        A["Iron"].add_tube(np.array([q - S * 0.18 * k, q + S * 0.18 * k]), 0.02 * k, sides=6, m=0.0)
+    for _ in range(3):
+        a = st + S * rng.uniform(-0.4, 0.4) * k
+        b = st + d1 * rng.uniform(0.6, 1.2) * k + S * rng.uniform(-0.12, 0.12) * k
+        A["Tendon"].add_tube(sag_path(a, b, 0.05, 10), 0.03 * k, sides=6, cap0=False, cap1=False)
+
+
+def build_pipe(v):
+    k, H, M = v["k"], v["H"], v["M"]
+    O, T, D, S = spine_frame(v["s"])
+    st = O + D * (H / 2 - 0.3 * k) - S * 0.3 * k
+    P = bezier([st, st + D * 1.4 * k - T * 0.4 * k, st + D * 1.9 * k - T * 1.0 * k - S * 0.5 * k], 24)
+    tt = np.linspace(0, 1, len(P))
+    A["Iron"].add_tube(P, 0.17 * k, sides=16, cap0=False, cap1=False, m=0.0, g=np.clip((tt - 0.85) / 0.15, 0, 1) * 0.8)
+    A["Iron"].add_tube(P[::-1] + 0.0, 0.15 * k, sides=16, cap0=False, cap1=False, m=0.0, flip=True)
+    for f in (0.12, 0.62):
+        i = int(f * (len(P) - 1))
+        tg = nrm(P[i + 1] - P[i - 1])
+        e1, e2 = perp(tg), np.cross(tg, perp(tg))
+        ring = P[i] + 0.2 * k * (np.cos(np.linspace(0, 2 * math.pi, 28))[:, None] * e1 + np.sin(np.linspace(0, 2 * math.pi, 28))[:, None] * e2)
+        A["Iron"].add_tube(ring, 0.045 * k, ry=0.02 * k, up=tg, sides=6, cap0=False, cap1=False, m=0.0)
+        for b in range(8):
+            a = 2 * math.pi * b / 8
+            q = P[i] + 0.2 * k * (math.cos(a) * e1 + math.sin(a) * e2) + tg * 0.03 * k
+            V, F = blob(q, basis_axes(e1, e2, tg, 0.03 * k, 0.03 * k, 0.03 * k), sub=1, amp=0.0)
+            A["Iron"].add(V, F, m=0.0)
+    V, F = blob(st, basis_axes(S, T, D, 0.5 * k, 0.5 * k, 0.3 * k), sub=3, amp=0.3)
+    A["Flesh"].add(V, F, m=0.0)
+    end = P[-1]
+    hang_strand(end + DOWN * 0.1, 1.1, 0.02, A["Oil"])
+
+
+# =============================================================================
+# Legs: open lancet buttress frames -> knee piers -> bone shanks -> iron grapnel feet
+# =============================================================================
+def iron_hoop(c, axis, r, k, w=0.05, rivets=8, heat=0.0):
+    """Riveted iron hoop clamped around a joint."""
+    axis = nrm(axis)
+    e1 = perp(axis)
+    e2 = np.cross(axis, e1)
+    th = np.linspace(0, 2 * math.pi, 30)
+    ring = c + r * (np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2)
+    A["Iron"].add_tube(ring, 0.022 * k, ry=w * k, up=axis, sides=6, cap0=False, cap1=False, m=0.0, g=heat)
+    for i in range(rivets):
+        a = 2 * math.pi * (i + 0.5) / rivets
+        d = math.cos(a) * e1 + math.sin(a) * e2
+        V, F = blob(c + d * (r + 0.02 * k), basis_axes(np.cross(axis, d), axis, d, 0.022 * k, 0.022 * k, 0.016 * k),
+                    sub=1, amp=0.0)
+        A["Iron"].add(V, F, m=0.0)
+
+
+def sheave(c, axis, r, k):
+    """Iron pulley wheel at a knee: the leg is a machine as much as a limb."""
+    axis = nrm(axis)
+    e1 = perp(axis)
+    w = 0.09 * k
+    prof = [(0.02, -w * 0.7), (r * 0.35, -w * 0.7), (r * 0.4, -w * 0.5), (r, -w * 0.5), (r, -w * 0.3),
+            (r * 0.84, -w * 0.1), (r * 0.84, w * 0.1), (r, w * 0.3), (r, w * 0.5), (r * 0.4, w * 0.5),
+            (r * 0.35, w * 0.7), (0.02, w * 0.7)]
+    V, F = lathe(prof, c, axis, 28)
+    A["Iron"].add(V, F, m=0.0)
+    A["Iron"].add_tube(np.array([c - axis * w * 1.6, c + axis * w * 1.6]), 0.035 * k, sides=8, m=0.0)
+    # a tendon running over the sheave groove
+    th = np.linspace(-0.3, math.pi + 0.3, 20)
+    e2 = np.cross(axis, e1)
+    arc = c + r * 0.86 * (np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2)
+    A["Tendon"].add_tube(arc, 0.03 * k, sides=6, cap0=False, cap1=False)
+
+
+def rubble(p, nout, k=1.0, n=None):
+    """Chipped rock collar where a hook bites the wall."""
+    t1 = perp(nout)
+    t2 = np.cross(nout, t1)
+    for _ in range(n or rng.randint(5, 9)):
+        a = rng.uniform(0, 2 * math.pi)
+        r = rng.uniform(0.12, 0.45) * k
+        c = p + (math.cos(a) * t1 + math.sin(a) * t2) * r - nout * rng.uniform(0.0, 0.06)
+        sz = rng.uniform(0.05, 0.16) * k
+        bm = stone_bm((sz * rng.uniform(0.7, 1.5), sz * rng.uniform(0.7, 1.4), sz * rng.uniform(0.5, 1.0)),
+                      chamfer=0.1, wear=0.004, chips=rng.randint(1, 3), subdiv=0)
+        R_ = rot(np.array([rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)]), rng.uniform(0, 3))
+        bm_xf(bm, mat4(R_ @ t1, R_ @ t2, R_ @ (-nout), c))
+        ENV["Rubble"].add_bm(bm)
+
+
+def oil_trail(p, nout, length, w0=0.06):
+    """Oil-blood weeping from a hook bite and running down the rock under gravity (thin decal strip)."""
+    n = 26
+    px, z, phi = wall_coords(p)
+    zz = z - np.linspace(0, length, n)
+    pxs = px + np.cumsum(np.r_[0, [rng.uniform(-0.03, 0.03) for _ in range(n - 1)]])
+    C = wall_point(pxs, zz, -0.0, disp=True) - np.array([[math.sin(phi), math.cos(phi), 0.0]]) * 0.012
+    tg = np.array([math.cos(phi), -math.sin(phi), 0.0])
+    t = np.linspace(0, 1, n)
+    wv = w0 * (1 - 0.75 * t) * (0.7 + 0.3 * np.sin(t * 17.0) ** 2)
+    L = C - tg[None] * wv[:, None]
+    R = C + tg[None] * wv[:, None]
+    V = np.vstack([L, R])
+    F = np.array([[i, i + 1, n + i + 1, n + i] for i in range(n - 1)])
+    ENV["Oil"].add(V, F)
+    Vb, Fb = blob(C[-1], basis_axes(tg, UP, -np.array([math.sin(phi), math.cos(phi), 0.0]), wv[-1] * 1.4, wv[-1] * 2.4,
+                                    0.012), sub=2, amp=0.1)
+    ENV["Oil"].add(Vb, Fb)
+
+
+def _grapnel(Aj, F, nout, side_vec, Dv, k, planted=True):
+    """Big iron meat-hook grapnel: a main scythe hook driven into the rock plus two splayed barbs."""
+    nin = -nout
+    if planted:
+        tip = F + nout * 0.32 * k
+        c1 = Aj + (F - Aj) * 0.3 + Dv * 0.75 * k + side_vec * 0.3 * k
+        c2 = F + nin * 0.85 * k + side_vec * 0.18 * k
+        P = bezier([Aj, c1, c2, tip], 30)
+    else:
+        dd = nrm(F - Aj)
+        P = bezier([Aj, Aj + dd * 0.7 * k + Dv * 0.35 * k, Aj + dd * 1.25 * k - Dv * 0.1 * k,
+                    Aj + dd * 1.1 * k - Dv * 0.65 * k - dd * 0.3 * k], 28)
+    t = np.linspace(0, 1, len(P))
+    r = 0.105 * k * (1 - t) ** 0.85 + 0.004
+    A["Iron"].add_tube(P, r, sides=9, up=side_vec, ry=r * 0.6, cap1=False, m=t, g=0.0)
+    axis = nrm(P[-1] - P[0])
+    for sgn in (-1, 1):  # splayed barbs
+        dd = rot(axis, sgn * math.radians(rng.uniform(60, 85))) @ nrm(P[6] - P[0])
+        L = rng.uniform(0.6, 0.95) * k
+        Q = bezier([Aj, Aj + dd * L * 0.6 + Dv * 0.15 * k, Aj + dd * L + Dv * -0.05,
+                    Aj + dd * L * 0.85 - Dv * 0.4 * k], 16)
+        tt = np.linspace(0, 1, len(Q))
+        rq = 0.06 * k * (1 - tt) + 0.003
+        A["Iron"].add_tube(Q, rq, sides=7, ry=rq * 0.6, up=np.cross(axis, dd), cap1=False, m=tt)
+    ax = nrm(P[3] - P[0])
+    iron_hoop(Aj + ax * 0.06, ax, 0.11 * k, k, w=0.045, rivets=6, heat=0.35)
+    if planted:
+        bite = F + nout * 0.02
+        rubble(bite, nout, k)
+        oil_trail(bite - UP * 0.05, nout, rng.uniform(0.6, 1.8) * k, 0.05 * k)
+        for _ in range(rng.randint(1, 2)):
+            i = rng.randint(len(P) // 2, len(P) - 6)
+            hang_strand(P[i] + nin * 0.02, rng.uniform(0.15, 0.6), 0.012 * k, A["Oil"])
+    return P
+
+
+def lancet2d(w, H, sharp=1.55):
+    R = w * sharp
+    th = math.acos((R - w / 2) / R)
+    rise = R * math.sin(th)
+    hs = max(H - rise, 0.25 * H)
+    nj = max(3, int(hs / 0.1) + 1)
+    left = [(-w / 2, y) for y in np.linspace(0, hs, nj)]
+    left += [(-w / 2 + R + R * math.cos(a), hs + R * math.sin(a)) for a in np.linspace(math.pi, math.pi - th, 14)[1:]]
+    right = [(w / 2 - R + R * math.cos(a), hs + R * math.sin(a)) for a in np.linspace(th, 0, 14)]
+    right += [(w / 2, y) for y in np.linspace(hs, 0, nj)[1:]]
+    return np.array(left), np.array(right), hs, hs + rise
+
+
+LEG_LOG = []
+
+
+def wall_cracks(p, nout, k=1.0, n=None):
+    """Fresh fractures radiating from where a grapnel bit into the ashlar (thin wet-black lines on the wall)."""
+    px0, z0, phi = wall_coords(p)
+    for _ in range(n or rng.randint(4, 7)):
+        a = rng.uniform(0, 2 * math.pi)
+        x, z = px0, z0
+        pts = []
+        L = rng.uniform(0.35, 1.3) * k
+        stp = 0.05
+        for i in range(int(L / stp)):
+            a += rng.uniform(-0.45, 0.45)
+            x += math.cos(a) * stp
+            z += math.sin(a) * stp
+            pts.append((x, z))
+        if len(pts) < 4:
+            continue
+        P = np.array(pts)
+        W3 = wall_point(P[:, 0], P[:, 1], 0.004, disp=True)
+        r = np.linspace(0.014, 0.003, len(W3)) * k
+        ENV["Crack"].add_tube(W3, r, sides=4, cap0=False)
+
+
+def grit(p, nout, k=1.0, n=24, fall=1.6, spread=0.35):
+    """Dust and grit knocked off the wall: a puff of chips hanging off the surface and a thin stream falling."""
+    t1 = perp(nout)
+    t2 = np.cross(nout, t1)
+    for i in range(n):
+        if i < n // 2:
+            c = p + nout * rng.uniform(0.02, 0.35) + (t1 * rng.uniform(-1, 1) + t2 * rng.uniform(-1, 1)) * spread * k
+        else:
+            c = p + nout * rng.uniform(0.05, 0.4) + DOWN * rng.uniform(0.1, fall) + t1 * rng.uniform(-0.15, 0.15)
+        sz = rng.uniform(0.008, 0.03) * k
+        V, F = blob(c, basis_axes(t1, t2, nout, sz, sz * rng.uniform(0.6, 1.2), sz * rng.uniform(0.5, 1.0)), sub=0,
+                    amp=0.3, freq=40.0, seed=rng.random() * 9)
+        ENV["Rubble"].add(V, F)
+
+
+def leg_shank(P0, P1, side_vec, r0, r1, acc, barbs=0, k=1.0, bow=0.12, m0=0.0, m1=1.0, sides=9):
+    shank = bezier([P0, (P0 + P1) / 2 + side_vec * bow * k, P1], 30)
+    t = np.linspace(0, 1, len(shank))
+    knuck = sum(0.018 * k * np.exp(-((t - c_) / 0.035) ** 2) for c_ in (0.04, 0.37, 0.71))
+    r = r0 + (r1 - r0) * t + knuck + 0.004 * np.sin(t * 23)
+    acc.add_tube(shank, r, sides=sides, nz_amp=0.04, nz_freq=5.0, seed=rng.random() * 30, m=m0 + (m1 - m0) * t)
+    for _ in range(barbs):
+        i = rng.randint(3, len(shank) - 4)
+        tg = nrm(shank[i + 1] - shank[i - 1])
+        pdir = rot(tg, rng.uniform(0, 2 * math.pi)) @ perp(tg)
+        V, F, uv, al = shard(shank[i] + pdir * r[i] * 0.8, nrm(pdir - tg * 0.8), rng.uniform(0.12, 0.26) * k,
+                             0.035 * k, hook_dir=-tg, hook=0.35, sides=4, rings=5)
+        A["Carved"].add(V, F, uv, al)
+    return shank, r
+
+
+def _build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
+    """Harvestman-tall cathedral leg, 2-3x the body width: a flying-buttress strut of voussoirs springs from the
+    flank to a free-standing knee pier (pinnacle on top) standing 2.5-4 m ABOVE the dorsal line; from its foot a
+    long, far-too-thin barbed bone shank and an iron metatarsus, bent the wrong way at the ankle, run down to a
+    grapnel driven into the masonry (cracks, rubble, grit). Lifted legs hang mid-step."""
+    s, k, W, H = v["s"], v["k"], v["W"], v["H"]
+    O, T, D, S = spine_frame(s + droot)
+    side = S * sigma
+    kk = k ** 0.6 * size ** 0.85
+    reach = kind == "reach"
+    stub = kind == "missing"
+    R0 = O + side * (0.4 * W) + D * (0.08 * H)
+    lat_k = 0.5 * W + rng.uniform(0.9, 1.5) * kk
+    up_k = 0.5 * H + rng.uniform(2.2, 3.4) * kk
+    fwd = ((0.9 - 1.8 * s / L_TOTAL) + rng.uniform(-0.45, 0.45)) * k * size
+    if reach:
+        lat_k, up_k, fwd = 0.5 * W + 1.6, 0.5 * H + 3.0, -0.3
+    upa = nrm(D + side * 0.22)
+    K = O + side * lat_k + D * up_k + T * fwd
+    ph = (1.15 + 0.25 * size) * k ** 0.7
+    pw = 0.5 * k ** 0.7 * size ** 0.3
+    Kt = K + upa * ph * 0.35          # where the strut lands on the pier
+    Kb = K - upa * ph * 0.65          # pier foot (knee joint)
+    # ---- femur: flying buttress, a single quarter-arch of voussoirs (no closed loops)
+    c1 = R0 + D * (up_k * 0.82) + side * (lat_k * 0.12) + T * fwd * 0.3
+    c2 = Kt + upa * 0.45 * kk - side * (lat_k * 0.3)
+    arc = bezier([R0, c1, c2, Kt], 60)
+    La = arclen(arc)
+    endL = La[-1] * (rng.uniform(0.3, 0.5) if stub else 1.0)
+    seg = 0.4 * k ** 0.5
+    nseg = max(3, int(endL / seg))
+    pn = nrm(np.cross(nrm(Kt - R0), side))
+    if pn.dot(T) < 0:
+        pn = -pn
+    for i in range(nseg):
+        a0, a1 = endL * i / nseg, endL * (i + 1) / nseg - 0.03 * k
+        am = (a0 + a1) / 2
+        j = int(np.clip(np.searchsorted(La, am), 1, len(arc) - 2))
+        ty = nrm(arc[j + 1] - arc[j - 1])
+        zz = nrm(np.cross(pn, ty))
+        if zz.dot(D + side * 0.3) < 0:
+            zz = -zz
+        xx = np.cross(ty, zz)
+        f = am / La[-1]
+        a_w = (0.36 - 0.12 * f) * k ** 0.8 * (0.85 + 0.15 * size)
+        b_t = (0.46 - 0.14 * f) * k ** 0.8 * (0.85 + 0.15 * size)
+        stone_at((a_w, a1 - a0, b_t), xx, ty, zz, arc[j], 0.16, 0.015 * k, rng.randint(1, 3))
+    jcut = int(np.searchsorted(La, endL)) + 1
+    A["Flesh"].add_tube(arc[:jcut] - D * 0.0, np.linspace(0.16, 0.09, jcut) * k ** 0.8, sides=8, nz_amp=0.18,
+                        nz_freq=3.0, seed=rng.random() * 30, m=0.2)
+    for off in (-0.1, 0.1):  # tendons along the back of the strut
+        A["Tendon"].add_tube(arc[:jcut] + pn * off * k - nrm(np.gradient(arc[:jcut], axis=0)) * 0.0 + D * 0.0
+                             - np.cross(pn, nrm(np.gradient(arc[:jcut], axis=0))) * 0.17 * k,
+                             0.028 * k, sides=6, cap0=False, cap1=False)
+    if stub:
+        tipp = arc[jcut - 1]
+        V, F = blob(tipp, basis_axes(side, T, D, 0.25 * k, 0.22 * k, 0.25 * k), sub=3, amp=0.3, freq=3.5)
+        A["Flesh"].add(V, F, m=0.9, g=0.2)
+        for _ in range(4):
+            hang_strand(tipp - D * 0.1, rng.uniform(0.8, 2.4), 0.024 * k, A["Tendon"])
+        hang_strand(tipp, rng.uniform(0.5, 1.4), 0.016 * k, A["Oil"])
+        return
+    # bowstring tendons under the arch (flank -> pier foot), taut, thin: an open triangle, not a loop
+    for off in (-0.12, 0.12):
+        a = R0 - D * 0.35 * H + pn * off * k
+        b = Kb + upa * 0.2 + pn * off * k
+        A["Tendon"].add_tube(sag_path(a, b, 0.08 * k, 18), 0.035 * k * (1 + 0.3 * np.sin(np.linspace(0, math.pi, 18))),
+                             sides=7, cap0=False, cap1=False)
+    # ---- knee pier: free-standing, capped by a pinnacle; iron hoop, spur
+    pX = nrm(np.cross(upa, side))
+    pY = np.cross(upa, pX)
+    stone_at((pw, pw, ph), pX, pY, upa, K, 0.16, 0.02 * k, rng.randint(2, 4), subdiv=1)
+    iron_hoop(K - upa * ph * 0.28, upa, pw * 0.76, k, w=0.07, rivets=10, heat=0.25 if rng.random() < 0.4 else 0.0)
+    ptop = K + upa * ph / 2
+    stone_at((pw * 1.18, pw * 1.18, 0.15 * k), pX, pY, upa, ptop + upa * 0.06 * k, 0.3, 0.01, 1)
+    Mk = mat4(pX, pY, upa, ptop)
+    pinnacle(Mk, np.array([0, 0, 0.1 * k]), np.array([0, -0.12, 1.0]), rng.uniform(1.0, 1.9) * k * (0.75 + 0.25 * size),
+             0.17 * k, k, broken=rng.random() < 0.3)
+    spd = nrm(-T * 0.6 + side * 0.7 + upa * 0.15)
+    V, F, uv, al = shard(K + side * pw * 0.4, spd, rng.uniform(0.8, 1.4) * k * size ** 0.5, 0.13 * k,
+                         hook_dir=-upa, hook=0.25, sides=5, rings=9)
+    A["Carved"].add(V, F, uv)
+    # ---- lower leg: wrong-way ankle; barbed bone tibia, thin iron metatarsus, grapnel
+    retag("LegL", np.eye(4))
+    if reach:
+        Cc, Tc, Dc = CROWN_PRE["C"], CROWN_PRE["T"], CROWN_PRE["D"]
+        # round 3: the grapnels hang right beside the window, reaching at the viewer - they frame the maw
+        F_ = Cc + Tc * (1.0 + 0.2 * size) + side * 2.05 + Dc * (0.5 if sigma > 0 else -0.6)
+        nout = -Tc
+        planted = False
+    else:
+        Ft = O + side * (lat_k + rng.uniform(0.8, 1.8) * kk) + T * (fwd + rng.uniform(-0.4, 0.4) * k)
+        F_, nout = project_wall(Ft)
+        planted = kind != "lifted"
+        if not planted:
+            F_ = F_ + nout * rng.uniform(1.0, 1.9) + T * rng.uniform(0.3, 0.8)
+    J = Kb + (F_ - Kb) * 0.42 + side * 1.25 * kk + upa * 0.95 * kk
+    if reach:
+        J = Kb + (F_ - Kb) * 0.5 + side * 0.9 + CROWN_PRE["T"] * -0.4 + upa * 0.4
+    Aj = F_ + (J - F_) * (0.2 if not reach else 0.26)
+    sheave(Kb + side * pw * 0.2, pn, 0.2 * k, k)
+    if kind == "broken":
+        cut = rng.uniform(0.5, 0.8)
+        J2 = Kb + (J - Kb) * cut
+        shank, r = leg_shank(Kb, J2, side, 0.09 * k, 0.065 * k, A["Bone"], barbs=rng.randint(2, 4), k=k)
+        end = shank[-1]
+        tg = nrm(shank[-1] - shank[-3])
+        for _ in range(rng.randint(4, 6)):
+            pdir = rot(tg, rng.uniform(0, 2 * math.pi)) @ perp(tg)
+            V, F, uv, al = shard(end + pdir * 0.04 * k, nrm(tg + pdir * 0.35), rng.uniform(0.12, 0.3) * k, 0.035 * k,
+                                 hook=0.05, sides=4, rings=4)
+            A["Bone"].add(V, F, uv, al)
+        V, F = blob(end - tg * 0.03, basis_axes(perp(tg), np.cross(tg, perp(tg)), tg, 0.075 * k, 0.075 * k, 0.05 * k),
+                    sub=2, amp=0.2)
+        A["Marrow"].add(V, F, g=0.35)
+        for _ in range(3):
+            hang_strand(end, rng.uniform(0.7, 2.0), 0.016 * k, A["Tendon"])
+        hang_strand(end, rng.uniform(0.4, 1.1), 0.012 * k, A["Oil"])
+        LEG_LOG.append(dict(kind=kind, F=end, Aj=end, K=K, sigma=sigma, s=s, hook=None))
+        return
+    shank, r = leg_shank(Kb, J, side + upa * 0.3, 0.08 * k ** 0.8, 0.048 * k ** 0.8, A["Bone"],
+                         barbs=rng.randint(1, 3), k=k, bow=0.35)
+    for tf in (0.07,):
+        i = int(tf * (len(shank) - 1))
+        iron_hoop(shank[i], nrm(shank[i + 1] - shank[max(i - 1, 0)]), r[i] + 0.02 * k, k, w=0.05, rivets=6)
+    # ankle: bolted iron knuckle, a tendon over it
+    V, F = blob(J, basis_axes(side, T, D, 0.1 * k, 0.1 * k, 0.1 * k), sub=2, amp=0.1, freq=6.0)
+    A["Iron"].add(V, F, m=0.0)
+    A["Iron"].add_tube(np.array([J - pn * 0.14 * k, J + pn * 0.14 * k]), 0.03 * k, sides=8, m=0.0)
+    met = bezier([J, (J + Aj) / 2 - side * 0.08 * k, Aj], 22)
+    tm = np.linspace(0, 1, len(met))
+    A["Iron"].add_tube(met, (0.055 - 0.015 * tm) * k ** 0.8, ry=(0.04 - 0.01 * tm) * k ** 0.8, up=pn, sides=6, m=0.0,
+                       g=np.clip((tm - 0.8) / 0.2, 0, 1) * 0.3)
+    for i in range(2, len(met) - 2, 4):
+        V, F = blob(met[i] + pn * 0.045 * k, basis_axes(side, T, pn, 0.018 * k, 0.018 * k, 0.012 * k), sub=1, amp=0.0)
+        A["Iron"].add(V, F, m=0.0)
+    a_ = shank[int(len(shank) * 0.7)]
+    b_ = met[int(len(met) * 0.3)]
+    A["Tendon"].add_tube(sag_path(a_, b_, -0.05, 12, toward=(side + upa) * 0.12 * k), 0.025 * k, sides=6,
+                         cap0=False, cap1=False)
+    hook = grapnel(Aj, F_, nout, side, D, k, planted)
+    LEG_LOG.append(dict(kind=kind, F=F_, Aj=Aj, K=K, sigma=sigma, s=s, hook=hook, J=J))
+    if planted:
+        wall_cracks(F_, nout, k)
+        if rng.random() < 0.6:
+            grit(F_ + nout * 0.05, nout, k, n=rng.randint(10, 22), fall=rng.uniform(0.6, 1.8))
+    else:
+        grit(F_ - nout * 0.2, nout, k, n=10, fall=1.2, spread=0.15)
+    if lantern:
+        i = int(np.argmin(hook[len(hook) // 3:, 2])) + len(hook) // 3
+        build_miner_lantern(hook[i] + DOWN * 0.03, k)
+
+
+def build_miner_lantern(top, k):
+    """A dead climber's lantern still hanging from the talon that took him, a coal still alive in it."""
+    top = np.asarray(top, float)
+    lan = top + DOWN * 0.62
+    chain(np.array([top, lan + UP * 0.2]), 0.55)
+    e1 = np.array([1.0, 0, 0])
+    e2 = np.array([0, 1.0, 0])
+    for j in range(6):
+        a = 2 * math.pi * j / 6
+        dr = math.cos(a) * e1 + math.sin(a) * e2
+        A["Iron"].add_tube(np.array([lan + dr * 0.085 + UP * 0.16, lan + dr * 0.105, lan + dr * 0.085 - UP * 0.15]),
+                           0.008, sides=4, m=0.0)
+    for h, rr_ in ((0.17, 0.09), (-0.16, 0.1)):
+        ring = lan + UP * h + rr_ * (np.cos(np.linspace(0, 2 * math.pi, 18))[:, None] * e1 + np.sin(np.linspace(0, 2 * math.pi, 18))[:, None] * e2)
+        A["Iron"].add_tube(ring, 0.014, sides=6, cap0=False, cap1=False, m=0.0)
+    V, F = blob(lan + UP * 0.22, basis_axes(e1, e2, UP, 0.09, 0.09, 0.05), sub=2, amp=0.05)
+    A["Iron"].add(V, F, m=0.0)
+    V, F = blob(lan, basis_axes(e1, e2, UP, 0.045, 0.045, 0.075), sub=2, amp=0.1)
+    A["Ember"].add(V, F, g=0.4)
+    LANTERN["miner"] = lan
+    # a scrap of the climber's coat snagged on it, soaked dark
+    hang_strand(lan + e1 * 0.1 - UP * 0.15, 0.5, 0.012, A["Oil"])
+
+
+def hang_strand(p0, length, r0, acc, drop=True):
+    p0 = np.asarray(p0, float)
+    n = 16
+    t = np.linspace(0, 1, n)
+    sway = NZ.vec(p0[None] * 3.0)[0] * 0.08 * length
+    P = p0[None] + DOWN[None] * (length * t)[:, None] + sway[None] * (t ** 2)[:, None]
+    r = r0 * (1 - 0.6 * t) + 0.002
+    acc.add_tube(P, r, sides=6, cap0=False, cap1=not drop)
+    if drop:
+        V, F = blob(P[-1] + DOWN * r0 * 1.5, basis_axes(np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), UP,
+                                                        r0 * 2.0, r0 * 2.0, r0 * 3.0), sub=2, amp=0.05)
+        (A["Oil"] if acc is A["Oil"] else A["Mucus"]).add(V, F)
+
+
+# =============================================================================
+# Chains
+# =============================================================================
+def link_template(Lk=0.17, Wk=0.10, wire=0.017):
+    a = Wk / 2 - wire
+    b = max(Lk / 2 - wire - a, 0.005)
+    # stadium: right straight -> top arc -> left straight -> bottom arc
+    path = []
+    for y in np.linspace(-b, b, 3)[:-1]:
+        path.append((a, y))
+    for th in np.linspace(0, math.pi, 8)[:-1]:
+        path.append((a * math.cos(th), b + a * math.sin(th)))
+    for y in np.linspace(b, -b, 3)[:-1]:
+        path.append((-a, y))
+    for th in np.linspace(math.pi, 2 * math.pi, 8)[:-1]:
+        path.append((a * math.cos(th), -b + a * math.sin(th)))
+    path.append(path[0])
+    P = np.array([(x, y, 0.0) for x, y in path])
+    V, F, uv, al = tube(P, wire, sides=6, cap0=False, cap1=False, up=np.array([0, 0, 1.0]))
+    return V, F
+
+
+_LINK = link_template()
+
+
+def chain(path, scale=1.0, acc=None):
+    acc = acc or A["Iron"]
+    if LOW:
+        acc.add_tube(resample(np.asarray(path, float), step=0.25), 0.03 * scale, sides=4, m=0.0)
+        return
+    V0, F0 = _LINK
+    V0 = V0 * scale
+    pitch = 0.118 * scale
+    P = resample(np.asarray(path, float), step=pitch)
+    if len(P) < 3:
+        return
+    T, N, B = frames(P)
+    for i in range(len(P) - 1):
+        c = (P[i] + P[i + 1]) / 2
+        y = nrm(P[i + 1] - P[i])
+        x = N[i] if i % 2 == 0 else B[i]
+        x = nrm(x - x.dot(y) * y)
+        z = np.cross(x, y)
+        acc.add(V0 @ np.stack([x, y, z]) + c, F0, m=0.0)
+
+
+def hanging_chain_path(p0, out_dir, length, sway=0.2, n=50):
+    pts = [np.asarray(p0, float)]
+    p = pts[0].copy()
+    d = nrm(out_dir)
+    step = length / n
+    for i in range(n):
+        nv = NZ.vec((p * 0.7)[None])[0]
+        d = nrm(d * 0.8 + DOWN * 0.2 + nv * sway * 0.12)
+        p = p + d * step
+        pts.append(p.copy())
+    return np.array(pts)
+
+
+def meat_hook(top, scale=1.0, acc=None):
+    acc = acc or A["Iron"]
+    top = np.asarray(top, float)
+    side = nrm(np.array([rng.uniform(-1, 1), rng.uniform(-1, 1), 0.0]))
+    P = bezier([top, top + DOWN * 0.25 * scale, top + DOWN * 0.42 * scale + side * 0.02,
+                top + DOWN * 0.45 * scale + side * 0.22 * scale, top + DOWN * 0.18 * scale + side * 0.26 * scale], 22)
+    t = np.linspace(0, 1, len(P))
+    r = 0.022 * scale * (1 - t ** 3) + 0.002
+    acc.add_tube(P, r, sides=7, cap1=False, m=t)
+    ring = top + 0.05 * scale * (np.cos(np.linspace(0, 2 * math.pi, 14))[:, None] * side + np.sin(np.linspace(0, 2 * math.pi, 14))[:, None] * UP) + UP * 0.05 * scale
+    acc.add_tube(ring, 0.012 * scale, sides=6, cap0=False, cap1=False, m=0.0)
+
+
+def pierce(p_in, out_dir, length, hook=True, scale=1.0):
+    """A chain driven through flesh: starts inside the tissue (hidden) and hangs under gravity."""
+    p_in = np.asarray(p_in, float)
+    path = hanging_chain_path(p_in - nrm(out_dir) * 0.15, out_dir, length)
+    chain(path, scale)
+    # iron grommet where it pierces
+    d = nrm(out_dir)
+    e1 = perp(d)
+    e2 = np.cross(d, e1)
+    ring = p_in + d * 0.05 + 0.07 * scale * (np.cos(np.linspace(0, 2 * math.pi, 16))[:, None] * e1 + np.sin(np.linspace(0, 2 * math.pi, 16))[:, None] * e2)
+    A["Iron"].add_tube(ring, 0.025 * scale, sides=6, cap0=False, cap1=False, m=0.0)
+    V, F = blob(p_in, basis_axes(e1, e2, d, 0.13 * scale, 0.13 * scale, 0.09 * scale), sub=2, amp=0.3, freq=6)
+    A["Flesh"].add(V, F, m=0.95)
+    # swollen dark rim of the puncture and a dried rust-blood trail run down from it
+    th = np.linspace(0, 2 * math.pi, 18)
+    rim = p_in + d * 0.04 + 0.12 * scale * (np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2)
+    A["Marrow"].add_tube(rim, 0.03 * scale, sides=6, cap0=False, cap1=False, g=0.0)
+    tr = p_in + d * 0.06 + np.array([DOWN * h + NZ.vec((p_in + h)[None])[0] * 0.04 for h in np.linspace(0.05, 0.7 * scale, 10)])
+    A["Oil"].add_tube(tr, np.linspace(0.022, 0.006, 10) * scale, sides=5, cap0=False)
+    if hook:
+        meat_hook(path[-1], scale * 1.9)
+
+
+# =============================================================================
+# Fronds (pale fiddleheads with cilia) and mucus
+# =============================================================================
+def _frond(root, direction, length, curl_axis, r0=0.018, n=56, curl=1.0, cilia=True):
+    """Pale, finger-thin sensory frond: a gentle arc that rolls up into a tight fiddlehead spiral at the tip,
+    fringed with fine cilia (in game: animate the curl toward sound)."""
+    p = np.asarray(root, float)
+    d = nrm(direction)
+    ax = nrm(curl_axis - curl_axis.dot(d) * d)
+    tt = np.arange(1, n) / n
+    w = 0.1 + smoothstep(0.45, 1.0, tt) ** 2
+    dth = curl * 2 * math.pi * 1.35 * w / w.sum()
+    stp = (1 - 0.72 * tt ** 1.4)
+    stp = stp / stp.sum() * length
+    pts = [p.copy()]
+    for i in range(n - 1):
+        d = rot(ax, dth[i]) @ d
+        if tt[i] < 0.5:
+            nv = NZ.vec((p * 2.3)[None])[0]
+            d = nrm(d + nv * 0.06 + DOWN * 0.01)
+            ax = nrm(ax - ax.dot(d) * d)
+        p = p + d * stp[i]
+        pts.append(p.copy())
+    P = np.array(pts)
+    t = np.linspace(0, 1, len(P))
+    r = r0 * (1 - 0.88 * t ** 0.8) + 0.0012
+    A["Frond"].add_tube(P, r, sides=6, cap0=False, m=t)
+    if cilia:
+        T, N, B = frames(P)
+        for i in range(3, len(P) - 3, 3):
+            for sgn in (-1, 1):
+                dd = nrm(N[i] * sgn + T[i] * 0.7 + B[i] * rng.uniform(-0.5, 0.5))
+                L = (0.02 + 0.05 * (1 - t[i])) * rng.uniform(0.6, 1.3) * (0.5 + 20 * r0)
+                Q = np.array([P[i], P[i] + dd * L * 0.5 + T[i] * L * 0.15, P[i] + dd * L + T[i] * L * 0.5])
+                if not LOW:
+                    A["Frond"].add_tube(Q, np.array([0.0035, 0.002, 0.0007]), sides=3, cap0=False, cap1=False,
+                                        m=float(t[i]))
+    return P
+
+
+def strand(a, b, sag, r0, drops=True):
+    P = sag_path(a, b, sag, 26)
+    t = np.linspace(0, 1, len(P))
+    r = r0 * (0.45 + 0.9 * np.sin(math.pi * t) ** 2) + 0.0015
+    A["Mucus"].add_tube(P, r, sides=6, cap0=False, cap1=False)
+    if drops:
+        i = int(np.argmin(P[:, 2]))
+        V, F = blob(P[i] + DOWN * r0 * 1.8, basis_axes(np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), UP,
+                                                       r0 * 1.8, r0 * 1.8, r0 * 3.2), sub=2, amp=0.05)
+        A["Mucus"].add(V, F)
+        if rng.random() < 0.6:
+            hang_strand(P[i], rng.uniform(0.08, 0.45), r0 * 0.6, A["Mucus"])
+
+
+# =============================================================================
+# The crown: rose-window ring split into a four-way maw, throat lit from inside
+# =============================================================================
+CROWN = {}
+
+
+def faces_list(F):
+    """Flatten loft/blob face output (array or list of arrays/lists) into a python list of index lists."""
+    if isinstance(F, np.ndarray):
+        F = [F]
+    out = []
+    for blk in F:
+        if isinstance(blk, np.ndarray) and blk.ndim == 2:
+            out += blk.tolist()
+        else:
+            out += [list(f) for f in blk]
+    return out
+
+
+def bool_cut(bm, cutters, name="cut"):
+    """Boolean-subtract cutter meshes [(V, F), ...] from a bmesh (EXACT solver via a temporary object).
+    Frees `bm` and returns a new bmesh."""
+    sc = bpy.context.scene
+    me = bpy.data.meshes.new("tmp_" + name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("tmp_" + name, me)
+    sc.collection.objects.link(ob)
+    tmp = []
+    for i, (V, F) in enumerate(cutters):
+        cm = bpy.data.meshes.new("tmpc_%s_%d" % (name, i))
+        cm.from_pydata(np.asarray(V, float).tolist(), [], faces_list(F))
+        cm.validate()
+        co = bpy.data.objects.new(cm.name, cm)
+        sc.collection.objects.link(co)
+        md = ob.modifiers.new("cut%d" % i, "BOOLEAN")
+        md.operation = "DIFFERENCE"
+        try:
+            md.solver = "EXACT"
+        except Exception:
+            pass
+        md.object = co
+        tmp.append(co)
+    dg = bpy.context.evaluated_depsgraph_get()
+    me2 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    out = bmesh.new()
+    out.from_mesh(me2)
+    for co in tmp:
+        cmesh = co.data
+        bpy.data.objects.remove(co)
+        bpy.data.meshes.remove(cmesh)
+    bpy.data.objects.remove(ob)
+    bpy.data.meshes.remove(me)
+    bpy.data.meshes.remove(me2)
+    return out
+
+
+def pit_cutter(c, axis, r, depth):
+    axis = nrm(axis)
+    P = np.array([c - axis * 0.35, c + axis * depth * 1.1])
+    V, F, uv, al = tube(resample(P, 6), r, sides=20)
+    return V, F
+
+
+def _eardrum(c, axis, r, depth, t, rr, e1, e2):
+    """Taut eardrum sealing a listening pit (its own kit mesh, Mason_PitMembrane, so it can blink/flex)."""
+    # taut eardrum: a slightly domed disc a little way in, with radial vessels
+    zc = depth * 0.22
+    nr_, na_ = 7, 28
+    rows = []
+    for i in range(nr_ + 1):
+        rf = i / nr_
+        rd_ = float(np.interp(zc / depth, t, rr)) * 1.01 * rf
+        dome = -0.12 * r * (1 - rf ** 2)
+        rows.append([c + axis * (zc + dome) + rd_ * (math.cos(a) * e1 + math.sin(a) * e2)
+                     for a in np.linspace(0, 2 * math.pi, na_, endpoint=False)])
+    G = np.array(rows)
+    G += NZ.vec(G.reshape(-1, 3) * (6.0 / r)).reshape(G.shape) * 0.012 * r
+    idx = np.arange((nr_ + 1) * na_).reshape(nr_ + 1, na_)
+    quads = np.stack([idx[:-1], np.roll(idx[:-1], -1, 1), np.roll(idx[1:], -1, 1), idx[1:]], -1).reshape(-1, 4)
+    A["Membrane"].add(G.reshape(-1, 3), quads, m=1.0)
+    for k in range(rng.randint(4, 7)):
+        a = rng.uniform(0, 2 * math.pi)
+        pts = []
+        for i in range(nr_ + 1):
+            a += rng.uniform(-0.12, 0.12)
+            rf = 1 - i / nr_ * 0.92
+            rd_ = float(np.interp(zc / depth, t, rr)) * rf
+            dome = -0.12 * r * (1 - rf ** 2)
+            pts.append(c + axis * (zc + dome - 0.004) + rd_ * (math.cos(a) * e1 + math.sin(a) * e2))
+        A["Vein"].add_tube(np.array(pts), np.linspace(0.009, 0.002, len(pts)) * (0.5 + 2 * r), sides=4, g=0.08)
+
+
+def _listening_pit(c, axis, r, depth, hue, power, membrane=False, cames=0, face_n=None, drape=None):
+    """A deep wet ear-canal sunk into stone: flesh lip wrapping the cut edge, ribbed tunnel narrowing into the
+    dark, and a coal glowing far down at the bottom (each pit its own hue/intensity). Some are sealed by a
+    taut translucent eardrum; the big one keeps a few soot-black lead cames of the glazing it used to be."""
+    axis = nrm(axis)
+    fn = nrm(face_n) if face_n is not None else -axis
+    e1 = perp(axis)
+    e2 = np.cross(axis, e1)
+    n = 26
+    t = np.linspace(0, 1, n)
+    bend = perp(axis) * 0.08 * r * np.sin(t * 2.4)[:, None] + e2 * 0.06 * r * np.sin(t * 3.1 + 1)[:, None]
+    P = c[None] + axis[None] * (depth * t - 0.04 * r)[:, None] + bend
+    rr = r * (1.0 - 0.38 * t ** 1.3) * (1 + 0.075 * np.sin(2 * math.pi * t * 4.5) * (t > 0.1))
+    rr = rr * (1 - 0.6 * smoothstep(0.88, 1.0, t))
+    V, F, uv, al = tube(P, rr, sides=18, cap0=False, cap1=True, flip=True, nz_amp=0.07, nz_freq=4.5 / r,
+                        seed=rng.random() * 30)
+    A["Gum"].add(V, F, uv, m=0.0, g=0.0, d=al)
+    # coal at the bottom
+    Vb, Fb = blob(P[-3], basis_axes(e1, e2, axis, rr[-3] * 0.85, rr[-3] * 0.85, rr[-3] * 0.5), sub=2, amp=0.3,
+                  freq=6.0 / r)
+    A["Pit"].add(Vb, Fb, m=hue, g=power)
+    # flesh lip bulging out of the cut and wrapping over the stone edge
+    th = np.linspace(0, 2 * math.pi, 40)
+    lipr = r * (1.0 + 0.08 * NZ.fbm(np.stack([np.cos(th), np.sin(th), np.zeros_like(th)], -1) * 2.0 + c, 2))
+    rd_ = np.cos(th)[:, None] * e1 + np.sin(th)[:, None] * e2
+    tt_ = -(rd_ @ fn) * lipr / min(-0.25, float(axis @ fn))
+    ring = c[None] - fn[None] * 0.012 + lipr[:, None] * rd_ + tt_[:, None] * axis[None]
+    if drape is not None:
+        ring = resample(np.array([drape(q) for q in resample(np.vstack([ring, ring[:1]]), 72)]), 72)
+    thr = np.linspace(0, 2 * math.pi, len(ring))
+    A["Flesh"].add_tube(ring, max(0.035, 0.13 * r) * (1 + 0.35 * np.sin(thr * 3 + rng.random() * 6)), sides=8,
+                        cap0=False, cap1=False, m=0.15, nz_amp=0.15, nz_freq=9.0)
+    # dark vessels radiating from the lip over the stone
+    for _ in range(rng.randint(2, 4) if r > 0.12 else rng.randint(0, 2)):
+        a = rng.uniform(0, 2 * math.pi)
+        d0 = math.cos(a) * e1 + math.sin(a) * e2
+        pts = [c + d0 * r * 1.05 - fn * 0.012]
+        dd = d0
+        for _ in range(rng.randint(5, 9)):
+            dd = nrm(dd + perp(fn) * 0 + (rot(fn, rng.uniform(-0.6, 0.6)) @ dd) * 0.8)
+            pts.append(pts[-1] + dd * r * 0.25)
+        Pv = np.array(pts)
+        A["Vein"].add_tube(Pv, np.linspace(0.016, 0.004, len(Pv)) * (0.6 + r), sides=5, g=0.03)
+    if membrane:
+        with tag("PitMembrane", PARTS[PART_STACK[-1]]["M"]):
+            _eardrum(c, axis, r, depth, t, rr, e1, e2)
+    for k in range(cames):
+        # soot-black lead cames: the last of the glazing, bent and snapped, almost every pane gone
+        a = rng.uniform(0, math.pi) + k * 1.1
+        d0 = math.cos(a) * e1 + math.sin(a) * e2
+        dz = axis * (0.03 + 0.04 * k)
+        p0 = c - d0 * r * 0.97 + dz
+        p1 = c + d0 * r * (0.97 if k == 0 else rng.uniform(0.1, 0.45)) + dz + axis * (0.0 if k == 0 else 0.12 * r)
+        Q = sag_path(p0, p1, 0.0, 12, toward=axis * 0.1 * r)
+        A["Iron"].add_tube(Q, 0.011, ry=0.006, up=axis, sides=4, m=0.0, cap0=False)
+        if k == 0:
+            # one cracked, filthy shard of glass still in the leading
+            q0 = (p0 * 0.62 + p1 * 0.38)
+            sd = np.cross(axis, d0)
+            Vg = np.array([q0, q0 + d0 * 0.13 * r * 2, q0 + d0 * 0.09 * r * 2 + sd * 0.18 * r, q0 + sd * 0.12 * r])
+            A["Glass"].add(Vg + axis * 0.003, [[0, 1, 2, 3]], m=0.2, g=0.25)
+
+
+def _build_crown():
+    """Rose-window maw. The window's hub has been punched out into a throat; its stone tracery mullions are the
+    teeth, converging on a black hole (folded in like a trap on the upper half, splayed forward where the ventral
+    third of the window has cracked off and hinges open). Two receding orders of small wedge voussoirs sunk in
+    wet flesh; a halo of raked thorns; a few deep, clustered listening pits; pale fronds tasting the air."""
+    O, T, D, S = spine_frame(RING_S)
+    C = O
+    Ri, Ro, dep = RING_RI, RING_RO, RING_DEPTH
+    Rm = Ri + (Ro - Ri) * 0.46
+    CROWN.update(C=C, T=T, D=D, S=S)
+    e1, e2 = S, D
+    I3 = np.eye(3)
+
+    def radial0(a):
+        return math.cos(a) * e1 + math.sin(a) * e2
+
+    def shape(a):
+        """The window is not a circle but a tall lancet: narrow, taller than wide, drawn up to an ogival point at
+        the dorsal top (a Gothic gable), with a lopsided, torn rim - no dartboard, no flower."""
+        ca, sa = math.cos(a), math.sin(a)
+        base = 1.0 / math.sqrt((ca / 0.74) ** 2 + (sa / 1.1) ** 2)
+        p = max(0.0, math.cos(a - math.pi / 2 - 0.08)) ** 9
+        return base * (1 + 0.3 * p) * (1 + 0.04 * math.sin(3 * a + 1.3) + 0.03 * math.sin(5 * a + 0.4))
+
+    SPL = CROWN_SPL
+
+    NORD = 3
+    OSTEP = SPL / NORD
+    ORD_R = [Ro - (Ro - Ri) * (i + 1) / NORD for i in range(NORD)] + [Ri]
+
+    def order_of(r):
+        return int(np.clip((Ro - r) / (Ro - Ri) * NORD, 0, NORD - 1))
+
+    def zf(r):
+        # stepped archivolt: each order's flat face sits one step behind the order outside it
+        return dep / 2 - OSTEP * order_of(r)
+
+    # ---- the split: the ventral third has cracked off along two radial breaks and hinges open, asymmetric
+    a_gap, a_hinge = math.radians(204.0), math.radians(332.0)
+    Hp = C + radial0(a_hinge) * (Ri + Ro) / 2 * shape(a_hinge)
+    pg = C + radial0(a_gap) * (Ri + Ro) / 2 * shape(a_gap)
+    s1 = max((-1, 1), key=lambda sg: float(np.dot(rot(T, sg * 0.2) @ (pg - Hp) + Hp - pg, radial0(a_gap))))
+    R1 = rot(T, s1 * math.radians(21.0))
+    ax2 = radial0(a_hinge)
+    s2 = max((-1, 1), key=lambda sg: float(np.dot(rot(ax2, sg * 0.2) @ (R1 @ (pg - Hp)) + Hp - pg, T)))
+    RL = rot(ax2, s2 * math.radians(36.0)) @ R1
+
+    def lower(a):
+        a = (a - a_gap) % (2 * math.pi)
+        return a < (a_hinge - a_gap) % (2 * math.pi)
+
+    def fr(a):
+        """Frame for crown geometry at window angle a: (centre, radial, tangent, facing, rotation)."""
+        if lower(a):
+            R = RL
+            Cx = Hp + RL @ (C - Hp)
+        else:
+            R, Cx = I3, C
+        er = R @ radial0(a)
+        et = R @ (-math.sin(a) * e1 + math.cos(a) * e2)
+        return Cx, er, et, R @ T, R
+
+    def at(a, r, z):
+        Cx, er, et, Tx, R = fr(a)
+        return Cx + er * r * shape(a) + Tx * z
+
+    CROWN.update(fr=fr, lower=lower, a_gap=a_gap, a_hinge=a_hinge, at=at, shape=shape)
+
+    # listening pits: few, clustered asymmetrically, one huge (angle deg, radius on the window, r, depth, hue, power,
+    # membrane, cames). hue 0 = dull blood red .. 1 = deep ember
+    Rmid = (Ri + Ro) / 2
+    o_c = [Ro - (Ro - Ri) * (i + 0.5) / 3 for i in range(3)]
+    PITS = [(146.0, Ro - 0.13, 0.3, 1.1, 0.3, 0.26, False, 1),
+            (101.0, o_c[0], 0.1, 0.42, 0.25, 0.14, True, 0),
+            (166.0, o_c[1], 0.12, 0.5, 0.75, 0.2, False, 0),
+            (112.0, o_c[2], 0.07, 0.3, 0.1, 0.12, False, 0),
+            (36.0, o_c[1], 0.13, 0.6, 0.4, 0.16, True, 0),
+            (250.0, o_c[0], 0.12, 0.5, 0.2, 0.15, False, 0),
+            (64.0, o_c[0], 0.075, 0.3, 0.0, 0.1, True, 0)]
+    pit_geo = []
+    for (adeg, rp, r, depth, hue, pw, memb, cames) in PITS:
+        a = math.radians(adeg)
+        Cx, er, et, Tx, R = fr(a)
+        c = at(a, rp, zf(rp) + 0.005)
+        fn = Tx
+        axis = nrm(-Tx + er * rng.uniform(-0.05, 0.12) + et * rng.uniform(-0.1, 0.1))
+        pit_geo.append(dict(a=a, c=c, axis=axis, r=r, depth=depth, hue=hue, pw=pw, memb=memb, cames=cames, Tx=fn))
+
+    # ---- three stepped archivolt orders of small wedge voussoirs (a Gothic portal funnelling into the throat),
+    #      each with a roll moulding on its inner arris; stone dominates, flesh only in joints, steps and gaps
+    joints = []
+    for oi in range(NORD):
+        r1o, r0o = ORD_R[oi] if oi else Ro, ORD_R[oi]
+        r1o = Ro if oi == 0 else ORD_R[oi - 1]
+        rmo = (r0o + r1o) / 2
+        face = dep / 2 - OSTEP * oi
+        odep = OSTEP + 0.32
+        for (a0_, a1_) in ((a_gap, a_hinge), (a_hinge, a_gap + 2 * math.pi)):
+            if a1_ < a0_:
+                a1_ += 2 * math.pi
+            cuts = [a0_]
+            while cuts[-1] < a1_ - 0.1:
+                cuts.append(cuts[-1] + rng.uniform(0.26, 0.42) / (rmo * shape(cuts[-1])))
+            cuts[-1] = a1_
+            for bi in range(len(cuts) - 1):
+                am, span = (cuts[bi] + cuts[bi + 1]) / 2, cuts[bi + 1] - cuts[bi]
+                Cx, er, et, Tx, R = fr(am)
+                joints.append((cuts[bi + 1], r0o, r1o, face))
+                if rng.random() < 0.05:
+                    # torn-out voussoir: wet tissue bulges out of the socket, a stub of rebar
+                    c = at(am, rmo, face - odep * 0.6)
+                    V, F = blob(c, basis_axes(et, er, Tx, span * rmo * shape(am) * 0.5, (r1o - r0o) * 0.6, odep * 0.5),
+                                sub=3, amp=0.22, freq=3.0)
+                    A["Flesh"].add(V, F, m=0.6, g=0.0)
+                    rebar(c + Tx * 0.2, nrm(Tx + er * 0.3), 0.5, -er, 0.4, 0.016)
+                    continue
+                bm = stone_bm((span * rmo - 0.02, odep, r1o - r0o - 0.012), chamfer=0.08, wear=0.012,
+                              chips=rng.randint(2, 4), subdiv=2)
+                askew = rng.random() < 0.2
+                lift = rng.uniform(0.02, 0.08) if askew else rng.uniform(-0.01, 0.012)
+                twk = rng.uniform(-0.12, 0.12) if askew else rng.uniform(-0.02, 0.02)
+                fwd = rng.uniform(0.03, 0.12) if askew else rng.uniform(-0.015, 0.015)
+                for vtx in bm.verts:
+                    x, y, z = vtx.co
+                    rr_ = rmo + z + lift
+                    ang = am + x / rmo
+                    er_a = R @ radial0(ang)
+                    pnt = Cx + er_a * rr_ * shape(ang) + Tx * (face - odep / 2 + y + fwd + twk * z)
+                    vtx.co = Vector(pnt)
+                cut = [pit_cutter(p["c"], p["axis"], p["r"], p["depth"]) for p in pit_geo
+                       if abs(((p["a"] - am + math.pi) % (2 * math.pi)) - math.pi) * rmo < span * rmo / 2 + p["r"] + 0.05]
+                if cut:
+                    bm = bool_cut(bm, cut, "vous")
+                A["Stone"].add_bm(bm)
+            # roll moulding (a slim shaft) on the inner arris of this order, broken here and there
+            angs = np.linspace(a0_ + 0.02, a1_ - 0.02, 60)
+            keep = NZ.fbm(np.stack([np.cos(angs) * 3 + oi, np.sin(angs) * 3, np.zeros_like(angs)], -1), 2) > -0.02
+            run = []
+            for a_, k_ in list(zip(angs, keep)) + [(None, False)]:
+                if k_:
+                    run.append(a_)
+                    continue
+                if len(run) > 3:
+                    Pm = resample(np.array([at(x_, r0o + 0.035, face - 0.05) for x_ in run]), step=0.02)
+                    Lm = arclen(Pm)
+                    # carved in short drums with joints, like a real coursed roll moulding
+                    edges_ = np.arange(0.0, Lm[-1], rng.uniform(0.28, 0.4))
+                    for e0, e1_ in zip(edges_[:-1], edges_[1:]):
+                        i0, i1 = np.searchsorted(Lm, e0 + 0.008), np.searchsorted(Lm, e1_ - 0.008)
+                        if i1 - i0 >= 2:
+                            A["Carved"].add_tube(Pm[i0:i1 + 1], 0.07, sides=10, m=0.0, nz_amp=0.08, nz_freq=9.0,
+                                                 seed=rng.random() * 9)
+                run = []
+            # wet tissue squeezing out of the step behind the moulding: only in torn patches (lumpy, short runs,
+            # never a continuous ring - continuous rings read as hoses / a dartboard)
+            if oi < NORD - 1:
+                angs = np.linspace(a0_ + 0.05, a1_ - 0.05, 90)
+                Pf = np.array([at(x_, r0o - 0.03, face - OSTEP + 0.04) for x_ in angs])
+                msk = NZ.fbm(Pf * 1.6 + 7.0 + oi, 2)
+                run = []
+                for i_ in range(len(angs) + 1):
+                    if i_ < len(angs) and msk[i_] > 0.12:
+                        run.append(i_)
+                        continue
+                    if len(run) >= 4:
+                        Q = Pf[run]
+                        tq = np.linspace(0, 1, len(Q))
+                        rq = (0.025 + 0.045 * np.sin(math.pi * tq) ** 0.7) * rng.uniform(0.7, 1.3)
+                        A["Flesh"].add_tube(Q, rq, sides=8, nz_amp=0.4, nz_freq=8.0, m=0.15, seed=rng.random() * 9)
+                    run = []
+    rmid = Rmid
+    # flesh the voussoirs are sunk into (behind)
+    for (aa, bb) in ((a_hinge, a_gap + 2 * math.pi), (a_gap, a_hinge)):
+        if bb < aa:
+            bb += 2 * math.pi
+        angs = np.linspace(aa + 0.03, bb - 0.03, 80)
+        P = np.array([at(a, rmid, dep / 2 - SPL - 0.55) for a in angs])
+        rs_ = np.array([shape(a) for a in angs])
+        A["Flesh"].add_tube(P, (Ro - Ri) * 0.4 * rs_ * (1 + 0.25 * NZ.fbm(P * 2.5, 2)), sides=12, nz_amp=0.14,
+                            nz_freq=4.0, seed=rng.random() * 9, m=0.1)
+    for k in range(10):
+        a = rng.uniform(0, 2 * math.pi)
+        Cx, er, et, Tx, R = fr(a)
+        c = at(a, Ro - 0.02, dep / 2 - 0.3)
+        V, F = blob(c, basis_axes(et, er, Tx, rng.uniform(0.1, 0.22), rng.uniform(0.05, 0.09), 0.08), sub=2, amp=0.3,
+                    freq=4.0)
+        A["Flesh"].add(V, F, m=0.2)
+    # flesh pillows squeezing out of ~half the joints
+    for (aj, r0o, r1o, face) in joints:
+        if rng.random() < 0.55:
+            continue
+        P = np.array([at(aj, r, face + 0.01) for r in np.linspace(r0o + 0.04, r1o - 0.04, 7)])
+        P += NZ.vec(P * 4.0)[:, :] * 0.008
+        A["Flesh"].add_tube(P, 0.014 + 0.018 * np.sin(np.linspace(0.2, math.pi - 0.2, 7)) * rng.uniform(0.6, 1.4),
+                            sides=7, m=0.2)
+    # soot-filled Lanternwright glyphs on a few voussoirs
+    for gi in range(6):
+        a = math.radians(rng.choice((20, 52, 80, 165, 185, 300, 318))) + rng.uniform(-0.05, 0.05)
+        Cx, er, et, Tx, R = fr(a)
+        c0 = at(a, (Ro + ORD_R[0]) / 2, zf(Ro - 0.05) + 0.006)
+        fn = Tx
+        for st_ in range(rng.randint(3, 5)):
+            p0 = c0 + et * rng.uniform(-0.12, 0.12) + np.cross(fn, et) * rng.uniform(-0.12, 0.12)
+            dd = nrm(et * rng.uniform(-1, 1) + np.cross(fn, et) * rng.uniform(-1, 1))
+            L = rng.uniform(0.07, 0.17)
+            Q = np.array([p0, p0 + dd * L * 0.5 + np.cross(fn, dd) * L * rng.uniform(-0.3, 0.3), p0 + dd * L])
+            A["Soot"].add_tube(resample(Q, 6), 0.007, sides=4)
+
+    # ---- listening pits (built after the stone they are cut into)
+    def drape(q):
+        # lay a point onto the stepped archivolt face it sits over (upper piece)
+        rel = q - C
+        radv = rel - (rel @ T) * T
+        a_ = math.atan2(float(radv @ e2), float(radv @ e1)) % (2 * math.pi)
+        if lower(a_):
+            return q
+        r_eff = float(np.linalg.norm(radv)) / shape(a_)
+        return C + radv + T * (zf(r_eff) + 0.014)
+
+    for p in pit_geo:
+        listening_pit(p["c"], p["axis"], p["r"], p["depth"], p["hue"], p["pw"], p["memb"], p["cames"], face_n=p["Tx"],
+                      drape=drape)
+    CROWN["pits"] = pit_geo
+
+    # ---- halo of raked thorns and rebar: longest and sharpest across the dorsal arc (the head is the sharp end)
+    nsp = 19
+    for j in range(nsp):
+        a = 2 * math.pi * j / nsp + rng.uniform(-0.09, 0.09)
+        Cx, er, et, Tx, R = fr(a)
+        base = at(a, Ro - 0.1, rng.uniform(-0.35, 0.15))
+        dors = max(0.0, math.sin(a)) ** 2
+        beta = math.radians(rng.uniform(52, 72) - 22 * dors)
+        dd = nrm(er * math.cos(beta) - Tx * math.sin(beta) + et * rng.uniform(-0.15, 0.15))
+        L = rng.uniform(0.95, 1.6) * (1 + 0.9 * dors) * (1.25 if j % 3 == 0 else 1.0)
+        if rng.random() < 0.16:
+            rebar(base, dd, L * 0.7, -Tx, 0.35, 0.022)
+            continue
+        tr_ = rng.uniform(0.45, 0.7) if rng.random() < 0.25 else 1.0
+        V, F, uv, al = shard(base, dd, L, rng.uniform(0.11, 0.17) * (1 + 0.3 * dors), hook_dir=-Tx + er * 0.2,
+                             hook=0.35, sides=5, rings=10, sink=0.12, trunc=tr_)
+        A["Carved"].add(V, F, uv, m=0.0)
+        if tr_ < 1.0:
+            tip = base + dd * L * tr_
+            rebar(tip - dd * 0.12, nrm(dd + et * rng.uniform(-0.5, 0.5)), rng.uniform(0.3, 0.6), -Tx, 0.3, 0.014)
+        CROWN.setdefault("thorns", []).append((a, base, dd, L * tr_))
+
+    # ---- throat: a deep, receding black gullet; staggered rows of back-hooked teeth getting darker with depth;
+    #      ONE faint hot glow far down
+    s_front = RING_S - (dep / 2 - SPL) + 0.05
+    GL = GULLET_L
+    gframe = gullet_frame
+
+    ss = np.linspace(s_front, s_front + GL, 140)
+    Ot, Tt, Dt, St = [np.array(x) for x in zip(*[gframe(x - s_front) for x in ss])]
+    depth = ss - s_front
+    r = 0.58 + (Ri * 1.02 - 0.58) * np.exp(-depth / 0.6)
+    # cartilage ribs where each ring of fangs roots, sagging pouches between them
+    rib = sum(np.exp(-((depth - z_) / 0.07) ** 2) for z_ in THROAT_RINGS)
+    r = r * (1 - 0.1 * rib + 0.05 * np.sin(2 * math.pi * depth / 0.21 + 0.6) * (1 - rib))
+    r = r * (1 - 0.8 * smoothstep(GL - 0.7, GL, depth))
+    Bt = np.cross(Tt, St)
+    c = circle_prof(36)
+    prof = np.stack([c[None, :, 0] * r[:, None], c[None, :, 1] * r[:, None]], -1)
+    V, F, uv, al = loft(Ot, prof, fr=(Tt, St, Bt), cap0=False, cap1=True, nz_amp=0.08, nz_freq=4.0, flip=True)
+    alv = np.clip(al, 0, 1)
+    # the mouth of the gullet takes the window's shape, and is stretched open by the hinged piece
+    rel = V - C
+    ang_v = np.arctan2(rel @ e2, rel @ e1) % (2 * math.pi)
+    wfront = (1 - smoothstep(0.0, 0.16, alv))
+    shp = np.array([shape(a_) for a_ in ang_v])
+    radv = rel - np.outer(rel @ T, T)
+    V = V + radv * ((shp - 1.0) * wfront)[:, None]
+    wlow = np.array([1.0 if lower(a_) else 0.0 for a_ in ang_v]) * wfront ** 1.5
+    Vl = Hp[None] + (V - Hp[None]) @ RL.T
+    V = V + (Vl - V) * wlow[:, None]
+    # wet black: the gullet falls to near-black within ~2 m (only coat glints and teeth survive)
+    A["Gum"].add(V, F, uv, m=0.0, g=0.0, d=np.clip(alv * 2.4, 0, 1))
+    CROWN.update(throat_s=ss, throat_r=r)
+    # round 3: eight ragged, receding rings of back-hooked fangs (a lamprey funnel), each ring rotated, with
+    # gaps and strays, so the eye counts rings going down into the dark
+    TEETH = []
+    for ri_, dz0 in enumerate(THROAT_RINGS):
+        nr = max(7, int(round(15 - ri_ * 0.9)) + rng.randint(-1, 1))
+        a0 = rng.uniform(0, 2 * math.pi)
+        for q in range(nr):
+            if rng.random() < 0.1:
+                continue
+            TEETH.append((dz0 + rng.uniform(-0.05, 0.05), a0 + 2 * math.pi * q / nr + rng.uniform(-0.1, 0.1)))
+    for _ in range(14):
+        TEETH.append((rng.uniform(0.3, GL - 0.9), rng.uniform(0, 2 * math.pi)))
+    for i, (dz, a) in enumerate(TEETH):
+        Oq, Tq, Dq, Sq = gframe(dz)
+        rq = float(np.interp(dz, depth, r))
+        rd = math.cos(a) * Sq + math.sin(a) * Dq
+        root = Oq + rd * (rq * 0.96)
+        dd = nrm(-rd * 0.9 - Tq * 0.9 + np.cross(Tq, rd) * rng.uniform(-0.2, 0.2))
+        dfrac = dz / GL
+        roll = rng.random()
+        Lt = 0.52 - 0.33 * dfrac
+        Lx = Lt * rng.uniform(0.55, 1.25) * (1.4 if roll > 0.94 else 1.0)
+        if roll < 0.16:
+            V, F, uv, al = shard(root, dd, Lx * 0.9, Lt * 0.06, hook_dir=-Tq, hook=0.6, rings=8, sides=4, sink=0.05)
+            A["IronTooth"].add(V, F, uv, al, d=dfrac)
+            continue
+        tr_ = rng.uniform(0.35, 0.6) if roll < 0.28 else 1.0
+        flat = 0.45 if roll < 0.4 else 1.0
+        V, F, uv, al = shard(root, dd, Lx, Lt * 0.15, hook_dir=-Tq, hook=0.35, rings=8, sides=6, sink=0.06,
+                             fang=True, trunc=tr_, flat=flat)
+        A["Teeth"].add(V, F, uv, al, d=dfrac)
+        if rng.random() < 0.6:
+            V, F = blob(root, basis_axes(np.cross(Tq, rd), Tq, rd, Lt * 0.22, Lt * 0.22, Lt * 0.1), sub=2, amp=0.25,
+                        freq=8.0)
+            A["Gum"].add(V, F, m=0.0, d=dfrac)
+    # the one hot point: a forge-coal sphincter far down the gullet, mostly hidden behind the last teeth
+    Oe, Te, De, Se = gframe(GL - 0.35)
+    V, F = blob(Oe, basis_axes(Se, Te, De, 0.3, 0.18, 0.3), sub=3, amp=0.3, freq=4.0)
+    A["Ember"].add(V, F, g=1.0)
+    CROWN["forge"] = Oe
+    CROWN["throat_light"] = gframe(GL - 0.6)[0]
+    CROWN["mouth_light"] = gframe(1.6)[0]
+    CROWN["mouth_front"] = C + T * (dep / 2)
+
+    # ---- mullion-teeth: the window's stone tracery with the hub torn out. Thick chiselled stone fangs converge
+    #      over the black hole toward the viewer (a trap closing), splayed wide on the dropped piece; uneven
+    #      lengths, several snapped with rebar, two missing
+    angs_m = []
+    for lo_, hi_, n_m in ((-68.0, 68.0, 10), (112.0, 248.0, 10), (76.0, 104.0, 2), (258.0, 284.0, 2)):
+        for q in range(n_m):
+            angs_m.append(math.radians(lo_ + (hi_ - lo_) * (q + 0.5) / n_m + rng.uniform(-3.5, 3.5)))
+    skip = {3, 14}
+    mull = []
+    for j, a in enumerate(angs_m):
+        if j in skip:
+            continue
+        Cx, er, et, Tx, R = fr(a)
+        low = lower(a)
+        beta = math.radians(rng.uniform(-50, -30) if low else rng.uniform(-14, 8))
+        # fangs reach across toward the vertical centre line from both jambs, leaving a black slit (a few
+        # long ones cross it and interlock)
+        side_in = -np.sign(math.cos(a)) * (R @ e1)
+        reach_ = Ri * shape(a) * abs(math.cos(a))
+        # round 3: the fangs no longer roof over the hole - most stop a third of the way in so the throat
+        # stays an open, black pit; only two long ones cross and interlock
+        long_ = False
+        if abs(math.cos(a)) < 0.35:
+            L = rng.uniform(0.3, 0.5)
+            dpl = -er
+        else:
+            dpl = nrm(side_in * 0.8 - er * 0.2)
+            L = float(np.clip(reach_ * (rng.uniform(1.0, 1.1) if long_ else rng.uniform(0.3, 0.5))
+                              / max(0.55, abs(float(dpl @ (R @ e1)))), 0.3, 1.5))
+        snapped = (not long_) and rng.random() < 0.2
+        if snapped:
+            L *= rng.uniform(0.45, 0.6)
+        root = at(a, Ri + 0.05, zf(Ri + 0.05) - 0.12)
+        dd = nrm(dpl * math.cos(beta) - Tx * math.sin(beta) + et * rng.uniform(-0.06, 0.06))
+        n_ = 16
+        tt = np.linspace(0, 1, n_)
+        # tips hook back toward the throat, like a ratchet
+        P = root[None] + dd[None] * (L * tt)[:, None] + (-Tx * 0.38 - dd * 0.05)[None] * (L * tt ** 2.2)[:, None]
+        # massive wedge: broad, flat chiselled blade at the root (a stone tooth, not a stick)
+        r0_ = rng.uniform(0.13, 0.17) * (0.9 + 0.2 * min(L, 1.2))
+        rv = r0_ * (1 - tt) ** (0.9 if not snapped else 0.3) + 0.006
+        V, F, uv, al = tube(P, rv * 0.75, ry=rv * 1.35, sides=6, up=Tx, cap0=True, cap1=True, nz_amp=0.07,
+                            nz_freq=7.0, seed=j * 3.1)
+        wv = rv * 2.7
+        dv_ = rv * 1.5
+        A["Carved"].add(V, F, uv, m=np.clip((al - 0.35) / 0.65, 0, 1))
+        mull.append(dict(a=a, P=P, dd=dd, L=L, Tx=Tx, er=er, et=et, low=low, snapped=snapped, w=wv))
+        if snapped:
+            tip = P[-1]
+            for _ in range(rng.randint(1, 3)):
+                rebar(tip - dd * 0.1, nrm(dd + et * rng.uniform(-0.6, 0.6) + Tx * rng.uniform(-0.4, 0.4)),
+                      rng.uniform(0.25, 0.55), -Tx, 0.3, 0.013)
+            V, F = blob(tip, basis_axes(et, dd, Tx, wv[-1] * 0.7, 0.04, dv_[-1] * 0.6), sub=2, amp=0.3)
+            A["Marrow"].add(V, F, g=0.1)
+        # chisel-cut serrations: small stone teeth along both edges of the mullion's inner half
+        for i in range(5, n_ - 3, 3):
+            for sx in (-1, 1):
+                q = P[i] + et * sx * wv[i] * 0.45
+                V, F, uv, al = shard(q, nrm(et * sx * 0.6 - Tx * 0.3 + dd * 0.4), 0.06 + 0.06 * (1 - tt[i]), 0.02,
+                                     hook_dir=-Tx, hook=0.3, rings=4, sides=4, sink=0.015)
+                A["Teeth"].add(V, F, uv, al)
+        # wet gum sleeve where the mullion roots in the window
+        V, F = blob(root + dd * 0.05, basis_axes(et, dd, np.cross(dd, et), 0.2, 0.09, 0.16), sub=2, amp=0.35, freq=6.0)
+        A["Gum"].add(V, F, m=0.0)
+    mull.sort(key=lambda M: M["a"])
+    CROWN["mullions"] = mull
+    # webbing of wet gum between the mullion roots, with a row of mixed teeth on the rim of each bay;
+    # only two broken tracery heads survive
+    heads = 0
+    for i in range(len(mull)):
+        ma, mb = mull[i], mull[(i + 1) % len(mull)]
+        da = (mb["a"] - ma["a"]) % (2 * math.pi)
+        if da > 1.1:
+            continue
+        am = ma["a"] + da / 2
+        if heads < 2 and not ma["low"] and not mb["low"] and not ma["snapped"] and not mb["snapped"]:
+            heads += 1
+            pa = ma["P"][4]
+            pb = mb["P"][4]
+            apex = at(am, Ri + 0.02, zf(Ri) - 0.1)
+            arc = np.vstack([bezier([pa, (pa + apex) / 2 + (fr(am)[1]) * 0.1, apex], 10),
+                             bezier([apex, (pb + apex) / 2 + (fr(am)[1]) * 0.1, pb], 10)[1:]])
+            arc = arc[: int(len(arc) * rng.uniform(0.55, 0.8))]
+            A["Carved"].add_tube(arc, 0.045, sides=4, phase=math.pi / 4, m=0.0)
+        n_r, n_c = 6, 9
+        rows = []
+        for k in range(n_r):
+            f = 0.03 + 0.2 * k / (n_r - 1)
+            pa = ma["P"][int(f * 15)]
+            pb = mb["P"][int(f * 15)]
+            tt = np.linspace(0, 1, n_c)[:, None]
+            Tx_ = fr(am)[3]
+            rows.append(pa + (pb - pa) * tt - Tx_[None] * (0.16 + 0.3 * f) * (4 * tt * (1 - tt)))
+        G = np.array(rows)
+        G += NZ.vec(G.reshape(-1, 3) * 5.0 + i).reshape(G.shape) * 0.02
+        Vm = G.reshape(-1, 3)
+        idx = np.arange(n_r * n_c).reshape(n_r, n_c)
+        quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+        qc = Vm[quads].mean(1)
+        keep = NZ.fbm(qc * 4.0 + i * 2.0, 2) < 0.3
+        A["Gum"].add(Vm, quads[keep], m=0.0)
+        A["Gum"].add(Vm, quads[keep][:, ::-1], m=0.0)
+        for k in range(rng.randint(3, 6)):
+            a = ma["a"] + da * rng.uniform(0.15, 0.85)
+            Cx, er, et, Tx, R = fr(a)
+            root = at(a, Ri - 0.02, zf(Ri) - 0.06)
+            dd = nrm(-er * 0.8 - Tx * 0.35 + et * rng.uniform(-0.2, 0.2))
+            roll = rng.random()
+            L = rng.uniform(0.16, 0.42)
+            if roll < 0.18:
+                V, F, uv, al = shard(root, dd, L * 1.1, 0.022, hook_dir=-Tx, hook=0.15, rings=6, sides=4, sink=0.06)
+                A["IronTooth"].add(V, F, uv, al)
+            elif roll < 0.4:
+                V, F, uv, al = shard(root, dd, L * 0.8, L * 0.2, hook_dir=-Tx, hook=0.1, rings=6, sides=5, sink=0.05,
+                                     flat=0.35, trunc=rng.uniform(0.5, 0.8))
+                A["Teeth"].add(V, F, uv, al)
+            else:
+                V, F, uv, al = shard(root, dd, L, L * 0.16, hook_dir=-Tx - er * 0.3, hook=0.3, rings=8, sides=7,
+                                     sink=0.05, fang=True, trunc=1.0 if roll > 0.55 else rng.uniform(0.4, 0.65))
+                A["Teeth"].add(V, F, uv, al)
+            if rng.random() < 0.5:
+                V, F = blob(root, basis_axes(et, er, Tx, 0.07, 0.06, 0.05), sub=2, amp=0.3, freq=8.0)
+                A["Gum"].add(V, F, m=0.0)
+    # a cluster of human-sized teeth set in a gum ridge on the lower piece (wrong scale, close-range horror)
+    a0 = a_gap + 0.55
+    for k in range(13):
+        a = a0 + k * 0.045 + rng.uniform(-0.01, 0.01)
+        Cx, er, et, Tx, R = fr(a)
+        root = at(a, Ri - 0.03 + rng.uniform(-0.02, 0.02), zf(Ri) + 0.08)
+        dd = nrm(-er * 0.7 + Tx * 0.6)
+        h = rng.uniform(0.03, 0.05)
+        V, F = blob(root + dd * h * 0.6, basis_axes(et, Tx, dd, 0.017, 0.013, h), sub=2, amp=0.12, freq=40.0)
+        A["Teeth"].add(V, F, m=0.85)
+    P = np.array([at(a0 - 0.05 + k * 0.05, Ri - 0.03, zf(Ri) + 0.04) for k in range(14)])
+    A["Gum"].add_tube(P, 0.035, sides=7, m=0.0)
+
+    # ---- the crack between the two pieces: torn pale membrane, taut sinew, drool; fronds boil out of it
+    Cu, eru, etu, Tu, _ = fr(a_gap - 0.02)
+    Cl, erl, etl, Tl, _ = fr(a_gap + 0.02)
+    rows = []
+    for k in range(10):
+        rr_ = Ri - 0.1 + (Ro - Ri + 0.2) * k / 9
+        pa = Cu + eru * rr_ + Tu * (dep / 2 - 0.45)
+        pb = Cl + erl * rr_ + Tl * (dep / 2 - 0.45)
+        tt = np.linspace(0, 1, 12)[:, None]
+        rows.append(pa + (pb - pa) * tt - T[None] * 0.25 * (4 * tt * (1 - tt)))
+    G = np.array(rows)
+    G += NZ.vec(G.reshape(-1, 3) * 3.0 + 4.0).reshape(G.shape) * 0.03
+    Vm = G.reshape(-1, 3)
+    idx = np.arange(10 * 12).reshape(10, 12)
+    quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+    qc = Vm[quads].mean(1)
+    keep = NZ.fbm(qc * 3.5 + 9.0, 3) < 0.22
+    A["Membrane"].add(Vm, quads[keep], m=0.5)
+    for k in range(7):
+        rr_ = rng.uniform(Ri - 0.1, Ro)
+        pa = Cu + eru * rr_ + Tu * rng.uniform(-0.2, dep / 2 - 0.1)
+        pb = Cl + erl * (rr_ + rng.uniform(-0.2, 0.2)) + Tl * rng.uniform(-0.2, dep / 2 - 0.1)
+        Ps = sag_path(pa, pb, rng.uniform(0.02, 0.1), 14)
+        A["Tendon"].add_tube(Ps, rng.uniform(0.012, 0.03) * (1 + 0.5 * np.sin(np.linspace(0, math.pi, 14))), sides=6,
+                             cap0=False, cap1=False)
+    for k in range(5):
+        rr_ = rng.uniform(Ri, Ro)
+        strand(Cu + eru * rr_ + Tu * dep / 2, Cl + erl * rr_ + Tl * dep / 2, rng.uniform(0.2, 0.6),
+               rng.uniform(0.012, 0.022))
+
+    # ---- drool: thick ropes across the hole between mullion tips, and hanging from teeth / the dropped lip
+    tips = [M["P"][-1] for M in mull]
+    for k in range(5):
+        i = rng.randrange(len(mull))
+        j = (i + rng.randint(3, len(mull) - 3)) % len(mull)
+        a_ = mull[i]["P"][int(rng.uniform(0.55, 0.95) * 15)]
+        b_ = mull[j]["P"][int(rng.uniform(0.55, 0.95) * 15)]
+        strand(a_, b_, rng.uniform(0.25, 0.7), rng.uniform(0.01, 0.024))
+    for M in mull:
+        if rng.random() < 0.3:
+            hang_strand(M["P"][-2], rng.uniform(0.1, 0.45), rng.uniform(0.01, 0.022), A["Mucus"])
+    for k in range(7):
+        a = a_gap + (a_hinge - a_gap) * rng.uniform(0.1, 0.9)
+        p0 = at(a, Ri - 0.05, dep / 2 - 0.3)
+        hang_strand(p0, rng.uniform(0.5, 1.6), rng.uniform(0.012, 0.024), A["Mucus"])
+
+    # ---- pale fronds: clusters boiling out of the crack, rising off the dorsal rim, and snaking out of the throat
+    def cluster(n, root_fn, dir_fn, Lr, r0r):
+        for _ in range(n):
+            root, dd, ax = root_fn(), None, None
+            dd = dir_fn(root)
+            ax = nrm(np.cross(dd, perp(dd)) * rng.choice((-1, 1)) + perp(dd) * rng.uniform(-0.5, 0.5))
+            frond(root, dd, rng.uniform(*Lr), ax, r0=rng.uniform(*r0r), curl=rng.uniform(0.8, 1.5), n=48)
+
+    def gap_root():
+        rr_ = rng.uniform(Ri - 0.05, Ro + 0.05)
+        f = rng.random()
+        return (Cu + eru * rr_) * f + (Cl + erl * rr_) * (1 - f) + T * rng.uniform(0.0, dep / 2 - 0.2)
+
+    gdir = nrm(T * 0.9 + radial0(a_gap) * 0.7)
+    cluster(22, gap_root, lambda p: nrm(gdir + NZ.vec(p[None] * 5.0)[0] * 0.9), (0.3, 0.95), (0.016, 0.03))
+
+    def rim_root():
+        a = math.radians(rng.uniform(55, 150))
+        return at(a, Ro + rng.uniform(-0.05, 0.12), rng.uniform(0.0, dep / 2))
+
+    cluster(16, rim_root, lambda p: nrm(T * 1.0 + nrm(p - C) * 0.6 + NZ.vec(p[None] * 4.0)[0] * 0.8), (0.3, 0.8),
+            (0.012, 0.024))
+
+    def throat_root():
+        dz = rng.uniform(0.25, 1.1)
+        Oq, Tq, Dq, Sq = gframe(dz)
+        a = rng.uniform(0, 2 * math.pi)
+        return Oq + (math.cos(a) * Sq + math.sin(a) * Dq) * float(np.interp(dz, depth, r)) * 0.85
+
+    cluster(6, throat_root, lambda p: nrm(T * 1.0 + nrm(p - C) * 0.25 + NZ.vec(p[None] * 6.0)[0] * 0.6), (0.5, 1.1),
+            (0.016, 0.026))
+    hp = pit_geo[0]
+
+    def pit_root():
+        a = rng.uniform(0, 2 * math.pi)
+        e1_ = perp(hp["axis"])
+        return hp["c"] + hp["r"] * 1.15 * (math.cos(a) * e1_ + math.sin(a) * np.cross(hp["axis"], e1_))
+
+    cluster(7, pit_root, lambda p: nrm(-hp["axis"] + nrm(p - hp["c"]) * 0.8), (0.25, 0.6), (0.006, 0.011))
+
+    # ---- neck: flesh collar from the window back to the first vertebra, heavy muscle cords
+    ss = np.linspace(RING_S - 0.1, RING_S + dep / 2 + 1.0, 16)
+    On, Tn, Dn, Sn = spine_frames(ss)
+    t = np.linspace(0, 1, len(ss))
+    rr = 1.95 - 0.55 * t
+    Bn = np.cross(Tn, Sn)
+    c = circle_prof(30)
+    prof = np.stack([c[None, :, 0] * rr[:, None], c[None, :, 1] * rr[:, None] * 0.85], -1)
+    V, F, uv, al = loft(On, prof, fr=(Tn, Sn, Bn), cap0=False, cap1=False, nz_amp=0.13, nz_freq=2.5)
+    A["Flesh"].add(V, F, uv, m=0.1)
+    for q in range(18):
+        a = 2 * math.pi * q / 18 + rng.uniform(-0.1, 0.1)
+        a_ = at(a, rng.uniform(1.4, 1.95), -dep / 2 + 0.1)
+        sb = RING_S + dep / 2 + 1.5
+        Ob, Tb, Db, Sb = spine_frame(sb)
+        b_ = Ob + (math.cos(a) * Sb * 0.95 + math.sin(a) * Db * 0.7) * 0.9
+        Pm = sag_path(a_, b_, 0.0, 16, toward=radial0(a) * 0.15)
+        tt = np.linspace(0, 1, 16)
+        if q % 3 == 0:
+            A["Flesh"].add_tube(Pm, (0.07 + 0.08 * np.sin(math.pi * tt) ** 1.5) * rng.uniform(0.85, 1.2), sides=10,
+                                nz_amp=0.12, nz_freq=5.0, seed=rng.random() * 20, m=0.15)
+        A["Tendon"].add_tube(Pm + radial0(a) * 0.04, (0.03 + 0.03 * np.sin(math.pi * tt)) * rng.uniform(0.8, 1.3),
+                             sides=7, cap0=False, cap1=False)
+    # drips and slime falling from the jaw into the shaft (motion and scale cue)
+    for k in range(40):
+        a_ = rng.uniform(0, 2 * math.pi)
+        p0 = at(a_, rng.uniform(Ri * 0.6, Ro), dep / 2 - rng.uniform(0.0, 0.8))
+        p0 = p0 + DOWN * rng.uniform(0.3, 4.5)
+        sz = rng.uniform(0.008, 0.02)
+        V, F = blob(p0, basis_axes(np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), UP, sz, sz, sz * rng.uniform(1.5, 4.0)),
+                    sub=1, amp=0.05)
+        A["Mucus"].add(V, F)
+    # chains driven through the crown
+    Cx, er, et, Tx, R = fr(math.radians(270))
+    pierce(Cx + er * (Ro - 0.25) - Tx * 0.2, er + DOWN * 0.6, 2.8)
+    Cx, er, et, Tx, R = fr(math.radians(170))
+    pierce(Cx + er * (Ro - 0.1) - Tx * 0.3, er * 0.6 + DOWN, 3.4, hook=True, scale=1.1)
+    # the previous climber's tether: grapple snagged on a low thorn, rope down to what is left of him
+    th_ = [t_ for t_ in CROWN.get("thorns", []) if lower(t_[0]) or math.sin(t_[0]) < -0.2]
+    if th_:
+        build_tether(max(th_, key=lambda t_: t_[3]))
+
+
+def build_tether(thorn):
+    """The previous climber: his three-prong grapple (the tool the player throws) snagged over a thorn of the
+    crown, the rope still knotted to what is left of him - harness around a pelvis, one leg in its boot, the
+    helmet swinging from its chin strap with a dead lamp."""
+    a, base, dd, L = thorn
+    c0 = base + dd * L * 0.62
+    t0 = dd
+    eu = nrm(UP - UP.dot(t0) * t0)
+    es = np.cross(t0, eu)
+    rad = 0.13
+    ang = np.radians(np.linspace(-55, 215, 30))
+    prong = c0[None] + rad * (np.cos(ang)[:, None] * es[None] + np.sin(ang)[:, None] * eu[None])
+    G0 = prong[0]
+    tt = np.linspace(0, 1, len(prong))
+    A["Iron"].add_tube(prong, 0.024 * (1 - tt) ** 0.6 + 0.004, sides=7, cap1=False, m=tt, g=0.0)
+    shank_end = G0 + DOWN * 0.42
+    A["Iron"].add_tube(np.array([G0, shank_end]), 0.026, sides=8, m=0.0)
+    out0 = nrm(prong[3] - G0)
+    for sg in (-1, 1):
+        d2 = rot(DOWN, sg * math.radians(120)) @ nrm(out0 - out0.dot(DOWN) * DOWN + 1e-6)
+        Pp = bezier([G0, G0 + d2 * 0.16 + UP * 0.02, G0 + d2 * 0.25 + DOWN * 0.1, G0 + d2 * 0.18 + DOWN * 0.23], 16)
+        ts = np.linspace(0, 1, 16)
+        A["Iron"].add_tube(Pp, 0.022 * (1 - ts) ** 0.6 + 0.004, sides=6, cap1=False, m=ts)
+    e1 = perp(DOWN)
+    eye = shank_end + DOWN * 0.05 + 0.05 * (np.cos(np.linspace(0, 2 * math.pi, 16))[:, None] * e1
+                                           + np.sin(np.linspace(0, 2 * math.pi, 16))[:, None] * UP)
+    A["Iron"].add_tube(eye, 0.012, sides=6, cap0=False, cap1=False, m=0.0)
+    # rope down to the body, gently swaying
+    top = shank_end + DOWN * 0.09
+    n, Lr = 50, 1.35
+    sway = NZ.vec(top[None] * 2.0)[0] * 0.12
+    tt = np.linspace(0, 1, n)
+    R = top[None] + DOWN[None] * (Lr * tt)[:, None] + sway[None] * (tt ** 2)[:, None]
+    A["Rope"].add_tube(R, 0.017, sides=8, cap0=True, cap1=False, m=tt * 0.5)
+    V, F = blob(top, basis_axes(e1, np.cross(DOWN, e1), UP, 0.04, 0.04, 0.055), sub=2, amp=0.25)
+    A["Rope"].add(V, F, m=0.5)
+    hip = R[-1] + DOWN * 0.12
+    fwd = nrm(np.cross(UP, e1))
+    tilt = rot(e1, 0.35)
+    bx, by, bz = tilt @ e1, tilt @ fwd, tilt @ UP
+    # harness: waist belt (flat webbing) + leg loops + belay loop up to the rope
+    th = np.linspace(0, 2 * math.pi, 30)
+    belt = hip + 0.16 * (np.cos(th)[:, None] * bx + 0.8 * np.sin(th)[:, None] * by)
+    A["Rope"].add_tube(belt, 0.03, ry=0.008, up=bz, sides=6, cap0=False, cap1=False, m=0.9)
+    A["Rope"].add_tube(np.array([R[-1], hip + by * 0.13]), 0.012, sides=6, m=0.9)
+    for sx in (-1, 1):
+        lc = hip + bx * sx * 0.08 - bz * 0.13
+        loop = lc + 0.085 * (np.cos(th)[:, None] * bx + np.sin(th)[:, None] * by)
+        A["Rope"].add_tube(loop, 0.02, ry=0.006, up=bz, sides=6, cap0=False, cap1=False, m=0.9)
+    # pelvis: iliac wings, sacrum, a socket with the femur still in it
+    for sx in (-1, 1):
+        V, F = blob(hip + bx * sx * 0.085 + bz * 0.03, basis_axes(nrm(bx * sx + by * 0.3), by, bz, 0.075, 0.03, 0.09),
+                    sub=2, amp=0.2, freq=9.0)
+        A["Bone"].add(V, F, m=0.2)
+    V, F = blob(hip - by * 0.06, basis_axes(bx, by, bz, 0.05, 0.035, 0.08), sub=2, amp=0.15, freq=9.0)
+    A["Bone"].add(V, F, m=0.2)
+    knee = hip + bx * 0.09 - bz * 0.42 + by * 0.05
+    ankle = knee + DOWN * 0.38 + by * 0.04
+    A["Bone"].add_tube(np.array([hip + bx * 0.09 - bz * 0.04, knee]), np.array([0.026, 0.02]), sides=8, m=np.array([0.0, 1.0]))
+    V, F = blob(knee, basis_axes(bx, by, bz, 0.035, 0.032, 0.03), sub=2, amp=0.1)
+    A["Bone"].add(V, F, m=1.0)
+    A["Bone"].add_tube(np.array([knee, ankle]), np.array([0.02, 0.017]), sides=8, m=np.array([0.0, 1.0]))
+    # the boot: rough leather loft, toe pointing down
+    tdir = nrm(by * 0.9 + DOWN * 0.6)
+    bp = np.array([ankle + UP * 0.12, ankle, ankle + tdir * 0.1 + DOWN * 0.05, ankle + tdir * 0.26 + DOWN * 0.05])
+    A["Rope"].add_tube(resample(bp, 10), np.array([0.05, 0.058, 0.062, 0.056, 0.052, 0.05, 0.048, 0.044, 0.038, 0.02]),
+                       ry=np.array([0.05, 0.055, 0.05, 0.045, 0.04, 0.038, 0.036, 0.034, 0.03, 0.02]), sides=10, m=0.95)
+    # helmet on its chin strap, dead lamp on the front
+    hc = hip - bx * 0.2 + DOWN * 0.55 + by * 0.08
+    A["Rope"].add_tube(sag_path(hip - bx * 0.15, hc + UP * 0.1, 0.0, 8), 0.006, sides=4, m=0.9)
+    prof = [(0.0, 0.13), (0.06, 0.125), (0.1, 0.1), (0.125, 0.06), (0.135, 0.02), (0.15, 0.0), (0.15, -0.01),
+            (0.125, -0.008), (0.115, 0.02), (0.105, 0.055), (0.085, 0.085), (0.05, 0.11), (0.0, 0.115)]
+    hax = nrm(UP + by * 0.6 + bx * 0.4)
+    V, F = lathe(prof, hc, hax, 24)
+    A["Iron"].add(V, F, m=0.3, g=0.0)
+    hf = nrm(perp(hax))
+    lamp = hc + hax * 0.07 + hf * 0.12
+    V, F, uv, al = tube(np.array([lamp - hf * 0.02, lamp + hf * 0.05]), 0.032, sides=12)
+    A["Iron"].add(V, F, uv, m=0.0)
+    V, F = blob(lamp + hf * 0.05, basis_axes(perp(hf), np.cross(hf, perp(hf)), hf, 0.026, 0.026, 0.008), sub=2, amp=0.0)
+    A["Glass"].add(V, F, m=0.0, g=0.0)
+    # the creature's slime run down the rope and the bones
+    for _ in range(3):
+        hang_strand(hip + bx * rng.uniform(-0.12, 0.12) - bz * 0.05, rng.uniform(0.2, 0.7), 0.008, A["Mucus"])
+    hang_strand(R[n // 2], 0.4, 0.006, A["Oil"])
+    CROWN["tether"] = (c0, hip)
+
+
+# =============================================================================
+# Scale cues: Lanternwright cage fused into the back, ladder skewering the neck
+# =============================================================================
+def build_cage(v, sgn=1.0):
+    """Rusted Lanternwright cage fused into the flank on the side the player sees, a dead man folded inside
+    (skull, ribs, an arm through the bars), a lantern still smouldering, tendons wrapped round the bars."""
+    O, T, D, S = spine_frame(v["s"] + v["Lb"] * 0.4)
+    side = S * sgn
+    up = nrm(D * 0.75 + side * 0.65 - T * 0.25)
+    sd = perp(up)
+    fwd = np.cross(up, sd)
+    base = O + D * (v["H"] * 0.18) + side * (v["W"] * 0.42) - up * 0.1
+    rad, hgt = 0.48, 1.7
+    nb = 14
+    for j in range(nb):
+        a = 2 * math.pi * j / nb
+        dr = math.cos(a) * sd + math.sin(a) * fwd
+        pts = []
+        for h in np.linspace(0, hgt, 9):
+            bow = 0.22 * math.sin(math.pi * h / hgt) if j in (0, 1) else 0.0
+            pts.append(base + dr * (rad + bow) + up * h)
+        for ang in np.linspace(0, math.pi / 2, 7)[1:]:
+            pts.append(base + up * (hgt + math.sin(ang) * 0.4) + dr * rad * math.cos(ang) * 0.98 + dr * 0.006)
+        if j == 5:
+            pts = pts[:6]
+        A["Iron"].add_tube(np.array(pts), 0.016, sides=6, m=0.0)
+    for h in (0.0, 0.57, 1.14, hgt):
+        ring = base + up * h + rad * (np.cos(np.linspace(0, 2 * math.pi, 36))[:, None] * sd + np.sin(np.linspace(0, 2 * math.pi, 36))[:, None] * fwd)
+        A["Iron"].add_tube(ring, 0.016, ry=0.034, up=up, sides=6, cap0=False, cap1=False, m=0.0)
+    top = base + up * (hgt + 0.4)
+    loop = top + up * 0.1 + 0.1 * (np.cos(np.linspace(0, 2 * math.pi, 16))[:, None] * sd + np.sin(np.linspace(0, 2 * math.pi, 16))[:, None] * up)
+    A["Iron"].add_tube(loop, 0.022, sides=6, cap0=False, cap1=False, m=0.0)
+    lan = top - up * 0.6
+    chain(np.array([top, lan + up * 0.18]), 0.5)
+    for j in range(6):
+        a = 2 * math.pi * j / 6
+        dr = math.cos(a) * sd + math.sin(a) * fwd
+        A["Iron"].add_tube(np.array([lan + dr * 0.08 + up * 0.15, lan + dr * 0.1, lan + dr * 0.08 - up * 0.15]), 0.008, sides=4, m=0.0)
+    V, F = blob(lan, basis_axes(sd, fwd, up, 0.045, 0.045, 0.075), sub=2, amp=0.1)
+    A["Ember"].add(V, F, g=0.35)
+    LANTERN["cage"] = lan
+    # the occupant: slumped skeleton
+    pel = base + up * 0.32 + fwd * 0.12
+    spine_top = base + up * 1.05 - fwd * 0.08 + sd * 0.06
+    A["Bone"].add_tube(bezier([pel, (pel + spine_top) / 2 - fwd * 0.08, spine_top], 12), 0.022, sides=6, m=0.3)
+    for i in range(6):
+        f = 0.3 + 0.12 * i
+        c = pel + (spine_top - pel) * f
+        for sx in (-1, 1):
+            arc = np.array([c + sd * sx * 0.13 * math.sin(t_) + fwd * (0.11 - 0.22 * (t_ / math.pi)) * 0.9 + up * (-0.05 * math.sin(t_))
+                            for t_ in np.linspace(0.15, math.pi * 0.85, 9)])
+            A["Bone"].add_tube(arc, 0.011, sides=5, m=0.5)
+    sk = spine_top + up * 0.13 + fwd * 0.06 - sd * 0.05
+    V, F = blob(sk, basis_axes(sd, fwd, up, 0.085, 0.105, 0.1), sub=3, amp=0.06, freq=6.0)
+    A["Bone"].add(V, F, m=0.6)
+    for sx in (-1, 1):
+        V, F = blob(sk + fwd * 0.085 + sd * sx * 0.033 + up * 0.01, basis_axes(sd, fwd, up, 0.022, 0.02, 0.02), sub=2, amp=0.0)
+        A["Soot"].add(V, F)
+    V, F = blob(sk + fwd * 0.05 - up * 0.08, basis_axes(sd, fwd, up, 0.06, 0.06, 0.03), sub=2, amp=0.1)
+    A["Bone"].add(V, F, m=0.6)
+    sh = spine_top + sd * 0.15
+    hand = base + sd * (rad + 0.35) + up * 0.55 + fwd * 0.1
+    elbow = (sh + hand) / 2 + up * 0.08
+    A["Bone"].add_tube(np.array([sh, elbow]), 0.016, sides=6, m=0.4)
+    A["Bone"].add_tube(np.array([elbow, hand]), 0.012, sides=6, m=0.4)
+    for f_ in range(4):
+        d_ = nrm(DOWN + sd * 0.3 + fwd * (f_ - 1.5) * 0.25)
+        A["Bone"].add_tube(np.array([hand, hand + d_ * 0.06, hand + d_ * 0.1 + DOWN * 0.03]), 0.005, sides=4, m=0.6)
+    # flesh engulfing the cage foot; tendons wrapping bars; veins
+    V, F = blob(base + up * 0.1, basis_axes(sd, fwd, up, 0.85, 0.8, 0.42), sub=4, amp=0.22, freq=2.2)
+    A["Flesh"].add(V, F, m=0.2)
+    for j in range(7):
+        a = 2 * math.pi * (j * 2) / nb
+        dr = math.cos(a) * sd + math.sin(a) * fwd
+        tdr = np.cross(up, dr)
+        h1 = rng.uniform(0.4, 1.3)
+        t = np.linspace(0, 1, 40)
+        hel = base[None] + dr[None] * rad + up[None] * (h1 * t)[:, None] + (dr[None] * np.cos(t * 14)[:, None] + tdr[None] * np.sin(t * 14)[:, None]) * 0.03
+        A["Tendon"].add_tube(hel, 0.014 * (1.3 - t), sides=5, cap0=False)
+    for j in range(4):
+        a = rng.uniform(0, 2 * math.pi)
+        dr = math.cos(a) * sd + math.sin(a) * fwd
+        P = np.array([base + dr * rad * 0.8 + up * h + np.cross(up, dr) * 0.04 * math.sin(h * 9) for h in np.linspace(0.1, rng.uniform(0.8, 1.6), 20)])
+        A["Vein"].add_tube(P, 0.01, sides=5, g=0.4)
+    pierce(base + sd * 0.4 + up * 0.3, sd + DOWN, 2.6, hook=True, scale=0.9)
+    CROWN["cage"] = base
+
+
+def build_ladder(v, sgn=1.0):
+    """An iron service ladder run clean through the neck, both ends sticking out past the crown."""
+    O, T, D, S = spine_frame(v["s"])
+    along = nrm(S * sgn * 1.0 - T * 0.3 + D * 0.35)
+    across = nrm(np.cross(along, D))
+    p0 = O - along * 2.9 + D * 0.62
+    length, wdt = 5.8, 0.48
+    t = np.linspace(0, 1, 44)
+    for sgn2 in (-1, 1):
+        P = p0[None] + along[None] * (length * t)[:, None] + across[None] * sgn2 * wdt / 2
+        P += (D * 0.35)[None] * (t ** 2)[:, None] + (T * -0.25)[None] * (t ** 3)[:, None]
+        if sgn2 > 0:
+            P = P[:39]
+        A["Iron"].add_tube(P, 0.026, ry=0.009, up=across, sides=4, m=0.0)
+    for i, tt in enumerate(np.arange(0.03, 0.97, 0.058)):
+        if i in (5, 6, 7, 8, 9):
+            continue  # rungs inside the neck
+        if i == 12:
+            continue
+        a = p0 + along * length * tt + (D * 0.35) * tt ** 2 + (T * -0.25) * tt ** 3
+        P = np.array([a - across * wdt / 2, a + across * wdt / 2])
+        if i == 14:
+            P = bezier(np.array([a - across * wdt / 2, a - across * 0.05 + D * 0.12, a + across * 0.1 + D * 0.3]), 8)
+        A["Iron"].add_tube(resample(P, 6), 0.017, sides=6, m=0.0)
+    for sgn2 in (-1, 1):
+        exitp = O + along * sgn2 * 1.55
+        V, F = blob(exitp, basis_axes(along, across, D, 0.4, 0.45, 0.35), sub=3, amp=0.25, freq=3.0)
+        A["Flesh"].add(V, F, m=0.6, g=0.0)
+        for q in range(4):
+            a = exitp + across * rng.uniform(-0.3, 0.3)
+            b = exitp + along * sgn2 * rng.uniform(0.4, 0.9) + across * rng.uniform(-0.25, 0.25)
+            A["Tendon"].add_tube(sag_path(a, b, 0.05, 10), 0.02, sides=6, cap0=False, cap1=False)
+        hang_strand(exitp + along * sgn2 * 0.3 + DOWN * 0.1, rng.uniform(0.4, 1.2), 0.014, A["Oil"])
+
+
+# =============================================================================
+# Tail
+# =============================================================================
+def lathe(prof_rz, center, axis, nseg=36):
+    """Revolve a closed (r, z) profile around axis."""
+    axis = nrm(axis)
+    e1 = perp(axis)
+    e2 = np.cross(axis, e1)
+    prof_rz = np.asarray(prof_rz, float)
+    th = np.linspace(0, 2 * math.pi, nseg + 1)
+    V = (center[None, None, :] + prof_rz[None, :, 0:1] * (np.cos(th)[:, None, None] * e1 + np.sin(th)[:, None, None] * e2)
+         + prof_rz[None, :, 1:2] * axis[None, None, :])
+    n_t, n_p = V.shape[:2]
+    idx = np.arange(n_t * n_p).reshape(n_t, n_p)
+    quads = np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4)
+    return V.reshape(-1, 3), quads
+
+
+def build_bell_at(top, Hb=1.25, Rl=0.6, axis=None):
+    """A cracked Lanternwright bronze bell (mouth along -axis) hanging from `top`."""
+    axis = UP if axis is None else nrm(axis)
+    zs = np.linspace(0, 1, 18)
+    r_out = Rl * (0.62 + 0.38 * np.exp(-zs * 9.0)) * (1 - 0.35 * zs ** 3) + 0.067 * Rl * np.exp(-((zs - 0.06) / 0.05) ** 2)
+    r_out[-1] = 0.0
+    z_out = zs * Hb
+    dome = np.linspace(0, math.pi / 2, 6)[1:]
+    prof = [(r_out[i], z_out[i]) for i in range(len(zs) - 1)]
+    prof += [(r_out[-2] * math.cos(a), Hb * 0.94 + 0.1 * Hb * math.sin(a)) for a in dome]
+    inner = [(max(r - 0.09 * Rl, 0.0), z) for (r, z) in prof[::-1] if z < Hb * 0.9]
+    prof = prof + [(0.0, Hb * 0.9)] + inner + [(Rl * 0.95, 0.0)]
+    base = top - axis * (Hb + 0.1 * Hb)
+    V, F = lathe(prof, base, axis, 40)
+    A["Bronze"].add(V, F, m=0.0)
+    e1 = perp(axis)
+    e2 = np.cross(axis, e1)
+    for i in range(7):  # the crack: a dark fissure up one side, ember light in it
+        p = base + e1 * Rl * (0.96 - 0.05 * i) + axis * (0.03 + i * 0.1 * Hb) + e2 * 0.03 * Rl * math.sin(i * 2.1)
+        V2, F2 = blob(p, basis_axes(e1, e2, axis, 0.06 * Rl, 0.03 * Rl, 0.13 * Rl), sub=1, amp=0.2)
+        A["Marrow"].add(V2, F2, g=0.7)
+    for ang in (0.0, math.pi / 2):
+        d = math.cos(ang) * e1 + math.sin(ang) * e2
+        ring = top + 0.2 * Rl * (np.cos(np.linspace(0, 2 * math.pi, 18))[:, None] * d + np.sin(np.linspace(0, 2 * math.pi, 18))[:, None] * axis)
+        A["Bronze"].add_tube(ring, 0.05 * Rl, sides=6, cap0=False, cap1=False, m=0.0)
+    A["Iron"].add_tube(np.array([top - axis * 0.1 * Hb, base + axis * 0.2 * Hb]), 0.04 * Rl, sides=6, m=0.0)
+    V2, F2 = blob(base + axis * 0.12 * Hb, basis_axes(e1, e2, axis, 0.16 * Rl, 0.16 * Rl, 0.22 * Rl), sub=2, amp=0.05)
+    A["Iron"].add(V2, F2, m=0.0)
+    # a chunk broken out of the lip
+    for i in range(3):
+        V2, F2 = blob(base + e2 * Rl * 0.93 + e1 * (i - 1) * 0.08 * Rl + axis * 0.03, basis_axes(e1, e2, axis, 0.07 * Rl, 0.05 * Rl, 0.05 * Rl), sub=1, amp=0.3)
+        A["Marrow"].add(V2, F2, g=0.3)
+
+
+def _build_tail(v):
+    s0 = v["s"] + v["Lb"] / 2 - 0.1
+    ss = np.linspace(s0, s0 + 2.8, 20)
+    O, T, D, S = spine_frames(ss)
+    t = np.linspace(0, 1, len(ss))
+    r = 0.35 * v["k"] * (1 - t) ** 1.2 + 0.01
+    V, F, uv, al = tube(O, r, sides=6, nz_amp=0.1, seed=3.0, fr=(T, S, np.cross(T, S)))
+    A["Carved"].add(V, F, uv)
+    for _ in range(4):
+        st = O[rng.randint(0, 8)]
+        rebar(st, nrm(-T[0] + D[0] * rng.uniform(0.2, 1.0) + S[0] * rng.uniform(-0.8, 0.8)), rng.uniform(0.6, 1.4),
+              DOWN, 0.2, 0.016)
+    for _ in range(2):
+        pierce(O[rng.randint(2, 8)] + D[0] * 0.1, D[0] + DOWN, rng.uniform(2.0, 4.0), hook=rng.random() < 0.5)
+
+
+# =============================================================================
+# Assemble the creature
+# =============================================================================
+def build_vertebra(idx, s, k):
+    O, T, D, S = spine_frame(s)
+    with tag("Seg%d" % idx, mat4(S, T, D, O)):
+        _build_vertebra(idx, s, k)
+
+
+def build_disc(va, vb):
+    with tag("Seg%d" % va["idx"], va["M"]):
+        _build_disc(va, vb)
+
+
+def grapnel(Aj, F, nout, side_vec, Dv, k, planted=True):
+    with tag("Hook", frame_zx(Aj, F - Aj, np.cross(F - Aj, Dv))):
+        return _grapnel(Aj, F, nout, side_vec, Dv, k, planted)
+
+
+LEG_FRAME = {}
+
+
+def build_leg(v, sigma, kind="normal", size=1.0, droot=0.0, lantern=False):
+    """Tagged wrapper: the strut + knee pier are Mason_LimbUpper (pivot at the flank joint, bone along +Z, pin +X);
+    from the knee down is Mason_LimbLower (pivot at the knee); the grapnel is Mason_Hook."""
+    O, T, D, S = spine_frame(v["s"] + droot)
+    LEG_FRAME.clear()
+    with tag("LegU", np.eye(4)):
+        i0 = len(PARTS) - 1
+        _build_leg(v, sigma, kind, size, droot, lantern)
+    L = LEG_LOG[-1] if LEG_LOG and LEG_LOG[-1].get("_tagged") is None else None
+    if L is not None:
+        L["_tagged"] = True
+        K, J = L["K"], L.get("J", L["F"])
+        side = S * sigma
+        upa = nrm(D + side * 0.22)
+        R0 = O + side * (0.4 * v["W"]) + D * (0.08 * v["H"])
+        pn = nrm(np.cross(nrm(K - R0), side))
+        PARTS[i0]["M"] = frame_zx(R0, K - R0, pn)
+        for j in range(i0 + 1, len(PARTS)):
+            if PARTS[j]["name"] == "LegL":
+                Kb = K - upa * (1.15 + 0.25 * size) * v["k"] ** 0.7 * 0.65
+                PARTS[j]["M"] = frame_zx(Kb, J - Kb, pn)
+
+
+def frond(root, direction, length, curl_axis, r0=0.018, n=56, curl=1.0, cilia=True):
+    d0 = nrm(direction)
+    ax = nrm(curl_axis - np.dot(curl_axis, d0) * d0)
+    with tag("Frond", mat4(ax, d0, np.cross(ax, d0), np.asarray(root, float))):
+        return _frond(root, direction, length, curl_axis, r0, n, curl, cilia)
+
+
+def listening_pit(c, axis, r, depth, hue, power, membrane=False, cames=0, face_n=None, drape=None):
+    y = -nrm(axis)
+    x = perp(y)
+    with tag("Pit", mat4(x, y, np.cross(x, y), np.asarray(c, float))):
+        _listening_pit(c, axis, r, depth, hue, power, membrane, cames, face_n, drape)
+
+
+def build_crown():
+    O, T, D, S = spine_frame(RING_S)
+    with tag("Head", mat4(S, T, D, O)):
+        _build_crown()
+
+
+def build_tail(v):
+    with tag("Tail", v["M"]):
+        _build_tail(v)
+
+
+def build_creature():
+    log("spine length %.1f m" % L_TOTAL)
+    for i, s in enumerate(VERT_S):
+        k = kprof(s) * (1 + rng.uniform(-0.04, 0.04))
+        build_vertebra(i, s, k)
+    log("vertebrae:", len(VERTS))
+    for a, b in zip(VERTS[:-1], VERTS[1:]):
+        build_disc(a, b)
+    build_crown()
+    log("crown done")
+    n = len(VERTS)
+    # legs: pairs on most segments, irregular side gaps, giants and stunted ones, doubled legs; 2 broken,
+    # 1 torn off, ~1/3 lifted mid-step; the two forelegs rear up beside the crown
+    slots = []
+    gap = {(rng.randint(5, 9), -1), (rng.randint(5, 9), -1), (rng.randint(13, 17), 1), (rng.randint(19, 23), -1)}
+    for i in range(1, n - 1):
+        for sigma in (-1, 1):
+            if (i, sigma) in gap or (i > 3 and rng.random() < 0.12):
+                continue
+            slots.append((i, sigma))
+    pool = [sl for sl in slots if 3 <= sl[0] < n - 2]
+    rng.shuffle(pool)
+    special = {pool[0]: "broken", pool[1]: "broken", pool[2]: "missing"}
+    for sl in pool[3:3 + len(slots) // 3]:
+        special[sl] = "lifted"
+    for sigma in (-1, 1):
+        build_leg(VERTS[0], sigma, "reach", 1.25, droot=0.3, lantern=(sigma > 0))
+    for (i, sigma) in sorted(slots):
+        v = VERTS[i]
+        kind = special.get((i, sigma), "normal")
+        r = rng.random()
+        size = rng.uniform(1.25, 1.5) if r < 0.2 else (rng.uniform(0.55, 0.72) if r < 0.36 else rng.uniform(0.85, 1.1))
+        build_leg(v, sigma, kind, size, rng.uniform(-0.2, 0.2) * v["k"])
+        if kind == "normal" and rng.random() < 0.1:
+            build_leg(v, sigma, "lifted" if rng.random() < 0.5 else "normal", rng.uniform(0.5, 0.62),
+                      -0.45 * v["k"])
+    log("legs:", len(slots) + 2, "slots,", sum(1 for x in special.values() if x == "lifted"), "lifted")
+    build_belfry(VERTS[SKYLINE["belfry"]])
+    build_great_spire(VERTS[SKYLINE["spire"]])
+    build_ibeam(VERTS[SKYLINE["ibeam"]])
+    build_cluster(VERTS[SKYLINE["cluster"]])
+    build_fin(VERTS[SKYLINE["fin"]], VERTS[min(SKYLINE["fin"] + 1, n - 1)])
+    build_pipe(VERTS[SKYLINE["pipe"]])
+    log("legs done")
+    for idx in (3, 6, 9, 12, 15, 18):
+        if idx >= n - 1:
+            continue
+        va, vb = VERTS[idx], VERTS[idx + 1]
+        sm = (va["s"] + va["Lb"] / 2 + vb["s"] - vb["Lb"] / 2) / 2
+        O, T, D, S = spine_frame(sm)
+        sg = rng.choice((-1, 1))
+        p_in = O + S * sg * 0.62 * va["k"] * SEG_W / 1.9 + D * rng.uniform(-0.1, 0.3) * va["k"]
+        pierce(p_in, S * sg + D * 0.3 + DOWN * 0.3, rng.uniform(1.8, 4.5), hook=rng.random() < 0.6, scale=va["k"] ** 0.5)
+    for idx in (5, 11):
+        if idx + 3 >= n:
+            continue
+        va, vb = VERTS[idx], VERTS[idx + 3]
+        Oa, Ta, Da, Sa = spine_frame(va["s"] + va["Lb"] * 0.6)
+        Ob, Tb, Db, Sb = spine_frame(vb["s"] + vb["Lb"] * 0.6)
+        pa = Oa + Sa * 0.75 * va["k"] * SEG_W / 1.9 + Da * 0.2
+        pb = Ob + Sb * 0.75 * vb["k"] * SEG_W / 1.9 + Db * 0.2
+        chain(sag_path(pa, pb, 1.4, 40, toward=Sa * 0.6))
+    # scale cues placed on the flank the player (and the full shot) sees
+    fc = np.array([float(x) for x in args.fullcam.split(",")][:3])
+
+    def facing(v):
+        O, T, D, S = spine_frame(v["s"])
+        return 1.0 if np.dot(S, fc - O) >= 0 else -1.0
+
+    cage_v = min(VERTS, key=lambda v: abs(v["s"] - 6.9))
+    build_cage(cage_v, facing(cage_v))
+    ladder_v = min(VERTS, key=lambda v: abs(v["s"] - 2.6))
+    build_ladder(ladder_v, facing(ladder_v))
+    bell_v = min(VERTS, key=lambda v: abs(v["s"] - 12.6))
+    build_flank_bell(bell_v, facing(bell_v))
+    build_tail(VERTS[-1])
+    log("creature assembled")
+
+
+# =============================================================================
+# Environment: shaft wall, a masonry ledge and a lantern
+# =============================================================================
+LANTERN = {}
+
+
+def build_env():
+    npx, nz = int(640 * args.wall_res), int(690 * args.wall_res)
+    px = np.linspace(-27, 27, npx)
+    zz = np.linspace(-14, 44, nz)
+    PX, ZZ = np.meshgrid(px, zz, indexing="ij")
+    d, mrand, joint, broken = wall_info(PX.ravel(), ZZ.ravel())
+    phi = PX.ravel() / R_SHAFT
+    r = R_SHAFT - d
+    P = np.stack([r * np.sin(phi), -R_SHAFT + r * np.cos(phi), ZZ.ravel()], -1)
+    idx = np.arange(npx * nz).reshape(npx, nz)
+    quads = np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4)
+    ENV["Rock"].add(P, quads, uv=np.stack([PX.ravel(), ZZ.ravel()], -1) / 4.0, m=mrand, g=joint, d=broken)
+    # ledge of Lanternwright masonry below the creature
+    for j, pxx in enumerate(np.arange(1.5, 13.5, 1.12)):
+        zb = -1.25 + rng.uniform(-0.05, 0.05)
+        ph_ = pxx / R_SHAFT
+        tng = np.array([math.cos(ph_), -math.sin(ph_), 0.0])
+        nin = np.array([-math.sin(ph_), -math.cos(ph_), 0.0])
+        c = wall_point(pxx, zb, 0.55)[0]
+        bm = stone_bm((1.05, 1.6, 0.48), chamfer=0.1, wear=0.03, chips=rng.randint(2, 5), subdiv=1)
+        bm_xf(bm, mat4(tng, nin, UP, c))
+        ENV["Masonry"].add_bm(bm)
+    # bracket + lantern
+    pl = 6.3
+    c = wall_point(pl, -0.98, 0.95)[0]
+    ph_ = pl / R_SHAFT
+    tng = np.array([math.cos(ph_), -math.sin(ph_), 0.0])
+    nin = np.array([-math.sin(ph_), -math.cos(ph_), 0.0])
+    for j in range(6):
+        a = 2 * math.pi * j / 6
+        dr = math.cos(a) * tng + math.sin(a) * nin
+        ENV["Iron"].add_tube(np.array([c + dr * 0.13, c + dr * 0.15 + UP * 0.22, c + dr * 0.12 + UP * 0.44]), 0.012, sides=4)
+    for h in (0.0, 0.44):
+        ring = c + UP * h + 0.14 * (np.cos(np.linspace(0, 2 * math.pi, 18))[:, None] * tng + np.sin(np.linspace(0, 2 * math.pi, 18))[:, None] * nin)
+        ENV["Iron"].add_tube(ring, 0.02, sides=6, cap0=False, cap1=False)
+    V, F = blob(c + UP * 0.22, basis_axes(tng, nin, UP, 0.085, 0.085, 0.14), sub=3, amp=0.05)
+    ENV["Glow"].add(V, F)
+    LANTERN["pos"] = c + UP * 0.22
+    # wet run-off: slime and oil-blood sheeting down the ashlar under the body, pooling on the ledge
+    for j in range(16):
+        s_ = rng.uniform(1.5, 13.0)
+        O, T, D, S = spine_frame(s_)
+        pxx, zt, _ = wall_coords(O)
+        pxx += rng.uniform(-1.6, 1.6)
+        zt += rng.uniform(-1.0, 0.5)
+        L = rng.uniform(1.5, 6.0)
+        n_ = 40
+        zs = zt - np.linspace(0, L, n_)
+        xs = pxx + np.cumsum(np.r_[0, [rng.uniform(-0.02, 0.02) for _ in range(n_ - 1)]])
+        Cw = wall_point(xs, zs, 0.0, disp=True)
+        ph2 = xs / R_SHAFT
+        tg = np.stack([np.cos(ph2), -np.sin(ph2), np.zeros_like(ph2)], -1)
+        nn = np.stack([-np.sin(ph2), -np.cos(ph2), np.zeros_like(ph2)], -1)
+        t = np.linspace(0, 1, n_)
+        wv = rng.uniform(0.04, 0.14) * (1 - 0.6 * t) * (0.7 + 0.3 * np.sin(t * 13.0 + j) ** 2)
+        Cw = Cw + nn * 0.006
+        V = np.vstack([Cw - tg * wv[:, None], Cw + tg * wv[:, None]])
+        F = np.array([[i, i + 1, n_ + i + 1, n_ + i] for i in range(n_ - 1)])
+        ENV["Puddle"].add(V, F, m=float(j % 3 == 0))
+    for (pxx, rr) in ((4.2, 0.9), (7.6, 0.55), (9.3, 0.35)):
+        cpt = wall_point(pxx, -1.25 + 0.245, 0.62)[0]
+        ph_ = pxx / R_SHAFT
+        tng = np.array([math.cos(ph_), -math.sin(ph_), 0.0])
+        nin = np.array([-math.sin(ph_), -math.cos(ph_), 0.0])
+        th = np.linspace(0, 2 * math.pi, 40, endpoint=False)
+        rad_ = rr * (1 + 0.25 * NZ.fbm(np.stack([np.cos(th), np.sin(th), np.zeros_like(th)], -1) * 1.5 + pxx, 2))
+        ring = cpt + (np.cos(th)[:, None] * tng * 1.3 + np.sin(th)[:, None] * nin * 0.5) * rad_[:, None]
+        V = np.vstack([cpt[None], ring])
+        F = [[0, 1 + i, 1 + (i + 1) % 40] for i in range(40)]
+        ENV["Puddle"].add(V, F, m=1.0)
+    # a living climber out in the shaft, for scale (full shot)
+    fcv = [float(x) for x in args.fullcam.split(",")]
+    fcam, ftgt = np.array(fcv[0:3]), np.array(fcv[3:6])
+    fdir = nrm(ftgt - fcam)
+    fright = nrm(np.cross(fdir, UP))
+    cl = fcam + (CROWN["C"] - fcam) * args.climber_at + fright * args.climber_side + DOWN * 2.0
+    lamp, fwd = build_climber(cl, CROWN["C"])
+    LANTERN["climber"] = (lamp, fwd)
+
+
+# =============================================================================
+# Materials (render-time procedural; Cycles)
+# =============================================================================
+class NT:
+    def __init__(self, mat):
+        self.mat = mat
+        self.nt = mat.node_tree
+        for n in list(self.nt.nodes):
+            self.nt.nodes.remove(n)
+        self.out = self.nt.nodes.new("ShaderNodeOutputMaterial")
+        self.bsdf = self.nt.nodes.new("ShaderNodeBsdfPrincipled")
+        self.nt.links.new(self.bsdf.outputs[0], self.out.inputs["Surface"])
+        try:
+            self.bsdf.subsurface_method = "BURLEY"
+        except Exception:
+            pass
+
+    def set(self, sock, v):
+        if isinstance(v, bpy.types.NodeSocket):
+            self.nt.links.new(v, sock)
+        else:
+            if isinstance(v, (tuple, list)) and len(v) == 3 and sock.type == "RGBA":
+                v = (*v, 1.0)
+            sock.default_value = v
+
+    def n(self, typ, inputs=None, **props):
+        node = self.nt.nodes.new(typ)
+        for k, v in props.items():
+            setattr(node, k, v)
+        for k, v in (inputs or {}).items():
+            self.set(node.inputs[k], v)
+        return node
+
+    def coord(self, kind="Object"):
+        return self.n("ShaderNodeTexCoord").outputs[kind]
+
+    def noise(self, vec, scale, detail=4.0, rough=0.55, distortion=0.0):
+        nd = self.n("ShaderNodeTexNoise", {"Scale": scale, "Detail": detail, "Roughness": rough, "Distortion": distortion})
+        if vec is not None:
+            self.set(nd.inputs["Vector"], vec)
+        return nd.outputs[0], nd.outputs[1]
+
+    def voronoi(self, vec, scale, feature="F1", rand=1.0):
+        nd = self.n("ShaderNodeTexVoronoi", {"Scale": scale, "Randomness": rand}, feature=feature)
+        if vec is not None:
+            self.set(nd.inputs["Vector"], vec)
+        return nd.outputs["Distance"], nd.outputs.get("Color")
+
+    def wave(self, vec, scale, distortion=4.0, bands="BANDS", direction="X"):
+        nd = self.n("ShaderNodeTexWave", {"Scale": scale, "Distortion": distortion, "Detail": 3.0},
+                    wave_type=bands)
+        try:
+            nd.bands_direction = direction
+        except Exception:
+            pass
+        if vec is not None:
+            self.set(nd.inputs["Vector"], vec)
+        return nd.outputs[1]
+
+    def ramp(self, fac, stops):
+        nd = self.n("ShaderNodeValToRGB")
+        cr = nd.color_ramp
+        cr.elements[0].position = stops[0][0]
+        cr.elements[1].position = stops[-1][0]
+        els = [cr.elements[0]]
+        for pos, _ in stops[1:-1]:
+            els.append(cr.elements.new(pos))
+        els.append(cr.elements[len(cr.elements) - 1])
+        for el, (pos, col) in zip(els, stops):
+            el.color = col if len(col) == 4 else (*col, 1.0)
+        self.set(nd.inputs[0], fac)
+        return nd.outputs[0]
+
+    def mix(self, fac, a, b, blend="MIX"):
+        nd = self.n("ShaderNodeMix", data_type="RGBA", blend_type=blend)
+        self.set(nd.inputs[0], fac)
+        self.set(nd.inputs[6], a)
+        self.set(nd.inputs[7], b)
+        return nd.outputs[2]
+
+    def math(self, op, a, b=0.0, clamp=False):
+        nd = self.n("ShaderNodeMath", operation=op, use_clamp=clamp)
+        self.set(nd.inputs[0], a)
+        self.set(nd.inputs[1], b)
+        return nd.outputs[0]
+
+    def maprange(self, v, a, b, c=0.0, d=1.0, clamp=True):
+        nd = self.n("ShaderNodeMapRange", clamp=clamp)
+        self.set(nd.inputs["Value"], v)
+        nd.inputs["From Min"].default_value = a
+        nd.inputs["From Max"].default_value = b
+        nd.inputs["To Min"].default_value = c
+        nd.inputs["To Max"].default_value = d
+        return nd.outputs["Result"]
+
+    def vadd(self, a, b, scale=None):
+        if scale is not None:
+            nd = self.n("ShaderNodeVectorMath", operation="SCALE")
+            self.set(nd.inputs[0], b)
+            nd.inputs["Scale"].default_value = scale
+            b = nd.outputs[0]
+        nd = self.n("ShaderNodeVectorMath", operation="ADD")
+        self.set(nd.inputs[0], a)
+        self.set(nd.inputs[1], b)
+        return nd.outputs[0]
+
+    def vscale(self, a, sx, sy, sz):
+        nd = self.n("ShaderNodeVectorMath", operation="MULTIPLY")
+        self.set(nd.inputs[0], a)
+        nd.inputs[1].default_value = (sx, sy, sz)
+        return nd.outputs[0]
+
+    def bump(self, h, strength, dist, normal=None):
+        nd = self.n("ShaderNodeBump", {"Strength": strength, "Distance": dist})
+        self.set(nd.inputs["Height"], h)
+        if normal is not None:
+            self.set(nd.inputs["Normal"], normal)
+        return nd.outputs["Normal"]
+
+    def attr(self, name="m"):
+        return self.n("ShaderNodeAttribute", attribute_name=name).outputs["Fac"]
+
+    def geo(self, out):
+        return self.n("ShaderNodeNewGeometry").outputs[out]
+
+    def pulse(self, period=3.1, phase=0.0, floor=0.22):
+        """Ember pulse bands along the spine (in game: phase -= speed * time, so they crawl head-ward)."""
+        sa = self.attr("spine_s")
+        x = self.math("ADD", self.math("MULTIPLY", sa, 2 * math.pi / period), phase)
+        c = self.math("ADD", self.math("MULTIPLY", self.math("COSINE", x), 0.5), 0.5)
+        c = self.math("POWER", c, 3.0)
+        band = self.math("ADD", self.math("MULTIPLY", c, 1.0 - floor), floor)
+        head = self.maprange(sa, 0.0, 29.0, 1.35, 0.45)
+        return self.math("MULTIPLY", band, head)
+
+    def p(self, **kw):
+        names = {"base": "Base Color", "metal": "Metallic", "rough": "Roughness", "ssw": "Subsurface Weight",
+                 "ssr": "Subsurface Radius", "sss": "Subsurface Scale", "coat": "Coat Weight",
+                 "coat_rough": "Coat Roughness", "emc": "Emission Color", "ems": "Emission Strength",
+                 "normal": "Normal", "coat_normal": "Coat Normal", "trans": "Transmission Weight", "ior": "IOR",
+                 "spec": "Specular IOR Level", "sheen": "Sheen Weight", "sheen_tint": "Sheen Tint"}
+        for k, v in kw.items():
+            self.set(self.bsdf.inputs[names[k]], v)
+
+
+EMBER = (1.0, 0.3, 0.06)
+
+
+def mat_stone(name="M_Stone", tint=(1.0, 1.0, 1.0), wet=0.6, value=1.0, carved=False):
+    """Soot-blackened Lanternwright ashlar: large per-block value swings, worn pale arrises, black grime in the
+    crevices, gravity-aligned soot and water streaks (glossy where wet), sparse hairline cracks, fine grit.
+    No dot speckle. `carved`: the attribute m marks wet tooth-tips on the tracery mullions."""
+    m = bpy.data.materials.new(name)
+    g = NT(m)
+    co = g.coord("Object")
+    _, wn = g.noise(co, 0.45, 2.0)
+    cw = g.vadd(co, wn, 0.3)
+    n1, _ = g.noise(cw, 0.8, 6.0, 0.6)
+    n2, _ = g.noise(cw, 4.2, 6.0, 0.6)
+    n3, _ = g.noise(cw, 15.0, 4.0, 0.55)
+    n4, _ = g.noise(co, 85.0, 2.0, 0.5)
+    v = value * 0.72
+    base = g.ramp(n1, [(0.28, (0.016 * v, 0.0155 * v, 0.015 * v)), (0.48, (0.034 * v, 0.032 * v, 0.03 * v)),
+                       (0.66, (0.058 * v, 0.054 * v, 0.049 * v)), (0.84, (0.085 * v, 0.078 * v, 0.07 * v))])
+    base = g.mix(g.maprange(n2, 0.35, 0.7, 0.0, 0.35), base, (0.09 * v, 0.085 * v, 0.078 * v, 1.0))
+    isl = g.geo("Random Per Island")
+    itint = g.ramp(isl, [(0.0, (0.4, 0.4, 0.42)), (0.3, (0.62, 0.61, 0.6)), (0.65, (0.85, 0.82, 0.78)),
+                         (0.9, (1.15, 1.1, 1.02)), (1.0, (1.35, 1.27, 1.15))])
+    base = g.mix(1.0, base, itint, "MULTIPLY")
+    base = g.mix(1.0, base, (tint[0], tint[1], tint[2], 1.0), "MULTIPLY")
+    # curvature: worn pale arrises, grime-black crevices
+    pt = g.geo("Pointiness")
+    edge = g.maprange(pt, 0.515, 0.6, 0.0, 1.0)
+    cav = g.maprange(pt, 0.42, 0.495, 1.0, 0.0)
+    wearn = g.maprange(n3, 0.4, 0.62, 0.3, 1.0)
+    base = g.mix(g.math("MULTIPLY", edge, wearn), base, (0.15 * v, 0.14 * v, 0.125 * v, 1.0))
+    base = g.mix(g.math("MULTIPLY", cav, 0.85), base, (0.004, 0.0035, 0.003, 1.0))
+    # gravity streaks (world Z): soot/water runs (dark, wet) and rare pale mineral efflorescence
+    st = g.vscale(co, 5.0, 5.0, 0.22)
+    sn, _ = g.noise(st, 1.0, 4.0, 0.6)
+    streak = g.maprange(sn, 0.52, 0.74, 0.0, 1.0)
+    base = g.mix(g.math("MULTIPLY", streak, 0.7), base, (0.006, 0.0055, 0.005, 1.0))
+    st2 = g.vscale(co, 3.0, 3.0, 0.15)
+    en, _ = g.noise(st2, 1.3, 3.0, 0.5)
+    eff = g.math("MULTIPLY", g.maprange(en, 0.68, 0.8, 0.0, 0.55), g.maprange(n2, 0.4, 0.6, 0.2, 1.0))
+    base = g.mix(eff, base, (0.16, 0.155, 0.145, 1.0))
+    # sparse hairline cracks
+    _, wn2 = g.noise(co, 3.0, 3.0)
+    cw2 = g.vadd(co, wn2, 0.1)
+    vd, _ = g.voronoi(cw2, 2.2, "DISTANCE_TO_EDGE")
+    crack = g.maprange(vd, 0.0, 0.006, 1.0, 0.0)
+    cm, _ = g.noise(co, 0.8, 2.0)
+    crack = g.math("MULTIPLY", crack, g.maprange(cm, 0.5, 0.6, 0.0, 1.0))
+    base = g.mix(crack, base, (0.002, 0.002, 0.002, 1.0))
+    # old blood soaked into the porous stone where it meets flesh
+    bn, _ = g.noise(co, 1.6, 5.0, 0.7)
+    blood = g.maprange(bn, 0.63, 0.76, 0.0, 0.7)
+    base = g.mix(blood, base, (0.03, 0.004, 0.003, 1.0))
+    wetf = g.math("MULTIPLY", streak, wet)
+    if carved:
+        tipw = g.attr("m")
+        base = g.mix(g.math("MULTIPLY", tipw, 0.6), base, (0.05, 0.035, 0.025, 1.0))
+        wetf = g.math("MAXIMUM", wetf, tipw)
+    rough = g.maprange(n2, 0.3, 0.7, 0.72, 0.95)
+    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", wetf, 0.45))
+    pk, _ = g.voronoi(cw, 7.0, "F1")
+    pock = g.math("MULTIPLY", g.maprange(pk, 0.0, 0.32, 1.0, 0.0), g.maprange(n2, 0.42, 0.62, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", pock, 0.6), base, (0.008, 0.0075, 0.007, 1.0))
+    h = g.math("ADD", g.math("MULTIPLY", n2, 0.55), g.math("MULTIPLY", n3, 0.3))
+    h = g.math("ADD", h, g.math("MULTIPLY", n4, 0.12))
+    h = g.math("SUBTRACT", h, g.math("MULTIPLY", crack, 0.9))
+    h = g.math("SUBTRACT", h, g.math("MULTIPLY", pock, 0.45))
+    h = g.math("ADD", h, g.math("MULTIPLY", n1, 1.2))
+    nrmv = g.bump(h, 1.0, 0.04)
+    _, cnz = g.noise(co, 30.0, 2.0)
+    g.p(base=base, rough=rough, normal=nrmv, coat=g.math("MULTIPLY", wetf, 0.9), coat_rough=0.06,
+        coat_normal=g.bump(n4, 0.2, 0.004), spec=0.45)
+    return m
+
+
+def mat_flesh(name="M_Flesh", dark=False, glowmul=1.0, gum=False):
+    """Wet bruised tissue: maroon / grey-pink / liver purple; saturated red only in fresh wounds (attr m);
+    heavy clear coat with a broken-up coat normal so it glistens; red-dominant SSS so thin edges glow."""
+    m = bpy.data.materials.new(name)
+    g = NT(m)
+    co = g.coord("Object")
+    _, wn = g.noise(co, 2.0, 2.0)
+    cw = g.vadd(co, wn, 0.15)
+    n1, _ = g.noise(cw, 3.2, 6.0, 0.6)
+    n2, _ = g.noise(cw, 13.0, 4.0, 0.6)
+    n5, _ = g.noise(co, 1.1, 3.0, 0.5)
+    vd, _ = g.voronoi(cw, 5.0, "DISTANCE_TO_EDGE")
+    vmask, _ = g.noise(co, 1.8, 3.0)
+    vein = g.math("MULTIPLY", g.maprange(vd, 0.0, 0.022, 1.0, 0.0), g.maprange(vmask, 0.48, 0.62, 0.0, 1.0))
+    depthd = g.attr("aux")
+    if gum:
+        base = g.ramp(n1, [(0.3, (0.012, 0.004, 0.006)), (0.55, (0.03, 0.011, 0.015)), (0.75, (0.055, 0.026, 0.03)),
+                           (0.92, (0.085, 0.052, 0.052))])
+    elif dark:
+        base = g.ramp(n1, [(0.3, (0.012, 0.002, 0.005)), (0.6, (0.04, 0.008, 0.014)), (0.82, (0.085, 0.025, 0.03))])
+    else:
+        base = g.ramp(n1, [(0.25, (0.018, 0.007, 0.011)), (0.45, (0.042, 0.017, 0.022)), (0.62, (0.068, 0.04, 0.043)),
+                           (0.8, (0.098, 0.07, 0.068)), (0.95, (0.125, 0.1, 0.092))])
+        bruise = g.maprange(n5, 0.5, 0.68, 0.0, 0.75)
+        base = g.mix(bruise, base, (0.022, 0.009, 0.024, 1.0))
+    wound = g.math("MULTIPLY", g.maprange(g.attr("m"), 0.45, 1.0, 0.0, 1.0), g.maprange(n2, 0.3, 0.6, 0.4, 1.0))
+    base = g.mix(g.math("MULTIPLY", wound, 0.85), base, (0.2, 0.012, 0.01, 1.0))
+    base = g.mix(g.math("MULTIPLY", vein, 0.6), base, (0.025, 0.004, 0.02, 1.0))
+    base = g.mix(g.math("POWER", depthd, 0.6), base, (0.002, 0.0006, 0.0008, 1.0))
+    glow = g.attr("glow")
+    gn, _ = g.noise(co, 2.5, 3.0)
+    gl = g.math("MULTIPLY", g.math("MULTIPLY", g.math("MULTIPLY", glow, g.maprange(gn, 0.45, 0.7, 0.0, 1.0)), vein),
+                g.pulse())
+    h = g.math("ADD", n1, g.math("MULTIPLY", n2, 0.4))
+    h = g.math("ADD", h, g.math("MULTIPLY", vein, 0.35))
+    nrmv = g.bump(h, 0.5, 0.02)
+    cn, _ = g.noise(co, 38.0, 3.0, 0.6)
+    g.p(base=base, rough=0.42, ssw=0.35 if not gum else 0.25, ssr=(0.8, 0.32, 0.26),
+        sss=0.01 if (dark or gum) else 0.025, coat=0.9, coat_rough=0.045, normal=nrmv,
+        coat_normal=g.bump(g.math("ADD", n2, g.math("MULTIPLY", cn, 0.5)), 0.25, 0.006), emc=(1.0, 0.09, 0.03),
+        ems=g.math("MULTIPLY", gl, 0.7 * glowmul), spec=0.55)
+    return m
+
+
+def mat_tendon():
+    m = bpy.data.materials.new("M_Tendon")
+    g = NT(m)
+    uv = g.coord("UV")
+    stri = g.wave(g.vscale(uv, 40.0, 0.4, 1.0), 1.0, 6.0, "BANDS", "X")
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 4.0, 4.0)
+    base = g.ramp(n1, [(0.3, (0.07, 0.03, 0.03)), (0.55, (0.17, 0.11, 0.09)), (0.78, (0.26, 0.2, 0.15))])
+    base = g.mix(g.math("MULTIPLY", stri, 0.35), base, (0.08, 0.018, 0.02, 1.0))
+    nrmv = g.bump(stri, 0.35, 0.006)
+    g.p(base=base, rough=0.35, ssw=0.7, ssr=(1.0, 0.3, 0.18), sss=0.015, coat=0.85, coat_rough=0.05, normal=nrmv,
+        coat_normal=g.bump(n1, 0.1, 0.004))
+    return m
+
+
+def mat_bone():
+    m = bpy.data.materials.new("M_Bone")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 3.0, 6.0, 0.6)
+    vd, _ = g.voronoi(co, 40.0, "F1")
+    pores = g.maprange(vd, 0.0, 0.15, 1.0, 0.0)
+    base = g.ramp(n1, [(0.3, (0.035, 0.028, 0.021)), (0.55, (0.085, 0.07, 0.052)), (0.78, (0.15, 0.125, 0.092))])
+    pt = g.geo("Pointiness")
+    cav = g.ramp(pt, [(0.44, (0.25, 0.18, 0.14)), (0.5, (1, 1, 1))])
+    base = g.mix(1.0, base, cav, "MULTIPLY")
+    sn, _ = g.noise(g.vscale(co, 6.0, 6.0, 0.3), 1.0, 3.0)
+    base = g.mix(g.maprange(sn, 0.5, 0.7, 0.0, 0.7), base, (0.02, 0.012, 0.008, 1.0))
+    al = g.attr("m")
+    ends = g.math("MAXIMUM", g.maprange(al, 0.0, 0.1, 1.0, 0.0), g.maprange(al, 0.92, 1.0, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", ends, 0.75), base, (0.07, 0.01, 0.008, 1.0))
+    nrmv = g.bump(g.math("ADD", n1, g.math("MULTIPLY", pores, -0.3)), 0.4, 0.01)
+    g.p(base=base, rough=0.5, ssw=0.2, ssr=(0.9, 0.45, 0.3), sss=0.01, coat=0.35, coat_rough=0.12, normal=nrmv)
+    return m
+
+
+def mat_iron():
+    """Near-black corroded iron: flaking dark rust scale, heat tint where torn (attr glow)."""
+    m = bpy.data.materials.new("M_Rust")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 5.0, 8.0, 0.65)
+    n2, _ = g.noise(co, 25.0, 4.0, 0.6)
+    vd, _ = g.voronoi(co, 22.0, "DISTANCE_TO_EDGE")
+    rust = g.maprange(n1, 0.36, 0.52, 0.0, 1.0)
+    al = g.attr("m")
+    tip = g.maprange(al, 0.8, 0.98, 0.0, 1.0)
+    rust = g.math("MULTIPLY", rust, g.math("SUBTRACT", 1.0, tip))
+    rc = g.ramp(n2, [(0.3, (0.018, 0.008, 0.005)), (0.55, (0.055, 0.02, 0.009)), (0.8, (0.1, 0.04, 0.016))])
+    flake = g.maprange(vd, 0.0, 0.05, 1.0, 0.0)
+    rc = g.mix(g.math("MULTIPLY", flake, 0.6), rc, (0.006, 0.004, 0.003, 1.0))
+    base = g.mix(rust, (0.028, 0.027, 0.028, 1.0), rc)
+    heat = g.attr("glow")
+    hn = g.math("ADD", heat, g.math("MULTIPLY", g.math("SUBTRACT", n2, 0.5), 0.25))
+    tintc = g.ramp(hn, [(0.05, (0.03, 0.028, 0.03)), (0.3, (0.16, 0.11, 0.045)), (0.5, (0.09, 0.03, 0.09)),
+                        (0.68, (0.025, 0.045, 0.11)), (0.88, (0.1, 0.02, 0.01))])
+    hm = g.maprange(heat, 0.05, 0.25, 0.0, 1.0)
+    base = g.mix(g.math("MULTIPLY", hm, g.math("SUBTRACT", 1.0, g.math("MULTIPLY", rust, 0.7))), base, tintc)
+    metal = g.math("MULTIPLY", g.math("SUBTRACT", 1.0, rust), 0.85)
+    rough = g.mix(rust, (0.42, 0.42, 0.42, 1.0), (0.9, 0.9, 0.9, 1.0))
+    h = g.math("ADD", g.math("MULTIPLY", n2, 0.5), g.math("MULTIPLY", flake, 0.4))
+    h = g.math("MULTIPLY", h, rust)
+    g.p(base=base, metal=metal, rough=rough, normal=g.bump(h, 0.7, 0.008), emc=(1.0, 0.12, 0.02),
+        ems=g.math("MULTIPLY", g.maprange(heat, 0.92, 1.0, 0.0, 1.0), 0.6))
+    return m
+
+
+def mat_teeth():
+    """Stained, wet teeth: yellow-brown roots, dirty ivory tips, crazing; darker the deeper in the throat (aux)."""
+    m = bpy.data.materials.new("M_Teeth")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 9.0, 5.0)
+    n2, _ = g.noise(co, 2.2, 4.0)
+    al = g.attr("m")
+    base = g.ramp(al, [(0.0, (0.02, 0.006, 0.004)), (0.14, (0.07, 0.035, 0.015)), (0.4, (0.17, 0.12, 0.06)),
+                       (0.75, (0.3, 0.26, 0.18)), (1.0, (0.36, 0.33, 0.26))])
+    stain = g.maprange(n2, 0.45, 0.7, 0.0, 0.7)
+    base = g.mix(stain, base, (0.1, 0.065, 0.025, 1.0))
+    base = g.mix(g.math("MULTIPLY", n1, 0.3), base, (0.05, 0.04, 0.03, 1.0))
+    vd, _ = g.voronoi(co, 26.0, "DISTANCE_TO_EDGE")
+    craze = g.maprange(vd, 0.0, 0.03, 1.0, 0.0)
+    base = g.mix(g.math("MULTIPLY", craze, 0.5), base, (0.03, 0.02, 0.012, 1.0))
+    base = g.mix(g.math("MULTIPLY", g.attr("aux"), 0.8), base, (0.008, 0.004, 0.003, 1.0))
+    g.p(base=base, rough=g.maprange(al, 0.0, 1.0, 0.55, 0.3), coat=g.maprange(al, 0.0, 0.5, 0.5, 0.95), coat_rough=0.05,
+        ssw=g.maprange(al, 0.5, 1.0, 0.0, 0.3), ssr=(0.9, 0.7, 0.5), sss=0.008,
+        normal=g.bump(g.math("ADD", n1, g.math("MULTIPLY", craze, -0.4)), 0.4, 0.004))
+    return m
+
+
+def mat_iron_tooth():
+    m = bpy.data.materials.new("M_IronTooth")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 14.0, 6.0, 0.6)
+    al = g.attr("m")
+    rust = g.maprange(n1, 0.5, 0.66, 0.0, 1.0)
+    rust = g.math("MULTIPLY", rust, g.maprange(al, 0.0, 0.6, 1.0, 0.0))
+    base = g.mix(rust, (0.012, 0.011, 0.012, 1.0), (0.06, 0.022, 0.009, 1.0))
+    base = g.mix(g.maprange(al, 0.0, 0.2, 0.8, 0.0), base, (0.03, 0.003, 0.003, 1.0))
+    g.p(base=base, metal=g.math("SUBTRACT", 0.85, rust), rough=g.maprange(al, 0.0, 1.0, 0.7, 0.3), coat=0.7,
+        coat_rough=0.06, normal=g.bump(n1, 0.5, 0.004))
+    return m
+
+
+def mat_ember(strength=22.0, name="M_Ember"):
+    m = bpy.data.materials.new(name)
+    g = NT(m)
+    co = g.coord("Object")
+    vd2, _ = g.voronoi(co, 18.0, "DISTANCE_TO_EDGE")
+    n1, _ = g.noise(co, 6.0, 4.0)
+    core = g.ramp(n1, [(0.3, (0.55, 0.05, 0.005)), (0.55, (1.0, 0.26, 0.04)), (0.75, (1.0, 0.55, 0.18))])
+    crust = g.maprange(vd2, 0.0, 0.06, 0.0, 1.0)
+    emc = g.mix(crust, (0.0, 0.0, 0.0, 1.0), core)
+    gl = g.attr("glow")
+    g.p(base=(0.02, 0.008, 0.006), rough=0.6, emc=emc, ems=g.math("MULTIPLY", g.math("MAXIMUM", gl, 0.0), strength))
+    return m
+
+
+def mat_frond():
+    """Pale bone-white / grey translucent fronds; faintly flushed tips."""
+    m = bpy.data.materials.new("M_Frond")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 12.0, 4.0)
+    al = g.attr("m")
+    base = g.ramp(n1, [(0.3, (0.36, 0.34, 0.31)), (0.6, (0.5, 0.48, 0.44)), (0.85, (0.6, 0.58, 0.53))])
+    base = g.mix(g.maprange(al, 0.0, 0.15, 1.0, 0.0), base, (0.1, 0.03, 0.035, 1.0))
+    base = g.mix(g.maprange(al, 0.75, 1.0, 0.0, 0.4), base, (0.5, 0.3, 0.28, 1.0))
+    g.p(base=base, rough=0.38, ssw=1.0, ssr=(1.0, 0.7, 0.55), sss=0.03, coat=0.85, coat_rough=0.05,
+        normal=g.bump(n1, 0.25, 0.003))
+    tr = g.n("ShaderNodeBsdfTranslucent")
+    tr.inputs["Color"].default_value = (0.75, 0.6, 0.5, 1.0)
+    ms = g.n("ShaderNodeMixShader")
+    ms.inputs[0].default_value = 0.3
+    g.nt.links.new(g.bsdf.outputs[0], ms.inputs[1])
+    g.nt.links.new(tr.outputs[0], ms.inputs[2])
+    g.nt.links.new(ms.outputs[0], g.out.inputs["Surface"])
+    return m
+
+
+def mat_bronze():
+    m = bpy.data.materials.new("M_Bronze")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 3.0, 6.0, 0.6)
+    n2, _ = g.noise(co, 18.0, 4.0)
+    ver = g.maprange(n1, 0.4, 0.6, 0.0, 1.0)
+    base = g.mix(ver, (0.06, 0.035, 0.017, 1.0), (0.025, 0.045, 0.035, 1.0))
+    base = g.mix(g.maprange(n2, 0.55, 0.75, 0.0, 0.7), base, (0.01, 0.008, 0.007, 1.0))
+    g.p(base=base, metal=g.maprange(ver, 0.0, 1.0, 0.6, 0.0), rough=g.maprange(ver, 0.0, 1.0, 0.45, 0.9),
+        normal=g.bump(g.math("ADD", n2, n1), 0.5, 0.01))
+    return m
+
+
+def mat_mucus():
+    m = bpy.data.materials.new("M_Mucus")
+    g = NT(m)
+    g.p(base=(0.22, 0.19, 0.14), rough=0.05, trans=0.8, ior=1.38, coat=1.0, coat_rough=0.02)
+    return m
+
+
+def mat_vein():
+    m = bpy.data.materials.new("M_Vein")
+    g = NT(m)
+    gl = g.math("MULTIPLY", g.attr("glow"), g.pulse())
+    g.p(base=(0.03, 0.006, 0.02), rough=0.3, coat=0.9, coat_rough=0.05, ssw=0.5, ssr=(0.8, 0.2, 0.3), sss=0.01,
+        emc=(1.0, 0.08, 0.03), ems=g.math("MULTIPLY", gl, 1.2))
+    return m
+
+
+def mat_seam():
+    """Bioluminescent seepage along fractures: dim, deep red, pulsing head-ward; never brighter than the throat."""
+    m = bpy.data.materials.new("M_Seam")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 3.0, 3.0)
+    flick = g.maprange(n1, 0.4, 0.72, 0.0, 1.0)
+    gl = g.math("MULTIPLY", g.math("MULTIPLY", g.attr("glow"), g.pulse()), flick)
+    emc = g.ramp(gl, [(0.0, (0.35, 0.01, 0.01)), (0.6, (0.75, 0.05, 0.02)), (1.0, (1.0, 0.16, 0.04))])
+    g.p(base=(0.02, 0.004, 0.004), rough=0.4, coat=0.8, coat_rough=0.08, emc=emc, ems=g.math("MULTIPLY", gl, 1.8))
+    return m
+
+
+def mat_glass():
+    m = bpy.data.materials.new("M_StainedGlass")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 9.0, 4.0)
+    g.p(base=g.mix(g.maprange(n1, 0.3, 0.7, 0.0, 1.0), (0.015, 0.012, 0.01, 1.0), (0.05, 0.02, 0.012, 1.0)),
+        rough=0.25, coat=0.6, coat_rough=0.2, emc=(0.6, 0.12, 0.04), ems=g.math("MULTIPLY", g.attr("glow"), 0.6))
+    return m
+
+
+def mat_rope():
+    m = bpy.data.materials.new("M_Rope")
+    g = NT(m)
+    uv = g.coord("UV")
+    tw = g.n("ShaderNodeVectorMath", operation="DOT_PRODUCT")
+    g.set(tw.inputs[0], uv)
+    tw.inputs[1].default_value = (1.0, 9.0, 0.0)
+    band = g.wave(g.vscale(tw.outputs["Value"], 1.0, 1.0, 1.0), 3.0, 1.5, "BANDS", "X")
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 30.0, 6.0, 0.7)
+    base = g.ramp(n1, [(0.3, (0.12, 0.085, 0.05)), (0.6, (0.3, 0.22, 0.13)), (0.8, (0.42, 0.33, 0.2))])
+    base = g.mix(g.math("MULTIPLY", band, 0.5), base, (0.06, 0.04, 0.025, 1.0))
+    bl = g.maprange(g.attr("m"), 0.0, 0.3, 0.8, 0.0)
+    base = g.mix(bl, base, (0.09, 0.01, 0.008, 1.0))
+    g.p(base=base, rough=0.92, sheen=0.4, normal=g.bump(g.math("ADD", band, g.math("MULTIPLY", n1, 0.4)), 0.6, 0.01))
+    return m
+
+
+def mat_oil():
+    m = bpy.data.materials.new("M_OilBlood")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 6.0, 4.0)
+    base = g.ramp(n1, [(0.3, (0.008, 0.0015, 0.0015)), (0.7, (0.035, 0.005, 0.004))])
+    g.p(base=base, rough=0.1, coat=1.0, coat_rough=0.02, spec=0.6)
+    return m
+
+
+def mat_membrane():
+    """Thin, pale grey-yellow translucent membrane with dark vessels; glows dully when backlit."""
+    m = bpy.data.materials.new("M_Membrane")
+    g = NT(m)
+    co = g.coord("Object")
+    vd, _ = g.voronoi(co, 3.4, "DISTANCE_TO_EDGE")
+    vd2, _ = g.voronoi(co, 11.0, "DISTANCE_TO_EDGE")
+    vein = g.math("MAXIMUM", g.maprange(vd, 0.0, 0.04, 1.0, 0.0), g.maprange(vd2, 0.0, 0.025, 0.6, 0.0))
+    bl, _ = g.noise(co, 2.0, 5.0, 0.6)
+    base = g.mix(g.maprange(bl, 0.3, 0.7, 0.0, 1.0), (0.2, 0.17, 0.12, 1.0), (0.36, 0.32, 0.23, 1.0))
+    base = g.mix(vein, base, (0.06, 0.012, 0.015, 1.0))
+    g.p(base=base, rough=0.3, ssw=0.6, ssr=(1.0, 0.5, 0.3), sss=0.02, coat=1.0, coat_rough=0.04,
+        normal=g.bump(g.math("ADD", bl, vein), 0.3, 0.012))
+    tr = g.n("ShaderNodeBsdfTranslucent")
+    g.set(tr.inputs["Color"], g.mix(vein, (0.62, 0.48, 0.3, 1.0), (0.12, 0.01, 0.01, 1.0)))
+    ms = g.n("ShaderNodeMixShader")
+    ms.inputs[0].default_value = 0.45
+    g.nt.links.new(g.bsdf.outputs[0], ms.inputs[1])
+    g.nt.links.new(tr.outputs[0], ms.inputs[2])
+    g.nt.links.new(ms.outputs[0], g.out.inputs["Surface"])
+    return m
+
+
+def mat_rock():
+    """Dark wet basalt: bedding strata, a few deep fractures (from geometry), wet streaks. No crackle."""
+    m = bpy.data.materials.new("M_Rock")
+    g = NT(m)
+    co = g.coord("Object")
+    _, wn = g.noise(co, 0.25, 2.0)
+    cw = g.vadd(co, wn, 1.2)
+    n1, _ = g.noise(cw, 0.6, 8.0, 0.62)
+    n2, _ = g.noise(cw, 3.5, 6.0, 0.6)
+    n3, _ = g.noise(cw, 14.0, 4.0, 0.55)
+    st = g.vscale(co, 3.0, 3.0, 0.18)
+    sn, _ = g.noise(st, 1.0, 5.0, 0.6)
+    streak = g.maprange(sn, 0.5, 0.72, 0.0, 1.0)
+    base = g.ramp(n1, [(0.3, (0.006, 0.006, 0.007)), (0.55, (0.018, 0.017, 0.018)), (0.78, (0.04, 0.037, 0.035))])
+    # bedding strata: warped bands along z
+    strat = g.wave(g.vscale(cw, 0.25, 0.25, 1.0), 0.22, 7.0, "BANDS", "Z")
+    sband = g.maprange(strat, 0.35, 0.8, 0.0, 1.0)
+    smask, _ = g.noise(co, 0.12, 2.0)
+    sband = g.math("MULTIPLY", sband, g.maprange(smask, 0.4, 0.62, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", sband, 0.35), base, (0.05, 0.046, 0.042, 1.0))
+    base = g.mix(g.math("MULTIPLY", streak, 0.5), base, (0.03, 0.028, 0.027, 1.0))
+    pt = g.geo("Pointiness")
+    cav = g.ramp(pt, [(0.44, (0.15, 0.15, 0.15)), (0.5, (1, 1, 1)), (0.56, (1.35, 1.3, 1.25))])
+    base = g.mix(1.0, base, cav, "MULTIPLY")
+    h = g.math("ADD", g.math("MULTIPLY", n2, 0.7), g.math("MULTIPLY", n3, 0.3))
+    h = g.math("ADD", h, g.math("MULTIPLY", sband, 0.25))
+    rough = g.maprange(n2, 0.3, 0.7, 0.62, 0.92)
+    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", streak, 0.4))
+    g.p(base=base, rough=rough, spec=0.45, normal=g.bump(h, 0.7, 0.08))
+    return m
+
+
+def mat_flat_black():
+    m = bpy.data.materials.new("M_Silhouette")
+    nt = m.node_tree
+    for n in list(nt.nodes):
+        nt.nodes.remove(n)
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = (0, 0, 0, 1)
+    em.inputs["Strength"].default_value = 0.0
+    nt.links.new(em.outputs[0], out.inputs["Surface"])
+    return m
+
+
+def mat_pit():
+    """Listening-pit coal: each pit its own hue (attr m: dull blood red -> deep ember) and intensity (glow)."""
+    m = bpy.data.materials.new("M_Pit")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 14.0, 4.0)
+    col = g.ramp(g.attr("m"), [(0.0, (0.3, 0.012, 0.008)), (0.5, (0.65, 0.06, 0.018)), (1.0, (1.0, 0.2, 0.035))])
+    fl = g.maprange(n1, 0.3, 0.7, 0.45, 1.0)
+    g.p(base=(0.01, 0.003, 0.003), rough=0.4, coat=1.0, coat_rough=0.05, emc=col,
+        ems=g.math("MULTIPLY", g.math("MULTIPLY", g.attr("glow"), fl), 7.0))
+    return m
+
+
+def mat_soot():
+    m = bpy.data.materials.new("M_Soot")
+    g = NT(m)
+    g.p(base=(0.004, 0.0035, 0.003), rough=0.95, spec=0.2)
+    return m
+
+
+def mat_wall():
+    """Shaft lining: soot-dark ashlar (per-block value from attr m), black eroded joints (glow), broken-out
+    sockets (aux), wet run-off and rare pale mineral streaks, fine grit bump."""
+    m = bpy.data.materials.new("M_ShaftAshlar")
+    g = NT(m)
+    co = g.coord("Object")
+    _, wn = g.noise(co, 0.3, 2.0)
+    cw = g.vadd(co, wn, 0.8)
+    n1, _ = g.noise(cw, 0.7, 6.0, 0.6)
+    n2, _ = g.noise(cw, 3.5, 6.0, 0.6)
+    n3, _ = g.noise(cw, 14.0, 4.0, 0.55)
+    n4, _ = g.noise(co, 60.0, 2.0, 0.5)
+    blk = g.attr("m")
+    jt = g.attr("glow")
+    brk = g.attr("aux")
+    bv = g.ramp(blk, [(0.0, (0.012, 0.012, 0.013)), (0.4, (0.022, 0.021, 0.021)), (0.8, (0.035, 0.033, 0.031)),
+                      (1.0, (0.05, 0.047, 0.043))])
+    base = g.mix(1.0, bv, g.ramp(n1, [(0.2, (0.6, 0.6, 0.6)), (0.5, (1.0, 1.0, 1.0)), (0.8, (1.35, 1.3, 1.25))]),
+                 "MULTIPLY")
+    base = g.mix(g.maprange(n2, 0.35, 0.7, 0.0, 0.3), base, (0.05, 0.048, 0.045, 1.0))
+    base = g.mix(g.math("MULTIPLY", jt, 0.9), base, (0.003, 0.003, 0.003, 1.0))
+    base = g.mix(g.math("MULTIPLY", brk, 0.6), base, (0.008, 0.007, 0.006, 1.0))
+    st = g.vscale(co, 2.2, 2.2, 0.06)
+    sn, _ = g.noise(st, 1.0, 4.0, 0.6)
+    streak = g.maprange(sn, 0.5, 0.7, 0.0, 1.0)
+    base = g.mix(g.math("MULTIPLY", streak, 0.6), base, (0.005, 0.005, 0.0055, 1.0))
+    st2 = g.vscale(co, 1.6, 1.6, 0.05)
+    en, _ = g.noise(st2, 1.3, 3.0, 0.5)
+    eff = g.math("MULTIPLY", g.maprange(en, 0.7, 0.82, 0.0, 0.45), g.maprange(n2, 0.4, 0.6, 0.2, 1.0))
+    base = g.mix(eff, base, (0.1, 0.1, 0.095, 1.0))
+    rough = g.maprange(n2, 0.3, 0.7, 0.7, 0.92)
+    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", streak, 0.5))
+    h = g.math("ADD", g.math("MULTIPLY", n3, 0.5), g.math("MULTIPLY", n4, 0.2))
+    h = g.math("ADD", h, g.math("MULTIPLY", n2, 0.4))
+    g.p(base=base, rough=rough, spec=0.45, normal=g.bump(h, 0.6, 0.02),
+        coat=g.math("MULTIPLY", streak, 0.6), coat_rough=0.08)
+    return m
+
+
+def mat_puddle():
+    m = bpy.data.materials.new("M_Puddle")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 8.0, 3.0)
+    base = g.mix(g.attr("m"), (0.006, 0.005, 0.005, 1.0), (0.02, 0.003, 0.002, 1.0))
+    g.p(base=base, rough=0.04, coat=1.0, coat_rough=0.01, spec=0.7, normal=g.bump(n1, 0.08, 0.004))
+    return m
+
+
+def mat_matte(name, col, rough=0.8):
+    m = bpy.data.materials.new(name)
+    g = NT(m)
+    g.p(base=col, rough=rough)
+    return m
+
+
+def setup_compositor(scene, glare=True, vignette=0.0, mist_col=(0.02, 0.024, 0.03)):
+    """Depth haze from the mist pass (cheap atmospheric perspective), fog-glow on the hot points, vignette.
+    Returns the mist-strength socket so each shot can set its own haze."""
+    try:
+        scene.render.compositor_device = "CPU"
+    except Exception:
+        pass
+    ng = bpy.data.node_groups.new("OssuaryComp", "CompositorNodeTree")
+    scene.compositing_node_group = ng
+    rl = ng.nodes.new("CompositorNodeRLayers")
+    out = ng.nodes.new("NodeGroupOutput")
+    ng.interface.new_socket("Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+    img = rl.outputs["Image"]
+    mist_sock = None
+    if "Mist" in rl.outputs:
+        mm = ng.nodes.new("ShaderNodeMath")
+        mm.operation = "MULTIPLY"
+        mm.use_clamp = True
+        ng.links.new(rl.outputs["Mist"], mm.inputs[0])
+        mm.inputs[1].default_value = 0.0
+        mist_sock = mm.inputs[1]
+        mx = ng.nodes.new("ShaderNodeMix")
+        mx.data_type = "RGBA"
+        ins = {sk.identifier: sk for sk in mx.inputs}
+        ng.links.new(mm.outputs[0], ins["Factor_Float"])
+        ng.links.new(img, ins["A_Color"])
+        ins["B_Color"].default_value = (*mist_col, 1.0)
+        img = next(sk for sk in mx.outputs if sk.identifier == "Result_Color")
+    if glare:
+        gl = ng.nodes.new("CompositorNodeGlare")
+        gl.inputs["Type"].default_value = "Fog Glow"
+        gl.inputs["Threshold"].default_value = 0.9
+        gl.inputs["Strength"].default_value = 0.4
+        gl.inputs["Size"].default_value = 0.6
+        ng.links.new(img, gl.inputs["Image"])
+        img = gl.outputs["Image"]
+    if vignette:
+        em = ng.nodes.new("CompositorNodeEllipseMask")
+        em.inputs["Size"].default_value = (0.95, 0.85)
+        bl = ng.nodes.new("CompositorNodeBlur")
+        bl.inputs["Size"].default_value = (300, 300)
+        ng.links.new(em.outputs["Mask"], bl.inputs["Image"])
+        mx = ng.nodes.new("ShaderNodeMix")
+        mx.data_type = "RGBA"
+        mx.blend_type = "MULTIPLY"
+        ins = {sk.identifier: sk for sk in mx.inputs}
+        ins["Factor_Float"].default_value = vignette
+        ng.links.new(img, ins["A_Color"])
+        inv = ng.nodes.new("ShaderNodeMix")
+        inv.data_type = "RGBA"
+        ii = {sk.identifier: sk for sk in inv.inputs}
+        ng.links.new(bl.outputs["Image"], ii["Factor_Float"])
+        ii["A_Color"].default_value = (0.0, 0.0, 0.0, 1)
+        ii["B_Color"].default_value = (1.0, 1.0, 1.0, 1)
+        ng.links.new(next(sk for sk in inv.outputs if sk.identifier == "Result_Color"), ins["B_Color"])
+        img = next(sk for sk in mx.outputs if sk.identifier == "Result_Color")
+    ng.links.new(img, out.inputs[0])
+    return mist_sock
+
+
+# =============================================================================
+# Scene build
+# =============================================================================
+def build_climber(pos, look_at):
+    """A tiny human climber on a rope out in the shaft (scale reference for the full shot), helmet lamp lit."""
+    fwd = nrm(np.asarray(look_at, float) - pos)
+    fwd = nrm(fwd - fwd.dot(UP) * UP * 0.3)
+    side = nrm(np.cross(fwd, UP))
+    up = np.cross(side, fwd)
+    acc = ENV["Climber"]
+    hip = pos
+    chest = hip + up * 0.5 + fwd * 0.05
+    head = chest + up * 0.3 + fwd * 0.05
+    acc.add_tube(np.array([hip, chest]), np.array([0.16, 0.19]), ry=np.array([0.11, 0.13]), up=fwd, sides=10)
+    V, F = blob(head, basis_axes(side, fwd, up, 0.11, 0.12, 0.13), sub=2, amp=0.02)
+    acc.add(V, F)
+    V, F = blob(head + up * 0.04, basis_axes(side, fwd, up, 0.14, 0.15, 0.1), sub=2, amp=0.0)
+    acc.add(V, F)
+    for sx in (-1, 1):
+        sh = chest + side * sx * 0.2 - up * 0.04
+        if sx > 0:
+            el = sh + up * 0.28 + fwd * 0.08
+            hd = el + up * 0.3 - side * 0.12
+        else:
+            el = sh - up * 0.22 + fwd * 0.2 - side * 0.05
+            hd = el + fwd * 0.25 + up * 0.05
+        acc.add_tube(np.array([sh, el, hd]), np.array([0.055, 0.05, 0.045]), sides=8)
+        kn = hip + side * sx * 0.1 + fwd * 0.3 - up * 0.2 + (up * 0.15 if sx > 0 else 0)
+        ft = kn - up * 0.42 + fwd * (0.05 if sx > 0 else -0.08)
+        acc.add_tube(np.array([hip + side * sx * 0.09, kn, ft]), np.array([0.08, 0.065, 0.055]), sides=8)
+        acc.add_tube(np.array([ft, ft + fwd * 0.2]), 0.05, sides=8)
+    lamp = head + fwd * 0.13 + up * 0.06
+    V, F = blob(lamp, basis_axes(side, up, fwd, 0.03, 0.03, 0.015), sub=2, amp=0.0)
+    ENV["Glow"].add(V, F)
+    hand = chest + side * 0.2 + up * 0.55 - side * 0.12 + fwd * 0.08
+    rope_top = hand + UP * 14.0 + side * 0.4
+    ENV["Rope"].add_tube(np.array([hip + fwd * 0.1, hand, rope_top]), 0.012, sides=6)
+    ENV["Rope"].add_tube(np.array([hip + fwd * 0.1, hip - up * 1.2 + fwd * 0.15 + side * 0.1, hip - up * 2.0 + side * 0.3]),
+                         0.012, sides=6)
+    return lamp, fwd
+
+
+def mat_lamp(name, col, strength):
+    m = bpy.data.materials.new(name)
+    g = NT(m)
+    g.p(base=(0.05, 0.04, 0.03), rough=0.4, emc=col, ems=strength)
+    return m
+
+
+def export_game(objs, mats, coll):
+    """Quest 3 game meshes. The render mesh is NOT shipped: the creature is rebuilt with the same RNG stream at
+    game tessellation (identical layout), merged into 4 atlas materials, decimated to LOD0 (~130k tris), smart-
+    UV'd and baked from the render mesh (base colour, roughness, tangent normal, AO, emissive); LOD1/LOD2 are
+    collapse-decimated from LOD0 and share its textures. Blender +Z up -> glTF +Y up; root at the shaft origin;
+    the per-vertex spine coordinate ships as _SPINE_S so the seam pulse can crawl head-ward in the shader."""
+    global LOW, rng, A, ENV
+    outd = args.export
+    os.makedirs(os.path.join(outd, "textures"), exist_ok=True)
+    sc = bpy.context.scene
+    t0 = time.time()
+    hiA = A
+    LOW = True
+    rng = random.Random(SEED)
+    A = {k: Acc("Ossuary_G_" + k) for k in hiA}
+    ENV = {k: Acc("Shaft_G_" + k) for k in ENV}
+    VERTS.clear()
+    LEG_LOG.clear()
+    del PARTS[1:]
+    PART_STACK[:] = [0]
+    build_creature()
+    LOW = False
+    game = bpy.data.collections.new("Game")
+    sc.collection.children.link(game)
+    raw = sum(a.n for a in A.values())
+    log("export: game-tessellation rebuild done, %d verts" % raw)
+    low = {}
+    for grp, members in ATLAS.items():
+        acc = merge_accs("Ossuary_LOD0_" + grp, [A[k] for k in members])
+        bm_ = bpy.data.materials.new("BAKE_" + grp)
+        bm_.use_nodes = True
+        ob = acc.build(bm_, game, smooth=True, sharp=math.radians(48) if grp == "StoneIron" else None)
+        n0 = tri_count(ob)
+        target = LOD_TRIS[0] * LOD_SHARE[grp]
+        if n0 > target:
+            apply_decimate(ob, target / n0)
+        log("export: %s %d -> %d tris" % (grp, n0, tri_count(ob)))
+        low[grp] = ob
+    # UVs
+    for grp, ob in low.items():
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        bpy.context.view_layer.objects.active = ob
+        ob.select_set(True)
+        while ob.data.uv_layers:
+            ob.data.uv_layers.remove(ob.data.uv_layers[0])
+        ob.data.uv_layers.new(name="UVMap")
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.context.scene.tool_settings.use_uv_select_sync = True
+        # an 80 deg limit keeps tubes as long strips: ~55% atlas fill vs ~30% at 60 deg (packing again only loses)
+        bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=0.001)
+        bpy.ops.object.mode_set(mode="OBJECT")
+    log("export: uv done %.0fs" % (time.time() - t0))
+    # bake from the render mesh
+    sc.render.engine = "CYCLES"
+    sc.cycles.device = "CPU"
+    sc.cycles.use_denoising = False
+    hidden = [o for o in bpy.context.view_layer.objects if o.name.startswith("Shaft_")]
+    # a world volume makes Cycles' AO bake come out black: switch fog off while baking
+    vols = [n for n in (sc.world.node_tree.nodes if sc.world else []) if n.type == "VOLUME_SCATTER"]
+    vol_d = [n.inputs["Density"].default_value for n in vols]
+    for n in vols:
+        n.inputs["Density"].default_value = 0.0
+    # local (contact) AO only: 10 m rays would black out everything under the legs and spires
+    ao_dist = sc.world.light_settings.distance if sc.world else None
+    if sc.world:
+        sc.world.light_settings.distance = 0.6
+    for o in hidden:
+        o.hide_render = True
+    textures = {}
+    for grp, ob in low.items():
+        res = ATLAS_RES[grp]
+        highs = [objs[k] for k in ATLAS[grp] if objs.get(k) is not None]
+        nt = ob.active_material.node_tree
+        imgs = {}
+        maps = ["albedo", "rough", "normal", "ao"] + (["emit"] if grp in ("Emissive", "FleshWet") else [])
+        for mp in maps:
+            im = bpy.data.images.new("Mason_%s_%s" % (grp, mp), res, res, alpha=False, float_buffer=False)
+            if mp != "albedo" and mp != "emit":
+                im.colorspace_settings.name = "Non-Color"
+            node = nt.nodes.new("ShaderNodeTexImage")
+            node.image = im
+            imgs[mp] = (im, node)
+        tb = time.time()
+        # bake one atlas at a time with only its own render meshes live (keeps Cycles' scene and RAM small)
+        allhi = hiA_objs(objs)
+        for o in allhi:
+            on_ = o in highs
+            o.hide_render = not on_
+            o.hide_viewport = not on_
+        for o in low.values():
+            o.hide_render = o is not ob
+        bake_pass(sc, ob, highs, imgs["albedo"][1], "DIFFUSE", pass_filter={"COLOR"})
+        bake_pass(sc, ob, highs, imgs["rough"][1], "ROUGHNESS")
+        bake_pass(sc, ob, highs, imgs["normal"][1], "NORMAL")
+        if "emit" in imgs:
+            bake_pass(sc, ob, highs, imgs["emit"][1], "EMIT")
+        # AO from the game mesh itself (all LOD0 parts occlude each other)
+        sc.collection.children.unlink(coll)
+        for o in low.values():
+            o.hide_render = False
+        bake_pass(sc, ob, [], imgs["ao"][1], "AO", selected=False, samples=24)
+        sc.collection.children.link(coll)
+        for o in allhi:
+            o.hide_render = False
+            o.hide_viewport = False
+        for mp, (im, node) in imgs.items():
+            im.filepath_raw = os.path.join(outd, "textures", im.name + ".png")
+            im.file_format = "PNG"
+            im.save()
+        textures[grp] = imgs
+        log("export: baked %s (%d px) in %.0fs" % (grp, res, time.time() - tb))
+    for o in hidden:
+        o.hide_render = False
+    for n, d_ in zip(vols, vol_d):
+        n.inputs["Density"].default_value = d_
+    if sc.world and ao_dist is not None:
+        sc.world.light_settings.distance = ao_dist
+    # final plain-PBR materials (glTF): base colour, metallic-roughness, normal, occlusion, emissive (+ clearcoat)
+    gltf_out = bpy.data.node_groups.get("glTF Material Output")
+    if gltf_out is None:
+        gltf_out = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+        gltf_out.interface.new_socket("Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+    gmats = {}
+    for grp, imgs in textures.items():
+        m = bpy.data.materials.new("Mason_" + grp)
+        m.use_nodes = True
+        nt = m.node_tree
+        bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
+
+        def tex(mp):
+            nd = nt.nodes.new("ShaderNodeTexImage")
+            nd.image = imgs[mp][0]
+            return nd
+
+        nt.links.new(tex("albedo").outputs["Color"], bsdf.inputs["Base Color"])
+        nt.links.new(tex("rough").outputs["Color"], bsdf.inputs["Roughness"])
+        nm = nt.nodes.new("ShaderNodeNormalMap")
+        nt.links.new(tex("normal").outputs["Color"], nm.inputs["Color"])
+        nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+        bsdf.inputs["Metallic"].default_value = 0.0
+        if "emit" in imgs:
+            nt.links.new(tex("emit").outputs["Color"], bsdf.inputs["Emission Color"])
+            bsdf.inputs["Emission Strength"].default_value = 1.0
+        if grp in ("FleshWet", "ToothBone"):
+            bsdf.inputs["Coat Weight"].default_value = 0.7 if grp == "FleshWet" else 0.4
+            bsdf.inputs["Coat Roughness"].default_value = 0.08
+        go = nt.nodes.new("ShaderNodeGroup")
+        go.node_tree = gltf_out
+        nt.links.new(tex("ao").outputs["Color"], go.inputs["Occlusion"])
+        gmats[grp] = m
+    for grp, ob in low.items():
+        ob.data.materials.clear()
+        ob.data.materials.append(gmats[grp])
+        ob.name = "Mason_LOD0_" + grp
+        ob.data.name = ob.name
+        me = ob.data
+        if "spine_s" in me.attributes:
+            vals = np.zeros(len(me.vertices), np.float32)
+            me.attributes["spine_s"].data.foreach_get("value", vals)
+            a2 = me.attributes.new("_SPINE_S", "FLOAT", "POINT")
+            a2.data.foreach_set("value", vals)
+    # ---- README kit parts, cut from the baked LOD0 (same 4 atlases), each moved to its pivot frame
+    kit = export_kit(low, gmats, game)
+    for ob in list(low.values()) + list(kit.values()):
+        me = ob.data
+        for an in ("m", "glow", "aux", "spine_s", "part"):
+            if an in me.attributes:
+                me.attributes.remove(me.attributes[an])
+        me.validate(clean_customdata=False)
+    # LOD1 / LOD2: collapse-decimated copies sharing the LOD0 atlases
+    lods = {0: dict(low)}
+    for li in (1, 2):
+        lods[li] = {}
+        for grp, ob in low.items():
+            ob2 = ob.copy()
+            ob2.data = ob.data.copy()
+            ob2.name = ob2.data.name = "Mason_LOD%d_%s" % (li, grp)
+            game.objects.link(ob2)
+            share = LOD_SHARE[grp] if li == 1 else {"StoneIron": 0.55, "FleshWet": 0.3, "ToothBone": 0.1,
+                                                    "Emissive": 0.05}[grp]
+            apply_decimate(ob2, LOD_TRIS[li] * share / max(tri_count(ob), 1))
+            ob2.data.validate(clean_customdata=False)
+            lods[li][grp] = ob2
+    report = {}
+
+    def export_sel(obs, fn):
+        for o in bpy.context.view_layer.objects:
+            o.select_set(False)
+        for o in obs:
+            o.select_set(True)
+        kw = dict(filepath=fn, export_format="GLB", use_selection=True, export_yup=True, export_apply=True,
+                  export_attributes=True, export_extras=False)
+        try:
+            bpy.ops.export_scene.gltf(export_image_format="JPEG", export_jpeg_quality=90, **kw)
+        except TypeError:
+            bpy.ops.export_scene.gltf(**kw)
+
+    for li, obs in lods.items():
+        report["lod%d" % li] = dict(triangles=sum(tri_count(o) for o in obs.values()),
+                                    by_material={g: tri_count(o) for g, o in obs.items()})
+        log("export: LOD%d %d tris" % (li, report["lod%d" % li]["triangles"]))
+    fn = os.path.join(outd, "mason_hero_lods.glb")
+    export_sel([o for obs in lods.values() for o in obs.values()], fn)
+    report["file"] = dict(name=os.path.basename(fn), bytes=os.path.getsize(fn),
+                          note="one GLB, nodes Mason_LOD{0,1,2}_{StoneIron,FleshWet,ToothBone,Emissive}; LODs share "
+                               "the 4 atlas texture sets; _SPINE_S vertex attribute drives the head-ward pulse")
+    fk = os.path.join(outd, "mason_kit.glb")
+    export_sel(list(kit.values()), fk)
+    report["kit"] = dict(name=os.path.basename(fk), bytes=os.path.getsize(fk),
+                         parts={k: tri_count(o) for k, o in kit.items()})
+    log("export: kit %s" % report["kit"]["parts"])
+    report["materials"] = {g: {mp: "textures/%s.png" % imgs[mp][0].name for mp in imgs} for g, imgs in textures.items()}
+    with open(os.path.join(outd, "export_report.json"), "w") as fh:
+        json.dump(report, fh, indent=2)
+    for obs in lods.values():
+        for ob in obs.values():
+            ob.hide_render = True
+    for ob in kit.values():
+        ob.hide_render = True
+    sc.render.bake.use_selected_to_active = False
+    A = hiA
+    log("export done in %.0fs" % (time.time() - t0))
+    return lods
+
+
+ATLAS = {
+    "StoneIron": ("Stone", "Carved", "Iron", "Bronze", "Soot", "Rope", "Glass", "IronTooth"),
+    "FleshWet": ("Flesh", "Marrow", "Gum", "Tendon", "Vein", "Membrane", "Mucus", "Oil", "Seam"),
+    "ToothBone": ("Teeth", "Bone", "Frond"),
+    "Emissive": ("Ember", "Pit"),
+}
+ATLAS_RES = {"StoneIron": 2048, "FleshWet": 2048, "ToothBone": 1024, "Emissive": 512}
+LOD_SHARE = {"StoneIron": 0.5, "FleshWet": 0.31, "ToothBone": 0.15, "Emissive": 0.04}
+LOD_TRIS = (130000, 36000, 9000)
+
+
+def tri_count(ob):
+    me = ob.data
+    me.calc_loop_triangles()
+    return len(me.loop_triangles)
+
+
+def merge_accs(name, accs):
+    out = Acc(name)
+    for a in accs:
+        if a.n == 0:
+            continue
+        off = out.n
+        out.V += a.V
+        out.flat += [f + off for f in a.flat]
+        out.sizes += a.sizes
+        out.uv += a.uv
+        out.m += a.m
+        out.g += a.g
+        out.d += a.d
+        out.p += a.p
+        out.n += a.n
+    return out
+
+
+def apply_decimate(ob, ratio):
+    md = ob.modifiers.new("dec", "DECIMATE")
+    md.decimate_type = "COLLAPSE"
+    md.ratio = float(min(max(ratio, 0.002), 1.0))
+    try:
+        md.use_collapse_triangulate = True
+    except Exception:
+        pass
+    dg = bpy.context.evaluated_depsgraph_get()
+    me2 = bpy.data.meshes.new_from_object(ob.evaluated_get(dg))
+    old = ob.data
+    ob.modifiers.clear()
+    ob.data = me2
+    bpy.data.meshes.remove(old)
+
+
+def bake_pass(sc, low, highs, img_node, typ, selected=True, samples=1, pass_filter=None):
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    for h in highs:
+        h.select_set(True)
+    low.select_set(True)
+    bpy.context.view_layer.objects.active = low
+    low.active_material.node_tree.nodes.active = img_node
+    sc.cycles.samples = samples
+    bk = sc.render.bake
+    bk.use_selected_to_active = selected
+    bk.cage_extrusion = 0.05
+    bk.max_ray_distance = 0.25
+    bk.margin = 6
+    kw = dict(type=typ, use_clear=True, margin=6)
+    if selected:
+        kw.update(use_selected_to_active=True, cage_extrusion=0.05, max_ray_distance=0.25)
+    if pass_filter:
+        kw["pass_filter"] = pass_filter
+    if typ == "NORMAL":
+        kw["normal_space"] = "TANGENT"
+    bpy.ops.object.bake(**kw)
+
+
+def export_kit(low, gmats, coll):
+    """Cut the README kit parts out of the baked LOD0 meshes (keeping their atlas UVs/materials) and move each
+    into its pivot frame: Segment = block centre (+Y head-ward, +Z dorsal), Head = crown centre (front at +Y),
+    Frond = root (+Y growth, curls about +X), Pit = pit centre (opening +Y), LimbUpper/LimbLower = joint at the
+    origin (bone along +Z, pin +X), Hook = hook root, Tail = last segment + tail."""
+    names = [P["name"] for P in PARTS]
+
+    def ids_named(nm):
+        return [i for i, n_ in enumerate(names) if n_ == nm]
+
+    def under(i, root):
+        while i:
+            if i == root:
+                return True
+            i = PARTS[i].get("parent", 0)
+        return False
+
+    head = ids_named("Head")[0]
+    head_ids = [i for i in range(len(PARTS)) if under(i, head) and names[i] != "Frond"]
+    fronds = [i for i in ids_named("Frond") if under(i, head)]
+    pits = [i for i in ids_named("Pit") if under(i, head)]
+    membs = [i for i in ids_named("PitMembrane") if under(i, head)]
+    pit_m = next((PARTS[i]["parent"] for i in membs), pits[0])
+    memb_ids = [i for i in membs if PARTS[i]["parent"] == pit_m]
+    segs = sorted({n_ for n_ in names if n_.startswith("Seg")}, key=lambda x: int(x[3:]))
+    triples = []
+    for i, n_ in enumerate(names):
+        if n_ == "LegU" and i + 2 < len(PARTS) and names[i + 1] == "LegL" and names[i + 2] == "Hook":
+            triples.append((i, i + 1, i + 2))
+    leg = triples[min(8, len(triples) - 1)]
+    spec = {"Mason_Segment_0": (ids_named(segs[6]), ids_named(segs[6])[0]),
+            "Mason_Segment_1": (ids_named(segs[11]), ids_named(segs[11])[0]),
+            "Mason_Segment_2": (ids_named(segs[17]), ids_named(segs[17])[0]),
+            "Mason_Tail": (ids_named(segs[-1]) + ids_named("Tail"), ids_named(segs[-1])[0]),
+            "Mason_Head": (head_ids, head),
+            "Mason_Pit": ([pit_m], pit_m),
+            "Mason_PitMembrane": (memb_ids, pit_m),
+            "Mason_LimbUpper": ([leg[0]], leg[0]),
+            "Mason_LimbLower": ([leg[1]], leg[1]),
+            "Mason_Hook": ([leg[2]], leg[2])}
+    for q, fi in enumerate(fronds[:: max(1, len(fronds) // 3)][:3]):
+        spec["Mason_Frond_%d" % q] = ([fi], fi)
+    grps = list(low.keys())
+    out = {}
+    for name, (ids, piv) in spec.items():
+        ids = set(ids)
+        Minv = np.linalg.inv(PARTS[piv]["M"])
+        Vs, Fs, UVs, Ms = [], [], [], []
+        off = 0
+        for gi, grp in enumerate(grps):
+            me = low[grp].data
+            nv = len(me.vertices)
+            co = np.zeros(nv * 3, np.float32)
+            me.vertices.foreach_get("co", co)
+            co = co.reshape(-1, 3).astype(float)
+            pa = np.zeros(nv, np.float32)
+            me.attributes["part"].data.foreach_get("value", pa)
+            pa = np.rint(pa).astype(int)
+            ls = np.zeros(len(me.polygons), np.int32)
+            lt = np.zeros(len(me.polygons), np.int32)
+            me.polygons.foreach_get("loop_start", ls)
+            me.polygons.foreach_get("loop_total", lt)
+            lv = np.zeros(len(me.loops), np.int32)
+            me.loops.foreach_get("vertex_index", lv)
+            uvd = np.zeros(len(me.loops) * 2, np.float32)
+            me.uv_layers[0].data.foreach_get("uv", uvd)
+            uvd = uvd.reshape(-1, 2)
+            inset = np.isin(pa, list(ids))
+            keep = [pi for pi in range(len(ls)) if inset[lv[ls[pi]:ls[pi] + lt[pi]]].all()]
+            if not keep:
+                continue
+            for pi in keep:
+                lo = np.arange(ls[pi], ls[pi] + lt[pi])
+                Fs.append(list(range(off, off + len(lo))))
+                Vs.append(co[lv[lo]])
+                UVs.append(uvd[lo])
+                Ms.append(gi)
+                off += len(lo)
+        if not Fs:
+            log("export: kit part %s empty" % name)
+            continue
+        V = np.vstack(Vs)
+        V = V @ Minv[:3, :3].T + Minv[:3, 3]
+        me = bpy.data.meshes.new(name)
+        me.from_pydata(V.tolist(), [], Fs)
+        me.uv_layers.new(name="UVMap").data.foreach_set("uv", np.vstack(UVs).astype(np.float32).ravel())
+        for grp in grps:
+            me.materials.append(gmats[grp])
+        me.polygons.foreach_set("material_index", np.array(Ms, np.int32))
+        bm_ = bmesh.new()
+        bm_.from_mesh(me)
+        bmesh.ops.remove_doubles(bm_, verts=bm_.verts, dist=1e-5)
+        bm_.to_mesh(me)
+        bm_.free()
+        me.shade_smooth()
+        me.validate(clean_customdata=False)
+        ob = bpy.data.objects.new(name, me)
+        coll.objects.link(ob)
+        out[name] = ob
+    return out
+
+
+def hiA_objs(objs):
+    return [o for o in objs.values() if o is not None]
+
+
+def main():
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    sc = bpy.context.scene
+    creature = bpy.data.collections.new("Ossuary")
+    env = bpy.data.collections.new("Shaft")
+    sc.collection.children.link(creature)
+    sc.collection.children.link(env)
+
+    build_creature()
+    build_env()
+
+    mats = dict(Stone=mat_stone(), Carved=mat_stone("M_StoneCarved", (1.04, 1.0, 0.96), carved=True),
+                Flesh=mat_flesh(), Marrow=mat_flesh("M_Marrow", dark=True, glowmul=1.0), Tendon=mat_tendon(),
+                Bone=mat_bone(), Iron=mat_iron(), Teeth=mat_teeth(), Ember=mat_ember(26.0), Frond=mat_frond(),
+                Mucus=mat_mucus(), Vein=mat_vein(), Membrane=mat_membrane(),
+                Gum=mat_flesh("M_Gum", gum=True, glowmul=1.0), Pit=mat_pit(), Bronze=mat_bronze(),
+                Seam=mat_seam(), Glass=mat_glass(), Rope=mat_rope(), Oil=mat_oil(), IronTooth=mat_iron_tooth(),
+                Soot=mat_soot())
+    for k, mt in mats.items():
+        try:
+            mt.cycles.emission_sampling = "AUTO" if k in ("Ember", "Pit") else "NONE"
+        except Exception as e:
+            log("emission_sampling:", e)
+    flat = {"Stone"}
+    objs = {}
+    for k, acc in A.items():
+        ob = acc.build(mats[k], creature, smooth=k not in flat,
+                       sharp=math.radians(40) if k in ("Carved", "Iron", "Bronze", "IronTooth") else None)
+        objs[k] = ob
+    log("meshes built")
+    tex = bpy.data.textures.new("StoneGrain", "CLOUDS")
+    tex.noise_scale = 0.16
+    tex.noise_depth = 3
+    tex2 = bpy.data.textures.new("StoneChunks", "VORONOI")
+    tex2.noise_scale = 0.28
+    for k in ("Stone", "Carved"):
+        ob = objs[k]
+        if ob is None:
+            continue
+        md = ob.modifiers.new("Grain", "SUBSURF")
+        md.subdivision_type = "SIMPLE"
+        md.levels = md.render_levels = 1
+        d1 = ob.modifiers.new("Chunks", "DISPLACE")
+        d1.texture = tex2
+        d1.texture_coords = "GLOBAL"
+        d1.strength = 0.04
+        d1.mid_level = 0.5
+        d2 = ob.modifiers.new("Grain", "DISPLACE")
+        d2.texture = tex
+        d2.texture_coords = "GLOBAL"
+        d2.strength = 0.016
+        d2.mid_level = 0.5
+    for k in ("Marrow", "Gum"):
+        ob = objs[k]
+        md = ob.modifiers.new("Smooth", "SUBSURF")
+        md.levels = md.render_levels = 1
+
+    envm = dict(Rock=mat_wall(), Masonry=mat_stone("M_Masonry", (0.95, 0.95, 0.97), value=0.9),
+                Iron=mats["Iron"], Glow=mat_lamp("M_LanternGlow", (1.0, 0.5, 0.18), 40.0),
+                Rubble=mat_stone("M_Rubble", (0.8, 0.78, 0.76), wet=0.3), Oil=mats["Oil"],
+                Crack=mat_matte("M_Crack", (0.002, 0.002, 0.002), 0.6), Puddle=mat_puddle(),
+                Climber=mat_matte("M_Climber", (0.025, 0.022, 0.02), 0.85), Rope=mats["Rope"])
+    env_objs = {}
+    for k, acc in ENV.items():
+        env_objs[k] = acc.build(envm[k], env, smooth=k not in ("Masonry", "Rubble"))
+    ob = env_objs["Masonry"]
+    md = ob.modifiers.new("Grain", "SUBSURF")
+    md.subdivision_type = "SIMPLE"
+    md.levels = md.render_levels = 1
+    d2 = ob.modifiers.new("Grain", "DISPLACE")
+    d2.texture = tex
+    d2.texture_coords = "GLOBAL"
+    d2.strength = 0.03
+
+    dg = bpy.context.evaluated_depsgraph_get()
+    tris = {}
+    for k, ob in objs.items():
+        if ob is None:
+            continue
+        ev = ob.evaluated_get(dg)
+        me = ev.to_mesh()
+        me.calc_loop_triangles()
+        tris[k] = len(me.loop_triangles)
+        ev.to_mesh_clear()
+    total = sum(tris.values())
+    log("creature triangles:", total, tris)
+
+    # ------------------------------------------------------------------ lights
+    def light(name, typ, loc, energy, color, size=0.1, target=None, spot=None, blend=0.4):
+        ld = bpy.data.lights.new(name, typ)
+        ld.energy = energy
+        ld.color = color
+        if typ in ("POINT", "SPOT"):
+            ld.shadow_soft_size = size
+        if typ == "SPOT":
+            ld.spot_size = spot
+            ld.spot_blend = blend
+        ob = bpy.data.objects.new(name, ld)
+        sc.collection.objects.link(ob)
+        try:
+            ob.visible_camera = False
+        except Exception:
+            pass
+        ob.location = Vector(loc)
+        if target is not None:
+            d = Vector(target) - Vector(loc)
+            ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+        return ob
+
+    C = CROWN["C"]
+    Tc = CROWN["T"]
+    Dc = CROWN["D"]
+    Sc = CROWN["S"]
+    mouth = CROWN["mouth_front"]
+    L_throat = light("L_Throat", "POINT", CROWN["throat_light"], 45.0, (1.0, 0.2, 0.04), 0.12)
+    L_forge = light("L_Forge", "POINT", CROWN["forge"] - Tc * 0.15, 120.0, (1.0, 0.16, 0.03), 0.15)
+    L_top = light("L_ShaftTop", "SPOT", (1.0, -11.0, 50.0), 300000.0, (0.55, 0.7, 1.0), 2.5,
+                  target=(0.0, -1.5, 10.0), spot=math.radians(46), blend=0.7)
+    hc = [float(x) for x in args.herocam.split(",")]
+    hero_cam_loc = C + Tc * hc[0] + np.array([0, 0, hc[1]]) + Sc * hc[2]
+    hero_target = C + Tc * hc[3] + np.array([0, 0, hc[4]]) + Sc * hc[5]
+    h_right = nrm(np.cross(hero_target - hero_cam_loc, UP))
+    # the player's helmet lamp: a single cold, low key from just below the lens (under-lights the crown)
+    L_helm_h = light("L_HelmetHero", "SPOT", hero_cam_loc + np.array([0, 0, -1.1]) + h_right * 1.4,
+                     args.hero_light, (0.8, 0.88, 1.0), 0.03, target=C + Tc * 0.2, spot=math.radians(52), blend=0.8)
+    L_rimc = light("L_RimCold", "SPOT", C - Tc * 2.5 + Dc * 3.5 + UP * 4.0, 2600.0, (0.55, 0.68, 1.0), 0.3,
+                   target=C + Tc * 0.6, spot=math.radians(60), blend=0.8)
+    L_lant_f = light("L_LanternFull", "POINT", LANTERN["pos"], 2600.0, (1.0, 0.5, 0.18), 0.15)
+    L_ffill = light("L_FullFill", "AREA", (14.0, -26.0, 26.0), 3500.0, (0.6, 0.72, 0.95), target=(-1.0, -1.0, 12.0))
+    L_ffill.data.size = 10.0
+    L_miner = light("L_Miner", "POINT", LANTERN.get("miner", C), 6.0, (1.0, 0.5, 0.2), 0.04)
+    L_cage = light("L_CageLantern", "POINT", LANTERN.get("cage", C), 8.0, (1.0, 0.45, 0.16), 0.04)
+    clamp_, cfwd = LANTERN["climber"]
+    L_climb = light("L_ClimberLamp", "SPOT", clamp_ + cfwd * 0.05, 2500.0, (0.8, 0.88, 1.0), 0.02,
+                    target=C + Tc * 0.5 - Dc * 1.2, spot=math.radians(24), blend=0.6)
+    ac = [float(x) for x in args.approachcam.split(",")]
+    app_loc = C + Tc * ac[0] + np.array([0, 0, ac[1]]) + Sc * ac[2] + Dc * ac[3]
+    app_target = C + Tc * ac[4] + np.array([0, 0, ac[5]]) + Sc * ac[6]
+    app_right = nrm(np.cross(app_target - app_loc, UP))
+    L_player = light("L_PlayerHelmet", "SPOT", app_loc + np.array([0, 0, -0.3]) - app_right * 0.2, args.app_light,
+                     (0.8, 0.88, 1.0), 0.02, target=C + Tc * 0.1, spot=math.radians(62), blend=0.7)
+
+    # ------------------------------------------------------------------ cameras
+    def camera(name, loc, target, lens):
+        cd = bpy.data.cameras.new(name)
+        cd.lens = lens
+        cd.clip_start = 0.05
+        cd.clip_end = 400
+        ob = bpy.data.objects.new(name, cd)
+        sc.collection.objects.link(ob)
+        ob.location = Vector(loc)
+        d = Vector(target) - Vector(loc)
+        ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+        return ob
+
+    tips = np.array([M_["P"][-1] for M_ in CROWN["mullions"]])
+    cam_hero = camera("CAM_Hero", hero_cam_loc, hero_target, hc[6])
+    cam_hero.data.dof.use_dof = True
+    cam_hero.data.dof.focus_distance = float(np.linalg.norm(hero_cam_loc - mouth))
+    cam_hero.data.dof.aperture_fstop = 4.0
+    fc = [float(x) for x in args.fullcam.split(",")]
+    cam_full = camera("CAM_Full", fc[0:3], fc[3:6], fc[6])
+    cam_app = camera("CAM_Approach", app_loc, app_target, ac[7])
+    cam_app.data.dof.use_dof = True
+    near_tip = tips[np.argsort(np.linalg.norm(tips - app_loc, axis=1))[:4]].mean(0)
+    cam_app.data.dof.focus_distance = float(np.linalg.norm(app_loc - near_tip))
+    cam_app.data.dof.aperture_fstop = args.app_fstop
+    # VR-distance close-up of one vertebra and its leg root (texture/detail validation at 1-3 m)
+    dv_ = min(VERTS, key=lambda v: abs(v["s"] - 10.5))
+    Od, Td, Dd, Sd = spine_frame(dv_["s"])
+    sgd = 1.0 if np.dot(Sd, np.array(fc[0:3]) - Od) >= 0 else -1.0
+    det_loc = Od + Sd * sgd * args.detail_cam[0] + Dd * args.detail_cam[1] + Td * args.detail_cam[2]
+    det_tgt = Od + Sd * sgd * 0.85 + Dd * 0.75
+    cam_det = camera("CAM_Detail", det_loc, det_tgt, 24)
+    cam_det.data.dof.use_dof = True
+    cam_det.data.dof.focus_distance = float(np.linalg.norm(det_loc - det_tgt))
+    cam_det.data.dof.aperture_fstop = 5.6
+    L_det = light("L_DetailHelmet", "SPOT", det_loc + UP * 0.3 - Td * 0.4, args.detail_cam[3], (0.8, 0.88, 1.0), 0.03,
+                  target=det_tgt, spot=math.radians(60), blend=0.7)
+    bc = [float(x) for x in args.belowcam.split(",")]
+    below_loc = wall_point(bc[0], bc[1], bc[2], disp=False)[0]
+    below_tgt = wall_point(bc[3], bc[4], bc[5], disp=False)[0]
+    cam_below = camera("CAM_Below", below_loc, below_tgt, bc[6])
+    log("approach cam", np.round(app_loc, 2), "dist to crown %.2f, focus %.2f" % (
+        np.linalg.norm(app_loc - C), cam_app.data.dof.focus_distance))
+
+    # ------------------------------------------------------------------ world
+    world = bpy.data.worlds.new("Abyss")
+    sc.world = world
+    wnt = world.node_tree
+    for n in list(wnt.nodes):
+        wnt.nodes.remove(n)
+    wout = wnt.nodes.new("ShaderNodeOutputWorld")
+    bg = wnt.nodes.new("ShaderNodeBackground")
+    bg.inputs["Color"].default_value = (0.0025, 0.003, 0.0042, 1)
+    bg.inputs["Strength"].default_value = 1.0
+    wnt.links.new(bg.outputs[0], wout.inputs["Surface"])
+    vol = wnt.nodes.new("ShaderNodeVolumeScatter")
+    vol.inputs["Color"].default_value = (0.62, 0.66, 0.72, 1)
+    vol.inputs["Anisotropy"].default_value = 0.35
+    wnt.links.new(vol.outputs[0], wout.inputs["Volume"])
+    try:
+        world.mist_settings.start = 3.0
+        world.mist_settings.depth = 26.0
+        world.mist_settings.falloff = "QUADRATIC"
+    except Exception as e:
+        log("mist settings:", e)
+    sc.view_layers[0].use_pass_mist = True
+
+    # ------------------------------------------------------------------ render settings
+    sc.render.engine = "CYCLES"
+    cy = sc.cycles
+    cy.device = "CPU"
+    cy.samples = args.samples
+    cy.use_adaptive_sampling = True
+    cy.adaptive_threshold = 0.02
+    cy.use_denoising = True
+    try:
+        cy.denoiser = "OPENIMAGEDENOISE"
+    except Exception:
+        pass
+    cy.max_bounces = 6
+    cy.diffuse_bounces = 2
+    cy.glossy_bounces = 2
+    cy.transmission_bounces = 4
+    cy.volume_bounces = 0
+    cy.transparent_max_bounces = 8
+    cy.caustics_reflective = False
+    cy.caustics_refractive = False
+    cy.blur_glossy = 1.0
+    if args.threads:
+        sc.render.threads_mode = "FIXED"
+        sc.render.threads = args.threads
+    sc.render.resolution_x, sc.render.resolution_y = RES
+    sc.render.resolution_percentage = 100
+    sc.render.image_settings.file_format = "PNG"
+    sc.render.image_settings.color_depth = "8"
+    sc.render.film_transparent = False
+
+    def look(cinematic=True):
+        vs = sc.view_settings
+        if cinematic:
+            vs.view_transform = "AgX"
+            try:
+                vs.look = "AgX - Medium High Contrast"
+            except Exception:
+                pass
+            vs.exposure = args.exposure
+        else:
+            vs.view_transform = "Standard"
+            vs.look = "None"
+            vs.exposure = 0.0
+
+    silhouette_mat = mat_flat_black()
+    mist_sock = None
+    comp_ok = False
+    try:
+        mist_sock = setup_compositor(sc, glare=True, vignette=0.55)
+        comp_ok = True
+    except Exception as e:
+        log("compositor unavailable:", e)
+    all_lights = [L_throat, L_forge, L_top, L_helm_h, L_rimc, L_lant_f, L_ffill, L_miner, L_cage, L_climb, L_player,
+                  L_det]
+
+    def show_lights(on):
+        for ob in all_lights:
+            ob.hide_render = ob.name not in on
+
+    stats = dict(seed=SEED, spine_length_m=round(L_TOTAL, 2), vertebrae=len(VERTS), legs=len(LEG_LOG) + 1,
+                 creature_triangles=total, triangles_by_group=tris)
+    with open(os.path.join(OUT, "stats.json"), "w") as fh:
+        json.dump(stats, fh, indent=2)
+    if args.blend:
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "ossuary.blend"))
+    game_lods = export_game(objs, mats, creature) if args.export else None
+
+    for shot in SHOTS:
+        t0 = time.time()
+        sc.view_layers[0].material_override = None
+        for ob in env.objects:
+            ob.hide_render = False
+        env_objs["Climber"].hide_render = shot not in ("full", "lod0")
+        if mist_sock is not None:
+            mist_sock.default_value = 0.0
+        if shot == "hero":
+            sc.camera = cam_hero
+            look(True)
+            vol.inputs["Density"].default_value = 0.0
+            if mist_sock is not None:
+                mist_sock.default_value = args.hero_haze
+            show_lights({"L_Forge", "L_Throat", "L_ShaftTop", "L_HelmetHero", "L_RimCold", "L_Miner"})
+            L_top.data.energy = 60000.0
+        elif shot == "approach":
+            sc.camera = cam_app
+            look(True)
+            vol.inputs["Density"].default_value = 0.0
+            if mist_sock is not None:
+                mist_sock.default_value = args.hero_haze
+            show_lights({"L_Forge", "L_Throat", "L_ShaftTop", "L_PlayerHelmet", "L_Miner", "L_RimCold"})
+            L_top.data.energy = 45000.0
+        elif shot == "full":
+            sc.camera = cam_full
+            look(True)
+            vol.inputs["Density"].default_value = args.fog
+            show_lights({"L_Forge", "L_Throat", "L_ShaftTop", "L_LanternFull", "L_FullFill", "L_Miner",
+                         "L_CageLantern", "L_ClimberLamp", "L_RimCold"})
+            L_top.data.energy = 260000.0
+        elif shot in ("lod0", "lod0_approach") and game_lods:
+            # the shipped Quest LOD0 (baked atlases, no render mesh) under the same cameras, for comparison
+            sc.camera = cam_full if shot == "lod0" else cam_app
+            look(True)
+            vol.inputs["Density"].default_value = args.fog if shot == "lod0" else 0.0
+            if mist_sock is not None and shot != "lod0":
+                mist_sock.default_value = args.hero_haze
+            if shot == "lod0":
+                show_lights({"L_Forge", "L_Throat", "L_ShaftTop", "L_LanternFull", "L_FullFill", "L_Miner",
+                             "L_CageLantern", "L_ClimberLamp", "L_RimCold"})
+                L_top.data.energy = 260000.0
+            else:
+                show_lights({"L_Forge", "L_Throat", "L_ShaftTop", "L_PlayerHelmet", "L_Miner", "L_RimCold"})
+                L_top.data.energy = 45000.0
+            creature.hide_render = True
+            for ob in game_lods[0].values():
+                ob.hide_render = False
+        elif shot == "detail":
+            sc.camera = cam_det
+            look(True)
+            vol.inputs["Density"].default_value = 0.0
+            if mist_sock is not None:
+                mist_sock.default_value = 0.3
+            show_lights({"L_DetailHelmet", "L_ShaftTop", "L_CageLantern"})
+            L_top.data.energy = 60000.0
+        elif shot in ("silhouette", "below"):
+            sc.camera = cam_full if shot == "silhouette" else cam_below
+            look(False)
+            vol.inputs["Density"].default_value = 0.0
+            bg.inputs["Color"].default_value = (0.2140, 0.2140, 0.2140, 1)
+            show_lights(set())
+            for ob in env.objects:
+                ob.hide_render = True
+            sc.view_layers[0].material_override = silhouette_mat
+        else:
+            continue
+        sil = shot in ("silhouette", "below")
+        if not sil:
+            bg.inputs["Color"].default_value = (0.0025, 0.003, 0.0042, 1)
+        cy.samples = 12 if sil else args.samples
+        cy.use_denoising = not sil
+        try:
+            sc.render.use_compositing = comp_ok and not sil
+        except Exception:
+            pass
+        if args.border:
+            bx = [float(x) for x in args.border.split(",")]
+            sc.render.use_border = True
+            sc.render.use_crop_to_border = True
+            sc.render.border_min_x, sc.render.border_max_x, sc.render.border_min_y, sc.render.border_max_y = bx
+        name = "silhouette_below" if shot == "below" else shot
+        sc.render.filepath = os.path.join(OUT, name + ".png")
+        bpy.ops.render.render(write_still=True)
+        creature.hide_render = False
+        if game_lods:
+            for ob in game_lods[0].values():
+                ob.hide_render = True
+        log("rendered", shot, "in %.0fs" % (time.time() - t0))
+    log("done")
+
+
+if __name__ == "__main__":
+    main()

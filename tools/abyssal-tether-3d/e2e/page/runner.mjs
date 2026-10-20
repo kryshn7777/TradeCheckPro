@@ -79,7 +79,10 @@ class GameSim {
   }
   _phys() {
     const g = this.game;
-    if (!this._ghostPhys || this._ghostPhys.level !== g.level || this._ghostPhys.diff !== g.diff) this._ghostPhys = new Physics3D(g.level, g.diff, this.ghostBus);
+    if (!this._ghostPhys || this._ghostPhys.level !== g.level || this._ghostPhys.diff !== g.diff) {
+      this._ghostPhys = new Physics3D(g.level, g.diff, this.ghostBus);
+      this._ghostPhys.health.god = true; // the look-ahead judges landing speeds only; it takes no damage (as in verify/bot.mjs)
+    }
     return this._ghostPhys;
   }
   frame(intent) {

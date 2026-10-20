@@ -11,6 +11,9 @@
  *   4. rope bookkeeping (tension total, catch jolt events)
  *   5. sphere-vs-box collisions, impacts, crumbling ledges, hazards
  *
+ * A shot is a projectile (TetherSystem.launch): the hook flies for distance / CONFIG.rope.flightSpeed
+ * and attaches on arrival; the pull then builds up over CONFIG.rope.attachRamp (Rope3D.pull, `grip`).
+ *
  * Ropes are forces, not projections (Rope3D.pull): a taut line is a stiff spring-damper
  * (stretch of a few % of its length, over-damped at catch speeds: no rebound) on the semi-implicit
  * Euler step, so a swing is a symplectic pendulum and a central pull conserves angular
@@ -23,6 +26,7 @@
  */
 
 import { CONFIG, U } from './config3d.js';
+import { Health3D } from './health3d.js';
 
 const C = CONFIG;
 export const HANDS = ['left', 'right'];
@@ -67,6 +71,7 @@ export class Player3D {
     this.ropeJolt = 0;
     this.deathCause = null;
     this.landedThisStep = false;
+    this.speedMul = 1; // adrenaline: set each frame by the game (sim/inventory3d.js)
   }
 
   get speed() {
@@ -97,6 +102,8 @@ export class Rope3D {
     this.catchSpeed = 0; // outward radial speed at the moment a slack line went taut (0 otherwise)
     this.slipSpeed = 0; // m/s of line the clutch is paying out right now (0 = holding)
     this.slipClock = 0; // s since the last rope:slip event of the current slip (events only)
+    this.rampT = C.rope.attachRamp; // s since the hook bit; the pull builds up over CONFIG.rope.attachRamp
+    this.grip = 1; // 0..1 share of the line's pull in force right now (smoothstep of rampT / attachRamp)
   }
 
   get attached() {
@@ -111,6 +118,8 @@ export class Rope3D {
     this.catchSpeed = 0;
     this.slipSpeed = 0;
     this.slipClock = 0;
+    this.rampT = 0; // a fresh bite: the pull starts at 0 and builds (a flying hook, then a soft catch)
+    this.grip = C.rope.attachRamp > 0 ? 0 : 1;
   }
 
   detach() {
@@ -121,6 +130,8 @@ export class Rope3D {
     this.catchSpeed = 0;
     this.slipSpeed = 0;
     this.slipClock = 0;
+    this.rampT = C.rope.attachRamp;
+    this.grip = 1;
   }
 
   /** Measures anchor → player; returns true when taut. */
@@ -196,10 +207,25 @@ export class Rope3D {
    * load applied), this.catchSpeed (outward radial speed absorbed by a fresh catch) and
    * this.slipSpeed (m/s of line paid out by the clutch, smoothed over slipFxSmooth: feedback
    * only, nothing in the simulation reads it).
+   *
+   * ATTACH RAMP: the hook arrives after its flight (TetherSystem), then the line's pull builds from 0 to
+   * full over CONFIG.rope.attachRamp (smoothstep, `grip`): the spring, the clutch and the catch brake are all
+   * scaled, so the body is taken up softly instead of snapping. The clutch's pay-out is not scaled: a line
+   * that is not yet gripping spools out freely. The ramp runs faster the faster the body runs out on the line
+   * (attachRampSpeed), so a fall arrest still bites at once.
    */
   pull(p, dt) {
     const R = C.rope;
     this.catchSpeed = 0;
+    let grip = 1;
+    if (this.rampT < R.attachRamp) {
+      // The faster the body is running out on the line, the faster the brake takes hold (a fall arrest must not wait).
+      const vOut = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+      this.rampT += dt * (1 + (vOut > 0 ? vOut : 0) / R.attachRampSpeed);
+      const u = this.rampT >= R.attachRamp ? 1 : this.rampT / R.attachRamp;
+      grip = u * u * (3 - 2 * u);
+    }
+    this.grip = grip;
     const s = this.d - this.length;
     if (s <= 0) {
       this.tension = 0;
@@ -225,7 +251,6 @@ export class Rope3D {
       this.slipSpeed *= 1 - Math.min(1, dt / R.slipFxSmooth);
       return;
     }
-    if (this.tension === 0 && vr > 0) this.catchSpeed = vr;
     let slip = 0;
     if (s > sCap) {
       // Beyond the elastic zone the winch pays the line out. It holds maxTension against a swing
@@ -242,6 +267,13 @@ export class Rope3D {
       const peak = R.catchPeakG * gAcc;
       if (T > peak) T = peak;
     }
+    T *= grip;
+    if (T <= 1e-6) {
+      this.tension = 0;
+      this.slipSpeed += (slip / dt - this.slipSpeed) * Math.min(1, dt / R.slipFxSmooth);
+      return;
+    }
+    if (this.tension === 0 && vr > 0) this.catchSpeed = vr;
     p.vx -= this.nx * T * dt;
     p.vy -= this.ny * T * dt;
     p.vz -= this.nz * T * dt;
@@ -266,7 +298,15 @@ export class Rope3D {
 }
 
 // =============================================================================
-// TetherSystem — targeting, firing, attach/release for both hands.
+// TetherSystem — targeting, firing, flight, attach/release for both hands.
+//
+// A shot is a projectile. fire() picks the target (as always) and launches the hook: it is IN FLIGHT for
+// flight = distance / CONFIG.rope.flightSpeed (clamped to [flightMin, flightMax]); the hand reports
+// state 'flying' (hand.flight = { t, dur, target }, hand.flightFrac 0..1), the line exerts no force, a
+// release cancels it. step() lands the hook on arrival (the target must still be sound and in reach, else
+// it falls off: a miss) and attaches through attach(); the pull then builds up over CONFIG.rope.attachRamp
+// (Rope3D.pull). Events: 'rope:fire' {hand,x,y,z,target,dur,buffered}, 'rope:hit' {hand,x,y,z,normal:{x,y,z}},
+// 'grapple:attach' (the arrival, unchanged payload), 'rope:cancel' {hand,reason}, 'grapple:miss'.
 // =============================================================================
 export class TetherSystem {
   /**
@@ -293,10 +333,24 @@ export class TetherSystem {
       target: null, // highlighted anchor for this hand's aim
       held: false,
       buffer: 0,
-      extend: 1, // visual extension 0..1
+      extend: 1, // visual extension 0..1 (the hook's flight progress while flying)
       attachTime: 0,
       miss: null, // { x,y,z, dx,dy,dz, len, t }
       lastAim: null,
+      flying: false, // the hook is in flight (flightObj is live)
+      flightObj: { t: 0, dur: 0, target: null }, // preallocated: no allocation per shot
+      /** 'flying' | 'attached' | 'idle' */
+      get state() {
+        return this.flying ? 'flying' : this.rope.anchor ? 'attached' : 'idle';
+      },
+      /** { t, dur, target } while the hook is in flight, else null. */
+      get flight() {
+        return this.flying ? this.flightObj : null;
+      },
+      /** 0..1 progress of the hook's flight (0 when not flying). */
+      get flightFrac() {
+        return this.flying && this.flightObj.dur > 0 ? Math.min(1, this.flightObj.t / this.flightObj.dur) : 0;
+      },
     };
   }
 
@@ -341,7 +395,11 @@ export class TetherSystem {
     const dz = aim.dz / dl;
     const list = this.level.anchorsNear(player.x, player.y, player.z, range, this._scratch);
     const current = hand ? this.hands[hand].target : null;
-    const other = hand ? this.hands[hand === 'left' ? 'right' : 'left'].rope.anchor : null;
+    let other = null;
+    if (hand) {
+      const oh = this.hands[hand === 'left' ? 'right' : 'left'];
+      other = oh.rope.anchor || (oh.flying ? oh.flightObj.target : null);
+    }
     let best = null;
     let bestScore = Infinity;
     for (let i = 0; i < list.length; i++) {
@@ -401,21 +459,22 @@ export class TetherSystem {
       if (hi.released || (!hi.held && st.held)) {
         st.held = false;
         st.buffer = 0;
-        if (st.rope.attached) this.release(player, h, 'input');
+        if (st.rope.attached || st.flying) this.release(player, h, 'input');
       }
       // Buffered fire: a held trigger that whiffed keeps looking briefly.
-      if (st.held && !st.rope.attached && st.buffer > 0) {
+      if (st.held && !st.rope.attached && !st.flying && st.buffer > 0) {
         st.buffer -= dt;
         const found = this.findTarget(player, hi.aim, h);
-        if (found) this.attach(player, h, found.anchor);
+        if (found) this.launch(player, h, found.anchor, true);
       }
     }
   }
 
+  /** Pulls the trigger: the hook launches at the best target (and is in flight), else the shot whiffs. */
   fire(player, hand, aim) {
     const found = this.findTarget(player, aim, hand);
     if (found) {
-      this.attach(player, hand, found.anchor);
+      this.launch(player, hand, found.anchor, false);
       return true;
     }
     const st = this.hands[hand];
@@ -425,16 +484,83 @@ export class TetherSystem {
       st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.diff.aimRange * 0.85, t: 0 };
     }
     st.buffer = C.rope.grappleBuffer;
+    this.bus.emit('rope:fire', { hand, x: player.x, y: player.y, z: player.z, target: null, dur: C.rope.missTime, buffered: false });
     this.bus.emit('grapple:miss', { hand, x: player.x, y: player.y, z: player.z });
     return false;
   }
 
+  /** The hook leaves the muzzle for `anchor`; it attaches in step() when it arrives. */
+  launch(player, hand, anchor, buffered) {
+    const R = C.rope;
+    const st = this.hands[hand];
+    if (st.flying) this._endFlight(st);
+    if (st.rope.attached) this.release(player, hand, 'refire'); // a new shot lets go of the old line first
+    const d = len3(player.x - anchor.x, player.y - anchor.y, player.z - anchor.z);
+    const dur = U.clamp(d / R.flightSpeed, R.flightMin, R.flightMax);
+    const fl = st.flightObj;
+    fl.t = 0;
+    fl.dur = dur;
+    fl.target = anchor;
+    st.flying = true;
+    st.extend = 0;
+    st.miss = null;
+    st.buffer = 0;
+    this.bus.emit('rope:fire', { hand, x: player.x, y: player.y, z: player.z, target: anchor, dur, buffered: !!buffered });
+  }
+
+  _endFlight(st) {
+    st.flying = false;
+    st.flightObj.target = null;
+    st.flightObj.t = 0;
+  }
+
+  /** The trigger was let go (or the player died) with the hook in the air: it retracts. */
+  _cancelFlight(player, hand, reason) {
+    const st = this.hands[hand];
+    const fl = st.flightObj;
+    const an = fl.target;
+    if (an) {
+      const dx = an.x - player.x;
+      const dy = an.y - player.y;
+      const dz = an.z - player.z;
+      const l = len3(dx, dy, dz) || 1;
+      const frac = fl.dur > 0 ? Math.min(1, fl.t / fl.dur) : 0;
+      // The whip-back animation (RopeView.miss) from the point the hook had reached.
+      st.miss = { x: player.x, y: player.y, z: player.z, dx: dx / l, dy: dy / l, dz: dz / l, len: l * frac, t: C.rope.missTime * 0.45 };
+    }
+    this._endFlight(st);
+    st.extend = 1;
+    this.bus.emit('rope:cancel', { hand, reason: reason || 'input' });
+  }
+
+  /** The hook reached its target: bite if it is still sound and in reach, else it falls off. */
+  _arrive(player, hand) {
+    const st = this.hands[hand];
+    const an = st.flightObj.target;
+    this._endFlight(st);
+    const d = len3(player.x - an.x, player.y - an.y, player.z - an.z);
+    if (an.broken || d > this.maxRopeLength()) {
+      // Crumbled while the hook was in the air, or the body moved out of reach: the hook falls off.
+      const l = d || 1;
+      st.miss = { x: player.x, y: player.y, z: player.z, dx: (an.x - player.x) / l, dy: (an.y - player.y) / l, dz: (an.z - player.z) / l, len: d, t: C.rope.missTime * 0.45 };
+      st.extend = 1;
+      st.buffer = C.rope.grappleBuffer;
+      this.bus.emit('grapple:miss', { hand, x: an.x, y: an.y, z: an.z, fell: true });
+      return;
+    }
+    const inv = 1 / (d || 1);
+    this.bus.emit('rope:hit', { hand, x: an.x, y: an.y, z: an.z, normal: { x: (player.x - an.x) * inv, y: (player.y - an.y) * inv, z: (player.z - an.z) * inv }, anchor: an });
+    this.attach(player, hand, an);
+  }
+
+  /** Instant attach (arrival of the hook, and the debug API). */
   attach(player, hand, anchor) {
     const st = this.hands[hand];
     const prev = st.rope.anchor;
+    if (st.flying) this._endFlight(st);
     const d = len3(player.x - anchor.x, player.y - anchor.y, player.z - anchor.z);
     st.rope.attach(anchor, d, this.maxRopeLength());
-    st.extend = 0;
+    st.extend = 1; // the line is already out (the flight was the extension)
     st.attachTime = 0;
     st.miss = null;
     st.buffer = 0;
@@ -444,6 +570,7 @@ export class TetherSystem {
 
   release(player, hand, reason) {
     const st = this.hands[hand];
+    if (st.flying) this._cancelFlight(player, hand, reason);
     if (!st.rope.attached) return;
     const anchor = st.rope.anchor;
     st.rope.detach();
@@ -462,7 +589,7 @@ export class TetherSystem {
     for (const h of HANDS) this.release(player, h, reason);
   }
 
-  /** Per-step bookkeeping: visual extension, whiffs, fragile anchors. */
+  /** Per-step bookkeeping: hooks in flight, whiffs, fragile anchors. */
   step(player, dt) {
     for (const h of HANDS) {
       const st = this.hands[h];
@@ -470,9 +597,14 @@ export class TetherSystem {
         st.miss.t += dt;
         if (st.miss.t >= C.rope.missTime) st.miss = null;
       }
+      if (st.flying) {
+        const fl = st.flightObj;
+        fl.t += dt;
+        st.extend = fl.dur > 0 ? Math.min(1, fl.t / fl.dur) : 1;
+        if (fl.t >= fl.dur) this._arrive(player, h);
+      }
       const rope = st.rope;
       if (!rope.attached) continue;
-      if (st.extend < 1) st.extend = Math.min(1, st.extend + (C.rope.fireSpeed * dt) / Math.max(rope.length, 0.5));
       st.attachTime += dt;
       const an = rope.anchor;
       if (an.kind === 'fragile') {
@@ -504,6 +636,15 @@ export class Physics3D {
     this.bus = bus;
     this._solids = [];
     this._hazards = [];
+    // Fall / hazard damage (health3d.js). Death comes from hp reaching 0 (or the lethal speed, which is damage 1).
+    this.health = new Health3D(diff, bus);
+  }
+
+  /** The health model with the current bus (Sim swaps physics.bus for look-ahead frames). */
+  _health() {
+    const h = this.health;
+    h.bus = this.bus;
+    return h;
   }
 
   /**
@@ -519,11 +660,15 @@ export class Physics3D {
     if (!player.alive) return;
     const P = C.player;
     const R = C.rope;
+    // Adrenaline (sim/inventory3d.js): multiplies the run / air speed caps, accelerations, reel and pump speed.
+    // Gravity, drag, fall damage and the global speed clamp are untouched.
+    const sm = player.speedMul > 1 ? player.speedMul : 1;
 
     player.prevX = player.x;
     player.prevY = player.y;
     player.prevZ = player.z;
     player.landedThisStep = false;
+    this._health().step(dt);
 
     // ---- 1. timers & control ------------------------------------------------
     if (player.stagger > 0) player.stagger = Math.max(0, player.stagger - dt);
@@ -564,9 +709,9 @@ export class Physics3D {
       anyTaut = anyTaut || taut;
       // Grip on a tethered hand yanks that rope in hard; otherwise the shared reel axis.
       const yank = intent.hands && intent.hands[h] ? intent.hands[h].yank || 0 : 0;
-      if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * yank, dt, tethers.maxRopeLength(), taut);
-      else rope.reel(player, intent.reel || 0, R.reelInSpeed, dt, tethers.maxRopeLength(), taut);
-      if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel, dt);
+      if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
+      else rope.reel(player, intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
+      if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel * sm, dt);
       // The line's own pull (elastic catch + slip clutch); both hands act on the same state.
       rope.pull(player, dt);
     }
@@ -578,10 +723,11 @@ export class Physics3D {
         player.vx *= k;
         player.vz *= k;
       } else if (moving) {
-        const tx = mx * P.runMaxSpeed;
-        const tz = mz * P.runMaxSpeed;
+        const runMax = P.runMaxSpeed * sm;
+        const tx = mx * runMax;
+        const tz = mz * runMax;
         const hs = len2(player.vx, player.vz);
-        if (hs > P.runMaxSpeed && player.vx * mx + player.vz * mz > 0) {
+        if (hs > runMax && player.vx * mx + player.vz * mz > 0) {
           player.vx = U.damp(player.vx, tx, P.overspeedFriction, dt);
           player.vz = U.damp(player.vz, tz, P.overspeedFriction, dt);
         } else {
@@ -589,7 +735,7 @@ export class Physics3D {
           const ex = tx - player.vx;
           const ez = tz - player.vz;
           const el = len2(ex, ez);
-          const step = P.runAccel * dt;
+          const step = P.runAccel * sm * dt;
           if (el <= step) {
             player.vx = tx;
             player.vz = tz;
@@ -612,9 +758,9 @@ export class Physics3D {
       if (moving) {
         const along = player.vx * mx + player.vz * mz; // speed along intent (mx,mz may be < 1)
         const im = len2(mx, mz) || 1;
-        if (along / im < P.airMaxSpeed) {
-          player.vx += mx * P.airAccel * dt;
-          player.vz += mz * P.airAccel * dt;
+        if (along / im < P.airMaxSpeed * sm) {
+          player.vx += mx * P.airAccel * sm * dt;
+          player.vz += mz * P.airAccel * sm * dt;
         }
       }
       const k = Math.exp(-P.airDrag * dt);
@@ -688,8 +834,10 @@ export class Physics3D {
     for (let i = 0; i < hz.length; i++) {
       if (hz[i].active === false) continue;
       if (U.sphereBox(player.x, player.y, player.z, r * 0.8, hz[i])) {
-        this.kill(player, tethers, 'hazard');
-        return;
+        if (this._health().hazardHit()) {
+          this.kill(player, tethers, 'hazard');
+          return;
+        }
       }
     }
 
@@ -803,9 +951,15 @@ export class Physics3D {
     player.lastImpact = maxImpact;
     const floorish = impactNY > P.lethalNormalY;
     const lethalMeasure = Math.max(floorish ? maxImpact : 0, floorFall);
-    if (this.diff.impactsLethal && lethalMeasure >= this.diff.lethalImpact) {
-      this.kill(player, tethers, 'impact', lethalMeasure);
-      return;
+    if (this.diff.impactsLethal) {
+      // Landing / wall damage; the lethal speed is damage 1, so the old rule (speed >= lethalImpact kills) still holds.
+      const hp = this._health();
+      let dead = lethalMeasure > 0 && hp.landing(lethalMeasure);
+      if (!dead && !floorish && maxImpact > 0) dead = hp.wallHit(maxImpact);
+      if (dead) {
+        this.kill(player, tethers, 'impact', Math.max(lethalMeasure, maxImpact));
+        return;
+      }
     }
     if (floorish && !wasGrounded) {
       const hard = maxImpact >= P.hardLandingSpeed;
@@ -821,6 +975,7 @@ export class Physics3D {
   kill(player, tethers, cause, impact) {
     if (!player.alive) return;
     if (tethers) tethers.releaseAll(player, 'death');
+    this.health.die();
     player.alive = false;
     player.deathCause = cause;
     player.vx = 0;

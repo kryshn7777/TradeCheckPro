@@ -47,6 +47,50 @@ export const PALETTE = {
   still: 0xf4ead2,
 };
 
+/** The baked sinew set is red; the level's growth is graded to a dark matte brown (linear multiplier). */
+const FLESH_GRADE = new THREE.Color(2.3, 8.2, 6.5);
+const _white = new THREE.Color(1, 1, 1);
+
+/**
+ * Toward the shaft key light (Renderer3D's DirectionalLight: cold light from
+ * high above, slanted) — shared so unlit silhouettes shade the same way.
+ */
+export const KEY_DIR = new THREE.Vector3(-0.45, 1, 0.3).normalize();
+
+/**
+ * Shared "look" uniforms, driven per frame by Renderer3D (one object, every lit
+ * material reads the same values, so nothing recompiles when they change):
+ *  uRimColor  the haze colour reflected at grazing angles (a Fresnel-like edge
+ *             light: relief reads as lit edges against the dark wall behind it)
+ *  uRim       its strength
+ *  uWet       0..1 section wetness: porous stone darkens, roughness drops, so the
+ *             carried lantern slides highlights over the surfaces as you swing
+ *  uVG        vertical grade: surfaces above the eye catch a little more of the
+ *             light that falls down the shaft, those far below sink into the pit
+ */
+export const LOOK = {
+  uRimColor: { value: new THREE.Color(0.2, 0.25, 0.28) },
+  uRim: { value: 0.0 },
+  uWet: { value: 0.0 },
+  uVG: { value: 0.3 },
+  uTime: { value: 0.0 },
+  // Reflection (render/envProbe.js): x global scale of the procedural environment (0 = off: the fetch is skipped),
+  // y wet boost (a wet surface reflects 1 + y times more), z how far the water film flattens the normal used for it.
+  uEnvK: { value: new THREE.Vector4(1, 3, 0.6, 0) },
+  // Wet film glint from the carried lantern (a smooth clear-coat lobe on the geometric normal, no MeshPhysicalMaterial).
+  uLanternW: { value: new THREE.Vector3(0, 1e5, 0) }, // world position
+  uLanternC: { value: new THREE.Vector4(0, 0, 0, 0) }, // rgb colour × candela, a = film strength (0 = off)
+  uLanternR: { value: new THREE.Vector2(30, 1.6) }, // range (m), decay
+  // Baked GI (render/lighting.js, tools/abyssal-tether-3d/bake/bake_gi.mjs): x on/off, y ambient-occlusion strength,
+  // z bounce gain, w shaft-key visibility strength.
+  uGI: { value: null },
+  uGIK: { value: new THREE.Vector4(0, 0.85, 1, 0.7) },
+  uGIMin: { value: new THREE.Vector3(0, 0, 0) },
+  uGIInv: { value: new THREE.Vector3(1, 1, 1) },
+  uGIWarm: { value: new THREE.Color(1.0, 0.55, 0.22) },
+  uGICool: { value: new THREE.Color(0.3, 0.5, 0.6) },
+};
+
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
 /** Fallback texture resolution (px) generated at boot, before the baked sets load. */
@@ -609,6 +653,138 @@ export async function loadTextureManifest(manifestOrUrl = 'assets/textures/manif
 // Shader patches
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Lighting chunks: baked GI + procedural reflections + wet film (lit materials only)
+// -----------------------------------------------------------------------------
+
+const LOOK_FRAG_DECL = `uniform highp sampler3D uGI;
+uniform vec4 uGIK;
+uniform vec3 uGIMin;
+uniform vec3 uGIInv;
+uniform vec3 uGIWarm;
+uniform vec3 uGICool;
+uniform vec4 uEnvK;
+uniform vec3 uLanternW;
+uniform vec4 uLanternC;
+uniform vec2 uLanternR;
+`;
+
+/**
+ * three's lights_fragment_begin with the baked volume folded in (one trilinear fetch per fragment, branch-skipped when
+ * the tier turns it off). The volume (RGBA8) holds R sqrt-encoded static bounce light (lamps, shaft fill), G its warmth
+ * (0 cool .. 1 warm), B visibility of the shaft key, A ambient occlusion:
+ *  - the hemisphere ambient is multiplied by the AO (dark crevices, corners, undersides),
+ *  - the bounce is added as indirect irradiance (warm near lamps, cool under the shaft), colours from the theme,
+ *  - the shaft key loses its light where it is blocked (no unshadowed sun under ledges).
+ * Only static contributions are baked: the pooled dynamic lamps and the lantern still add their own direct light.
+ * null when this three build's chunk does not have the expected anchors (the materials then keep stock lighting).
+ */
+function buildLightsBeginGI() {
+  let c = THREE.ShaderChunk.lights_fragment_begin;
+  const mDir = 'getDirectionalLightInfo( directionalLight, directLight );';
+  const mTail = '#if defined( RE_IndirectSpecular )\n\tvec3 radiance = vec3( 0.0 );';
+  if (!c || !c.includes(mDir) || !c.includes(mTail)) return null;
+  c = c.replace(mDir, mDir + '\n\t\tdirectLight.color *= atKeyVis;');
+  c = c.replace(
+    mTail,
+    `#if defined( RE_IndirectDiffuse )
+	irradiance *= mix( 1.0, atGv.a, uGIK.y );
+	iblIrradiance += atBounce;
+#endif
+` + mTail,
+  );
+  return `
+vec4 atGv = vec4( 1.0, 0.0, 1.0, 1.0 );
+float atKeyVis = 1.0;
+vec3 atBounce = vec3( 0.0 );
+if ( uGIK.x > 0.5 ) {
+	vec3 atGq = ( vAtW + inverseTransformDirection( nonPerturbedNormal, viewMatrix ) * 0.8 - uGIMin ) * uGIInv;
+	vec3 atGd = abs( atGq - 0.5 );
+	float atGin = 1.0 - smoothstep( 0.46, 0.5, max( atGd.x, max( atGd.y, atGd.z ) ) );
+	atGv = mix( vec4( 0.0, 0.5, 1.0, 1.0 ), texture( uGI, atGq.xzy ), atGin );
+	atKeyVis = mix( 1.0, atGv.b, uGIK.w );
+	atBounce = ( atGv.r * atGv.r * 2.0 * uGIK.z ) * mix( uGICool, uGIWarm, atGv.g );
+}
+` + c;
+}
+const LIGHTS_BEGIN_GI = buildLightsBeginGI();
+
+/**
+ * Specular side of the look, replacing lights_fragment_maps on lit materials:
+ *  - environment reflection from the shared procedural probe (PMREM, envProbe.js): scaled by the tier, by the surface's
+ *    wetness (a wet film reflects several times more, and flattens the normal it sees), by the baked occlusion
+ *    (no sky in crevices); Fresnel and roughness blur come from three's own IBL terms; the diffuse IBL term is gone
+ *    (ambient is the hemisphere + baked volume);
+ *  - the wet film glint of the lantern: one smooth GGX lobe (F0 0.04, roughness ~0.22) on the unperturbed normal,
+ *    i.e. a clear coat without MeshPhysicalMaterial.
+ */
+const LIGHTS_MAPS_LIT = `
+#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+	if ( uEnvK.x * envMapIntensity > 0.0005 ) {
+		vec3 atEn = normalize( mix( normal, nonPerturbedNormal, atWet * uEnvK.z ) );
+		radiance += getIBLRadiance( geometryViewDir, atEn, material.roughness ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y ) * mix( 1.0, atGv.a, uGIK.y ) );
+	}
+#endif
+if ( uLanternC.a > 0.001 && atWet > 0.03 ) {
+	vec3 atLv = ( viewMatrix * vec4( uLanternW, 1.0 ) ).xyz - geometryPosition;
+	float atLd = length( atLv );
+	vec3 atLl = atLv / max( atLd, 1e-3 );
+	float atNL = saturate( dot( nonPerturbedNormal, atLl ) );
+	if ( atNL > 0.0 ) {
+		vec3 atH = normalize( atLl + geometryViewDir );
+		float atNH = saturate( dot( nonPerturbedNormal, atH ) );
+		float atNV = saturate( dot( nonPerturbedNormal, geometryViewDir ) );
+		float atVH = saturate( dot( geometryViewDir, atH ) );
+		float atAl = 0.0484;
+		float atSp = D_GGX( atAl, atNH ) * V_GGX_SmithCorrelated( atAl, atNL, atNV ) * F_Schlick( vec3( 0.04 ), 1.0, atVH ).x;
+		float atAt = pow2( saturate( 1.0 - pow4( atLd / uLanternR.x ) ) ) / max( pow( atLd, uLanternR.y ), 0.01 );
+		reflectedLight.directSpecular += uLanternC.rgb * ( atAt * atNL * atSp * uLanternC.a * atWet );
+	}
+}
+`;
+const LIGHTS_MAPS_LIT_NOGI = 'vec4 atGv = vec4( 1.0, 0.0, 1.0, 1.0 );\n' + LIGHTS_MAPS_LIT;
+
+/**
+ * Stock lights_fragment_maps with two changes for materials that carry the shared probe (define AT_LOOK_ENV, set by
+ * applyLookTo): no diffuse IBL term (ambient is the hemisphere + baked GI; the probe is for reflections only) and a
+ * uniform branch that skips the fetch when the tier / envMapIntensity is 0. Materials with their own environment (the
+ * arms' gear map) keep the stock behaviour.
+ */
+const LIGHTS_MAPS_LOOK = `#if defined( RE_IndirectDiffuse )
+	#ifdef USE_LIGHTMAP
+		vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );
+		vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapIntensity;
+		irradiance += lightMapIrradiance;
+	#endif
+	#if defined( USE_ENVMAP ) && defined( STANDARD ) && defined( ENVMAP_TYPE_CUBE_UV ) && ! defined( AT_LOOK_ENV )
+		iblIrradiance += getIBLIrradiance( geometryNormal );
+	#endif
+#endif
+#if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+	#ifdef AT_LOOK_ENV
+	if ( envMapIntensity > 0.0005 ) {
+	#endif
+	#ifdef USE_ANISOTROPY
+		radiance += getIBLAnisotropyRadiance( geometryViewDir, geometryNormal, material.roughness, material.anisotropyB, material.anisotropy );
+	#else
+		radiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness );
+	#endif
+	#ifdef USE_CLEARCOAT
+		clearcoatRadiance += getIBLRadiance( geometryViewDir, geometryClearcoatNormal, material.clearcoatRoughness );
+	#endif
+	#ifdef AT_LOOK_ENV
+	}
+	#endif
+#endif
+`;
+
+/** Installs the lights_fragment_maps variant (idempotent). Called by installRadialFog(). */
+export function installLookChunks() {
+  if (THREE.ShaderChunk.lights_fragment_maps !== LIGHTS_MAPS_LOOK && /getIBLIrradiance/.test(THREE.ShaderChunk.lights_fragment_maps)) {
+    THREE.ShaderChunk.lights_fragment_maps = LIGHTS_MAPS_LOOK;
+  }
+}
+
 const UV_TARGETS = ['MAP', 'NORMALMAP', 'AOMAP', 'ROUGHNESSMAP', 'METALNESSMAP', 'ALPHAMAP', 'EMISSIVEMAP'];
 const UV_VARY = {
   MAP: 'vMapUv',
@@ -630,6 +806,11 @@ const UV_ASSIGN = UV_TARGETS.map((t) => `#ifdef USE_${t}\n\t${UV_VARY[t]} = atUv
  *  shapes: true  per-vertex aShape vs per-instance iShape.x selection (others collapse),
  *                aSplit × iShape.y lateral split, aGlow × iShape.z emissive inlay (glowColor),
  *                aPlate (1 wall-only / 2 chain-only part) vs iShape.w (1 = chain mount)
+ *  shade: true   unlit silhouettes take a cheap key-light term from their world
+ *                normal (KEY_DIR, the shaft key in Renderer3D): lit tops and
+ *                flanks, shaded undersides — colossi read as carved masses, not cut-outs
+ *  lit: true     rim (Fresnel haze edge light) + wetness response from the shared LOOK
+ *                uniforms; `wetK` scales this material's wetness, `wetMin` floors it (flesh is always wet)
  *  fog: 'cap'    linear fog capped at fogCap (silhouettes survive)
  *       'fade'   additive materials: fade toward black instead of fog colour
  * Uniform objects live on material.userData.at so callers can drive them.
@@ -657,10 +838,18 @@ export function patchMaterial(mat, opts = {}) {
   const crack = !!opts.crack && uvMode;
   const macro = !!opts.macro && uvMode;
   const shaft = !!opts.shaft;
-  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|fog:${fog}`;
+  const shade = !!opts.shade;
+  const lit = !!opts.lit;
+  const wetK = opts.wetK != null ? opts.wetK : 1;
+  const wetMin = opts.wetMin || 0;
+  const breathe = opts.breathe || 0;
+  const aniso = lit && macro && opts.aniso ? opts.aniso : 0;
+  const gi = lit && opts.gi !== false && LIGHTS_BEGIN_GI !== null;
+  const key = `at3d|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
+    if (lit) Object.assign(shader.uniforms, LOOK);
     let vs = shader.vertexShader;
     let fs = shader.fragmentShader;
     let vDecl = '';
@@ -760,6 +949,95 @@ ${UV_ASSIGN}
       );
     }
 
+    if (lit) {
+      vDecl += 'varying vec3 vAtW;\n';
+      fDecl += 'varying vec3 vAtW;\n';
+      vs = vs.replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+  {
+    vec4 atWp4 = vec4( transformed, 1.0 );
+    #ifdef USE_INSTANCING
+      atWp4 = instanceMatrix * atWp4;
+    #endif
+    vAtW = ( modelMatrix * atWp4 ).xyz;
+  }`,
+      );
+    }
+    if (lit && breathe > 0) {
+      // living growth: a slow position-only sway (no per-face displacement, so flat-shaded faces never tear apart)
+      vDecl += 'uniform float uTime;\n';
+      vs = vs.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+  {
+    float atPh = position.y * 0.8 + position.x * 0.5 + position.z * 0.6;
+    transformed += vec3( sin( uTime * 0.7 + atPh ), 0.4 * sin( uTime * 0.5 + atPh * 1.3 ), cos( uTime * 0.6 + atPh * 0.9 ) ) * ${breathe.toFixed(4)};
+  }`,
+      );
+    }
+    if (lit) {
+      fDecl += 'uniform vec3 uRimColor;\nuniform float uRim;\nuniform float uWet;\nuniform float uVG;\n' + LOOK_FRAG_DECL;
+      const dry = uvMode ? 'smoothstep( 0.55, 0.95, vAtTop )' : '0.0';
+      // porous stone darkens when wet; the water film drops roughness (sharp lantern glints)
+      fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
+  float atWet = max( uWet * ${wetK.toFixed(3)}, ${wetMin.toFixed(3)} ) * ( 1.0 - ${dry} );
+  diffuseColor.rgb *= 1.0 - 0.32 * atWet;
+  diffuseColor.rgb *= 1.0 + uVG * clamp( ( vAtW.y - cameraPosition.y ) * ( 1.0 / 24.0 ), - 1.0, 1.0 );`);
+      fs = fs.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.42 + 0.06, atWet );`);
+      if (aniso > 0) {
+        // Brushed-metal look without tangents or MeshPhysicalMaterial: a fine grain across the surface's v axis
+        // tilts the normal along v, so the lantern's highlight stretches into a short streak across the grain.
+        fs = fs.replace(
+          '#include <normal_fragment_maps>',
+          `#include <normal_fragment_maps>
+  {
+    vec3 atQ0 = dFdx( - vViewPosition );
+    vec3 atQ1 = dFdy( - vViewPosition );
+    vec2 atS0 = dFdx( vAtUv );
+    vec2 atS1 = dFdy( vAtUv );
+    vec3 atB = cross( atQ1, normal ) * atS0.y + cross( normal, atQ0 ) * atS1.y;
+    float atBl = dot( atB, atB );
+    if ( atBl > 1e-12 ) {
+      float atG = texture2D( uMacroMap, vAtUv * vec2( 1.7, 53.0 ) ).r + 0.5 * texture2D( uMacroMap, vAtUv * vec2( 4.1, 131.0 ) ).r - 0.75;
+      normal = normalize( normal + atB * ( inversesqrt( atBl ) * atG * ${aniso.toFixed(3)} ) );
+    }
+  }`,
+        );
+      }
+      if (gi) {
+        fs = fs.replace('#include <lights_fragment_begin>', LIGHTS_BEGIN_GI);
+        fs = fs.replace('#include <lights_fragment_maps>', LIGHTS_MAPS_LIT);
+      } else {
+        fs = fs.replace('#include <lights_fragment_maps>', LIGHTS_MAPS_LIT_NOGI);
+      }
+      fs = fs.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+  {
+    float atRim = pow( 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 ), 3.0 );
+    atRim *= 1.0 - 0.75 * clamp( dot( normalize( normal ), viewMatrix[ 1 ].xyz ), 0.0, 1.0 ); // floors keep their stone: the haze edge belongs to verticals
+    totalEmissiveRadiance += uRimColor * ( atRim * uRim ) * ( 0.25 + diffuseColor.rgb );
+  }`,
+      );
+    }
+
+    if (shade) {
+      vDecl += 'varying vec3 vAtWN;\n';
+      fDecl += 'varying vec3 vAtWN;\n';
+      vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vAtWN = normalize( mat3( modelMatrix ) * normal );');
+      const k = KEY_DIR;
+      fs = fs.replace(
+        '#include <opaque_fragment>',
+        `#include <opaque_fragment>
+  {
+    vec3 atN = normalize( vAtWN );
+    gl_FragColor.rgb *= 0.45 + 0.95 * max( dot( atN, vec3( ${k.x.toFixed(4)}, ${k.y.toFixed(4)}, ${k.z.toFixed(4)} ) ), 0.0 ) + 0.15 * atN.y;
+  }`,
+      );
+    }
+
     if (fog === 'cap' || fog === 'fade') {
       fDecl += 'uniform float uFogCap;\n';
       const body =
@@ -787,17 +1065,27 @@ ${UV_ASSIGN}
 /**
  * Fog for VR, installed globally (ShaderChunk) so every module's materials agree:
  *  - radial (distance) fog instead of view depth: rotation-invariant, so
- *    looking around in the headset never changes what the fog hides
+ *    looking around in the headset never changes what fog hides
  *  - a front-loaded curve between fogNear and fogFar (1 − (1 − t)^2.5): mid
  *    distances turn to haze quickly (silhouettes, depth), and the far value
  *    still reaches exactly 1 so distance culling at fogFar is invisible
- * atFogFactor(d) is available to every fragment shader that uses fog.
+ *  - a vertical gradient on the fog colour by view direction (per fragment):
+ *    the haze above (where you came from) holds a little light, the abyss below
+ *    swallows it. `fogColor` is redefined to the graded colour after the
+ *    declarations, so every material's fog code (built-in chunks and custom
+ *    patches alike) fades to exactly the same colour as the sky dome
+ *    (Renderer3D) — distance culling stays invisible at any pitch.
+ * atFogFactor(d) and atFogColor() are available to every fragment shader that uses fog.
  */
+export const FOG_GRADIENT = { up: 0.55, down: 0.6 };
+
 export function installRadialFog() {
-  const vtx = '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n#endif\n';
+  const vpars = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif\n';
+  const vtx = '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n\tvFogView = mvPosition.xyz;\n#endif\n';
   const pars = `#ifdef USE_FOG
 	uniform vec3 fogColor;
 	varying float vFogDepth;
+	varying vec3 vFogView;
 	#ifdef FOG_EXP2
 		uniform float fogDensity;
 	#else
@@ -813,12 +1101,22 @@ export function installRadialFog() {
 		return 1.0 - u * u * sqrt( u );
 	#endif
 	}
+	vec3 atFogColor() {
+		// world-space up of the view ray: viewMatrix[ 1 ].xyz is world +Y in view space
+		float k = dot( normalize( vFogView ), viewMatrix[ 1 ].xyz );
+		float up = smoothstep( 0.0, 1.0, k );
+		float dn = smoothstep( 0.0, 0.85, - k );
+		return fogColor * ( 1.0 + ${FOG_GRADIENT.up.toFixed(3)} * up - ${FOG_GRADIENT.down.toFixed(3)} * dn );
+	}
+	#define fogColor atFogColor()
 #endif
 `;
   const frag = '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, atFogFactor( vFogDepth ) );\n#endif\n';
+  if (THREE.ShaderChunk.fog_pars_vertex !== vpars) THREE.ShaderChunk.fog_pars_vertex = vpars;
   if (THREE.ShaderChunk.fog_vertex !== vtx) THREE.ShaderChunk.fog_vertex = vtx;
   if (THREE.ShaderChunk.fog_pars_fragment !== pars) THREE.ShaderChunk.fog_pars_fragment = pars;
   if (THREE.ShaderChunk.fog_fragment !== frag) THREE.ShaderChunk.fog_fragment = frag;
+  installLookChunks();
 }
 
 /** JS twin of the shader fog curve (0..1) for CPU-side fades. */
@@ -896,11 +1194,11 @@ export class MaterialLibrary {
     const m = this.m;
     const macro = S.macro && S.macro.map;
     // Level solids (InstancedMesh, box-projected world UVs, ash on tops).
-    m.rock = this._std(S.rock, {}, { uv: 'box', ash: 0.32, macro, role: 'rock' });
-    m.masonry = this._std(S.masonry, {}, { uv: 'box', ash: 0.38, macro, role: 'masonry' });
+    m.rock = this._std(S.rock, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.32, macro, role: 'rock', lit: true });
+    m.masonry = this._std(S.masonry, { envMapIntensity: 0.5 }, { uv: 'box', ash: 0.38, macro, role: 'masonry', lit: true });
     // Crumbling ledges read differently by PATTERN (dense dark cracks) and value (paler, dusty), not hue alone.
-    m.crumble = this._std(S.masonry, { color: 0xf0e2c8 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry' });
-    m.metal = this._std(S.metal, {}, { uv: 'box', ash: 0.22, macro, role: 'metal' });
+    m.crumble = this._std(S.masonry, { color: 0xf0e2c8, envMapIntensity: 0.4 }, { uv: 'box', ash: 0.55, crack: S.crack && S.crack.map, crackScale: 1 / 1.6, macro, role: 'masonry', lit: true });
+    m.metal = this._std(S.metal, { envMapIntensity: 1.25 }, { uv: 'box', ash: 0.22, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.4 });
     m.grate = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: S.grate && S.grate.map,
@@ -909,16 +1207,22 @@ export class MaterialLibrary {
       alphaTest: 0.5,
       side: THREE.DoubleSide,
     });
+    m.grate.envMapIntensity = 0.8;
     patchMaterial(m.grate, { uv: 'box', tile: 4 });
-    // Merged decor (uv already in metres).
-    m.decorStone = this._std(S.masonry, {}, { uv: 'metric', ash: 0.3, macro, role: 'masonry' });
-    m.decorMetal = this._std(S.metal, {}, { uv: 'metric', ash: 0.15, macro, role: 'metal' });
-    m.decorRock = this._std(S.distant || S.rock, {}, { uv: 'metric', ash: 0.25, macro, role: 'distant' });
-    // Organic growth (the predator's ribs through the masonry): flesh set when baked, dark-red rock until then.
-    m.decorFlesh = this._std(S.flesh || S.rock, { color: S.flesh ? 0xffffff : 0x8a4a40 }, { uv: 'metric', macro, role: 'flesh' });
+    // Merged decor + environment dressing (uv already in metres; vertex colour =
+    // baked AO × the section grade).
+    m.decorStone = this._std(S.masonry, { vertexColors: true, envMapIntensity: 0.5 }, { uv: 'metric', ash: 0.3, macro, role: 'masonry', lit: true });
+    m.decorMetal = this._std(S.metal, { vertexColors: true, envMapIntensity: 1.2 }, { uv: 'metric', ash: 0.15, macro, role: 'metal', lit: true, wetK: 0.5, aniso: 0.3 });
+    m.decorRock = this._std(S.distant || S.rock, { vertexColors: true, envMapIntensity: 0.45 }, { uv: 'metric', ash: 0.25, macro, role: 'distant', lit: true });
+    // Organic growth (the predator's sinew through the masonry): the flesh set's
+    // relief, graded to a dark, MATTE bruise-brown (art bible: never wet red).
+    m.decorFlesh = this._std(S.flesh || S.rock, { vertexColors: true, envMapIntensity: 0.8, color: S.flesh ? FLESH_GRADE : 0x3a2c28 }, { uv: 'metric', macro, role: 'flesh', lit: true, wetK: 1.4, wetMin: 0.45, breathe: 0.03 });
+    m.decorFlesh.userData.matte = 0.82;
+    m.decorFlesh.roughnessMap = null;
+    m.decorFlesh.roughness = 0.82;
     // Emissive bits of decor (lamp bulbs, inlays, statue lanterns): vertex colours.
     m.decorGlow = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false });
-    patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.7 });
+    patchMaterial(m.decorGlow, { fog: 'cap', fogCap: 0.55 });
     // Volumetric light shafts: additive, fades to black in fog. forceSinglePass:
     // a transparent DoubleSide material otherwise draws twice per eye (back then
     // front) and re-resolves its program on every pass; additive with no depth
@@ -935,7 +1239,7 @@ export class MaterialLibrary {
     });
     patchMaterial(m.lightShaft, { fog: 'fade', fogCap: 0.85, shaft: true, nearFade: [2.5, 14] });
     // Anchor mounts: shape-selected iron with phosphor inlays.
-    m.mount = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.75 });
+    m.mount = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0.75, envMapIntensity: 0.9 });
     patchMaterial(m.mount, { shapes: true, glowColor: PALETTE.phos, splitGap: 0.05 });
     // Anchor glyphs (billboards): additive phosphor, fades (not fogs) with distance.
     m.glyph = new THREE.MeshBasicMaterial({
@@ -947,12 +1251,28 @@ export class MaterialLibrary {
     });
     patchMaterial(m.glyph, { shapes: true, fog: 'fade', fogCap: 0.55, splitGap: 0.28 });
     // Hazards: shape-selected rusted iron with a dull warning inlay.
-    m.hazard = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.3 });
+    m.hazard = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.5 });
     patchMaterial(m.hazard, { shapes: true, glowColor: 0x8a2c18 });
     // Colossal silhouettes: unlit, colour follows the fog, fog capped.
     m.colossal = new THREE.MeshBasicMaterial({ color: 0x0b0c0d, toneMapped: false });
-    patchMaterial(m.colossal, { fog: 'cap', fogCap: 0.5 });
-    m.plaque = this._std(S.masonry, { emissive: new THREE.Color(PALETTE.phos), emissiveIntensity: 0.0 }, { uv: 'metric', role: 'masonry' });
+    patchMaterial(m.colossal, { fog: 'cap', fogCap: 0.5, shade: true });
+    m.plaque = this._std(S.masonry, { emissive: new THREE.Color(PALETTE.phos), emissiveIntensity: 0.0, envMapIntensity: 0.4 }, { uv: 'metric', role: 'masonry' });
+    // Sky dome (Renderer3D): fully fogged, so it shows exactly the graded fog colour.
+    m.sky = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: true });
+    // Shared reflection probe (render/lighting.js assigns the texture): the stock-chunk materials get AT_LOOK_ENV
+    // (no diffuse IBL term, branch-skipped when the tier turns reflections off); the lit-patched ones carry their own chunk.
+    for (const k of ['grate', 'mount', 'hazard', 'plaque']) m[k].defines = Object.assign({}, m[k].defines, { AT_LOOK_ENV: '' });
+  }
+
+  /** Hands the shared environment probe (a PMREM texture) to every standard material of the library. */
+  setEnvironment(tex) {
+    this._env = tex || null;
+    for (const k of Object.keys(this.m)) {
+      const mat = this.m[k];
+      if (!mat.isMeshStandardMaterial || mat.envMap === this._env) continue;
+      mat.envMap = this._env;
+      mat.needsUpdate = true;
+    }
   }
 
   get(name) {
@@ -975,7 +1295,7 @@ export class MaterialLibrary {
       if (!s || !s.map) continue;
       if (mat.map !== s.map) changed = true;
       mat.map = s.map;
-      if (role === 'flesh') mat.color.set(0xffffff);
+      if (role === 'flesh') mat.color.copy(mat.userData.matte ? FLESH_GRADE : _white);
       if (mat.normalMap && s.normalMap) {
         if (mat.normalMap !== s.normalMap) changed = true;
         mat.normalMap = s.normalMap;
@@ -983,7 +1303,7 @@ export class MaterialLibrary {
       if (mat.aoMap && s.ormMap) {
         if (mat.aoMap !== s.ormMap) changed = true;
         mat.aoMap = s.ormMap;
-        mat.roughnessMap = s.ormMap;
+        mat.roughnessMap = mat.userData.matte ? null : s.ormMap;
         mat.metalnessMap = s.ormMap;
       }
       if (mat.userData.at) mat.userData.at.uTexScale.value = 1 / (s.tileMeters || DEFAULT_TILE);

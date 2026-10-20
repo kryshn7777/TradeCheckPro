@@ -66,7 +66,13 @@ export const CONFIG = {
     reelSpinCap: 1.02,
     releaseBoost: 1.04,
     releaseBoostMinSpeed: 8,
-    fireSpeed: 220, // visual tether extension (m/s); attachment itself is immediate
+    // The shot is a projectile: the hook flies from the muzzle to the target and the line attaches when it ARRIVES
+    // (TetherSystem.fire / step). Flight time = distance / flightSpeed, clamped to [flightMin, flightMax].
+    flightSpeed: 85, // m/s: hook flight speed (a 20 m shot takes 0.24 s, the farthest 0.38 s)
+    flightMin: 0.05, // s: even a point-blank shot is visibly in flight
+    flightMax: 0.45, // s: the longest flight (the farthest shots are a little faster than flightSpeed)
+    attachRamp: 0.2, // s: after the hook bites, the line's pull builds from 0 to full (smoothstep): no snap
+    attachRampSpeed: 5, // m/s of outward speed that doubles the ramp's rate (a fast fall is arrested at once: 20 m/s = 5x)
     missTime: 0.24,
     grappleBuffer: 0.2,
     tautSlack: 0.04,
@@ -77,6 +83,50 @@ export const CONFIG = {
     stickiness: 0.18,
     losEndClearance: 0.6,
     minAimLength: 1e-3,
+  },
+
+  // Health and fall damage (sim/health3d.js). hp is 0..1 (100 hp). Per-difficulty values live in
+  // DIFFICULTY[k].health (fall threshold, regeneration, hazard damage, wall scale).
+  health: {
+    lowEnter: 0.35, // hp at or below this is "low": the heartbeat, the ECG turns red, the pulse starts
+    lowExit: 0.5, // ... until hp climbs back to this (hysteresis)
+    vignetteStart: 0.6, // the red screen-edge vignette fades in below this hp (full rim at 0)
+    fallExp: 2, // landing damage = ((v/vLethal - threshold) / (1 - threshold))^fallExp: 0 at the threshold, 1 (dead) at the lethal speed
+    wallThreshold: 0.5, // side impacts: no damage below this fraction of the lethal speed
+    wallMax: 0.45, // ... damage at the lethal speed (the normal-component speed)
+    wallExp: 2,
+    wallCap: 0.7, // ... and the most a single wall hit can take
+    wallSpeedCap: 1.5, // speed ratio at which the wall curve stops growing
+    hitCooldown: 0.35, // s: one landing is not counted twice (a bigger second hit pays only the excess)
+    hazardCooldown: 1.2, // s between hazard (spikes / blades / rebar) hits
+    bpmCalm: 60, // heartbeat at full health
+    bpmMax: 140, // ... near zero hp
+    bpmExp: 1.5,
+    adrenalineBpm: 25, // extra bpm right after a hit, fading over adrenalineTime
+    adrenalineTime: 4,
+    checkpointHeal: 1, // hp restored on reaching a new checkpoint (fraction of full)
+  },
+
+  // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
+  // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
+  bag: {
+    caps: [1, 5, 2, 3], // how many of each the bag holds
+    applyTime: [5, 1.5, 0.6, 1], // s a use is channelled (cancelled by damage / death / the cancel input)
+    heal: [1, 0.2, 0.1, 0], // fraction of full health restored when the channel completes
+    adrenalineTime: 10, // s of the speed boost
+    adrenalineMul: 2, // x run / air speed caps, acceleration, reel and pump speed (gravity and fall damage unchanged)
+    batteryRestore: 0.5, // lantern charge a battery restores (0..1)
+    lanternDrain: 0.0007, // charge per second while playing: full to empty in ~24 min
+    lanternFloor: 0.25, // the lantern never goes dark: this fraction of its light at zero charge
+    lanternDimFrom: 0.6, // below this charge the light starts to fall (smoothstep to the floor at zero)
+    lanternLow: 0.15, // 'low battery' warning level
+    fullHp: 0.995, // heals are refused above this hp (nothing to heal)
+    pickupRadius: 0.9, // m from the body centre: walking / swinging through collects
+    handRadius: 0.35, // m: a hand reaching a pickup collects it with the grip pressed
+    handGrip: 0.5, // grip value that counts as pressed for a hand pickup
+    supplyFraction: 1 / 3, // share of the authored supply spots that hold an item in a run
+    supplySpacing: 4, // m: two spots of one section closer than this are not both chosen (when avoidable)
+    maxFirstAid: 3, // per run
   },
 };
 
@@ -96,6 +146,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
+    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
   },
   nightmare: {
     key: 'nightmare',
@@ -112,6 +163,7 @@ export const DIFFICULTY = {
     checkpoints: 'alternate',
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
+    health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
   },
   abyss: {
     key: 'abyss',
@@ -128,6 +180,7 @@ export const DIFFICULTY = {
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
+    health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
   },
   sandbox: {
     key: 'sandbox',
@@ -144,6 +197,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
+    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 1, wallScale: 1 },
   },
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;
@@ -156,6 +210,7 @@ export const SETTINGS_DEFAULTS = {
   mouseSensitivity: 1.0, // desktop look (0.3..3)
   dominantHand: 'right',
   haptics: true,
+  showBody: true, // draw the player's own body (jacket, belt, legs, boots, backpack) when looking down
   lastDifficulty: 'normal',
   // Player height (CONTRACT3D §8 "Rig and eye height"). Old saved settings lack these keys and migrate to the defaults.
   heightMode: 'standing', // 'standing' = real height 1:1; 'seated' = eyes lifted by heightCal to a standing eye height

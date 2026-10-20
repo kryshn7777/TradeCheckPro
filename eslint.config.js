@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'public/abyssal-tether-3d/vendor']),
+  globalIgnores(['dist', 'public/abyssal-tether-3d/vendor', 'tools/abyssal-tether-3d/wip']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

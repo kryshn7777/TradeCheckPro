@@ -38,7 +38,7 @@ for (const cid of chapterIds(argValue(argv, '--chapter', 'ch1'))) {
       const ok = r.ok && r.deaths === 0 && r.maxLand < 0.85;
       allOk = allOk && ok;
       console.log(
-        `${cid} ${v.padEnd(9)} ${key.padEnd(7)} ${ok ? 'PASS' : 'FAIL'} t=${r.time.toFixed(1)}s maxLand=${r.maxLand.toFixed(2)}${r.maxLandAt ? '@' + r.maxLandAt.y.toFixed(0) : ''} deaths=${r.deaths} attaches=${r.attaches.length} la=${r.lookaheads} (${Date.now() - t0}ms)` +
+        `${cid} ${v.padEnd(9)} ${key.padEnd(7)} ${ok ? 'PASS' : 'FAIL'} t=${r.time.toFixed(1)}s maxLand=${r.maxLand.toFixed(2)}${r.maxLandAt ? '@' + r.maxLandAt.y.toFixed(0) : ''} deaths=${r.deaths} dmg=${r.damage.total}hp/${r.damage.hits}hits minHp=${r.damage.minHp} attaches=${r.attaches.length} la=${r.lookaheads} (${Date.now() - t0}ms)` +
           (r.fail ? `\n     ${r.fail}` : '') +
           (r.misTarget.length ? `\n     misTarget ${JSON.stringify(r.misTarget.slice(0, 5))}` : ''),
       );

@@ -25,7 +25,7 @@
  * manifest) are applied tri-planar in each part's local space.
  *
  *   const view = new CreatureView(scene, gltf);                 // GLTFLoader result
- *   CreatureView.loadTextures('assets/textures/manifest.json').then((t) => view.setTextures(t));
+ *   view.setTextures(renderer.materials.sets);                 // optional: the level's texture sets
  *   view.update(creature, dt, camera);                          // camera optional (LOD)
  *   view.info → { drawCalls, triangles, bones, parts, optional, missing, lod1 }
  */
@@ -44,7 +44,7 @@ const DEFAULTS = {
   lodDistance: 42, // camera → head distance beyond which the LOD1 mesh shows (when the kit has LOD1 parts)
   hideDistance: 260, // never drawn beyond this (fog has swallowed it long before)
   glowPierce: 0.35, // how much of the sensory glow survives the fog (glints in the dark)
-  sightingFogCap: 0.8, // fog never fully swallows the far sighting: a dark silhouette in the haze
+  sightingFogCap: 0.55, // fog never fully swallows the far sighting: a dark silhouette in the haze (at 0.8 it was barely darker than the fog)
   detailTile: 0.5, // detail texture tile = manifest tileMeters × this (in part-local metres)
 };
 
@@ -692,43 +692,6 @@ export class CreatureView {
       const tile = Math.max(0.25, (Number(s.tileMeters) || 4) * this.opts.detailTile);
       U.uTexScale.value[c] = 1 / tile;
       U.uTexGain.value[c] = 1 / Math.max(0.05, s.mean || meanLuma(s.map));
-    }
-  }
-
-  /**
-   * Loads the assets agent's manifest ({ "<set>": { albedo, normal, orm, tileMeters } }).
-   * Resolves to sets for setTextures(), or null (never rejects).
-   */
-  static async loadTextures(manifestUrl = 'assets/textures/manifest.json') {
-    try {
-      if (typeof fetch !== 'function') return null;
-      const res = await fetch(manifestUrl, { cache: 'no-cache' });
-      if (!res.ok) return null;
-      const manifest = await res.json();
-      const sets = manifest && manifest.sets ? manifest.sets : manifest;
-      const base = manifestUrl.replace(/[^/]*$/, '');
-      const loader = new THREE.TextureLoader();
-      const out = {};
-      const want = { masonry: ['masonry', 'stone', 'rock'], metal: ['metal', 'iron', 'rust'], flesh: ['flesh', 'sinew'] };
-      await Promise.all(
-        Object.keys(want).map(async (role) => {
-          const name = want[role].find((n) => sets[n]);
-          if (!name) return;
-          const s = sets[name];
-          const rel = s.albedo || s.map || s.color || s.diffuse;
-          if (!rel) return;
-          const map = await new Promise((resolve) => loader.load(/^(https?:|data:|blob:|\/)/.test(rel) ? rel : base + rel, resolve, undefined, () => resolve(null)));
-          if (!map) return;
-          map.colorSpace = THREE.SRGBColorSpace;
-          map.wrapS = THREE.RepeatWrapping;
-          map.wrapT = THREE.RepeatWrapping;
-          map.anisotropy = 2;
-          out[role] = { map, tileMeters: Number(s.tileMeters) || 4, mean: meanLuma(map) };
-        }),
-      );
-      return Object.keys(out).length ? out : null;
-    } catch {
-      return null;
     }
   }
 

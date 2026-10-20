@@ -5,13 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node tools/abyssal-tether-3d/release/gen-sw.mjs",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "verify:at3d": "node tools/abyssal-tether-3d/verify/verify.mjs",
     "budget:at3d": "node tools/abyssal-tether-3d/verify/budget.mjs",
     "test:at3d": "node tools/abyssal-tether-3d/tests/run-tests.mjs",
-    "e2e:at3d": "node tools/abyssal-tether-3d/e2e/e2e.cjs"
+    "e2e:at3d": "node tools/abyssal-tether-3d/e2e/e2e.cjs",
+    "at3d:sw": "node tools/abyssal-tether-3d/release/gen-sw.mjs",
+    "build:at3d-release": "node tools/abyssal-tether-3d/release/build-release.mjs",
+    "test:at3d-release": "node tools/abyssal-tether-3d/release/test-pwa.mjs && node tools/abyssal-tether-3d/release/test-boot.mjs",
+    "soak:at3d": "node tools/abyssal-tether-3d/release/soak.mjs",
+    "capture:at3d-store": "node tools/abyssal-tether-3d/release/capture-screens.mjs",
+    "art:at3d-store": "python3 tools/abyssal-tether-3d/release/make-art.py"
   },
   "dependencies": {
     "@studio-freight/lenis": "^1.0.42",

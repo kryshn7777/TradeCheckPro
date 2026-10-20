@@ -8,7 +8,16 @@
  * and, on the left bracer, a small swinging lantern whose glass core is the
  * socket for Renderer3D's lantern light (setLanternParent).
  *
- * Draw calls (per eye): 2 launchers + 1 lantern + 1 batched FX mesh = 4.
+ * The shipped look is the Blender-built GLB (assets/models/player_arms.glb, see
+ * handsGear.js): HD gloved forearms with a strapped-on brass/iron launcher
+ * (skinned, 4 finger poses blended from the controller's trigger/grip analog
+ * values, drum / gauge needle / trigger lever / recoil slide animated, the grapple
+ * head leaving the muzzle with the line, the carried lantern). It loads async and
+ * the procedural launchers above stay as the fallback until it arrives (or if it
+ * fails). The rope origin is the GLB muzzle (HandsView.muzzlePosition).
+ *
+ * Draw calls (per eye): 2 arms + 2 launchers + 1 lantern + 1 batched FX mesh
+ * (+ 2 loose grapple heads while a line is out) = 6..8; the procedural fallback: 4.
  * No per-frame allocation; the FX batch is one dynamic BufferGeometry.
  *
  * Usage (Game):
@@ -21,6 +30,7 @@
 
 import {
   AdditiveBlending,
+  BackSide,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -29,16 +39,23 @@ import {
   CylinderGeometry,
   DoubleSide,
   DynamicDrawUsage,
+  FrontSide,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
+  PMREMGenerator,
   Quaternion,
+  Scene,
   ShaderMaterial,
+  SphereGeometry,
   TorusGeometry,
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CONFIG } from '../sim/config3d.js';
+import { GEAR_TUNING, GEAR_URL, HandGear, loadGearGLTF, readPoses } from './handsGear.js';
 
 const HANDS = ['left', 'right'];
 
@@ -58,6 +75,16 @@ export const HANDS_TUNING = {
   wristLift: { x: 0, y: 0.03, z: 0 }, // wrist-HUD mount above the palm (clears the bracer plate)
   lanternRope: 0.05, // hook → lantern body (m)
   lanternDamp: 2.2, // pendulum damping (1/s)
+  // --- GLB arms + launchers (handsGear.js) -------------------------------------------
+  gear: true, // false = procedural launchers only
+  gearUrl: GEAR_URL,
+  wristLiftGear: { x: 0, y: 0.083, z: 0.115 }, // wrist-HUD mount above the strapped-on launcher, behind the drum
+  desktopGear: { x: 0, y: 0.03, z: 0.03, rx: 0, ry: 0, rz: 0, scale: 1.3 }, // arm model offset on the desktop virtual hand
+  gearLight: 0.2, // × direct light on the gear (the lantern sits a few cm from the hands)
+  gearEnv: 1.2, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
+  gearGlowIdle: 0.45, // emissive intensity of the pilot lamp / gauge phosphor
+  gripRest: 0.62, // resting-finger-on-the-grip-button reads as a half-closed hand
+  headScaleMax: 8, // loose grapple head enlarges with distance like the rope does (ropeView R_PER_M)
 };
 
 // Palette (sRGB hex → linear via Color). Glow tints match the anchor highlights
@@ -426,6 +453,63 @@ class FxBatch {
 }
 
 // -----------------------------------------------------------------------------
+// Gear environment: a tiny lit-room reflection for the metals (PMREM, built once)
+// -----------------------------------------------------------------------------
+
+/**
+ * Metal needs something to reflect: the shaft has no environment map, so the
+ * brass/iron would be black outside the lantern's pin highlight. A small warm
+ * "room" (dim vault dome, two lamp boxes, a cool floor bounce) is prefiltered
+ * once and set on the gear materials only; its strength follows the scene's
+ * ambient light so the hands do not glow in a pitch-black chamber.
+ */
+export const GEAR_ENV = {
+  top: '#8a8f98',
+  mid: '#34363a',
+  bot: '#2a3034',
+  lampA: [3.0, 3.0, 3.0],
+  lampB: [1.5, 1.5, 1.5],
+  strip: [0.7, 1.0, 1.2],
+};
+
+export function buildGearEnvironment(renderer, E = GEAR_ENV) {
+  const sc = new Scene();
+  const geo = new SphereGeometry(6, 24, 12);
+  const pos = geo.attributes.position;
+  const col = new Float32Array(pos.count * 3);
+  const top = new Color(E.top);
+  const mid = new Color(E.mid);
+  const bot = new Color(E.bot);
+  const c = new Color();
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i) / 6;
+    if (y > 0) c.copy(mid).lerp(top, Math.pow(y, 0.8));
+    else c.copy(mid).lerp(bot, Math.pow(-y, 0.8));
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  geo.setAttribute('color', new BufferAttribute(col, 3));
+  sc.add(new Mesh(geo, new MeshBasicMaterial({ vertexColors: true, side: BackSide, toneMapped: false })));
+  const box = (w, h, d, rgb, x, y, z) => {
+    const m = new Mesh(new BoxGeometry(w, h, d), new MeshBasicMaterial({ color: new Color(rgb[0], rgb[1], rgb[2]), toneMapped: false }));
+    m.position.set(x, y, z);
+    sc.add(m);
+  };
+  box(2.6, 0.12, 1.4, E.lampA, -1.2, 4.2, 1.6);
+  box(0.2, 1.6, 0.9, E.lampB, 4.4, 1.0, -1.4);
+  box(3.2, 0.1, 0.5, E.strip, 0, -3.6, -2.0);
+  const pm = new PMREMGenerator(renderer);
+  const rt = pm.fromScene(sc, 0.03);
+  pm.dispose();
+  for (const o of sc.children) {
+    if (o.material) o.material.dispose();
+    if (o.geometry) o.geometry.dispose();
+  }
+  return rt;
+}
+
+// -----------------------------------------------------------------------------
 // HandsView
 // -----------------------------------------------------------------------------
 
@@ -492,6 +576,35 @@ export class HandsView {
     this.batch = new FxBatch();
     if (this.scene) this.scene.add(this.batch.mesh);
 
+    // GLB gear (arms + launchers + lantern + loose grapple heads): see _loadGear.
+    this.gear = null; // { left: HandGear, right: HandGear }
+    this._disposed = false;
+    this._fireListeners = [];
+    this._lanternFallback = null;
+    this.gearState = this.tuning.gear ? 'loading' : 'off'; // off | loading | ready | failed
+    this.gearError = null;
+    this.gearReady = null; // Promise, resolves true/false
+    this._gearEnv = null;
+    this._gearLight = { value: this.tuning.gearLight };
+    this._gearMats = null; // { left, right, lantern }
+    this._heads = { left: null, right: null };
+    this._pad = {
+      left: { squeeze: 0, trigger: 0, point: 0, cap: false },
+      right: { squeeze: 0, trigger: 0, point: 0, cap: false },
+    };
+    this._rig = {
+      left: { paid: 0, hadRope: false, headOut: false, rewind: 0, speed: 0 },
+      right: { paid: 0, hadRope: false, headOut: false, rewind: 0, speed: 0 },
+    };
+    this._mz = { left: new Vector3(), right: new Vector3() }; // world muzzle (rope origin), this frame
+    this._mzOk = { left: false, right: false };
+    this._gearXr = null;
+    this._lanternFlick = 1;
+    this._tip = new Vector3();
+    this._tdir = new Vector3();
+    this._fwd = new Vector3(0, 0, -1);
+    if (this.tuning.gear) this.gearReady = this._loadGear(this.tuning.gearUrl);
+
     // scratch
     this._ray = { ox: 0, oy: 0, oz: 0, dx: 0, dy: 0, dz: -1 };
     this._hit = { t: 0, solid: null, x: 0, y: 0, z: 0 };
@@ -512,9 +625,92 @@ export class HandsView {
     this._ls = new Vector3();
   }
 
-  /** Object3D the launcher of `hand` is drawn on. */
+  /** Object3D the launcher of `hand` is drawn on (the GLB side root once loaded, else the procedural mesh). */
   launcher(hand) {
+    if (this.gear && this.gear[hand]) return this.gear[hand].root;
     return this.launchers[hand] || null;
+  }
+
+  /**
+   * Stable API for the rope FX / body avatar (all world space, no allocation):
+   *   getMuzzle(hand, outPos, outDir)   nozzle position + unit forward direction (barrel axis)
+   *   getWristSocket(hand, outMatrix)   world matrix of the wrist (Hand bone: origin at the wrist joint)
+   *   getElbowAnchor(hand, outPos)      centre of the open sleeve end near the elbow (where an upper arm attaches)
+   *   addFireListener(fn) / removeFireListener(fn)   fn(hand) when a shot leaves the muzzle (see onFire)
+   * Each returns false when the gear is not up / the hand is untracked (the outputs are then untouched, except
+   * getMuzzle which falls back to InputManager.handPose + the grip forward axis).
+   */
+  getMuzzle(hand, outPos, outDir) {
+    const g = this.gear && this.gear[hand];
+    if (g && this.input && this.input.handTracked(hand) && g.muzzleWorld(outPos)) {
+      g.root.updateWorldMatrix(true, false);
+      const e = g.root.matrixWorld.elements;
+      outDir.set(-e[8], -e[9], -e[10]).normalize(); // socket −Z in world
+      return true;
+    }
+    const inp = this.input;
+    if (!inp) return false;
+    const pose = inp.handPose(hand);
+    outPos.set(pose.x, pose.y, pose.z);
+    this._q.set(pose.qx, pose.qy, pose.qz, pose.qw);
+    outDir.set(0, 0, -1).applyQuaternion(this._q);
+    return false;
+  }
+
+  getWristSocket(hand, outMatrix) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !g.wrist) return false;
+    g.wrist.updateWorldMatrix(true, false);
+    outMatrix.copy(g.wrist.matrixWorld);
+    return true;
+  }
+
+  getElbowAnchor(hand, outPos) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !g.forearm || !g.wrist) return false;
+    g.root.updateWorldMatrix(true, false);
+    g.forearm.updateWorldMatrix(true, false);
+    g.wrist.updateWorldMatrix(true, false);
+    outPos.setFromMatrixPosition(g.forearm.matrixWorld); // elbow joint
+    this._tmp.setFromMatrixPosition(g.wrist.matrixWorld);
+    this._tmp.subVectors(outPos, this._tmp).normalize();
+    outPos.addScaledVector(this._tmp, 0.028); // the sleeve ends 2.8 cm past the joint
+    return true;
+  }
+
+  addFireListener(fn) {
+    if (typeof fn === 'function' && !this._fireListeners.includes(fn)) this._fireListeners.push(fn);
+  }
+
+  removeFireListener(fn) {
+    const i = this._fireListeners.indexOf(fn);
+    if (i >= 0) this._fireListeners.splice(i, 1);
+  }
+
+  /** A shot leaves the muzzle: kick the recoil slide and tell the listeners (rope FX). */
+  onFire(hand, kick = 1) {
+    const g = this.gear && this.gear[hand];
+    if (g) g.kick(kick);
+    for (let i = 0; i < this._fireListeners.length; i++) {
+      try {
+        this._fireListeners[i](hand);
+      } catch {
+        /* a listener must not break the hands */
+      }
+    }
+  }
+
+  /**
+   * World position of a hand's launcher muzzle: where the rope starts (RopeView) and the
+   * laser leaves. Valid for the current frame's sockets. Returns false (out untouched)
+   * while the procedural fallback is showing or the hand is not tracked, so the caller
+   * falls back to InputManager.handPose().
+   */
+  muzzlePosition(hand, out) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !this.input || !this.input.handTracked(hand)) return false;
+    if (!g.muzzleWorld(out)) return false;
+    return true;
   }
 
   /**
@@ -528,7 +724,7 @@ export class HandsView {
     if (!m) {
       m = new Object3D();
       m.name = `AT3D-wrist-${h}`;
-      m.position.copy(this.tuning.wristLift);
+      m.position.copy(this.gear ? this.tuning.wristLiftGear : this.tuning.wristLift);
       this._wrist[h] = m;
     }
     const sock = this.input && this.input.handSocket ? this.input.handSocket(h) : null;
@@ -538,6 +734,381 @@ export class HandsView {
 
   setVisible(v) {
     this.visible = !!v;
+  }
+
+  // ---------------------------------------------------------------------------
+  // GLB gear
+  // ---------------------------------------------------------------------------
+
+  _loadGear(url) {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') {
+      this.gearState = 'failed';
+      return Promise.resolve(false);
+    }
+    return loadGearGLTF(url)
+      .then((gltf) => {
+        this._applyGear(gltf);
+        return true;
+      })
+      .catch((err) => {
+        this.gearState = 'failed';
+        this.gearError = err;
+        if (typeof console !== 'undefined') console.warn('[AT3D] arm/launcher model unavailable, procedural hands only', err);
+        return false;
+      });
+  }
+
+  /** The GLB arrived: build both sides, swap the lantern, hide the procedural stand-ins. */
+  _applyGear(gltf) {
+    if (this._disposed) return;
+    const inp = this.input;
+    const root = gltf.scene;
+    let baseMat = null;
+    root.traverse((o) => {
+      if (!baseMat && o.isMesh && o.material) baseMat = Array.isArray(o.material) ? o.material[0] : o.material;
+    });
+    if (!baseMat) throw new Error('player_arms.glb has no mesh material');
+    const poses = readPoses(gltf.animations);
+    // One material per hand (the emissive tint differs), one for the lantern; textures are shared.
+    const makeMat = (hex) => {
+      const m = baseMat.clone();
+      m.side = FrontSide;
+      m.transparent = true; // alpha stays 1: only so renderOrder places the hands after the VR UI (see HANDS_RENDER_ORDER_XR)
+      m.forceSinglePass = true;
+      m.emissive = new Color(hex);
+      m.emissiveIntensity = this.tuning.gearGlowIdle;
+      // The lantern is a few centimetres from the hands (and the hands are the brightest thing in a dark
+      // shaft): scale the direct light on the gear so the leather and brass are not blown out by it.
+      const lightU = this._gearLight;
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uGearLight = lightU;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uGearLight;')
+          .replace(
+            '#include <lights_fragment_end>',
+            '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uGearLight;\n\treflectedLight.directSpecular *= uGearLight;',
+          );
+      };
+      m.customProgramCacheKey = () => 'at3d-gear-light';
+      if (this._gearEnv) {
+        m.envMap = this._gearEnv.texture;
+        m.envMapIntensity = this.tuning.gearEnv;
+      }
+      m.needsUpdate = true;
+      return m;
+    };
+    const r = this.r3 && this.r3.renderer;
+    if (r && typeof r.getContext === 'function') {
+      try {
+        this._gearEnv = buildGearEnvironment(r);
+      } catch (err) {
+        this._gearEnv = null;
+        if (typeof console !== 'undefined') console.warn('[AT3D] gear environment map unavailable', err);
+      }
+    }
+    const mats = { left: makeMat(PAL.glowLeft), right: makeMat(PAL.glowRight), lantern: makeMat(PAL.lanternGlass) };
+    // The wrist ECG screens: unlit, one material per hand (the GLB's placeholder trace until healthFx binds its texture).
+    const ecgSrc = this._findMaterial(root, 'Arm_ECG_Screen');
+    this._ecgPlaceholder = ecgSrc ? ecgSrc.emissiveMap || ecgSrc.map || null : null;
+    const gear = {};
+    for (const h of HANDS) {
+      const node = root.getObjectByName(h === 'left' ? 'Arm_L' : 'Arm_R');
+      if (!node) throw new Error(`player_arms.glb: Arm_${h === 'left' ? 'L' : 'R'} missing`);
+      node.parent.remove(node);
+      gear[h] = new HandGear(h, node, poses, mats[h], GEAR_TUNING);
+      if (gear[h].ecgMesh) {
+        const em = new MeshBasicMaterial({ map: this._ecgPlaceholder, toneMapped: false, fog: false });
+        em.transparent = true; // alpha stays 1: draw order only (see HANDS_RENDER_ORDER_XR)
+        em.forceSinglePass = true;
+        em.name = 'Arm_ECG_Screen';
+        gear[h].ecgMesh.material = em;
+      }
+      const sock = inp && inp.handSocket ? inp.handSocket(h) : null;
+      if (sock) sock.add(node);
+      node.visible = false;
+    }
+    // Loose grapple heads (world space; shown only while a line is out).
+    const head = root.getObjectByName('GrappleHead');
+    if (head) {
+      head.parent.remove(head);
+      for (const h of HANDS) {
+        const m = head.clone();
+        m.name = `AT3D-grapple-head-${h}`;
+        m.material = mats[h];
+        m.frustumCulled = false;
+        m.visible = false;
+        m.matrixAutoUpdate = true;
+        this._heads[h] = m;
+        if (this.scene) this.scene.add(m);
+      }
+    }
+    // The carried lantern: the GLB model replaces the procedural one (same pendulum, same light socket).
+    const lan = root.getObjectByName('Lantern');
+    const hook = gear.left.hook;
+    if (lan && hook) {
+      lan.parent.remove(lan);
+      lan.traverse((o) => {
+        if (o.isMesh) {
+          o.material = mats.lantern;
+          o.frustumCulled = false;
+        }
+      });
+      if (this.lantern.parent) this.lantern.parent.remove(this.lantern);
+      this._lanternFallback = this.lantern;
+      this.lantern = lan;
+      this.lantern.name = 'AT3D-lantern';
+      this._hookLocal.copy(hook.position);
+      lan.position.copy(this._hookLocal);
+      gear.left.root.add(lan);
+      const sock = lan.getObjectByName('Lantern_Socket');
+      if (sock) this.lanternSocket = sock;
+      this._bobInit = false;
+      this._lanternMode = ''; // re-parent the light into the new glass
+    }
+    this._gearMats = mats;
+    this.gear = gear;
+    for (const h of HANDS) this.launchers[h].visible = false;
+    if (this._lanternFallback) this._lanternFallback.visible = false;
+    this._order = -1; // re-apply render orders to the new meshes
+    for (const h of HANDS) {
+      const m = this._wrist[h];
+      if (m) m.position.copy(this.tuning.wristLiftGear);
+    }
+    this.gearState = 'ready';
+    // Compile the programs and upload the atlas now (menu time), not on first sight mid-descent.
+    if (this.r3 && typeof this.r3.precompile === 'function') {
+      try {
+        this.r3.precompile();
+      } catch {
+        /* optimisation only */
+      }
+    }
+  }
+
+  _findMaterial(root, name) {
+    let found = null;
+    root.traverse((o) => {
+      if (!found && o.isMesh && o.material && o.material.name === name) found = o.material;
+    });
+    return found;
+  }
+
+  /**
+   * healthFx (another module, may arrive after us) publishes a CanvasTexture with the ECG trace:
+   * bind it to the GLB screens (and the plane on the procedural fallback hands) once it exists.
+   */
+  _bindEcg(game) {
+    const hfx = game ? game.healthFx : null;
+    if (!hfx || !hfx.ecgTexture) return;
+    const tex = hfx.ecgTexture;
+    if (this._ecgTex !== tex) {
+      this._ecgTex = tex;
+      if (this.gear) {
+        for (const h of HANDS) {
+          const mesh = this.gear[h].ecgMesh;
+          if (!mesh) continue;
+          if (h === 'right' && game.bagFx) continue; // the right wrist shows the bag (see _bindBag)
+          mesh.material.map = tex;
+          mesh.material.needsUpdate = true;
+          // glTF UVs have their origin top-left (textures there are flipY = false); a CanvasTexture is flipY = true: flip v once
+          if (tex.flipY && !mesh.userData.ecgFlipped) {
+            const uv = mesh.geometry.attributes.uv;
+            for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+            uv.needsUpdate = true;
+            mesh.userData.ecgFlipped = true;
+          }
+        }
+      }
+    }
+    if (!this._ecgPlanes && typeof hfx.makeEcgPlane === 'function') {
+      this._ecgPlanes = {};
+      for (const h of HANDS) {
+        let m = null;
+        try {
+          m = hfx.makeEcgPlane(0.07, 0.035);
+        } catch {
+          m = null;
+        }
+        if (!m) continue;
+        m.name = `AT3D-ecg-${h}`;
+        m.frustumCulled = false;
+        m.renderOrder = this._order > 0 ? this._order : 0;
+        // lies on the bracer plate, tilted toward the eye; baseline along the forearm
+        m.position.set(h === 'left' ? 0.012 : -0.012, 0.056, 0.1);
+        m.rotation.set(-Math.PI / 2 + 0.45, 0, h === 'left' ? -0.0 : 0.0);
+        m.rotateZ(Math.PI / 2);
+        this._ecgPlanes[h] = m;
+      }
+    }
+  }
+
+  /**
+   * The right wrist screen shows the bag: four item icons with counts, the lantern charge, the apply progress and the
+   * adrenaline timer (bagFx publishes one CanvasTexture); the left wrist keeps the heartbeat trace.
+   */
+  _bindBag(game) {
+    const bfx = game ? game.bagFx : null;
+    if (!bfx || typeof bfx.makeIconTexture !== 'function' || !this.gear) return;
+    const mesh = this.gear.right ? this.gear.right.ecgMesh : null;
+    if (!mesh) return;
+    const tex = bfx.makeIconTexture();
+    if (!tex || this._bagTex === tex) return;
+    this._bagTex = tex;
+    mesh.material.map = tex;
+    mesh.material.needsUpdate = true;
+    if (tex.flipY && !mesh.userData.ecgFlipped) {
+      const uv = mesh.geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+      uv.needsUpdate = true;
+      mesh.userData.ecgFlipped = true;
+    }
+  }
+
+  /** Per-hand analog inputs: XR gamepad (read-only) or the desktop intents. */
+  _readPad(hand, xr, st) {
+    const P = this._pad[hand];
+    const T = this.tuning;
+    let squeeze = 0.85;
+    let trigger = 0;
+    let point = 0;
+    if (xr) {
+      let gp = null;
+      const sess = this.r3 && this.r3.renderer && this.r3.renderer.xr && this.r3.renderer.xr.getSession ? this.r3.renderer.xr.getSession() : null;
+      const srcs = sess ? sess.inputSources : null;
+      if (srcs) {
+        for (let i = 0; i < srcs.length; i++) {
+          if (srcs[i].handedness === hand && srcs[i].gamepad) {
+            gp = srcs[i].gamepad;
+            break;
+          }
+        }
+      }
+      if (gp && gp.buttons) {
+        const bt = gp.buttons[0];
+        const bs = gp.buttons[1];
+        trigger = bt ? Math.max(bt.value || 0, bt.pressed ? 1 : 0) : 0;
+        squeeze = bs ? Math.max(bs.value || 0, bs.pressed ? 1 : 0) : 0;
+        const tTouch = !!(bt && bt.touched);
+        const sTouch = !!(bs && bs.touched);
+        if (tTouch || sTouch) P.cap = true; // this controller senses resting fingers
+        if (P.cap) {
+          if (sTouch) squeeze = Math.max(squeeze, T.gripRest);
+          if (!tTouch && trigger < 0.02 && squeeze > 0.5) point = 1; // index lifted off the trigger: pointing
+        }
+      } else {
+        squeeze = 0.7;
+        trigger = st && st.held ? 1 : 0;
+      }
+    } else {
+      const ih = this.input.intent && this.input.intent.hands ? this.input.intent.hands[hand] : null;
+      trigger = (st && st.held) || (ih && ih.held) ? 1 : 0;
+      squeeze = Math.max(0.82, ih ? ih.yank || 0 : 0);
+    }
+    P.squeeze = squeeze;
+    P.trigger = trigger;
+    P.point = point;
+    return P;
+  }
+
+  /** Poses the fingers, runs the launcher mechanics and places the loose grapple head. */
+  _updateGear(hand, dt, game, tethers, xr, showHands) {
+    const G = this.gear[hand];
+    const T = this.tuning;
+    const R = this._rig[hand];
+    const st = tethers && tethers.hands ? tethers.hands[hand] : null;
+    const rope = st ? st.rope : null;
+    const attached = !!(rope && rope.anchor) && !!showHands;
+    const miss = !!(st && st.miss) && !attached && !!showHands;
+    // The hook is a projectile now: it has left the muzzle from the shot until it bites (rope:fire already kicked the slide).
+    const flying = !!(st && st.flying) && !attached && !!showHands;
+    const pad = this._readPad(hand, xr, st);
+    G.poseFingers(dt, pad.squeeze, pad.trigger, pad.point);
+
+    // line state → mechanics
+    const extend = st && typeof st.extend === 'number' ? Math.min(1, Math.max(0, st.extend)) : 1;
+    let paid = 0;
+    let pay = 0;
+    if (attached) {
+      const len = isFinite(rope.length) ? rope.length : 0;
+      paid = len * (extend < 1 ? extend : 1);
+      if (R.hadRope && dt > 0) pay = (paid - R.paid) / dt;
+      R.rewind = 0;
+    } else if (R.hadRope) {
+      R.rewind = 0.28; // the line was let go: the spring drum winds the cable back
+    }
+    if (R.rewind > 0) {
+      pay = -9 * (R.rewind / 0.28);
+      R.rewind = Math.max(0, R.rewind - dt);
+    }
+    R.speed += (pay - R.speed) * (1 - Math.exp(-30 * dt));
+    R.paid = paid;
+    R.hadRope = attached;
+    const out = attached || miss || flying;
+    if (flying) R.flew = true;
+    if (out !== R.headOut) {
+      R.headOut = out;
+      G.setHeadOut(out); // head leaves / re-seats in the muzzle
+      if (out) {
+        if (!R.flew) this.onFire(hand, attached ? 1 : 0.8);
+      } else {
+        G.kick(-0.35);
+        R.flew = false;
+      }
+    }
+    const g = (CONFIG.player && CONFIG.player.gravity) || 9.81;
+    G.animate(dt, {
+      trigger: pad.trigger,
+      tension: attached && isFinite(rope.tension) ? rope.tension : 0,
+      pay: R.speed,
+      slip: attached && isFinite(rope.slipSpeed) ? Math.max(0, rope.slipSpeed) : 0,
+      gravity: g,
+    });
+
+    // The muzzle (rope origin) of this frame, then the loose head at the tip of the line.
+    this._mzOk[hand] = G.root.visible ? G.muzzleWorld(this._mz[hand]) : false;
+    const prop = this._heads[hand];
+    if (!prop) return;
+    if (!(out && this._mzOk[hand])) {
+      prop.visible = false;
+      return;
+    }
+    const M = this._mz[hand];
+    const tip = this._tip;
+    const dir = this._tdir;
+    if (attached) {
+      const a = rope.anchor;
+      dir.set(a.x - M.x, a.y - M.y, a.z - M.z);
+      const d = dir.length() || 1e-6;
+      dir.multiplyScalar(1 / d);
+      const e = Math.max(0.0, extend);
+      tip.copy(M).addScaledVector(dir, d * e);
+    } else {
+      // missed shot: the line's end as RopeView drew it last frame
+      const rv = this.r3 && this.r3.ropeView;
+      const strand = rv && rv.strands ? rv.strands[hand] : null;
+      if (!strand || !strand.mesh.visible) {
+        prop.visible = false;
+        return;
+      }
+      const c = strand.centre;
+      const n = c.length - 3;
+      tip.set(c[n], c[n + 1], c[n + 2]);
+      dir.subVectors(tip, M);
+      const d = dir.length();
+      if (d < 0.05) {
+        prop.visible = false;
+        return;
+      }
+      dir.multiplyScalar(1 / d);
+    }
+    // grows with distance from the eye like the rope tube does, so a far head still reads
+    const eye = this._hp;
+    const dh = Math.sqrt((tip.x - eye.x) ** 2 + (tip.y - eye.y) ** 2 + (tip.z - eye.z) ** 2);
+    const sc = Math.min(T.headScaleMax, 1 + Math.max(0, dh - 0.6) * 0.2);
+    prop.scale.setScalar(sc);
+    prop.quaternion.setFromUnitVectors(this._fwd, dir);
+    prop.position.copy(tip).addScaledVector(dir, -0.0395 * sc);
+    prop.visible = true;
   }
 
   /**
@@ -558,11 +1129,30 @@ export class HandsView {
     const state = game && game.state ? game.state : 'playing';
     const inRun = state === 'playing' || state === 'paused' || state === 'dead';
     const showHands = this.visible && (xr || inRun);
+    const gear = this.gear;
     for (const h of HANDS) {
       const m = this.launchers[h];
       const sock = inp.handSocket(h);
       if (m.parent !== sock && sock) sock.add(m);
-      m.visible = showHands;
+      m.visible = showHands && !gear;
+      if (gear) {
+        const r = gear[h].root;
+        if (sock && r.parent !== sock) sock.add(r);
+        r.visible = showHands;
+      }
+    }
+    if (gear && xr !== this._gearXr) this._placeGear(xr);
+    this._bindEcg(game);
+    this._bindBag(game);
+    if (this._ecgPlanes) {
+      for (const h of HANDS) {
+        const pl = this._ecgPlanes[h];
+        if (!pl) continue;
+        const sock = inp.handSocket(h);
+        if (sock && pl.parent !== sock) sock.add(pl);
+        pl.visible = showHands && !gear; // the GLB screens replace the plane once the model is up
+        if (pl.renderOrder !== (xr ? HANDS_RENDER_ORDER_XR : 0)) pl.renderOrder = xr ? HANDS_RENDER_ORDER_XR : 0;
+      }
     }
     this.lantern.visible = showHands;
     const order = xr ? HANDS_RENDER_ORDER_XR : 0;
@@ -570,6 +1160,16 @@ export class HandsView {
       this._order = order;
       for (const h of HANDS) this.launchers[h].renderOrder = order;
       this.lantern.renderOrder = order;
+      if (gear) {
+        const setOrder = (o) => {
+          o.renderOrder = order;
+        };
+        for (const h of HANDS) {
+          gear[h].root.traverse(setOrder);
+          if (this._heads[h]) this._heads[h].renderOrder = order;
+        }
+        this.lantern.traverse(setOrder);
+      }
     }
     this._updateLanternParent(xr);
 
@@ -583,6 +1183,7 @@ export class HandsView {
     this._updateLantern(step);
 
     const tethers = game ? game.tethers : null;
+    if (gear) for (const h of HANDS) this._updateGear(h, step, game, tethers, xr, showHands);
     const playing = state === 'playing' && !inp.uiMode && (!game || !game.player || game.player.alive !== false);
     const batch = this.batch;
     batch.begin();
@@ -653,6 +1254,26 @@ export class HandsView {
     const t = this._time;
     const fl = 0.86 + 0.08 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3);
     this.lanternMaterial.userData.glow.uGlowB.value = 2.4 * fl;
+    if (this._gearMats) this._gearMats.lantern.emissiveIntensity = 1.5 * fl;
+  }
+
+  /** Desktop: the arm model sits on the virtual hand with a small offset; XR: identity on the grip socket. */
+  _placeGear(xr) {
+    this._gearXr = xr;
+    const D = this.tuning.desktopGear;
+    for (const h of HANDS) {
+      const r = this.gear[h].root;
+      if (xr) {
+        r.position.set(0, 0, 0);
+        r.rotation.set(0, 0, 0);
+        r.scale.setScalar(1);
+      } else {
+        const sg = h === 'left' ? -1 : 1;
+        r.position.set(D.x * sg, D.y, D.z);
+        r.rotation.set(D.rx, D.ry * sg, D.rz * sg);
+        r.scale.setScalar(D.scale);
+      }
+    }
   }
 
   _updateHand(hand, dt, game, tethers, playing, xrShow, showHands) {
@@ -678,6 +1299,11 @@ export class HandsView {
     }
     if (!playing && !attached) g = 0.45;
     glow.uGlowA.value = g;
+    if (this.gear) {
+      // GLB lamp + gauge phosphor: idle pilot, brighter on a target / under load (no bloom: keep it readable, not blown)
+      const e = this.tuning.gearGlowIdle * (0.5 + g * 0.55);
+      this._gearMats[hand].emissiveIntensity = Math.min(3.2, e);
+    }
 
     // Laser / reticle visibility targets.
     const pose = showHands && playing && !attached ? inp.handPose(hand) : null;
@@ -690,7 +1316,8 @@ export class HandsView {
     const d = this._d;
     let laserLen = 0;
     if (pose && ray) {
-      s.set(pose.x, pose.y, pose.z);
+      if (this._mzOk[hand]) s.copy(this._mz[hand]);
+      else s.set(pose.x, pose.y, pose.z);
       if (target) {
         d.set(target.x - s.x, target.y - s.y, target.z - s.z);
         const dist = d.length() || 1e-6;
@@ -797,6 +1424,29 @@ export class HandsView {
   }
 
   dispose() {
+    this._disposed = true;
+    if (this.gear) {
+      for (const h of HANDS) {
+        const g = this.gear[h];
+        if (g.root.parent) g.root.parent.remove(g.root);
+        g.root.traverse((o) => {
+          if (o.isMesh && o.geometry) o.geometry.dispose();
+          if (o.isSkinnedMesh && o.skeleton) o.skeleton.dispose();
+        });
+        const p = this._heads[h];
+        if (p && p.parent) p.parent.remove(p);
+      }
+      const hp = this._heads.left;
+      if (hp && hp.geometry) hp.geometry.dispose();
+      if (this.lantern && this.lantern !== this._lanternFallback) {
+        if (this.lantern.parent) this.lantern.parent.remove(this.lantern);
+        this.lantern.traverse((o) => {
+          if (o.isMesh && o.geometry) o.geometry.dispose();
+        });
+      }
+      for (const k of Object.keys(this._gearMats || {})) this._gearMats[k].dispose();
+      if (this._gearEnv) this._gearEnv.dispose();
+    }
     for (const h of HANDS) {
       const m = this.launchers[h];
       if (m.parent) m.parent.remove(m);

@@ -17,6 +17,14 @@ const { Player3D, TetherSystem, Physics3D, HANDS } = await import(srcUrl('sim/ph
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
 
+// Experiments: AT3D_ROPE='flightSpeed=80,attachRamp=0.15' overrides CONFIG.rope keys for this process.
+if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
+  for (const kv of process.env.AT3D_ROPE.split(',')) {
+    const [k, v] = kv.split('=');
+    if (k in CONFIG.rope && isFinite(Number(v))) CONFIG.rope[k] = Number(v);
+  }
+}
+
 export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT };
 
 export const FRAME = 1 / 60;
@@ -52,8 +60,8 @@ export function makeIntent() {
   };
 }
 
-const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim'];
-const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension'];
+const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim', 'flying'];
+const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT', 'grip'];
 
 // -----------------------------------------------------------------------------
 // E29: per-system timers
@@ -304,6 +312,13 @@ export class Sim {
       this.deathCause = e.cause;
       this.events.push(['death', e.cause, +this.t.toFixed(2), +e.x.toFixed(1), +e.y.toFixed(1), +e.z.toFixed(1), +(e.impact || 0).toFixed(1)]);
     });
+    this._secIdx = 0; // section / checkpoint bookkeeping, as Game3D._enterSection (a new checkpoint heals)
+    this._cpIdx = 0;
+    this.damageLog = []; // health:damage events of the real run: [t, cause, amount (hp), hp after, speed]
+    this.bus.on('health:damage', (e) => {
+      if (this.ghost) return;
+      this.damageLog.push([+this.t.toFixed(2), e.cause, +(e.amount * 100).toFixed(1), +(e.hp * 100).toFixed(1), +(e.speed || 0).toFixed(1)]);
+    });
     this.bus.on('grapple:attach', (e) => {
       if (this.ghost) return;
       this.attaches.push(e.anchor.id);
@@ -360,6 +375,10 @@ export class Sim {
     this.deaths = 0;
     this.attaches = [];
     this.events = [];
+    this.damageLog = [];
+    this.physics.health.reset();
+    this._secIdx = this.level.sectionIndexAt(y);
+    this._cpIdx = this.level.checkpointFor(this._secIdx, this.diff.checkpoints).index;
     this.trace = [];
     this.hash = new TrajectoryHash();
     this.logFrames = 0;
@@ -388,6 +407,7 @@ export class Sim {
       if (!p.alive) break;
     }
     intent.jumpPressed = false;
+    if (real) this._checkpoint(p);
     if (real && this.creature) this._stepCreature(timers);
     if (timers) {
       const wall = now() - t0;
@@ -400,6 +420,18 @@ export class Sim {
       if (this._frameNo++ % this.traceEvery === 0) this.trace.push(p.x, p.y, p.z);
     }
     return p.alive;
+  }
+
+  /** Game3D._enterSection: reaching a deeper checkpoint (per the difficulty's policy) restores health. */
+  _checkpoint(p) {
+    const si = this.level.sectionIndexAt(p.y);
+    if (si === this._secIdx || si < 0) return;
+    this._secIdx = si;
+    const cp = this.level.checkpointFor(si, this.diff.checkpoints);
+    if (cp && cp.index > this._cpIdx) {
+      this._cpIdx = cp.index;
+      this.physics.health.heal(CONFIG.health.checkpointHeal);
+    }
   }
 
   _stepCreature(timers) {
@@ -435,11 +467,15 @@ export class Sim {
     const s = { t: this.t, p: new Array(this.playerKeys.length), hands: {}, dyn: [] };
     for (let i = 0; i < this.playerKeys.length; i++) s.p[i] = p[this.playerKeys[i]];
     s.tethered = p._tethered;
+    s.health = this.physics.health.snapshot();
     for (const h of HANDS) {
       const st = this.tethers.hands[h];
       const o = {};
       for (const k of HAND_KEYS) o[k] = st[k];
       o.miss = st.miss ? Object.assign({}, st.miss) : null;
+      o.flT = st.flightObj.t;
+      o.flDur = st.flightObj.dur;
+      o.flTarget = st.flightObj.target;
       for (const k of ROPE_KEYS) o['r_' + k] = st.rope[k];
       s.hands[h] = o;
     }
@@ -453,11 +489,15 @@ export class Sim {
     this.t = s.t;
     for (let i = 0; i < this.playerKeys.length; i++) p[this.playerKeys[i]] = s.p[i];
     p._tethered = s.tethered;
+    this.physics.health.restore(s.health);
     for (const h of HANDS) {
       const st = this.tethers.hands[h];
       const o = s.hands[h];
       for (const k of HAND_KEYS) st[k] = o[k];
       st.miss = o.miss ? Object.assign({}, o.miss) : null;
+      st.flightObj.t = o.flT;
+      st.flightObj.dur = o.flDur;
+      st.flightObj.target = o.flTarget;
       for (const k of ROPE_KEYS) st.rope[k] = o['r_' + k];
     }
     let j = 0;
@@ -470,6 +510,18 @@ export class Sim {
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
     }
+  }
+
+  /** Damage taken this run (hp points, 100 = full health): hits, total, lowest hp, the events. */
+  damageReport() {
+    const h = this.physics.health;
+    return {
+      hits: h.hits,
+      total: +(h.totalDamage * 100).toFixed(1),
+      minHp: +(h.minHp * 100).toFixed(1),
+      endHp: +(h.hp * 100).toFixed(1),
+      events: this.damageLog,
+    };
   }
 
   attachedHands() {

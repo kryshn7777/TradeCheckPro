@@ -643,6 +643,100 @@ light(-3, -551.5, 26, '#ffd9a0', 3.2, 40, 0, { still: true });
 light(-2, -520, 0, '#e0a050', 1.0, 40, 0.1);
 
 // =============================================================================
+// SUPPLIES — candidate spots for the bag's consumables (sim/pickups3d.js)
+//  A seeded per-run picker fills about a third of these (2-4 per section) by rarity, so every descent lies
+//  differently. 6-10 candidates per section: LEDGES (the open floor of a landing), ALCOVES (corners against
+//  a wall, off the line) and a few RISKS (perches, girders, arm tops: awkward to land on, but they favour the
+//  rare kinds). Each rests 0.45 m above the top face of the solid it names, never in a solid, never within
+//  1.5 m of an anchor, and clear of the checkpoint -> anchor sight lines (tools/.../verify.mjs checks all of it).
+//  w = relative weight per item kind [first aid, bandage, adrenaline, battery].
+// =============================================================================
+const SUP_W = { ledge: [0.8, 5, 2, 4.5], alcove: [0.6, 5, 1.5, 5], risk: [3.5, 2, 5, 2] };
+const supplies = [];
+/** Candidate on top of the solid `on` at (x, z). */
+function sup(id, on, x, z, tier = 'ledge') {
+  const s = solids.find((o) => o.id === on);
+  if (!s) throw new Error(`supply ${id}: no solid ${on}`);
+  supplies.push({ id, x, y: +(s.maxY + 0.45).toFixed(3), z, tier, on, w: SUP_W[tier].slice() });
+}
+// S1 · The Threshold
+sup('sup-s1-01', 's1-threshold', -8, 5.2);
+sup('sup-s1-02', 's1-threshold', 2, 6.5, 'alcove');
+sup('sup-s1-03', 's1-sill', 0.4, -9.6, 'alcove');
+sup('sup-s1-04', 's1-sill', -6, -5.4);
+sup('sup-s1-05', 's1-sill', -9.8, -5.6, 'alcove');
+sup('sup-s1-06', 's1-pocket', -9, 2, 'risk');
+sup('sup-s1-07', 's1-girder', 6, -1, 'risk');
+// S2 · The Long Swing
+sup('sup-s2-01', 's2-landing', 9.8, -9.6, 'alcove');
+sup('sup-s2-02', 's2-landing', 5, -3.5);
+sup('sup-s2-03', 's2-far', -24.5, -9);
+sup('sup-s2-04', 's2-floor-a', 9.6, 9.6, 'alcove');
+sup('sup-s2-05', 's2-floor-a', -8, -9.6);
+sup('sup-s2-06', 's2-floor-a', -20.4, 9.6, 'alcove');
+sup('sup-s2-07', 's2-low', -29, 9);
+sup('sup-s2-08', 's2-arm', -30.5, 7, 'risk');
+sup('sup-s2-09', 's2-pier-w', 2, 9);
+sup('sup-s2-10', 's2-pier-e', 10, -8, 'alcove');
+// S3 · Broken Gallery
+sup('sup-s3-01', 's3-landing', 9.7, 9.7, 'alcove');
+sup('sup-s3-02', 's3-landing', 9.7, -9.7, 'alcove');
+sup('sup-s3-03', 's3-landing', 6, 4);
+sup('sup-s3-04', 's3-shelf', -33, -9.7, 'alcove');
+sup('sup-s3-05', 's3-shelf', -29, -3.5);
+sup('sup-s3-06', 's3-g2', -14.25, 8, 'risk');
+sup('sup-s3-07', 's3-g3', -26.25, -8, 'risk');
+sup('sup-s3-08', 's3-g5', -20.25, 8, 'risk');
+sup('sup-s3-09', 's4-g1', 5, -3, 'risk');
+// S4 · The Listening Vault
+sup('sup-s4-01', 's4-landing', 9.7, 9.7, 'alcove');
+sup('sup-s4-02', 's4-landing', -6.5, 9.7, 'alcove');
+sup('sup-s4-03', 's4-landing', 9.5, 3);
+sup('sup-s4-04', 's4-catwalk', -16, -10);
+sup('sup-s4-05', 's4-catwalk', -16, -22.5, 'risk');
+sup('sup-s4-06', 's4-shelf', 9.7, -9.7, 'alcove');
+sup('sup-s4-07', 's4-shelf', 4, -6);
+sup('sup-s4-08', 's4-plinth', -16, 6);
+// S5 · The Gullet Stair
+sup('sup-s5-01', 's5-landing', -4.2, 7.8, 'alcove');
+sup('sup-s5-02', 's5-landing', -4.2, -7.8, 'alcove');
+sup('sup-s5-03', 's5-step1', -19.5, -8, 'alcove');
+sup('sup-s5-04', 's5-step1', -13, -6.5);
+sup('sup-s5-05', 's5-step5', -14, -6.5);
+sup('sup-s5-06', 's5-step6', -19, 7.8, 'alcove');
+sup('sup-s5-07', 's5-step3', -5, 7.8, 'alcove');
+sup('sup-s5-08', 's5-step4', -4.2, -7.8, 'alcove');
+sup('sup-s5-09', 's5-arm2', -19, 0, 'risk');
+sup('sup-s5-10', 's5-arm4', -6, 0, 'risk');
+// S6 · The Two Descents
+sup('sup-s6-01', 's6-fork', -18.5, 4.8, 'alcove');
+sup('sup-s6-02', 's6-safe1', -32.5, -9.6, 'alcove');
+sup('sup-s6-03', 's6-safe1', -22, -5);
+sup('sup-s6-04', 's6-safe2', -32.5, 9.6, 'alcove');
+sup('sup-s6-05', 's6-safe2', -21, 6.5);
+sup('sup-s6-06', 's6-safe3', -24, -9.5);
+sup('sup-s6-07', 's6-safe4', -28, 9.5);
+sup('sup-s6-08', 's6-arm-b', -32, -5, 'risk');
+sup('sup-s6-09', 's6-safe5', -32.5, -9.6, 'alcove');
+// S7 · The Hollow Nave
+sup('sup-s7-01', 's7-landing', 8.7, 9.7, 'alcove');
+sup('sup-s7-02', 's7-landing', -32.5, -9.7, 'alcove');
+sup('sup-s7-03', 's7-landing', -22, 7);
+sup('sup-s7-04', 's7-landing', -4, -8.5);
+sup('sup-s7-05', 's7-perch', -20, 26, 'risk');
+sup('sup-s7-06', 's7-perch', -17.5, 23.5, 'risk');
+// S8 · The Last Throat
+sup('sup-s8-01', 's8-landing', 16.7, -18.7, 'alcove');
+sup('sup-s8-02', 's8-landing', 12, -12);
+sup('sup-s8-03', 's8-step1-w', -20.5, 17, 'alcove');
+sup('sup-s8-04', 's8-step1-w', -20.5, -17, 'alcove');
+sup('sup-s8-05', 's8-step1-e', 15.8, 17, 'alcove');
+sup('sup-s8-06', 's8-step1-n', -5, -19);
+sup('sup-s8-07', 's8-step2-w', -14.5, 12, 'alcove');
+sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'alcove');
+sup('sup-s8-09', 's8-step2-s', -2, 14);
+
+// =============================================================================
 // Sections (themes, creature behaviour, hints, triggers)
 // =============================================================================
 const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0) => ({ mode, lethal, speedMul, burstRate, spawnOffsetY });
@@ -839,4 +933,5 @@ export const LEVEL_DATA_3D = {
   anchors,
   decor,
   lights,
+  supplies, // candidate spots for the bag's consumables (see SUPPLIES above)
 };

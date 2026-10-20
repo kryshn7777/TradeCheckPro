@@ -1,0 +1,26 @@
+{
+  "name": "Abyssal Tether",
+  "shortName": "Abyssal Tether",
+  "version": "1.0.0",
+  "chapter": "Chapter I",
+  "gameDir": "public/abyssal-tether-3d",
+  "distDir": "dist-at3d",
+  "gamePath": "/play/",
+  "maxCoreMB": 60,
+  "owner": {
+    "studio": "<STUDIO NAME>",
+    "contactEmail": "<support@your-domain>",
+    "domain": "<your-domain>",
+    "postalAddress": "<postal address if required in your country>",
+    "effectiveDate": "<YYYY-MM-DD>",
+    "hostName": "<hosting provider>",
+    "logRetentionDays": "30"
+  },
+  "bubblewrap": {
+    "packageId": "com.<studio>.abyssaltether",
+    "launcherName": "Abyssal",
+    "metaAppId": "<META APP ID>",
+    "keystorePath": "~/secure/abyssal-tether.keystore",
+    "keyAlias": "abyssaltether"
+  }
+}
