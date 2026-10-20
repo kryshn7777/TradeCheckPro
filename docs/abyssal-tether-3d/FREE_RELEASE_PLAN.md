@@ -25,7 +25,7 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 ## Work packages and state (update as work lands)
 | WP | What | Owner files | State |
 |---|---|---|---|
-| WP-FOG | fog cards, dust, grit, event rubble, drips | render/fx.js, atmosphere.js, debris.js | agent running |
+| WP-FOG | fog cards, dust, grit, event rubble, drips | render/fx.js, atmosphere.js, debris.js, lanternHalo.js | DONE 2026-10-20 18:40: lint+tests green; e2e skipped (owner rule); +3-4 draw calls; quality tiers (low/quest/high) |
 | WP-ARMS | Blender launcher + gloved arms + handsView integration | tools/build_hands.py, assets/models/player_arms.glb, render/handsView.js, ropeView.js | agent running |
 | WP-HEALTH | fall damage + health, red low-health vignette, ECG on gloves (owner request 2026-10-20) | sim/health3d.js, render/healthFx.js, narrow hooks in physics3d/config3d/game/audio3d/ui3d; ECG screen mount in handsView by WP-ARMS | DONE 2026-10-20 18:20: lint/verify/routes/tests green; e2e NOT yet passed (OOM-killed, re-run at integration); ECG mount pending in WP-ARMS; headset check of vignette/ECG pending |
 | WP-BODY | owner request 2026-10-20: player body mesh linked to the arms; looking down shows legs/torso (Blender, skinned, 2-bone arm IK from controller hands to shoulders, legs/feet follow the sim body: planted when grounded, dangling/kicking/trailing when swinging, running cycle when moving), first-person safe (head/neck hidden, no clipping into the camera), uses the arms' elbow anchors | tools/build_body.py, assets/models/player_body.glb, render/bodyView.js | after WP-ARMS |

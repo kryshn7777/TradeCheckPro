@@ -1359,7 +1359,7 @@ function glowQuad(cx, cy, cz, w, h) {
  * teeth, a rim, six spokes and a hub boss. Non-indexed position / normal / uv
  * (metres at an 8 m reference radius) / AO colour, for one InstancedMesh.
  */
-export function gearGeometry(teeth = 30, spokes = 6) {
+export function gearGeometry(teeth = 24, spokes = 5) {
   const sh = new THREE.Shape();
   const da = (Math.PI * 2) / teeth;
   const R_ROOT = 0.9;
@@ -2161,7 +2161,7 @@ class Dresser {
     const S = this.S;
     const s = F.s;
     const g = this.grade((s.minY + s.maxY) / 2);
-    const tiers = Math.max(1, Math.min(4, Math.floor(F.H / 34)));
+    const tiers = Math.max(1, Math.min(2, Math.floor(F.H / 34)));
     for (const [a, b] of F.spans) {
       const len = b - a;
       const n = Math.max(2, Math.round(len / 18));
@@ -2180,7 +2180,7 @@ class Dresser {
           const cx = a + bay * (j + 0.5);
           const w = bay - 5;
           const rise = w * 0.85;
-          if (S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
+          if (rng() < 0.3 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
           this._cat = 'farlancet';
           this._lancet(F, cx, y0, w, jamb, rise, 0.7, 0.9, g.stone, 'stone', true, false);
           if (rng() < 0.45) {
@@ -2370,13 +2370,13 @@ class Dresser {
         const t = (y1 - yy) / H; // 0 top → 1 foot
         pts.push(new THREE.Vector3(Math.sin(yy * 0.13 + ph) * wob + Math.sin(yy * 0.41 + ph * 2) * 0.25, yy - a, r0 * (0.75 + 0.15 * Math.sin(yy * 0.9)) * (1 - 0.3 * t)));
       }
-      let geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), n * 2, 1, 6, false);
+      let geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), n + (n >> 1), 1, 5, false);
       // lumpy, tapering radius: displace each ring about its centre line
       const pos = geo.attributes.position;
-      const ring = 7; // radialSegments + 1
+      const ring = 6; // radialSegments + 1
       for (let i = 0; i < pos.count; i++) {
         const seg = Math.floor(i / ring);
-        const tt = seg / (n * 2);
+        const tt = seg / (n + (n >> 1));
         const yy = a - h * tt;
         const t = (y1 - yy) / H;
         const c = new THREE.Vector3();
@@ -2479,7 +2479,7 @@ class Dresser {
             const k = (0.1 + rng() * 0.16) * Math.min(1, g.inlay + 0.2);
             const warm = rng() < 0.18;
             this._cat = 'pane';
-            this.put(F, archPanel(lw - 0.16, jamb, rise - 0.08, yBot - s.minY, 0.04, 1, 9), cx, 0, 'glow', warm ? [k * 1.5, k * 1.0, k * 0.5] : [k * 0.55, k * 1.0, k * 0.95]);
+            this.put(F, archPanel(lw - 0.16, jamb, rise - 0.08, yBot - s.minY, 0.04, 1, 9), cx, 0, 'glow', warm ? [k * 1.15, k * 0.85, k * 0.45] : [k * 0.55, k * 1.0, k * 0.95]);
           }
           this._cat = null;
           this.stats.lancets++;

@@ -99,7 +99,13 @@ export class Resilience {
       }),
     );
     // frame watchdog (visible page, XR or not, but no frames)
-    this._wdTimer = setInterval(() => this._watchdog(), WATCHDOG_MS);
+    let wd = true;
+    try {
+      wd = new URLSearchParams(window.location.search).get('watchdog') !== 'off'; // slow software-GL test runs
+    } catch {
+      /* ignore */
+    }
+    if (wd) this._wdTimer = setInterval(() => this._watchdog(), WATCHDOG_MS);
     return this;
   }
 
