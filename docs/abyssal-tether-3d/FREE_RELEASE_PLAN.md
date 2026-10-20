@@ -44,6 +44,13 @@ domain + host, signing keystore, App ID, IARC, Data Use Checkup, headset testing
 ## Machine notes
 - The container's memory cgroup OOM-kills big jobs (Blender ~6 GB, headless Chromium 1.5-4.4 GB). Every Blender run goes under `flock /tmp/at3d-blender.lock`, every headless Chromium/Playwright run under `flock /tmp/at3d-browser.lock`. Never broad `pkill`.
 
+## OWNER RULE (2026-10-20, overrides the gate lists below): build fast, check once, fix only big issues
+No browser e2e, no soak tests, no multi-round critic loops, no adversarial review panels. Verification per package = eslint +
+`npm run -s verify:at3d -- --chapter ch1 --variant all` + `node tools/abyssal-tether-3d/verify/run.mjs all all` +
+`node tools/abyssal-tether-3d/tests/run-tests.mjs` (all Node-only and fast) + at most ONE quick headless-browser sanity run
+(boot, a few screenshots looked at once, no console errors; under `flock /tmp/at3d-browser.lock`). Fix only clearly broken things
+(crash, console errors, broken visuals, failing routes, big perf regressions). WP-QA is reduced to one light pass.
+
 ## Rules for every agent
 - Work in /home/user/TradeCheckPro on branch `claude/abyssal-tether-game-3zft6o`; edit only your owned files.
 - Run at most ONE Blender process at a time, wrapped as `flock /tmp/at3d-blender.lock <cmd>` (16 GB RAM, 4 CPUs shared).

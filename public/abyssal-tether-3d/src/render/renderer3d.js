@@ -50,7 +50,7 @@ const ENV_LIGHTS = 2;
 const ENV_REASSIGN = 0.25; // seconds between nearest-light re-evaluations
 const ENV_GAIN = 1.6; // level.lights: candela = intensity × max(6, 0.06·range²) × gain (reaches ~range)
 const THEME_BLEND = 9; // metres either side of a section boundary
-const AMBIENT_SCALE = 3.4; // theme.ambient → hemisphere intensity
+const AMBIENT_SCALE = 3.0; // theme.ambient → hemisphere intensity
 const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black

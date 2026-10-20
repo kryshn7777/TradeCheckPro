@@ -830,6 +830,7 @@ ${UV_ASSIGN}
         `#include <emissivemap_fragment>
   {
     float atRim = pow( 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 ), 3.0 );
+    atRim *= 1.0 - 0.75 * clamp( dot( normalize( normal ), viewMatrix[ 1 ].xyz ), 0.0, 1.0 ); // floors keep their stone: the haze edge belongs to verticals
     totalEmissiveRadiance += uRimColor * ( atRim * uRim ) * ( 0.25 + diffuseColor.rgb );
   }`,
       );

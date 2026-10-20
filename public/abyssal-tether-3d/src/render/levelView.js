@@ -1201,6 +1201,7 @@ const PROF_PIER = [
 ];
 // Far walls (the Vault's): a plain chamfered pier, cheap at 100+ m in the fog.
 const PROF_PIER_FAR = [[-0.5, 0, 0.55], [0.5, 0, 0.55], [0.5, 0.2, 0.9], [0.3, 0.34, 1], [-0.3, 0.34, 1], [-0.5, 0.2, 0.9]];
+const PROF_PIER_BIG = [[-1.5, 0, 0.55], [1.5, 0, 0.55], [1.5, 0.7, 0.9], [1, 1.2, 1], [-1, 1.2, 1], [-1.5, 0.7, 0.9]];
 const PROF_SHAFT = Array.from({ length: 8 }, (_, i) => {
   const a = (i / 8) * Math.PI * 2;
   return [Math.sin(a) * 0.24, 0.22 + Math.cos(a) * 0.24, Math.cos(a) > -0.5 ? 0.95 : 0.6];
@@ -1775,6 +1776,7 @@ class Dresser {
     this.emit = emit;
     this.plan = plan;
     this.secs = Array.isArray(level.sections) ? level.sections : [];
+    this.marks = { organ: [], door: [] }; // world positions of notable dressing (tools / tests)
     this.gears = []; // colossal turning cogs: { m (Matrix4, unit-radius → world), spin (rad/s), phase, tint, sec }
     this.stats = { faces: 0, piers: 0, courses: 0, crowns: 0, corbels: 0, roots: 0, arches: 0, braces: 0, burls: 0, lancets: 0, cords: 0 };
     this._m = new THREE.Matrix4();
@@ -2085,6 +2087,7 @@ class Dresser {
         }
       }
     }
+    if (!near) this._farWall(F, hosts, rng);
     this._cogs(F, hosts, rng);
   }
 
@@ -2145,6 +2148,51 @@ class Dresser {
       used[sec] = (used[sec] || 0) + 1;
       this.stats.cogs = (this.stats.cogs || 0) + 1;
     }
+  }
+
+
+  /**
+   * Colossal order on a far wall (the Vault's 190 m back wall, seen across the void
+   * as haze): great piers every ~18 m and tiers of giant lancets, some holding a dim
+   * pane of old light. Stands ≤ 1.3 m off the wall; only where nothing near is solid.
+   */
+  _farWall(F, hosts, rng) {
+    if (F.L < 40 || F.H < 30) return;
+    const S = this.S;
+    const s = F.s;
+    const g = this.grade((s.minY + s.maxY) / 2);
+    const tiers = Math.max(1, Math.min(4, Math.floor(F.H / 34)));
+    for (const [a, b] of F.spans) {
+      const len = b - a;
+      const n = Math.max(2, Math.round(len / 18));
+      const bay = len / n;
+      this._cat = 'farpier';
+      for (let j = 1; j < n; j++) {
+        const u = a + bay * j;
+        const box = frameBox(F, u - 2, u + 2, 0, F.H, 0, 1.5);
+        for (const [y0, y1] of S.cut(box, 'y', s.minY, s.maxY, hosts, false, 12)) this._vertical(F, PROF_PIER_BIG, u, y0, y1, 'stone', g.stone);
+      }
+      for (let t = 0; t < tiers; t++) {
+        const jamb = 14 + rng() * 4;
+        const y0 = (F.H * (t + 0.5)) / tiers - (jamb + 7) / 2;
+        if (y0 < 1 || y0 + jamb + 8 > F.H - 1) continue;
+        for (let j = 0; j < n; j++) {
+          const cx = a + bay * (j + 0.5);
+          const w = bay - 5;
+          const rise = w * 0.85;
+          if (S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
+          this._cat = 'farlancet';
+          this._lancet(F, cx, y0, w, jamb, rise, 0.7, 0.9, g.stone, 'stone', true, false);
+          if (rng() < 0.45) {
+            const k = 0.1 + rng() * 0.14;
+            this._cat = 'pane';
+            this.put(F, archPanel(w - 1.4, jamb, rise - 0.7, y0, 0.2, 1, 9), cx, 0, 'glow', [k * 0.55, k, k * 0.95]);
+          }
+        }
+      }
+      this._cat = null;
+    }
+    this.stats.farWalls = (this.stats.farWalls || 0) + 1;
   }
 
   /** World along-axis coordinate → face-local u. */
@@ -2546,6 +2594,7 @@ class Dresser {
     this.put(F, metal.geometry(), 0, 0, 'metal', g.stone);
     this._cat = null;
     used[sec] = (used[sec] || 0) + 1;
+    this.marks.organ.push([F.o.x + F.N.z * cx, F.o.y + y0 + 3, F.o.z - F.N.x * cx, F.N.x, F.N.z]);
     F.budget.organs--;
     this.stats.organs = (this.stats.organs || 0) + 1;
     return true;
@@ -2846,14 +2895,14 @@ class Dresser {
     // seams across and rivet lines along the walking surface (flush strips)
     const y = s.maxY + 0.012;
     const F = new FlatBuilder(y);
-    const dark = [0.5, 0.5, 0.5];
-    const rl = [1.15, 1.15, 1.15];
+    const dark = [0.32, 0.32, 0.32];
+    const rl = [1.3, 1.3, 1.3];
     const step = W > 3 ? 2.4 : 1.8;
     const ns = Math.floor(L / step);
     for (let i = 1; i < ns; i++) {
       const t = c0 + (L * i) / ns;
-      if (alongX) F.rect(t - 0.03, s.minZ + 0.12, t + 0.03, s.maxZ - 0.12, dark);
-      else F.rect(s.minX + 0.12, t - 0.03, s.maxX - 0.12, t + 0.03, dark);
+      if (alongX) F.rect(t - 0.045, s.minZ + 0.12, t + 0.045, s.maxZ - 0.12, dark);
+      else F.rect(s.minX + 0.12, t - 0.045, s.maxX - 0.12, t + 0.045, dark);
     }
     for (const sd of [0.16, W - 0.2]) {
       if (alongX) F.rect(s.minX + 0.1, s.minZ + sd, s.maxX - 0.1, s.minZ + sd + 0.04, rl);
@@ -3072,6 +3121,7 @@ class Dresser {
               this._lancet(W, du, H, dw, dh - 1.0, 1.0, 0.2, 0.2, g.stone, 'stone', true, false);
               this._cat = null;
               this.stats.doors = (this.stats.doors || 0) + 1;
+              this.marks.door.push([W.o.x + wx * du, s.maxY + 1.3, W.o.z + wz * du, N.x, N.z]);
             }
           }
           // a corbel table under ledges; under whole floors a sparser one

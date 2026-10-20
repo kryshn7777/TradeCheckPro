@@ -94,6 +94,7 @@ ap.add_argument("--export", default="", help="directory: also write the Quest LO
 ap.add_argument("--threads", type=int, default=0)
 ap.add_argument("--omit", default="", help="look-dev: comma list of crown features to skip (ropes,strands,arms,tongue,lips,wheel,membr)")
 ap.add_argument("--nobake", action="store_true", help="export dry run: skip the bakes")
+ap.add_argument("--grain", type=int, default=1, help="stone grain subdivision levels (0 saves a lot of RAM)")
 ap.add_argument("--lab", default="", help="crown: build only the crown + 3 vertebrae (fast look-dev)")
 ap.add_argument("--exposure", type=float, default=0.0)
 ap.add_argument("--border", default="", help="xmin,xmax,ymin,ymax crop (0-1) for quick detail checks")
@@ -3091,7 +3092,7 @@ def _build_crown():
                 A["Stone"].add_bm(bm)
                 continue
             r_ = rng.random()
-            if r_ < 0.4:
+            if r_ < 0.0:
                 rows = []
                 for q in range(6):
                     rq = 1.0 + (RW - WB - 1.0) * q / 5
@@ -3546,7 +3547,7 @@ def build_tail(v):
 
 def build_creature():
     log("spine length %.1f m" % L_TOTAL)
-    for i, s in enumerate(VERT_S[:3] if args.lab else VERT_S):
+    for i, s in enumerate(VERT_S[:12] if args.lab == 'head' else VERT_S[:3] if args.lab else VERT_S):
         k = kprof(s) * (1 + rng.uniform(-0.04, 0.04))
         build_vertebra(i, s, k)
     log("vertebrae:", len(VERTS))
@@ -3555,7 +3556,7 @@ def build_creature():
     build_crown()
     log("crown done")
     n = len(VERTS)
-    if args.lab:
+    if args.lab == 'crown':
         for sigma in (-1, 1):
             build_leg(VERTS[0], sigma, "reach", 1.25, droot=0.3, lantern=(sigma > 0))
         build_cage(VERTS[1], 1.0)
@@ -3586,12 +3587,12 @@ def build_creature():
             build_leg(v, sigma, "lifted" if rng.random() < 0.5 else "normal", rng.uniform(0.5, 0.62),
                       -0.45 * v["k"])
     log("legs:", len(slots) + 2, "slots,", sum(1 for x in special.values() if x == "lifted"), "lifted")
-    build_belfry(VERTS[SKYLINE["belfry"]])
-    build_great_spire(VERTS[SKYLINE["spire"]])
-    build_ibeam(VERTS[SKYLINE["ibeam"]])
-    build_cluster(VERTS[SKYLINE["cluster"]])
-    build_fin(VERTS[SKYLINE["fin"]], VERTS[min(SKYLINE["fin"] + 1, n - 1)])
-    build_pipe(VERTS[SKYLINE["pipe"]])
+    for nm_, fn_ in (("belfry", build_belfry), ("spire", build_great_spire), ("ibeam", build_ibeam),
+                     ("cluster", build_cluster), ("pipe", build_pipe)):
+        if SKYLINE[nm_] < n:
+            fn_(VERTS[SKYLINE[nm_]])
+    if SKYLINE["fin"] < n:
+        build_fin(VERTS[SKYLINE["fin"]], VERTS[min(SKYLINE["fin"] + 1, n - 1)])
     log("legs done")
     for idx in (3, 6, 9, 12, 15, 18):
         if idx >= n - 1:
@@ -3624,7 +3625,8 @@ def build_creature():
     build_ladder(ladder_v, facing(ladder_v))
     bell_v = min(VERTS, key=lambda v: abs(v["s"] - 12.6))
     build_flank_bell(bell_v, facing(bell_v))
-    build_tail(VERTS[-1])
+    if args.lab != 'head':
+        build_tail(VERTS[-1])
     log("creature assembled")
 
 
@@ -4217,7 +4219,7 @@ def mat_membrane():
     g.p(base=base, rough=0.18, ssw=0.6, ssr=(1.0, 0.5, 0.3), sss=0.02, coat=1.0, coat_rough=0.03,
         normal=g.bump(g.math("ADD", bl, vein), 0.3, 0.012))
     tr = g.n("ShaderNodeBsdfTranslucent")
-    g.set(tr.inputs["Color"], g.mix(vein, (0.34, 0.24, 0.13, 1.0), (0.08, 0.008, 0.008, 1.0)))
+    g.set(tr.inputs["Color"], g.mix(vein, (0.16, 0.11, 0.06, 1.0), (0.05, 0.006, 0.006, 1.0)))
     ms = g.n("ShaderNodeMixShader")
     ms.inputs[0].default_value = 0.6
     g.nt.links.new(g.bsdf.outputs[0], ms.inputs[1])
@@ -5842,7 +5844,7 @@ def main():
             continue
         md = ob.modifiers.new("Grain", "SUBSURF")
         md.subdivision_type = "SIMPLE"
-        md.levels = md.render_levels = 1
+        md.levels = md.render_levels = args.grain
         d1 = ob.modifiers.new("Chunks", "DISPLACE")
         d1.texture = tex2
         d1.texture_coords = "GLOBAL"
