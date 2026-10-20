@@ -130,3 +130,24 @@ Animated parts (axes in the socket frame, the left side mirrors x; converted to 
 `Drum` +X (+angle = line pays out), `Needle` about the gauge normal (−0.34, 0.80, 0.50), rest = 12 o'clock, dial
 −135° … +135° clockwise (0 … 5.5 g, red zone from 80 %), `Trigger` +X (−12° = pulled), `Slide` along −Z (recoil +Z,
 14 mm), `Head` scaled to 0 while the line is out.
+
+## Player body (first-person avatar)
+
+`build_body.py` builds the player's own body in Blender (all from code, deterministic) and exports
+`public/abyssal-tether-3d/assets/models/player_body.glb` (one skinned mesh, one material, 22 bones, 5 clips) plus
+`previews/body_*.png`. Runtime: `src/render/bodyView.js` (setting `showBody`, default on).
+
+```bash
+.venv/bin/python tools/abyssal-tether-3d/build_body.py --out public/abyssal-tether-3d/assets/models \
+    --renders <dir> --render --samples 40 --res 1280x720     # bake ~10 min, previews ~5 min
+```
+
+Pipeline: HIGH meshes (≈290k tris: tubes with cloth folds, rounded strap sections with stitch rows, rivets, laces) -> LOW game
+mesh (≈10k tris) -> bake normal / AO / albedo / roughness+metal into one 2048² atlas (procedural materials with edge wear,
+cavity dirt and floor mud) -> `body_albedo` (sRGB), `body_normal` (OpenGL), `body_orm` (R = AO, G = roughness, B = metalness),
+embedded in the GLB. `--cache` holds the bakes: delete it after geometry changes.
+
+The character faces glTF −Z with the origin on the floor between the feet; eye height 1.62 m, neck base 1.45 m. No head: the neck
+is closed by a scarf roll. Bones: `Root, Pelvis, Spine1, Spine2, Neck, Pack, Clavicle_L/R, UpperArm_L/R, Forearm_L/R` (the
+forearm is a 10 cm stub that slides into the arms' sleeve opening), `Thigh_L/R, Shin_L/R, Foot_L/R, Toe_L/R, Pouch_L/R`.
+Clips (30 fps): `Idle_Stand` 3 s, `Run` 1 s (matches ~3.2 m/s), `Hang_Swing` 2 s, `Fall` 1.5 s, `Land` 0.6 s (once).
