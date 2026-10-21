@@ -114,9 +114,9 @@ def mat_wall_calm(F):
     h = (-depth + 0.0015 * F.spectral(beta=2.0, fmin=40, fmax=300)) * (1.0 - prof) + face_h * prof
     # albedo: strong per-block value (3 stone classes) + hue drift
     tone = rb[blk, 9]
-    base = tint((60, 56, 51), shp)
-    a = lerp_rgb(base, np.broadcast_to(col((92, 85, 75)), shp + (3,)), sstep(0.25, 0.7, tone))
-    a = lerp_rgb(a, np.broadcast_to(col((122, 112, 98)), shp + (3,)), sstep(0.72, 1.0, tone) * 0.85)
+    base = tint((62, 58, 53), shp)
+    a = lerp_rgb(base, np.broadcast_to(col((98, 90, 79)), shp + (3,)), sstep(0.25, 0.7, tone))
+    a = lerp_rgb(a, np.broadcast_to(col((108, 100, 88)), shp + (3,)), sstep(0.72, 1.0, tone) * 0.7)
     warm = (rb[blk, 0] - 0.5) * 0.16
     a[..., 0] *= 1 + warm
     a[..., 2] *= 1 - warm
@@ -180,14 +180,64 @@ def mat_floor_calm(F):
     return dict(albedo=a, height=h, rough=rough, metal=np.zeros(shp), ao_k=2.0, ao_scales=(0.01, 0.03, 0.08), nstrength=0.7, albedo_ao=0.45)
 
 
+def mat_iron_calm(F):
+    """Riveted iron plate (2 m tile): 1 x 0.5 m plates with grooved seams and rivet rows, per-plate value variation, soft rust
+    blooms; the old set's spotted rust / patina read as camouflage noise on every girder."""
+    n = F.n
+    shp = (n, n)
+    T = F.tile
+    rs = np.random.default_rng(F.rng.integers(1 << 30))
+    w_lo = F.spectral(beta=3.4, fmax=6)
+    w_mid = F.spectral(beta=2.6, fmin=4, fmax=60)
+    x = F.u * T
+    y = F.v * T
+    pw, ph = 1.0, 0.5
+    col_i = np.floor(x / pw).astype(np.int64)
+    row_i = np.floor(y / ph).astype(np.int64)
+    pid = (row_i * 7 + col_i * 3 + ((row_i * 5) % 3)) % 11
+    tone_tab = rs.uniform(0.78, 1.18, 11)
+    rust_tab = rs.uniform(0.0, 1.0, 11)
+    fx = (x / pw - col_i) * pw  # position inside the plate (m)
+    fy = (y / ph - row_i) * ph
+    dx = np.minimum(fx, pw - fx)
+    dy = np.minimum(fy, ph - fy)
+    seam = np.minimum(dx, dy)
+    groove = np.exp(-(seam / 0.006) ** 2)
+    # rivets: 0.125 m spacing along the seams, 3 cm inside them
+    sp = 0.125
+    rivet = np.zeros(shp)
+    for axis in (0, 1):
+        if axis == 0:  # along the horizontal seam
+            d_seam = np.abs(dy - 0.03)
+            along = (fx / sp - np.floor(fx / sp) - 0.5) * sp
+        else:
+            d_seam = np.abs(dx - 0.03)
+            along = (fy / sp - np.floor(fy / sp) - 0.5) * sp
+        r = np.hypot(d_seam, along)
+        rivet = np.maximum(rivet, np.sqrt(np.clip(1 - (r / 0.011) ** 2, 0, 1)))
+    undul = F.spectral(beta=3.0, fmin=2, fmax=30)
+    h = -0.004 * groove + 0.0035 * rivet + 0.0008 * undul + 0.00015 * F.spectral(beta=1.6, fmin=80, fmax=300)
+    base = tint((54, 54, 58), shp) * tone_tab[pid][..., None]
+    rust_zone = sstep(1.1, 2.1, w_lo + 0.5 * w_mid + 0.9 * (rust_tab[pid] - 0.4))
+    a = lerp_rgb(base, np.broadcast_to(col((86, 52, 36)), shp + (3,)), 0.4 * rust_zone)
+    a = lerp_rgb(a, np.broadcast_to(col((22, 22, 24)), shp + (3,)), 0.6 * groove)
+    a = lerp_rgb(a, np.broadcast_to(col((92, 90, 88)), shp + (3,)), 0.35 * rivet)
+    streak = F.spectral(beta=2.0, fmin=3, fmax=160, sx=1.0, sy=14.0)
+    a *= (1.0 - 0.22 * sstep(0.2, 1.4, streak) * sstep(-0.5, 1.0, w_lo))[..., None]
+    rough = 0.52 + 0.28 * rust_zone + 0.05 * groove - 0.06 * rivet + 0.04 * w_mid
+    metal = np.clip(0.85 - 0.8 * rust_zone, 0, 1)
+    return dict(albedo=a, height=h, rough=rough, metal=metal, ao_k=2.0, ao_scales=(0.004, 0.012, 0.03), nstrength=0.9, albedo_ao=0.5)
+
+
 hq.SETS["rock"] = (mat_wall_calm, 4.0, 2048, 1101, True, 0.00012, "stone", "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation")
+hq.SETS["metal"] = (mat_iron_calm, 2.0, 2048, 3303, True, 0.00005, "metal", "calm riveted iron plate: grooved seams, rivet rows, per-plate value, soft rust blooms")
 hq.SETS["masonry"] = (mat_floor_calm, 4.0, 2048, 2202, True, 0.0001, "stone", "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", required=True)
     ap.add_argument("--out", default=hq.DEFAULT_OUT)
-    ap.add_argument("--sets", default="rock,masonry")
+    ap.add_argument("--sets", default="rock,masonry,metal")
     ap.add_argument("--tilecheck", default="")
     a = ap.parse_args()
     names = [s for s in a.sets.split(",") if s]

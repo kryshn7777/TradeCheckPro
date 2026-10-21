@@ -6,16 +6,16 @@
     "tileMeters": 4,
     "size": 2048,
     "hero": true,
-    "heightM": 0.14491,
+    "heightM": 0.05581,
+    "meanLuma": 0.05872,
     "source": "baked:build_textures_hq.py",
-    "description": "shaft rock: bedded strata, jointed blocks, faults, veins, seeps, micro grain",
+    "description": "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation",
     "ktx2": {
       "albedo": "rock_albedo.ktx2",
       "normal": "rock_normal.ktx2",
       "orm": "rock_orm.ktx2",
       "normalHeightInB": true
-    },
-    "meanLuma": 0.02777
+    }
   },
   "masonry": {
     "albedo": "masonry_albedo.jpg",
@@ -24,16 +24,16 @@
     "tileMeters": 4,
     "size": 2048,
     "hero": true,
-    "heightM": 0.05296,
+    "heightM": 0.02243,
+    "meanLuma": 0.07386,
     "source": "baked:build_textures_hq.py",
-    "description": "Lanternwright ashlar: dressed courses, chipped arrises, eroded mortar, grime runs, micro peck",
+    "description": "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits",
     "ktx2": {
       "albedo": "masonry_albedo.ktx2",
       "normal": "masonry_normal.ktx2",
       "orm": "masonry_orm.ktx2",
       "normalHeightInB": true
-    },
-    "meanLuma": 0.03952
+    }
   },
   "metal": {
     "albedo": "metal_albedo.jpg",
@@ -42,16 +42,16 @@
     "tileMeters": 2,
     "size": 2048,
     "hero": true,
-    "heightM": 0.01305,
+    "heightM": 0.00797,
+    "meanLuma": 0.03511,
     "source": "baked:build_textures_hq.py",
-    "description": "corroded iron plate: scale, flaking rust, pitting, runs, edge wear",
+    "description": "calm riveted iron plate: grooved seams, rivet rows, per-plate value, soft rust blooms",
     "ktx2": {
       "albedo": "metal_albedo.ktx2",
       "normal": "metal_normal.ktx2",
       "orm": "metal_orm.ktx2",
       "normalHeightInB": true
-    },
-    "meanLuma": 0.02945
+    }
   },
   "rockFar": {
     "albedo": "rockFar_albedo.jpg",

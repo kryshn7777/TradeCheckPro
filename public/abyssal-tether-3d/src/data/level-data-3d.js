@@ -876,7 +876,7 @@ const sections = [
     yTop: 40, yBottom: -8,
     shaft: { minX: -11, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: -4, y: 0.4, z: 8.5, yaw: 0 },
-    theme: theme('#3a4f5c', '#7fb6cc', '#e8a458', 10, 115, 0.38, { rim: 0.8 }),
+    theme: theme('#2f414d', '#7fb6cc', '#e8a458', 10, 110, 0.38, { rim: 0.8 }),
     creature: creature('dormant', false, 260),
     hints: [
       {
@@ -907,7 +907,7 @@ const sections = [
     yTop: -8, yBottom: -58,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 8, y: -21.6, z: -6, yaw: PI / 2 },
-    theme: theme('#33485a', '#7fb0c8', '#e8a458', 8, 105, 0.34, { rim: 0.75 }),
+    theme: theme('#293a49', '#7fb0c8', '#e8a458', 8, 100, 0.34, { rim: 0.75 }),
     creature: creature('dormant', false, 260),
     hints: [
       {
@@ -933,7 +933,7 @@ const sections = [
     yTop: -58, yBottom: -98,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 7, y: -65.6, z: 0, yaw: PI / 2 },
-    theme: theme('#30443f', '#86aeaa', '#4fa08e', 7, 95, 0.31, { rim: 0.7 }),
+    theme: theme('#25322f', '#86aeaa', '#4fa08e', 7, 90, 0.31, { rim: 0.7 }),
     creature: creature('dormant', false, 240),
     hints: [
       {
@@ -952,7 +952,7 @@ const sections = [
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
-    theme: theme('#2c5560', '#6aa4b4', '#b8f0e0', 10, 240, 0.3, { rim: 0.8 }),
+    theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     creature: creature('sighting', false, 220),
     hints: [],
     triggers: [
@@ -970,7 +970,7 @@ const sections = [
     yTop: -150, yBottom: -204,
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
-    theme: theme('#46281c', '#a8683c', '#c4602a', 5, 72, 0.27, { rim: 0.7 }),
+    theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
     creature: creature('stalk', true, 130),
     hints: [
       {
@@ -1002,7 +1002,7 @@ const sections = [
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
-    theme: theme('#392c28', '#6a98a2', '#c0602e', 6, 88, 0.25, { rim: 0.75 }),
+    theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
     creature: creature('hunt', true, 120),
     hints: [], // the fork is briefed in S5 (see its second hint)
     triggers: [
@@ -1015,7 +1015,7 @@ const sections = [
     yTop: -284, yBottom: -420,
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
-    theme: theme('#244250', '#5f9aaa', '#b8f0e0', 12, 170, 0.24, { rim: 0.8 }),
+    theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
     creature: creature('frenzy', true, 110),
     hints: [
       {
@@ -1035,7 +1035,7 @@ const sections = [
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
-    theme: theme('#563818', '#e0b878', '#f0a850', 6, 95, 0.27, { rim: 0.7 }),
+    theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
     creature: creature('escape', true, 100),
     hints: [
       {
