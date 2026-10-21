@@ -9,6 +9,8 @@
  *    time, draw calls, triangles, render resolution and the GPU in use.
  */
 
+import { bumpDefaultTier, defaultTier, headroomStep, isCoarsePrimary, maxPixelRatio } from '../platform/deviceProfile.js';
+
 const SOFTWARE_GPU = /swiftshader|llvmpipe|softpipe|software|basic render/i;
 const INTEGRATED_GPU = /intel|\buhd\b|\biris\b|radeon\(tm\) (graphics|vega)|\bvega \d+ graphics/i;
 
@@ -78,7 +80,9 @@ export function installPerfDiag(game) {
     if (!renderer || typeof renderer.getContext !== 'function') return null;
     const gl = renderer.getContext();
     const gpu = gpuName(gl);
-    const maxRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+    const maxRatio = () => maxPixelRatio();
+    const touchDev = isCoarsePrimary();
+    let headroomWindows = 0;
     const state = { gpu, fps: 0, frameMs: 0, worstMs: 0, ratio: renderer.getPixelRatio(), software: SOFTWARE_GPU.test(gpu), integrated: INTEGRATED_GPU.test(gpu) };
     game.perfDiag = state;
 
@@ -152,6 +156,14 @@ export function installPerfDiag(game) {
           }
           if (Math.abs(renderer.getPixelRatio() - target) > 1e-3) renderer.setPixelRatio(target);
           state.ratio = target;
+          // Phones start on the 'low' tier: with the frame rate pinned high at the full (capped) ratio for a while, step up once.
+          if (touchDev) {
+            headroomWindows = fps >= HIGH_FPS && target >= maxRatio() - 1e-3 ? headroomWindows + 1 : 0;
+            if (headroomStep({ touch: true, tier: defaultTier(), fps, ratio: target, cap: maxRatio(), good: headroomWindows })) {
+              bumpDefaultTier('quest');
+              headroomWindows = 0;
+            }
+          }
           // Still slow at minimum resolution: the browser is probably not using the real GPU.
           if (fps < SLOW_HINT_FPS && state.ratio <= MIN_RATIO + 1e-3) slowWindows++;
           else slowWindows = 0;

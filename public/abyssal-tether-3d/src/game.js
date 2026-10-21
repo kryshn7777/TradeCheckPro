@@ -28,6 +28,7 @@ import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
+import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
 
@@ -294,7 +295,7 @@ export class FallbackRenderer3D {
     this.container = container;
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer = renderer;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(maxPixelRatio());
     renderer.xr.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;

@@ -56,6 +56,7 @@ import { createGLTFLoader, setKTX2Renderer } from './glbLoad.js';
 import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
+import { maxPixelRatio } from '../platform/deviceProfile.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -171,7 +172,7 @@ export class Renderer3D {
     installRadialFog();
 
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2));
+    r.setPixelRatio(maxPixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.25;
@@ -937,7 +938,7 @@ export class Renderer3D {
       h = window.innerHeight;
     }
     if (!w || !h) return;
-    r.setPixelRatio(Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2));
+    r.setPixelRatio(maxPixelRatio());
     r.setSize(w, h);
     // An XR session leaves its own fov/zoom on the user camera (WebXRManager.updateUserCamera).
     this.camera.fov = this.baseFov;

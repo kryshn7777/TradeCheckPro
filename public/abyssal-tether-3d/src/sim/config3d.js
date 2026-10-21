@@ -293,6 +293,15 @@ export const SETTINGS_DEFAULTS = {
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
+  // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
+  touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
+  touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
+  touchInvertY: false, // invert the vertical look
+  touchGyro: false, // gyroscope look (asks for motion permission on iOS)
+  touchScale: 1.0, // 0.9..1.5 size of the on-screen buttons (the base size is >= 56 px)
+  touchMirror: false, // mirror the layout: stick on the right, buttons on the left
+  touchLauncher: 'two', // 'two' = one fire button per hand | 'toggle' = one fire button + an L/R chip
+  touchRopeMode: 'hold', // 'hold' = rope attached while the button is held | 'latch' = tap to attach, tap again to let go
 };
 
 /** Limits and allowed values of the WP-UX settings (the single source for the UI, sanitizeUxSettings and the tests). */
@@ -310,7 +319,28 @@ export const UX_LIMITS = {
   turnModes: ['smooth', 'snap'],
   qualityTiers: ['auto', 'low', 'quest', 'high'],
   frameRates: ['72', '90', 'auto'],
+  touchControls: ['auto', 'on', 'off'],
+  touchLookSens: [0.3, 3],
+  touchScale: [0.9, 1.5],
+  touchLaunchers: ['two', 'toggle'],
+  touchRopeModes: ['hold', 'latch'],
 };
+
+/** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
+export function sanitizeTouchSettings(s) {
+  const D = SETTINGS_DEFAULTS;
+  const L = UX_LIMITS;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  s.touchLookSens = Math.min(L.touchLookSens[1], Math.max(L.touchLookSens[0], num(s.touchLookSens, D.touchLookSens)));
+  s.touchScale = Math.min(L.touchScale[1], Math.max(L.touchScale[0], num(s.touchScale, D.touchScale)));
+  if (L.touchControls.indexOf(s.touchControls) < 0) s.touchControls = D.touchControls;
+  if (L.touchLaunchers.indexOf(s.touchLauncher) < 0) s.touchLauncher = D.touchLauncher;
+  if (L.touchRopeModes.indexOf(s.touchRopeMode) < 0) s.touchRopeMode = D.touchRopeMode;
+  s.touchInvertY = s.touchInvertY === true;
+  s.touchGyro = s.touchGyro === true;
+  s.touchMirror = s.touchMirror === true;
+  return s;
+}
 
 /** Clamps / snaps the WP-UX keys of a settings object in place (after load, restore or apply). Returns the object. */
 export function sanitizeUxSettings(s) {
@@ -333,6 +363,7 @@ export function sanitizeUxSettings(s) {
   s.tutorialHints = s.tutorialHints !== false;
   s.reducedEffects = s.reducedEffects === true;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
+  sanitizeTouchSettings(s);
   return s;
 }
 

@@ -125,7 +125,10 @@ const TABS = [
   { id: 'display', label: 'Display', title: 'Display' },
   { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
   { id: 'access', label: 'Access', title: 'Accessibility and hands' },
+  { id: 'touch', label: 'Touch', title: 'Touch controls (phone and tablet)', desktopOnly: true },
 ];
+/** The VR panel has no touch page. */
+const VR_TABS = TABS.filter((t) => !t.desktopOnly);
 /**
  * Settings schema (keys of SETTINGS_DEFAULTS). `tab` places a row; `desktop` rows are hidden in VR; `vr` rows (links) are
  * hidden on the desktop; `page` rows live on a sub page in VR ('height' = the Player height page, 'calibrate' = the Brightness
@@ -170,6 +173,14 @@ const SETTINGS_SCHEMA = [
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
   { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
+  { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
+  { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },
+  { key: 'touchGyro', tab: 'touch', type: 'toggle', label: 'Gyroscope look', desc: 'Tilt the device to look around. iOS asks for motion permission.', desktop: true },
+  { key: 'touchLauncher', tab: 'touch', type: 'choice', label: 'Rope buttons', desc: 'One button per hand, or one button with an L / R switch.', options: [['two', 'Two buttons'], ['toggle', 'One + switch']], desktop: true },
+  { key: 'touchRopeMode', tab: 'touch', type: 'choice', label: 'Rope behaviour', desc: 'Hold to stay attached, or tap to attach and tap again to let go.', options: [['hold', 'Hold'], ['latch', 'Tap to toggle']], desktop: true },
+  { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
+  { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
   { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
@@ -205,6 +216,17 @@ const CONTROLS_DESKTOP = [
   [['1', '2', '3', '4'], 'Bag: apply the first aid kit, bandage, adrenaline shot or lantern battery.'],
   [['Wheel', 'G'], 'Bag: select the previous / next item · apply the selected item.'],
   [['X'], 'Stop applying a bag item (taking damage stops it too).'],
+];
+
+const CONTROLS_TOUCH = [
+  [['Left thumb'], 'Drag anywhere on the left half: a stick appears under your thumb. Move, pump the swing, steer in the air.'],
+  [['Right thumb'], 'Drag anywhere on the right half to look. Dragging from a rope or grip button looks while you hold it.'],
+  [['ROPE R', 'ROPE L'], 'Fire that hand’s tether at the highlighted anchor. Hold to stay attached, release to let go (or tap to toggle, see Settings, Touch).'],
+  [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
+  [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip.'],
+  [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
+  [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
+  [['II'], 'Pause.'],
 ];
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]';
@@ -485,7 +507,8 @@ const MARKUP = `
     <div class="panel-body">
       <div class="ctl-cols">
         <div class="ctl-col"><h3 class="group-title">Meta Quest controllers</h3><ul class="bind-list ctl-quest"></ul></div>
-        <div class="ctl-col"><h3 class="group-title">Mouse &amp; keyboard</h3><ul class="bind-list ctl-desktop"></ul></div>
+        <div class="ctl-col ctl-col-touch"><h3 class="group-title">Touch screen</h3><ul class="bind-list ctl-touch"></ul></div>
+        <div class="ctl-col ctl-col-desktop"><h3 class="group-title">Mouse &amp; keyboard</h3><ul class="bind-list ctl-desktop"></ul></div>
       </div>
       <p class="panel-note">Full-speed swings and falls are the experience, and smooth turning is the default. A comfort vignette, snap turning, seated play, captions and more are in Settings. Take a break whenever you need one — the game pauses with <kbd>B</kbd> / <kbd>≡</kbd> or <kbd>Esc</kbd>.</p>
     </div>
@@ -676,6 +699,11 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .diff-meta{font-size:.74em;color:var(--ink-4)}
 .at3d-ui .diff-tag{position:absolute;top:.75em;right:.8em;font:650 .62em var(--fu);letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
 .at3d-ui .ctl-cols{display:grid;grid-template-columns:1fr 1fr;gap:1.3em}
+.at3d-ui .ctl-col-touch{display:none}
+html.touch-on .at3d-ui .ctl-col-touch{display:block;order:-1}
+html.touch-on .at3d-ui .ctl-col-desktop{display:none}
+html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
+@media (max-width:760px){html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr}}
 .at3d-ui .bind-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
 .at3d-ui .bind-list li{display:grid;grid-template-columns:minmax(6.5em,auto) 1fr;gap:.8em;align-items:baseline;padding:.42em 0;border-bottom:1px solid var(--line);font-size:.86em}
 .at3d-ui .bind-list li:last-child{border-bottom:0}
@@ -983,6 +1011,7 @@ export class UI3D {
       diffGrid: q('.diff-grid'),
       ctlQuest: q('.ctl-quest'),
       ctlDesktop: q('.ctl-desktop'),
+      ctlTouch: q('.ctl-touch'),
       settingsBody: q('.settings-body'),
       pauseStats: q('.pause-stats'),
       pauseRespawn: q('.pause-respawn'),
@@ -1492,6 +1521,7 @@ export class UI3D {
     };
     fill(this.dom.ctlQuest, CONTROLS_QUEST);
     fill(this.dom.ctlDesktop, CONTROLS_DESKTOP);
+    fill(this.dom.ctlTouch, CONTROLS_TOUCH);
   }
 
   // ------------------------------------------------------------------ settings
@@ -2231,7 +2261,13 @@ export class UI3D {
     if (typeof hint !== 'object') return String(hint);
     const vr = this._forceVR || this._xrActive();
     if (vr) return hint.text || hint.desktop || '';
+    if (hint.touch && this._touchOn()) return hint.touch;
     return hint.desktop || hint.text || '';
+  }
+
+  /** WP-TOUCH: the touch layer is active (input/touchInput.js sets the class on <html>). */
+  _touchOn() {
+    return typeof document !== 'undefined' && document.documentElement.classList.contains('touch-on');
   }
 
   hideHint() {
@@ -2345,7 +2381,7 @@ export class UI3D {
         this._eraseData();
         break;
       case 'tab':
-        this._vrTab = Math.max(0, Math.min(TABS.length - 1, parseInt(d.value, 10) || 0));
+        this._vrTab = Math.max(0, Math.min(VR_TABS.length - 1, parseInt(d.value, 10) || 0));
         this._vrSetPage = 0;
         this._vrDirty = true;
         break;
@@ -3748,11 +3784,11 @@ export class UI3D {
       return;
     }
     const gap = 12;
-    const tw = (CW - 88 - gap * (TABS.length - 1)) / TABS.length;
-    TABS.forEach((t, i) => {
+    const tw = (CW - 88 - gap * (VR_TABS.length - 1)) / VR_TABS.length;
+    VR_TABS.forEach((t, i) => {
       this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 64, 'tab', { value: i }), t.label, null, { primary: i === this._vrTab, size: 28 });
     });
-    const tab = TABS[this._vrTab] || TABS[0];
+    const tab = VR_TABS[this._vrTab] || VR_TABS[0];
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
     const rowH = 88;
     let y = 190;

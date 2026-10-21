@@ -239,7 +239,8 @@ export class DesktopInput {
   }
 
   handDown(hand) {
-    return this.mouse[hand] || this.keyHand[hand];
+    const t = this.im.touch;
+    return this.mouse[hand] || this.keyHand[hand] || !!(t && t.fireDown(hand));
   }
 
   /** Takes the accumulated mouse movement (px) into out {x, y} and zeroes it. */
@@ -438,6 +439,8 @@ export class DesktopInput {
   onMouseDown(e) {
     const im = this.im;
     if (im.xrActive) return;
+    // The mouse events a touch generates (compat events) belong to the touch layer.
+    if (e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents) return;
     const onView = this.locked || this._onCanvas(e.target);
     if (!onView) return;
     if (im.uiMode || !im._inPlay()) return; // menus are DOM: clicks belong to them
