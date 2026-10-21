@@ -20,24 +20,28 @@ export const STEPS = Object.freeze([
     id: 'fire',
     text: 'Pull the [Trigger] to fire your tether at a glowing ring.',
     desktop: 'Hold the [Left mouse button] to fire your tether at a glowing ring.',
+    touch: 'Hold [ROPE R] or [ROPE L] to fire that hand’s tether at a glowing ring.',
     seconds: 6,
   }),
   Object.freeze({
     id: 'reel',
     text: 'Push the [Right stick] up to reel in, down to let rope out.',
     desktop: 'Hold [Space] to reel in, [Shift] to let rope out.',
+    touch: 'Hold [REEL] to reel in, [LET OUT] to let rope out.',
     seconds: 6,
   }),
   Object.freeze({
     id: 'grip',
     text: 'Squeeze the [Grip] on chalk marks to climb. Move your hand to pull.',
     desktop: 'Hold [F] near chalk marks to cling, then [W][A][S][D] to climb.',
+    touch: 'Hold [GRIP] near chalk marks to cling, then use the stick to climb.',
     seconds: 7,
   }),
   Object.freeze({
     id: 'bag',
     text: 'Reach to your right hip and squeeze the [Grip] to open your bag.',
     desktop: 'Press [1] to [4] to use a bag item.',
+    touch: 'Tap [BAG], then an item to use it.',
     seconds: 7,
   }),
 ]);
@@ -152,7 +156,7 @@ export class Tutorial {
     this._save();
     this._lastShown = this.clock;
     this._pending = step;
-    this.ui.showHint({ text: step.text, desktop: step.desktop }, step.seconds);
+    this.ui.showHint({ text: step.text, desktop: step.desktop, touch: step.touch }, step.seconds);
     if (this.ui._hint) this.ui._hint.tutorial = true;
     return true;
   }

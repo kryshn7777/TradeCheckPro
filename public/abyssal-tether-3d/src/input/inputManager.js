@@ -39,6 +39,7 @@ import { Group, Matrix4, Quaternion, Vector3 } from 'three';
 import { CONFIG, U, VIEW } from '../sim/config3d.js';
 import { XRInput, tetherDown } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
+import { TouchInput } from './touchInput.js';
 import { makeBagGesture, updateBagGesture } from './bagGesture.js';
 
 export const HANDS = ['left', 'right'];
@@ -338,6 +339,10 @@ export class InputManager {
     };
 
     this.desktop = new DesktopInput(this, this.canvas, opts.env);
+    // WP-TOUCH: the phone / tablet layer (inert unless the device or the setting asks for it; never alive in XR)
+    this.touch = new TouchInput(this, this.canvas, opts.env);
+    this._tlook = { yaw: 0, pitch: 0 };
+    this.touch.refresh();
     this._placeDesktopSockets();
   }
 
@@ -457,6 +462,7 @@ export class InputManager {
   /** Game.applySettings hook: settings are read live every frame; adopt a replaced object. */
   applySettings(settings) {
     this.setSettings(settings);
+    if (this.touch) this.touch.applySettings();
   }
 
   /** Releases every held tether / button now (e.g. on pause). Held triggers must be pressed again. */
@@ -791,6 +797,7 @@ export class InputManager {
     for (const off of this._unsub) off();
     this._unsub.length = 0;
     this.desktop.detach();
+    if (this.touch) this.touch.detach();
     this.xrIn.dispose();
     for (const h of HANDS) {
       const s = this.sockets[h];
@@ -915,6 +922,7 @@ export class InputManager {
     this._xLatched = false;
     this._ctrlLostT = 0;
     this.desktop.clear();
+    if (this.touch) this.touch.clear();
     this._emit('input:release', { reason: reason || 'release' });
   }
 
@@ -925,6 +933,7 @@ export class InputManager {
   _setMode(mode) {
     const prev = this.mode;
     this.mode = mode;
+    if (this.touch) this.touch.refresh(); // the touch layer is off while a session is presenting
     const cam = this.camera;
     if (mode === 'xr') {
       if (cam) {
@@ -1297,6 +1306,9 @@ export class InputManager {
     const T = this.tuning;
     const I = this.intent;
     const s = this.settings || {};
+    const TI = this.touch;
+    if (TI) TI.update(dt);
+    const tOn = !!TI && TI.active;
 
     // look (mouse while locked; arrow keys always)
     const look = D.consumeLook(this._look);
@@ -1308,6 +1320,11 @@ export class InputManager {
       const ky = (D.key('ArrowUp') ? 1 : 0) - (D.key('ArrowDown') ? 1 : 0);
       dYaw -= kx * T.keyLookRate * sens * dt;
       dPitch += ky * T.keyLookRate * sens * dt;
+      if (tOn) {
+        const tl = TI.consumeLook(this._tlook);
+        dYaw += tl.yaw;
+        dPitch += tl.pitch;
+      }
       if (dYaw !== 0 || dPitch !== 0) this._applyLook(dYaw, dPitch);
     }
 
@@ -1316,6 +1333,10 @@ export class InputManager {
     const yaw = yawOfMatrix(this._m3.elements);
     let fx = (D.key('KeyD') ? 1 : 0) - (D.key('KeyA') ? 1 : 0);
     let fz = (D.key('KeyW') ? 1 : 0) - (D.key('KeyS') ? 1 : 0);
+    if (tOn) {
+      fx += TI.stick.x;
+      fz += TI.stick.y;
+    }
     const ml = Math.hypot(fx, fz);
     if (ml > 1) {
       fx /= ml;
@@ -1328,9 +1349,10 @@ export class InputManager {
 
     const shift = D.key('ShiftLeft') || D.key('ShiftRight');
     I.reel = (D.key('Space') ? 1 : 0) - (shift ? 1 : 0);
+    if (tOn) I.reel = U.clamp(I.reel + TI.reel, -1, 1);
     I.brake = D.key('KeyC');
     I.turnRate = 0;
-    const yank = D.key('KeyF') ? 1 : 0;
+    const yank = D.key('KeyF') || (tOn && TI.gripHeld) ? 1 : 0;
 
     // climbing: F clings to a marked surface in reach, W/S climb, A/D traverse (view relative), Space hops off
     const C = I.climb;
@@ -1340,6 +1362,10 @@ export class InputManager {
     C.grab.right = cling;
     C.fwd = (D.key('KeyW') ? 1 : 0) - (D.key('KeyS') ? 1 : 0);
     C.side = (D.key('KeyD') ? 1 : 0) - (D.key('KeyA') ? 1 : 0);
+    if (tOn) {
+      C.fwd = U.clamp(C.fwd + TI.stick.y, -1, 1);
+      C.side = U.clamp(C.side + TI.stick.x, -1, 1);
+    }
     C.rx = c;
     C.rz = -sn;
     C.fx = -sn;

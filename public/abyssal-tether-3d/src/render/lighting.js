@@ -39,6 +39,7 @@ import { EnvProbe, DEFAULT_ENV_SPEC } from './envProbe.js';
 import { GI_HEADER_BYTES, levelGiHash, readHeader, undelta } from './giFormat.js';
 import { LM_INDEX_NAME, buildChartTable, levelLmHash, lmUndelta, readLmHeader, LM_HEADER_BYTES } from './lightmapFormat.js';
 import { RenderGovernor } from './renderGovernor.js';
+import { defaultTier } from '../platform/deviceProfile.js';
 
 const TIER_ALIAS = { low: 'low', reduced: 'low', quest: 'quest', xr: 'quest', medium: 'quest', high: 'high', desktop: 'high' };
 export const QUALITY_TIERS = Object.freeze({
@@ -73,14 +74,6 @@ function urlTier() {
   }
 }
 
-function isQuestBrowser() {
-  try {
-    return typeof navigator !== 'undefined' && /OculusBrowser|Quest/i.test(navigator.userAgent || '');
-  } catch {
-    return false;
-  }
-}
-
 export class Lighting {
   /**
    * @param {object} r3d  Renderer3D (reads .renderer, .scene, .materials, .lantern, .envLights, .levelView, .settings)
@@ -89,7 +82,7 @@ export class Lighting {
     this.r3d = r3d;
     this.settings = r3d.settings || {};
     this.pinned = null; // a tier name set through setQualityTier()
-    this.tier = urlTier() || (isQuestBrowser() ? 'quest' : 'high');
+    this.tier = urlTier() || defaultTier();
     if (this.settings.reducedEffects) this.tier = 'low';
     this.cfg = QUALITY_TIERS[this.tier];
     this.govLevel = 0;
@@ -432,7 +425,7 @@ export class Lighting {
   _resolve(game) {
     const s = (game && game.settings) || this.settings;
     let n = this.pinned || urlTier();
-    if (!n) n = s && s.reducedEffects ? 'low' : tierName(s && s.fxQuality) || (game && game.xrActive ? 'quest' : isQuestBrowser() ? 'quest' : 'high');
+    if (!n) n = s && s.reducedEffects ? 'low' : tierName(s && s.fxQuality) || (game && game.xrActive ? 'quest' : defaultTier());
     if (s && s.reducedEffects && !this.pinned) n = 'low';
     let gl = 0;
     const gov = game && game.governor;
