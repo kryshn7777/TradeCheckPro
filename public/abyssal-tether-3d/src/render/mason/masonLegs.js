@@ -1,8 +1,10 @@
 /* ABYSSAL TETHER 3D — mason/masonLegs.js
  * The Mason's legs: the 10 sim-driven LEAD legs (analytic 2-bone IK from the rendered flank to the sim's planted hook, the iron
  * metatarsus keeps its wrong-way back-bend because shank + metatarsus + grapnel are one rigid lower assembly) and the 26
- * FOLLOWER legs (a metachronal wave: each plants where the surface is and steps when the body has carried it too far, neighbours
- * never lift together, a retrograde front-to-back ripple). Writes world matrices straight into the leg Bones (the skin reads
+ * FOLLOWER legs (a metachronal gait: one phase clock advances with the DISTANCE travelled (stride length ~ the leg's reach), every
+ * leg owns a phase offset (the wave runs tail to head, the two sides in antiphase); a leg lifts when the clock crosses its offset,
+ * swings for a time set by the speed, plants and then stays exactly where it landed until the next lift; an overextended foot is
+ * re-planted at once so nothing ever slides). Writes world matrices straight into the leg Bones (the skin reads
  * bone.matrixWorld x boneInverse), allocation-free: typed scratch arrays and scalar maths only.
  *
  * Rest frame (glTF): the leg template is a LEFT leg (x < 0) relative to its vertebra bone's head; right legs mirror x. Every bone
@@ -52,12 +54,24 @@ function makeProto(chain, mirror) {
   return { H, K, A, T, X, a, b, Fu, Fl, offA: sub(A, K), offT: sub(T, K), offX: sub(X, K), total: a + b, hip: H };
 }
 
+export const GAIT_MASON = { delta: 0.1, duty: 0.7, strideK: 0.8, minDur: 0.24, maxDur: 0.8, minStep: 0.12, maxDisp: 0.62, lift: 0.13 };
+export const GAIT_SKITTER = { delta: 0.15, duty: 0.55, strideK: 1.15, minDur: 0.09, maxDur: 0.4, minStep: 0.1, maxDisp: 0.62, lift: 0.14 };
+
 /**
  * @param {Object<string, THREE.Bone>} bones  name → Bone
  * @param {object} meta  glTF extras.mason (chain, legs)
+ * @param {object} [gait]  GAIT_MASON / GAIT_SKITTER
+ * @param {number} [size]  creature size (follower reach scales with it)
  */
 export class MasonLegs {
-  constructor(bones, meta) {
+  constructor(bones, meta, gait, size) {
+    this.gait = gait || GAIT_MASON;
+    this.size = size || 1;
+    this.cycle = 0; // gait phase in cycles (advanced by the view: distance / stride)
+    this.stride = this.gait.strideK * 7 * this.size; // metres per cycle
+    this.onLand = null; // (x, y, z, side, weight, lead) -> void: a foot has just planted (dust, audio hooks)
+    this.loadL = 0;
+    this.loadR = 0;
     this.protos = { '-1': makeProto(meta.chain, false), '1': makeProto(meta.chain, true) };
     this.legs = [];
     this.lead = [];
@@ -101,6 +115,8 @@ export class MasonLegs {
         hipZ: 0,
         tap: 0,
         wasPlanted: true,
+        phi: -lg.point * this.gait.delta + (side > 0 ? 0.5 : 0), // gait phase offset (cycles): rear legs lift first, sides in antiphase
+        lastCyc: 0,
       };
       L.thr = 0.34 + 0.012 * lg.point + 0.05 * (((lg.point * 7 + (side > 0 ? 3 : 0)) % 5) / 4); // desynchronised thresholds, rear legs a touch later
       this.legs.push(L);
@@ -112,7 +128,7 @@ export class MasonLegs {
     this._r = new Float64Array(9);
     this._phase = 0;
     this.solids = [];
-    this.stats = { stepping: 0, planted: 0 };
+    this.stats = { stepping: 0, planted: 0, slide: 0, slideLead: 0 };
     this._probe = 0;
   }
 
@@ -121,6 +137,7 @@ export class MasonLegs {
     for (const L of this.legs) {
       L.placed = false;
       L.step = -1;
+      L.lastCyc = Math.floor(this.cycle - L.phi);
     }
   }
 
@@ -133,6 +150,12 @@ export class MasonLegs {
     let nStep = 0;
     let nPlanted = 0;
     let starts = 0;
+    let swL = 0;
+    let swR = 0;
+    let totL = 0;
+    let totR = 0;
+    let slide = 0;
+    let slideLead = 0;
     const ik = this._ik;
     for (let li = 0; li < legs.length; li++) {
       const L = legs[li];
@@ -175,9 +198,18 @@ export class MasonLegs {
         tz = sim.foot.z;
         reach = sim.reach || L.reach;
         if (sim.planted) nPlanted++;
-        else nStep++;
+        else {
+          nStep++;
+          if (side < 0) swL++;
+          else swR++;
+        }
+        if (side < 0) totL++;
+        else totR++;
         // two feeling taps on a surface before it plants (the leg_probe clip, procedurally)
-        if (sim.planted && !L.wasPlanted) L.tap = 0.8;
+        if (sim.planted && !L.wasPlanted) {
+          L.tap = 0.8;
+          if (this.onLand) this.onLand(sim.foot.x, sim.foot.y, sim.foot.z, side, 1, 1);
+        }
         L.wasPlanted = sim.planted;
         if (L.tap > 0) {
           const k = 0.8 - L.tap;
@@ -189,17 +221,22 @@ export class MasonLegs {
           tz += uz * lift;
         }
       } else {
-        reach = L.reach;
+        reach = L.reach * this.size;
         const r = this._follower(L, dt, HX, HY, HZ, F, o, s, level, freeze, speed);
-        if (r === 1) nStep++;
-        else nPlanted++;
+        if (r === 1 || r === 2) {
+          nStep++;
+          if (side < 0) swL++;
+          else swR++;
+        } else nPlanted++;
+        if (side < 0) totL++;
+        else totR++;
         if (r === 2) starts++;
         tx = L.fx;
         ty = L.fy;
         tz = L.fz;
       }
       // leg scale: the leg spans the sim's reach (+4 % so planted knees stay bent)
-      const sl = clamp((reach * 1.04) / P.total, 0.5, 1.9);
+      const sl = clamp((reach * 1.04) / P.total, 0.5 * this.size, 1.9);
       const a0 = P.a * sl;
       const b0 = P.b * sl;
       let px = ux * 1.0 + rx * side * 0.7 - F[o + 3] * 0.2;
@@ -210,6 +247,15 @@ export class MasonLegs {
       py /= pl;
       pz /= pl;
       solve2(ik, HX, HY, HZ, tx, ty, tz, a0, b0, px, py, pz, 1.18);
+      const gx = ik[4] - tx;
+      const gy = ik[5] - ty;
+      const gz = ik[6] - tz;
+      const gap = Math.sqrt(gx * gx + gy * gy + gz * gz);
+      L.gap = gap;
+      // only planted feet count as a slide (a raised foot may fall short of its lifted target mid-swing)
+      if (L.kind === 'lead') {
+        if (limbs && limbs[L.simLimb] && limbs[L.simLimb].planted && gap > slideLead) slideLead = gap;
+      } else if (L.step < 0 && gap > slide) slide = gap;
       const KX = ik[0];
       const KY = ik[1];
       const KZ = ik[2];
@@ -278,6 +324,10 @@ export class MasonLegs {
     }
     this.stats.stepping = nStep;
     this.stats.planted = nPlanted;
+    this.stats.slide = slide;
+    this.stats.slideLead = slideLead;
+    this.loadL = totL ? swL / totL : 0;
+    this.loadR = totR ? swR / totR : 0;
     this._probe = starts;
   }
 
@@ -298,7 +348,8 @@ export class MasonLegs {
    * Follower foothold. Returns 0 planted, 1 stepping, 2 stepping (just started).
    */
   _follower(L, dt, HX, HY, HZ, F, o, s, level, freeze, speed) {
-    const reach = L.reach;
+    const g = this.gait;
+    const reach = L.reach * this.size;
     const ux = F[o + 6];
     const uy = F[o + 7];
     const uz = F[o + 8];
@@ -321,6 +372,7 @@ export class MasonLegs {
       L.fz = L.tz;
       L.placed = true;
       L.step = -1;
+      L.lastCyc = Math.floor(this.cycle - L.phi);
       return 0;
     }
     if (freeze && L.step < 0) return 0;
@@ -332,11 +384,13 @@ export class MasonLegs {
         L.fx = L.tx;
         L.fy = L.ty;
         L.fz = L.tz;
+        if (this.onLand) this.onLand(L.fx, L.fy, L.fz, L.side, 0.4 + 0.6 * Math.min(1, speed / 6), 0);
         return 0;
       }
       const k = L.step;
+      // lift early, plant late: the foot rises fast, glides, and the last quarter is a controlled descent
       const e = k * k * (3 - 2 * k);
-      const lift = Math.sin(Math.PI * k) * reach * 0.16;
+      const lift = Math.sin(Math.PI * Math.pow(k, 0.8)) * reach * g.lift;
       L.fx = L.ox + (L.tx - L.ox) * e + ux * lift;
       L.fy = L.oy + (L.ty - L.oy) * e + uy * lift;
       L.fz = L.oz + (L.tz - L.oz) * e + uz * lift;
@@ -346,15 +400,44 @@ export class MasonLegs {
     const dy = L.fy - iy;
     const dz = L.fz - iz;
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (d > L.thr * reach && this._canStep(L)) {
-      // start a step: aim ahead of the ideal spot by the stride so the foot lands where the body will have carried it
-      const lead = reach * 0.22 + clamp(speed, 0, 14) * 0.05;
+    // the gait clock crossing this leg's offset lifts it (if the body has actually carried it somewhere); a foot dragged past
+    // its limit lifts at once whatever the clock says (nothing ever slides)
+    const cyc = Math.floor(this.cycle - L.phi);
+    let go = false;
+    let urgent = false;
+    if (cyc !== L.lastCyc) {
+      L.lastCyc = cyc;
+      if (d > g.minStep * reach && speed > 0.12) go = true;
+    }
+    const hx = L.fx - HX;
+    const hy = L.fy - HY;
+    const hz = L.fz - HZ;
+    if (d > g.maxDisp * reach || hx * hx + hy * hy + hz * hz > reach * reach * 1.06 * 1.06) {
+      go = true; // dragged past the limit of the leg: lift at once
+      urgent = true;
+    }
+    if (go && (urgent || this._canStep(L))) {
+      // swing time from the speed (a stride ~ one cycle of the clock); aim ahead so the foot lands where the body will have carried it
+      const dur = clamp((this.stride * (1 - g.duty)) / Math.max(speed, 0.6), g.minDur, g.maxDur) * (urgent ? 0.8 : 1);
+      const lead = reach * 0.2 + clamp(speed, 0, 16) * dur * 0.9;
       this._probeSurface(L, level, HX, HY, HZ, ix + fx * lead, iy + fy * lead, iz + fz * lead, ux, uy, uz, reach);
+      // the landing spot must be within the leg's reach of where the hip will be then
+      const lx = L.tx - HX - fx * speed * dur;
+      const ly = L.ty - HY - fy * speed * dur;
+      const lz = L.tz - HZ - fz * speed * dur;
+      const ld = Math.sqrt(lx * lx + ly * ly + lz * lz);
+      const lim = reach * 0.97;
+      if (ld > lim) {
+        const k = lim / ld;
+        L.tx = HX + fx * speed * dur + lx * k;
+        L.ty = HY + fy * speed * dur + ly * k;
+        L.tz = HZ + fz * speed * dur + lz * k;
+      }
       L.ox = L.fx;
       L.oy = L.fy;
       L.oz = L.fz;
       L.step = 0;
-      L.dur = clamp(0.34 - clamp(speed, 0, 16) * 0.012, 0.16, 0.36);
+      L.dur = dur;
       return 2;
     }
     return 0;
@@ -367,8 +450,7 @@ export class MasonLegs {
       const M = legs[i];
       if (M === L || M.step < 0) continue;
       const dp = M.point - L.point;
-      if (M.side === L.side && (dp === 1 || dp === -1)) return false;
-      if (dp === 0) return false;
+      if (dp === 0) return false; // never both feet of one pair in the air
     }
     return true;
   }

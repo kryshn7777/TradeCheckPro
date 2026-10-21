@@ -279,6 +279,9 @@ uniform vec3 uLanW;
 uniform vec4 uLanC;
 uniform vec2 uLanR;
 uniform vec3 uSky;
+uniform vec3 uSkyUp;
+uniform vec3 uSkyHz;
+uniform vec3 uSkyDn;
 uniform float uDust;
 uniform sampler2D uWear;
 varying vec3 vN;
@@ -310,7 +313,10 @@ void main() {
   // the lantern hangs a hand's width from the glass: its candela / d^1.6 would be a blinding 100+; the gear is lit at a fraction of the
   // scene's direct light (handsView gearLight), so the reflection is capped and scaled the same way (a hot spot, never a white disc)
   vec3 lan = uLanC.rgb * min( att, 24.0 ) * 0.12;
-  vec3 col = uSky * ( F * 1.1 ) + lan * ( spec + spec2 ) * ( 0.5 + 0.5 * F ) + lan * sc * ( 0.35 + 3.0 * spec ) + vec3( 0.25, 0.24, 0.22 ) * dust * ( 0.1 + 0.5 * dot( lan, vec3( 0.33 ) ) );
+  // what the glass mirrors: the section's own reflection probe (average up / horizon / down radiance, envProbe.js), scaled like the gear light
+  float gwUp = dot( reflect( - V, N ), viewMatrix[ 1 ].xyz );
+  vec3 gwSky = mix( uSkyDn, mix( uSkyHz, uSkyUp, smoothstep( 0.05, 0.95, gwUp ) ), smoothstep( - 0.45, 0.1, gwUp ) );
+  vec3 col = ( uSky * 0.4 + min( gwSky * 0.07, vec3( 0.3 ) ) ) * ( F * 1.1 ) + lan * ( spec + spec2 ) * ( 0.5 + 0.5 * F ) + lan * sc * ( 0.35 + 3.0 * spec ) + vec3( 0.25, 0.24, 0.22 ) * dust * ( 0.1 + 0.5 * dot( lan, vec3( 0.33 ) ) );
   float a = clamp( 0.03 + 0.45 * F + 0.1 * dust + 0.1 * sc, 0.0, 0.8 );
   gl_FragColor = vec4( col, a );
   #include <tonemapping_fragment>
@@ -330,6 +336,9 @@ export function getGlassMaterial() {
       uLanC: LOOK.uLanternC,
       uLanR: LOOK.uLanternR,
       uSky: { value: new THREE.Color(0.08, 0.1, 0.11) },
+      uSkyUp: LOOK.uSkyUp,
+      uSkyHz: LOOK.uSkyHz,
+      uSkyDn: LOOK.uSkyDn,
       uDust: { value: 0.7 },
       uWear: GEAR_SURFACE.uWearTex,
     },

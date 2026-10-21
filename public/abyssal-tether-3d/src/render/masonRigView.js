@@ -9,7 +9,9 @@
  *     (<= 25 k) share the skeleton and the two atlases; 4 draw calls per LOD.
  *   - Procedural layers (zero allocation): the spine follows the sim's body (one bone per block, per-bone scale from the link
  *     lengths), the crown aims at the sound with a spring (lag + overshoot), the head is shrunk / lifted to fit the shaft
- *     (HeadFit), lead legs IK to the sim's planted hooks, follower legs ripple in a metachronal wave (MasonLegs).
+ *     (HeadFit), lead legs IK to the sim's planted hooks, follower legs walk a metachronal gait whose clock advances with the
+ *     distance travelled (MasonLegs), a damped spring chain adds the travelling wave / inertia / load bob / wind-up coil
+ *     (BodyMotion), feet landings and the body's wake throw ground dust (CreatureDust, bindDust).
  *   - Clips: AnimationMixer; the clip graph (mason/masonClipGraph.js, pure) maps sim state to weights; the attack clips are
  *     scrubbed by the sim's own timer (phase lock) and the parametric clips by body.listen / lunge / frondOpen / glow.
  *   - Bus: `creature:clip` {name, event, t, x, y, z} at the clip event times (audio sync).
@@ -19,7 +21,9 @@
 import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
 import { HeadFit } from './mason/masonFit.js';
-import { MasonLegs } from './mason/masonLegs.js';
+import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
+import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
+import { sectionWet } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
@@ -79,7 +83,17 @@ export class MasonRigView {
     this._buildRig(meta);
     this._buildActions(gltf, meta);
     this.graph = new ClipGraph();
-    this.legs = new MasonLegs(this.bones, meta);
+    const skit = !!this.opts.variant;
+    this.legs = new MasonLegs(this.bones, meta, skit ? GAIT_SKITTER : GAIT_MASON, this.opts.size);
+    this.legs.onLand = (x, y, z, side, w, lead) => this._landed(x, y, z, w, lead);
+    this.motion = new BodyMotion(SEG, skit ? MOTION_SKITTER : MOTION_MASON);
+    this.dust = null;
+    this._trailAcc = 0;
+    this._trailI = 3;
+    this._gu = new Float32Array([0, 1, 0]); // the body's up near the shoulders (the dust's surface normal)
+    this._gv = new Float32Array(3); // the body's velocity (the dust follows the wake)
+    this._wet = 0;
+    this._camD = 0;
     this.fit = new HeadFit();
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
@@ -104,6 +118,11 @@ export class MasonRigView {
 
   bindBus(bus) {
     this.bus = bus || null;
+  }
+
+  /** The shared ground-dust pool (fx.creatureDust): footfalls, the wake and strikes feed it. */
+  bindDust(dust) {
+    this.dust = dust || null;
   }
 
   /** compat with CreatureView (the atlases are baked into the GLB) */
@@ -318,6 +337,7 @@ export class MasonRigView {
         return;
       }
     }
+    this._camD = camD;
     this.root.visible = true;
     const lodWant = camD > (this._lod === 1 ? o.lodDistance - o.lodHysteresis : o.lodDistance) ? 1 : 0;
     this._setLod(lodWant);
@@ -350,6 +370,7 @@ export class MasonRigView {
     this._havePrev = true;
     if (jump) {
       this.legs.reset();
+      this.motion.reset();
       this.fit.reset();
       const f = this._focus;
       f.yaw = f.pitch = f.vyaw = f.vpitch = 0;
@@ -367,6 +388,14 @@ export class MasonRigView {
     const F = this.F;
     const S = this.S;
     computeFrames(B, SEG, F);
+    // the gait clock: one cycle per stride of distance travelled (the legs and the body's wave share it), frozen while it listens
+    const gs = this.graph.out;
+    if (!gs.freeze && dt > 0) this.legs.cycle += (this._speed * dt) / this.legs.stride;
+    {
+      const sn = this.graph.snapshot;
+      const wind = sn.phase === 'windup' ? clamp(sn.atkT / Math.max(sn.atkWindup, 0.05), 0, 1) : sn.phase === 'strike' ? -0.5 : 0;
+      this.motion.update(dt, F, sp, size, gs.freeze ? 0 : this._speed, this.legs.cycle, this.legs.loadL, this.legs.loadR, wind, B.jitter || 0);
+    }
     const level = C.level || this._level;
     if (C.level) this._level = C.level;
     const cap = sectionHeadScale(C);
@@ -398,6 +427,7 @@ export class MasonRigView {
     this._poseSpine(F, S);
     this._poseCrown();
     this._poseLegs(dt, B, F, S, level, g, lodFar);
+    if (this.dust) this._wake(dt, C, B, F, size);
 
     // ---- shading uniforms ----
     if (o.variant) {
@@ -544,6 +574,8 @@ export class MasonRigView {
   }
 
   _emitClip(name, event, t, C, extra) {
+    if (name === 'strike' && event === 'contact') this._slam(C, 1);
+    else if (name === 'roar_display' && event === 'peak') this._slam(C, 0.5);
     if (!this.bus) return;
     const h = C && C.body && C.body.head;
     const p = { name, event, t, x: h ? h.x : 0, y: h ? h.y : 0, z: h ? h.z : 0 };
@@ -690,6 +722,55 @@ export class MasonRigView {
     this.legs.hug = this._hug;
     const freeze = g.freeze || !!(this._forced && this._forced.hold);
     this.legs.update(dt, F, S, limbs, level, freeze, lodFar, this._speed);
+  }
+
+  // ---- ground dust ------------------------------------------------------------------------------------------------
+  _landed(x, y, z, w, lead) {
+    const d = this.dust;
+    if (!d || this._camD > 90) return;
+    const u = this._gu;
+    const v = this._gv;
+    const size = this.opts.size;
+    d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2]);
+  }
+
+  /** Under-body wake: a low drifting wisp every so often while it moves (more when fast), the slam on a strike's contact. */
+  _wake(dt, C, B, F, size) {
+    const d = this.dust;
+    if (!d || this._camD > 90) return;
+    const o = 6 * 12;
+    this._gu[0] = F[o + 6];
+    this._gu[1] = F[o + 7];
+    this._gu[2] = F[o + 8];
+    const sp = this._speed;
+    this._gv[0] = F[o + 3] * sp;
+    this._gv[1] = F[o + 4] * sp;
+    this._gv[2] = F[o + 5] * sp;
+    this._wet = sectionWet(C.sectionIndex);
+    const mv = clamp(sp / (3 * Math.max(size, 0.3) ** 0.5), 0, 2);
+    if (mv < 0.12 && !(this._wet > 0.3)) return;
+    // emission by distance travelled and a slow idle seep over wet stone
+    const perM = this.opts.variant ? 1.2 : 0.7; // wisps per metre of travel
+    this._trailAcc += dt * (sp * perM + this._wet * (0.5 + 0.8 * mv));
+    let guard = 0;
+    while (this._trailAcc >= 1 && guard++ < 3) {
+      this._trailAcc -= 1;
+      const i = this._trailI;
+      this._trailI = i >= 16 ? 3 : i + 1;
+      const hug = this._hug * 0.95;
+      const q = i * 12;
+      d.trail(F[q] - F[q + 6] * hug, F[q + 1] - F[q + 7] * hug, F[q + 2] - F[q + 8] * hug, F[q + 6], F[q + 7], F[q + 8], size, clamp(mv, 0.2, 1), this._wet, this._gv[0] * 0.5, this._gv[1] * 0.5, this._gv[2] * 0.5);
+    }
+  }
+
+  _slam(C, strength) {
+    const d = this.dust;
+    const h = C && C.body && C.body.head;
+    if (!d || !h || this._camD > 90) return;
+    const u = this._gu;
+    const size = this.opts.size;
+    // the impact point: the crown's tip on the surface it strikes (the head height above it is the hug)
+    d.slam(h.x - u[0] * this._hug * 0.8, h.y - u[1] * this._hug * 0.8, h.z - u[2] * this._hug * 0.8, u[0], u[1], u[2], size * 1.5, strength, this._wet);
   }
 
   _bounds(sp, hs) {
@@ -1042,7 +1123,7 @@ export const SKITTER_VIEW = {
   variant: 'skitter',
   size: 0.45,
   clipRate: 1.5, // clips play 1.5x speed
-  twitch: 0.06, // procedural quiver (m of sideways shiver per vertebra at full agitation, before the size)
+  twitch: 0.025, // procedural quiver (m of sideways shiver per vertebra at full agitation, before the size); the body spring chain adds the rest
   lodDistance: 6, // LOD1 (20k tris) beyond 6 m; LOD0 only when it is on top of you
   lodHysteresis: 1,
   farDistance: 34, // beyond this the pose refreshes every 2nd frame

@@ -179,7 +179,7 @@ const HEIGHT_KEYS = ['heightMode', 'heightCal', 'heightOffset', 'heightMeasured'
 /** [keys, full description, short VR description]. */
 const CONTROLS_QUEST = [
   [['Trigger'], 'Fire that hand’s tether at its highlighted anchor. Hold to stay attached, release to let go.', 'Tether · hold on · release'],
-  [['Grip'], 'Hand at a chalk-studded surface: hold to grab it, then move the hand to pull yourself; alternate hands to climb, let go to launch, A hops off. Grip strength runs out. Elsewhere, on a tethered hand: yank that rope in hard.', 'Grab · climb · yank rope'],
+  [['Grip'], 'Hand at a chalk-studded surface or any ledge edge / corner: hold to grab it (edges tire the grip faster; pull down at a ledge lip to climb over), then move the hand to pull yourself; alternate hands to climb, let go to launch, A hops off. Grip strength runs out. Elsewhere, on a tethered hand: yank that rope in hard.', 'Grab · climb · yank rope'],
   [['Left stick'], 'Move, pump the swing, steer in the air — relative to where you look.', 'Move · swing · air control'],
   [['Right stick ← →'], 'Smooth turn.', 'Smooth turn'],
   [['Right stick ↑ ↓'], 'Reel every attached tether in / out.', 'Reel in / let out'],
@@ -198,7 +198,7 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
-  [['F'], 'Hold near a chalk-studded surface to cling to it (W A S D climb, Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
+  [['F'], 'Hold near a chalk-studded surface or any ledge edge / corner to cling to it (W A S D climb, W or Space at a ledge lip climbs over, otherwise Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
   [['Esc'], 'Pause.'],
   [['R'], 'Restart the run.'],
   [['Enter'], 'Confirm · continue after a fall.'],

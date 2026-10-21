@@ -19,6 +19,7 @@
 
 import { U } from './config3d.js';
 import { LEVEL_DATA_3D } from '../data/level-data-3d.js';
+import { buildEdges, edgeQuery } from './climbEdges.js';
 
 /** Vertical bucket size (m). */
 const BUCKET = 8;
@@ -289,6 +290,10 @@ export class Level3D {
     this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
     this._losScratch = [];
     this._rayScratch = [];
+    // Procedural edge holds (sim/climbEdges.js): every exposed solid edge is a low-grade grip candidate, spatially hashed.
+    const eb = buildEdges(this);
+    this.edges = eb.edges;
+    this._edgeGrid = eb.grid;
 
     this.byId = Object.create(null);
     for (const list of [this.solids, this.hazards, this.anchors, this.decor, this.climb]) {
@@ -405,6 +410,11 @@ export class Level3D {
   /** Climb zones whose box touches the sphere (x, y, z, r) (exact box distance); allocation-free (see sim/climb3d.js). */
   climbNear(x, y, z, r, out) {
     return this._queryBoxes(this._climbIndex, x - r, y - r, z - r, x + r, y + r, z + r, out);
+  }
+
+  /** Procedural edge holds (see sim/climbEdges.js) whose box touches the sphere (x, y, z, r); a superset, allocation-free. */
+  edgeNear(x, y, z, r, out) {
+    return edgeQuery(this._edgeGrid, x, y, z, r, out);
   }
 
   /**

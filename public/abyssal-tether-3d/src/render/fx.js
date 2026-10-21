@@ -31,8 +31,10 @@
 
 import * as THREE from 'three';
 import { Atmosphere, FX_LIGHT_GLSL, FxLighting, makeNoise3D } from './atmosphere.js';
+import { CreatureDust } from './creatureDust.js';
 import { Rubble, Trickles } from './debris.js';
 import { LanternHalo } from './lanternHalo.js';
+import { GodRays } from './godRays.js';
 
 const DUST_COUNT = 1100;
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
@@ -104,10 +106,12 @@ export class FX {
     this._noise = makeNoise3D(64);
     this.atmosphere = new Atmosphere(scene, this.lighting, this._noise, this._rng);
     this.halo = new LanternHalo(scene, this.lighting.uniforms, this._noise);
+    this.godRays = new GodRays(scene, this.lighting.uniforms, this._noise, this.halo);
     this.trickles = new Trickles(scene, this.lighting.uniforms, this._rng);
     this.trickles.burst = (kind, x, y, z, opts) => this.burst(kind, x, y, z, opts);
     this._buildDust();
     this._buildBursts();
+    this.creatureDust = new CreatureDust(scene, this.lighting.uniforms, this._rng); // ground dust under the moving creatures (one draw)
     this._buildDebris();
     this._buildFade();
     // Event rubble state
@@ -364,6 +368,10 @@ export class FX {
     this._bus = bus;
     if (!bus || typeof bus.on !== 'function') return;
     const on = (type, fn) => this._unsub.push(bus.on(type, fn));
+    // A hand takes a procedural edge hold: a pinch of chalky grit off the stone (the authored studs are already chalked).
+    on('climb:grab', (e) => {
+      if (e && e.edge === true && isFinite(e.x)) this.burst('dust', e.x, e.y - 0.03, e.z, { count: 1 });
+    });
     on('grapple:attach', (e) => {
       const an = e.anchor || {};
       const x = num(e.x, an.x);
@@ -528,6 +536,7 @@ export class FX {
     this.trickles.reset();
     this.atmosphere.reset();
     this.bursts.geometry.setDrawRange(0, 0);
+    this.creatureDust.reset();
     this.bursts.visible = false;
     this._slamT = -1;
     this._slammed = false;
@@ -784,6 +793,7 @@ export class FX {
     this.lighting.update(dt, game);
     this.atmosphere.update(dt, game, head, tier, this.threat);
     this.halo.update(dt, this.time, this.atmosphere.density, this.threat, this.lighting.lanternLevel, this.scene.fog ? this.scene.fog.color : this._black, tier);
+    this.godRays.update(dt, this.time, game, head, this.atmosphere.density, this.lighting.lanternLevel, this.scene.fog ? this.scene.fog.color : this._black, this.camera);
     const si = level && typeof level.sectionIndexAt === 'function' ? level.sectionIndexAt(head.y) : 0;
     const stir = Math.min(1, this.lighting.creatureNear * (0.6 + Math.min(1, this.lighting.creatureSpeed / 6)) + this.threat * 0.3);
     this.trickles.update(dt, level, head, tier, SECTION_WET[si] || 0, stir);
@@ -794,6 +804,7 @@ export class FX {
 
     this._updateDust(dt, head);
     this._updateBursts(dt);
+    this.creatureDust.update(dt, head, tier, this.reduced);
     this.rubble.update(dt, level, head);
     this._updateFade(game);
     const st = this.stats;
@@ -1029,10 +1040,12 @@ export class FX {
       o.geometry.dispose();
       o.material.dispose();
     }
+    this.creatureDust.dispose();
     this.rubble.dispose();
     this.trickles.dispose();
     this.atmosphere.dispose();
     this.halo.dispose();
+    this.godRays.dispose();
     if (this._noise) this._noise.dispose();
     if (this.fade.parent) this.fade.parent.remove(this.fade);
     this.fade.geometry.dispose();

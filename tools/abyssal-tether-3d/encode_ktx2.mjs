@@ -4,7 +4,7 @@
 // detail_normal.png) and writes GPU-compressed .ktx2 files (full mip chain) into the game's assets/textures folder,
 // then records them in manifest.json ("ktx2": {albedo, normal, orm}).
 //
-//   hero sets (rock, masonry, metal; 2048)   albedo UASTC + zstd, normal UASTC + zstd, ORM UASTC + zstd
+//   hero sets (rock, masonry, metal; 2048)   albedo UASTC + zstd, normal UASTC + zstd, ORM UASTC + zstd (all 2048)
 //   other sets (1024)                        albedo ETC1S (~8x smaller), normal / ORM UASTC + zstd
 //
 // UASTC is the quality tier (transcodes to ASTC 4x4 on Quest: 8 bpp on the GPU, normals stay clean); ETC1S is the
@@ -41,6 +41,11 @@ const nm = path.join(path.resolve(toolsDir), 'node_modules');
 const { encodeToKTX2 } = await import(pathToFileURL(path.join(nm, 'ktx2-encoder', 'dist', 'node', 'index.js')).href);
 const sharp = createRequire(path.join(nm, 'x.js'))('sharp');
 
+const ormSize = Number(opt('orm-size', 0)) || 0;
+const ormRdo = Number(opt('orm-rdo', 1.2));
+const albRdo = Number(opt('alb-rdo', 1.5));
+const nrmRdo = Number(opt('nrm-rdo', 0.8));
+const maps = new Set(opt('maps', 'albedo,normal,orm').split(','));
 const HERO = new Set(['rock', 'masonry', 'metal']);
 const ALL = ['rock', 'masonry', 'metal', 'rockFar', 'flesh', 'rubble', 'roots', 'detail', 'decals'];
 const sets = opt('sets', ALL.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
@@ -104,10 +109,11 @@ for (const name of sets) {
     saveEntry(name, ent);
     continue;
   }
-  total += await enc(path.join(work, `${name}_albedo.png`), path.join(out, `${name}_albedo.ktx2`), { uastc: hero, srgb: true });
-  total += await enc(path.join(work, `${name}_normal_h.png`), path.join(out, `${name}_normal.ktx2`), { uastc: true, srgb: false, rdo: 0.8 });
-  // hero ORM is encoded at 1024: AO / roughness / metalness are low-frequency, the 2048 detail rides on albedo + normal
-  total += await enc(path.join(work, `${name}_orm.png`), path.join(out, `${name}_orm.ktx2`), { uastc: true, srgb: false, rdo: 0.8, size: hero ? 1024 : 0 });
+  if (maps.has('albedo')) total += await enc(path.join(work, `${name}_albedo.png`), path.join(out, `${name}_albedo.ktx2`), { uastc: hero, srgb: true, rdo: albRdo });
+  if (maps.has('normal')) total += await enc(path.join(work, `${name}_normal_h.png`), path.join(out, `${name}_normal.ktx2`), { uastc: true, srgb: false, rdo: nrmRdo });
+  // ORM: full 2048 for the hero sets since WP-TEX-PBR (roughness carries damp / dry patches, polished arrises and scratches, AO the
+  // cavities of the baked relief); --orm-size 1024 restores the old half-resolution encode
+  if (maps.has('orm')) total += await enc(path.join(work, `${name}_orm.png`), path.join(out, `${name}_orm.ktx2`), { uastc: true, srgb: false, rdo: ormRdo, size: hero ? ormSize : 0 });
   ent.ktx2 = { albedo: `${name}_albedo.ktx2`, normal: `${name}_normal.ktx2`, orm: `${name}_orm.ktx2`, normalHeightInB: true };
   saveEntry(name, ent);
 }

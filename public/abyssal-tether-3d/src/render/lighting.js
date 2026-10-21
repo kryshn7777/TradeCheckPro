@@ -27,8 +27,8 @@
  *   low    reflections off (fetch branch-skipped), no baked GI sample, no wet glint, far detail ×0.55, no lightmaps when
  *          pinned (?fx=low / setQualityTier('low')); reducedEffects and the governor's low step KEEP the lightmaps
  *          (one fetch, no volume fetch: they cost no more than the volume they replace)                (≈ stock cost)
- *   quest  reflections ×1 (probe 64 px, 2 fetches), lightmaps (1 array fetch) + volume for the rest, wet glint, far detail ×1
- *   high   reflections ×1.1 (probe 128 px), lightmaps + volume, wet glint, far detail ×1.35
+ *   quest  reflections ×1 (probe 128 px, 2 fetches), lightmaps (1 array fetch) + volume for the rest, wet glint, far detail ×1
+ *   high   reflections ×1.1 (probe 256 px), lightmaps + volume, wet glint, far detail ×1.35
  * Governor steps (platform/governor.js level, or renderer.governor.update(frameMs) when no platform governor exists):
  *   level ≥ 2  wet glint off, far detail ×0.85      level ≥ 3  `low` tier (the platform governor also switches fx to low)
  */
@@ -43,8 +43,8 @@ import { RenderGovernor } from './renderGovernor.js';
 const TIER_ALIAS = { low: 'low', reduced: 'low', quest: 'quest', xr: 'quest', medium: 'quest', high: 'high', desktop: 'high' };
 export const QUALITY_TIERS = Object.freeze({
   low: Object.freeze({ name: 'low', env: 0, envSize: 32, gi: false, lm: false, coat: 0, detail: 0.55 }),
-  quest: Object.freeze({ name: 'quest', env: 1, envSize: 64, gi: true, lm: true, coat: 1, detail: 1 }),
-  high: Object.freeze({ name: 'high', env: 1.1, envSize: 128, gi: true, lm: true, coat: 1, detail: 1.35 }),
+  quest: Object.freeze({ name: 'quest', env: 1, envSize: 128, gi: true, lm: true, coat: 1, detail: 0.85 }), // detail: far-detail / mid / neighbour draw distances x0.85 (BUDGET_CH1)
+  high: Object.freeze({ name: 'high', env: 1.1, envSize: 256, gi: true, lm: true, coat: 1, detail: 1.35 }),
 });
 export const GI_URL = new URL('../../assets/lighting/gi_ch1.bin', import.meta.url).href;
 export const LM_BASE_URL = new URL('../../assets/lighting/', import.meta.url).href;
@@ -134,6 +134,42 @@ export class Lighting {
     }
   }
 
+  /**
+   * The section as a room for the reflection probe (envProbe.js): the shaft box (the same one the material shader corrects the
+   * parallax against), the real lights of the section (window lights = cool, strong, steady lights against a wall) and the authored
+   * light shafts. Empty without a shaft (the probe then draws its generic cathedral).
+   */
+  _roomSpec(level, sec, i) {
+    const sh = sec && sec.shaft;
+    if (!sh || !isFinite(sh.minX + sh.maxX + sh.minZ + sh.maxZ + sec.yTop + sec.yBottom)) return {};
+    const cx = (sh.minX + sh.maxX) * 0.5;
+    const cy = (sec.yTop + sec.yBottom) * 0.5;
+    const cz = (sh.minZ + sh.maxZ) * 0.5;
+    const hx = Math.max(4, (sh.maxX - sh.minX) * 0.5);
+    const hy = Math.max(6, (sec.yTop - sec.yBottom) * 0.5);
+    const hz = Math.max(4, (sh.maxZ - sh.minZ) * 0.5);
+    const lampList = [];
+    for (const l of level.lights || []) {
+      if (!l || l.far || (l.section != null ? l.section : level.sectionIndexAt(l.y)) !== i) continue;
+      _c.set(l.color);
+      const nearWall = Math.min(Math.abs(l.x - sh.minX), Math.abs(l.x - sh.maxX), Math.abs(l.z - sh.minZ), Math.abs(l.z - sh.maxZ)) < 4;
+      const win = nearWall && !l.still && (l.flicker || 0) < 0.01 && l.intensity >= 2.4 && l.range >= 40 && _c.b >= _c.r * 1.05;
+      lampList.push({ x: l.x, y: l.y, z: l.z, r: _c.r, g: _c.g, b: _c.b, k: l.intensity, range: Math.max(6, l.range), win });
+    }
+    lampList.sort((a, b) => b.k - a.k);
+    const beamList = [];
+    for (const d of level.decor || []) {
+      if (!d || (d.section != null ? d.section : level.sectionIndexAt(d.y)) !== i || !/^(shaft-light|lightshaft|light-shaft|beam)$/.test(d.type)) continue;
+      if (d.x < sh.minX || d.x > sh.maxX || d.z < sh.minZ || d.z > sh.maxZ) continue;
+      _c.set(typeof d.color === 'string' || typeof d.color === 'number' ? d.color : '#7fb4c8');
+      const top = Math.min(sec.yTop, d.y + d.sy / 2);
+      const bot = Math.max(sec.yBottom, d.y - d.sy / 2);
+      if (top - bot < 4) continue;
+      beamList.push({ x: d.x, y: (top + bot) / 2, z: d.z, h: top - bot, r: Math.max(d.sx, d.sz) * 0.3, cr: _c.r * 0.22, cg: _c.g * 0.22, cb: _c.b * 0.22 });
+    }
+    return { room: { c: [cx, cy, cz], h: [hx, hy, hz] }, lampList: lampList.slice(0, 14), beamList: beamList.slice(0, 3) };
+  }
+
   /** Per-section environment specs from the level themes + the lights per section. */
   setLevel(level, themes) {
     this._level = level || null;
@@ -145,13 +181,17 @@ export class Lighting {
         if (si >= 0 && si < lamps.length) lamps[si]++;
       }
     }
-    this._specs = themes.map((t, i) => ({
-      light: t.light.clone(),
-      accent: t.accent.clone(),
-      fog: t.fog.clone(),
-      ambient: t.ambient,
-      lamps: Math.max(2, lamps[i] + 1),
-    }));
+    this._specs = themes.map((t, i) => {
+      const spec = {
+        light: t.light.clone(),
+        accent: t.accent.clone(),
+        fog: t.fog.clone(),
+        ambient: t.ambient,
+        lamps: Math.max(2, lamps[i] + 1),
+      };
+      Object.assign(spec, this._roomSpec(level, secs[i], i));
+      return spec;
+    });
     this._sections = this._specs.length;
     if (this.probe) {
       this.probe.setSections(this._specs);
@@ -422,6 +462,7 @@ export class Lighting {
     const e = this._effective();
     const probeOk = !!this.probe;
     LOOK.uEnvK.value.x = probeOk ? e.env : 0;
+    LOOK.uEnvK.value.w = probeOk && this.tier === 'high' && this.govLevel < 1 ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
     LOOK.uLMK.value.y = this.lmTune.exposure;
@@ -455,6 +496,9 @@ export class Lighting {
         this._pumpAt = game && game.state === 'playing' ? 8 : 0;
       }
       p.select(blend.ia, blend.ib, blend.w);
+      LOOK.uSkyUp.value.copy(p.sky.up);
+      LOOK.uSkyHz.value.copy(p.sky.hz);
+      LOOK.uSkyDn.value.copy(p.sky.dn);
       this.stats.envBuilds = p.builds;
       this.stats.envBlits = p.blits;
     }

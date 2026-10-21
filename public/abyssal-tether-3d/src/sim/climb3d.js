@@ -20,6 +20,12 @@
  * in the air (regenAir). Below warnAt the hold strains (`warn` 0..1: haptics, sound, vignette). At zero the hands slip: both
  * holds are lost ('slip'), the player cannot grip for slipLock s nor before stamina is back to resumeAt.
  *
+ * EDGE HOLDS: besides the authored zones, every exposed solid edge (sim/climbEdges.js via level.edgeNear) is a low-grade hold:
+ * palm within reachVR of the segment (desktop: body within reachDesk), the closest point on the segment becomes the hold, the
+ * stamina drains x edgeMul and two hands do not discount it; an authored zone in reach always wins. Top lips of standable
+ * ledges (zone.lip) allow a MANTLE: VR - pulling the hand down near the lip; desktop - W / Space with the head at lip height:
+ * the climb carries the body up over the lip and onto the ledge (event 'climb:mantle', release reason 'mantle').
+ *
  * Collisions stay with Physics3D (the velocity set here goes through the normal sphere-vs-box resolution); while the grip
  * controls the body, impacts do no damage (Physics3D skips them via player.climbing).
  *
@@ -29,8 +35,9 @@
  *   hands: { left: { ok, x,y,z (hand world), rx,ry,rz (hand relative to the body, set by the Game) }, right: {...} } }
  *
  * Bus events (plain payloads): 'climb:grab' {hand,x,y,z,kind,wet,vr}, 'climb:release' {hand,reason,speed,last},
- * 'climb:scrape' {hand,speed,kind,wet,x,y,z}, 'climb:strain' {level,stamina}, 'climb:slip' {x,y,z}, 'climb:hop' {x,y,z}.
- * reasons: 'input' | 'slip' | 'stretch' | 'zone' | 'hop' | 'death' | 'reset'.
+ * 'climb:scrape' {hand,speed,kind,wet,x,y,z}, 'climb:strain' {level,stamina}, 'climb:slip' {x,y,z}, 'climb:hop' {x,y,z}, 'climb:mantle' {x,y,z,lipY}
+ * (grab carries edge: true on a procedural edge hold).
+ * reasons: 'input' | 'slip' | 'stretch' | 'zone' | 'hop' | 'mantle' | 'death' | 'reset'.
  *
  * Read-only for the presentation: stamina, warn, holding, mode (0 none, 1 VR, 2 desktop), wet, exhausted, canGrip, speed,
  * hands[h] = { gripping, hover, hoverIn, hx,hy,hz (nearest hold to the hand), ax,ay,az (the hold), zone }.
@@ -78,6 +85,7 @@ export class Climb3D {
     this.drainMul = dm > 0 ? dm : 1;
     this.hands = { left: makeHand(), right: makeHand() };
     this._list = [];
+    this._elist = [];
     this._near = { zone: null, x: 0, y: 0, z: 0, d: 0 };
     this._tmp = { x: 0, y: 0, z: 0, d: 0 };
     this.sv = { x: 0, y: 0, z: 0 }; // low-passed pull velocity (what a release inherits)
@@ -96,6 +104,10 @@ export class Climb3D {
     this.wet = false;
     this.speed = 0;
     this.canGrip = true;
+    this.edgeHold = false; // the grip is on procedural edges only (drains faster)
+    this.mantling = false;
+    this._mz = null;
+    this._mt = 0;
     this.clock = 0;
     this._strainT = 0;
     this._scrapeT = 0;
@@ -135,9 +147,10 @@ export class Climb3D {
     return (this.hands.left.gripping ? 1 : 0) + (this.hands.right.gripping ? 1 : 0);
   }
 
-  /** Nearest zone to a point within r (fills this._near); returns the zone or null. */
+  /** Nearest hold to a point within r (fills this._near); returns the zone or null. Authored zones win over procedural edges. */
   _nearest(x, y, z, r) {
-    const list = this.level && typeof this.level.climbNear === 'function' ? this.level.climbNear(x, y, z, r, this._list) : this._list;
+    const lv = this.level;
+    const list = lv && typeof lv.climbNear === 'function' ? lv.climbNear(x, y, z, r, this._list) : this._list;
     let best = null;
     let bd = r;
     const t = this._tmp;
@@ -152,6 +165,22 @@ export class Climb3D {
         nr.y = t.y;
         nr.z = t.z;
         nr.d = t.d;
+      }
+    }
+    if (!best && lv && typeof lv.edgeNear === 'function') {
+      const el = lv.edgeNear(x, y, z, r, this._elist);
+      for (let i = 0; i < el.length; i++) {
+        const c = el[i];
+        if (c.src.active === false) continue; // a ledge that has crumbled away
+        closest(c, x, y, z, t);
+        if (t.d <= bd) {
+          bd = t.d;
+          best = c;
+          nr.x = t.x;
+          nr.y = t.y;
+          nr.z = t.z;
+          nr.d = t.d;
+        }
       }
     }
     nr.zone = best;
@@ -233,6 +262,8 @@ export class Climb3D {
     this.speed = 0;
     if (!p.alive) {
       if (this.holding) this._endAll(p, 'death', false);
+    } else if (this.mantling) {
+      ctl = this._stepMantle(p, dt);
     } else if (ci) {
       if (this.holding && (this.mode === MODE_VR) !== !!ci.vr) this._endAll(p, 'reset', false);
       ctl = ci.vr ? this._stepVR(p, intent, ci, dt) : this._stepDesk(p, intent, ci, dt);
@@ -281,11 +312,13 @@ export class Climb3D {
         const hz = p.z + hi.rz;
         const z = this._nearest(hx, hy, hz, K.reachVR);
         if (z) {
+          const nr = this._near;
+          const edge = z.edge === true; // an edge hold: the hand snaps to the closest point of the segment
           st.gripping = true;
           st.zone = z;
-          st.ax = hx;
-          st.ay = hy;
-          st.az = hz;
+          st.ax = edge ? nr.x : hx;
+          st.ay = edge ? nr.y : hy;
+          st.az = edge ? nr.z : hz;
           if (!this.holding) {
             this.holding = true;
             this.mode = MODE_VR;
@@ -294,7 +327,7 @@ export class Climb3D {
             this.sv.z = p.vz;
           }
           this.wet = z.wet;
-          this._emit('climb:grab', { hand: h, x: hx, y: hy, z: hz, kind: z.kind, wet: z.wet, vr: true });
+          this._emit('climb:grab', { hand: h, x: st.ax, y: st.ay, z: st.az, kind: z.kind, wet: z.wet, vr: true, edge });
         }
       }
     }
@@ -342,6 +375,17 @@ export class Climb3D {
     this.sv.x += (vx - this.sv.x) * a;
     this.sv.y += (vy - this.sv.y) * a;
     this.sv.z += (vz - this.sv.z) * a;
+    // pulling the hand down on a standable lip with the body near its height: carry the body over
+    if (this.sv.y > K.mantleVy) {
+      for (let i = 0; i < 2; i++) {
+        const st = this.hands[CLIMB_HANDS[i]];
+        const z = st.gripping ? st.zone : null;
+        if (z && z.lip && p.y > z.maxY - K.mantleBelow && p.y < z.maxY + 0.2) {
+          this._beginMantle(p, z);
+          return true;
+        }
+      }
+    }
     this._scrape(dt, this.speed, p, this.hands.left.gripping ? 'left' : 'right');
     return true;
   }
@@ -370,7 +414,7 @@ export class Climb3D {
         st.az = nr.z;
       }
       this.wet = z.wet;
-      this._emit('climb:grab', { hand: 'right', x: nr.x, y: nr.y, z: nr.z, kind: z.kind, wet: z.wet, vr: false });
+      this._emit('climb:grab', { hand: 'right', x: nr.x, y: nr.y, z: nr.z, kind: z.kind, wet: z.wet, vr: false, edge: z.edge === true });
     } else {
       if (!want) {
         p.vx *= 0.3;
@@ -380,6 +424,10 @@ export class Climb3D {
         return false;
       }
       if (intent.jumpPressed) {
+        if (this._deskLip(p, this._zone)) {
+          this._beginMantle(p, this._zone);
+          return true;
+        }
         this._hop(p, 1, 1);
         return false;
       }
@@ -408,7 +456,44 @@ export class Climb3D {
     let nz = z.nz;
     let sep;
     let hold = K.deskHold;
-    if (z.ax < 0) {
+    if (z.edge) {
+      // an edge: the body hangs off the two faces it joins (their outward axes p, q); beside a face the normal is that face's,
+      // round the corner it is the radial of the corner line. The edge runs along z.ea.
+      if ((ci.fwd || 0) > 0 && this._deskLip(p, z)) {
+        this._beginMantle(p, z);
+        return true;
+      }
+      const ea = z.ea;
+      const pa = (ea + 1) % 3;
+      const qa = (ea + 2) % 3;
+      const sp = pa === 0 ? Math.sign(z.ux) : pa === 1 ? Math.sign(z.uy) : Math.sign(z.uz);
+      const sq = qa === 0 ? Math.sign(z.ux) : qa === 1 ? Math.sign(z.uy) : Math.sign(z.uz);
+      const c0 = pa === 0 ? z.minX : pa === 1 ? z.minY : z.minZ;
+      const c1 = qa === 0 ? z.minX : qa === 1 ? z.minY : z.minZ;
+      const u = ((pa === 0 ? p.x : pa === 1 ? p.y : p.z) - c0) * sp;
+      const v = ((qa === 0 ? p.x : qa === 1 ? p.y : p.z) - c1) * sq;
+      let ou = 0;
+      let ov = 0;
+      if (v <= 0) {
+        ou = 1;
+        sep = u;
+      } else if (u <= 0) {
+        ov = 1;
+        sep = v;
+      } else {
+        sep = Math.sqrt(u * u + v * v);
+        ou = u / sep;
+        ov = v / sep;
+      }
+      const au = ou * sp;
+      const av = ov * sq;
+      nx = (pa === 0 ? au : 0) + (qa === 0 ? av : 0);
+      ny = (pa === 1 ? au : 0) + (qa === 1 ? av : 0);
+      nz = (pa === 2 ? au : 0) + (qa === 2 ? av : 0);
+      this._nx = nx;
+      this._ny = ny;
+      this._nz = nz;
+    } else if (z.ax < 0) {
       // a chain: hang off it, the normal points from its axis to the body
       const cx = (z.minX + z.maxX) * 0.5;
       const cz = (z.minZ + z.maxZ) * 0.5;
@@ -452,7 +537,21 @@ export class Climb3D {
       cvz = tz * side * K.deskSide;
     }
     // stay on the zone: no moving out past its edges
-    if (z.ax >= 0) {
+    if (z.edge) {
+      if (z.ea === 1) {
+        if (cvy > 0 && p.y > z.maxY + 0.15) cvy = 0;
+        if (cvy < 0 && p.y < z.minY - 0.05) cvy = 0;
+      } else {
+        if (cvy > 0 && p.y > z.maxY + 0.15) cvy = 0;
+        if (z.ea === 0) {
+          if (cvx > 0 && p.x > z.maxX + 0.1) cvx = 0;
+          if (cvx < 0 && p.x < z.minX - 0.1) cvx = 0;
+        } else {
+          if (cvz > 0 && p.z > z.maxZ + 0.1) cvz = 0;
+          if (cvz < 0 && p.z < z.minZ - 0.1) cvz = 0;
+        }
+      }
+    } else if (z.ax >= 0) {
       if (cvy > 0 && p.y > z.maxY + 0.15) cvy = 0;
       if (cvy < 0 && p.y < z.minY - 0.05) cvy = 0;
       if (z.ax !== 0) {
@@ -500,6 +599,10 @@ export class Climb3D {
     if (this.mode === MODE_VR || !this._zone) {
       nx = 0;
       nz = 0;
+    } else if (this._zone.edge) {
+      const hl = Math.sqrt(this._nx * this._nx + this._nz * this._nz) || 1;
+      nx = this._nx / hl;
+      nz = this._nz / hl;
     } else if (this._zone.ax < 0) {
       const cx = (this._zone.minX + this._zone.maxX) * 0.5;
       const cz = (this._zone.minZ + this._zone.maxZ) * 0.5;
@@ -527,11 +630,65 @@ export class Climb3D {
     this.mode = MODE_NONE;
   }
 
+  /** Desktop: is this hold a standable lip with the head at (or above) its height and the body not yet over it? */
+  _deskLip(p, z) {
+    if (!z || !z.lip) return false;
+    const head = p.y + CONFIG.player.eyeHeight;
+    return head >= z.maxY - K.mantleHead && p.y < z.maxY + 0.2;
+  }
+
+  _beginMantle(p, z) {
+    this.mantling = true;
+    this._mz = z;
+    this._mt = 0;
+    this._emit('climb:mantle', { x: p.x, y: p.y, z: p.z, lipY: z.maxY });
+  }
+
+  /** The assist: rise past the lip, then walk onto the ledge. Returns true while the climb drives the body. */
+  _stepMantle(p, dt) {
+    const z = this._mz;
+    this._mt += dt;
+    if (!z || z.src.active === false || this._mt > K.mantleTime) {
+      this._endMantle(p, false);
+      return false;
+    }
+    const d = (p.x - z.minX) * z.mx + (p.z - z.minZ) * z.mz; // m onto the ledge from the lip line
+    if (d >= 0.45 && p.y >= z.maxY + 0.3) {
+      this._endMantle(p, true);
+      return false;
+    }
+    if (p.y < z.maxY + 0.42) {
+      p.vx = 0;
+      p.vz = 0;
+      p.vy = K.mantleUp;
+    } else {
+      p.vx = z.mx * K.mantleIn;
+      p.vz = z.mz * K.mantleIn;
+      p.vy = 0;
+    }
+    this.speed = K.mantleUp;
+    return true;
+  }
+
+  _endMantle(p, done) {
+    const z = this._mz;
+    this.mantling = false;
+    this._mz = null;
+    this._endAll(p, 'mantle', false);
+    this.hands.left.needRelease = true;
+    this.hands.right.needRelease = true;
+    p.vx = done && z ? z.mx * 1.2 : 0;
+    p.vy = 0;
+    p.vz = done && z ? z.mz * 1.2 : 0;
+  }
+
   emitRelease(p, reason, hand) {
     this._emit('climb:release', { hand, reason, speed: Math.sqrt(this.sv.x * this.sv.x + this.sv.y * this.sv.y + this.sv.z * this.sv.z), last: true, x: p.x, y: p.y, z: p.z });
   }
 
   _clear() {
+    this.mantling = false;
+    this._mz = null;
     for (const h of CLIMB_HANDS) {
       const st = this.hands[h];
       st.gripping = false;
@@ -606,7 +763,13 @@ export class Climb3D {
     const gripping = this.holding;
     if (gripping && !p.grounded) {
       let d = K.hangDrain + K.moveDrain * Math.min(1.5, this.speed / K.moveRef);
-      if (this.gripCount > 1) d *= K.twoHand;
+      const L = this.hands.left;
+      const R = this.hands.right;
+      // edge-only grip (no authored hold under either hand) is the low grade: faster drain, no two-hand discount
+      const eh = (!L.gripping || (L.zone !== null && L.zone.edge === true)) && (!R.gripping || (R.zone !== null && R.zone.edge === true));
+      this.edgeHold = eh;
+      if (eh) d *= K.edgeMul;
+      else if (this.gripCount > 1) d *= K.twoHand;
       if (this.wet) d *= K.wetMul;
       st -= d * this.drainMul * dt;
     } else if (gripping) {

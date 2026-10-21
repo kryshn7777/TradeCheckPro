@@ -74,6 +74,7 @@ const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before b
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
+const CREATURE_LOD = { low: 11, quest: 16, high: 38 }; // creature LOD0 -> LOD1 switch distance (m) per render tier (hysteresis 5 m in the view)
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -97,6 +98,7 @@ const MODULES = {
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
   gltf: 'three/addons/loaders/GLTFLoader.js',
+  glbLoad: './render/glbLoad.js', // KTX2 loader for the KHR_texture_basisu GLB textures (attachKTX2)
   // WP-RELEASE: platform + meta modules (every one optional; the game plays without them)
   loadingScene: './platform/loadingScene.js',
   resilience: './platform/resilience.js',
@@ -1299,6 +1301,7 @@ export class Game3D {
     }
     try {
       const loader = new M.gltf.GLTFLoader();
+      if (M.glbLoad && typeof M.glbLoad.attachKTX2 === 'function') M.glbLoad.attachKTX2(loader); // KTX2 textures of the GLB
       loader.load(
         KIT_URL,
         (gltf) => {
@@ -1356,6 +1359,7 @@ export class Game3D {
     }
     try {
       const loader = new M.gltf.GLTFLoader();
+      if (M.glbLoad && typeof M.glbLoad.attachKTX2 === 'function') M.glbLoad.attachKTX2(loader); // KTX2 textures of the GLB
       loader.load(
         RIG_URL,
         (gltf) => {
@@ -1364,7 +1368,10 @@ export class Game3D {
             const clones = this._cloneSkitterScenes(gltf); // BEFORE the Mason takes the meshes out of the glTF scene
             const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
             rig.bindBus(this.bus);
+            const dust = this.renderer && this.renderer.fx && this.renderer.fx.creatureDust;
+            rig.bindDust(dust);
             this.skitterViews = this._buildSkitterViews(gltf, clones);
+            for (const v of this.skitterViews) v.bindDust(dust);
             this._kitView = kitView;
             if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
             this.creatureView = rig;
@@ -1588,6 +1595,9 @@ export class Game3D {
     });
     bus.on('climb:hop', () => {
       if (this._inRun()) this._hapticBoth(0.35, 50);
+    });
+    bus.on('climb:mantle', () => {
+      if (this._inRun()) this._hapticBoth(0.3, 60);
     });
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;
@@ -3300,6 +3310,8 @@ export class Game3D {
     const cv = this.creatureView;
     if (cv) {
       try {
+        // LOD0 (60 k triangles, x2 eyes) only close up on Quest / low: LOD1 (25 k) beyond (BUDGET_CH1); high keeps the long range
+        if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);

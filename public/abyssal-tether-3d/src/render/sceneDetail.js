@@ -40,7 +40,7 @@ export const DRAW_CALLS = 3;
 /** Per quality tier: rank cut, triangle cap of the prop window, radius, decal / puddle caps. */
 export const DETAIL_TIERS = Object.freeze({
   low: Object.freeze({ name: 'low', rank: 0.4, tris: 2400, radius: 16, decals: 90, puddles: 10 }),
-  quest: Object.freeze({ name: 'quest', rank: 0.75, tris: 5200, radius: 22, decals: 200, puddles: 22 }),
+  quest: Object.freeze({ name: 'quest', rank: 0.75, tris: 4600, radius: 20, decals: 180, puddles: 20 }),
   high: Object.freeze({ name: 'high', rank: 1.0, tris: 6500, radius: 28, decals: 260, puddles: 30 }),
 });
 const MAX_V = 24000;

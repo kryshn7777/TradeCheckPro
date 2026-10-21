@@ -153,9 +153,10 @@ export class ClipGraph {
       o.strikeTime = STRIKE_CONTACT + s.atkT;
       strikeTarget = 1;
     }
-    this._rearW = rearTarget > this._rearW ? approach(this._rearW, 1, 0.07, 0, dts) : 0;
-    this._strikeW = strikeTarget > this._strikeW ? 1 : approach(this._strikeW, 0, 0, 0.45, dts);
-    if (s.phase === 'windup' || s.phase === 'strike') this._strikeW = strikeTarget ? 1 : this._strikeW;
+    // soft hand-overs (no pop between the wind-up pose and the strike): the wind-up fades out under the strike for ~60 ms
+    this._rearW = approach(this._rearW, rearTarget, 0.07, 0.05, dts);
+    if (this._rearW < 0.004 && !rearTarget) this._rearW = 0;
+    this._strikeW = strikeTarget ? approach(this._strikeW, 1, 0.03, 0, dts) : approach(this._strikeW, 0, 0, 0.45, dts);
 
     // ---- listening / lingering / retreat ----
     const attacking = s.phase !== null;

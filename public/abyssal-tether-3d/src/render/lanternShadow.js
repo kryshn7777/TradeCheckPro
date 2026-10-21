@@ -27,19 +27,21 @@
 
 import * as THREE from 'three';
 import { LSHADOW, attachLanternShadow } from './materials.js';
+import { clusterGeometries } from './lanternShadowProxy.js';
 import { coneFit, dynamicDue, makeStaticCache, markStaticRefreshed, shadowPlan, shadowTierName, smoothAxis, staticNeedsRefresh } from './lanternShadowLogic.js';
 
 export const SHADOW_LAYER_STATIC = 5; // layers 1 and 2 belong to the XR eye cameras (three's WebXRManager)
 export const SHADOW_LAYER_DYNAMIC = 6;
 
 const PROXY_MAX = { quest: 640, high: 1400 }; // static box proxies (12 triangles each)
-const DECOR_TRI_BUDGET = { quest: 9000, high: 40000 }; // triangles of flagged decor chunks in the static pass
+const DECOR_TRI_BUDGET = { quest: 6000, high: 40000 }; // triangles of flagged decor chunks in the static pass
 const DECOR_CHUNK_MAX = { quest: 4500, high: 16000 }; // a single decor chunk bigger than this never casts
-const DECOR_CHUNK_COUNT = { quest: 2, high: 12 }; // draw calls the decor chunks may add to a static pass (the proxy is 1 more)
+const DECOR_CHUNK_COUNT = { quest: 1, high: 12 }; // draw calls the decor chunks may add to a static pass (the proxy is 1 more)
 const DECOR_NAME = /^decor_(stone|metal|rock|flesh)_/;
 const REPACK_MOVE = 2.5; // m the lantern may drift from the proxy pack centre before the proxies are re-chosen
 const REPACK_EVERY = 0.4; // s: at least this often (solids switching on / off)
 const DISCOVER_EVERY = 0.5; // s
+const PROXY_CELL = { hand: 0.016, body: 0.04, creature: 0.14 }; // weld cell (m) of the low-poly dynamic casters
 const AXIS_RATE = 7; // 1/s: the cone axis follows the head's forward direction
 
 const _bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
@@ -127,6 +129,7 @@ export class LanternShadow {
     this._discoverT = 0;
     this._dynObjs = []; // every object flagged as a dynamic caster (count only; the layer does the selecting)
     this._lod = []; // { show: Mesh[] } meshes drawn only in the dynamic pass (the creature's LOD1 while LOD0 is the visible one)
+    this._proxies = new Map(); // key -> { sig, meshes: Mesh[] (proxies), vis: () => bool } low-poly dynamic casters (see lanternShadowProxy.js)
     this._decorOn = new Set();
     this._decorTris = new WeakMap();
     this._decorKey = 0;
@@ -217,6 +220,73 @@ export class LanternShadow {
       }
     });
     return object;
+  }
+
+  /**
+   * Dynamic casters drawn as welded low-poly stand-ins (hands + launchers, body, creature LOD1): the depth pass only needs the
+   * silhouette at the map's 1-4 cm texel. Sources are grouped by (parent, skeleton, local transform) so each group is ONE call.
+   * The sources themselves are NOT flagged as casters. Falls back to addCaster for anything that cannot be welded.
+   * @param {string} key  stable slot name (a changed source list rebuilds the slot)
+   * @param {THREE.Mesh[]} sources
+   * @param {number} cell  weld cell (m)
+   * @param {() => boolean} vis  whether the stand-ins are drawn this frame
+   */
+  addProxyCaster(key, sources, cell, vis) {
+    const list = (sources || []).filter((m) => m && m.isMesh && !m.userData.noShadowCast);
+    const sig = list.map((m) => m.uuid).join(',');
+    const old = this._proxies.get(key);
+    if (old && old.sig === sig) return;
+    if (old) this._dropProxy(old);
+    if (!list.length) return;
+    const groups = new Map();
+    const rest = [];
+    for (const m of list) {
+      if (m.isInstancedMesh || !m.parent || !m.geometry || !m.geometry.attributes.position || (m.isSkinnedMesh && !m.skeleton)) {
+        rest.push(m);
+        continue;
+      }
+      m.updateMatrix();
+      const k = `${m.parent.uuid}|${m.isSkinnedMesh ? m.skeleton.uuid + m.bindMode + m.bindMatrix.elements.join(',') : ''}|${m.matrix.elements.join(',')}`;
+      let g = groups.get(k);
+      if (!g) groups.set(k, (g = []));
+      g.push(m);
+    }
+    const rec = { sig, meshes: [], vis: vis || (() => true), src: list };
+    for (const g of groups.values()) {
+      const geo = clusterGeometries(g.map((m) => m.geometry), cell);
+      if (!geo) {
+        rest.push(...g);
+        continue;
+      }
+      const s0 = g[0];
+      const proxy = s0.isSkinnedMesh ? new THREE.SkinnedMesh(geo, this._matDyn) : new THREE.Mesh(geo, this._matDyn);
+      if (s0.isSkinnedMesh) {
+        proxy.bindMode = s0.bindMode;
+        proxy.bind(s0.skeleton, s0.bindMatrix);
+      }
+      proxy.name = 'lsProxy';
+      proxy.matrixAutoUpdate = false;
+      proxy.matrix.copy(s0.matrix);
+      proxy.frustumCulled = false;
+      proxy.layers.set(SHADOW_LAYER_DYNAMIC); // never drawn by the head camera
+      proxy.userData.noShadowRecv = true;
+      proxy.userData.lsDyn = true;
+      s0.parent.add(proxy);
+      rec.meshes.push(proxy);
+      this._dynObjs.push(proxy);
+    }
+    for (const m of rest) this.addCaster(m);
+    this._proxies.set(key, rec);
+  }
+
+  _dropProxy(rec) {
+    for (const p of rec.meshes) {
+      if (p.parent) p.parent.remove(p);
+      if (p.geometry) p.geometry.dispose();
+      const i = this._dynObjs.indexOf(p);
+      if (i >= 0) this._dynObjs.splice(i, 1);
+    }
+    rec.meshes.length = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -313,11 +383,11 @@ export class LanternShadow {
     if (hv && hv.gear) {
       for (const h of ['left', 'right']) {
         const g = hv.gear[h];
-        if (g && g.meshes) for (const m of g.meshes) this.addCaster(m);
+        if (g && g.meshes) this.addProxyCaster('hand-' + h, g.meshes, PROXY_CELL.hand, () => g.meshes.some((m) => m.visible));
       }
     }
     const bv = game.bodyView;
-    if (bv && bv.mesh) this.addCaster(bv.mesh);
+    if (bv && bv.mesh) this.addProxyCaster('body', [bv.mesh], PROXY_CELL.body, () => bv.mesh.visible);
     const rv = this.r3d.ropeView;
     if (rv && rv.strands) {
       if (rv.strands.left && rv.strands.left.mesh) this.addCaster(rv.strands.left.mesh);
@@ -338,8 +408,13 @@ export class LanternShadow {
       cv._lsDone = lods[0];
       this._lod.length = 0; // a replaced creature view (kit -> rig) drops the old entry
       const lod1 = lods[1] && lods[1] !== lods[0] ? lods[1] : lods[0];
-      for (const m of lod1) this.addCaster(m);
-      if (lod1 !== lods[0]) this._lod.push({ view: cv, show: lod1, was: false });
+      this.addProxyCaster('creature', lod1, PROXY_CELL.creature, () => !!(cv.root && cv.root.visible));
+      const rec = this._proxies.get('creature');
+      if (!rec || !rec.meshes.length) {
+        // nothing could be welded (kit creature): the old behaviour, LOD1 stands in for LOD0 inside this pass only
+        for (const m of lod1) this.addCaster(m);
+        if (lod1 !== lods[0]) this._lod.push({ view: cv, show: lod1, was: false });
+      }
     }
     this.stats.casters = this._dynObjs.length;
   }
@@ -649,6 +724,10 @@ export class LanternShadow {
           for (const m of e.show) m.visible = true;
           any = true;
         }
+      }
+      for (const rec of this._proxies.values()) {
+        const on = rec.vis();
+        for (const p of rec.meshes) p.visible = on;
       }
       this._pass(this._rtD, this._camD, this._matDyn);
       if (any) for (let i = 0; i < swapped.length; i++) for (const m of swapped[i].show) m.visible = swapped[i].was;

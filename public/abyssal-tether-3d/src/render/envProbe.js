@@ -6,8 +6,14 @@
  * is inside a ±9 m theme blend band, never per frame otherwise), so there is no pop at a section change, no PMREM
  * generation during play and no shader recompile (the texture object and its size never change at runtime).
  *
- * Cost: 8 variants × (6 tiny cube faces + PMREM blur) at load, spread over frames (one per `pump()`); resident
- * memory ≈ 9 × 0.7 MB (size 64) / 9 × 2.8 MB (size 128). In the shader: two bilinear fetches per fragment (stock
+ * Each section's cube is rendered from the section's own shaft box centre (the parallax box of the material shader) and shows
+ * THAT section: the four walls of the box lit by the section's real baked lights (ambient from the theme, lamp falloff x N.L per
+ * vertex), the real lamps as emissive discs at their real positions, window lights as emissive panes on the wall they sit in, the
+ * authored light shafts as faint columns, an open sky above and a pit below. Without a box (no shaft) the old generic dome with
+ * lancets / random lamps is used.
+ *
+ * Cost: 8 variants × (6 cube faces + PMREM blur) at load, spread over frames (one per `pump()`); resident
+ * memory ≈ 9 × 1.5 MB (size 128, quest) / 9 × 6.3 MB (size 256, high). In the shader: two bilinear fetches per fragment (stock
  * cube-UV lookup), skipped by a uniform branch when the tier turns reflections off.
  */
 
@@ -15,6 +21,11 @@ import * as THREE from 'three';
 
 const _c = new THREE.Color();
 const _warm = new THREE.Color(1.0, 0.56, 0.2);
+const DOME_R = 220; // the backdrop dome (beyond the largest section box)
+const ROOM_NX = 12; // wall grid cells (horizontal / vertical) for the per-vertex lighting
+const ROOM_NY = 16;
+const ROOM_LAMPS = 12;
+const ROOM_BEAMS = 3;
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -40,7 +51,7 @@ export class EnvProbe {
   /**
    * @param {THREE.WebGLRenderer} renderer
    * @param {object} [o]
-   * @param {number} [o.size=64]  cube face size (32 | 64 | 128): the PMREM target is 3·max(size,112) × 4·size
+   * @param {number} [o.size=64]  cube face size (32 | 64 | 128 | 256): the PMREM target is 3·max(size,112) × 4·size
    */
   constructor(renderer, { size = 64 } = {}) {
     this.renderer = renderer;
@@ -52,6 +63,9 @@ export class EnvProbe {
     this._cubeCam = null;
     this._scene = null;
     this.live = null;
+    // average up / horizon / down radiance of the shown blend (for surfaces that cannot fetch the cube: the gauge glass)
+    this.sky = { up: new THREE.Color(), hz: new THREE.Color(), dn: new THREE.Color() };
+    this._skies = [];
     this._blitScene = null;
     this._blitCam = null;
     this._blitMat = null;
@@ -76,7 +90,7 @@ export class EnvProbe {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
     });
-    this._cubeCam = new THREE.CubeCamera(0.1, 200, this._cubeRT);
+    this._cubeCam = new THREE.CubeCamera(0.1, 500, this._cubeRT);
     this._buildScene();
     // blit: live = mix(a, b, w) over the whole PMREM atlas (texel-exact: same size, linear sampling at texel centres)
     this._blitMat = new THREE.ShaderMaterial({
@@ -117,7 +131,7 @@ export class EnvProbe {
       return m;
     };
     // dome with a vertical gradient (vertex colours rewritten per variant)
-    const dome = new THREE.SphereGeometry(80, 32, 16);
+    const dome = new THREE.SphereGeometry(DOME_R, 32, 16);
     dome.setAttribute('color', new THREE.BufferAttribute(new Float32Array(dome.attributes.position.count * 3), 3));
     const domeMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, toneMapped: false, fog: false });
     const domeMesh = new THREE.Mesh(dome, domeMat);
@@ -159,6 +173,55 @@ export class EnvProbe {
     this._floorGlow.position.set(0, -34, 0);
     this._floorGlow.rotation.x = -Math.PI / 2;
     this._scene = sc;
+    this._buildRoom(sc);
+  }
+
+  /** The section room: a gridded wall mesh (vertex colours), emissive lamp discs, window panes and light-shaft columns (pools, reused). */
+  _buildRoom(sc) {
+    const room = new THREE.Group();
+    room.visible = false;
+    const NX = ROOM_NX;
+    const NY = ROOM_NY;
+    const verts = 4 * (NX + 1) * (NY + 1);
+    const idx = [];
+    for (let w = 0; w < 4; w++) {
+      const o = w * (NX + 1) * (NY + 1);
+      for (let j = 0; j < NY; j++) {
+        for (let i = 0; i < NX; i++) {
+          const a = o + j * (NX + 1) + i;
+          const b = a + 1;
+          const c = a + (NX + 1);
+          const d = c + 1;
+          idx.push(a, c, b, b, c, d);
+        }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(verts * 3), 3));
+    g.setIndex(idx);
+    const walls = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false, fog: false }));
+    walls.frustumCulled = false;
+    walls.name = 'RoomWalls';
+    room.add(walls);
+    this._walls = walls;
+    const mk = (geo, extra) => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial(Object.assign({ color: 0x000000, toneMapped: false, fog: false, side: THREE.DoubleSide }, extra)));
+      m.frustumCulled = false;
+      m.visible = false;
+      room.add(m);
+      return m;
+    };
+    this._roomLamps = [];
+    for (let i = 0; i < ROOM_LAMPS; i++) this._roomLamps.push(mk(new THREE.CircleGeometry(1, 10)));
+    this._roomWindows = [];
+    for (let i = 0; i < 2; i++) this._roomWindows.push(mk(new THREE.PlaneGeometry(1, 1)));
+    this._roomBeams = [];
+    for (let i = 0; i < ROOM_BEAMS; i++) {
+      this._roomBeams.push(mk(new THREE.CylinderGeometry(1, 1, 1, 12, 1, true), { transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+    }
+    sc.add(room);
+    this._room = room;
   }
 
   _paint(spec, index) {
@@ -169,7 +232,7 @@ export class EnvProbe {
     const col = this._dome.attributes.color;
     const fog = spec.fog;
     for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i) / 80;
+      const y = pos.getY(i) / DOME_R;
       const az = Math.atan2(pos.getX(i), pos.getZ(i));
       const bands = 0.75 + 0.25 * Math.sin(az * 3 + index) * Math.sin(az * 5 - index * 0.7 + y * 4);
       if (y >= 0) {
@@ -202,6 +265,132 @@ export class EnvProbe {
       lp.m.material.color.setRGB(_c.r * k, _c.g * k, _c.b * k);
     }
     this._floorGlow.material.color.setRGB(_c.r * 0.18, _c.g * 0.18, _c.b * 0.18);
+    this._paintRoom(spec);
+  }
+
+  /** The section room from spec.room ({c:[x,y,z], h:[hx,hy,hz]}) + spec.lampList / windowList / beamList (world coordinates). */
+  _paintRoom(spec) {
+    const R = spec.room;
+    const on = !!R;
+    this._room.visible = on;
+    for (const l of this._lancets) l.m.visible = !on;
+    this._floorGlow.visible = !on;
+    if (!on) {
+      this._shaft.position.y = 60;
+      this._shaft.scale.setScalar(1);
+      return;
+    }
+    const [cx, cy, cz] = R.c;
+    const [hx, hy, hz] = R.h;
+    const L = spec.light;
+    const amb = Math.max(0.05, spec.ambient);
+    const fog = spec.fog;
+    const lamps = spec.lampList || [];
+    // the top opening: the window the daylight comes through sits above the ceiling
+    this._shaft.position.y = Math.max(60, hy + 12);
+    this._shaft.scale.setScalar(Math.max(1, Math.min(hx, hz) / 14));
+    // walls: 4 grids (+x, -x, +z, -z), inward normals
+    const pos = this._walls.geometry.attributes.position;
+    const col = this._walls.geometry.attributes.color;
+    const NX = ROOM_NX;
+    const NY = ROOM_NY;
+    const stone = 0.2;
+    let vi = 0;
+    for (let w = 0; w < 4; w++) {
+      const nx = w === 0 ? -1 : w === 1 ? 1 : 0;
+      const nz = w === 2 ? -1 : w === 3 ? 1 : 0;
+      for (let j = 0; j <= NY; j++) {
+        const y = -hy + (2 * hy * j) / NY;
+        const ty = j / NY; // 0 bottom .. 1 top
+        for (let i = 0; i <= NX; i++) {
+          const u = -1 + (2 * i) / NX;
+          let x;
+          let z;
+          if (w < 2) {
+            x = w === 0 ? hx : -hx;
+            z = u * hz;
+          } else {
+            z = w === 2 ? hz : -hz;
+            x = u * hx;
+          }
+          pos.setXYZ(vi, x, y, z);
+          // ambient: the cold light falls from above (brighter high up), plus a little haze everywhere
+          const sky = 0.25 + 0.75 * ty * ty;
+          let r = L.r * (0.1 + 1.5 * amb) * sky + fog.r * 0.35;
+          let g = L.g * (0.1 + 1.5 * amb) * sky + fog.g * 0.35;
+          let b = L.b * (0.1 + 1.5 * amb) * sky + fog.b * 0.35;
+          for (let k = 0; k < lamps.length; k++) {
+            const lp = lamps[k];
+            const dx = lp.x - cx - x;
+            const dy = lp.y - cy - y;
+            const dz = lp.z - cz - z;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1e-3;
+            const nl = Math.max(0, (dx * nx + dz * nz) / d) * 0.85 + 0.15;
+            const fall = Math.max(0, 1 - Math.pow(d / lp.range, 2));
+            const e = (lp.k * fall * fall * nl * 1.1) / (1 + d * 0.05);
+            r += lp.r * e;
+            g += lp.g * e;
+            b += lp.b * e;
+          }
+          col.setXYZ(vi, r * stone, g * stone, b * stone);
+          vi++;
+        }
+      }
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    // emissive lamps at their real positions, facing the centre
+    let n = 0;
+    for (let k = 0; k < lamps.length && n < this._roomLamps.length; k++) {
+      const lp = lamps[k];
+      if (lp.win) continue;
+      const m = this._roomLamps[n++];
+      m.visible = true;
+      m.position.set(lp.x - cx, lp.y - cy, lp.z - cz);
+      m.scale.setScalar(0.45 + 0.35 * Math.min(2.5, lp.k));
+      m.lookAt(0, 0, 0);
+      const e = 8 + 8 * Math.min(2.5, lp.k);
+      m.material.color.setRGB(lp.r * e, lp.g * e, lp.b * e);
+    }
+    for (; n < this._roomLamps.length; n++) this._roomLamps[n].visible = false;
+    // windows: emissive panes in the wall plane the window light sits in
+    let nw = 0;
+    for (let k = 0; k < lamps.length && nw < this._roomWindows.length; k++) {
+      const lp = lamps[k];
+      if (!lp.win) continue;
+      const m = this._roomWindows[nw++];
+      m.visible = true;
+      const x = lp.x - cx;
+      const z = lp.z - cz;
+      const ox = Math.abs(x) / hx;
+      const oz = Math.abs(z) / hz;
+      if (ox >= oz) {
+        m.position.set(Math.sign(x) * (hx - 0.1), lp.y - cy, z);
+        m.rotation.set(0, Math.PI / 2, 0);
+        m.scale.set(Math.min(12, hz * 1.2), 14, 1);
+      } else {
+        m.position.set(x, lp.y - cy, Math.sign(z) * (hz - 0.1));
+        m.rotation.set(0, 0, 0);
+        m.scale.set(Math.min(12, hx * 1.2), 14, 1);
+      }
+      const e = 3.5 + 24 * amb;
+      m.material.color.setRGB(lp.r * e, lp.g * e, lp.b * e);
+    }
+    for (; nw < this._roomWindows.length; nw++) this._roomWindows[nw].visible = false;
+    // light shafts: faint columns
+    const beams = spec.beamList || [];
+    let nb = 0;
+    for (let k = 0; k < beams.length && nb < this._roomBeams.length; k++) {
+      const bm = beams[k];
+      const m = this._roomBeams[nb++];
+      m.visible = true;
+      m.position.set(bm.x - cx, bm.y - cy, bm.z - cz);
+      m.scale.set(bm.r, bm.h, bm.r);
+      m.material.color.setRGB(bm.cr * 1.4, bm.cg * 1.4, bm.cb * 1.4);
+    }
+    for (; nb < this._roomBeams.length; nb++) this._roomBeams[nb].visible = false;
+    // the lamps list drives the whole look: hide the generic ones
+    for (const lp of this._lamps) lp.m.visible = false;
   }
 
   _renderCube(spec, index) {
@@ -221,6 +410,12 @@ export class EnvProbe {
     for (const t of this.variants) if (t) t.dispose();
     this.variants = new Array(specs.length).fill(null);
     this.specs = specs;
+    this._skies = specs.map((sp) => {
+      const amb = Math.max(0.05, sp.ambient);
+      const up = sp.light.clone().multiplyScalar(0.4 + 2.4 * amb);
+      const hz = sp.fog.clone().multiplyScalar(0.9).add(sp.accent.clone().multiplyScalar(0.12 * Math.min(1, (sp.lamps || 0) / 5)));
+      return { up, hz, dn: sp.fog.clone().multiplyScalar(0.25) };
+    });
     this._shown = { a: -2, b: -2, w: 0 };
     this._nextBuild = 0;
   }
@@ -267,6 +462,13 @@ export class EnvProbe {
     const B = w > 0 ? this.variants[b] : A;
     if (!A || !B) return false;
     this._blit(A, B, w);
+    const sa = this._skies[a];
+    const sb = this._skies[b];
+    if (sa && sb) {
+      this.sky.up.copy(sa.up).lerp(sb.up, w);
+      this.sky.hz.copy(sa.hz).lerp(sb.hz, w);
+      this.sky.dn.copy(sa.dn).lerp(sb.dn, w);
+    }
     s.a = a;
     s.b = b;
     s.w = w;
