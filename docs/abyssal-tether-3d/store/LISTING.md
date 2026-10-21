@@ -64,7 +64,7 @@ Something vast lives in the walls of this place. It listens. It follows you down
 BUILT FOR THE HEADSET
 - Your real height is used 1:1, with a calibration step and a seated option.
 - Spatial audio: you will hear it before you see it.
-- Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 16 MB).
+- Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 65 MB).
 
 COMFORT
 Comfort rating: Intense. Abyssal Tether uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
@@ -143,5 +143,5 @@ checkpoints, best-time records. Plays offline after the first launch.
 | `art/mini-1080x360.png` | 1080 x 360 | Mini landscape |
 | `art/icon-1024.png`, `art/icon-512.png` | 1024 / 512 | App icon (24-bit PNG, opaque) |
 | `art/logo-transparent.png` | 2880 x 1440 | Logo (32-bit PNG, transparent) |
-| `screenshots/shot-01..10.png` | 1920 x 1080 | Screenshots (at least 3 required; Meta prefers 2560 x 1440 captured on a Quest 3: replace with device captures before submission if possible) |
-| `screenshots/hero-2880x1600.png` | 2880 x 1600 | Press / hero render |
+| `screenshots/shot-01..10.jpg` | 1920 x 1080 | Screenshots (at least 3 required; Meta prefers 2560 x 1440 captured on a Quest 3: replace with device captures before submission if possible) |
+| `screenshots/hero-2880x1600.jpg` | 2880 x 1600 | Press / hero render |

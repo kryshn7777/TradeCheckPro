@@ -21,7 +21,14 @@
  *   applyTextures(textures) → Promise    precompile()  headPosition(out)  themeAt(y, out)
  *   .fx.burst(kind, x, y, z, opts)       kind: 'sparks' | 'puff' | 'chips' | 'debris'
  *   .stats {calls, triangles, points, programs, frameMs}   (after render())
+ *   .contactShadows                 dynamic blob shadows (contactShadows.js): 1 draw call, <= 24 quads, hidden outside a run
+ *   .droppedProps                   thrown / dropped bag items with weight (droppedProps.js); .spawn(kind, x,y,z, vx,vy,vz);
+ *                                   bus 'prop:impact' {kind,x,y,z,speed,surface} is the impact-sound hook
  *   .lighting                       reflections (envProbe.js) + baked GI (lighting.js) + wet glint; see lighting.js
+ *   .lanternShadow                  real-time shadow of the carried lantern (lanternShadow.js): cached static depth map + small
+ *                                   dynamic one, sampled by the lantern term only; tiers low off / quest 1024 / high 2048, reduced
+ *                                   by the governor (level 2) and off at level 3. API: setEnabled(bool) · setTier('low'|'quest'|'high'|null)
+ *                                   · stats; the passes are counted in .stats (render() resets renderer.info once per frame)
  *   setQualityTier('low'|'quest'|'high'|null) · .qualityTier        lighting/detail tier (null = automatic: ?fx=, settings,
  *                                   reducedEffects, XR); uniforms and distances only, never a recompile
  *   .governor.update(frameMs) · .governor.level · .governor.on(fn)  frame-time hook (mirrors platform/governor.js when
@@ -39,12 +46,16 @@
  */
 
 import * as THREE from 'three';
-import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, installRadialFog, loadTextureManifest } from './materials.js';
-import { LevelView } from './levelView.js';
+import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
+import { LevelView, glowTexture } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
 import { RenderGovernor } from './renderGovernor.js';
+import { createGLTFLoader } from './glbLoad.js';
+import { ContactShadows } from './contactShadows.js';
+import { DroppedProps } from './droppedProps.js';
+import { LanternShadow } from './lanternShadow.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -108,6 +119,31 @@ const DEFAULT_THEME = {
 const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 
+// Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
+// the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
+const SURFACE_TIERS = {
+  low: { parallax: 1, parMax: 5, parFade: 2, steps: 0, stepMax: 0, stepFade: 1, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, steps: 6, stepMax: 3, stepFade: 1.2, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, steps: 10, stepMax: 5, stepFade: 1.8, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
+};
+// Parallax-corrected probe box: the shaft box is inflated a little so the far window overhead and the lancets ring stay beyond the walls.
+const PROBE_BOX_GROW = 1.25;
+const PROBE_BOX_EASE = 3; // 1/s: the box eases between sections (the theme blend band is ~18 m wide)
+// WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
+// governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
+const XR_RENDER_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
+// Foveation by governor level when the platform governor is absent (it sets 0.5 / 1 itself).
+const XR_FOVEATION = [0.5, 0.66, 0.66, 1, 1];
+// Highest foveation level any caller may set per tier. Quest Browser maps 0..1 onto low / medium / high; the high level is a
+// visible blur at the periphery on a 4K-class LCD panel, so the quest and high tiers cap at medium (0.66). Only the `low`
+// (emergency) tier may use full foveation. The platform governor / game call xr.setFoveation(1) directly: wrapped in the constructor.
+const XR_FOVEATION_CAP = { low: 1, quest: 0.66, high: 0.5 };
+// Near plane (m). The head-clearance fade (game.js HEAD_BLACK 0.1 m, eyes 0.032 m off the head centre) keeps solids beyond
+// ~0.1 m, so 0.08 never cuts the view; it doubles the depth resolution of the old 0.05 (24-bit depth, far 400).
+const CAMERA_NEAR = 0.08;
+// Cap of the lit surfaces' black-point lift (linear, before the tone mapper; the ACES curve has a slope of ~0.45 there).
+const BLACK_LIFT_MAX = 0.004;
+
 const _tmpC = new THREE.Color();
 
 function num(v, fb) {
@@ -139,10 +175,18 @@ export class Renderer3D {
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.25;
-    r.shadowMap.enabled = false;
+    r.shadowMap.enabled = false; // three.js' own shadow maps stay off: the lantern shadow is custom (lanternShadow.js)
+    r.info.autoReset = false; // render() resets it once per frame so the shadow passes and the main pass add up in stats
     r.xr.enabled = true;
     try {
-      r.xr.setFoveation(1);
+      // cap every foveation request at the tier's level (see XR_FOVEATION_CAP); `this` is not built yet: read the tier lazily
+      const setFov = r.xr.setFoveation.bind(r.xr);
+      r.xr.setFoveation = (v) => {
+        const tier = this.lighting ? this.lighting.tier : 'quest';
+        const cap = XR_FOVEATION_CAP[tier] != null ? XR_FOVEATION_CAP[tier] : 0.66;
+        return setFov(Math.min(num(v, 0.5), cap));
+      };
+      r.xr.setFoveation(0.5);
     } catch {
       /* older runtimes */
     }
@@ -157,7 +201,7 @@ export class Renderer3D {
     this.scene.background = this.fogColor.clone();
 
     this.baseFov = DESKTOP_FOV;
-    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, 0.05, 400);
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, 16 / 9, CAMERA_NEAR, 400);
     this.camera.name = 'HeadCamera';
     this.rig = new THREE.Group();
     this.rig.name = 'PlayerRig';
@@ -199,6 +243,16 @@ export class Renderer3D {
     );
     this.lanternBulb.name = 'LanternBulb';
     this.lanternGroup.add(this.lanternBulb);
+    // Fake bloom on the lantern (no post pass): one additive sprite with a soft skirt and a gentle anamorphic streak. It is
+    // drawn over whatever is in front of it (depthTest off), so it blooms across the glass and the fingers like a real flare.
+    this.lanternFlare = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: glowTexture(128), color: 0xffb46a, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false, toneMapped: false, opacity: 0.0 }),
+    );
+    this.lanternFlare.name = 'LanternFlare';
+    this.lanternFlare.scale.set(0.42, 0.42, 1);
+    this.lanternFlare.renderOrder = 70;
+    this.lanternFlare.material.userData.noLook = true;
+    this.lanternGroup.add(this.lanternFlare);
     this.lanternBase = LANTERN_CANDELA;
     this.setLanternParent(this.camera);
 
@@ -215,11 +269,17 @@ export class Renderer3D {
     this._envScratch = [];
 
     this.materials = new MaterialLibrary(r);
+    configureTextureLoading({ renderer: r }); // KTX2 (GPU-compressed) texture sets need the renderer's compressed-format support
     this._game = null;
     this._bus = null;
     this._lampFlick = 1;
     this.governor = new RenderGovernor(this);
     this.lighting = new Lighting(this);
+    this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1.15;
+    this._applyXRRenderScale();
+    // the next session starts with the tier's scale again (a degraded tier during this one never reaches the swapchain)
+    if (r.xr.addEventListener) r.xr.addEventListener('sessionend', () => this._applyXRRenderScale());
+    this.governor.on((ev) => this._applyXRFoveation(ev.level));
     this.lightingReady = Promise.resolve(false);
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 24, 12), this.materials.get('sky'));
     this.sky.name = 'SkyDome';
@@ -231,6 +291,12 @@ export class Renderer3D {
     this.ropeView = new RopeView(this.scene);
     this.fx = new FX(this.scene, this.camera);
     this.levelView.fx = this.fx;
+    // WP-GFX-PARITY: contact shadows (one instanced batch: body, hands, creature feet, supplies, rope end, dropped items) and the
+    // dropped / thrown bag items with weight (one dynamic mesh, hidden while nothing is in flight)
+    this.contactShadows = new ContactShadows(this.scene);
+    this.droppedProps = new DroppedProps(this.scene);
+    // WP-SHADOWS: the lantern's real-time shadow (cached static depth + small dynamic depth; quest 1024 / high 2048 / low off)
+    this.lanternShadow = new LanternShadow(this);
 
     this.level = null;
     this.time = 0;
@@ -298,11 +364,11 @@ export class Renderer3D {
    */
   _loadEnvKit() {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
-    return import('three/addons/loaders/GLTFLoader.js')
+    return createGLTFLoader()
       .then(
-        (M) =>
+        (loader) =>
           new Promise((resolve) => {
-            new M.GLTFLoader().load(
+            loader.load(
               ENV_KIT_URL,
               (gltf) => resolve(gltf),
               undefined,
@@ -337,6 +403,7 @@ export class Renderer3D {
     this.lightingReady = this.lighting.loadGI();
     this._prepareEnvLights(level);
     this.levelView.build(level);
+    this.lanternShadow.setLevel(level);
     this._themeInit = false;
     this.applyTextures(textures);
     this.precompile();
@@ -655,6 +722,8 @@ export class Renderer3D {
     LOOK.uWet.value = th.wet;
     LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3);
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
+    this._driveSurfaceLook(th, tk);
+    this._driveProbeBox(d, head);
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;
@@ -662,6 +731,7 @@ export class Renderer3D {
       1 + 0.05 * Math.sin(t * 11.3) * Math.sin(t * 2.9 + 0.7) + 0.035 * Math.sin(t * 23.7 + Math.sin(t * 1.3) * 2) - (Math.sin(t * 0.61) > 0.992 ? 0.18 : 0);
     const dead = game && game.player && game.player.alive === false;
     this.lantern.intensity = this.lanternBase * flick * (dead ? 0.35 : 1);
+    this.lanternFlare.material.opacity = 0.26 * flick * (dead ? 0.3 : 1);
     this.lantern.position.set(Math.sin(t * 7.1) * 0.006, Math.sin(t * 5.3) * 0.006, 0);
     _tmpC.setHex(PALETTE.lantern);
     this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08);
@@ -673,6 +743,9 @@ export class Renderer3D {
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.update(d, game, head, this.threat);
+    this.droppedProps.update(d, game);
+    this.contactShadows.update(d, game, head, this);
+    this.lanternShadow.update(d, game);
 
     // Pulse the glyph of an anchor the moment a tether bites.
     if (game && game.bus && game.bus !== this._bus) this._bindBus(game.bus);
@@ -682,6 +755,7 @@ export class Renderer3D {
     if (this._busOff) this._busOff();
     this._bus = bus;
     this._busOff = typeof bus.on === 'function' ? bus.on('grapple:attach', (e) => this.levelView.pulseAnchor(e && e.anchor)) : null;
+    this.droppedProps.bind(bus, () => this._game);
   }
 
   // ---------------------------------------------------------------------------
@@ -693,7 +767,126 @@ export class Renderer3D {
    * governor does); without it a pin that needs another resolution rebuilds the probe (do it behind a fade).
    */
   setQualityTier(name, opts) {
-    return this.lighting.setTier(name, opts);
+    const r = this.lighting.setTier(name, opts);
+    // The framebuffer scale is read once, when a session starts (a change mid-session resets the swapchain, or is ignored with a
+    // warning): a tier step made by the governor while presenting must not rewrite the value the NEXT session will start with.
+    if (!this.renderer.xr.isPresenting) this.setXRRenderScale(XR_RENDER_SCALE[this.lighting.tier] || this.xrRenderScale);
+    return r;
+  }
+
+  /**
+   * WebXR framebuffer scale (1 = the runtime's recommended resolution): 1.15 on the quest tier, 1.2 high, 1.0 low. three.js only
+   * reads it when a session starts, so a change made while presenting waits for the next session; the platform governor
+   * lowers the *viewport* inside this allocation (levels 2-4 = 0.9 / 0.8 / 0.7 of it) when frames are missed.
+   */
+  setXRRenderScale(f) {
+    this.xrRenderScale = THREE.MathUtils.clamp(num(f, this.xrRenderScale || 1), 0.6, 1.5);
+    this._applyXRRenderScale();
+    return this.xrRenderScale;
+  }
+
+  _applyXRRenderScale() {
+    const xr = this.renderer.xr;
+    if (!xr || typeof xr.setFramebufferScaleFactor !== 'function' || xr.isPresenting) return;
+    try {
+      xr.setFramebufferScaleFactor(this.xrRenderScale);
+    } catch {
+      /* older runtimes */
+    }
+  }
+
+  /** Foveation follows the governor level when there is no platform governor driving it (desktop / tests / QA). */
+  _applyXRFoveation(level) {
+    const xr = this.renderer.xr;
+    if (!xr || !xr.isPresenting || this.governor.mode === 'platform' || typeof xr.setFoveation !== 'function') return;
+    try {
+      xr.setFoveation(XR_FOVEATION[Math.max(0, Math.min(XR_FOVEATION.length - 1, level | 0))]);
+    } catch {
+      /* layer without foveation */
+    }
+  }
+
+  /** Per frame: the tier / governor levers of the surface shader (parallax, detail normal, crevices) and the section grade. */
+  _driveSurfaceLook(th, tk) {
+    const P = SURFACE_TIERS[this.lighting.tier] || SURFACE_TIERS.quest;
+    const lvl = this.governor.level;
+    // parallax is the first thing the governor drops: level 2 = the 1-tap only (no steep floor march), level 3 = none
+    const par = lvl >= 3 ? 0 : P.parallax;
+    LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
+    LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);
+    LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
+    LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
+    // edge bevel (box solids) and standing water: tier levers; the governor drops the bevel first at level 2 (pure ALU)
+    LOOK.uBevelK.value.set(lvl >= 2 ? 0 : P.bevel, 0.035, lvl >= 1 ? P.bevelFar * 0.7 : P.bevelFar, 0);
+    LOOK.uPudK.value.x = (lvl >= 3 ? 0.5 : 1) * P.pud;
+    // Grade: a little contrast, the sections' warmth/cold in the highlights, slight desaturation, more with depth.
+    const a = th.accent;
+    const m = Math.max(a.r, a.g, a.b, 1e-3);
+    LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
+    LOOK.uGradeK.value.set(1.1 + 0.06 * tk, 0.94 - 0.1 * tk, 0.22, 0);
+    // LCD black point: a Quest 3 panel never reaches OLED black, so crushed pits read as a hole in the picture, not as depth. The
+    // darkest lit surfaces keep a trace (a third of the haze colour, so it follows the section's mood), never more than ~sRGB 8/255.
+    const fc = this.scene.fog.color;
+    const fl = Math.max(fc.r * 0.2126 + fc.g * 0.7152 + fc.b * 0.0722, 1e-4);
+    const lift = Math.min(0.3, BLACK_LIFT_MAX / fl);
+    LOOK.uBlack.value.setRGB(fc.r * lift, fc.g * lift, fc.b * lift);
+  }
+
+  /**
+   * Parallax-corrected reflections: the shared probe box follows the head's section (its shaft: inner faces x/z, section y range),
+   * eased in time so the section change never pops. No shaft (a chamber without walls) = no correction for that section.
+   */
+  _driveProbeBox(dt, head) {
+    const lv = this.level;
+    const C = LOOK.uProbeC.value;
+    const H = LOOK.uProbeH.value;
+    let want = false;
+    if (lv && typeof lv.sectionAt === 'function') {
+      const sec = lv.sectionAt(head.y);
+      const sh = sec && sec.shaft;
+      if (sh && isFinite(sh.minX) && isFinite(sh.maxX) && isFinite(sh.minZ) && isFinite(sh.maxZ) && isFinite(sec.yTop) && isFinite(sec.yBottom)) {
+        const cx = (sh.minX + sh.maxX) * 0.5;
+        const cy = (sec.yTop + sec.yBottom) * 0.5;
+        const cz = (sh.minZ + sh.maxZ) * 0.5;
+        const hx = Math.max(4, (sh.maxX - sh.minX) * 0.5) * PROBE_BOX_GROW;
+        const hy = Math.max(6, (sec.yTop - sec.yBottom) * 0.5) * PROBE_BOX_GROW;
+        const hz = Math.max(4, (sh.maxZ - sh.minZ) * 0.5) * PROBE_BOX_GROW;
+        const k = C.w > 0.5 ? 1 - Math.exp(-PROBE_BOX_EASE * dt) : 1;
+        C.x += (cx - C.x) * k;
+        C.y += (cy - C.y) * k;
+        C.z += (cz - C.z) * k;
+        H.x += (hx - H.x) * k;
+        H.y += (hy - H.y) * k;
+        H.z += (hz - H.z) * k;
+        want = true;
+      }
+    }
+    C.w = want ? 1 : 0;
+  }
+
+  /**
+   * What the XR path uses, for QA / the debug API: the canvas was created with antialias (three.js then allocates the XR layer with 4
+   * MSAA samples; the desktop canvas keeps the browser's default MSAA, no extra pass), the framebuffer scale the next session starts
+   * with (tier scale x settings.renderScale), the foveation cap of the tier (the platform governor's requests are clamped to it, only
+   * while a session is presenting) and whether a session is presenting now. Nothing here touches the desktop path.
+   */
+  xrSettings() {
+    const r = this.renderer;
+    let attrs = null;
+    try {
+      attrs = r.getContext().getContextAttributes();
+    } catch {
+      attrs = null;
+    }
+    const tier = this.lighting.tier;
+    return {
+      presenting: !!(r.xr && r.xr.isPresenting),
+      antialias: !!(attrs && attrs.antialias),
+      msaaSamplesXR: attrs && attrs.antialias ? 4 : 0,
+      framebufferScale: this.xrRenderScale,
+      foveationCap: XR_FOVEATION_CAP[tier] != null ? XR_FOVEATION_CAP[tier] : 0.66,
+      tier,
+    };
   }
 
   get qualityTier() {
@@ -708,8 +901,21 @@ export class Renderer3D {
   render() {
     const r = this.renderer;
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
-    r.render(this.scene, this.camera);
     const info = r.info;
+    info.reset(); // autoReset is off: one reset per frame, the lantern-shadow passes and the main render add up
+    const ls = this.lanternShadow;
+    let shCalls = 0;
+    if (ls && this.level) {
+      try {
+        ls.render();
+        shCalls = ls.stats.calls;
+      } catch (err) {
+        ls.setEnabled(false); // a failing shadow pass must never take the frame down
+        if (typeof console !== 'undefined') console.warn('[AT3D] lantern shadow disabled', err);
+      }
+    }
+    r.render(this.scene, this.camera);
+    this.stats.shadowCalls = shCalls;
     this.stats.calls = info.render.calls;
     this.stats.triangles = info.render.triangles;
     this.stats.points = info.render.points;
@@ -741,11 +947,16 @@ export class Renderer3D {
     if (typeof window !== 'undefined') window.removeEventListener('resize', this.resize);
     if (this._busOff) this._busOff();
     this.lighting.dispose();
+    this.contactShadows.dispose();
+    this.lanternShadow.dispose();
+    this.droppedProps.dispose();
     this.fx.dispose();
     this.ropeView.dispose();
     this.levelView.dispose();
     this.materials.dispose();
     this.lanternBulb.geometry.dispose();
+    if (this.lanternFlare.material.map) this.lanternFlare.material.map.dispose();
+    this.lanternFlare.material.dispose();
     this.lanternBulb.material.dispose();
     if (this.sky) this.sky.geometry.dispose();
     this.renderer.setAnimationLoop(null);

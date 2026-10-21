@@ -31,6 +31,16 @@
  *   psych ───┘   space (feedback-delay "room")      │
  *   ui, stinger ────────────────────────────────────┘
  *
+ * WP-AUDIO modules (each owns its nodes; built in _build, driven from _control):
+ *   ambience3d.js  convolution reverb with generated per-section impulse responses, drone bank, drips / groans /
+ *                  creaking iron / chains / slurps / sinew creaks per section, the shaft's breath;
+ *   music3d.js     the adaptive generative score (sub pulse, pad swells, five-note motif, stingers; silence as a signal);
+ *   ropeFx3d.js    per-hand rope friction + taut hum (the matching haptic curve lives in dsp3d.js ropeHaptic);
+ *   movement3d.js  footsteps by surface, wall scrape, air rush, cloth / leather rustle, landing colour;
+ *   creatureSync3d.js  the Mason's sound locked to its clip events (creature:clip), with sim-event fallbacks.
+ * Quality tier: settings.reducedEffects or governor level >= 3 caps one-shots at 14 (HRTF 5), shortens the reverb,
+ * thins ambient events; see _applyTier. The master chain ends in a compressor, a brick-wall-ish limiter and a soft clip.
+ *
  * Robustness: `enabled` is false and every method is a no-op without Web
  * Audio. unlock() is idempotent and gesture-safe (also on XR session start
  * and on the first XR select/squeeze). All parameter changes are ramped,
@@ -42,6 +52,11 @@
  * activeVoices, peakVoices, hrtfVoices; _attachContext(ctx) (tests).
  */
 import { CONFIG, SETTINGS_DEFAULTS, U as CU, eyeAboveBody } from '../sim/config3d.js';
+import { Ambience } from './ambience3d.js';
+import { Music } from './music3d.js';
+import { RopeFx } from './ropeFx3d.js';
+import { Movement } from './movement3d.js';
+import { CreatureSync } from './creatureSync3d.js';
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -101,6 +116,8 @@ const STRIDE = 1.5; // metres per footstep
 const HAND_PAN = { left: -0.35, right: 0.35 };
 
 const BUS_LEVEL = { ambient: 0.85, player: 1, creature: 1, psych: 1, ui: 0.5, stinger: 1 };
+const REDUCED = { voices: 14, hrtf: 5, ambientHrtf: 2 }; // reducedEffects tier caps
+const LOG_LEN = 24; // debug: last events kept
 const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus (other gameplay buses → 0)
 
 // Inharmonic partials for struck iron (ratios, amplitudes, decay time-constants).
@@ -359,7 +376,7 @@ export class AudioManager3D {
     this._luz = 0;
     this._listenerSet = false;
     this._lastL = new Float64Array(9).fill(NaN); // last values written to the listener
-    this._sp = { d: 0, gain: 0, cutoff: 0, send: 0, ok: false, x: 0, y: 0, z: 0 }; // spatial scratch
+    this._sp = { d: 0, gain: 0, cutoff: 0, send: 0, delay: 0, ok: false, x: 0, y: 0, z: 0 }; // spatial scratch
     this._pos = { x: 0, y: 0, z: 0 }; // position scratch for one-shots
     this._hrtfCount = 0;
     this._peakHrtf = 0;
@@ -396,6 +413,29 @@ export class AudioManager3D {
     this._dripT = rand(1, 4);
     this._tickT = rand(3, 9);
     this._gritT = 0;
+
+    // WP-AUDIO state shared with the modules.
+    this._reduced = false; // quality tier (settings.reducedEffects or governor level >= 3)
+    this._govLevel = 0;
+    this._maxVoices = MAX_VOICES;
+    this._maxHrtf = MAX_HRTF;
+    this._maxAmbHrtf = HRTF_AMBIENT;
+    this._thin = 1; // 1 = full ambience, down to ~0.35 while the creature listens
+    this._silence = 0; // 0..1: the designed hush (creature listens / lingers / freezes)
+    this._shaftBreath = 0; // -1..1 slow inhale / exhale of the shaft (also read by the renderer, if it likes)
+    this._amb = null;
+    this._music = null;
+    this._rope = null;
+    this._mov = null;
+    this._cs = null;
+    this._mods = [];
+    this._ctl = { tv: 0, playing: false, dead: false, victory: false, menu: true, ducked: true, speed: 0, hspeed: 0, lethal: 17, silence: 0, thin: 1 };
+    this._log = [];
+    this._logN = 0;
+    this._exPeak = 0;
+    this._gasp = false;
+    this._eventCount = 0;
+    this._tierAt = 0;
 
     if (!this.enabled) return;
     this._subscribe();
@@ -517,6 +557,8 @@ export class AudioManager3D {
       this._hushUntil = now + 0.3;
       this._victory = false;
       for (const k of [this.kAmbient, this.kPlayer, this.kCreature, this.kPsych, this.kStinger]) k.force(0, now, 0.015);
+      if (this._music && this._music.kBus) this._music.kBus.force(0, now, 0.015);
+      if (this._amb && this._amb.kWet) this._amb.kWet.force(0, now, 0.015);
       this._mixSpace(now, true, 0.015);
       this._silenceEnvelopes(now);
     } catch (err) {
@@ -705,8 +747,16 @@ export class AudioManager3D {
     this.clip = ctx.createWaveShaper();
     this.clip.curve = makeSoftClip();
     this.clip.oversample = 'none';
+    // Limiter: catches what the glue compressor lets through (several stingers + impacts at once) before the soft clip.
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -4;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.001;
+    this.limiter.release.value = 0.09;
     this.master.connect(this.comp);
-    this.comp.connect(this.clip);
+    this.comp.connect(this.limiter);
+    this.limiter.connect(this.clip);
     this.clip.connect(ctx.destination);
     this.kMaster = this._knob(this.master.gain, 0, 0.0005);
 
@@ -732,6 +782,23 @@ export class AudioManager3D {
     this._buildPlayer();
     this._buildPsych();
     this._buildCreature();
+    this._applyTier(); // reduced tier before the modules size themselves
+    this._cs = new CreatureSync(this);
+    this._amb = new Ambience(this);
+    this._music = new Music(this);
+    this._rope = new RopeFx(this);
+    this._mov = new Movement(this);
+    this._mods = [this._cs, this._amb, this._music, this._rope, this._mov];
+    for (let i = 0; i < this._mods.length; i++) {
+      const mod = this._mods[i];
+      if (typeof mod.build !== 'function') continue;
+      try {
+        mod.build();
+      } catch (err) {
+        mod.broken = true; // the rest of the soundscape carries on without it
+        this._warn('build', err);
+      }
+    }
 
     for (let i = 0; i < this._loops.length; i++) {
       const s = this._loops[i];
@@ -1260,6 +1327,12 @@ export class AudioManager3D {
       this._polledVolume = vol;
       this.setVolume(vol);
     }
+    // WP-UX effects slider (settings.sfxVolume): every bus except the music stingers follows it.
+    const sfx = this._sfxMul();
+    if (sfx !== this._sfxSeen) {
+      this._sfxSeen = sfx;
+      if (this._built) this._mixBuses(this.ctx.currentTime, this._state);
+    }
 
     // The listener tracks the head every frame: HRTF needs a fresh orientation.
     this._followListener(game);
@@ -1371,17 +1444,24 @@ export class AudioManager3D {
     }
   }
 
+  /** settings.sfxVolume 0..1 squared (the same perceptual curve as the master); 1 when unset. */
+  _sfxMul() {
+    const v = this.settings && typeof this.settings.sfxVolume === 'number' && isFinite(this.settings.sfxVolume) ? U.clamp(this.settings.sfxVolume, 0, 1) : 1;
+    return v * v;
+  }
+
   _mixBuses(now, state) {
     const ducked = this._pauseFlag || state === 'paused' || state === 'menu';
     const hushed = now < this._hushUntil;
     const dead = this._dead || state === 'dead';
     const tc = 0.15;
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * (ducked ? DUCKED.ambient : 1), now, tc);
-    this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player, now, tc);
-    this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature, now, tc);
-    this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych, now, dead ? 0.08 : tc);
+    const fx = this._sfxMul();
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
+    this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
+    this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
+    this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
     this.kStinger.set(hushed ? 0 : BUS_LEVEL.stinger * (ducked ? DUCKED.stinger : 1), now, tc);
-    this.kUi.set(BUS_LEVEL.ui, now, tc);
+    this.kUi.set(BUS_LEVEL.ui * fx, now, tc);
     this._mixSpace(now, hushed, 1.5);
   }
 
@@ -1392,6 +1472,7 @@ export class AudioManager3D {
     const level = game && game.level ? game.level : null;
     const playing = state === 'playing';
     const victory = state === 'victory' || this._victory;
+    this._applyTier();
     if (state === 'dead') this._dead = true;
     else if (playing && P && P.alive !== false) this._dead = false;
     const dead = this._dead;
@@ -1434,11 +1515,18 @@ export class AudioManager3D {
       if (P.grounded && hspeed > 200 * SPEED_K) this._exertion = Math.min(1, this._exertion + dtc * 0.025);
     }
 
+    // After a hard effort a deep recovery breath (once per drop from the peak).
+    this._exPeak = Math.max(this._exPeak - dtc * 0.02, this._exertion);
+    if (this._exPeak > 0.65 && this._exertion < this._exPeak - 0.25) {
+      this._gasp = true;
+      this._exPeak = this._exertion;
+    }
+
     // ---- ambient bed -----------------------------------------------------
     const speedK = body ? U.smoothstep(200 * SPEED_K, 1400 * SPEED_K, speed) : 0;
     const gustL = 0.55 + 0.45 * U.noise1(c * 0.17, 3);
     const gustR = 0.55 + 0.45 * U.noise1(c * 0.15 + 40, 5);
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv);
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
     this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK), now, 0.4);
@@ -1456,6 +1544,31 @@ export class AudioManager3D {
     this.kPadB.set(root * (victory ? 1.5 : sec.iv) + det, now, victory ? 3 : 1.2);
     this.kPadC.set(root * (victory ? 3 : 2 * sec.iv) + det * 1.7, now, victory ? 3 : 1.2);
     this.kPadG.set(sec.pad * (victory ? 2.2 : 1 + 0.6 * tv), now, 1.5);
+
+    // ---- WP-AUDIO modules (creature sync first: it sets the silence / thin signal the others read) ----
+    const C = this._ctl;
+    C.tv = tv;
+    C.playing = playing;
+    C.dead = dead;
+    C.victory = victory;
+    C.menu = state === 'menu';
+    C.ducked = this._pauseFlag || state === 'paused' || state === 'menu';
+    C.speed = speed;
+    C.hspeed = hspeed;
+    C.lethal = lethal;
+    for (let i = 0; i < this._mods.length; i++) {
+      const mod = this._mods[i];
+      if (mod.broken || typeof mod.control !== 'function') continue;
+      if (i === 1) {
+        C.silence = this._silence;
+        C.thin = this._thin;
+      }
+      try {
+        mod.control(dtc, now, game, C);
+      } catch (err) {
+        this._warn('mod-control', err);
+      }
+    }
 
     // ---- player continuous layers (both hands) ------------------------------
     let attached = false;
@@ -1515,7 +1628,8 @@ export class AudioManager3D {
       this._stride += hspeed * dtc;
       if (this._stride > STRIDE) {
         this._stride = 0;
-        this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
+        if (this._mov && !this._mov.broken) this._mov.footstep(U.clamp(hspeed / 5.5, 0.3, 1), game);
+        else this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
       }
     } else {
       this._stride = STRIDE * 0.65; // the first step lands soon after starting to run
@@ -1539,19 +1653,22 @@ export class AudioManager3D {
 
     // ---- ambient events ---------------------------------------------------------
     if (now >= this._hushUntil) {
+      const thin = 0.35 + 0.65 * this._thin;
       this._creakT -= dtc;
       if (this._creakT <= 0) {
-        this._creakT = (rand(0.5, 1.6) * 60) / Math.max(0.5, sec.creaks * (1 + 0.8 * tv));
+        this._creakT = (rand(0.5, 1.6) * 60) / Math.max(0.5, sec.creaks * (1 + 0.8 * tv) * thin);
         this._sfxCreak();
       }
-      this._dripT -= dtc;
-      if (this._dripT <= 0) {
-        this._dripT = (rand(0.4, 1.7) * 60) / Math.max(0.5, sec.drips);
-        this._sfxDrip();
+      if (!this._amb || this._amb.broken) {
+        this._dripT -= dtc;
+        if (this._dripT <= 0) {
+          this._dripT = (rand(0.4, 1.7) * 60) / Math.max(0.5, sec.drips);
+          this._sfxDrip();
+        }
       }
       this._tickT -= dtc;
       if (this._tickT <= 0) {
-        this._tickT = rand(4, 14) / (1 + tv);
+        this._tickT = rand(4, 14) / ((1 + tv) * thin);
         this._sfxSettle();
       }
     }
@@ -1610,14 +1727,20 @@ export class AudioManager3D {
     // The HRTF panner's flat 'bed' curve does the distance attenuation (2D: presence^0.45);
     // fully silent far away (an inactive creature may report a huge distance) so the gates close.
     const farCut = U.smoothstep(CREATURE_FAR[1], CREATURE_FAR[0], d);
-    this.kCrG.set(farCut > 0.001 ? farCut : 0, now, 0.15);
-    this.kCrLP.set(280 + 11500 * Math.exp(-d / AIR_D), now, 0.15);
+    // Sync (creatureSync3d): the bed is cut on the freeze frame (listening / listen clip), the drone drops 12 dB while it
+    // hides, plates grind with body.jitter / the plate_shiver clip, and masonry between us dulls the whole bed.
+    const cs = this._cs;
+    const cut = !!(cs && cs.bedCut);
+    const jit = Math.max(cs ? cs.shiver : 0, CR.body && CR.body.jitter > 0 ? CR.body.jitter : 0) * U.smoothstep(55, 7, d);
+    const occ = cs ? cs.occ : 0;
+    this.kCrG.set(farCut > 0.001 ? farCut * (1 - 0.25 * occ) : 0, now, 0.15);
+    this.kCrLP.set((280 + 11500 * Math.exp(-d / AIR_D)) * (1 - 0.6 * occ), now, 0.15);
     this.kCrSend.set(0.15 + 0.5 * (1 - presence), now, 0.3);
-    this.kScrG.set(0.9 * move * stMul, now, 0.12);
+    this.kScrG.set(cut ? 0 : 0.9 * Math.max(move, 0.45 * jit) * stMul, now, cut ? 0.02 : 0.12);
     this.kScrF.set((210 + 300 * move) * (st === 'BURST' ? 1.5 : 1), now, 0.15);
     this.kScrLfo.set(2.2 + 7 * move + 2 * U.noise1(c * 0.9, 41), now, 0.1);
-    this.kCloseG.set(0.26 * move * U.smoothstep(47, 8, d) * stMul, now, 0.1);
-    this.kDroneG.set(0.22 * U.smoothstep(115, 11, d) * (0.5 + 0.5 * inten) * stMul, now, 0.4);
+    this.kCloseG.set(cut ? 0 : (0.26 * move * U.smoothstep(47, 8, d) + 0.2 * jit) * stMul, now, cut ? 0.02 : 0.1);
+    this.kDroneG.set(0.22 * U.smoothstep(115, 11, d) * (0.5 + 0.5 * inten) * stMul * (cs && cs.hide ? 0.25 : 1), now, 0.4);
     this.kDroneF1.set(surge ? 46 : 40.5, now, 0.5);
     this.kDroneF2.set(surge ? 47.1 : 41.2, now, 0.5);
     this.kListenG.set(st === 'OBSERVING' ? 0.14 * U.smoothstep(130, 12, d) : 0, now, 0.25);
@@ -1632,9 +1755,12 @@ export class AudioManager3D {
     const theme = section && section.theme ? section.theme : null;
     const dark = theme ? U.clamp(num(theme.darkness, 0), 0, 1) : 0;
     this._spaceFb = Math.min(0.75, s.fb + 0.05 * dark);
-    this._spaceLevel = s.space * (1 + 0.15 * dark);
+    // The generated convolution reverb carries the tail; the feedback room stays as the diffuse early part.
+    this._spaceLevel = s.space * (1 + 0.15 * dark) * (this._amb && this._amb.enabledReverb ? 0.55 : 1);
     for (let k = 0; k < 3; k++) this.kSpaceDelay[k].set(SPACE_DELAYS[k] * s.size, now, tc * 1.5);
     this._mixSpace(now, false, tc);
+    if (this._amb && !this._amb.broken) this._amb.setSection(this._secIndex, section, now, tc);
+    if (this._music && !this._music.broken) this._music.setSection(this._secIndex, !!this._firstEntry, now);
   }
 
   /** Room feedback + wet level. While hushed the loop is opened so no old tail survives stopAll(). */
@@ -1711,27 +1837,34 @@ export class AudioManager3D {
     if (!this._breathOn || this._dead) return;
     this._breathT -= dt;
     if (this._breathT > 0) return;
-    const ragged = this._tv > 0.5 ? 0.18 : 0.08;
-    const period = (60 / this._breathRate) * (1 + rand(-ragged, ragged));
+    // Exertion (health audio is separate): easy breathing → mouth-open panting (shorter pauses, brighter, fuller
+    // inhales); after a hard effort one deep, slow recovery breath.
+    const ex = this._exertion;
+    const pant = U.smoothstep(0.5, 0.95, ex);
+    const gasp = this._gasp;
+    this._gasp = false;
+    const ragged = this._tv > 0.5 ? 0.18 : 0.08 + 0.06 * pant;
+    let period = (60 / this._breathRate) * (1 + rand(-ragged, ragged));
+    if (gasp) period = Math.max(period, 2.6);
     this._breathT = period;
-    const lvl = this._breathLevel * rand(0.85, 1.1);
+    const lvl = this._breathLevel * rand(0.85, 1.1) * (gasp ? 1.4 : 1 + 0.25 * pant);
     const t = now + 0.02;
-    const inDur = period * 0.36;
-    const gap = period * 0.06;
-    const exDur = period * 0.46;
+    const inDur = period * (gasp ? 0.34 : 0.36 + 0.06 * pant);
+    const gap = period * 0.06 * (1 - 0.7 * pant);
+    const exDur = period * (gasp ? 0.5 : 0.46 - 0.06 * pant);
     const g = this.breathGain.gain;
     const f = this.breathBP.frequency;
     try {
       g.cancelScheduledValues(t);
       f.cancelScheduledValues(t);
-      // inhale: thinner, higher band
-      f.setTargetAtTime(1500 + 500 * this._tv, t, 0.05);
-      g.setTargetAtTime(lvl * 0.7, t, inDur * 0.3);
+      // inhale: thinner, higher band (a deeper one for the gasp)
+      f.setTargetAtTime((gasp ? 1100 : 1500 + 450 * pant) + 500 * this._tv, t, 0.05);
+      g.setTargetAtTime(lvl * (0.7 + 0.3 * pant), t, inDur * 0.3);
       g.setTargetAtTime(0, t + inDur * 0.7, inDur * 0.16);
       // exhale: fuller, falling band
       const te = t + inDur + gap;
-      f.setTargetAtTime(1000, te - 0.03, 0.03);
-      f.setTargetAtTime(650, te, exDur * 0.5);
+      f.setTargetAtTime(gasp ? 760 : 1000 + 250 * pant, te - 0.03, 0.03);
+      f.setTargetAtTime(gasp ? 480 : 650 + 200 * pant, te, exDur * 0.5);
       g.setTargetAtTime(lvl, te, exDur * 0.18);
       g.setTargetAtTime(0, te + exDur * 0.45, exDur * 0.22);
     } catch (err) {
@@ -1778,6 +1911,8 @@ export class AudioManager3D {
     S.gain = 1 / (1 + Math.pow(d / PRESENCE_D, 1.5)); // the 2D presence curve (in metres)
     S.cutoff = 260 + 12000 * Math.exp(-d / AIR_D);
     S.send = 0.12 + 0.55 * (1 - Math.exp(-d / SEND_D));
+    // Sound travels at 343 m/s: far events arrive late (capped at 0.6 s); near ones stay tight (A1/A2 of the sync rules).
+    S.delay = ok && d > 28 ? Math.min(0.6, d / 343) : 0;
     return S;
   }
 
@@ -1855,7 +1990,7 @@ export class AudioManager3D {
     }
     v.panner = null;
     if (pos) {
-      const hrtf = this._hrtfCount < (ambient ? HRTF_AMBIENT : MAX_HRTF);
+      const hrtf = this._hrtfCount < (ambient ? this._maxAmbHrtf : this._maxHrtf);
       const p = this._makeSpatialPanner(preset || 'near', pos.x, pos.y, pos.z, hrtf);
       if (hrtf) {
         v.hrtf = true;
@@ -1903,7 +2038,7 @@ export class AudioManager3D {
       active++;
       if (!victim || v.priority < victim.priority || (v.priority === victim.priority && v.t0 < victim.t0)) victim = v;
     }
-    if (active >= MAX_VOICES) {
+    if (active >= this._maxVoices) {
       if (!victim || victim.priority > prio) return null;
       this._kill(victim, now, 0.012);
     }
@@ -2088,6 +2223,12 @@ export class AudioManager3D {
       'player:jump': this._onJump,
       'player:land': this._onLand,
       'player:wallhit': this._onWallHit,
+      'climb:grab': this._onClimbGrab,
+      'climb:release': this._onClimbRelease,
+      'climb:scrape': this._onClimbScrape,
+      'climb:strain': this._onClimbStrain,
+      'climb:slip': this._onClimbSlip,
+      'climb:hop': this._onClimbHop,
       'health:damage': this._onHealthDamage,
       'pickup:collect': this._onPickup,
       'pickup:full': this._onBagRefuse,
@@ -2111,6 +2252,16 @@ export class AudioManager3D {
       'creature:strike': this._onCreatureStrike,
       'creature:retreat': this._onCreatureRetreat,
       'creature:sighting': this._onCreatureSighting,
+      'rope:slip': this._onRopeSlip,
+      'rope:cancel': this._onRopeCancel,
+      'creature:clip': this._onClipEvent,
+      'mason:anim': this._onClipEvent,
+      'creature:freeze': this._onCreatureFlag,
+      'creature:unfreeze': this._onCreatureFlag,
+      'creature:linger': this._onCreatureFlag,
+      'creature:hide': this._onCreatureFlag,
+      'mason:plant': this._onCreatureFlag,
+      'quality:level': this._onQuality,
       'game:start': this._onGameStart,
       'game:restart': this._onGameStart,
       'game:pause': this._onGamePause,
@@ -2127,6 +2278,7 @@ export class AudioManager3D {
     for (const type of Object.keys(map)) {
       const fn = map[type];
       bus.on(type, (payload) => {
+        this._logEvent(type);
         if (!this._built) {
           // Lifecycle flags still matter before the context exists.
           if (type === 'xr:start' || type === 'xr:sessionstart') this.unlock();
@@ -2139,12 +2291,22 @@ export class AudioManager3D {
           return;
         }
         try {
-          fn.call(this, payload && typeof payload === 'object' ? payload : EMPTY);
+          fn.call(this, payload && typeof payload === 'object' ? payload : EMPTY, type);
         } catch (err) {
           this._warn(type, err);
         }
       });
     }
+  }
+
+  /** Debug ring buffer of the last events seen: fixed slots, no allocation after the first lap. */
+  _logEvent(type) {
+    this._eventCount++;
+    const i = this._logN++ % LOG_LEN;
+    const e = this._log[i] || (this._log[i] = { type: '', n: 0, t: 0 });
+    e.type = type;
+    e.n = this._eventCount;
+    e.t = this.ctx ? +this.ctx.currentTime.toFixed(3) : 0;
   }
 
   // ---- lifecycle -----------------------------------------------------------------
@@ -2158,9 +2320,14 @@ export class AudioManager3D {
     this._killAll(now, 0.05, true);
     this.kMuffle.force(this._nyq, now, 0.05);
     this._exertion = 0.1;
+    this._exPeak = 0;
+    this._gasp = false;
     this._breathT = 0.8;
     this._beatClock = 0;
     this._prevAtt.left = this._prevAtt.right = false;
+    this._runs = (this._runs | 0) + 1;
+    if (this._cs) this._cs.reset();
+    if (this._music) this._music.reseed(this._runs * 7919);
     this._state = 'playing';
     this._mixBuses(now, 'playing');
   }
@@ -2195,6 +2362,8 @@ export class AudioManager3D {
     this.kMuffle.force(this._nyq, now, 0.45);
     this._exertion = Math.max(this._exertion, 0.4); // shaken: heavier breathing for a while
     this._breathT = 0.4;
+    if (this._cs) this._cs.reset();
+    if (this._music) this._music.duck(4);
     this._prevAtt.left = this._prevAtt.right = false;
     this._sfxRespawn();
   }
@@ -2229,7 +2398,9 @@ export class AudioManager3D {
   _onSection(p) {
     const idx = num(p.index, this._secIndex);
     const now = this.ctx.currentTime;
+    this._firstEntry = !!p.first;
     if ((idx | 0) !== this._secIndex) this._applySection(idx, p.section || null, now, 2.5);
+    this._firstEntry = false;
     if (p.first) this._sfxSectionShift();
   }
 
@@ -2297,6 +2468,38 @@ export class AudioManager3D {
   _onWallHit(p) {
     this._exertion = Math.min(1, this._exertion + 0.06);
     this._sfxWall(p);
+  }
+
+  // ---- grip climbing (WP-CLIMB, sim/climb3d.js): a glove closing on stone, grit scraping, the hold straining, slipping ----
+
+  _onClimbGrab(p) {
+    this._exertion = Math.min(1, this._exertion + 0.025);
+    this._sfxGrip(p);
+  }
+
+  _onClimbRelease(p) {
+    if (!p || p.reason === 'death' || p.reason === 'reset' || p.reason === 'slip' || p.reason === 'hop') return;
+    this._sfxGripLet(U.clamp(0.4 + num(p.speed, 0) / 9, 0.4, 1), p.hand);
+  }
+
+  _onClimbScrape(p) {
+    this._exertion = Math.min(1, this._exertion + 0.004);
+    this._sfxScrape(p);
+  }
+
+  _onClimbStrain(p) {
+    const k = U.clamp(num(p.level, 0.3), 0, 1);
+    this._exertion = Math.min(1, this._exertion + 0.03 + 0.05 * k);
+    this._sfxStrain(k);
+  }
+
+  _onClimbSlip() {
+    this._exertion = Math.min(1, this._exertion + 0.2);
+    this._sfxSlip();
+  }
+
+  _onClimbHop() {
+    this._sfxGripLet(0.9, 'right');
   }
 
   /** Fall / hazard damage: a body thump (no voice), and above ~25 hp a ringing in the ears with dulled hearing. */
@@ -2394,11 +2597,114 @@ export class AudioManager3D {
   }
 
   _onCreatureStep(p) {
+    if (p.skit) return this._sfxSkitter(p, 'step');
+    if (this._cs && this._cs.seen.plant) return; // the rig reports every leg plant (mason:plant): those sound instead
     this._sfxCreatureStep(p);
   }
 
   _onCreatureCall(p) {
-    this._sfxCall(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), U.clamp(num(p.intensity, 0.7), 0.1, 1), false, num(p.distance, NaN));
+    const x = num(p.x, NaN);
+    const y = num(p.y, NaN);
+    const z = num(p.z, NaN);
+    const inten = U.clamp(num(p.intensity, 0.7), 0.1, 1);
+    const d = num(p.distance, NaN);
+    if (this._cs && this._cs.route('roar', x, y, z, d, inten, false)) return; // roar_display clip drives it
+    this._sfxCall(x, y, z, inten, false, d);
+  }
+
+  // ---- WP-AUDIO: rope friction, clip sync, tier ----------------------------------------------
+
+  _onRopeSlip(p) {
+    if (this._rope && !this._rope.broken) this._rope.onSlip(p);
+  }
+
+  /** The hook is called back before it bit / the line is cut by the player: a short winch zip. */
+  _onRopeCancel(p) {
+    if (p.reason === 'reset' || p.reason === 'death') return;
+    this._sfxCancel(p);
+  }
+
+  _onClipEvent(p) {
+    if (this._cs) this._cs.onClip(p);
+  }
+
+  _onCreatureFlag(p, type) {
+    if (this._cs) this._cs.onFlag(type, p);
+  }
+
+  _onQuality(p) {
+    this._govLevel = num(p.level, 0) | 0;
+    this._applyTier();
+  }
+
+  /** Quality tier: reducedEffects (player setting) or governor level >= 3 → fewer voices, shorter reverb, thinner ambience. */
+  _applyTier() {
+    const red = !!(this.settings && this.settings.reducedEffects) || this._govLevel >= 3;
+    this._reduced = red;
+    this._maxVoices = red ? REDUCED.voices : MAX_VOICES;
+    this._maxHrtf = red ? REDUCED.hrtf : MAX_HRTF;
+    this._maxAmbHrtf = red ? REDUCED.ambientHrtf : HRTF_AMBIENT;
+  }
+
+  /** A deferred sim-event creature sound whose clip event never came (CreatureSync.control). */
+  _playSim(cat, p) {
+    if (cat === 'windup') this._sfxAttack(p.x, p.y, p.z, U.clamp(p.w, 0.03, 0.9), false, false);
+    else if (cat === 'strike') this._sfxStrike(p.x, p.y, p.z, p.d, p.w > 0.5);
+    else if (cat === 'roar') this._sfxCall(p.x, p.y, p.z, U.clamp(p.w, 0.1, 1), false, p.d);
+    else if (cat === 'snap') this._sfxCrownSnap(p.x, p.y, p.z, p.d, U.clamp(p.w, 0.1, 0.6), p.f);
+  }
+
+  /** Winch zip when a shot is cancelled in flight. */
+  _sfxCancel(p) {
+    const v = this._begin('cancel', 0, 0.1, 0.35, this.busPlayer, 0.5, HAND_PAN[p.hand] || 0, 0.05, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 3800, 1.5);
+    bp.frequency.exponentialRampToValueAtTime(1100, t + 0.16);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.4, 0.004, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    this._tickTrain(v, t, 5, 0.14, 0.25, 1500, 3200, 6, 0.008, 0.5);
+    this._commit(v);
+  }
+
+  /** Debug / QA read-out (AT3D.debug.audio.state()). Allocates; not for the frame loop. */
+  debugState() {
+    const out = {
+      enabled: this.enabled,
+      built: this._built,
+      context: this.ctx ? this.ctx.state : 'none',
+      sampleRate: this.ctx ? this.ctx.sampleRate : 0,
+      tier: this._reduced ? 'reduced' : 'full',
+      volume: this._volume,
+      paused: this._pauseFlag,
+      activeVoices: this.activeVoices,
+      peakVoices: this._peakVoices,
+      hrtfVoices: this._hrtfCount,
+      caps: { voices: this._maxVoices, hrtf: this._maxHrtf },
+      silence: +this._silence.toFixed(3),
+      thin: +this._thin.toFixed(3),
+      threat: +this._tv.toFixed(3),
+      section: this._secIndex,
+      exertion: +this._exertion.toFixed(3),
+      events: this._eventCount,
+      last: [],
+      music: this._music ? this._music.debug({}) : null,
+      ambience: this._amb ? this._amb.debug({}) : null,
+      rope: this._rope ? this._rope.debug({}) : null,
+      movement: this._mov ? this._mov.debug({}) : null,
+      creatureSync: this._cs ? this._cs.debug({}) : null,
+      broken: this._mods.filter((m) => m.broken).length,
+    };
+    const n = Math.min(this._logN, LOG_LEN);
+    for (let k = 0; k < n; k++) {
+      const e = this._log[(this._logN - 1 - k) % LOG_LEN];
+      out.last.push({ type: e.type, n: e.n, t: e.t });
+    }
+    return out;
   }
 
   /**
@@ -2408,6 +2714,7 @@ export class AudioManager3D {
    * the surge once the hold is over. `commit` (a real lunge) pushes harder.
    */
   _onCreatureBurst(p) {
+    if (p.skit) return this._sfxSkitter(p, 'burst');
     const x = num(p.x, NaN);
     const y = num(p.y, NaN);
     const z = num(p.z, NaN);
@@ -2416,12 +2723,14 @@ export class AudioManager3D {
     if (p.reason === 'heard' || p.reason === 'stall') {
       const cr = this._game && this._game.creature;
       hold = U.clamp(num(p.snap, num(cr && cr.k && cr.k.snap, 0.3)), 0.1, 0.6);
-      this._sfxCrownSnap(x, y, z, d, hold, p.reason === 'stall');
+      const stall = p.reason === 'stall';
+      if (!(this._cs && this._cs.route('snap', x, y, z, d, hold, stall))) this._sfxCrownSnap(x, y, z, d, hold, stall);
     }
     this._sfxBurst(x, y, z, d, hold, !!p.commit);
   }
 
   _onCreatureAttack(p) {
+    if (p.skit) return this._sfxSkitter(p, 'attack');
     // A lunge is emitted at wind-up start. The 3D creature reports the contact itself
     // (creature:strike, with the true strike point and hit / near miss): then the
     // impact belongs to the strike. Without strike events (or before the first one
@@ -2436,7 +2745,14 @@ export class AudioManager3D {
         w = cr && cr.attack ? num(cr.attack.windup, 0.5) : 0.5;
       }
     }
-    this._sfxAttack(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), U.clamp(w, 0.03, 0.9), !!p.gate, !strikeFollows);
+    const ax = num(p.x, NaN);
+    const ay = num(p.y, NaN);
+    const az = num(p.z, NaN);
+    const aw = U.clamp(w, 0.03, 0.9);
+    if (p.gate && this._music) this._music.stinger('gate');
+    // With the rig's rear_windup clip the grinding rise belongs to the clip; the sim sound is the fallback.
+    if (!p.gate && strikeFollows && this._cs && this._cs.route('windup', ax, ay, az, num(p.distance, NaN), aw, false)) return;
+    this._sfxAttack(ax, ay, az, aw, !!p.gate, !strikeFollows);
   }
 
   /**
@@ -2445,21 +2761,25 @@ export class AudioManager3D {
    * past the head — the near miss you are meant to survive.
    */
   _onCreatureStrike(p) {
+    if (p.skit) return this._sfxSkitter(p, p.hit ? 'bite' : 'snap');
     this._strikeSeen = true;
     const x = num(p.x, NaN);
     const y = num(p.y, NaN);
     const z = num(p.z, NaN);
     const d = num(p.distance, NaN);
-    this._sfxStrike(x, y, z, d, !!p.hit);
+    if (!(this._cs && this._cs.route('strike', x, y, z, d, p.hit ? 1 : 0, false))) this._sfxStrike(x, y, z, d, !!p.hit);
     if (!p.hit) this._sfxNearMiss(x, y, z, d);
+    if (this._music && !this._music.broken) this._music.stinger('strike');
   }
 
   _onCreatureRetreat(p) {
+    if (p.skit) return;
     this._sfxRetreat(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
   }
 
   _onCreatureSighting(p) {
     this._sfxSighting(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (this._music && !this._music.broken) this._music.stinger('sighting');
   }
 
   // -------------------------------------------------------------------------
@@ -2585,6 +2905,125 @@ export class AudioManager3D {
     this._perc(lg.gain, t, 0.5 * heavy, 0.003, 0.07);
     lo.connect(lg);
     lg.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A glove closing on a hold: a dry slap, a short grit burst (a chain: a metal clack; sinew: a wet squeeze). */
+  _sfxGrip(p) {
+    const kind = p.kind || 'masonry';
+    const v = this._begin('gripGrab', 1, 0.06, 0.35, this.busPlayer, 0.5, HAND_PAN[p.hand] || 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'sine', kind === 'chain' ? 190 : 130, t);
+    o.frequency.setTargetAtTime(70, t, 0.03);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.4, 0.002, 0.035);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', kind === 'chain' ? 3400 : kind === 'sinew' ? 700 : 2200, kind === 'chain' ? 5 : 1.1);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, kind === 'sinew' ? 0.22 : 0.35, 0.002, kind === 'chain' ? 0.06 : 0.025);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    if (kind === 'chain') this._tickTrain(v, t + 0.01, 3, 0.1, 0.25, 2600, 5200, 8, 0.01, 0.6);
+    this._commit(v);
+  }
+
+  /** Letting go of a hold / hopping off: a light scuff and a pebble or two. */
+  _sfxGripLet(strength, hand) {
+    const v = this._begin('gripLet', 1, 0.08, 0.3, this.busPlayer, 0.35 * strength, HAND_PAN[hand] || 0, 0.06, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 1500, 0.9);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.35, 0.01, 0.03, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    this._tickTrain(v, t + 0.03, 2, 0.12, 0.18, 1800, 3800, 4, 0.01, 0.7);
+    this._commit(v);
+  }
+
+  /** Moving over a hold: grit dragged across stone (wet: a smear; chain: links clinking; sinew: a creaking rub). */
+  _sfxScrape(p) {
+    const kind = p.kind || 'masonry';
+    const sp = U.clamp(num(p.speed, 1) / 3, 0.25, 1);
+    const v = this._begin('gripScrape', 1, 0.15, 0.4, this.busPlayer, 0.22 + 0.18 * sp, HAND_PAN[p.hand] || 0, 0.07, 0);
+    if (!v) return;
+    const t = v.t0;
+    if (kind === 'chain') {
+      this._tickTrain(v, t, 4, 0.22, 0.4, 2200, 5200, 9, 0.012, 0.5);
+      const b = this._vNoise(v, this._brown, t, 1);
+      const lp = this._vFilter(v, 'lowpass', 420, 0);
+      const bg = this._vGain(v, 0);
+      this._swell(bg.gain, t, 0.12, 0.03, 0.1, 0.08);
+      b.connect(lp);
+      lp.connect(bg);
+      bg.connect(v.out);
+    } else {
+      const wet = !!p.wet || kind === 'sinew';
+      const n = this._vNoise(v, wet ? this._pink : this._white, t, wet ? 0.9 : rand(0.9, 1.15));
+      const bp = this._vFilter(v, 'bandpass', wet ? 900 : 2400, wet ? 0.8 : 1.4);
+      bp.frequency.setValueAtTime(wet ? 900 : 2800, t);
+      bp.frequency.exponentialRampToValueAtTime(wet ? 600 : 1500, t + 0.3);
+      const g = this._vGain(v, 0);
+      this._swell(g.gain, t, 0.3 * (0.5 + sp), 0.04, 0.12, 0.08);
+      n.connect(bp);
+      bp.connect(g);
+      g.connect(v.out);
+      if (!wet) this._tickTrain(v, t + 0.02, 3, 0.25, 0.14, 1600, 3800, 3, 0.006, 0.6);
+    }
+    this._commit(v);
+  }
+
+  /** The hold straining: a low stressed creak under a held, shaky breath that quickens with the warning level. */
+  _sfxStrain(k) {
+    const v = this._begin('gripStrain', 2, 0.35, 0.9, this.busPlayer, 0.32 + 0.3 * k, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const o = this._vOsc(v, 'sawtooth', 70 + 40 * k, t);
+    o.frequency.linearRampToValueAtTime(52 + 30 * k, t + 0.6);
+    const b1 = this._vFilter(v, 'bandpass', 520, 8);
+    const cg = this._vGain(v, 0);
+    this._swell(cg.gain, t, 0.5, 0.08, 0.35, 0.12);
+    o.connect(b1);
+    b1.connect(cg);
+    cg.connect(v.out);
+    // a strained exhale through the teeth
+    const n = this._vNoise(v, this._pink, t + 0.05, 1);
+    const hp = this._vFilter(v, 'bandpass', 2600, 1.3);
+    const ng = this._vGain(v, 0);
+    this._swell(ng.gain, t + 0.05, 0.1 + 0.12 * k, 0.1, 0.25, 0.12);
+    n.connect(hp);
+    hp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The hands give out: a scrabble of grit and nails, a gasp, a short rush. */
+  _sfxSlip() {
+    const v = this._begin('gripSlip', 3, 0.3, 0.9, this.busPlayer, 0.7, 0, 0.14, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._tickTrain(v, t, 9, 0.45, 0.45, 1200, 4200, 3, 0.01, 0.4);
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 2800, 0.9);
+    bp.frequency.setValueAtTime(2800, t);
+    bp.frequency.exponentialRampToValueAtTime(700, t + 0.5);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.3, 0.03, 0.2, 0.15);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 110, t);
+    o.frequency.setTargetAtTime(60, t, 0.1);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t + 0.05, 0.3, 0.01, 0.1);
+    o.connect(og);
+    og.connect(v.out);
     this._commit(v);
   }
 
@@ -2748,6 +3187,7 @@ export class AudioManager3D {
     const v = this._begin('land', hard ? 2 : 1, 0.06, hard ? 1.1 : 0.75, this.busPlayer, 0.5 + 0.4 * s, 0, 0.06 + 0.12 * s, 0);
     if (!v) return;
     const t = v.t0;
+    if (this._mov && !this._mov.broken) this._mov.landColor(v, t, s, this._game);
     const o = this._vOsc(v, 'sine', 90, t);
     o.frequency.setTargetAtTime(42, t, 0.04);
     const og = this._vGain(v, 0);
@@ -3337,7 +3777,8 @@ export class AudioManager3D {
 
   /** Creature one-shot level: the panner does the distance loss when positioned (keep `floor`), else the 2D curve. */
   _cMul(sp, floor) {
-    return sp.ok ? this._floor('near', sp.d, floor) : Math.max(sp.gain, floor);
+    const occ = this._cs ? this._cs.levelMul : 1; // masonry between the crown and the head
+    return (sp.ok ? this._floor('near', sp.d, floor) : Math.max(sp.gain, floor)) * occ;
   }
 
   _cPos(sp) {
@@ -3351,9 +3792,9 @@ export class AudioManager3D {
     const inten = U.clamp(num(p.intensity, 0.6), 0.1, 1);
     const base = 2.2 * (0.4 + 0.6 * inten);
     if (base * sp.gain < 0.02) return; // inaudible: do not spend a voice
-    const v = this._begin('cstep', 0, 0.04, 0.4, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
+    const v = this._begin('cstep', 0, 0.04, 0.4 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     this._tickTrain(v, t, 2 + Math.floor(Math.random() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
     const o = this._vOsc(v, 'sine', rand(140, 210), t);
     o.frequency.setTargetAtTime(rand(85, 110), t, 0.03);
@@ -3379,9 +3820,9 @@ export class AudioManager3D {
   _sfxCall(x, y, z, inten, far, dHint) {
     const sp = this._spatial(x, y, z, dHint);
     const lvl = (0.3 + 0.7 * inten) * this._cMul(sp, far ? 0.1 : 0.06);
-    const v = this._begin('call', 2, 1.2, 4.2, this.busCreature, lvl, 0, Math.max(sp.send, 0.45), Math.min(sp.cutoff + 400, 7000), this._cPos(sp), 'near');
+    const v = this._begin('call', 2, 1.2, 4.2 + sp.delay, this.busCreature, lvl, 0, Math.max(sp.send, 0.45), Math.min(sp.cutoff + 400, 7000), this._cPos(sp), 'near');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     const f0 = rand(92, 128);
     const exc = this._vGain(v, 1);
     const o1 = this._vOsc(v, 'sawtooth', f0, t);
@@ -3434,9 +3875,45 @@ export class AudioManager3D {
   }
 
   /** Burst: a rising surge of grinding noise, a heavy push-off and a flurry of limb clicks. */
+  /**
+   * WP-SKITTER: the small red hunters reuse the creature bus and tick train, pitched up and run faster (a dry, quick scritch of
+   * claws and chitin, no low body): kind = step | burst | attack | bite | snap. Small voice budget (2 'cstep' voices at most).
+   */
+  _sfxSkitter(p, kind) {
+    if (this._countAlive('cstep') >= 5) return;
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const inten = U.clamp(num(p.intensity, kind === 'step' ? 0.5 : 0.9), 0.1, 1);
+    const base = (kind === 'step' ? 1.5 : 2.2) * (0.4 + 0.6 * inten);
+    if (base * sp.gain < 0.02) return;
+    const dur = kind === 'burst' ? 0.9 : kind === 'attack' ? 0.8 : 0.35;
+    const v = this._begin('cstep', 0, 0.04, dur + 0.3 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff + 900, this._cPos(sp), 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = kind === 'step' ? 4 + Math.floor(Math.random() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
+    this._tickTrain(v, t, n, dur * 0.8, 0.55, 3800, 7600, 9, 0.004, 0.35);
+    if (kind === 'burst' || kind === 'attack') {
+      const nz = this._vNoise(v, this._pink, t, 1);
+      const bp = this._vFilter(v, 'bandpass', 1400, 2.2);
+      bp.frequency.setValueAtTime(1400, t);
+      bp.frequency.exponentialRampToValueAtTime(5200, t + dur);
+      const g = this._vGain(v, 0);
+      this._swell(g.gain, t, 0.45, dur * 0.7, 0.05, 0.1);
+      nz.connect(bp);
+      bp.connect(g);
+      g.connect(v.out);
+    } else if (kind === 'bite' || kind === 'snap') {
+      const o = this._vOsc(v, 'triangle', 1500, t);
+      o.frequency.setTargetAtTime(520, t, 0.025);
+      const og = this._vGain(v, 0);
+      this._perc(og.gain, t, kind === 'bite' ? 0.5 : 0.28, 0.001, 0.07);
+      o.connect(og);
+      og.connect(v.out);
+    }
+    this._commit(v);
+  }
   _sfxBurst(x, y, z, dHint, hold, commit) {
     const sp = this._spatial(x, y, z, dHint);
-    const delay = hold > 0 ? hold : 0;
+    const delay = (hold > 0 ? hold : 0) + sp.delay;
     const lvl = this._cMul(sp, 0.05) * 1.4 * (commit ? 1.15 : 1);
     const v = this._begin('burst', 2, 0.5, 1.9 + delay, this.busCreature, lvl, 0, sp.send, sp.cutoff + 600, this._cPos(sp), 'near');
     if (!v) return;
@@ -3751,9 +4228,9 @@ export class AudioManager3D {
   _sfxSighting(x, y, z) {
     const sp = this._spatial(x, y, z, NaN);
     // Direction only (no distance loss): one resonant tone at the edge of hearing, from where it is.
-    const v = this._begin('sighting', 2, 2, 7, this.busCreature, 0.2, 0, 0.65, 1300, sp.ok ? sp : null, 'flat');
+    const v = this._begin('sighting', 2, 2, 7 + sp.delay, this.busCreature, 0.2, 0, 0.65, 1300, sp.ok ? sp : null, 'flat');
     if (!v) return;
-    const t = v.t0;
+    const t = v.t0 + sp.delay;
     const f = rand(68, 78);
     const g = this._vGain(v, 0);
     this._swell(g.gain, t, 0.5, 1.2, 0.4, 1.0);

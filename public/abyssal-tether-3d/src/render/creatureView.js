@@ -40,7 +40,7 @@ const LOD_SUFFIX = '_LOD1';
 
 const DEFAULTS = {
   fronds: 10,
-  pits: 5,
+  pits: 0, // the rig-ready kit's head carries its own seven bored pits; the loose Mason_Pit coals floated around the crown as orange motes
   lodDistance: 42, // camera → head distance beyond which the LOD1 mesh shows (when the kit has LOD1 parts)
   hideDistance: 260, // never drawn beyond this (fog has swallowed it long before)
   glowPierce: 0.35, // how much of the sensory glow survives the fog (glints in the dark)

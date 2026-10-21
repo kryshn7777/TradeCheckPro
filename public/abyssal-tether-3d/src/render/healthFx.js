@@ -59,6 +59,7 @@ const FRAG = /* glsl */ `
 uniform float uVig;     // 0..1 rim strength
 uniform float uHaze;    // 0..1 centre darkening / desaturation
 uniform float uFlash;   // 0..1 damage flash
+uniform float uGrip;    // 0..1 failing grip (WP-CLIMB): a cold, dark tunnel closes in
 uniform vec2 uRange;    // rim start / end radius in NDC
 varying vec2 vNdc;
 void main() {
@@ -76,6 +77,10 @@ void main() {
   float fa = uFlash * (0.30 + 0.70 * e);
   c = mix(c, vec3(0.62, 0.012, 0.012), fa / max(a + fa * (1.0 - a), 1e-4));
   a = a + fa * (1.0 - a);
+  // Failing grip: the edges of the view go dark and cold (not red: that is health).
+  float ga = clamp(e * uGrip * 0.7, 0.0, 0.7);
+  c = mix(c, vec3(0.012, 0.022, 0.03), ga / max(a + ga * (1.0 - a), 1e-4));
+  a = a + ga * (1.0 - a);
   // Interleaved-gradient dither: no banding in the dark gradient.
   float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   a = clamp(a + (n - 0.5) / 255.0, 0.0, 1.0);
@@ -122,6 +127,7 @@ export class HealthFx {
         uVig: { value: 0 },
         uHaze: { value: 0 },
         uFlash: { value: 0 },
+        uGrip: { value: 0 },
         uRange: { value: new THREE.Vector2(0.55, 1.35) },
       },
       transparent: true,
@@ -157,6 +163,7 @@ export class HealthFx {
     this._vig = 0;
     this._haze = 0;
     this._flash = 0;
+    this._grip = 0; // failing-grip tunnel strength as drawn (0..1)
     this._pulseAmp = 0;
     this._phase = 0; // heartbeat phase of the vignette pulse (cycles)
     this._xr = false;
@@ -194,6 +201,7 @@ export class HealthFx {
 
   /** A fresh start: full health look, calm trace. */
   reset() {
+    this._grip = 0;
     this._vig = 0;
     this._haze = 0;
     this._flash = 0;
@@ -268,17 +276,24 @@ export class HealthFx {
     // flash decays
     if (this._flash > 0) this._flash = reduced ? 0 : Math.max(0, this._flash - dts * 0.85);
 
+    // failing grip (sim/climb3d.js warn 0..1): the rim darkens as the strength runs out; a slow bounded breath unless reduced
+    const cl = g.climb;
+    const gTarget = inRun && cl && !dead ? cl.warn : 0;
+    this._grip += (gTarget - this._grip) * (1 - Math.exp(-dts * (gTarget > this._grip ? 5 : 2)));
+    const gripPulse = reduced ? 0 : 0.12 * Math.sin(this._ecgT * 6.5) * this._grip;
+
     const vig = U.clamp(this._vig * (1 + PULSE_ALPHA * pulse), 0, 1);
     this.strength = vig;
     const u = this.material.uniforms;
     u.uVig.value = vig;
     u.uHaze.value = this._haze;
     u.uFlash.value = this._flash;
+    u.uGrip.value = U.clamp(this._grip * (0.85 + gripPulse), 0, 1);
     // Lenses crop the corners of the eye buffer: start the rim a little further in when presenting.
     const r0 = (this._xr ? 0.5 : 0.6) - PULSE_RADIUS * pulse;
     const r1 = this._xr ? 1.22 : 1.4;
     u.uRange.value.set(r0, r1);
-    this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004;
+    this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004 || this._grip > 0.004;
 
     // ---- ECG ------------------------------------------------------------------------------------
     this._ecgAcc += dts;

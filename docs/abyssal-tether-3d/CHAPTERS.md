@@ -479,6 +479,7 @@ that matters for store reviews and for speedrunners who will spread it.
 **Creature beats:** dormant (S1–S3) → the sighting across the Vault (S4) → heard in the walls, then stalk (S5) → hunt
 (S6) → frenzy, **the Spiral**, two false lulls (S7) → escape and the slam (S8) → the coils, the unspooling, the crown at
 3 m (S9, scripted, non-lethal). Hearing model: `legacy` (today's stall/listen tuning, untouched).
+**Skitterlings (WP-SKITTER):** the Ossuary Column's small red kin, 0.45 scale and exactly 1.5x the Mason's speeds, hunt beside it in S6 (1), S7 (1 / 2 / 2) and S8 (1 / 1 / 2) on Normal / Nightmare / Abyss; a bite costs 26 / 32 / 40 % health (never an instant kill). Data: `creature.skitter` per section; `?skitter=off` disables.
 
 **Hazards:** lethal falls (≥ 10.7/8.9/7.8 m free fall), rebar (S5/S6), spikes (S2/S5, Abyss), blades (S8, Abyss),
 fragile rings (S3 NM/AB, S6), crumbling ledges (S2 NM, S3 AB, S5 NM, S6), the Mason (S5–S8).

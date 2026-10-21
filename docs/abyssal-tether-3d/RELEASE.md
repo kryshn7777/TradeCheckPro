@@ -626,6 +626,39 @@ decision, and its availability for PWAs is unconfirmed.
 
 ## 18. OWNER ACTIONS (only a human can do these)
 
+### 18.0 Free Chapter I release: the short list (updated 2026-10-20, state of WP-RELEASE)
+
+Code side is done and checked (immersive boot, PWA, saves, resilience, governor, dormant entitlement, store pack,
+`npm run build:at3d-release` -> `dist-at3d/web` + `dist-at3d/twa`; evidence in [pwa/WP_RELEASE.md](pwa/WP_RELEASE.md)).
+What only you can do, in order:
+
+1. **Fill the owner details** in `tools/abyssal-tether-3d/release/release.config.json` (`owner`: studio, contact email,
+   domain, postal address, effective date, host name, log retention; `bubblewrap`: package ID, Meta App ID, keystore
+   path/alias). The build warns until no `<placeholder>` is left; it fills the privacy / support pages and the TWA manifest.
+2. **Meta developer organization**, 2FA, **Developer Distribution Agreement**; financial account / tax only if you will
+   ever sell something (not needed for a free app with no add-ons, but needed before the paid unlock) (sections 4, 18.1).
+3. **Domain + host with header control** (Cloudflare Pages / Netlify / Vercel). Deploy `dist-at3d/web/` atomically
+   (it already contains `play/`, `privacy/`, `support/`, `_headers`); add `/.well-known/assetlinks.json` once you have the
+   keystore fingerprint (`twa/assetlinks.template.json`). GitHub Pages can only serve the beta copy (no origin root).
+4. **Signing keystore** + **package ID** + **Meta App ID/Secret**; build the APK with `docs/abyssal-tether-3d/store/BUBBLEWRAP.md`
+   (`dist-at3d/twa/` has the filled `twa-manifest.json` and `build-and-upload.sh`). Keep the keystore out of every repo.
+5. **Headset checks (cannot be done in the sandbox)**: first head-tracked frame under 4 s from the Library icon (cold and warm;
+   `AT3D.debug.platform().bootTimes`), 72 fps in the heaviest sections with OVR Metrics Tool (tune the governor
+   thresholds / level-0 foveation in `src/platform/governor.js`), offline relaunch with Wi-Fi off, Universal Menu /
+   controllers-down pause, forced context loss (`AT3D.debug.loseContext()`), second launch after an update.
+6. **Store page**: paste text from `docs/abyssal-tether-3d/store/LISTING.md` (title, short, long, tags, comfort **Intense**,
+   age group **Teens and Adults**, IARC draft answers, Data Use Checkup: no grants), upload `store/art/*` and
+   `store/screenshots/*` (replace with 2560 x 1440 Quest 3 captures if you can; re-run `npm run capture:at3d-store` and
+   `npm run art:at3d-store` after the last visual change), privacy URL (`https://<domain>/privacy/`), support URL.
+7. **Approve the deviations**: no comfort options beyond what Settings ships (Accessibility.8), two-handed design
+   (Accessibility.4) (vrc-checklist.md).
+8. **Upload ALPHA/BETA, test, press Submit for Review** (uploads never submit), submit at least two weeks before the
+   release date (section 17).
+9. **Paid unlock (later)**: create SKU `abyssal_tether_full_game`, Data Use Checkup IAP grant, private repo, only when
+   Chapters II-V exist (18.1 items 6, 11, 12).
+
+### 18.1 Full list (including the later paid unlock)
+
 Accounts, legal, money:
 1. Create/verify the Meta developer **organization**; enable 2-factor auth (§4).
 2. Sign the **Developer Distribution Agreement** as org admin; read its fee terms (§4).

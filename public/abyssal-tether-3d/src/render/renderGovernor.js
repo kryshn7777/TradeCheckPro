@@ -36,6 +36,11 @@ export class RenderGovernor {
     this.stats = { frames: 0, avgMs: 0, degrades: 0, recovers: 0 };
   }
 
+  /** The headset's frame rate changed (72 / 90): the frame-time target of the internal stepping follows. */
+  setTargetHz(hz) {
+    if (hz > 20 && hz < 240) this.target = 1000 / hz;
+  }
+
   /** The platform governor of the running Game3D, if any (and active). */
   get external() {
     const g = this.r3d._game && this.r3d._game.governor;

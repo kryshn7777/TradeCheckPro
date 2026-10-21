@@ -23,6 +23,7 @@
  */
 
 import * as THREE from 'three';
+import { DITHER_GLSL } from './vrShade.js';
 
 // -----------------------------------------------------------------------------
 // Shared FX lighting (lantern + 2 env lights + shaft key + creature glow + ambient)
@@ -470,6 +471,7 @@ varying float vAlpha;
 varying float vType;
 varying float vNear;
 ${FX_LIGHT_GLSL}
+${DITHER_GLSL}
 #include <common>
 #include <fog_pars_fragment>
 void main() {
@@ -546,7 +548,8 @@ void main() {
   #include <colorspace_fragment>
   gl_FragColor.rgb *= gl_FragColor.a;
   // dither: sub-LSB noise on the little this layer adds, so long dark gradients do not band in 8 bit
-  gl_FragColor.rgb += ( fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5 ) * ( 1.0 / 255.0 ) * min( 1.0, gl_FragColor.a * 20.0 );
+  // (interleaved gradient noise: stable, per-eye, triangular +-1 LSB; weighted by what this layer adds)
+  gl_FragColor.rgb += atDither3( gl_FragCoord.xy ) * ( 1.0 / 255.0 ) * min( 1.0, gl_FragColor.a * 20.0 );
 }
 `;
 

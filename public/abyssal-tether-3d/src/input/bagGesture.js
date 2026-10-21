@@ -69,9 +69,10 @@ export function updateBagGesture(g, S) {
   const rz = -sy;
   const fx = -sy;
   const fz = -cy;
-  g.px = S.hx + rx * BAG_ZONE.right + fx * BAG_ZONE.forward;
+  const side = S.left ? -1 : 1; // WP-UX: settings.dominantHand 'left' puts the bag on the left hip
+  g.px = S.hx + rx * BAG_ZONE.right * side + fx * BAG_ZONE.forward;
   g.py = S.hy - BAG_ZONE.down;
-  g.pz = S.hz + rz * BAG_ZONE.right + fz * BAG_ZONE.forward;
+  g.pz = S.hz + rz * BAG_ZONE.right * side + fz * BAG_ZONE.forward;
 
   // Which hand is in the zone (the nearer when both)?
   let zone = -1;

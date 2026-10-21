@@ -4,7 +4,7 @@
 // Run: node tools/abyssal-tether-3d/tests/release/test-governor.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
 
-const { QualityGovernor, GOVERNOR_STEPS, REDUCED_FLOOR } = await import(srcUrl('platform/governor.js'));
+const { QualityGovernor, GOVERNOR_STEPS, REDUCED_FLOOR, normalizeFrameRateMode, pickFrameRate } = await import(srcUrl('platform/governor.js'));
 const { EventBus } = await import(srcUrl('sim/config3d.js'));
 
 let pass = 0;
@@ -169,6 +169,59 @@ function run(g, gov, seconds, dt, frame) {
   const n = calls.length;
   gov.setLevel(0, 'test');
   ok(calls.length === n, 'unsubscribe works');
+}
+
+// WP-GFX-PARITY frame rate option: '72' (default) | '90' | 'auto', pure helpers + the governor
+{
+  ok(normalizeFrameRateMode(undefined) === '72' && normalizeFrameRateMode(72) === '72' && normalizeFrameRateMode('x') === '72', 'frame rate mode defaults to 72');
+  ok(normalizeFrameRateMode(90) === '90' && normalizeFrameRateMode('90') === '90' && normalizeFrameRateMode('auto') === 'auto', 'frame rate mode accepts 90 / auto');
+  ok(pickFrameRate('72', [72, 90, 120]) === 72, 'mode 72 asks 72');
+  ok(pickFrameRate('90', [72, 90, 120]) === 90, 'mode 90 asks 90 when listed');
+  ok(pickFrameRate('90', [72, 120]) === 72, 'mode 90 falls back to 72 when 90 is not listed');
+  ok(pickFrameRate('auto', [72, 90]) === 90 && pickFrameRate('auto', [72, 90], true) === 72, 'auto asks 90, 72 after the fallback');
+  ok(pickFrameRate('90', [120]) === 0 && pickFrameRate('72', undefined) === 0, 'no listed rate of ours: nothing requested');
+  // default keeps 72
+  let f = fakeGame();
+  let gov = new QualityGovernor(f.game);
+  gov.onSessionStart(f.session);
+  ok(f.rates.length === 1 && f.rates[0] === 72 && gov.targetHz === 72, 'default setting requests 72 Hz');
+  // 90
+  f = fakeGame({ settings: { frameRate: '90' } });
+  gov = new QualityGovernor(f.game);
+  gov.onSessionStart(f.session);
+  ok(f.rates[0] === 90 && Math.abs(gov.target - 1 / 90) < 1e-9, "'90' requests 90 Hz and the frame-time target follows");
+  // a healthy 90 Hz headset is not degraded (the miss rule is relative to 90 Hz, not 72)
+  run(f.game, gov, 30, 1 / 90, f.frame);
+  ok(gov.level === 0 && gov.stats.degrades === 0, 'steady 90 fps is healthy at the 90 Hz target');
+  // 60 fps (16.7 ms) at a 90 Hz target is a sustained overrun: in '90' mode the picture steps down (the same frames are fine at 72 Hz: 13.9 ms budget x 1.3)
+  run(f.game, gov, 8, 1 / 60, f.frame);
+  ok(gov.level >= 1, "'90' mode degrades the picture when frames take 16.7 ms");
+  // auto: 90 first, then 72 (no picture step) on the first sustained overrun
+  f = fakeGame({ settings: { frameRate: 'auto' } });
+  gov = new QualityGovernor(f.game);
+  const events = [];
+  f.game.bus.on('quality:rate', (e) => events.push(e.hz));
+  gov.onSessionStart(f.session);
+  ok(f.rates[0] === 90, "'auto' starts at 90 Hz");
+  run(f.game, gov, 1.2, 1 / 90, f.frame);
+  run(f.game, gov, 3, 1 / 60, f.frame); // 16.7 ms frames: every frame misses an 11.1 ms budget
+  ok(f.rates.join() === '90,72', `'auto' falls back to 72 Hz on a sustained overrun (requests ${f.rates.join()})`);
+  ok(gov.level === 0 || gov.stats.degrades <= 1, 'the fallback comes before (or with at most one) picture step');
+  ok(Math.abs(gov.target - 1 / 72) < 1e-9 && events.includes(72), 'the target follows the fallback and bus quality:rate fires');
+  // the fallback sticks for the session; a new session tries 90 again
+  run(f.game, gov, 20, 1 / 72, f.frame);
+  ok(f.rates.join() === '90,72', 'no flapping back to 90 inside the session');
+  gov.onSessionEnd();
+  gov.onSessionStart(f.session);
+  ok(f.rates[f.rates.length - 1] === 90, 'a new session in auto tries 90 Hz again');
+  // changing the setting mid-session re-requests
+  f = fakeGame();
+  gov = new QualityGovernor(f.game);
+  gov.onSessionStart(f.session);
+  f.game.settings.frameRate = '90';
+  f.game.bus.emit('settings:changed', { settings: f.game.settings });
+  ok(f.rates.join() === '72,90' && gov.frameRateMode === '90', 'settings:changed re-requests the new rate');
+  ok(gov.report().frameRate.hz === 90, 'report() shows the frame rate');
 }
 // no allocation in sample(): the heap does not grow over 2M calls
 {

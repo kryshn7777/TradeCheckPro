@@ -107,6 +107,50 @@ export const CONFIG = {
     checkpointHeal: 1, // hp restored on reaching a new checkpoint (fraction of full)
   },
 
+  // Grip climbing (sim/climb3d.js): authored climb zones (level data `climb`), hand-delta locomotion in VR (hold GRIP with a
+  // hand inside reach of a zone: the hand is anchored there and moving it pulls the body the other way; let go and the pull
+  // velocity is kept = a throw), cling-and-climb on the desktop (hold F; W/S/A/D climb, Space hops off). Grip STAMINA (0..1)
+  // drains while hanging unsupported, faster while moving and on wet zones, refills on solid ground; empty = the hands slip.
+  climb: {
+    reachVR: 0.24, // m from the hand (palm) to a climb zone that can be gripped
+    reachDesk: 0.62, // m from the body centre (the wall is ~0.38 away) on the desktop
+    hoverReachVR: 0.36, // handhold highlight appears a little before the grab works
+    track: 90, // 1/s: stiffness of the pull (v = stretch x track); 90 -> the body is on the hand within ~2 physics steps
+    maxPull: 9, // m/s: cap of the pull velocity (a hand thrown at a wall cannot catapult the body, nor hurt it)
+    maxStretch: 0.7, // m: a gripped hand this far from its hold (the body is blocked) lets go
+    throwSmooth: 0.07, // s: low-pass of the pull velocity (what a release inherits)
+    throwGain: 1.12, // x the smoothed pull velocity at release
+    throwMax: 11, // m/s
+    gripOn: 0.62, // grip squeeze that grabs (hysteresis: let go below gripOff)
+    gripOff: 0.4,
+    // stamina (1 = full), per second
+    hangDrain: 0.03, // hanging by a hand in the air (~33 s from full)
+    moveDrain: 0.05, // extra while the body moves at moveRef m/s (climbing; VR: pulling)
+    moveRef: 1.4,
+    twoHand: 0.62, // x the drain with both hands on holds
+    wetMul: 1.7, // x on a wet zone
+    regenGround: 0.4, // standing on solid ground (a full refill in ~2.5 s)
+    regenAir: 0.05, // swinging on a rope / falling (a slow breath)
+    regenGrip: 0.12, // gripping while standing (resting on a ledge)
+    minStart: 0.08, // stamina needed to take a hold
+    resumeAt: 0.25, // after the hands slipped (empty), stamina needed before gripping again
+    slipLock: 0.8, // s after a slip before a hold can be taken
+    warnAt: 0.28, // below this stamina the hold strains (haptics, strain sound, vignette)
+    // desktop cling
+    deskUp: 1.5, // m/s climbing up
+    deskDown: 2.2,
+    deskSide: 1.2,
+    deskHold: 0.44, // m: body centre to the wall surface while clinging (radius + a hand's width)
+    deskSnap: 9, // 1/s: how fast the body settles to the hold distance
+    hopUp: 6.2, // Space while clinging (desktop) / A while gripping (VR)
+    hopOut: 2.6,
+    hopLock: 0.25, // s after a hop before the next hold
+    scrapePeriod: 0.3, // s between 'climb:scrape' events while moving over a zone
+    strainPeriod: 1.1, // s between 'climb:strain' events at the start of the warning (shortens to strainFast)
+    strainFast: 0.45,
+    moveSound: 0.3, // m/s of body speed that counts as moving for scrapes
+  },
+
   // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
   // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
   bag: {
@@ -147,6 +191,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
     health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
+    climb: { drainMul: 1 },
   },
   nightmare: {
     key: 'nightmare',
@@ -164,6 +209,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
     health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
+    climb: { drainMul: 1.1 },
   },
   abyss: {
     key: 'abyss',
@@ -181,6 +227,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
     health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
+    climb: { drainMul: 1.25 },
   },
   sandbox: {
     key: 'sandbox',
@@ -198,6 +245,7 @@ export const DIFFICULTY = {
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
     health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 1, wallScale: 1 },
+    climb: { drainMul: 0.5 },
   },
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;
@@ -217,7 +265,68 @@ export const SETTINGS_DEFAULTS = {
   heightCal: 0, // metres added in Seated mode, set by the calibration press (standEye − measured eye height)
   heightOffset: 0, // fine trim, ±VIEW.offsetMax in VIEW.offsetStep steps (VR and desktop)
   heightMeasured: 0, // eye height above the real floor at the last calibration press (0 = never), shown in the panel
+  // ---- WP-UX (ui/uxLogic.js documents every key; ranges in UX_LIMITS, validation in sanitizeUxSettings) ----
+  musicVolume: 0.8, // 0..1, times the master volume (audio/music3d.js reads it)
+  sfxVolume: 1.0, // 0..1, times the master volume (every non-music sound)
+  hapticStrength: 1.0, // 0.25..1.5 multiplier on every controller pulse (input haptic())
+  captions: false, // subtitle-style captions for the sounds that warn you (ui/captions.js)
+  colorSafe: false, // shape + word cues next to colour for health, grip, bag and warnings
+  textScale: 1.0, // 0.9..1.5: VR panels, notes and captions get physically larger; the desktop UI font grows
+  vignette: 0, // 0..1 comfort vignette strength while moving fast, swinging or turning (0 = off, the default)
+  turnMode: 'smooth', // 'smooth' | 'snap'
+  snapAngle: 45, // degrees per snap step: 30 | 45 | 60 | 90
+  qualityTier: 'auto', // 'auto' | 'low' | 'quest' | 'high' (render tier pin; auto = the governor and the device decide)
+  renderScale: 1.0, // 0.7..1.3: multiplier on the tier's XR framebuffer scale, read when a VR session starts
+  brightness: 1.0, // 0.6..1.6 exposure multiplier (calibration screen)
+  blackLevel: 0, // 0..1 lifts the darkest pixels by up to 6/255 (calibration screen)
+  brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
+  reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
+  tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
+  // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
+  frameRate: '72',
 };
+
+/** Limits and allowed values of the WP-UX settings (the single source for the UI, sanitizeUxSettings and the tests). */
+export const UX_LIMITS = {
+  volume: [0, 1],
+  musicVolume: [0, 1],
+  sfxVolume: [0, 1],
+  hapticStrength: [0.25, 1.5],
+  textScale: [0.9, 1.5],
+  vignette: [0, 1],
+  renderScale: [0.7, 1.3],
+  brightness: [0.6, 1.6],
+  blackLevel: [0, 1],
+  snapAngles: [30, 45, 60, 90],
+  turnModes: ['smooth', 'snap'],
+  qualityTiers: ['auto', 'low', 'quest', 'high'],
+  frameRates: ['72', '90', 'auto'],
+};
+
+/** Clamps / snaps the WP-UX keys of a settings object in place (after load, restore or apply). Returns the object. */
+export function sanitizeUxSettings(s) {
+  const D = SETTINGS_DEFAULTS;
+  const L = UX_LIMITS;
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  for (const k of ['volume', 'musicVolume', 'sfxVolume', 'hapticStrength', 'textScale', 'vignette', 'renderScale', 'brightness', 'blackLevel']) {
+    const [lo, hi] = L[k];
+    s[k] = Math.min(hi, Math.max(lo, num(s[k], D[k])));
+  }
+  if (L.turnModes.indexOf(s.turnMode) < 0) s.turnMode = D.turnMode;
+  if (L.qualityTiers.indexOf(s.qualityTier) < 0) s.qualityTier = D.qualityTier;
+  const a = num(s.snapAngle, D.snapAngle);
+  let best = L.snapAngles[0];
+  for (const c of L.snapAngles) if (Math.abs(c - a) < Math.abs(best - a)) best = c;
+  s.snapAngle = best;
+  s.captions = s.captions === true;
+  s.colorSafe = s.colorSafe === true;
+  s.brightnessChecked = s.brightnessChecked === true;
+  s.tutorialHints = s.tutorialHints !== false;
+  s.reducedEffects = s.reducedEffects === true;
+  s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
+  return s;
+}
 
 /**
  * Player height tuning. The collision sphere (CONFIG.player.radius) rests on the floor, so the ground under the
@@ -426,6 +535,7 @@ export const Storage = {
     }
     if (!DIFFICULTY[out.lastDifficulty]) out.lastDifficulty = 'normal';
     sanitizeHeightSettings(out);
+    sanitizeUxSettings(out);
     return out;
   },
   saveSettings: (s) => Storage.set('settings', s),

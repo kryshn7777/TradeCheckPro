@@ -240,9 +240,14 @@ export class BagFx {
     const charge = bag ? bag.lanternCharge : 1;
     const blink = bag && charge <= B.lanternLow ? (Math.floor(this._t * 2) & 1) : 0;
     const prog = ap && ap.active ? Math.min(1, ap.t / ap.dur) : 0;
+    // WP-CLIMB: the grip stamina row, shown while holding on or while the strength is coming back
+    const cl = idle ? null : this.game.climb;
+    const gs = cl ? cl.stamina : 1;
+    const showGrip = !!cl && (cl.holding || gs < 0.995);
+    const gBlink = showGrip && cl.warn > 0.25 ? Math.floor(this._t * 4) & 1 : 0;
     const key = idle
       ? 'idle'
-      : `${counts[0]}${counts[1]}${counts[2]}${counts[3]}|${sel}|${ap.active ? ap.kind + ':' + Math.round(prog * 64) : '-'}|${ef.active ? Math.ceil(ef.t * 10) : '-'}|${Math.round(charge * 200)}|${blink}|${this.game.state}`;
+      : `${counts[0]}${counts[1]}${counts[2]}${counts[3]}|${sel}|${ap.active ? ap.kind + ':' + Math.round(prog * 64) : '-'}|${ef.active ? Math.ceil(ef.t * 10) : '-'}|${Math.round(charge * 200)}|${blink}|${this.game.state}|${showGrip ? Math.round(gs * 100) + ':' + (cl.exhausted ? 1 : 0) + gBlink : '-'}`;
     if (key === this._key) return;
     this._key = key;
 
@@ -301,7 +306,7 @@ export class BagFx {
       ctx.fillRect(8, y + 6, (W - 16) * prog, 4);
       y = 0;
     }
-    if (ef && ef.active) {
+    if (ef && ef.active && !(showGrip && !y)) {
       const yy = y ? 106 : 124;
       ctx.textAlign = 'left';
       ctx.fillStyle = PHOS;
@@ -318,6 +323,19 @@ export class BagFx {
       ctx.font = `600 11px ${FONT}`;
       ctx.textAlign = 'left';
       ctx.fillText(bag && bag.total > 0 ? `${ITEM_NAMES[sel].toUpperCase()}` : 'BAG EMPTY', 6, 112);
+    }
+    if (showGrip) {
+      const col = cl.exhausted || gs <= CONFIG.climb.warnAt ? (gBlink ? RED : AMBER) : gs < 0.5 ? AMBER : PHOS;
+      ctx.textAlign = 'left';
+      ctx.font = `700 12px ${FONT}`;
+      ctx.fillStyle = col;
+      ctx.fillText(cl.exhausted ? 'GRIP SPENT' : cl.wet && cl.holding ? 'GRIP WET' : 'GRIP', 6, 124);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(78.5, 114.5, 128, 11);
+      ctx.fillRect(80, 116, Math.max(0, 125 * U.clamp(gs, 0, 1)), 8);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${Math.round(gs * 100)}%`, W - 6, 124);
     }
     // CRT scanlines + a dim frame, as on the ECG
     ctx.fillStyle = 'rgba(0,0,0,0.16)';

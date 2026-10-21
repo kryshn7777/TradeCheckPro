@@ -28,10 +28,15 @@ function hyp(x, y, z = 0) {
 
 
 const SEG = 32; // segments along the rope
-const RAD = 6; // sides
+const RAD = 8; // sides (8: a round silhouette at arm's length; 6 showed facets)
 const BASE_R = 0.0065; // metres at the hand
 const R_PER_M = 0.0013; // extra radius per metre from the head
 const HANDS = ['left', 'right'];
+// Twisted-strand look (VR polish): a 3-strand lay computed in the fragment shader from (cos, sin, length) of each ring vertex, so the
+// tube needs no UVs or texture. Relief is a bump of ~1.2 mm with a 3.6 cm lay length; fades out beyond a few metres (it would
+// shimmer below a pixel) and the roughness is raised a little: fibre, not plastic.
+const LAY_PER_M = 28;
+const STRAND_BUMP = 0.0012;
 const MISS_TIME = (CONFIG.rope && CONFIG.rope.missTime) || 0.24;
 const RAMP = (CONFIG.rope && CONFIG.rope.attachRamp) || 0.2;
 const SETTLE = RAMP + 0.12; // s after the bite the shape is still driven by the flight model (snap-taut + crack)
@@ -98,15 +103,44 @@ class RopeStrand {
     this.nrmAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', this.posAttr);
     geo.setAttribute('normal', this.nrmAttr);
+    this.lenAttr = new THREE.BufferAttribute(new Float32Array(verts * 3), 3); // (cos, sin) around the tube, metres along it
+    this.lenAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aRope', this.lenAttr);
     geo.setIndex(idx);
     this.color = new THREE.Color(hand === 'left' ? PALETTE.handLeft : PALETTE.handRight);
     this.mat = new THREE.MeshStandardMaterial({
       color: 0x5a554e,
-      roughness: 0.5,
-      metalness: 0.35,
+      roughness: 0.62,
+      metalness: 0.3,
       emissive: this.color,
       emissiveIntensity: 0.15,
     });
+    this.mat.dithering = true;
+    this.mat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec3 aRope;\nvarying vec3 vRope;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRope = aRope;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRope;')
+        .replace(
+          '#include <normal_fragment_maps>',
+          `#include <normal_fragment_maps>
+  {
+    // three strands twisted along the rope: a ridge per strand, a little fibre fuzz, bump-mapped from screen derivatives
+    float atP = 3.0 * atan( vRope.y, vRope.x ) * 0.159155 + vRope.z * ${LAY_PER_M.toFixed(1)};
+    float atH = sqrt( sin( 3.14159 * fract( atP ) ) ) * ( 0.88 + 0.12 * sin( vRope.z * 700.0 + atP * 5.0 ) );
+    atH *= ${STRAND_BUMP.toFixed(4)} * step( 0.5, dot( vRope.xy, vRope.xy ) ) * ( 1.0 - smoothstep( 1.5, 4.5, length( vViewPosition ) ) );
+    vec3 atQ0 = dFdx( - vViewPosition );
+    vec3 atQ1 = dFdy( - vViewPosition );
+    vec3 atR1 = cross( atQ1, normal );
+    vec3 atR0 = cross( normal, atQ0 );
+    float atDet = dot( atQ0, atR1 );
+    vec3 atGrad = sign( atDet ) * ( dFdx( atH ) * atR1 + dFdy( atH ) * atR0 );
+    normal = normalize( abs( atDet ) * normal - atGrad );
+  }`,
+        );
+    };
+    this.mat.customProgramCacheKey = () => 'at3dRopeStrands';
     this.mesh = new THREE.Mesh(geo, this.mat);
     this.mesh.name = `rope_${hand}`;
     this.mesh.frustumCulled = false;
@@ -134,7 +168,10 @@ class RopeStrand {
     const c = this.centre;
     const pos = this.posAttr.array;
     const nrm = this.nrmAttr.array;
+    const rp = this.lenAttr.array;
+    let run = 0;
     for (let i = 0; i <= SEG; i++) {
+      if (i > 0) run += hyp(c[i * 3] - c[i * 3 - 3], c[i * 3 + 1] - c[i * 3 - 2], c[i * 3 + 2] - c[i * 3 - 1]);
       const i0 = Math.max(0, i - 1);
       const i1 = Math.min(SEG, i + 1);
       _t.set(c[i1 * 3] - c[i0 * 3], c[i1 * 3 + 1] - c[i0 * 3 + 1], c[i1 * 3 + 2] - c[i0 * 3 + 2]);
@@ -163,10 +200,14 @@ class RopeStrand {
         nrm[k] = nx;
         nrm[k + 1] = ny;
         nrm[k + 2] = nz;
+        rp[k] = ca;
+        rp[k + 1] = sa;
+        rp[k + 2] = run;
       }
     }
     this.posAttr.needsUpdate = true;
     this.nrmAttr.needsUpdate = true;
+    this.lenAttr.needsUpdate = true;
   }
 
   /**

@@ -140,6 +140,11 @@ function dec(type, x, y, z, sx, sy, sz, yaw = 0, props) {
 function light(x, y, z, color, intensity, range, flicker = 0, extra) {
   lights.push(Object.assign({ x, y, z, color, intensity, range, flicker }, extra));
 }
+/** A lit work lamp and its warm pool in one call (art pass): the fixture at (x, y, z) facing yaw, the baked light 0.4 m in front of it. */
+function lampPool(x, y, z, yaw, intensity = 1, range = 12, flicker = 0.35, color = '#e8a458') {
+  dec('lamp', x, y, z, 0.4, 0.8, 0.4, yaw, { lit: true, flicker });
+  light(x - Math.sin(yaw) * 0.45, y, z - Math.cos(yaw) * 0.45, color, intensity, range, flicker);
+}
 
 /**
  * Four walls around the inner rectangle [x0,x1]×[z0,z1] from y0 (bottom) to
@@ -239,6 +244,12 @@ light(-9.6, 1.8, 6, '#e0a050', 0.9, 9, 0.35);
 dec('statue', -9, -1.8, -9.5, 2.2, 6.4, 2.2, PI);
 dec('lamp', -2, -3.2, -10.8, 0.4, 0.8, 0.4, PI, { lit: true, flicker: 0.2 });
 light(-2, -3.2, -10.4, '#e0a050', 0.7, 10, 0.2);
+// ART PASS S1: warm pool under the Threshold arch (statues lit from above), the cold Outer Dark pouring through the east window
+// onto the far wall, a lit well shaft that lures the eye toward the descent.
+lampPool(-8.4, 4.4, 9.5, 0, 1.1, 11, 0.3);
+lampPool(0.4, 4.4, 9.5, 0, 1.1, 11, 0.3);
+light(10, 19, 0, '#a8d8ea', 2.6, 42, 0);
+dec('shaft-light', 7, 14, -3, 4, 40, 4, 0, { color: '#7fb4c8' });
 
 // =============================================================================
 // S2 — THE LONG SWING (y −8 → −58) · "Momentum is a promise"
@@ -293,12 +304,18 @@ dec('pipe', -33.4, -26, 9, 0.8, 34, 0.8, 0);
 dec('glyphs', 10.9, -42, 0, 0.1, 1.5, 12, PI / 2);
 dec('girder', -19.25, -31, 0, 1.5, 1, 22, 0); // a snapped beam across the hall
 light(-33, -23.5, -9, '#e0a050', 1.0, 12, 0.6);
+// ART PASS S2: warm landing, cold west window behind the colossus (rim light), warm pools between the arches, a cold shaft from the well.
+light(-32.5, -17.5, 0, '#a8d0e0', 3.0, 48, 0);
+lampPool(10.6, -19.6, -6, PI / 2, 1.0, 12, 0.3);
+lampPool(-11.5, -26.4, -10.4, PI, 0.9, 13, 0.4);
+lampPool(-11.5, -26.4, 10.4, 0, 0.9, 13, 0.4);
+lampPool(-24, -24, 10.4, 0, 0.8, 12, 0.5);
+dec('shaft-light', 5.5, -21, 2, 4, 30, 4, 0, { color: '#7fb4c8' });
 
 // The Outer Dark beyond the S1 / S2 windows: nothing but fog, and far below,
 // rubble floors that end any fall through a window.
 S('outer-floor-e', 14, 64, -83, -80, -11, 50, 'wall', { tag: 'floor' });
 S('outer-floor-w', -87, -37, -103, -100, -11, 50, 'wall', { tag: 'floor' });
-light(7, -21, -6, '#6fa3b5', 0.5, 10, 0);
 
 // =============================================================================
 // S3 — BROKEN GALLERY (y −58 → −98) · "Every fall is a question"
@@ -351,7 +368,11 @@ dec('glyphs', -33.9, -88, -6, 0.1, 2, 10, -PI / 2);
 dec('pipe', 10.6, -80, -10.4, 0.8, 40, 0.8, 0);
 dec('arch', -12, -75, 10.6, 20, 14, 1.2, 0);
 dec('shaft-light', -16, -78, 0, 5, 40, 5, 0, { color: '#7c9a9c' });
-light(-16, -64, 0, '#7c9a9c', 0.6, 16, 0);
+light(-16, -62, 0, '#9cc8c8', 2.0, 32, 0);
+// ART PASS S3: warm landing, a lit beacon over the narrow last span, a pale-teal glow along the glyph band.
+lampPool(10.6, -65.6, 8, PI / 2, 1.0, 12, 0.3);
+lampPool(-33.6, -73.4, -2.5, -PI / 2, 1.3, 14, 0.5);
+light(-33.2, -88, -6, '#3fa090', 0.9, 14, 0);
 
 // =============================================================================
 // S4 — THE LISTENING VAULT (y −98 → −150) · "Something answered"
@@ -404,7 +425,13 @@ dec('machinery', 9, -108, -9, 3, 6, 3, 0);
 dec('glyphs', 10.9, -112, 4, 0.1, 1.5, 12, PI / 2);
 dec('lamp', 10.6, -98.4, 6, 0.4, 0.8, 0.4, PI / 2, { lit: true, flicker: 0.7 });
 light(10.4, -98.4, 6, '#e0a050', 0.8, 10, 0.7);
-light(-30, -150, -120, '#b8f0e0', 2.5, 90, 0, { far: true });
+light(-30, -150, -120, '#b8f0e0', 3.6, 140, 0, { far: true });
+// ART PASS S4: lit waypoints (catwalk end, shelf, plinth), mid-distance cold columns inside the Vault.
+lampPool(-16, -104.5, -23.4, 0, 1.3, 16, 0.4);
+lampPool(10.6, -117.6, -8, PI / 2, 1.0, 12, 0.4);
+lampPool(-16, -124.6, 10.4, 0, 1.0, 12, 0.4);
+dec('shaft-light', -50, -170, -60, 14, 220, 14, 0, { color: '#9fe0d0' });
+dec('shaft-light', 22, -170, -45, 10, 220, 10, 0, { color: '#8fd8e8' });
 
 // =============================================================================
 // S5 — THE GULLET STAIR (y −150 → −204) · "It has your scent"
@@ -463,6 +490,13 @@ dec('glyphs', -12, -165, -8.9, 10, 1.2, 0.1, 0);
 dec('cage', -7, -190, 6, 2, 3, 2, 0);
 dec('shaft-light', -12, -180, 0, 4, 50, 4, 0, { color: '#7a3b22' });
 light(-12, -160, 0, '#8a5a3c', 0.6, 14, 0.2);
+// ART PASS S5: cold light leaking down from the vault above, hot forge glow rising from the fork below, lamps on alternate ledges.
+light(-12, -152, 0, '#6fa3b5', 1.2, 24, 0);
+light(-12, -198, 0, '#d06a30', 2.6, 36, 0.15);
+lampPool(-20.6, -158.6, -6.5, -PI / 2, 1.0, 11, 0.5);
+lampPool(-3.4, -174.6, 6.5, PI / 2, 1.0, 11, 0.5);
+lampPool(-3.4, -182.6, -5, PI / 2, 1.0, 11, 0.5);
+lampPool(-20.6, -190.6, -6.5, -PI / 2, 1.0, 11, 0.5);
 
 // =============================================================================
 // S6 — THE TWO DESCENTS (y −204 → −284) · "Slow and certain, or quick and thin"
@@ -526,6 +560,17 @@ dec('machinery', -32, -215, 9, 3, 5, 3, 0);
 dec('ribs', 9.25, -268, 0, 1.5, 26, 18, PI / 2);
 light(-19.4, -207, -5.4, '#e0a050', 0.8, 10, 0.25);
 light(-4.6, -207, -5.4, '#9a4a2a', 0.8, 10, 0.6);
+// ART PASS S6: the fork is a two-colour choice: warm lamps down the long stair, cold teal down the throat with one rust-red warning lamp.
+lampPool(-33.6, -216, -6, -PI / 2, 1.0, 12, 0.3);
+lampPool(-33.6, -228, 6, -PI / 2, 1.0, 12, 0.3);
+lampPool(-33.6, -240, -6, -PI / 2, 1.0, 12, 0.3);
+lampPool(-33.6, -252, 6, -PI / 2, 1.0, 12, 0.3);
+lampPool(-33.6, -264, -6, -PI / 2, 1.0, 12, 0.3);
+light(4, -232, 0, '#5fb0b4', 1.7, 28, 0);
+light(4, -258, 0, '#5fb0b4', 1.7, 28, 0);
+light(4.5, -225, -4, '#c0442a', 1.1, 12, 0.5);
+dec('shaft-light', -24, -240, 0, 5, 60, 5, 0, { color: '#c88a3c' });
+dec('shaft-light', 2, -245, 0, 6, 70, 6, 0, { color: '#5fb0c0' });
 
 // =============================================================================
 // S7 — THE HOLLOW NAVE (y −284 → −420) · "Nothing to stand on"
@@ -588,7 +633,13 @@ dec('cage', 22, -340, -32, 3, 4, 3, 0);
 dec('chain', 22, -312, -32, 0.5, 52, 0.5, 0, { link: 0.9 });
 dec('plaque', -51.85, -352, 26, 0.15, 0.9, 3.6, -PI / 2, { text: 'IT WEARS OUR WORK.' });
 dec('shaft-light', 20, -350, -26, 8, 120, 8, 0, { color: '#b8f0e0' });
-light(-12, -414, 0, '#b8f0e0', 1.6, 60, 0, { far: true }); // cold glow under the spire's tip
+light(-12, -414, 0, '#b8f0e0', 2.4, 80, 0, { far: true }); // cold glow under the spire's tip
+// ART PASS S7: the spire is the lit landmark (cold, top to tip); the corner colossi hold warm lanterns far out.
+light(-12, -293, 0, '#b8f0e0', 1.5, 30, 0);
+light(-12, -350, 0, '#9fe0d0', 1.3, 44, 0);
+light(-40, -366, -28, '#e0a050', 1.8, 44, 0.2);
+light(16, -366, 28, '#e0a050', 1.8, 44, 0.2);
+dec('shaft-light', -30, -340, 20, 7, 100, 7, 0, { color: '#9fe0d0' });
 
 // =============================================================================
 // S8 — THE LAST THROAT (y −420 → −562) · "Down. Now."
@@ -641,6 +692,11 @@ dec('grate', -2, -552, 10.25, 8, 8, 0.5, 0);
 dec('shaft-light', -2, -500, 0, 8, 110, 8, 0, { color: '#e0a050' });
 light(-3, -551.5, 26, '#ffd9a0', 3.2, 40, 0, { still: true });
 light(-2, -520, 0, '#e0a050', 1.0, 40, 0.1);
+// ART PASS S8: the throat warms and brightens toward the Still Lamp; a cold last look back at the nave.
+light(-2, -455, 0, '#e0a050', 1.4, 42, 0.1);
+light(-2, -490, 0, '#e8a448', 1.8, 44, 0.1);
+light(-2, -540, 0, '#f0b868', 2.2, 44, 0.1);
+light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 
 // =============================================================================
 // SUPPLIES — candidate spots for the bag's consumables (sim/pickups3d.js)
@@ -737,10 +793,84 @@ sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'alcove');
 sup('sup-s8-09', 's8-step2-s', -2, 14);
 
 // =============================================================================
+// CLIMB ZONES (WP-CLIMB, sim/climb3d.js) — the surfaces the player can grab and climb
+//  Not every surface: short, authored courses of rough masonry, chains, sinew roots and ledge lips, placed where a climb is a
+//  RECOVERY (back up out of a pocket, off a shelf, to rope height) or an optional alternative to a lowering the route already
+//  gives, never a way round a swing or a drop (the route bot ignores them). Stamina keeps them honest: a dry course of 11-13 m
+//  is ~60-70 % of a full grip, a wet one (dripping stone) is limited to ~7.5 m. Each zone is a thin box just off the surface
+//  (`face` = the surface's coordinate along its normal `n`), marked in the world with chalky studs (render/climbView.js).
+//  verify.mjs checks that every zone hugs a solid, stays clear of hazards and keeps its height within the stamina budget.
+// =============================================================================
+const climb = [];
+const CT = 0.4; // thickness of a grip volume off its surface (m)
+/**
+ * Wall zone. side: 'w' = the wall is on the west, its inner face (x = c) looks +x; 'e' = face looks -x; 'n' = the wall is
+ * on the north, its face (z = c) looks +z; 's' = face looks -z. a0..a1 run along the wall (z for w/e, x for n/s).
+ */
+function CL(id, side, c, a0, a1, y0, y1, kind = 'masonry', extra) {
+  const o = { id, kind, minY: Math.min(y0, y1), maxY: Math.max(y0, y1), face: c };
+  if (side === 'w' || side === 'e') {
+    const sg = side === 'w' ? 1 : -1;
+    o.minX = sg > 0 ? c - 0.05 : c - CT;
+    o.maxX = sg > 0 ? c + CT : c + 0.05;
+    o.minZ = Math.min(a0, a1);
+    o.maxZ = Math.max(a0, a1);
+    o.n = { x: sg, y: 0, z: 0 };
+  } else {
+    const sg = side === 'n' ? 1 : -1;
+    o.minZ = sg > 0 ? c - 0.05 : c - CT;
+    o.maxZ = sg > 0 ? c + CT : c + 0.05;
+    o.minX = Math.min(a0, a1);
+    o.maxX = Math.max(a0, a1);
+    o.n = { x: 0, y: 0, z: sg };
+  }
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+/** Underside zone: hang under a slab whose bottom face is y = c. */
+function CLU(id, c, x0, x1, z0, z1, kind = 'ledge', extra) {
+  const o = { id, kind, minX: Math.min(x0, x1), maxX: Math.max(x0, x1), minZ: Math.min(z0, z1), maxZ: Math.max(z0, z1), minY: c - CT, maxY: c + 0.05, face: c, n: { x: 0, y: -1, z: 0 } };
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+/** A hanging chain at (x, z) from y0 to y1. */
+function CLC(id, x, z, y0, y1, extra) {
+  const o = { id, kind: 'chain', minX: x - 0.45, maxX: x + 0.45, minZ: z - 0.45, maxZ: z + 0.45, minY: Math.min(y0, y1), maxY: Math.max(y0, y1) };
+  climb.push(Object.assign(o, extra));
+  return o;
+}
+// S1 · The Threshold: back along the west wall from the sill to the lip (to retry the swing), and a practice wall by the spawn.
+CL('c-s1-west', 'w', -11, -8, 4.5, -4.9, -0.6);
+CL('c-s1-practice', 'w', -11, 6.6, 8.2, 0.3, 5.2);
+// S2 · The Long Swing: from the hall floor back up beside the landing (to try the swing again); out of the floor opening.
+CL('c-s2-east', 'e', 11, -0.3, 8.5, -34.6, -21.8);
+CL('c-s2-shaft', 'w', -34, 3.6, 7.8, -42.6, -34.6);
+// S3 · Broken Gallery: up the west wall from the shelf toward rope height (the anchors above come within range).
+CL('c-s3-shelf', 'w', -34, -9.5, -4.5, -95.4, -84);
+// S4 · The Listening Vault: the shelf wall, and the cradle's chain up toward the ring above it.
+CL('c-s4-shelf', 'e', 11, -9.5, -3.5, -118.6, -108);
+CLC('c-s4-chain', -31.5, -5, -111.6, -100.2);
+// S5 · The Gullet Stair: shaft wall courses from a ledge up to the one above (the predator hunts: a slow, exposed choice).
+CL('c-s5-east', 'e', -3, 0, 3, -183.6, -176.4, 'sinew', { wet: true });
+CL('c-s5-west', 'w', -21, -4, 2, -199.6, -193.4);
+// S6 · The Two Descents: the dividing wall between the long stair's shelves.
+CL('c-s6-div1', 'e', -13, -2.6, 3, -229.6, -218.6);
+CL('c-s6-div2', 'e', -13, -2.6, 3, -253.6, -242.6);
+// S7 · The Hollow Nave: hang under the landing, the spire's faces.
+CLU('c-s7-under', -291, -33, -15.6, -6, 6);
+CL('c-s7-spire-w', 'e', -15, -2.8, 2.8, -301.6, -294, 'sinew', { wet: true });
+CL('c-s7-spire-s', 'n', 3, -13, -10, -352, -342.5);
+// S8 · The Last Throat: the converging walls.
+CL('c-s8-w1', 'w', -22, -8, 8, -469.6, -460);
+CL('c-s8-w3', 'w', -12, -8, -1, -546.4, -535.2);
+
+// =============================================================================
 // Sections (themes, creature behaviour, hints, triggers)
 // =============================================================================
-const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0) => ({ mode, lethal, speedMul, burstRate, spawnOffsetY });
-const theme = (fog, light, accent, fogNear, fogFar, ambient) => ({ fog, light, accent, fogNear, fogFar, ambient });
+const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitter = null) => (skitter ? { mode, lethal, speedMul, burstRate, spawnOffsetY, skitter } : { mode, lethal, speedMul, burstRate, spawnOffsetY });
+// WP-SKITTER: the Ossuary Column's little kin (small, red, 1.5x faster hunters) per difficulty; deeper sections of Chapter I only.
+const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
+const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
 const sections = [
   {
@@ -748,7 +878,7 @@ const sections = [
     yTop: 40, yBottom: -8,
     shaft: { minX: -11, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: -4, y: 0.4, z: 8.5, yaw: 0 },
-    theme: theme('#252b30', '#6fa3b5', '#e0a050', 8, 90, 0.34),
+    theme: theme('#2f414d', '#7fb6cc', '#e8a458', 10, 110, 0.38, { rim: 0.8 }),
     creature: creature('dormant', false, 260),
     hints: [
       {
@@ -760,6 +890,11 @@ const sections = [
         y: -0.2, duration: 7,
         text: 'Push the LEFT STICK the way you want to swing. Let go near the top of the arc to fly.',
         desktop: 'W A S D pumps the swing. Release near the top of the arc to fly.',
+      },
+      {
+        y: -7.5, duration: 9,
+        text: 'Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.',
+        desktop: 'Studded stone can be climbed: stand close, hold F, then W A S D to climb. SPACE hops off.',
       },
       {
         y: -6.5, duration: 8,
@@ -774,7 +909,7 @@ const sections = [
     yTop: -8, yBottom: -58,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 8, y: -21.6, z: -6, yaw: PI / 2 },
-    theme: theme('#22282d', '#6fa3b5', '#e0a050', 7, 85, 0.3),
+    theme: theme('#293a49', '#7fb0c8', '#e8a458', 8, 100, 0.34, { rim: 0.75 }),
     creature: creature('dormant', false, 260),
     hints: [
       {
@@ -800,7 +935,7 @@ const sections = [
     yTop: -58, yBottom: -98,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 7, y: -65.6, z: 0, yaw: PI / 2 },
-    theme: theme('#23231f', '#7c9a9c', '#3f6b63', 6, 75, 0.27),
+    theme: theme('#25322f', '#86aeaa', '#4fa08e', 7, 90, 0.31, { rim: 0.7 }),
     creature: creature('dormant', false, 240),
     hints: [
       {
@@ -819,7 +954,7 @@ const sections = [
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
-    theme: theme('#1b2226', '#5b8c9b', '#b8f0e0', 8, 170, 0.25),
+    theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     creature: creature('sighting', false, 220),
     hints: [],
     triggers: [
@@ -837,7 +972,7 @@ const sections = [
     yTop: -150, yBottom: -204,
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
-    theme: theme('#211b19', '#8a5a3c', '#7a3b22', 4, 55, 0.2),
+    theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
     creature: creature('stalk', true, 130),
     hints: [
       {
@@ -869,8 +1004,8 @@ const sections = [
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
-    theme: theme('#1b1918', '#5a7d86', '#9a4a2a', 5, 65, 0.18),
-    creature: creature('hunt', true, 120),
+    theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
+    creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
     hints: [], // the fork is briefed in S5 (see its second hint)
     triggers: [
       { y: -209, name: 'call', data: { intensity: 0.9 } },
@@ -882,8 +1017,8 @@ const sections = [
     yTop: -284, yBottom: -420,
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
-    theme: theme('#141719', '#4f7f8c', '#b8f0e0', 8, 120, 0.16),
-    creature: creature('frenzy', true, 110),
+    theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
+    creature: creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)),
     hints: [
       {
         y: -287, duration: 7,
@@ -902,8 +1037,8 @@ const sections = [
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
-    theme: theme('#120f0e', '#d9b878', '#e0a050', 5, 70, 0.2),
-    creature: creature('escape', true, 100),
+    theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
+    creature: creature('escape', true, 100, 1, 0, skit(1, 1, 2)),
     hints: [
       {
         y: -548, duration: 5,
@@ -934,4 +1069,5 @@ export const LEVEL_DATA_3D = {
   decor,
   lights,
   supplies, // candidate spots for the bag's consumables (see SUPPLIES above)
+  climb, // grip zones (see CLIMB ZONES above)
 };

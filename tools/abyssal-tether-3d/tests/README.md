@@ -36,6 +36,18 @@ Every script takes `--root DIR` (or `AT3D_ROOT`) like the harness; by default it
 |---|---|
 | `unit.mjs` | The player bag (`src/sim/inventory3d.js`, `pickups3d.js`, `input/bagGesture.js`): apply times (first aid 5 s, bandage 1.5 s, adrenaline 0.6 s, battery 1 s) and heals, `Health3D.heal` (never above full, `health:heal`), cancel on damage / death / input / an inactive run, capacities (1/5/2/3) and refusals, the adrenaline x2 for 10 s and its `Physics3D` multiplier (run cap and acceleration x2, gravity and fall damage unchanged), the authored supply spots (6-10 per section), deterministic seeded picks (~1/3, rarity order, one first aid / adrenaline per section, fairness guarantees over 400 seeds), pickup radius 0.9 m, hand reach 0.35 m + grip, a full bag, checkpoint snapshots, the lantern charge (drain, never dark, low warning, battery) and the VR hip gesture. Pass / fail. |
 
+## climb/
+
+| Script | What it checks |
+|---|---|
+| `unit.mjs` | Grip climbing (`src/sim/climb3d.js`, level data `climb`, `Physics3D` hook): the authored zones (1-4 per section, <= 14 m tall, `level.climbNear`), the VR hand-delta pull (a hand pulled down 0.5 m lifts the body ~0.5 m, no drift while holding), the throw on release (the low-passed pull velocity x 1.12, capped at 11 m/s), alternating hands, the hand ripped from its hold (stretch), collision safety (pressed into a wall: no tunnelling, no damage), the yank vs grab decision, grip stamina (hang 0.03/s, x0.62 with two hands, x1.7 wet, more while moving, Abyss x1.25, slip at zero, lockout + resume level, refill on the ground in ~2.5 s), the strain warning level, the desktop cling (F, W/S climb, A/D traverse, stops at the zone top, Space hops off, F released drops), grabbing while tethered, determinism (bit-identical), a plain physics intent (the route bot) untouched, death lets go. Pass / fail. |
+
+## render/
+
+| File | |
+|---|---|
+| `test-scene-detail.mjs` | WP-SCENE-DETAIL (`src/render/sceneDetail*.js`, the render-only scene dressing): the procedural kit (finite, indexed, unit normals, uvs in the atlas, windings, <= 300 triangles per template), the seeded placement (same seed = same checksum, another seed differs, per-section caps and mixes, 5-6 vignettes off the anchors and checkpoints, nothing that dangles or glows near a grapple anchor), the quest budget (<= 3 draw calls, the worst window over a sweep of the whole descent inside every tier cap and <= 15 k stereo triangles, lower tier = subset of the higher), and the view on a fake game (re-pack inside its draw range, tiers, reducedEffects, shader patches land on this three.js build's anchors, dispose). |
+
 ## release/
 
 | File | |

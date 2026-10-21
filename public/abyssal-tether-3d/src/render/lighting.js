@@ -3,9 +3,19 @@
  *
  *  - reflections: one procedural environment probe (envProbe.js; PMREM, cross-faded between sections) shared by every
  *    standard material; metal reflects strongly, wet stone through the shared wetness uniform, dry stone weakly;
- *  - baked GI: the static bounce light + ambient occlusion + shaft-key visibility volume
+ *  - baked LIGHTMAPS (the Quest look): global illumination baked per face of every static solid box
+ *    (assets/lighting/lm_ch1_*, tools/abyssal-tether-3d/bake/bake_lightmaps.mjs): ambient occlusion, soft lamp and
+ *    shaft-key shadows, colour bleeding, bounces. One texture-array fetch per lightmapped fragment replaces the
+ *    hemisphere ambient, the shaft key, the volume and the two pooled lamps for the solids; the lantern still adds
+ *    its own light. Lamp design: the flickering flame lamps' DIRECT light sits in the lightmap's alpha channel and is
+ *    multiplied at run time by the section's lamp tint and the lamps' current flicker (RGB holds everything steady,
+ *    including the lamps' bounces), so the baked pools still breathe; the pooled PointLights (decay 2, the lantern is
+ *    1.6) are switched off on lightmapped surfaces in the shader, so nothing is counted twice. They stay on for decor,
+ *    creature, hands, body and pickups;
+ *  - baked GI volume: the static bounce light + ambient occlusion + shaft-key visibility volume
  *    (assets/lighting/gi_ch1.bin from tools/abyssal-tether-3d/bake/bake_gi.mjs), sampled once per fragment by the
- *    lit-surface shader patch (materials.js);
+ *    lit-surface shader patch (materials.js). Lights everything that is not lightmapped (decor, creature, hands, body,
+ *    pickups, crumbling ledges, variant-specific pieces) and the whole level in the `low` tier;
  *  - the wet film glint of the lantern (uniform-driven lobe in the same patch);
  *  - quality tiers `low | quest | high` (same names as fx.js: ?fx=, settings.fxQuality, settings.reducedEffects,
  *    XR → quest, otherwise high) that only change uniforms and distances at run time, so no program ever recompiles;
@@ -14,9 +24,11 @@
  *    intensity (the renderer also does it automatically for every unclaimed standard material in precompile()).
  *
  * Tier table (what a tier changes):
- *   low    reflections off (fetch branch-skipped), no baked GI sample, no wet glint, far detail ×0.55   (≈ stock cost)
- *   quest  reflections ×1 (probe 64 px, 2 fetches), baked GI (1 trilinear fetch), wet glint, far detail ×1
- *   high   reflections ×1.1 (probe 128 px), baked GI, wet glint, far detail ×1.35
+ *   low    reflections off (fetch branch-skipped), no baked GI sample, no wet glint, far detail ×0.55, no lightmaps when
+ *          pinned (?fx=low / setQualityTier('low')); reducedEffects and the governor's low step KEEP the lightmaps
+ *          (one fetch, no volume fetch: they cost no more than the volume they replace)                (≈ stock cost)
+ *   quest  reflections ×1 (probe 64 px, 2 fetches), lightmaps (1 array fetch) + volume for the rest, wet glint, far detail ×1
+ *   high   reflections ×1.1 (probe 128 px), lightmaps + volume, wet glint, far detail ×1.35
  * Governor steps (platform/governor.js level, or renderer.governor.update(frameMs) when no platform governor exists):
  *   level ≥ 2  wet glint off, far detail ×0.85      level ≥ 3  `low` tier (the platform governor also switches fx to low)
  */
@@ -25,15 +37,19 @@ import * as THREE from 'three';
 import { LOOK } from './materials.js';
 import { EnvProbe, DEFAULT_ENV_SPEC } from './envProbe.js';
 import { GI_HEADER_BYTES, levelGiHash, readHeader, undelta } from './giFormat.js';
+import { LM_INDEX_NAME, buildChartTable, levelLmHash, lmUndelta, readLmHeader, LM_HEADER_BYTES } from './lightmapFormat.js';
 import { RenderGovernor } from './renderGovernor.js';
 
 const TIER_ALIAS = { low: 'low', reduced: 'low', quest: 'quest', xr: 'quest', medium: 'quest', high: 'high', desktop: 'high' };
 export const QUALITY_TIERS = Object.freeze({
-  low: Object.freeze({ name: 'low', env: 0, envSize: 32, gi: false, coat: 0, detail: 0.55 }),
-  quest: Object.freeze({ name: 'quest', env: 1, envSize: 64, gi: true, coat: 1, detail: 1 }),
-  high: Object.freeze({ name: 'high', env: 1.1, envSize: 128, gi: true, coat: 1, detail: 1.35 }),
+  low: Object.freeze({ name: 'low', env: 0, envSize: 32, gi: false, lm: false, coat: 0, detail: 0.55 }),
+  quest: Object.freeze({ name: 'quest', env: 1, envSize: 64, gi: true, lm: true, coat: 1, detail: 1 }),
+  high: Object.freeze({ name: 'high', env: 1.1, envSize: 128, gi: true, lm: true, coat: 1, detail: 1.35 }),
 });
 export const GI_URL = new URL('../../assets/lighting/gi_ch1.bin', import.meta.url).href;
+export const LM_BASE_URL = new URL('../../assets/lighting/', import.meta.url).href;
+/** Lightmap grading defaults: exposure multiplies the baked irradiance, floor adds a little ambient everywhere (so the darkest corners stay readable). */
+export const LM_TUNE = { exposure: 1.5, floor: 0.012, lanternGain: 1.05, lanternFalloff: 0.38 };
 
 const FLAME = new THREE.Color(1.0, 0.56, 0.22);
 const _c = new THREE.Color();
@@ -79,7 +95,14 @@ export class Lighting {
     this.govLevel = 0;
     this.probe = null;
     this._pendingMaterials = new Set();
-    this.stats = { tier: this.tier, envSize: 0, envBuilds: 0, envBlits: 0, giLoaded: false, giBytes: 0, giMs: 0, giState: 'none', swept: 0 };
+    this.stats = {
+      tier: this.tier, envSize: 0, envBuilds: 0, envBlits: 0, giLoaded: false, giBytes: 0, giMs: 0, giState: 'none', swept: 0,
+      lmLoaded: false, lmState: 'none', lmBytes: 0, lmMs: 0, lmPages: 0, lmGpuBytes: 0, lmSolids: 0,
+    };
+    this.lmTune = Object.assign({}, LM_TUNE); // live grading knobs (exposure, ambient floor)
+    this._lm = null; // { tex, tab, index }
+    this._lmPromise = null;
+    this._lmForcedOff = false; // pinned / ?fx= low tier: the old volume only
     this._gi = null; // { tex, meta }
     this._giPromise = null;
     this._level = null;
@@ -87,6 +110,7 @@ export class Lighting {
     this._sweepAt = 0;
     this._lastObjects = -1;
     this._pumpAt = 0;
+    this._lmForcedOff = urlTier() === 'low';
     this._buildProbe(this.cfg.envSize);
     this._applyUniforms(true);
   }
@@ -134,6 +158,7 @@ export class Lighting {
       this.probe.ensure(0);
     }
     this._refreshGI();
+    this._refreshLM();
   }
 
   // ---------------------------------------------------------------------------
@@ -143,9 +168,11 @@ export class Lighting {
   loadGI(url = GI_URL) {
     if (this._giPromise) return this._giPromise;
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const lmLoad = this.loadLightmaps(); // the lightmaps load in parallel with the volume, behind the same loader promise
     this._giPromise = (async () => {
       if (typeof fetch !== 'function' || typeof DecompressionStream !== 'function') {
         this.stats.giState = 'unsupported';
+        await lmLoad;
         return false;
       }
       const res = await fetch(url);
@@ -180,6 +207,7 @@ export class Lighting {
       this._gi = { tex, meta };
       this.stats.giBytes = buf.length;
       this.stats.giMs = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+      await lmLoad;
       return this._refreshGI();
     })().catch((err) => {
       this.stats.giState = 'error';
@@ -187,6 +215,120 @@ export class Lighting {
       return false;
     });
     return this._giPromise;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Baked lightmaps
+  // ---------------------------------------------------------------------------
+  /**
+   * Loads the lightmap pages (once): index JSON, then every page (zlib + delta) into ONE RGBA8 texture array, plus the
+   * chart table the solids' vertex shader reads. Resolves true when usable for the current level.
+   */
+  loadLightmaps(base = LM_BASE_URL) {
+    if (this._lmPromise) return this._lmPromise;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    this._lmPromise = (async () => {
+      if (typeof fetch !== 'function' || typeof DecompressionStream !== 'function') {
+        this.stats.lmState = 'unsupported';
+        return false;
+      }
+      const res = await fetch(base + LM_INDEX_NAME);
+      if (!res || !res.ok) {
+        this.stats.lmState = 'missing';
+        return false;
+      }
+      const index = await res.json();
+      if (!index || index.format !== 'AT3DLM01' || !Array.isArray(index.pages) || !Array.isArray(index.rows)) {
+        this.stats.lmState = 'bad-index';
+        return false;
+      }
+      const [W, H] = index.page;
+      const layer = W * H * 4;
+      const data = new Uint8Array(layer * index.pages.length);
+      let bytes = 0;
+      await Promise.all(
+        index.pages.map(async (pg, i) => {
+          const r = await fetch(base + pg.file);
+          if (!r || !r.ok) throw new Error('lightmap page missing: ' + pg.file);
+          const buf = new Uint8Array(await r.arrayBuffer());
+          bytes += buf.length;
+          const h = readLmHeader(buf);
+          if (!h || h.w !== W || h.h !== H || h.pages !== 1) throw new Error('bad lightmap page ' + pg.file);
+          const stream = new Blob([buf.subarray(LM_HEADER_BYTES)]).stream().pipeThrough(new DecompressionStream('deflate'));
+          const raw = new Uint8Array(await new Response(stream).arrayBuffer());
+          if (raw.length !== h.rawLength) throw new Error('lightmap page length ' + pg.file);
+          lmUndelta(raw);
+          data.set(raw, i * layer);
+        }),
+      );
+      const tex = new THREE.DataArrayTexture(data, W, H, index.pages.length);
+      tex.format = THREE.RGBAFormat;
+      tex.type = THREE.UnsignedByteType;
+      tex.minFilter = THREE.LinearFilter; // no mips: texels are 0.15-0.7 m, magnified on screen up to ~60 m
+      tex.magFilter = THREE.LinearFilter;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.generateMipmaps = false;
+      tex.unpackAlignment = 4;
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.name = 'at3dLightmaps';
+      tex.needsUpdate = true;
+      const t = buildChartTable(index.rows);
+      const tab = new THREE.DataTexture(t.data, t.width, t.height, THREE.RGBAFormat, THREE.FloatType);
+      tab.minFilter = tab.magFilter = THREE.NearestFilter;
+      tab.generateMipmaps = false;
+      tab.colorSpace = THREE.NoColorSpace;
+      tab.name = 'at3dLightmapCharts';
+      tab.needsUpdate = true;
+      this._lm = { tex, tab, index };
+      this.stats.lmBytes = bytes;
+      this.stats.lmPages = index.pages.length;
+      this.stats.lmGpuBytes = data.length;
+      this.stats.lmMs = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+      return this._refreshLM();
+    })().catch((err) => {
+      this.stats.lmState = 'error';
+      if (typeof console !== 'undefined') console.warn('[AT3D] lightmaps unavailable, baked volume only', err);
+      return false;
+    });
+    return this._lmPromise;
+  }
+
+  _refreshLM() {
+    const g = this._lm;
+    if (!g) return false;
+    const lv = this._level;
+    if (lv && levelLmHash(lv, Object.keys(g.index.solids)) !== g.index.hash) {
+      this.stats.lmState = 'stale';
+      LOOK.uLM.value = null;
+      LOOK.uLMTab.value = null;
+      this.stats.lmLoaded = false;
+      if (this.r3d.levelView && this.r3d.levelView.setLightmapIndex) this.r3d.levelView.setLightmapIndex(null);
+      if (typeof console !== 'undefined') console.warn('[AT3D] lightmaps are stale for this level (re-run tools/abyssal-tether-3d/bake/bake_lightmaps.mjs)');
+      return false;
+    }
+    LOOK.uLM.value = g.tex;
+    LOOK.uLMTab.value = g.tab;
+    this.stats.lmSolids = this.r3d.levelView && this.r3d.levelView.setLightmapIndex ? this.r3d.levelView.setLightmapIndex(g.index) : 0;
+    this.stats.lmLoaded = true;
+    this.stats.lmState = 'ok';
+    try {
+      this.r3d.renderer.initTexture(g.tex); // upload on the menu, not on the first frame that samples it
+      this.r3d.renderer.initTexture(g.tab);
+    } catch {
+      /* uploads lazily */
+    }
+    this._applyUniforms(true);
+    return true;
+  }
+
+  /** Live grading of the lightmapped surfaces: exposure (× baked irradiance), floor (irradiance added everywhere), lanternGain / lanternFalloff (the lantern's extra d^-falloff on them). */
+  setLightmapTune(t) {
+    if (t && isFinite(t.exposure)) this.lmTune.exposure = t.exposure;
+    if (t && isFinite(t.floor)) this.lmTune.floor = t.floor;
+    if (t && isFinite(t.lanternGain)) this.lmTune.lanternGain = t.lanternGain;
+    if (t && isFinite(t.lanternFalloff)) this.lmTune.lanternFalloff = t.lanternFalloff;
+    this._applyUniforms(true);
+    return this.lmTune;
   }
 
   _refreshGI() {
@@ -258,6 +400,7 @@ export class Lighting {
     else gl = this.r3d.governor ? this.r3d.governor.level : 0;
     if (gl >= 3 && !this.pinned) n = 'low';
     this.govLevel = gl;
+    this._lmForcedOff = (this.pinned || urlTier()) === 'low';
     return n;
   }
 
@@ -270,6 +413,8 @@ export class Lighting {
       gi: c.gi,
       coat: gl >= 2 ? 0 : c.coat,
       detail: c.detail * (gl >= 2 ? 0.85 : 1),
+      // lightmaps are free: only a pinned / ?fx=low tier drops them (reducedEffects and the governor's low step keep them)
+      lm: c.lm || !this._lmForcedOff,
     };
   }
 
@@ -278,6 +423,10 @@ export class Lighting {
     const probeOk = !!this.probe;
     LOOK.uEnvK.value.x = probeOk ? e.env : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
+    LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
+    LOOK.uLMK.value.y = this.lmTune.exposure;
+    LOOK.uLMK.value.w = this.lmTune.floor;
+    LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);
   }
@@ -315,6 +464,21 @@ export class Lighting {
     _c.copy(FLAME).lerp(th.accent, 0.25);
     LOOK.uGIWarm.value.copy(_c).multiplyScalar(0.6 + 0.4 * lampFlick);
     LOOK.uGIK.value.z = 1.0;
+
+    // lightmaps: the flame lamps' baked direct light breathes with the pooled lamps' flicker, tinted by the section's lamps
+    if (this._lm) {
+      LOOK.uLMK.value.z = Math.min(1.06, lampFlick * 1.06);
+      const secs = this._lm.index.sections;
+      const a = secs[blend.ia] || secs[0];
+      const b = secs[blend.ib] || a;
+      if (a && b) {
+        LOOK.uLMLamp.value.setRGB(
+          a.lampTint[0] + (b.lampTint[0] - a.lampTint[0]) * blend.w,
+          a.lampTint[1] + (b.lampTint[1] - a.lampTint[1]) * blend.w,
+          a.lampTint[2] + (b.lampTint[2] - a.lampTint[2]) * blend.w,
+        );
+      }
+    }
 
     // the lantern, for the wet film glint
     const l = this.r3d.lantern;
@@ -379,14 +543,21 @@ export class Lighting {
   /** Applies the look to every unclaimed standard material in `root`; returns how many were changed. */
   sweep(root) {
     let n = 0;
+    const ls = this.r3d.lanternShadow; // every lit standard material also receives the lantern's shadow (once)
     root.traverse((o) => {
       const m = o.material;
       if (!m || o.isPoints || o.isSprite) return;
       if (Array.isArray(m)) {
-        for (const mm of m) if (this._unclaimed(mm)) (this.applyLookTo(mm), n++);
-      } else if (this._unclaimed(m)) {
-        this.applyLookTo(m);
-        n++;
+        for (const mm of m) {
+          if (this._unclaimed(mm)) (this.applyLookTo(mm), n++);
+          if (ls && ls.attach(mm)) n++;
+        }
+      } else {
+        if (this._unclaimed(m)) {
+          this.applyLookTo(m);
+          n++;
+        }
+        if (ls && ls.attach(m)) n++;
       }
     });
     this.stats.swept += n;
@@ -402,6 +573,12 @@ export class Lighting {
     this.probe = null;
     if (this._gi) this._gi.tex.dispose();
     LOOK.uGI.value = null;
+    if (this._lm) {
+      this._lm.tex.dispose();
+      this._lm.tab.dispose();
+    }
+    LOOK.uLM.value = null;
+    LOOK.uLMTab.value = null;
   }
 }
 

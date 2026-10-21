@@ -115,6 +115,9 @@ function integrity(ch, v) {
   // Supplies (WP-BAG): the candidate spots of the bag's consumables sit on ledges, never in solids, clear of anchors and of
   // the checkpoint -> route-anchor sight lines; 6-10 per section; the seeded picker is fair and deterministic.
   out.supplies = supplyChecks(L, P);
+  // Climb zones (WP-CLIMB): authored grip surfaces hug a solid (or a chain), keep clear of hazards, leave room for the climber,
+  // fit the stamina budget and stay in numbers that cannot be chained into a way round the routes.
+  out.climb = climbChecks(L, P);
   // Hazards / spikes never overlap a checkpoint or the goal.
   for (const h of L.hazards) {
     for (const s of L.sections) {
@@ -245,6 +248,88 @@ function supplyChecks(L, P) {
   out.distinctRuns = distinct.size;
   if (out.picks < sup.length * 0.25 || out.picks > sup.length * 0.5) P(`supply picker picks ${out.picks} of ${sup.length} spots on average (want about a third)`);
   if (distinct.size < 40) P(`supply picker gives only ${distinct.size} different layouts in 60 seeds`);
+  return out;
+}
+
+/** WP-CLIMB: validates level.climb (see level-data-3d.js CLIMB ZONES). Older checkouts without climb zones skip it. */
+function climbChecks(L, P) {
+  if (!Array.isArray(L.climb)) return null;
+  const K = CONFIG.climb;
+  const zones = L.climb;
+  const out = { zones: zones.length, perSection: L.sections.map(() => 0), maxHeight: 0, maxCost: 0 };
+  if (!zones.length) {
+    P('no climb zones authored (level.data.climb)');
+    return out;
+  }
+  const scratch = [];
+  const ids = new Set();
+  const inside = (x, y, z, pad = 0) => {
+    for (const o of L.querySolids(x - 0.02, y - 0.02, z - 0.02, x + 0.02, y + 0.02, z + 0.02, scratch)) {
+      if (x >= o.minX - pad && x <= o.maxX + pad && y >= o.minY - pad && y <= o.maxY + pad && z >= o.minZ - pad && z <= o.maxZ + pad) return true;
+    }
+    return false;
+  };
+  for (const z of zones) {
+    if (ids.has(z.id)) P(`climb zone ${z.id}: duplicate id`);
+    ids.add(z.id);
+    if (![z.minX, z.minY, z.minZ, z.maxX, z.maxY, z.maxZ].every(Number.isFinite)) {
+      P(`climb zone ${z.id}: non-finite box`);
+      continue;
+    }
+    if (z.section >= 0) out.perSection[z.section]++;
+    else P(`climb zone ${z.id}: outside every section`);
+    const h = z.maxY - z.minY;
+    if (h > out.maxHeight) out.maxHeight = h;
+    // stamina budget of climbing the whole zone at the nominal pace (one hand at a time, no rests) must leave a margin
+    const cost = (h / K.moveRef) * (K.hangDrain + K.moveDrain) * (z.wet ? K.wetMul : 1) * (DIFFICULTY.abyss.climb ? DIFFICULTY.abyss.climb.drainMul : 1);
+    if (cost > out.maxCost) out.maxCost = cost;
+    if (cost > 0.98) P(`climb zone ${z.id}: ${h.toFixed(1)} m ${z.wet ? 'wet ' : ''}costs ${(cost * 100).toFixed(0)} % of a full grip on Abyss (max 98 %)`);
+    if (h > 14) P(`climb zone ${z.id}: ${h.toFixed(1)} m tall (max 14: the climbs must not replace a drop)`);
+    // hugging a surface
+    if (z.kind === 'chain') {
+      const cx = (z.minX + z.maxX) / 2;
+      const cz = (z.minZ + z.maxZ) / 2;
+      const chain = L.decor.some((d) => d.type === 'chain' && Math.abs(d.x - cx) < 0.3 && Math.abs(d.z - cz) < 0.3 && d.y - d.sy / 2 <= z.maxY && d.y + d.sy / 2 >= z.minY);
+      if (!chain) P(`climb zone ${z.id}: no chain (decor) at its position`);
+    } else {
+      // sample the surface plane 5 x 5 (1 cm behind the face): at least 60 % must be solid; the climber's side must be free
+      let solid = 0;
+      let n = 0;
+      let blocked = 0;
+      const ax = z.ax;
+      const u0 = ax === 0 ? z.minZ : z.minX;
+      const u1 = ax === 0 ? z.maxZ : z.maxX;
+      const v0 = ax === 1 ? z.minZ : z.minY;
+      const v1 = ax === 1 ? z.maxZ : z.maxY;
+      const nrm = ax === 0 ? z.nx : ax === 1 ? z.ny : z.nz;
+      for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 5; j++) {
+          const a = u0 + ((u1 - u0) * (i + 0.5)) / 5;
+          const b = v0 + ((v1 - v0) * (j + 0.5)) / 5;
+          const px = ax === 0 ? z.face - nrm * 0.03 : a;
+          const py = ax === 1 ? z.face - nrm * 0.03 : b;
+          const pz = ax === 0 ? a : ax === 1 ? b : z.face - nrm * 0.03;
+          n++;
+          if (inside(px, py, pz)) solid++;
+          const qx = ax === 0 ? z.face + nrm * 0.5 : a;
+          const qy = ax === 1 ? z.face + nrm * 0.5 : b;
+          const qz = ax === 0 ? a : ax === 1 ? b : z.face + nrm * 0.5;
+          if (inside(qx, qy, qz)) blocked++;
+        }
+      }
+      if (solid < n * 0.6) P(`climb zone ${z.id}: only ${solid}/${n} of its face is backed by a solid (not mounted)`);
+      if (blocked > n * 0.25) P(`climb zone ${z.id}: ${blocked}/${n} samples 0.5 m in front of it are inside a solid (no room to climb)`);
+    }
+    for (const hz of L.hazards) {
+      const dx = Math.max(hz.minX - z.maxX, 0, z.minX - hz.maxX);
+      const dy = Math.max(hz.minY - z.maxY, 0, z.minY - hz.maxY);
+      const dz = Math.max(hz.minZ - z.maxZ, 0, z.minZ - hz.maxZ);
+      if (Math.hypot(dx, dy, dz) < 0.6) P(`climb zone ${z.id} is within 0.6 m of hazard ${hz.id}`);
+    }
+  }
+  out.perSection.forEach((n, i) => {
+    if (n < 1 || n > 4) P(`section ${L.sections[i].id} has ${n} climb zones (want 1-4)`);
+  });
   return out;
 }
 

@@ -10,7 +10,7 @@ We read every message.
 
 ## Quick answers
 
-**The game says it needs an internet connection.** The first launch downloads the game (about 16 MB). After that it
+**The game says it needs an internet connection.** The first launch downloads the game (about 65 MB). After that it
 plays offline. If it still asks, open it once while online and wait for the loading lantern to finish.
 
 **It froze or went black.** Press the Meta button and return to the game; it pauses and restores its graphics by

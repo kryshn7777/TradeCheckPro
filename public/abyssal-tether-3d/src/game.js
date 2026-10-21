@@ -22,10 +22,12 @@
  */
 
 import * as THREE from 'three';
-import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings } from './sim/config3d.js';
+import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings, sanitizeUxSettings } from './sim/config3d.js';
+import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
+import { ropeHaptic } from './audio/dsp3d.js';
 
 const C = CONFIG;
 
@@ -71,6 +73,7 @@ const MAX_DEBUG_STEP_FRAMES = 60 * 600;
 const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before building the level view
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
+const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -78,14 +81,18 @@ const MODULES = {
   level: './sim/level3d.js',
   levelData: './data/level-data-3d.js',
   creature: './sim/creature3d.js',
+  skitter: './sim/skitter3d.js',
   threat: './sim/threat3d.js',
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
+  masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
+  climbView: './render/climbView.js',
+  sceneDetail: './render/sceneDetail.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
@@ -137,6 +144,12 @@ function blankHand() {
   return { aim: null, pressed: false, held: false, released: false, yank: 0 };
 }
 
+/** The grip-climbing part of an intent (sim/climb3d.js): grab per hand, desktop climb axes + view axes, palm points. */
+function blankClimb() {
+  const hand = () => ({ ok: false, x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 });
+  return { vr: false, grab: { left: false, right: false }, fwd: 0, side: 0, rx: 1, rz: 0, fx: 0, fz: -1, hands: { left: hand(), right: hand() } };
+}
+
 /** An intent in the contract §2 shape with everything idle. */
 export function blankIntent() {
   return {
@@ -152,6 +165,7 @@ export function blankIntent() {
     backPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    climb: blankClimb(),
   };
 }
 
@@ -178,6 +192,15 @@ function scopedBus(bus) {
     offs.length = 0;
   };
   return scope;
+}
+
+/** `?skitter=off` disables the skitterlings (sim and views). */
+function skitterOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]skitter=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
 }
 
 /** Copy of a difficulty preset whose creature never enters play (menu attract). */
@@ -783,6 +806,8 @@ export class Game3D {
     this.deathCause = null;
     this.deathT = 0;
     this.creatureView = null;
+    this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
+    this.skitterViews = [];
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
@@ -790,6 +815,8 @@ export class Game3D {
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
+    this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
+    this.sceneDetail = null; // seeded render-only scene dressing: bones, rubble, chains, puddles, decals (render/sceneDetail.js)
     this.lastDeath = null; // info handed to the death panel
     this.lastVictory = null; // info handed to the victory panel
     this.textures = null; // resolved texture manifest handed to renderer.buildLevel
@@ -838,7 +865,7 @@ export class Game3D {
     this._override = null;
     this._ovIntent = blankIntent();
     this._blank = blankIntent();
-    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } } };
+    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } }, climb: blankClimb() };
     this._threatCtx = { player: null, creature: null, tethers: null, diff: null, level: null };
     this._uiFallback = false;
     this._uiMode = null;
@@ -1056,6 +1083,7 @@ export class Game3D {
         for (const k of Object.keys(SETTINGS_DEFAULTS)) if (k in saved && typeof saved[k] === typeof SETTINGS_DEFAULTS[k]) this.settings[k] = saved[k];
         if (!DIFFICULTY[this.settings.lastDifficulty]) this.settings.lastDifficulty = 'normal';
         sanitizeHeightSettings(this.settings);
+        sanitizeUxSettings(this.settings);
       } else if (!saved) svc.store.recordSettings(this.settings);
       return svc;
     } catch (err) {
@@ -1216,6 +1244,22 @@ export class Game3D {
         this.bagFx = null;
       }
     }
+    if (!this.climbView && M.climbView && typeof M.climbView.ClimbView === 'function') {
+      try {
+        this.climbView = new M.climbView.ClimbView(this);
+      } catch (err) {
+        this._fault('climbView', err);
+        this.climbView = null;
+      }
+    }
+    if (!this.sceneDetail && M.sceneDetail && typeof M.sceneDetail.SceneDetail === 'function') {
+      try {
+        this.sceneDetail = new M.sceneDetail.SceneDetail(this);
+      } catch (err) {
+        this._fault('sceneDetail', err);
+        this.sceneDetail = null;
+      }
+    }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
       try {
         this.pickupsView = new M.pickupsView.PickupsView(this);
@@ -1265,6 +1309,7 @@ export class Game3D {
             this.creatureView = cv;
             this._precompile(); // the creature's programs, while still on the menu
             this.bus.emit('assets:kit', { ok: true });
+            this._loadMasonRig(cv); // async: the rigged Mason replaces the kit view when it arrives (the kit view stays as the fallback)
             // Masonry / metal / flesh detail for the creature: the level's own texture
             // sets (same manifest key as buildLevel → the renderer's cached load), so
             // nothing is decoded or uploaded twice. Optional; degrades gracefully.
@@ -1295,6 +1340,89 @@ export class Game3D {
       this._fault('creatureKit', err);
       standIn();
     }
+  }
+
+  /**
+   * WP-CREATURE-RIG: loads the rigged, skinned Mason (mason_rig.glb) and swaps it in for the kit view. Any failure (module, asset,
+   * construction, a later update fault) leaves / returns the creature to the kit CreatureView. `?mason=kit` keeps the kit view.
+   */
+  _loadMasonRig(kitView) {
+    const M = this.modules;
+    if (!M.masonRigView || typeof M.masonRigView.MasonRigView !== 'function' || !M.gltf || typeof M.gltf.GLTFLoader !== 'function') return;
+    try {
+      if (typeof location !== 'undefined' && /[?&]mason=kit/.test(location.search || '')) return;
+    } catch {
+      /* no location */
+    }
+    try {
+      const loader = new M.gltf.GLTFLoader();
+      loader.load(
+        RIG_URL,
+        (gltf) => {
+          if (this.creatureView !== kitView) return;
+          try {
+            const clones = this._cloneSkitterScenes(gltf); // BEFORE the Mason takes the meshes out of the glTF scene
+            const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
+            rig.bindBus(this.bus);
+            this.skitterViews = this._buildSkitterViews(gltf, clones);
+            this._kitView = kitView;
+            if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
+            this.creatureView = rig;
+            this._precompile(); // both LOD programs + atlases, on the menu
+            this.bus.emit('assets:rig', { ok: true });
+          } catch (err) {
+            this._fault('masonRigView', err);
+          }
+        },
+        undefined,
+        (err) => this._fault('masonRigAsset', err),
+      );
+    } catch (err) {
+      this._fault('masonRigAsset', err);
+    }
+  }
+
+  /**
+   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded glTF (geometry, textures and clips are shared: no second
+   * download or GPU upload; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
+   */
+  _cloneSkitterScenes(gltf) {
+    const M = this.modules;
+    if (skitterOff() || !M.masonRigView || typeof M.masonRigView.cloneSkitterScenes !== 'function') return [];
+    try {
+      return M.masonRigView.cloneSkitterScenes(gltf, 2);
+    } catch (err) {
+      this._fault('skitterView', err);
+      return [];
+    }
+  }
+
+  _buildSkitterViews(gltf, clones) {
+    if (!clones || !clones.length) return [];
+    try {
+      return this.modules.masonRigView.makeSkitterViews(this.renderer.scene, gltf, clones);
+    } catch (err) {
+      this._fault('skitterView', err);
+      return [];
+    }
+  }
+
+  /** The rigged view failed at run time: back to the kit CreatureView. */
+  _fallbackToKit(rig) {
+    const kit = this._kitView;
+    if (this.creatureView !== rig) return;
+    try {
+      rig.dispose();
+    } catch {
+      /* already broken */
+    }
+    this._kitView = null;
+    for (const v of this.skitterViews) if (v.root.parent) v.root.parent.remove(v.root); // they share the rig's geometry: retire with it
+    this.skitterViews = [];
+    if (kit) {
+      if (kit.root && !kit.root.parent && this.renderer && this.renderer.scene) this.renderer.scene.add(kit.root);
+      this.creatureView = kit;
+    } else this.creatureView = null;
   }
 
   /** Compiles every shader program the scene can need (Renderer3D.precompile; rare calls only). */
@@ -1385,6 +1513,10 @@ export class Game3D {
       const k = U.clamp((finiteOr(e.speed, 0) - C.rope.joltFxSpeed) / 20, 0, 1);
       this._hapticTethered(0.35 + 0.5 * k, 60);
     });
+    // The clutch paying line out: the first bite of a slip (the continuous buzz is in _updateHaptics, same curve as the audio).
+    bus.on('rope:slip', (e) => {
+      if (this._inRun()) this._haptic(e.hand, ropeHaptic(finiteOr(e.speed, 1), finiteOr(e.load, 2), this.time), 90);
+    });
     bus.on('player:land', (e) => {
       if (!this._inRun()) return;
       const r = U.clamp(finiteOr(e.lethalRatio, 0.5), 0, 1);
@@ -1409,7 +1541,7 @@ export class Game3D {
         this.flash = Math.max(this.flash, 0.55);
         return;
       }
-      if (this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(0.7, 150);
+      if (this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(e && e.skit ? 0.4 : 0.7, e && e.skit ? 90 : 150);
     });
     bus.on('creature:strike', (e) => {
       if (!this._inRun() || (e && e.hit) || !this._creatureNear(e, 7)) return;
@@ -1418,7 +1550,7 @@ export class Game3D {
       this.flash = Math.max(this.flash, 0.18);
     });
     bus.on('creature:burst', (e) => {
-      if (this._inRun() && this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(0.35, 80);
+      if (this._inRun() && this._creatureNear(e, e && e.skit ? 14 : CREATURE_HAPTIC_RANGE)) this._hapticBoth(e && e.skit ? 0.2 : 0.35, 60);
     });
     bus.on('trigger:rumble', (e) => {
       if (!this._inRun()) return;
@@ -1431,6 +1563,31 @@ export class Game3D {
       if (!this._inRun()) return;
       const k = U.clamp(finiteOr(e.amount, 0.1) * 2.2, 0, 1);
       this._hapticBoth(0.3 + 0.7 * k, Math.round(70 + 260 * k));
+    });
+    // Grip climbing (sim/climb3d.js): a click as a hand takes a hold, a scrape of grit while moving over stone, a hard
+    // shudder as the strength runs out, the hands slipping.
+    bus.on('climb:grab', (e) => {
+      if (this._inRun()) this._haptic(e.hand, 0.5, 35);
+    });
+    bus.on('climb:release', (e) => {
+      if (!this._inRun() || !e) return;
+      if (e.reason === 'slip') this._hapticBoth(0.9, 240);
+      else if (e.reason !== 'death' && e.reason !== 'reset') this._haptic(e.hand, 0.16, 25);
+    });
+    bus.on('climb:scrape', (e) => {
+      if (this._inRun()) this._haptic(e.hand, U.clamp(0.08 + 0.1 * finiteOr(e.speed, 1), 0.08, 0.3), 45);
+    });
+    bus.on('climb:strain', (e) => {
+      if (!this._inRun()) return;
+      const k = U.clamp(finiteOr(e.level, 0.3), 0, 1);
+      const cl = this.climb;
+      for (let i = 0; i < 2; i++) if (!cl || cl.hands[HANDS[i]].gripping) this._haptic(HANDS[i], 0.22 + 0.55 * k, 90);
+    });
+    bus.on('climb:slip', () => {
+      if (this._inRun()) this.flash = Math.max(this.flash, 0.14);
+    });
+    bus.on('climb:hop', () => {
+      if (this._inRun()) this._hapticBoth(0.35, 50);
     });
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;
@@ -1724,6 +1881,7 @@ export class Game3D {
 
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
+    this._try('skitter', () => this.skitters && this.skitters.reset());
     this._face(finiteOr(sp.yaw, 0));
 
     this.settings.lastDifficulty = key;
@@ -1795,6 +1953,7 @@ export class Game3D {
     this.level.reset();
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset(); // a respawn restores full health
+    if (this.physics && this.physics.climb) this.physics.climb.reset(); // ... and a fresh grip
     this._restoreBag(); // ... and the bag as it was at the checkpoint (supplies taken since lie there again)
     this.tethers.reset();
     this._acc = 0;
@@ -1805,6 +1964,7 @@ export class Game3D {
     if (idx !== this.sectionIndex) this._enterSection(idx, 'respawn');
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
+    this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.flash = 0;
@@ -1878,6 +2038,7 @@ export class Game3D {
     const p = this.player;
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset();
+    if (this.physics && this.physics.climb) this.physics.climb.reset();
     this.tethers.reset();
     this._acc = 0;
     this._pendingJump = false;
@@ -1890,6 +2051,7 @@ export class Game3D {
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._enterSection(idx, 'warp');
     this._try('creature', () => this.creature.onRespawn(p));
+    this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
@@ -1924,6 +2086,7 @@ export class Game3D {
     if (s.dominantHand !== 'left' && s.dominantHand !== 'right') s.dominantHand = D.dominantHand;
     if (!DIFFICULTY[s.lastDifficulty]) s.lastDifficulty = 'normal';
     sanitizeHeightSettings(s);
+    sanitizeUxSettings(s);
     Storage.saveSettings(s);
     this._try('audio', () => this.audio.setVolume(s.volume));
     this._try('input', () => this.input.applySettings && this.input.applySettings(s));
@@ -1969,6 +2132,15 @@ export class Game3D {
       }
     }
     if (!this.creature) this.creature = nullCreature();
+    this.skitters = null;
+    const SkitterCls = M.skitter && M.skitter.SkitterGroup;
+    if (typeof SkitterCls === 'function' && !skitterOff()) {
+      try {
+        this.skitters = new SkitterCls(lvl, cdiff, this._runBus, { seed: (0x9e3779b1 * (this._runCount + 1)) >>> 0 });
+      } catch (err) {
+        this._fault('skitter', err);
+      }
+    }
     const tc = this._threatCtx;
     tc.player = this.player;
     tc.creature = this.creature;
@@ -2105,6 +2277,7 @@ export class Game3D {
     this.diff = DIFFICULTY[key];
     this._buildWorld(this.diff, true);
     this._try('creature', () => this.creature.reset(this.player));
+    this._try('skitter', () => this.skitters && this.skitters.reset());
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this.hidePlayer = true;
     this.time = 0;
@@ -2208,6 +2381,12 @@ export class Game3D {
       return;
     }
     if (this.governor && this.xrActive) this.governor.sample(realDt, frame);
+    const rgov = this.renderer && this.renderer.governor;
+    if (rgov) {
+      // render-side governor (lighting tiers): mirrors platform/governor.js in XR, steps by itself on desktop; 0 = not a measuring state
+      const st = this.state;
+      rgov.update(st === 'playing' || st === 'menu' || st === 'dead' ? realDt * 1000 : 0);
+    }
     try {
       if (this._frozen) {
         // Debug manual stepping: presentation keeps running (rig, views, UI, render),
@@ -2356,9 +2535,19 @@ export class Game3D {
 
   /** XR smooth turn (no snap, no vignette — user decision). Desktop: 0 (the mouse turns). */
   _applyTurn(dt, intent) {
-    const rate = finiteOr(intent.turnRate, 0);
-    if (rate === 0 || !this.renderer || this.state === 'dead') return;
-    this.renderer.rig.rotation.y += rate * dt;
+    let rate = finiteOr(intent.turnRate, 0);
+    let step = 0;
+    if (this.settings && this.settings.turnMode === 'snap') {
+      // WP-UX comfort option: the stick snaps the view by settings.snapAngle, once per push (smooth turning stays the default).
+      step = snapTurnStep(this._snapState || (this._snapState = makeSnapState()), rate, SNAP_FULL_RATE * U.clamp(finiteOr(this.settings.turnSpeed, 1), 0.25, 3), this.settings.snapAngle);
+      rate = 0;
+    }
+    if ((rate === 0 && step === 0) || !this.renderer || this.state === 'dead') return;
+    // Hanging by a hand in VR: the hold would be dragged round by a turn about the head. Turn your body instead.
+    const cl = this.physics ? this.physics.climb : null;
+    if (cl && cl.holding && cl.mode === 1) return;
+    this.renderer.rig.rotation.y += rate * dt + step;
+    if (step !== 0) this.bus.emit('comfort:snap', { dir: step > 0 ? 1 : -1 });
   }
 
   // ---- per-state updates -------------------------------------------------------
@@ -2417,6 +2606,7 @@ export class Game3D {
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
+    this._prepareClimb(intent, si);
     this._acc += dt;
     let steps = 0;
     while (this._acc >= PDT - 1e-9) {
@@ -2436,6 +2626,51 @@ export class Game3D {
     }
     if (this._acc < 0) this._acc = 0;
     this.alpha = p.alive ? U.clamp(this._acc / PDT, 0, 1) : 0;
+  }
+
+  /**
+   * Grip climbing (sim/climb3d.js), once per frame before the physics steps: copies the climb intent, turns each palm into a
+   * point relative to the body (the rig follows the body's render position, so hand - body does not depend on where the body
+   * moves this frame), lets the model probe which hands are in reach of a hold, and gives a grip that is a grab to the climb
+   * (no rope yank on it; on the desktop Space is the hop, not the reel).
+   */
+  _prepareClimb(intent, si) {
+    const climb = this.physics ? this.physics.climb : null;
+    const sc = si.climb;
+    const ic = intent.climb;
+    if (!climb || !sc) return;
+    const p = this.player;
+    if (!ic || this.state !== 'playing' || this.victoryT >= 0) {
+      sc.vr = false;
+      sc.grab.left = false;
+      sc.grab.right = false;
+      sc.hands.left.ok = false;
+      sc.hands.right.ok = false;
+      climb.probe(p, null);
+      return;
+    }
+    sc.vr = !!ic.vr && !!this.xrActive;
+    sc.fwd = finiteOr(ic.fwd, 0);
+    sc.side = finiteOr(ic.side, 0);
+    sc.rx = finiteOr(ic.rx, 1);
+    sc.rz = finiteOr(ic.rz, 0);
+    sc.fx = finiteOr(ic.fx, 0);
+    sc.fz = finiteOr(ic.fz, -1);
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      sc.grab[h] = !!ic.grab[h];
+      const a = ic.hands[h];
+      const b = sc.hands[h];
+      b.ok = !!a.ok && isFinite(a.x) && isFinite(a.y) && isFinite(a.z);
+      if (b.ok) {
+        b.rx = a.x - p.rx;
+        b.ry = a.y - p.ry;
+        b.rz = a.z - p.rz;
+      }
+    }
+    climb.probe(p, sc);
+    for (let k = 0; k < 2; k++) if (climb.suppressYank(HANDS[k])) si.hands[HANDS[k]].yank = 0;
+    if (climb.holding && !sc.vr) si.reel = 0;
   }
 
   _updateProgress(dt) {
@@ -2495,6 +2730,7 @@ export class Game3D {
     this._creatureSection = idx;
     const sec = this.level.sections[idx];
     this._try('creature', () => this.creature.setSection(idx, sec, this.player));
+    this._try('skitter', () => this.skitters && this.skitters.setSection(idx, this.player));
   }
 
   _queueHint(hint) {
@@ -2856,6 +3092,23 @@ export class Game3D {
     } catch (err) {
       this._fault('creature', err);
     }
+    this._updateSkitters(dt);
+  }
+
+  /** WP-SKITTER: the little hunters step with the Mason; a hit costs health (health3d), and only an empty bar kills. */
+  _updateSkitters(dt) {
+    const g = this.skitters;
+    if (!g || !g.enabled) return;
+    try {
+      g.update(dt, this.player, this._runClock);
+      const dmg = g.takeDamage();
+      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health) {
+        const h = this.physics.health;
+        if (h.damage(dmg, 'skitter', 0)) this.physics.kill(this.player, this.tethers, 'creature');
+      }
+    } catch (err) {
+      this._fault('skitter', err);
+    }
   }
 
   _updateThreat(dt) {
@@ -3000,7 +3253,8 @@ export class Game3D {
       if (!rope.attached) continue;
       const norm = U.clamp((rope.tension - 1.6 * g) / (3 * g), 0, 1);
       const stress = this.tethers.anchorStress(h);
-      const amt = Math.max(norm > 0 ? 0.06 + 0.45 * norm : 0, stress > 0 ? 0.1 + 0.55 * stress : 0);
+      const buzz = ropeHaptic(rope.slipSpeed, rope.tension / g, this.time); // friction buzz while the clutch pays out
+      const amt = Math.max(norm > 0 ? 0.06 + 0.45 * norm : 0, stress > 0 ? 0.1 + 0.55 * stress : 0, buzz);
       if (amt > 0) this._haptic(h, amt, Math.round(TENSION_HAPTIC_PERIOD * 1000) + 10);
     }
   }
@@ -3021,6 +3275,20 @@ export class Game3D {
         this._fault('bagFx', err);
       }
     }
+    if (this.climbView) {
+      try {
+        this.climbView.update(dt, this);
+      } catch (err) {
+        this._fault('climbView', err);
+      }
+    }
+    if (this.sceneDetail) {
+      try {
+        this.sceneDetail.update(dt, this);
+      } catch (err) {
+        this._fault('sceneDetail', err);
+      }
+    }
     if (this.pickupsView) {
       try {
         this.pickupsView.update(dt, this);
@@ -3035,6 +3303,21 @@ export class Game3D {
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);
+        if (cv.isRig) this._fallbackToKit(cv);
+      }
+    }
+    const sv = this.skitterViews;
+    if (sv.length && this.skitters) {
+      const cam = this.renderer && this.renderer.camera;
+      for (let i = 0; i < sv.length; i++) {
+        try {
+          sv[i].update(this.skitters.slots[i] || null, dt, cam);
+        } catch (err) {
+          this._fault('skitterView', err);
+          sv[i].root.visible = false;
+          sv.splice(i, 1); // a broken view retires; the sim keeps running (no visuals, only sound)
+          i--;
+        }
       }
     }
     // A HandsView the input manager created is updated by the input manager.
@@ -3189,6 +3472,11 @@ export class Game3D {
     return this.bag ? this.bag.lanternCharge : 1;
   }
 
+  /** The grip-climbing model (sim/climb3d.js: stamina, warn, holding, hands[h].gripping / hover) or null before a world exists. */
+  get climb() {
+    return this.physics ? this.physics.climb : null;
+  }
+
   /** The player's health model (sim/health3d.js: hp 0..1, low, dead, heartbeatRate) or null before a world exists. */
   get health() {
     return this.physics ? this.physics.health : null;
@@ -3298,6 +3586,17 @@ export class Game3D {
       dst.released = !!(src && src.released);
       dst.yank = src ? U.clamp(finiteOr(src.yank, 0), 0, 1) : 0;
     }
+    // Grip climbing (desktop style): { grab: true, fwd: -1..1, side: -1..1 } clings to a zone in reach (tests, QA)
+    const oc = o.climb || null;
+    const ic = it.climb;
+    ic.vr = false;
+    ic.grab.left = ic.grab.right = !!(oc && oc.grab);
+    ic.fwd = oc ? U.clamp(finiteOr(oc.fwd, 0), -1, 1) : 0;
+    ic.side = oc ? U.clamp(finiteOr(oc.side, 0), -1, 1) : 0;
+    ic.rx = 1;
+    ic.rz = 0;
+    ic.fx = 0;
+    ic.fz = -1;
     const ui = o.ui || {};
     it.ui.ray = ui.ray || null;
     it.ui.click = !!ui.click;
@@ -3467,6 +3766,7 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
@@ -3534,6 +3834,54 @@ export class Game3D {
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
       },
+      // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing
+      // them; play(clip) / pose(u, clip) force a clip (pose freezes it at normalised time u); stop() / clear() return to the sim; state() reads the rig.
+      creature: {
+        place: (o) => {
+          const d = this.creatureView && this.creatureView.debug;
+          return d ? d.place(Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {})) : null;
+        },
+        play: (name, o) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.play(String(name), o)),
+        pose: (u, name) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.pose(u, name)),
+        stop: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.stop()),
+        clear: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.clear()),
+        set: (patch) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.set(patch)),
+        state: () => (this.creatureView && this.creatureView.debug ? this.creatureView.debug.state() : { rig: false }),
+        // WP-SKITTER: placeSkitter({distance, height, yaw, up, state, count}) puts synthetic skitterlings near the player (screenshots);
+        // clearSkitter() returns them to the sim; spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
+        placeSkitter: (o) => {
+          const sv = this.skitterViews;
+          const out = [];
+          const n = Math.max(1, Math.min(sv.length, (o && o.count) | 0 || 1));
+          for (let i = 0; i < n; i++) {
+            const oo = Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {});
+            if (i) oo.yaw = (oo.yaw || 0) + 38 * i;
+            if (i) oo.distance = (oo.distance == null ? 4 : oo.distance) + 1.5 * i;
+            out.push(sv[i].debug.place(oo));
+          }
+          return out;
+        },
+        clearSkitter: () => {
+          for (const v of this.skitterViews) v.debug.clear();
+          return true;
+        },
+        spawnSkitter: (n) => {
+          const g = this.skitters;
+          return g && g.enabled ? g.force(Math.max(1, Math.min(2, n | 0 || 1)), this.player) : 0;
+        },
+        skitter: () => ({
+          enabled: !!(this.skitters && this.skitters.enabled),
+          off: skitterOff(),
+          views: this.skitterViews.length,
+          alive: this.skitters ? this.skitters.aliveCount : 0,
+          hits: this.skitters ? this.skitters.hits : 0,
+          slots: this.skitters
+            ? this.skitters.slots.map((c) => ({ on: c.on, state: c.state, distance: Math.round(c.distance), speed: +c.speed.toFixed(2), visible: c.body.visible }))
+            : [],
+          views_: this.skitterViews.map((v) => ({ visible: v.root.visible, lod: v._lod, calls: v.info.drawCalls, tris: v.info.triangles })),
+        }),
+        view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
+      },
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),
       setInput: (partial) => this.debugSetInput(partial),
@@ -3575,6 +3923,16 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
+      // WP-AUDIO: state() = voices, tier, music / ambience / rope / movement / creature-sync read-outs and the last events;
+      // emit(type, payload) fires a bus event (QA: 'creature:clip', 'rope:slip', ...); music(kind) plays a stinger.
+      audio: {
+        state: () => (this.audio && typeof this.audio.debugState === 'function' ? this.audio.debugState() : null),
+        emit: (type, payload) => {
+          this.bus.emit(String(type), payload && typeof payload === 'object' ? payload : {});
+          return true;
+        },
+        stinger: (kind) => !!(this.audio && this.audio._music && (this.audio._music.stinger(kind || 'sighting'), true)),
+      },
     };
   }
 }

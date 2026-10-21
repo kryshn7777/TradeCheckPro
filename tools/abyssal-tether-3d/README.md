@@ -11,6 +11,7 @@ Verification and tests (each folder has its own README):
 | [`e2e/`](e2e/README.md) | `npm run e2e:at3d` | the real game in headless Chromium: desktop input, the whole descent with the creature live, persistence, mock WebXR |
 | [`tests/`](tests/README.md) | `npm run test:at3d` | Node unit tests (input, VR UX fixes, creature) and the creature pacing / perf tools |
 | [`bake/`](bake/bake_gi.mjs) | `node tools/abyssal-tether-3d/bake/bake_gi.mjs` (`--verify` checks the asset against the level) | bakes the static lighting (AO, lamp/shaft bounce, key visibility) of Chapter I into `public/abyssal-tether-3d/assets/lighting/gi_ch1.bin` (~1 MB, ~10 s, deterministic, no Blender); re-run after any change to level solids or lights (the runtime ignores a stale bake and tests/render/test-lighting.mjs fails) |
+| [`bake/`](bake/bake_lightmaps.mjs) | `node tools/abyssal-tether-3d/bake/bake_lightmaps.mjs [--draft] [--budget N] [--workers N] [--preview DIR] [--verify]` | bakes Chapter I's LIGHTMAPS (Quest look): per-face charts on every visible static solid (0.1-0.6 m texels under a 5M-texel budget), direct light from the 13 lamps, light shafts and the shaft key (soft shadows), sky/abyss ambient with baked occlusion, 3 gather bounces with colour bleeding, denoise + dilation, sqrt RGBA8 pages (RGB static irradiance, A flame-lamp direct light that the runtime flickers) into `assets/lighting/lm_ch1_index.json` + `lm_ch1_p<N>.bin` (5 pages, 20 MB of GPU memory, ~3 MB on disk, ~1 min on 4 cores, deterministic for any worker count). Helpers: `lmCharts.mjs` (visibility, density, MaxRects packing), `lmTrace.mjs` (box-grid ray tracer), `lmTheme.mjs`, `lmWorker.mjs`. Re-run after any change to core solids, lamps, light shafts or shadow-casting decor (the runtime ignores a stale bake; tests/render/test-lighting.mjs fails). Format and design notes: `src/render/lightmapFormat.js`, `src/render/lighting.js` |
 
 ## The Mason (predator)
 
@@ -72,25 +73,117 @@ Options: `--seed N`, `--samples`, `--res WxH`, `--shots hero,approach,full,silho
 `--grain 0|1`, `--omit ropes,strands,arms,tongue,tether`, `--nobake` (export dry run). `pack_glb.py` runs automatically on
 the exported GLBs (it packs `_MASK` / `_OWNER`).
 
+## The Mason rig (WP-CREATURE-RIG)
+
+`build_mason_rig.py` (+ `mason_rig_core.py` kit reader / rest-pose assembly / bone table / skin arrays, `mason_rig_clips.py` the
+clips authored in code, `mason_rig_gltf.py` the glTF writer, `mason_rig_preview.py` the Blender contact sheets) turns the rig-ready
+kit (`mason_kit.glb` + the leg template of `mason_hero.glb`) into `public/abyssal-tether-3d/assets/models/mason_rig.glb` (7.9 MB):
+no remodelling, the kit's per-vertex `_OWNER` attribute IS the skin (rigid stone / iron / bone / teeth = 100 % on the owner bone, flesh
+= 2 influences by `_SPINE_S`), the kit's two atlases are copied byte for byte (re-encoded JPEG q68 to stay under 8 MB).
+
+```bash
+python3 tools/abyssal-tether-3d/build_mason_rig.py                    # numpy + Pillow only, ~6 s: GLB + wip/creature/mason_rig_report.json
+flock /tmp/at3d-blender.lock BLENDER_VENV/bin/python tools/abyssal-tether-3d/build_mason_rig.py --out /tmp/x --render tools/abyssal-tether-3d/previews
+        # imports the EXPORTED glb into Blender and renders 8 key poses per clip into previews/mason_rig_<clip>.png (<= 2 GB, ~8 min)
+node tools/abyssal-tether-3d/tests/render/test-mason-rig.mjs          # structure + clip graph + IK + head fit
+```
+
+| | |
+|---|---|
+| Skeleton | 170 bones: `root`, `neck`, `spine_00..17` (one per sim block, flat under the root: the view writes their world frames), `tail_0/1`, the crown subtree (`crown`, `portal_arch_0..2`, `portal_comb_L0/L1/R0/R1`, `portal_hinge_0/1`, `gullet_0..2`, `pit_0..6`, `arm_0..4_0/1`) and 36 legs: 10 lead (`leg_{L,R}NN_0..3` = IK'd to the sim's planted hooks) + 26 followers (`_0..2`, metachronal wave). `extras.mason` carries P0, the leg chain, leg table, pit directions, clip table (kind, loop, events, phase) |
+| Meshes | `Mason_LOD0` 56.7 k tris, `Mason_LOD1` 20.7 k, one shared skin, 4 primitives (= draw calls) each: MasonCrown, MasonBody (spine) + MasonBody (legs), MasonEmissive. Attributes: `_MASK` (flesh, wet, thickness, class) kept for the shader |
+| Clips (30 fps, in place, root never keyed) | base: `crown_idle` `listen` `notice_snap` `rear_windup` (0.75 s, scrubbed over the sim wind-up) `strike` (0.40 s, portal slams at 0.16 s = the sim strike time) `roar_display` `linger_breathe` `take_close`; additive: `recoil` `plate_shiver` `breathe_seams` `portal_snap` `flinch` `retreat_fold`; parametric (time = value x duration): `arms_flare` `pit_dilate` `portal_open`; template `leg_probe` (the view taps the lead legs procedurally on re-plant) |
+
+Runtime: `src/render/masonRigView.js` + `src/render/mason/*` (clip graph, pose maths, legs, head fit, material patch); `game.js` loads
+the GLB after the kit and swaps views, with the kit `CreatureView` as the automatic fallback (`?mason=kit` forces it).
+
 ## Textures
 
-Original tileable PBR sets (1024², seamless by construction) are baked by `build_textures.py` into
-`public/abyssal-tether-3d/assets/textures/` with a `manifest.json`:
+Seamless PBR sets (every map periodic by construction) live in `public/abyssal-tether-3d/assets/textures/` with a
+`manifest.json`. Two generations of tooling:
 
-| Set | Tile | Use |
+* `build_textures.py` - the original 1024 height-field sculpts (rock strata, ashlar masonry, corroded iron, far rock, sinew).
+* `build_textures_hq.py` - the Quest-tier pass (WP-GFX-QUEST-MAT): reuses those sculpts at **2048 px for the hero sets**
+  (`rock` 4 m, `masonry` 4 m, `metal` 2 m), adds an extra micro-relief octave, curvature wear (pale arrises, grime in cavities,
+  bare-metal edges), wet streaks, low-frequency colour / roughness variation inside the tile, and bakes the new 1024 sets
+  `rockFar` (16 m), `flesh` (1.5 m), a shared 512 `detail` micro-normal (0.5 m) and the **decal atlas**
+  `decals` (2048 x 1024 RGBA + normal, 4 x 2 cells: two crack types, grime run, moss, blood smear, burn, claw scratches,
+  impact). `rubble` and `roots` (`mat_rubble`, `mat_roots`) can be baked on demand (`--sets rubble`) but are not shipped: rubble piles
+  reuse the masonry set so they merge into the existing stone draw call.
+
+| Set | Size | Tile | Use |
+|---|---|---|---|
+| `rock` | 2048 | 4 m | shaft walls, ledges |
+| `masonry` | 2048 | 4 m | Lanternwright ashlar: built walls, bridges, the creature's stone |
+| `metal` | 2048 | 2 m | corroded iron: girders, bands, grates |
+| `rockFar` | 1024 | 16 m | distant structures |
+| `flesh` | 1024 | 1.5 m | the creature's exposed tissue |
+| `detail` | 512 | 0.5 m | micro normal layered over every macro normal (shader, near only) |
+| `decals` | 2048 x 1024 | atlas | instanced-free merged quad decals (one draw call) |
+
+Each set has `albedo` (sRGB), `normal` (OpenGL +Y) and `orm` (R = AO, G = roughness, B = metalness).
+
+Run (the Blender venv python has numpy + Pillow; ~2.8 GB for a 2048 set, one process at a time):
+
+```bash
+PY=.../blender-venv/bin/python
+$PY -I tools/abyssal-tether-3d/build_textures_hq.py --work <masters dir> --tilecheck <masters dir>/tilecheck      # all sets (~6 min)
+$PY -I tools/abyssal-tether-3d/build_textures_hq.py --work <masters dir> --sets rock,decals                        # some
+```
+
+It writes lossless masters to `--work` (PNG; `<set>_normal_h.png` has the **height field in the blue channel**, `_height16.png`
+is the same height at 16 bit) and into the game folder only: `manifest.json` (merged) and the **1024 px JPEG fallbacks**
+(`<set>_albedo/normal/orm.jpg`, the normal's blue = true z). `--tilecheck` writes 2x2 seam-check sheets.
+
+### GPU compression (KTX2 / Basis Universal)
+
+`encode_ktx2.mjs` turns the masters into `.ktx2` files (full mip chain, bottom-row-first so they match the TextureLoader
+orientation) and records them under `"ktx2"` in each manifest entry (`normalHeightInB: true` = blue channel carries height):
+
+| Map | Codec | Notes |
 |---|---|---|
-| `rock` | 4 m | shaft walls, ledges |
-| `masonry` | 4 m | Lanternwright ashlar: built walls, bridges, the creature's stone |
-| `metal` | 2 m | corroded iron: girders, bands, grates |
-| `rockFar` | 16 m | distant structures |
-| `flesh` | 1.5 m | the creature's exposed tissue (fibres run along v) |
+| hero albedo (rock, masonry, metal) | UASTC + zstd + RDO 1.5 | 2048; transcodes to ASTC 4x4 (8 bpp) on Quest |
+| normals (all sets, B = height) | UASTC + zstd + RDO 0.8 | 2048 for the hero sets, no "normal map mode" (blue is data) |
+| ORM | UASTC + zstd + RDO 0.8 | **1024 for the hero sets** (AO / roughness / metal are low frequency), 1024 for the rest |
+| other albedo | ETC1S (quality 150) | 1024, ~0.15 MB each |
+| decals albedo | ETC1S with alpha slice | 2048 x 1024 |
 
-Each set has `albedo` (sRGB), `normal` (OpenGL +Y, linear) and `orm` (R = AO, G = roughness, B = metalness, linear),
-so one ORM texture feeds three.js `aoMap`, `roughnessMap` and `metalnessMap`. Run with the Blender venv Python;
-`--preview` renders `previews/textures.png`, `--tilecheck <dir>` writes 2×2 seam-check sheets.
+```bash
+mkdir -p $TOOLS && cd $TOOLS && npm init -y && npm i ktx2-encoder@0.6.0 sharp      # once; not shipped
+KTX2_TOOLS=$TOOLS node tools/abyssal-tether-3d/encode_ktx2.mjs --work <masters dir> [--sets rock,masonry]
+```
+
+(single-threaded WASM: a 2048 UASTC map takes ~100 s; run one process per set side by side.) With Khronos' `toktx`:
+`toktx --t2 --encode uastc --uastc_quality 2 --zcmp 19 --genmipmap --assign_oetf srgb out.ktx2 in.png` (`linear` for
+normal / ORM; ETC1S: `--encode etc1s --clevel 4 --qlevel 160`; add `--lower_left_maps_to_s0t0` for the bottom-row-first order).
+
+Runtime: `src/render/materials.js` `loadTextureManifest()` uses the vendored `KTX2Loader` + Basis transcoder
+(`vendor/three/addons/libs/basis/`, licence notes in `vendor/three/README.txt`) when the manifest entry has `ktx2` and the
+browser has Worker + WebAssembly, otherwise (or if any map of a set fails) the JPEG fallbacks load, with no parallax
+(the packed height is only used with the KTX2 normals). Memory (ASTC, with mips): a 2048 map = 5.6 MB, a 1024 map = 1.4 MB.
 
 `fetch_polyhaven.py` swaps in CC0 Poly Haven sets (same manifest format) when the network allows
 (`polyhaven.com`, `api.polyhaven.com`, `dl.polyhaven.org`); `--list <category>` and `--set name=id` choose assets.
+
+### Geometry compression (EXT_meshopt_compression)
+
+`compress_glbs.mjs` post-processes the five big GLBs (`mason_rig`, `player_arms`, `mason_hero`, `mason_kit`, `player_body`): meshopt
+vertex-cache reorder, KHR_mesh_quantization of POSITION (14 bit; the two player GLBs keep float32 positions because
+`render/gearSurface.js` reads them in metres), NORMAL / TANGENT (10), TEXCOORD (12), WEIGHTS (8), then EXT_meshopt_compression on every
+buffer view (lossless codec, no decoder filters). The custom attributes `_SPINE_S`, `_PART`, `_MASK`, `_OWNER`, JOINTS and COLOR are
+never quantized. 26.9 MB -> 18.5 MB (images are untouched). Re-run it after every Blender re-export (the build scripts write
+uncompressed GLBs; already-compressed files are skipped):
+
+```bash
+mkdir -p $TOOLS && cd $TOOLS && npm init -y && npm i meshoptimizer@0.22.0 @gltf-transform/core @gltf-transform/extensions @gltf-transform/functions   # once; not shipped
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs [--only mason_rig,player_arms] [--dir D --out D2] [--force]
+npm run at3d:sw        # precache list + hashes
+```
+
+Runtime: `src/render/glbLoad.js` (`createGLTFLoader` / `loadGLB`) attaches the vendored `MeshoptDecoder`
+(`vendor/three/addons/libs/meshopt_decoder.module.js`); the vendored `GLTFLoader` also defaults to it, so loaders created in game.js read the
+same files. `tests/render/test-glb-meshopt.mjs` decodes every accessor with that decoder, checks the custom attributes and loads each file
+through three's GLTFLoader.
 
 ## Player arms + tether launchers
 
@@ -152,3 +245,19 @@ The character faces glTF −Z with the origin on the floor between the feet; eye
 is closed by a scarf roll. Bones: `Root, Pelvis, Spine1, Spine2, Neck, Pack, Clavicle_L/R, UpperArm_L/R, Forearm_L/R` (the
 forearm is a 10 cm stub that slides into the arms' sleeve opening), `Thigh_L/R, Shin_L/R, Foot_L/R, Toe_L/R, Pouch_L/R`.
 Clips (30 fps): `Idle_Stand` 3 s, `Run` 1 s (matches ~3.2 m/s), `Hang_Swing` 2 s, `Fall` 1.5 s, `Land` 0.6 s (once).
+
+## Environment kit (`build_env_kit.py`) and the VR hero props
+
+`build_env_kit.py` (Blender or the `bpy` module, procedural, deterministic, ~2 s without `--render`) writes
+`public/abyssal-tether-3d/assets/models/env/ch1_env_kit.glb` (413 KB): modular dressing parts, one mesh each, no UVs (LevelView projects the
+shared baked sets in metres), vertex AO in `COLOR_0`, materials named `stone | metal | flesh`. The part table and pivot conventions are
+in the script's docstring. WP-GFX-VR-POLISH added three hero parts the eye can linger on from a ledge at 1:1 scale: `ch1_env_geartrain`
+(three meshing cogs, bearing blocks, straps, rack bar, chain; ~2.1 k tris), `ch1_env_corbel_hero` (carved corbel head with a dead lantern;
+~0.9 k) and `ch1_env_arch_fragment` (crumbling pointed-arch relief with fallen stones; ~0.3 k). LevelView places them in the existing bays
+(`_icon`: gear trains replace every other big gear, arch fragments every third saint; the corbel table: every fourth plain corbel on
+ledges, at most 6 per section), through the same stone / metal decor lists, so no extra draw call. `--focus a,b --render` renders only the
+named parts. Quick part check without the Cycles preview: import the GLB into Blender and render each part with a sun lamp.
+
+```bash
+flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d/build_env_kit.py [--out DIR]
+```

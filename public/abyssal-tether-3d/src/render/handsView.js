@@ -56,6 +56,7 @@ import {
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../sim/config3d.js';
 import { GEAR_TUNING, GEAR_URL, HandGear, loadGearGLTF, readPoses } from './handsGear.js';
+import { getGlassMaterial, patchGearSurface } from './gearSurface.js';
 
 const HANDS = ['left', 'right'];
 
@@ -83,7 +84,11 @@ export const HANDS_TUNING = {
   gearLight: 0.2, // × direct light on the gear (the lantern sits a few cm from the hands)
   gearEnv: 1.2, // image-based light on the metal (a dim lit-room reflection), × the scene's ambient
   gearGlowIdle: 0.45, // emissive intensity of the pilot lamp / gauge phosphor
-  gripRest: 0.62, // resting-finger-on-the-grip-button reads as a half-closed hand
+  gripRest: 0.5, // a finger resting on the grip button (touched, not pressed) reads as a half-closed hand
+  gripRelaxed: 0.2, // controller held but no finger on grip / trigger / thumb sensors: the fingers hang half-way, not flat
+  thumbTouch: 0.5, // thumb on the stick / A / B (touched): curl target
+  thumbRest: 0.7, // thumb on the thumbrest
+  thumbPress: 0.9, // thumb pressing a button
   headScaleMax: 8, // loose grapple head enlarges with distance like the rope does (ropeView R_PER_M)
 };
 
@@ -104,6 +109,8 @@ const FX_COLOR = {
   left: [0.42, 1.0, 0.82],
   right: [1.0, 0.7, 0.3],
   ui: [0.85, 0.92, 1.0],
+  grip: [0.95, 0.93, 0.8], // handholds: chalk
+  gripOff: [1.0, 0.45, 0.3], // a hold in reach but no strength to take it
 };
 
 const ZERO_OFFSET = Object.freeze({ x: 0, y: 0, z: 0 });
@@ -589,8 +596,8 @@ export class HandsView {
     this._gearMats = null; // { left, right, lantern }
     this._heads = { left: null, right: null };
     this._pad = {
-      left: { squeeze: 0, trigger: 0, point: 0, cap: false },
-      right: { squeeze: 0, trigger: 0, point: 0, cap: false },
+      left: { squeeze: 0, trigger: 0, point: 0, thumb: 0, cap: false },
+      right: { squeeze: 0, trigger: 0, point: 0, thumb: 0, cap: false },
     };
     this._rig = {
       left: { paid: 0, hadRope: false, headOut: false, rewind: 0, speed: 0 },
@@ -770,7 +777,7 @@ export class HandsView {
     if (!baseMat) throw new Error('player_arms.glb has no mesh material');
     const poses = readPoses(gltf.animations);
     // One material per hand (the emissive tint differs), one for the lantern; textures are shared.
-    const makeMat = (hex) => {
+    const makeMat = (hex, wear = true) => {
       const m = baseMat.clone();
       m.side = FrontSide;
       m.transparent = true; // alpha stays 1: only so renderOrder places the hands after the VR UI (see HANDS_RENDER_ORDER_XR)
@@ -790,6 +797,8 @@ export class HandsView {
           );
       };
       m.customProgramCacheKey = () => 'at3d-gear-light';
+      // fingerprints / scratches / dust / grain, cloth sheen, skin response (gearSurface.js; not on the brass lantern)
+      if (wear) patchGearSurface(m);
       if (this._gearEnv) {
         m.envMap = this._gearEnv.texture;
         m.envMapIntensity = this.tuning.gearEnv;
@@ -806,7 +815,7 @@ export class HandsView {
         if (typeof console !== 'undefined') console.warn('[AT3D] gear environment map unavailable', err);
       }
     }
-    const mats = { left: makeMat(PAL.glowLeft), right: makeMat(PAL.glowRight), lantern: makeMat(PAL.lanternGlass) };
+    const mats = { left: makeMat(PAL.glowLeft), right: makeMat(PAL.glowRight), lantern: makeMat(PAL.lanternGlass, false) };
     // The wrist ECG screens: unlit, one material per hand (the GLB's placeholder trace until healthFx binds its texture).
     const ecgSrc = this._findMaterial(root, 'Arm_ECG_Screen');
     this._ecgPlaceholder = ecgSrc ? ecgSrc.emissiveMap || ecgSrc.map || null : null;
@@ -964,13 +973,22 @@ export class HandsView {
     }
   }
 
-  /** Per-hand analog inputs: XR gamepad (read-only) or the desktop intents. */
+  /**
+   * Per-hand analog inputs: XR gamepad (read-only) or the desktop intents.
+   * Quest Touch controllers (oculus-touch profiles, standard mapping) report analog value + capacitive `touched` for: [0] trigger,
+   * [1] grip (squeeze), [3] thumbstick, [4] A / X, [5] B / Y, [6] thumbrest. The fingers follow them:
+   *   index    trigger value, resting on it when only touched, lifted (pointing) when the other fingers hold the grip and the trigger is untouched
+   *   middle / ring / pinky   the grip value; a finger resting on the grip button half-closes them (gripRest); nothing touched = relaxed
+   *   thumb    lifted when no sensor is touched, part-curled on the stick / buttons, rests on the thumbrest, curled when a button is pressed
+   * HandGear.poseFingers smooths every finger separately.
+   */
   _readPad(hand, xr, st) {
     const P = this._pad[hand];
     const T = this.tuning;
     let squeeze = 0.85;
     let trigger = 0;
     let point = 0;
+    let thumb = 0.62;
     if (xr) {
       let gp = null;
       const sess = this.r3 && this.r3.renderer && this.r3.renderer.xr && this.r3.renderer.xr.getSession ? this.r3.renderer.xr.getSession() : null;
@@ -990,23 +1008,40 @@ export class HandsView {
         squeeze = bs ? Math.max(bs.value || 0, bs.pressed ? 1 : 0) : 0;
         const tTouch = !!(bt && bt.touched);
         const sTouch = !!(bs && bs.touched);
-        if (tTouch || sTouch) P.cap = true; // this controller senses resting fingers
+        const bStick = gp.buttons[3];
+        const bA = gp.buttons[4];
+        const bB = gp.buttons[5];
+        const bRest = gp.buttons[6];
+        const thumbOn = !!((bStick && (bStick.touched || bStick.pressed)) || (bA && (bA.touched || bA.pressed)) || (bB && (bB.touched || bB.pressed)));
+        const restOn = !!(bRest && bRest.touched);
+        const press = !!((bA && bA.pressed) || (bB && bB.pressed) || (bStick && bStick.pressed));
+        // capacitive sensing: the buttons carry a `touched` field (it stays false until a finger lies on it)
+        if (bt && 'touched' in bt) P.cap = true;
+        if (tTouch || sTouch || thumbOn || restOn) P.cap = true;
         if (P.cap) {
           if (sTouch) squeeze = Math.max(squeeze, T.gripRest);
+          else if (squeeze < 0.02) squeeze = T.gripRelaxed;
           if (!tTouch && trigger < 0.02 && squeeze > 0.5) point = 1; // index lifted off the trigger: pointing
+          thumb = press ? T.thumbPress : restOn ? T.thumbRest : thumbOn ? T.thumbTouch : 0;
+          thumb = Math.max(thumb, squeeze * 0.35); // a hard grip pulls the thumb in a little too
+        } else {
+          thumb = squeeze;
         }
       } else {
         squeeze = 0.7;
         trigger = st && st.held ? 1 : 0;
+        thumb = 0.6;
       }
     } else {
       const ih = this.input.intent && this.input.intent.hands ? this.input.intent.hands[hand] : null;
       trigger = (st && st.held) || (ih && ih.held) ? 1 : 0;
       squeeze = Math.max(0.82, ih ? ih.yank || 0 : 0);
+      thumb = 0.6 + 0.4 * (squeeze - 0.82);
     }
     P.squeeze = squeeze;
     P.trigger = trigger;
     P.point = point;
+    P.thumb = thumb;
     return P;
   }
 
@@ -1022,7 +1057,15 @@ export class HandsView {
     // The hook is a projectile now: it has left the muzzle from the shot until it bites (rope:fire already kicked the slide).
     const flying = !!(st && st.flying) && !attached && !!showHands;
     const pad = this._readPad(hand, xr, st);
-    G.poseFingers(dt, pad.squeeze, pad.trigger, pad.point);
+    // WP-CLIMB: a hand on a hold closes into a fist (the trigger finger too), whatever the controller says.
+    const cl = game ? game.climb : null;
+    if (cl && cl.hands[hand].gripping && showHands) {
+      pad.squeeze = 1;
+      pad.trigger = Math.max(pad.trigger, 0.85);
+      pad.point = 0;
+      pad.thumb = 1; // the thumb wraps over the fingers: a proper fist
+    }
+    G.poseFingers(dt, pad.squeeze, pad.trigger, pad.point, pad.thumb);
 
     // line state → mechanics
     const extend = st && typeof st.extend === 'number' ? Math.min(1, Math.max(0, st.extend)) : 1;
@@ -1166,12 +1209,14 @@ export class HandsView {
         };
         for (const h of HANDS) {
           gear[h].root.traverse(setOrder);
+          gear[h].glass.renderOrder = order + 1; // the gauge glass draws over the dial it covers
           if (this._heads[h]) this._heads[h].renderOrder = order;
         }
         this.lantern.traverse(setOrder);
       }
     }
     this._updateLanternParent(xr);
+    if (gear) this._updateGlass();
 
     // Head (current frame) for billboards.
     inp.headMatrix(this._head);
@@ -1188,12 +1233,21 @@ export class HandsView {
     const batch = this.batch;
     batch.begin();
     for (const h of HANDS) this._updateHand(h, step, game, tethers, playing, xr && showHands, showHands);
+    if (playing && showHands) this._updateHolds(game, xr);
     const uiPointer = this.showUIPointer || !game || !game.ui || !!game.ui.isNull;
     if (xr && inp.uiMode && uiPointer && this.visible) this._uiPointer();
     batch.end();
     // keep the batch in world space
     if (this.batch.mesh.parent && this.batch.mesh.parent !== this.scene && this.scene) this.scene.add(this.batch.mesh);
     this.batch.mesh.matrixWorld.identity();
+  }
+
+  /** The gauge glass reflects the haze of the section the hands are in (the shared glass material's sky colour). */
+  _updateGlass() {
+    const fog = this.scene && this.scene.fog;
+    if (!fog || !fog.color) return;
+    const u = getGlassMaterial().uniforms.uSky.value;
+    u.copy(fog.color).multiplyScalar(1.5);
   }
 
   _updateLanternParent(xr) {
@@ -1402,6 +1456,36 @@ export class HandsView {
       const hsz = Math.max(0.012, f.dotDist * this.tuning.wallDotAngular) * (f.hollow ? 1.6 : 1);
       const a = (f.hollow ? 0.28 : 0.42) * f.dot * (inp.xrActive ? 1 : 0.85);
       B.sprite(c, this._camR, this._camU, hsz, rgb, a, f.hollow ? SHAPE_HOLLOW : SHAPE_DOT);
+    }
+  }
+
+  /**
+   * WP-CLIMB: the handholds. A chalk ring on the nearest hold of each hand that is in reach (dim red when it is, but the
+   * strength is gone), a small dot where a hand is holding on. Sprites of the existing batch: no extra draw call.
+   * Desktop: both virtual hands share one hold, so one ring.
+   */
+  _updateHolds(game, xr) {
+    const cl = game ? game.climb : null;
+    if (!cl) return;
+    const B = this.batch;
+    const t = this._time;
+    const c = this._tmp;
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      const st = cl.hands[h];
+      if (!xr && k === 0) continue; // desktop: one ring / dot
+      if (st.gripping) {
+        c.set(st.ax, st.ay, st.az);
+        const d = this._hp.distanceTo(c);
+        B.sprite(c, this._camR, this._camU, Math.min(0.05, Math.max(0.012, d * 0.012)), FX_COLOR.grip, 0.9, SHAPE_DOT);
+      } else if (st.hover && !cl.holding) {
+        c.set(st.hx, st.hy, st.hz);
+        const d = this._hp.distanceTo(c);
+        const hsz = Math.min(0.1, Math.max(0.03, d * (st.hoverIn ? 0.05 : 0.04)));
+        const pulse = 0.78 + 0.22 * Math.sin(t * 9 + k);
+        if (cl.canGrip) B.sprite(c, this._camR, this._camU, hsz, FX_COLOR.grip, (st.hoverIn ? 0.95 : 0.45) * pulse, SHAPE_RING);
+        else B.sprite(c, this._camR, this._camU, hsz, FX_COLOR.gripOff, 0.6, SHAPE_HOLLOW);
+      }
     }
   }
 

@@ -36,12 +36,17 @@
 import * as THREE from 'three';
 import { DIFFICULTY, DIFFICULTY_ORDER, SETTINGS_DEFAULTS, Storage, U, VIEW, heightCalibration } from '../sim/config3d.js';
 import { ITEM_NAMES } from '../sim/inventory3d.js';
+import { BUILD } from '../platform/buildInfo.js';
+import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
+import { ComfortOverlay, applyDisplay } from './comfort.js';
+import { Tutorial } from './tutorial.js';
+import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
 
 // =============================================================================
 // Constants
 // =============================================================================
-const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'pause', 'death', 'victory'];
-const SUB_SCREENS = { difficulty: true, controls: true, settings: true };
+const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'about', 'calibrate', 'pause', 'death', 'victory'];
+const SUB_SCREENS = { difficulty: true, controls: true, settings: true, about: true, calibrate: true };
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const HANDS = ['left', 'right'];
 
@@ -78,6 +83,7 @@ const NOTE_LAG = 22 * U.DEG; // the cards start following once the head turns th
 const HINT = { cw: 1024, ch: 192, w: 1.2, dy: -0.36 };
 const TITLE = { cw: 1024, ch: 288, w: 1.2, dy: 0.2 };
 const TOAST = { cw: 512, ch: 80, w: 0.6, dy: 0.42 };
+const CAPTION = { cw: 1024, ch: 208, w: 1.2, dy: -0.64 }; // subtitle lines, under the hint card
 const RENDER_ORDER = 950; // UI draws over the world and the death fade (keep the fade sphere < 900)
 
 const COL = {
@@ -109,81 +115,71 @@ const DEATH_COPY = {
   creature: { kicker: 'Closer than it sounded', message: 'The Underspire closed its hand.' },
 };
 
-const pct = (v) => `${Math.round(v * 100)}%`;
-const mul = (v) => `${v.toFixed(2)}×`;
-/** Settings schema (keys of SETTINGS_DEFAULTS). `desktop` rows are hidden in VR. No comfort options by design. */
+const pct = fmtPct;
+const mul = fmtMul;
+const mTxt = (v) => `${v.toFixed(2)} m`;
+const cm = (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`;
+/** Settings tabs (VR: one tab per page of rows; desktop: one heading per tab). */
+const TABS = [
+  { id: 'comfort', label: 'Comfort', title: 'Comfort and movement' },
+  { id: 'display', label: 'Display', title: 'Display' },
+  { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
+  { id: 'access', label: 'Access', title: 'Accessibility and hands' },
+];
+/**
+ * Settings schema (keys of SETTINGS_DEFAULTS). `tab` places a row; `desktop` rows are hidden in VR; `vr` rows (links) are
+ * hidden on the desktop; `page` rows live on a sub page in VR ('height' = the Player height page, 'calibrate' = the Brightness
+ * screen). Numeric `choice` options keep their number type. The comfort options are OFF / smooth by default (the owner's design
+ * is full-speed swings and falls; they are there for the players who need them).
+ */
 const SETTINGS_SCHEMA = [
-  { group: 'Sound' },
-  { key: 'volume', type: 'range', label: 'Master volume', min: 0, max: 1, step: 0.05, fmt: pct },
-  { group: 'Aim and movement' },
-  {
-    key: 'aimAssist',
-    type: 'range',
-    label: 'Aim assist',
-    desc: 'How generously a tether picks an anchor near your aim.',
-    min: 0.6,
-    max: 1.4,
-    step: 0.05,
-    fmt: pct,
-  },
-  { key: 'turnSpeed', type: 'range', label: 'Turn speed', desc: 'Right-stick smooth turning in VR.', min: 0.5, max: 2, step: 0.05, fmt: mul },
-  {
-    key: 'mouseSensitivity',
-    type: 'range',
-    label: 'Mouse sensitivity',
-    desc: 'Mouse look on desktop.',
-    min: 0.3,
-    max: 3,
-    step: 0.05,
-    fmt: mul,
-    desktop: true,
-  },
-  { group: 'Controllers' },
-  {
-    key: 'dominantHand',
-    type: 'choice',
-    label: 'Dominant hand',
-    desc: 'The hand that points at menus.',
-    options: [
-      ['left', 'Left'],
-      ['right', 'Right'],
-    ],
-  },
-  { key: 'haptics', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
-  { key: 'showBody', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
-  // Player height (VR panel: its own page, "Player height ›" on the settings page).
-  { group: 'Player height' },
+  { key: 'vignette', tab: 'comfort', type: 'range', label: 'Comfort vignette', desc: 'Darkens the edge of your view while you move fast, swing or turn. Off by default.', min: 0, max: 1, step: 0.1, fmt: fmtOff },
+  { key: 'turnMode', tab: 'comfort', type: 'choice', label: 'Turning', desc: 'Smooth turning with the right stick, or snap in steps.', options: [['smooth', 'Smooth'], ['snap', 'Snap']] },
+  { key: 'snapAngle', tab: 'comfort', type: 'choice', label: 'Snap angle', desc: 'Degrees per snap step.', options: [[30, '30°'], [45, '45°'], [60, '60°'], [90, '90°']] },
+  { key: 'turnSpeed', tab: 'comfort', type: 'range', label: 'Turn speed', desc: 'Right-stick smooth turning in VR.', min: 0.5, max: 2, step: 0.05, fmt: mul },
+  { key: 'mouseSensitivity', tab: 'comfort', type: 'range', label: 'Mouse sensitivity', desc: 'Mouse look on desktop.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   {
     key: 'heightMode',
+    tab: 'comfort',
     type: 'choice',
-    label: 'Player height',
+    label: 'Seated or standing',
     desc: 'Standing: your real height, 1:1. Seated: lifts your eyes to a standing eye height.',
-    page: 'height',
-    options: [
-      ['standing', 'Standing'],
-      ['seated', 'Seated'],
-    ],
+    options: [['standing', 'Standing'], ['seated', 'Seated']],
   },
-  {
-    key: 'heightOffset',
-    type: 'range',
-    label: 'Fine height',
-    desc: 'Raise or lower your eyes a little.',
-    page: 'height',
-    min: -VIEW.offsetMax,
-    max: VIEW.offsetMax,
-    step: VIEW.offsetStep,
-    fmt: (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`,
-  },
-  { type: 'height', page: 'height' },
+  { key: 'heightOffset', tab: 'comfort', type: 'range', label: 'Fine height', desc: 'Raise or lower your eyes a little.', page: 'height', min: -VIEW.offsetMax, max: VIEW.offsetMax, step: VIEW.offsetStep, fmt: cm },
+  { type: 'height', tab: 'comfort', page: 'height' },
+  { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
+
+  { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
+  { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },
+  { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
+  { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
+  { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
+  { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
+  { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
+  { type: 'patches', tab: 'display', page: 'calibrate' },
+  { type: 'link', tab: 'display', vr: true, label: 'Brightness and black level', action: 'calibrate' },
+
+  { key: 'volume', tab: 'audio', type: 'range', label: 'Master volume', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'musicVolume', tab: 'audio', type: 'range', label: 'Music', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'sfxVolume', tab: 'audio', type: 'range', label: 'Effects', desc: 'The world, the rope and the creature.', min: 0, max: 1, step: 0.05, fmt: pct },
+  { key: 'haptics', tab: 'audio', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
+  { key: 'hapticStrength', tab: 'audio', type: 'range', label: 'Haptic strength', min: 0.25, max: 1.5, step: 0.05, fmt: pct },
+
+  { key: 'captions', tab: 'access', type: 'toggle', label: 'Captions', desc: 'Text for the sounds that warn you: where it came from, how close.' },
+  { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
+  { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
+  { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
+const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
 const HEIGHT_KEYS = ['heightMode', 'heightCal', 'heightOffset', 'heightMeasured'];
-const mTxt = (v) => `${v.toFixed(2)} m`;
 
 /** [keys, full description, short VR description]. */
 const CONTROLS_QUEST = [
   [['Trigger'], 'Fire that hand’s tether at its highlighted anchor. Hold to stay attached, release to let go.', 'Tether · hold on · release'],
-  [['Grip'], 'On a tethered hand: yank that rope in hard.', 'Yank that rope in'],
+  [['Grip'], 'Hand at a chalk-studded surface: hold to grab it, then move the hand to pull yourself; alternate hands to climb, let go to launch, A hops off. Grip strength runs out. Elsewhere, on a tethered hand: yank that rope in hard.', 'Grab · climb · yank rope'],
   [['Left stick'], 'Move, pump the swing, steer in the air — relative to where you look.', 'Move · swing · air control'],
   [['Right stick ← →'], 'Smooth turn.', 'Smooth turn'],
   [['Right stick ↑ ↓'], 'Reel every attached tether in / out.', 'Reel in / let out'],
@@ -202,7 +198,7 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
-  [['F'], 'Yank both ropes.'],
+  [['F'], 'Hold near a chalk-studded surface to cling to it (W A S D climb, Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
   [['Esc'], 'Pause.'],
   [['R'], 'Restart the run.'],
   [['Enter'], 'Confirm · continue after a fall.'],
@@ -434,6 +430,7 @@ const MARKUP = `
     <div class="hud-row hud-sub"><span class="hud-depth">0 m</span><span class="hud-dot" aria-hidden="true">·</span><span class="hud-diff">Normal</span></div>
     <div class="hud-best" hidden></div>
     <div class="hud-section"></div>
+    <div class="hud-status" hidden aria-label="Status"></div>
     <canvas class="hud-ecg" width="256" height="128" aria-label="Heart monitor"></canvas>
     <canvas class="hud-bag" width="256" height="128" aria-label="Bag"></canvas>
   </div>
@@ -444,6 +441,7 @@ const MARKUP = `
 <div class="capture" role="status">Click to look around <span>·</span> <kbd>Esc</kbd> pauses</div>
 <button class="btn-pause" type="button" data-action="pause" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
 <div class="section-card" aria-live="polite"><div class="section-num"></div><div class="section-name"></div><div class="section-rule" aria-hidden="true"></div><div class="section-sub"></div></div>
+<div class="captions" aria-live="off" hidden></div>
 <div class="hint" role="status" aria-live="polite"></div>
 <div class="toast" role="status" aria-live="polite"><span class="toast-glyph" aria-hidden="true"></span><span class="toast-text"></span></div>
 <div class="xr-note" role="status"><span class="xr-note-glyph" aria-hidden="true">${HEADSET_SVG}</span><span>Playing in VR — the menus are in the headset.</span></div>
@@ -456,14 +454,17 @@ const MARKUP = `
       <p class="tagline">A lantern, a line, and a very long way down.</p>
     </header>
     <nav class="menu-actions" aria-label="Main menu">
-      <button class="btn btn-primary btn-start" type="button" data-action="start" data-autofocus><span class="btn-label">Begin descent</span><span class="btn-sub menu-start-sub">Normal</span></button>
+      <button class="btn btn-primary btn-continue" type="button" data-action="continue-run" hidden data-autofocus><span class="btn-label">Continue</span><span class="btn-sub menu-continue-sub"></span></button>
+      <button class="btn btn-primary btn-start" type="button" data-action="start" data-autofocus><span class="btn-label menu-start-label">Begin descent</span><span class="btn-sub menu-start-sub">Normal</span></button>
       <button class="btn btn-vr" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Enter VR</span><span class="btn-sub">Put on the headset · Meta Quest</span></button>
-      <button class="btn" type="button" data-action="difficulty"><span class="btn-label">Difficulty</span></button>
+      <button class="btn menu-diff" type="button" data-action="difficulty"><span class="btn-label">Difficulty</span></button>
       <button class="btn" type="button" data-action="sandbox"><span class="btn-label">Sandbox</span><span class="btn-sub">No predator</span></button>
       <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
       <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
+      <button class="btn menu-about" type="button" data-action="about"><span class="btn-label">About</span><span class="btn-sub menu-about-sub" hidden>Update ready</span></button>
     </nav>
     <div class="menu-foot">
+      <button class="menu-update" type="button" data-action="apply-update" hidden><span aria-hidden="true">◆</span> Update ready — restart to apply</button>
       <dl class="best-strip" aria-label="Best times"></dl>
       <p class="vr-note" hidden></p>
       <p class="menu-hint">Click to look · hold <kbd>Left</kbd>/<kbd>Right</kbd> mouse for each hand’s tether · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> swing · <kbd>Space</kbd> reel in</p>
@@ -486,7 +487,7 @@ const MARKUP = `
         <div class="ctl-col"><h3 class="group-title">Meta Quest controllers</h3><ul class="bind-list ctl-quest"></ul></div>
         <div class="ctl-col"><h3 class="group-title">Mouse &amp; keyboard</h3><ul class="bind-list ctl-desktop"></ul></div>
       </div>
-      <p class="panel-note">Full movement, smooth turning, no comfort filters: the swings and the falls are the experience. Take a break whenever you need one — the game pauses with <kbd>B</kbd> / <kbd>≡</kbd> or <kbd>Esc</kbd>.</p>
+      <p class="panel-note">Full-speed swings and falls are the experience, and smooth turning is the default. A comfort vignette, snap turning, seated play, captions and more are in Settings. Take a break whenever you need one — the game pauses with <kbd>B</kbd> / <kbd>≡</kbd> or <kbd>Esc</kbd>.</p>
     </div>
   </div>
 </section>
@@ -498,6 +499,25 @@ const MARKUP = `
   </div>
 </section>
 
+<section class="screen" data-screen="about" hidden aria-labelledby="at3d-about-title">
+  <div class="panel panel-wide">
+    <div class="panel-head">${backBtn()}<h2 id="at3d-about-title">About</h2></div>
+    <div class="panel-body about-body">
+      <p class="kicker">The Underspire · Chapter I · free</p>
+      <dl class="about-list">
+        <div><dt>Version</dt><dd class="about-version"></dd></div>
+        <div><dt>Update</dt><dd><span class="about-update"></span> <button class="btn btn-ghost btn-inline" type="button" data-action="apply-update" hidden><span class="btn-label">Restart to update</span></button></dd></div>
+        <div><dt>Privacy</dt><dd><a class="about-privacy" target="_blank" rel="noopener noreferrer"></a></dd></div>
+        <div><dt>Support</dt><dd><a class="about-support" target="_blank" rel="noopener noreferrer"></a></dd></div>
+        <div><dt>Your data</dt><dd>Settings, best times and one saved run stay on this device. The game has no account and sends nothing about you.</dd></div>
+      </dl>
+      <h3 class="group-title">Credits</h3>
+      <p class="about-credits"></p>
+      <div class="set-actions"><button class="btn btn-ghost about-erase" type="button" data-action="erase-data"><span class="btn-label">Erase saved data</span></button></div>
+    </div>
+  </div>
+</section>
+
 <section class="screen screen-pause" data-screen="pause" hidden aria-labelledby="at3d-pause-title">
   <div class="panel panel-pause">
     <div class="panel-head panel-head-center"><h2 id="at3d-pause-title">Paused</h2><p class="run-line pause-stats"></p></div>
@@ -506,11 +526,11 @@ const MARKUP = `
         <div class="pause-actions">
           <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Continue this run in the headset</span></button>
           <button class="btn btn-primary" type="button" data-action="resume" data-autofocus><span class="btn-label">Resume</span></button>
-          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Respawn at checkpoint</span></button>
-          <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
+          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Restart section</span><span class="btn-sub">Back to the last checkpoint</span></button>
+          <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span><span class="btn-sub">From the top</span></button>
           <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
           <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
-          <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Quit to menu</span></button>
+          <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Quit to menu</span><span class="btn-sub">Your progress is saved</span></button>
         </div>
         <div class="pause-warp" hidden><h3 class="group-title">Warp to section</h3><div class="warp-grid"></div></div>
       </div>
@@ -526,7 +546,7 @@ const MARKUP = `
     <div class="death-actions">
       <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
       <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">from the last checkpoint</span></button>
-      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart run</span></button>
+      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
     </div>
     <p class="death-prompt"><kbd>Enter</kbd> continue · <kbd>R</kbd> restart</p>
@@ -537,17 +557,22 @@ const MARKUP = `
   <div class="panel panel-victory">
     <div class="panel-body">
       <div class="victory-lamp" aria-hidden="true"></div>
-      <p class="kicker">The Still Lamp</p>
+      <p class="kicker">Chapter I · The Underspire</p>
       <h2 id="at3d-victory-title" class="victory-title">You reached the bottom</h2>
       <div class="victory-time"><span class="victory-time-label">Descent time</span><span class="victory-time-value v-time">0:00.00</span><span class="badge-new v-new" hidden>★ New best</span></div>
       <dl class="stat-grid">
+        <div><dt>Falls</dt><dd class="v-deaths">0</dd></div>
+        <div><dt>Lowest health</dt><dd class="v-health">100%</dd></div>
+        <div><dt>Items used</dt><dd class="v-items">0</dd></div>
         <div><dt>Best</dt><dd class="v-best">—</dd></div>
-        <div><dt>Previous best</dt><dd class="v-prev">—</dd></div>
-        <div><dt>Deaths</dt><dd class="v-deaths">0</dd></div>
-        <div><dt>Deepest point</dt><dd class="v-deepest">0 m</dd></div>
         <div><dt>Difficulty</dt><dd class="v-diff">Normal</dd></div>
       </dl>
       <p class="panel-note victory-note v-note"></p>
+      <div class="teaser">
+        <p class="teaser-kicker">Chapters II–V · coming soon</p>
+        <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
+        <p class="teaser-line">The Underspire goes deeper than the light does. The descent continues.</p>
+      </div>
       <div class="victory-actions">
         <button class="btn btn-primary" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
         <button class="btn" type="button" data-action="menu"><span class="btn-label">Menu</span></button>
@@ -558,7 +583,7 @@ const MARKUP = `
 
 const CSS = `
 .at3d-ui{--u:clamp(14px,calc(7px + 0.4vmin + 0.35vmax),26px);--bg:#08090a;--stone-600:#30363a;--ink:#ddd5c4;--ink-2:#b3ac9e;--ink-3:#868074;--ink-4:#5e5b54;--phosphor:#e8dcc0;--amber:#e0a050;--amber-2:#b67a3a;--verdigris:#3f6b63;--verdigris-2:#6a9c90;--line:rgba(232,220,192,.11);--line-2:rgba(232,220,192,.2);--line-3:rgba(232,220,192,.34);--panel-a:rgba(21,24,25,.95);--panel-b:rgba(10,11,12,.97);--focus:#f2e6c9;--fd:${F_DISPLAY};--fu:${F_UI};--tap:44px;--ease:cubic-bezier(.2,.7,.2,1);--gut:16px;
-position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font-size:var(--u);line-height:1.4;color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font-size:calc(var(--u) * var(--ts,1));line-height:1.4;color:var(--ink);-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 .at3d-ui *,.at3d-ui *::before,.at3d-ui *::after{box-sizing:border-box}
 .at3d-ui [hidden]{display:none!important}
 .at3d-ui button,.at3d-ui input{font:inherit;color:inherit}
@@ -777,6 +802,38 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .xr-note-glyph svg{display:block;width:100%;fill:none;stroke:currentColor;stroke-width:1.6}
 .at3d-ui.is-xr .xr-note{display:flex}
 .at3d-ui.is-xr .screen,.at3d-ui.is-xr .hud,.at3d-ui.is-xr .hint,.at3d-ui.is-xr .toast,.at3d-ui.is-xr .section-card,.at3d-ui.is-xr .crosshair,.at3d-ui.is-xr .capture,.at3d-ui.is-xr .btn-pause{display:none!important}
+.at3d-ui .menu-update{display:flex;align-items:center;justify-content:center;gap:.5em;min-height:var(--tap);padding:.3em 1em;color:#fbe7c2;background:rgba(74,52,27,.55);border:1px solid rgba(224,160,80,.6);border-radius:3px;font:650 .8em var(--fu);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
+.at3d-ui .menu-update span{color:var(--amber)}
+.at3d-ui .btn-inline{display:inline-flex;width:auto;min-height:var(--tap);margin-left:.6em;align-items:center;vertical-align:middle}
+.at3d-ui .menu-about-sub{color:var(--amber)}
+.at3d-ui .about-body{display:flex;flex-direction:column;gap:.7em}
+.at3d-ui .about-list{display:flex;flex-direction:column;margin:0}
+.at3d-ui .about-list>div{display:grid;grid-template-columns:7em 1fr;gap:.8em;align-items:baseline;padding:.45em 0;border-bottom:1px solid var(--line);font-size:.9em}
+.at3d-ui .about-list dt{font:650 .74em var(--fu);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.at3d-ui .about-list dd{margin:0;color:var(--ink-2);word-break:break-word}
+.at3d-ui .about-list a{color:var(--phosphor);text-decoration-color:var(--line-3)}
+.at3d-ui .about-credits{margin:0;font-size:.86em;line-height:1.55;color:var(--ink-2)}
+.at3d-ui .btn.is-armed{border-color:rgba(194,122,92,.8)}
+.at3d-ui .patches{display:block;width:100%;height:auto;margin-top:.4em;border-radius:3px;background:#000}
+.at3d-ui .teaser{width:100%;margin:1em 0 0;padding:.75em .9em;text-align:center;border:1px solid var(--line-2);border-radius:3px;background:linear-gradient(180deg,rgba(255,240,210,.045),rgba(255,240,210,.01))}
+.at3d-ui .teaser p{margin:0}
+.at3d-ui .teaser-kicker{font:400 .86em var(--fd);font-variant:small-caps;letter-spacing:.34em;text-transform:lowercase;color:var(--amber)}
+.at3d-ui .teaser-names{display:flex;flex-wrap:wrap;justify-content:center;gap:.2em 1.2em;margin-top:.45em!important;font:700 .9em var(--fd);letter-spacing:.06em;color:var(--ink)}
+.at3d-ui .teaser-line{margin-top:.4em!important;font:italic 400 .86em var(--fd);color:var(--ink-3)}
+.at3d-ui .hud-status{display:flex;gap:.7em;justify-content:center;font:650 .74em var(--fu);letter-spacing:.06em;color:var(--ink);font-variant-numeric:tabular-nums}
+.at3d-ui .hud-status span{display:inline-flex;align-items:center;gap:.3em}
+.at3d-ui .hud-status svg{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:2}
+.at3d-ui .hud-status em{font-style:normal;font-size:.8em;color:var(--ink-3)}
+.at3d-ui .hud-status b{font-weight:700}
+.at3d-ui .hud-status .warn{color:#ffd9a0;text-decoration:underline}
+.at3d-ui .captions{position:absolute;z-index:15;left:50%;bottom:calc(10px + 6.2em);display:flex;flex-direction:column;align-items:center;gap:.3em;width:min(34em,calc(100% - 3em));transform:translateX(-50%);pointer-events:none}
+.at3d-ui .cap{display:flex;align-items:center;gap:.6em;max-width:100%;padding:.3em .8em;font-size:.95em;line-height:1.3;color:#fff;background:rgba(0,0,0,.82);border-radius:3px;border-left:3px solid var(--ink-3)}
+.at3d-ui .cap[data-sev="2"]{font-weight:700;border-left-color:var(--amber)}
+.at3d-ui .cap i{flex:none;width:.7em;height:.7em;background:currentColor}
+.at3d-ui .cap i.diamond{transform:rotate(45deg)}
+.at3d-ui .cap i.circle{border-radius:50%}
+.at3d-ui .cap .cap-dir{flex:none;min-width:2.4em;font:650 .7em var(--fu);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.at3d-ui.is-xr .captions{display:none!important}
 @media (max-width:760px){.at3d-ui .diff-grid,.at3d-ui .ctl-cols{grid-template-columns:1fr}.at3d-ui .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.at3d-ui .pause-cols{flex-direction:column}.at3d-ui .set-row{grid-template-columns:1fr}.at3d-ui .set-control{justify-content:flex-start}.at3d-ui .hud-gauge{display:none}.at3d-ui .menu-hint{display:none}}
 @media (max-height:560px){.at3d-ui .menu-wrap{gap:.7em}.at3d-ui .tagline,.at3d-ui .menu-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.at3d-ui .screen,.at3d-ui .screen>*{animation:none!important}}
@@ -816,7 +873,7 @@ export class UI3D {
     // HUD caches (compared before every DOM write).
     this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1, bag: -1, apply: -1, applyKind: -1 };
     // Notes (hint / section title / toast), shared by DOM and VR.
-    this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false };
+    this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false, tutorial: false };
     this._title = { name: '', sub: '', num: '', t: 0, dirty: false };
     this._toast = { text: '', t: 0, dirty: false };
 
@@ -824,6 +881,19 @@ export class UI3D {
     this._vr = null;
     this._vrDirty = true;
     this._vrSetPage = 0; // VR settings: 0 = general, 1 = player height
+    this._vrTab = 0; // VR settings: index into TABS
+    this._armed = ''; // a destructive button pressed once ('erase-data'): the second press within 4 s does it
+    this._armedT = 0;
+    this._eraseMsg = '';
+    this._xrScaleApplied = { tier: undefined, scale: NaN, baseExposure: 0, expMul: 1 };
+    this._textScale = 1;
+    this._capRev = -1;
+    this._capShown = 0;
+    this._statusKey = '';
+    this._tut = null;
+    this._caps = null;
+    this._comfort = null;
+    this._updateReady = false;
     this._cal = null; // height calibration countdown { t } while running
     this._calMsg = ''; // result / error line of the last calibration press
     this._heightKey = ''; // the status text last painted (a change repaints the panel)
@@ -832,6 +902,7 @@ export class UI3D {
     this._hover = null;
     this._lastClickAt = -10;
     this._needRecenter = true;
+    this._capDirty = true;
     this._wristAcc = WRIST_INTERVAL;
     this._wristKey = '';
     this._gripCheckT = 0;
@@ -887,7 +958,24 @@ export class UI3D {
       toast: q('.toast'),
       toastText: q('.toast-text'),
       startSub: q('.menu-start-sub'),
+      startLabel: q('.menu-start-label'),
       startBtn: q('.btn-start'),
+      continueBtn: q('.btn-continue'),
+      continueSub: q('.menu-continue-sub'),
+      diffBtn: q('.menu-diff'),
+      aboutSub: q('.menu-about-sub'),
+      updateBtn: q('.menu-update'),
+      hudStatus: q('.hud-status'),
+      captions: q('.captions'),
+      aboutVersion: q('.about-version'),
+      aboutUpdate: q('.about-update'),
+      aboutUpdateBtn: q('.about-body [data-action="apply-update"]'),
+      aboutPrivacy: q('.about-privacy'),
+      aboutSupport: q('.about-support'),
+      aboutCredits: q('.about-credits'),
+      aboutErase: q('.about-erase'),
+      vHealth: q('.v-health'),
+      vItems: q('.v-items'),
       vrBtn: q('.menu-actions [data-action="enter-vr"]'),
       vrReturn: [...this.root.querySelectorAll('.btn-vr-return')],
       vrNote: q('.vr-note'),
@@ -909,9 +997,7 @@ export class UI3D {
       vTime: q('.v-time'),
       vNew: q('.v-new'),
       vBest: q('.v-best'),
-      vPrev: q('.v-prev'),
       vDeaths: q('.v-deaths'),
-      vDeepest: q('.v-deepest'),
       vDiff: q('.v-diff'),
       vNote: q('.v-note'),
     };
@@ -919,8 +1005,11 @@ export class UI3D {
     this._buildDifficultyCards();
     this._buildControls();
     this._buildSettings();
+    this._buildAbout();
+    this._buildCaptionLines();
     this._bindDom();
     this._bindBus();
+    this._startUx();
     this.syncSettings();
     this._checkVR();
     this._ready = true;
@@ -1029,6 +1118,12 @@ export class UI3D {
     });
     on('checkpoint', () => this.showToast('Checkpoint', 2.2));
     on('hint', (p) => this.showHint(p.hint && typeof p.hint === 'object' ? p.hint : p.text || p, num(p.duration, num(p.seconds, 0))));
+    on('continue:changed', () => this.refreshMenu());
+    on('app:update-ready', () => {
+      this._updateReady = true;
+      this.refreshMenu();
+      if (this.current === 'about') this._fillAbout();
+    });
     on('xr:recenter', () => this.recenter());
     on('xr:recentered', () => this.recenter());
     on('input:recenter', () => this.recenter());
@@ -1089,7 +1184,7 @@ export class UI3D {
     const start = d.startBtn;
     if (start && d.vrBtn.parentNode === start.parentNode) {
       if (this._vrFirst()) {
-        if (d.vrBtn.nextElementSibling !== start) start.parentNode.insertBefore(d.vrBtn, start);
+        if (d.vrBtn.nextElementSibling !== d.continueBtn) start.parentNode.insertBefore(d.vrBtn, d.continueBtn);
         d.vrBtn.classList.add('btn-primary');
         d.vrBtn.setAttribute('data-autofocus', '');
         start.classList.remove('btn-primary');
@@ -1133,6 +1228,7 @@ export class UI3D {
   show(name, info) {
     if (name === undefined || name === 'none' || name === 'game') name = null;
     if (name === 'title' || name === 'main') name = 'menu';
+    if (name === 'end') name = 'victory';
     if (name !== null && SCREENS.indexOf(name) < 0) {
       if (typeof console !== 'undefined') console.warn(`[AT3D] UI.show: unknown screen "${name}"`);
       return;
@@ -1143,8 +1239,10 @@ export class UI3D {
       this.current = name;
       return;
     }
+    if (name === 'calibrate' && !this.vrMode) name = 'settings'; // the desktop shows the sliders inline
     if (name === 'death') this._fillDeath(info);
     else if (name === 'victory') this._fillVictory(info);
+    else if (name === 'about') this._fillAbout();
 
     const prev = this.current;
     const game = this.game || {};
@@ -1155,6 +1253,7 @@ export class UI3D {
       this._opener = prev === 'menu' || prev === 'pause' ? { screen: prev, el: active && this.screens[prev].contains(active) ? active : null } : null;
     }
     this.current = name;
+    this._disarm();
     for (const n of SCREENS) {
       const el = this.screens[n];
       if (el && el.hidden === (n === name)) el.hidden = n !== name;
@@ -1162,6 +1261,7 @@ export class UI3D {
     if (name === 'menu') this.refreshMenu();
     else if (name === 'difficulty') this._refreshDifficulty();
     else if (name === 'settings') this.syncSettings();
+    if (name === 'calibrate' && !this._settings().brightnessChecked) this._applySettings({ brightnessChecked: true });
     if (name !== 'settings') {
       this._vrSetPage = 0;
       if (this._cal) {
@@ -1169,7 +1269,7 @@ export class UI3D {
         this._calMsg = '';
       }
     }
-    else if (name === 'pause') this._preparePause();
+    if (name === 'pause') this._preparePause();
     else if (name === 'death') this._deathArmedAt = this._clock + DEATH_ARM;
     if (name !== null) this._deathTimer = -1;
     this._syncRootClasses();
@@ -1242,6 +1342,10 @@ export class UI3D {
       this._vrDirty = true;
       return;
     }
+    if (this.current === 'calibrate') {
+      this.show('settings');
+      return;
+    }
     const state = this.game && this.game.state;
     let target = this._returnTo || 'menu';
     if (state === 'paused') target = 'pause';
@@ -1263,8 +1367,31 @@ export class UI3D {
     const key = this._defaultDifficulty();
     const diff = DIFFICULTY[key];
     const best = Storage.getBest(key);
+    const cont = this._continueInfo();
+    const d = this.dom;
+    // Continue (the saved run) leads when there is one; 'New descent' then opens the difficulty chooser instead of starting at once.
+    d.continueBtn.hidden = !cont;
+    d.diffBtn.hidden = !!cont;
+    if (cont) {
+      d.continueSub.textContent = this._continueLine(cont);
+      d.startLabel.textContent = 'New descent';
+      d.startBtn.dataset.action = 'difficulty';
+      d.startBtn.classList.remove('btn-primary');
+      d.startSub.textContent = 'Choose a difficulty · replaces the saved run';
+      d.startBtn.removeAttribute('data-autofocus');
+      d.continueBtn.setAttribute('data-autofocus', '');
+    } else {
+      d.startLabel.textContent = 'Begin descent';
+      d.startBtn.dataset.action = 'start';
+      d.continueBtn.removeAttribute('data-autofocus');
+      if (!this._vrFirst()) d.startBtn.classList.add('btn-primary');
+    }
+    d.updateBtn.hidden = !this._updateReady || this._xr;
+    d.aboutSub.hidden = !this._updateReady;
     // With VR first on the menu, the flat run says what it is.
-    if (this._vrFirst()) this.dom.startSub.textContent = `Flat screen · mouse & keyboard · ${diff.label}`;
+    if (cont) {
+      // (sub-label set above)
+    } else if (this._vrFirst()) this.dom.startSub.textContent = `Flat screen · mouse & keyboard · ${diff.label}`;
     else this.dom.startSub.textContent = best != null ? `${diff.label} · best ${fmtTime(best)}` : diff.label;
     if (this._bestCells) {
       for (const k of DIFFICULTY_ORDER) {
@@ -1276,6 +1403,23 @@ export class UI3D {
     }
     this._refreshDifficulty();
     this._vrDirty = true;
+  }
+
+  /** The saved run for the Continue button (game.canContinue / save.continueInfo), or null. */
+  _continueInfo() {
+    const g = this.game || {};
+    try {
+      if (typeof g.canContinue === 'function' && !g.canContinue()) return null;
+      const info = g.save && typeof g.save.continueInfo === 'function' ? g.save.continueInfo() : null;
+      return info && typeof info === 'object' ? info : null;
+    } catch {
+      return null;
+    }
+  }
+
+  _continueLine(info) {
+    const sec = info.sectionName ? info.sectionName : `Section ${(info.section | 0) + 1}`;
+    return `${info.label || 'Normal'} · ${sec} · ${fmtTime(num(info.time, 0))}`;
   }
 
   _buildBestStrip() {
@@ -1359,61 +1503,70 @@ export class UI3D {
   _buildSettings() {
     const body = this.dom.settingsBody;
     body.textContent = '';
-    let group = null;
-    for (const def of SETTINGS_SCHEMA) {
-      if (def.group) {
-        group = make('div', 'set-group');
-        group.appendChild(make('h3', 'group-title', def.group));
-        body.appendChild(group);
-        continue;
-      }
-      if (def.type === 'height') {
-        this._buildHeightBlock(group || body);
-        continue;
-      }
-      const row = make('div', 'set-row');
-      const label = make('div', 'set-label');
-      const id = `at3d-set-${def.key}`;
-      const name = make('label', 'set-name', def.label);
-      name.htmlFor = id;
-      label.appendChild(name);
-      if (def.desc) label.appendChild(make('p', 'set-desc', def.desc));
-      const ctl = make('div', 'set-control');
-      if (def.type === 'range') {
-        const wrap = make('div', 'range-wrap');
-        const input = make('input');
-        input.type = 'range';
-        input.id = id;
-        input.min = String(def.min);
-        input.max = String(def.max);
-        input.step = String(def.step);
-        input.dataset.key = def.key;
-        const out = make('output');
-        out.htmlFor = id;
-        wrap.append(input, out);
-        ctl.appendChild(wrap);
-        this._ctl[def.key] = { def, input, out };
-      } else {
-        const seg = make('div', 'seg');
-        seg.setAttribute('role', 'group');
-        seg.setAttribute('aria-label', def.label);
-        const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
-        const btns = [];
-        for (const [value, text] of opts) {
-          const b = make('button', null, text);
-          b.type = 'button';
-          b.dataset.action = 'set';
-          b.dataset.key = def.key;
-          b.dataset.value = String(value);
-          if (btns.length === 0) b.id = id;
-          seg.appendChild(b);
-          btns.push([value, b]);
+    for (const tab of TABS) {
+      const group = make('div', 'set-group');
+      group.appendChild(make('h3', 'group-title', tab.title));
+      body.appendChild(group);
+      for (const def of SETTINGS_SCHEMA) {
+        if (def.tab !== tab.id || def.vr) continue;
+        if (def.type === 'height') {
+          this._buildHeightBlock(group);
+          continue;
         }
-        ctl.appendChild(seg);
-        this._ctl[def.key] = { def, btns };
+        if (def.type === 'patches') {
+          const c = make('canvas', 'patches');
+          c.width = 936;
+          c.height = 120;
+          c.setAttribute('role', 'img');
+          c.setAttribute('aria-label', 'Black level test: eight dark squares; the second should be just visible.');
+          group.appendChild(c);
+          this._patchesCanvas = c;
+          continue;
+        }
+        const row = make('div', 'set-row');
+        const label = make('div', 'set-label');
+        const id = `at3d-set-${def.key}`;
+        const name = make('label', 'set-name', def.label);
+        name.htmlFor = id;
+        label.appendChild(name);
+        if (def.desc) label.appendChild(make('p', 'set-desc', def.desc));
+        const ctl = make('div', 'set-control');
+        if (def.type === 'range') {
+          const wrap = make('div', 'range-wrap');
+          const input = make('input');
+          input.type = 'range';
+          input.id = id;
+          input.min = String(def.min);
+          input.max = String(def.max);
+          input.step = String(def.step);
+          input.dataset.key = def.key;
+          const out = make('output');
+          out.htmlFor = id;
+          wrap.append(input, out);
+          ctl.appendChild(wrap);
+          this._ctl[def.key] = { def, input, out };
+        } else {
+          const seg = make('div', 'seg');
+          seg.setAttribute('role', 'group');
+          seg.setAttribute('aria-label', def.label);
+          const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
+          const btns = [];
+          for (const [value, text] of opts) {
+            const b = make('button', null, text);
+            b.type = 'button';
+            b.dataset.action = 'set';
+            b.dataset.key = def.key;
+            b.dataset.value = String(value);
+            if (btns.length === 0) b.id = id;
+            seg.appendChild(b);
+            btns.push([value, b]);
+          }
+          ctl.appendChild(seg);
+          this._ctl[def.key] = { def, btns };
+        }
+        row.append(label, ctl);
+        group.appendChild(row);
       }
-      row.append(label, ctl);
-      (group || body).appendChild(row);
     }
     const actions = make('div', 'set-actions');
     const reset = make('button', 'btn btn-ghost');
@@ -1573,6 +1726,7 @@ export class UI3D {
     if (!this.dom) return;
     const s = this._settings();
     this._refreshHeight();
+    this._syncUx(s);
     for (const key of Object.keys(this._ctl)) {
       const c = this._ctl[key];
       const v = key in s ? s[key] : SETTINGS_DEFAULTS[key];
@@ -1594,7 +1748,10 @@ export class UI3D {
     let v = value;
     if (def.type === 'range') v = U.clamp(Math.round(num(+value, def.min) / def.step) * def.step, def.min, def.max);
     else if (def.type === 'toggle') v = value === true || value === 'true';
-    else if (!def.options.some((o) => o[0] === value)) return;
+    else {
+      if (typeof def.options[0][0] === 'number') v = Number(value);
+      if (!def.options.some((o) => o[0] === v)) return;
+    }
     v = def.type === 'range' ? +v.toFixed(4) : v;
     this._applySettings({ [key]: v });
   }
@@ -1626,6 +1783,267 @@ export class UI3D {
     this._cal = null;
     this._calMsg = '';
     this._applySettings(partial);
+  }
+
+  // ------------------------------------------------------------------ WP-UX: comfort, display, captions, hints, about
+  _startUx() {
+    const g = this.game || {};
+    this._comfort = new ComfortOverlay(g);
+    this._caps = new CaptionTracker({ captions: () => this._settings().captions === true, status: () => this._settings().colorSafe === true });
+    this._caps.attach(g.bus);
+    this._tut = new Tutorial(g, this);
+    this._tut.attach();
+  }
+
+  /** Text scale, display tier / exposure, colour-safe strip and captions visibility follow the live settings. */
+  _syncUx(s) {
+    const ts = textScaleOf(s);
+    if (ts !== this._textScale) {
+      this._textScale = ts;
+      this.root.style.setProperty('--ts', String(ts));
+      this._scaleVR();
+    }
+    applyDisplay(this.game, this._xrScaleApplied);
+    this.dom.hudStatus.hidden = s.colorSafe !== true;
+    this._statusKey = '';
+    this._wristKey = '';
+    if (s.captions !== true && s.colorSafe !== true && this._caps) this._caps.clear();
+    this._paintPatchesDom();
+  }
+
+  /** VR: panel, notes and captions grow with settings.textScale (notes are capped so a card still fits the view). */
+  _scaleVR() {
+    const vr = this._vr;
+    if (!vr) return;
+    vr.panel.scale.setScalar(this._textScale);
+    vr.notes.scale.setScalar(Math.min(this._textScale, 1.3));
+    this._vrDirty = true;
+  }
+
+  _privacyUrl() {
+    return this._pageUrl('../privacy/', 'Published with the store build');
+  }
+
+  _supportUrl() {
+    return this._pageUrl('../support/', 'Published with the store build');
+  }
+
+  _pageUrl(rel, fallback) {
+    if (BUILD.channel !== 'release' || typeof location === 'undefined') return fallback;
+    try {
+      return new URL(rel, location.href).href;
+    } catch {
+      return fallback;
+    }
+  }
+
+  _buildAbout() {
+    const d = this.dom;
+    d.aboutCredits.textContent =
+      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live, there are no samples. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
+  }
+
+  _versionLine() {
+    const c = BUILD.commit ? ` (${String(BUILD.commit).slice(0, 7)})` : '';
+    return `${BUILD.version}${c} · ${BUILD.channel === 'release' ? 'store build' : 'development build'}`;
+  }
+
+  /** The update row text for About (DOM + VR). */
+  _updateLine() {
+    const u = this.game && this.game.updates;
+    if (this._updateReady || (u && u.ready)) return this._xr ? 'Update ready. It installs the next time you start the game.' : 'Update ready. Restart to apply it.';
+    if (u && u.registered) return 'You have the latest version.';
+    return 'Running from the page.';
+  }
+
+  _fillAbout() {
+    const d = this.dom;
+    if (!d) return;
+    d.aboutVersion.textContent = this._versionLine();
+    d.aboutUpdate.textContent = this._updateLine();
+    const u = this.game && this.game.updates;
+    d.aboutUpdateBtn.hidden = !((this._updateReady || (u && u.ready)) && !this._xr);
+    for (const [el, url] of [[d.aboutPrivacy, this._privacyUrl()], [d.aboutSupport, this._supportUrl()]]) {
+      el.textContent = url;
+      if (/^https?:/.test(url)) el.href = url;
+      else el.removeAttribute('href');
+    }
+    this._disarm();
+    this._vrDirty = true;
+  }
+
+  _applyUpdate() {
+    const u = this.game && this.game.updates;
+    if (!u || !(u.ready || this._updateReady)) return;
+    if (this._xr) {
+      this.showToast('Installs on next launch', 3);
+      return;
+    }
+    let ok = false;
+    try {
+      ok = !!u.apply();
+    } catch {
+      ok = false;
+    }
+    if (!ok) this.showToast('Update will install on next launch', 3);
+  }
+
+  _disarm() {
+    if (!this._armed) return;
+    this._armed = '';
+    this._armedT = 0;
+    if (this.dom && this.dom.aboutErase) {
+      this.dom.aboutErase.classList.remove('is-armed');
+      this.dom.aboutErase.querySelector('.btn-label').textContent = 'Erase saved data';
+    }
+    this._vrDirty = true;
+  }
+
+  /** Two presses within 4 s: wipes settings, best times and the saved run from this device (Privacy.4: deleting your data). */
+  _eraseData() {
+    if (this._armed !== 'erase-data') {
+      this._armed = 'erase-data';
+      this._armedT = 4;
+      if (this.dom && this.dom.aboutErase) {
+        this.dom.aboutErase.classList.add('is-armed');
+        this.dom.aboutErase.querySelector('.btn-label').textContent = 'Press again to erase';
+      }
+      this._vrDirty = true;
+      return;
+    }
+    this._disarm();
+    const g = this.game || {};
+    try {
+      if (g.save && g.save.store && typeof g.save.store.reset === 'function') g.save.store.reset();
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('[AT3D] save reset failed', err);
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const rm = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf('abyssalTether3d.') === 0) rm.push(k);
+        }
+        for (const k of rm) localStorage.removeItem(k);
+      }
+    } catch {
+      /* storage blocked: nothing to erase */
+    }
+    this._resetSettings();
+    if (this._tut) this._tut.reset();
+    this._applySettings({ brightnessChecked: false });
+    this.refreshMenu();
+    this.showToast('Saved data erased', 3);
+  }
+
+  // ---- DOM captions + colour-safe status strip ------------------------------------------------------------------
+  _buildCaptionLines() {
+    const box = this.dom.captions;
+    box.textContent = '';
+    this._capDom = [];
+    for (let i = 0; i < 3; i++) {
+      const row = make('div', 'cap');
+      row.hidden = true;
+      const icon = make('i');
+      const dir = make('span', 'cap-dir');
+      const text = make('span', 'cap-text');
+      row.append(icon, dir, text);
+      box.appendChild(row);
+      this._capDom.push({ row, icon, dir, text });
+    }
+    const st = this.dom.hudStatus;
+    st.textContent = '';
+    const mk = (cls, path, label) => {
+      const span = make('span', cls);
+      span.insertAdjacentHTML('beforeend', `<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`);
+      span.append(make('em', null, label), make('b', null, '—'));
+      st.appendChild(span);
+      return span;
+    };
+    this._statusDom = {
+      hp: mk('st-hp', 'M5 1h2v4h4v2H7v4H5V7H1V5h4z', 'HP'),
+      grip: mk('st-grip', 'M6 1.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9zM6 4v4', 'GRIP'),
+      bag: mk('st-bag', 'M2 3h8v7H2zM4 3V1.5h4V3', 'BAG'),
+    };
+  }
+
+  _dirGlyph(l) {
+    if (l.sector < 0) return l.vert > 0 ? '▲' : l.vert < 0 ? '▼' : '';
+    return DIR_ARROWS[l.sector] + (l.vert > 0 ? '▲' : l.vert < 0 ? '▼' : '');
+  }
+
+  _updateCaptionsDom() {
+    const caps = this._caps;
+    const lines = caps.lines;
+    let any = false;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      const dom = this._capDom[i];
+      dom.row.hidden = !l.on;
+      if (!l.on) continue;
+      any = true;
+      dom.row.dataset.sev = String(l.sev);
+      dom.icon.className = KIND_SHAPE[l.kind] || 'square';
+      dom.dir.textContent = this._dirGlyph(l);
+      dom.text.textContent = l.text;
+    }
+    this.dom.captions.hidden = !any;
+  }
+
+  /** HP / grip / bag as numbers next to their shapes (colour-safe strip), DOM HUD. Called at the HUD interval. */
+  _updateStatusDom(g) {
+    if (this._settings().colorSafe !== true) return;
+    const st = this._statusValues(g);
+    const key = `${st.hp}|${st.grip}|${st.bag}`;
+    if (key === this._statusKey) return;
+    this._statusKey = key;
+    const D = this._statusDom;
+    D.hp.querySelector('b').textContent = String(st.hp);
+    D.grip.querySelector('b').textContent = String(st.grip);
+    D.bag.querySelector('b').textContent = String(st.bag);
+    D.hp.classList.toggle('warn', st.hp < 40);
+    D.grip.classList.toggle('warn', st.grip < 25);
+  }
+
+  _statusValues(g) {
+    const hp = g.health && typeof g.health.hp === 'number' ? Math.round(g.health.hp * 100) : 100;
+    const cl = g.physics && g.physics.climb;
+    const grip = cl && typeof cl.stamina === 'number' ? Math.round(cl.stamina * 100) : 100;
+    let bag = 0;
+    if (g.bag && g.bag.counts) for (let i = 0; i < g.bag.counts.length; i++) bag += g.bag.counts[i];
+    const out = this._stv || (this._stv = { hp: 100, grip: 100, bag: 0 });
+    out.hp = hp;
+    out.grip = grip;
+    out.bag = bag;
+    return out;
+  }
+
+  // ---- black level patches (DOM canvas; the VR calibrate screen paints the same picture) ----------------------------
+  _paintPatchesDom() {
+    const c = this._patchesCanvas;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this._paintPatches(ctx, 0, 0, c.width, c.height);
+  }
+
+  /** Eight squares from 0.5 % to 10 % of white on black: the second should be just visible, the first not at all. */
+  _paintPatches(ctx, x, y, w, h) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x, y, w, h);
+    const n = PATCH_LEVELS.length;
+    const gap = 12;
+    const sw = (w - gap * (n + 1)) / n;
+    const sh = h - 44;
+    for (let i = 0; i < n; i++) {
+      const v = Math.round(PATCH_LEVELS[i] * 255);
+      const px = x + gap + i * (sw + gap);
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(px, y + 10, sw, sh);
+      txt(ctx, String(i + 1), px + sw / 2, y + h - 12, `650 26px ${F_UI}`, '#9a948a', 'center', 0);
+    }
   }
 
   // ------------------------------------------------------------------ pause / death / victory
@@ -1739,7 +2157,18 @@ export class UI3D {
       deepestMeters: num(p && p.deepestMeters, U.depthMeters(num(g.deepest, g.player ? g.player.y : 0))),
       difficultyKey: key,
       label: diff.label,
+      falls: num(p && p.falls, num(p && p.deaths, num(g.deaths, 0))),
+      lowestHp: num(p && p.lowestHp, g.health && typeof g.health.minHp === 'number' ? g.health.minHp : 1),
+      itemsUsed: num(p && p.itemsUsed, this._itemsUsed(g)),
     };
+  }
+
+  /** Bag items applied this run (inventory stats), for the end card. */
+  _itemsUsed(g) {
+    const u = g && g.bag && g.bag.stats ? g.bag.stats.used : null;
+    let n = 0;
+    if (u) for (let i = 0; i < u.length; i++) n += u[i];
+    return n;
   }
 
   _fillVictory(info) {
@@ -1753,24 +2182,15 @@ export class UI3D {
     const d = this.dom;
     d.vTime.textContent = fmtTime(i.time);
     d.vNew.hidden = !(i.recorded && i.isNew);
-    d.vDeaths.textContent = String(i.deaths || 0);
-    d.vDeepest.textContent = fmtMeters(i.deepestMeters);
+    d.vDeaths.textContent = String(i.falls != null ? i.falls : i.deaths || 0);
+    d.vHealth.textContent = pct(U.clamp(num(i.lowestHp, 1), 0, 1));
+    d.vItems.textContent = String(i.itemsUsed | 0);
     d.vDiff.textContent = i.label;
-    d.vBest.textContent = '';
-    d.vPrev.textContent = '';
     if (!i.recorded) {
       d.vBest.textContent = '—';
-      d.vPrev.textContent = '—';
       d.vNote.textContent = 'Sandbox descents are not timed for the records.';
     } else {
       d.vBest.textContent = fmtTime(i.best != null ? i.best : i.time);
-      if (i.previous != null) {
-        d.vPrev.textContent = fmtTime(i.previous);
-        const delta = i.time - i.previous;
-        if (isFinite(delta) && delta !== 0) d.vPrev.appendChild(make('small', null, `${delta < 0 ? '−' : '+'}${Math.abs(delta).toFixed(2)} s`));
-      } else {
-        d.vPrev.textContent = 'First descent';
-      }
       d.vNote.textContent = '';
     }
   }
@@ -1794,6 +2214,7 @@ export class UI3D {
     if (!text) return;
     const h = this._hint;
     h.src = hint && typeof hint === 'object' ? hint : null;
+    h.tutorial = false;
     h.vr = this._forceVR || this._xrActive();
     h.text = String(text);
     h.t = seconds > 0 ? seconds : 5;
@@ -1903,7 +2324,33 @@ export class UI3D {
       case 'difficulty':
       case 'controls':
       case 'settings':
+      case 'about':
         this.show(action);
+        break;
+      case 'calibrate':
+        if (this.vrMode) this.show('calibrate');
+        else {
+          this.show('settings');
+          const c = this._ctl.brightness;
+          if (c && c.input && !fromVR) c.input.focus();
+        }
+        break;
+      case 'continue-run':
+        this._continueRun(fromVR);
+        break;
+      case 'apply-update':
+        this._applyUpdate();
+        break;
+      case 'erase-data':
+        this._eraseData();
+        break;
+      case 'tab':
+        this._vrTab = Math.max(0, Math.min(TABS.length - 1, parseInt(d.value, 10) || 0));
+        this._vrSetPage = 0;
+        this._vrDirty = true;
+        break;
+      case 'cal-reset':
+        this._applySettings({ brightness: SETTINGS_DEFAULTS.brightness, blackLevel: SETTINGS_DEFAULTS.blackLevel });
         break;
       case 'back':
         this._back();
@@ -1991,6 +2438,18 @@ export class UI3D {
       default:
         break;
     }
+  }
+
+  _continueRun(fromVR) {
+    const game = this.game || {};
+    const ok = this._call('continueRun');
+    if (ok === false || ok === undefined) {
+      this.showToast('Nothing to continue', 2.5);
+      this.refreshMenu();
+      return;
+    }
+    if (game.state === 'playing' && this.current !== null) this.show(null);
+    if (!fromVR) this._lockPointer();
   }
 
   _startRun(key, fromVR) {
@@ -2262,6 +2721,13 @@ export class UI3D {
     this._clock += step;
     const g = this.game || {};
     this._updateCalibration(step);
+    if (this._comfort) this._comfort.update(step);
+    if (this._tut) this._tut.update(step);
+    if (this._armedT > 0) {
+      this._armedT -= step;
+      if (this._armedT <= 0) this._disarm();
+    }
+    this._updateCaps(step);
 
     // XR session started / ended.
     const xr = this._xrActive();
@@ -2321,6 +2787,35 @@ export class UI3D {
 
     if (this.vrMode) this._updateVR(step);
     else if (this._vr && this._vr.visible) this._hideVR();
+  }
+
+  /** World-space head pose of the camera (x, y, z, yaw) for caption directions. */
+  _worldHead() {
+    const H = this._headW || (this._headW = { x: 0, y: 0, z: 0, yaw: 0, ok: false });
+    const R = this.game && this.game.renderer;
+    const cam = R && R.camera;
+    if (!cam || !cam.matrixWorld) {
+      H.ok = false;
+      return H;
+    }
+    const e = cam.matrixWorld.elements;
+    H.x = e[12];
+    H.y = e[13];
+    H.z = e[14];
+    H.yaw = Math.atan2(e[8], e[10]);
+    H.ok = isFinite(H.x + H.y + H.z + H.yaw);
+    return H;
+  }
+
+  _updateCaps(step) {
+    const caps = this._caps;
+    if (!caps) return;
+    caps.update(step, this._worldHead());
+    if (caps.rev !== this._capRev) {
+      this._capRev = caps.rev;
+      this._capDirty = true;
+      if (!this._xr && this._capDom) this._updateCaptionsDom();
+    }
   }
 
   // ------------------------------------------------------------------ desktop HUD
@@ -2403,6 +2898,7 @@ export class UI3D {
     h.acc += step;
     if (h.acc < HUD_INTERVAL) return;
     h.acc = 0;
+    this._updateStatusDom(g);
     const t = fmtTime(g.time || 0);
     if (t !== h.time) {
       h.time = t;
@@ -2542,11 +3038,14 @@ export class UI3D {
     vr.title = mkPlane(vr.titleC, TITLE.w, RENDER_ORDER - 5);
     vr.toastC = mkCanvas(TOAST.cw, TOAST.ch, true);
     vr.toast = mkPlane(vr.toastC, TOAST.w, RENDER_ORDER - 5);
+    vr.captionC = mkCanvas(CAPTION.cw, CAPTION.ch, true);
+    vr.caption = mkPlane(vr.captionC, CAPTION.w, RENDER_ORDER - 6);
     vr.hint.position.set(0, HINT.dy, 0);
     vr.title.position.set(0, TITLE.dy, 0);
     vr.toast.position.set(0, TOAST.dy, 0);
-    vr.hint.visible = vr.title.visible = vr.toast.visible = false;
-    vr.notes.add(vr.hint, vr.title, vr.toast);
+    vr.caption.position.set(0, CAPTION.dy, 0);
+    vr.hint.visible = vr.title.visible = vr.toast.visible = vr.caption.visible = false;
+    vr.notes.add(vr.hint, vr.title, vr.toast, vr.caption);
 
     // Wrist HUD (depth-tested: the hand / controller may cover it, like a real watch).
     // Mipmapped: ~1.6× minified at arm's length, the small text would shimmer otherwise
@@ -2567,6 +3066,7 @@ export class UI3D {
     vr.notes.visible = false;
     this._vr = vr;
     this._attachVR();
+    this._scaleVR();
     return vr;
   }
 
@@ -2949,6 +3449,8 @@ export class UI3D {
       else if (s === 'difficulty') this._paintDifficulty(ctx);
       else if (s === 'controls') this._paintControls(ctx);
       else if (s === 'settings') this._paintSettings(ctx);
+      else if (s === 'about') this._paintAbout(ctx);
+      else if (s === 'calibrate') this._paintCalibrate(ctx);
       else if (s === 'pause') this._paintPause(ctx);
       else if (s === 'death') this._paintDeath(ctx);
       else if (s === 'victory') this._paintVictory(ctx);
@@ -3091,14 +3593,27 @@ export class UI3D {
     const key = this._defaultDifficulty();
     const best = Storage.getBest(key);
     const sub = best != null ? `${DIFFICULTY[key].label} · best ${fmtTime(best)}` : DIFFICULTY[key].label;
+    const cont = this._continueInfo();
     const x0 = 212;
     const w = 600;
-    this._btn(ctx, this._region(x0, 330, w, 104, 'start'), 'Begin descent', sub, { primary: true, size: 34 });
     const hw = (w - 16) / 2;
-    this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'Difficulty', null, {});
+    if (cont) {
+      this._btn(ctx, this._region(x0, 330, w, 104, 'continue-run'), 'Continue', this._continueLine(cont), { primary: true, size: 34 });
+      this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'New descent', null, {});
+    } else {
+      this._btn(ctx, this._region(x0, 330, w, 104, 'start'), 'Begin descent', sub, { primary: true, size: 34 });
+      this._btn(ctx, this._region(x0, 448, hw, 84, 'difficulty'), 'Difficulty', null, {});
+    }
     this._btn(ctx, this._region(x0 + hw + 16, 448, hw, 84, 'sandbox'), 'Sandbox', 'No predator', {});
-    this._btn(ctx, this._region(x0, 546, hw, 76, 'controls'), 'Controls', null, {});
-    this._btn(ctx, this._region(x0 + hw + 16, 546, hw, 76, 'settings'), 'Settings', null, {});
+    const th = (w - 24) / 3;
+    this._btn(ctx, this._region(x0, 546, th, 76, 'settings'), 'Settings', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + th + 12, 546, th, 76, 'controls'), 'Controls', null, { size: 28 });
+    this._btn(ctx, this._region(x0 + (th + 12) * 2, 546, th, 76, 'about'), 'About', null, { size: 28 });
+    if (this._updateReady) {
+      ctx.fillStyle = COL.amber;
+      diamond(ctx, x0 + (th + 12) * 2 + th - 18, 546 + 18, 9);
+      ctx.fill();
+    }
     // Best times strip.
     const items = DIFFICULTY_ORDER.map((k) => {
       const b = Storage.getBest(k);
@@ -3119,7 +3634,9 @@ export class UI3D {
       txt(ctx, v, x + measure(ctx, l, lf, 0.12) + 12, 680, vf, has ? COL.ink : COL.ink4, 'left', 0);
       x += widths[i] + 48;
     });
-    txt(ctx, 'Point and pull the trigger', cx, 734, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
+    if (this._updateReady) txt(ctx, 'Update ready: it installs next time you start the game', cx, 734, `500 28px ${F_UI}`, COL.amber, 'center', 0.02);
+    else if (!this._settings().brightnessChecked) txt(ctx, 'A dark game: check Settings › Display › Brightness', cx, 734, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02);
+    else txt(ctx, 'Point and pull the trigger', cx, 734, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
     if (this._xr) this._btn(ctx, this._region(CW - 168, 18, 148, 60, 'exit-vr'), 'Exit VR', null, { ghost: true, size: 28 });
   }
 
@@ -3218,7 +3735,7 @@ export class UI3D {
         ctx.fillRect(44, y + Math.round((rowH - 22) / 2), CW - 88, 1);
       }
     });
-    txt(ctx, 'Smooth turning, full-speed falls. Pause any time.', CW / 2, 740, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
+    txt(ctx, 'Comfort options are in Settings. Pause any time.', CW / 2, 740, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
   }
 
   _paintSettings(ctx) {
@@ -3226,16 +3743,29 @@ export class UI3D {
     const page = this._vrSetPage === 1;
     this._header(ctx, page ? 'Player height' : 'Settings');
     const s = this._settings();
-    const rows = SETTINGS_SCHEMA.filter((d) => d.key && !d.desktop && !d.page);
-    const rowH = 94;
     if (page) {
-      this._paintHeightPage(ctx, s, rowH);
+      this._paintHeightPage(ctx, s, 94);
       return;
     }
-    rows.forEach((def, i) => this._paintSettingRow(ctx, def, 116 + i * rowH, rowH, s));
-    const by = 116 + rows.length * rowH + 22;
-    this._btn(ctx, this._region(CW / 2 - 360, by, 340, 70, 'height-page', { value: 1 }), 'Player height  ›', null, { size: 28 });
-    this._btn(ctx, this._region(CW / 2 + 20, by, 340, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+    const gap = 12;
+    const tw = (CW - 88 - gap * (TABS.length - 1)) / TABS.length;
+    TABS.forEach((t, i) => {
+      this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 64, 'tab', { value: i }), t.label, null, { primary: i === this._vrTab, size: 28 });
+    });
+    const tab = TABS[this._vrTab] || TABS[0];
+    const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
+    const rowH = 88;
+    let y = 190;
+    for (const def of rows) {
+      if (def.type === 'link') {
+        this._btn(ctx, this._region(44, y + 4, CW - 88, 72, def.action, { value: def.value }), `${def.label}  ›`, null, { size: 30 });
+        y += 84;
+      } else {
+        this._paintSettingRow(ctx, def, y, rowH, s);
+        y += rowH;
+      }
+    }
+    if (tab.id === 'access') this._btn(ctx, this._region(CW / 2 - 200, y + 14, 400, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
   }
 
   /** One settings row at y: label + value, then a − slider + for ranges or option buttons. */
@@ -3266,9 +3796,12 @@ export class UI3D {
       this._btn(ctx, this._region(888, y + 14, 68, 68, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
     } else {
       const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
+      const many = opts.length > 2;
+      const bw = many ? (480 - 8 * (opts.length - 1)) / opts.length : 176;
       opts.forEach(([value, label], j) => {
         const on = value === v;
-        this._btn(ctx, this._region(588 + j * 188, y + 14, 176, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
+        const bx = many ? 500 + j * (bw + 8) : 588 + j * 188;
+        this._btn(ctx, this._region(bx, y + 14, bw, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
       });
     }
     ctx.fillStyle = COL.line;
@@ -3277,7 +3810,7 @@ export class UI3D {
 
   /** VR settings page 2: Standing / Seated, the fine trim, the eye height readout, Calibrate and Reset. */
   _paintHeightPage(ctx, s, rowH) {
-    const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'height');
+    const defs = SETTINGS_SCHEMA.filter((d) => d.key && (d.page === 'height' || d.key === 'heightMode'));
     defs.forEach((def, i) => this._paintSettingRow(ctx, def, 112 + i * rowH, rowH, s));
     const h = this._heightInfo();
     const y0 = 112 + defs.length * rowH + 10;
@@ -3293,6 +3826,61 @@ export class UI3D {
     this._btn(ctx, this._region(704, by, 276, 90, 'reset-height'), 'Reset height', null, { ghost: true, size: 28 });
   }
 
+  _paintAbout(ctx) {
+    this._frame(ctx);
+    this._header(ctx, 'About');
+    const cx = CW / 2;
+    txt(ctx, 'ABYSSAL TETHER', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
+    txt(ctx, 'CHAPTER I · THE UNDERSPIRE · FREE', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
+    const lab = `650 28px ${F_UI}`;
+    const val = `500 28px ${F_UI}`;
+    const row = (y, label, text, color) => {
+      txt(ctx, label, 44, y, lab, COL.ink3, 'left', 0.1);
+      txt(ctx, ellipsize(ctx, text, CW - 330, val), 290, y, val, color || COL.ink, 'left', 0);
+    };
+    row(262, 'VERSION', this._versionLine());
+    const u = this.game && this.game.updates;
+    const ready = this._updateReady || (u && u.ready);
+    txt(ctx, 'UPDATE', 44, 318, lab, COL.ink3, 'left', 0.1);
+    const ul = wrapLines(ctx, this._updateLine(), CW - 330, val);
+    ul.slice(0, 2).forEach((ln, i) => txt(ctx, ln, 290, 318 + i * 36, val, ready ? COL.amber : COL.ink, 'left', 0));
+    if (ready && !this._xr) this._btn(ctx, this._region(CW - 260, 288, 216, 60, 'apply-update'), 'Restart', null, { size: 28 });
+    row(410, 'PRIVACY', this._privacyUrl());
+    row(458, 'SUPPORT', this._supportUrl());
+    txt(ctx, 'No account. Nothing about you leaves this headset.', 44, 514, val, COL.ink2, 'left', 0);
+    const credits = 'Created by the Abyssal Tether team. Original world, creature, score and sound (synthesised live). Built with three.js (MIT) and Blender.';
+    wrapLines(ctx, credits, CW - 88, `400 28px ${F_UI}`)
+      .slice(0, 3)
+      .forEach((ln, i) => txt(ctx, ln, 44, 568 + i * 36, `400 28px ${F_UI}`, COL.ink3, 'left', 0));
+    const armed = this._armed === 'erase-data';
+    this._btn(ctx, this._region(CW / 2 - 220, 690, 440, 62, 'erase-data'), armed ? 'Press again to erase' : 'Erase saved data', null, { ghost: !armed, primary: armed, size: 28 });
+  }
+
+  _paintCalibrate(ctx) {
+    this._frame(ctx);
+    this._header(ctx, 'Brightness');
+    this._btn(ctx, this._region(CW - 190, 18, 170, 64, 'cal-reset'), 'Reset', null, { ghost: true, size: 28 });
+    const cx = CW / 2;
+    txt(ctx, 'Raise Black level until square 2 is just visible,', cx, 142, `500 28px ${F_UI}`, COL.ink2, 'center', 0);
+    txt(ctx, 'while square 1 stays black.', cx, 178, `500 28px ${F_UI}`, COL.ink2, 'center', 0);
+    this._paintPatches(ctx, 44, 196, CW - 88, 124);
+    // A window onto the world behind the panel, so Brightness can be judged on the real picture.
+    const wy = 338;
+    const wh = 150;
+    ctx.clearRect(44, wy, CW - 88, wh);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = COL.line3;
+    ctx.strokeRect(44, wy, CW - 88, wh);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.95)';
+    ctx.shadowBlur = 8;
+    txt(ctx, 'The world, as it looks now', cx, wy + wh - 16, `500 28px ${F_UI}`, COL.ink, 'center', 0);
+    ctx.restore();
+    const s = this._settings();
+    const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'calibrate');
+    defs.forEach((def, i) => this._paintSettingRow(ctx, def, 504 + i * 94, 94, s));
+  }
+
   _paintPause(ctx) {
     this._frame(ctx);
     const g = this.game || {};
@@ -3304,8 +3892,8 @@ export class UI3D {
     if (this._ctrlLostShown) txt(ctx, 'Pick up both controllers to continue', CW / 2, 124, `650 30px ${F_UI}`, COL.amber, 'center', 0.02);
     else txt(ctx, this._runLine(), CW / 2, 124, `500 28px ${F_UI}`, COL.ink3, 'center', 0.04);
     const items = [['resume', 'Resume', { primary: true }]];
-    if (!won && this._canRespawn() && g.player) items.push(['respawn', 'Respawn at checkpoint', {}]);
-    items.push(['restart', 'Restart run', {}], ['settings', 'Settings', {}], ['controls', 'Controls', {}], ['quit', 'Quit to menu', { ghost: true }]);
+    if (!won && this._canRespawn() && g.player) items.push(['respawn', 'Restart section', {}]);
+    items.push(['restart', 'Restart descent', {}], ['settings', 'Settings', {}], ['controls', 'Controls', {}], ['quit', 'Quit to menu', { ghost: true }]);
     const bw = sections ? 440 : 520;
     const bx = sections ? 40 : (CW - bw) / 2;
     const bh = items.length > 5 ? 78 : 86;
@@ -3360,13 +3948,14 @@ export class UI3D {
       size: 34,
     });
     const hw = (bw - 16) / 2;
-    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'restart'), 'Restart run', null, {});
+    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'restart'), 'Restart descent', null, {});
     this._btn(ctx, this._region(bx + hw + 16, by + 118, hw, 80, 'quit'), 'Menu', null, { ghost: true });
     const pr = i.prompt || (i.canRespawn ? 'A (or point + trigger) to rise again · hold X to restart' : 'A (or point + trigger) to begin again');
     const pf = `500 ${fitSize(ctx, pr, CW - 80, 28, 22, (px) => `500 ${px}px ${F_UI}`, 0.02)}px ${F_UI}`;
     txt(ctx, pr, cx, Math.min(CH - 30, by + 250), pf, COL.ink3, 'center', 0.02);
   }
 
+  /** The end card after Chapter I: the result, then the hook (no purchase button, no store link: it is a teaser). */
   _paintVictory(ctx) {
     this._frame(ctx, 'victory');
     const i = this._victoryInfo || this._victoryFrom(null);
@@ -3375,54 +3964,63 @@ export class UI3D {
     ctx.shadowColor = 'rgba(224,160,80,0.9)';
     ctx.shadowBlur = 30;
     ctx.fillStyle = COL.amber;
-    diamond(ctx, cx, 54, 14);
+    diamond(ctx, cx, 44, 13);
     ctx.fill();
     ctx.restore();
-    txt(ctx, 'THE STILL LAMP', cx, 116, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.42);
-    txt(ctx, 'You reached the bottom', cx, 172, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
-    txt(ctx, 'DESCENT TIME', cx, 222, `650 28px ${F_UI}`, COL.ink3, 'center', 0.2);
-    txt(ctx, fmtTime(i.time), cx, 300, `650 78px ${F_UI}`, COL.warm, 'center', 0.02);
+    txt(ctx, 'CHAPTER I · THE UNDERSPIRE', cx, 100, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.34);
+    txt(ctx, 'You reached the bottom', cx, 154, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
+    txt(ctx, 'DESCENT TIME', cx, 200, `650 28px ${F_UI}`, COL.ink3, 'center', 0.2);
+    txt(ctx, fmtTime(i.time), cx, 278, `650 78px ${F_UI}`, COL.warm, 'center', 0.02);
     const recorded = i.recorded !== false && i.difficultyKey !== 'sandbox';
     if (recorded && i.isNew) {
       const bf = `750 28px ${F_UI}`;
       const bw = measure(ctx, '★ NEW BEST', bf, 0.14) + 32;
-      rr(ctx, cx - bw / 2, 318, bw, 42, 4);
+      rr(ctx, cx - bw / 2, 292, bw, 42, 4);
       ctx.fillStyle = COL.amber;
       ctx.fill();
-      txt(ctx, '★ NEW BEST', cx, 349, bf, '#1a1206', 'center', 0.14);
+      txt(ctx, '★ NEW BEST', cx, 323, bf, '#1a1206', 'center', 0.14);
     }
     const cells = [
-      ['BEST', !recorded ? '—' : fmtTime(i.best != null ? i.best : i.time), null],
-      ['PREVIOUS', !recorded ? '—' : i.previous != null ? fmtTime(i.previous) : 'First', null],
-      ['DEATHS', String(i.deaths || 0), null],
-      ['DEEPEST', fmtMeters(i.deepestMeters), null],
-      ['MODE', i.label || (DIFFICULTY[i.difficultyKey] || DIFFICULTY.normal).label, null],
+      ['FALLS', String(i.falls != null ? i.falls : i.deaths || 0)],
+      ['LOWEST HP', pct(U.clamp(num(i.lowestHp, 1), 0, 1))],
+      ['ITEMS USED', String(i.itemsUsed | 0)],
+      [recorded ? 'BEST' : i.label ? i.label.toUpperCase() : 'MODE', recorded ? fmtTime(i.best != null ? i.best : i.time) : '—'],
     ];
-    if (recorded && i.previous != null && isFinite(i.time - i.previous) && i.time !== i.previous) {
-      const delta = i.time - i.previous;
-      cells[1][2] = `${delta < 0 ? '−' : '+'}${Math.abs(delta).toFixed(2)} s`;
-    }
     const gap = 12;
-    const cw = (CW - 48 - gap * 4) / 5;
-    cells.forEach(([dt, dd, small], k) => {
+    const cw = (CW - 48 - gap * 3) / 4;
+    cells.forEach(([dt, dd], k) => {
       const x = 24 + k * (cw + gap);
-      const y = 382;
-      rr(ctx, x, y, cw, 128, 5);
+      const y = 352;
+      rr(ctx, x, y, cw, 112, 5);
       ctx.fillStyle = 'rgba(255,240,210,0.04)';
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = COL.line2;
       ctx.stroke();
-      txt(ctx, dt, x + cw / 2, y + 40, `650 28px ${F_UI}`, COL.ink3, 'center', 0.06);
-      const vf = `650 ${fitSize(ctx, dd, cw - 16, 32, 28, (px) => `650 ${px}px ${F_UI}`, 0)}px ${F_UI}`;
-      txt(ctx, dd, x + cw / 2, y + 84, vf, COL.ink, 'center', 0);
-      if (small) txt(ctx, small, x + cw / 2, y + 116, `500 28px ${F_UI}`, COL.ink3, 'center', 0);
+      txt(ctx, dt, x + cw / 2, y + 40, `650 28px ${F_UI}`, COL.ink3, 'center', 0.04, cw - 12);
+      const vf = `650 ${fitSize(ctx, dd, cw - 16, 44, 28, (px) => `650 ${px}px ${F_UI}`, 0)}px ${F_UI}`;
+      txt(ctx, dd, x + cw / 2, y + 90, vf, COL.ink, 'center', 0);
     });
-    if (!recorded) txt(ctx, 'Sandbox descents are not timed for the records.', cx, 556, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'center', 0);
+    // The hook.
+    const ty = 484;
+    rr(ctx, 24, ty, CW - 48, 168, 8);
+    const tg = ctx.createLinearGradient(0, ty, 0, ty + 168);
+    tg.addColorStop(0, 'rgba(255,240,210,0.07)');
+    tg.addColorStop(1, 'rgba(255,240,210,0.015)');
+    ctx.fillStyle = tg;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(224,160,80,0.45)';
+    ctx.stroke();
+    txt(ctx, 'CHAPTERS II–V · COMING SOON', cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+    const names = 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
+    const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
+    txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
+    txt(ctx, 'The Underspire goes deeper than the light does.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
     const bw = 680;
     const bx = (CW - bw) / 2;
-    this._btn(ctx, this._region(bx, 600, 400, 96, 'restart'), 'Descend again', null, { primary: true, size: 32 });
-    this._btn(ctx, this._region(bx + 416, 600, bw - 416, 96, 'menu'), 'Menu', null, {});
+    this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });
+    this._btn(ctx, this._region(bx + 416, 670, bw - 416, 82, 'menu'), 'Menu', null, {});
   }
 
   // ---- notes ---------------------------------------------------------------------------------
@@ -3433,8 +4031,12 @@ export class UI3D {
     const ts = this._toast;
     const showHint = h.on && !panelUp;
     const showTitle = t.t > 0 && !panelUp;
-    const showToast = ts.t > 0 && !panelUp;
-    vr.notes.visible = (showHint || showTitle || showToast) && H.ok;
+    const showToast = ts.t > 0 && !panelUp && !showTitle; // (draw-call budget: title and toast share a slot)
+    const caps = this._caps;
+    let capLines = 0;
+    if (caps) for (let i = 0; i < caps.lines.length; i++) if (caps.lines[i].on) capLines++;
+    const showCaps = capLines > 0 && !panelUp;
+    vr.notes.visible = (showHint || showTitle || showToast || showCaps) && H.ok;
     if (!vr.notes.visible) return;
     // Lazy follow: position locked to the head, yaw catches up once the head turns away.
     if (!this._noteYawSet) {
@@ -3470,6 +4072,114 @@ export class UI3D {
     }
     vr.toast.visible = showToast;
     if (showToast) vr.toast.material.opacity = U.clamp(Math.min(ts.t / 0.3, 1), 0, 1);
+
+    vr.caption.visible = showCaps;
+    if (showCaps && this._capDirty) {
+      this._capDirty = false;
+      this._paintCaptions();
+    }
+  }
+
+  /** Subtitle lines: [shape] [direction] [text] in a dark pill each, newest-first order of the slots, up to 3. */
+  _paintCaptions() {
+    const c = this._vr.captionC;
+    const ctx = c.ctx;
+    ctx.setTransform(PX, 0, 0, PX, 0, 0);
+    ctx.clearRect(0, 0, c.cw, c.ch);
+    const lh = 64;
+    let row = 0;
+    const lines = this._caps.lines;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.on) continue;
+      const f = `${l.sev >= 2 ? 700 : 500} 32px ${F_UI}`;
+      const tw = measure(ctx, l.text, f, 0);
+      const hasDir = l.sector >= 0 || l.vert !== 0;
+      const w = Math.min(c.cw - 20, tw + 96 + (hasDir ? 64 : 0));
+      const x = (c.cw - w) / 2;
+      const y = 6 + row * lh;
+      rr(ctx, x, y, w, lh - 8, 10);
+      ctx.fillStyle = 'rgba(0,0,0,0.86)';
+      ctx.fill();
+      if (l.sev >= 2) {
+        ctx.fillStyle = COL.amber;
+        ctx.fillRect(x, y + 6, 6, lh - 20);
+      }
+      const cy = y + (lh - 8) / 2;
+      this._kindShape(ctx, l.kind, x + 34, cy, 11);
+      let tx = x + 62;
+      if (hasDir) {
+        this._dirDial(ctx, x + 90, cy, 19, l.sector, l.vert, l.near);
+        tx = x + 124;
+      }
+      txt(ctx, l.text, tx, cy + 11, f, '#ffffff', 'left', 0, w - (tx - x) - 14);
+      row++;
+    }
+    c.tex.needsUpdate = true;
+  }
+
+  /** Shape-coded source kind: diamond = creature, square = the world, circle = you, triangle = a status warning. */
+  _kindShape(ctx, kind, cx, cy, r) {
+    ctx.fillStyle = '#f2e6c9';
+    ctx.strokeStyle = '#f2e6c9';
+    ctx.lineWidth = 3;
+    if (kind === 'creature') {
+      diamond(ctx, cx, cy, r + 3);
+      ctx.fill();
+    } else if (kind === 'status') {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r - 2);
+      ctx.lineTo(cx + r + 3, cy + r);
+      ctx.lineTo(cx - r - 3, cy + r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.fillRect(cx - 1.5, cy - 4, 3, 7);
+      ctx.fillRect(cx - 1.5, cy + 5, 3, 3);
+    } else if (kind === 'player') {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    }
+  }
+
+  /** A small compass: a ring with a wedge toward the sound (0 = ahead = up), a bar above / below for vertical, bold when near. */
+  _dirDial(ctx, cx, cy, r, sector, vert, near) {
+    ctx.save();
+    ctx.strokeStyle = '#f2e6c9';
+    ctx.fillStyle = '#f2e6c9';
+    ctx.lineWidth = near ? 4 : 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    if (sector >= 0) {
+      const a = sector * (Math.PI / 4);
+      const sx = Math.sin(a);
+      const sy = -Math.cos(a);
+      ctx.beginPath();
+      ctx.moveTo(cx + sx * (r + 5), cy + sy * (r + 5));
+      ctx.lineTo(cx + sy * -7 + sx * (r - 8), cy + sx * 7 + sy * (r - 8));
+      ctx.lineTo(cx + sy * 7 + sx * (r - 8), cy - sx * 7 + sy * (r - 8));
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (vert !== 0) {
+      ctx.beginPath();
+      if (vert > 0) {
+        ctx.moveTo(cx, cy - 6);
+        ctx.lineTo(cx + 6, cy + 4);
+        ctx.lineTo(cx - 6, cy + 4);
+      } else {
+        ctx.moveTo(cx, cy + 6);
+        ctx.lineTo(cx + 6, cy - 4);
+        ctx.lineTo(cx - 6, cy - 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   /**
@@ -3619,7 +4329,9 @@ export class UI3D {
     const time = fmtTime(g.time || 0);
     const depth = g.player ? U.depthMeters(num(g.player.y, 0)) : 0;
     const si = g.sectionIndex | 0;
-    const key = `${time.slice(0, -1)}|${depth}|${si}|${tl}|${tr}|${fragile ? (this._clock * 20) | 0 : 0}`;
+    const safe = this._settings().colorSafe === true;
+    const stv = safe ? this._statusValues(g) : null;
+    const key = `${time.slice(0, -1)}|${depth}|${si}|${tl}|${tr}|${fragile ? (this._clock * 20) | 0 : 0}${safe ? `|${stv.hp}|${stv.grip}|${stv.bag}` : ''}`;
     if (key === this._wristKey) return;
     this._wristKey = key;
     this._paintWrist(g, time, depth, si, tl, tr);
@@ -3681,7 +4393,34 @@ export class UI3D {
     txt(ctx, time.slice(0, -1), c.cw / 2, 62, `700 40px ${F_UI}`, COL.warm, 'center', 0.02);
     txt(ctx, `${depth} m`, c.cw / 2, 102, `650 30px ${F_UI}`, COL.phosphor, 'center', 0.02);
     const sec = this._sections() ? this._sections()[si] : null;
-    if (sec) {
+    if (this._settings().colorSafe === true) {
+      // Colour-safe strip: a shape and a number per resource (the section name gives way to it).
+      const st = this._statusValues(g);
+      const items = [
+        [st.hp < 40, 'HP', st.hp, 0],
+        [st.grip < 25, 'GRIP', st.grip, 1],
+        [false, 'BAG', st.bag, 2],
+      ];
+      items.forEach(([warn, name, value, shape], k) => {
+        const x = 18 + k * 100;
+        ctx.strokeStyle = warn ? '#ffd9a0' : COL.ink2;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.lineWidth = 3;
+        const cy = 134;
+        if (shape === 0) {
+          ctx.fillRect(x + 5, cy - 10, 6, 20);
+          ctx.fillRect(x - 2, cy - 3, 20, 6);
+        } else if (shape === 1) {
+          ctx.beginPath();
+          ctx.arc(x + 8, cy, 9, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, cy - 9, 17, 18);
+        }
+        txt(ctx, warn ? `${value}!` : String(value), x + 24, cy + 8, `700 22px ${F_UI}`, warn ? '#ffd9a0' : COL.phosphor, 'left', 0);
+        txt(ctx, name, x + 24, cy + 28, `600 14px ${F_UI}`, COL.ink3, 'left', 0.06);
+      });
+    } else if (sec) {
       const label = `${ROMAN[si] || si + 1} · ${sec.name}`;
       const size = fitSize(ctx, label, c.cw - 24, 22, 16, (px) => `400 ${px}px ${F_DISPLAY}`, 0.04);
       txt(ctx, label, c.cw / 2, 142, `400 ${size}px ${F_DISPLAY}`, COL.amber, 'center', 0.04);

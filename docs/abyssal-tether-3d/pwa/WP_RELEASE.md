@@ -25,10 +25,12 @@ below; keep them only as the original design notes). Plan and VRC context: [../R
 npm run at3d:sw                 # regenerate public/abyssal-tether-3d/sw.js (also runs as `prebuild`, so GitHub Pages deploys a consistent list)
 npm run build:at3d-release      # dist-at3d/{web,twa}; -- --minify, -- --smoke
 npm run test:at3d               # Node suites incl. save / entitlement / governor / platform
-npm run test:at3d-release       # browser: PWA install / offline / update / bad deploy, immersive boot time
-node tools/abyssal-tether-3d/release/test-resilience.mjs   # context loss, XR end, visibility, saves in a real browser
-npm run soak:at3d -- --minutes 45                           # accelerated 45-minute soak
-npm run capture:at3d-store && npm run art:at3d-store        # screenshots and art from the real game, then the cover set
+npm run sanity:at3d             # ONE page: immersive boot, stable memory over an accelerated loop, context loss, XR end, saves (verified)
+npm run test:at3d-release       # test-pwa.mjs (install / offline / update / bad deploy / sub-path + root) + sanity.mjs
+# written but not run to completion (software GL is too slow / memory hungry on the shared machine; run on a quiet box):
+#   test-boot.mjs (throttled boot timing), test-resilience.mjs (longer resilience matrix), soak.mjs (45-minute soak)
+# always run browser jobs under:  flock /tmp/at3d-browser.lock <cmd>
+npm run capture:at3d-store && npm run art:at3d-store        # screenshots (packed to JPEG by pack-screens.py, store pack 13 MB) and art from the real game, then the cover set
 node tools/abyssal-tether-3d/release/check-listing.mjs      # listing text limits + art sizes
 ```
 
@@ -51,8 +53,10 @@ Timings are on `AT3D.debug.platform().bootTimes` (ms since navigation start: `mi
 
 ## Service worker (RELEASE section 9)
 
-Precache core = every runtime file (assets, code, vendor three.js, manifest, icons), SHA-256 per file, all-or-nothing
-install; unchanged files are copied from the previous cache on update; later chapters (`assets/chapters/chN/**`) are the
+Precache core = every runtime file generated from the tree (assets incl. `lighting/*.bin` and `.ktx2`, models, code, vendor
+three.js incl. the Basis transcoder, manifest, icons; today 106 files / 63.5 MB, cap `maxCoreMB` 80), SHA-256 per file,
+all-or-nothing install; JPEG/PNG texture fallbacks that have a `.ktx2` sibling are lazy (cached on first use, so textures are
+not downloaded twice); unchanged files are copied from the previous cache on update; later chapters (`assets/chapters/chN/**`) are the
 lazy tier; excluded: sw.js, docs, previews, `mason_hero.glb`, keystores. Works at any path (every URL resolves against
 the registration scope; cache names carry the scope path).
 
@@ -87,7 +91,9 @@ previous build. UI hook for the UX agent: a Settings > About row "Update ready: 
 (> 250 ms) and non-play states are ignored. Quality tiers use the semantics fx.js already has:
 `settings.reducedEffects === true` pins level >= 3 (fx tier 0), otherwise the governor writes `settings.fxQuality`
 (`'quest'` / `'low'`, in memory; removed on session end). `?gov=off` disables it, `?gov=N` pins level N (QA).
-`AT3D.debug.platform().governor` reports level, miss ratio and the last changes; bus event `quality:level`.
+Render side (2026-10-20): `Game3D._loop` now calls `renderer.governor.update(frameMs)` every frame (0 while not playing / menu / dead):
+in XR `render/renderGovernor.js` only mirrors this governor's level (lighting levers, `gfx:level`), on desktop it steps by itself,
+so the tiers exist once. `AT3D.debug.platform().governor` reports level, miss ratio and the last changes; bus event `quality:level`.
 Plug-in API for the render quality tiers: `game.governor.onFrame(frameMs)` (feed a frame time),
 `game.governor.onStep(fn)` -> unsubscribe, with `fn(tier, foveation, scale, level, why)` (`tier` is `'quest'` or `'low'`);
 when the renderer has `setQualityTier(tier)` it is called on every change as well.
@@ -135,4 +141,18 @@ today. Dev-channel mock: `?entitlement=owned|demo|buy|cancel|offline|error`; the
 
 ## Verification evidence
 
-See the final report of WP-RELEASE; logs are reproducible with the commands above.
+Measured on software WebGL (headless Chromium, mock WebXR, shared 4-core machine; device numbers are the owner's):
+
+- Node: 46 save, 29 entitlement, 34 governor, 35 platform checks; `npm run test:at3d` all suites pass.
+- `sanity.mjs` 12/12: first XR frame 465-733 ms after launch with the loading scene (< 4 s), menu in VR at 1.9-2.7 s;
+  geometries 88 / textures 46 / programs 73 / scene objects 235 / bus listeners 124 identical before and after
+  3 x 63 simulated seconds across sections; context loss pauses + saves, restore keeps place and clock, resume renders;
+  checkpoint in IndexedDB and continuable; system-ended XR -> Return to VR panel -> re-enter; zero console errors.
+- `test-pwa.mjs`: install (every core file cached), offline reload with the server stopped, deep link, run + VR offline:
+  source tree at sub-path and host root 18/20 on the first run (the 2 failures were the test counting in-page `blob:`
+  requests as network requests; fixed), the same checks 10/10 on the built release at the host root (every request in
+  the precache list). Update flow (only the changed file downloaded, ready signal, apply, old cache removed) and
+  half-finished-deploy rejection (hash mismatch, failing file, repair then update) 12/12; dev policy (no worker on
+  localhost without ?sw=1) passed. `?sw=0` purge was fixed after a flaky run and not re-run.
+- The 45-minute soak and test-boot / test-resilience were NOT completed: first renders of each new area take 15-55 s on
+  software GL and the machine OOM-killed browsers during long runs.

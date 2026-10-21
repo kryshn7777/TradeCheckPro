@@ -3,37 +3,73 @@
     "albedo": "rock_albedo.jpg",
     "normal": "rock_normal.jpg",
     "orm": "rock_orm.jpg",
-    "tileMeters": 4.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "shaft rock: dark bedded stone, jointed blocks, faults, calcite veins, seeps"
+    "tileMeters": 4,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.05581,
+    "meanLuma": 0.05872,
+    "source": "baked:build_textures_hq.py",
+    "description": "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation",
+    "ktx2": {
+      "albedo": "rock_albedo.ktx2",
+      "normal": "rock_normal.ktx2",
+      "orm": "rock_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "masonry": {
     "albedo": "masonry_albedo.jpg",
     "normal": "masonry_normal.jpg",
     "orm": "masonry_orm.jpg",
-    "tileMeters": 4.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "Lanternwright ashlar: dressed courses + band course, worn chipped arrises, eroded joints"
+    "tileMeters": 4,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.02243,
+    "meanLuma": 0.07386,
+    "source": "baked:build_textures_hq.py",
+    "description": "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits",
+    "ktx2": {
+      "albedo": "masonry_albedo.ktx2",
+      "normal": "masonry_normal.ktx2",
+      "orm": "masonry_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "metal": {
     "albedo": "metal_albedo.jpg",
     "normal": "metal_normal.jpg",
     "orm": "metal_orm.jpg",
-    "tileMeters": 2.0,
-    "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "corroded iron: blackened scale, flaking rust blooms and runs, pitting"
+    "tileMeters": 2,
+    "size": 2048,
+    "hero": true,
+    "heightM": 0.00797,
+    "meanLuma": 0.03511,
+    "source": "baked:build_textures_hq.py",
+    "description": "calm riveted iron plate: grooved seams, rivet rows, per-plate value, soft rust blooms",
+    "ktx2": {
+      "albedo": "metal_albedo.ktx2",
+      "normal": "metal_normal.ktx2",
+      "orm": "metal_orm.ktx2",
+      "normalHeightInB": true
+    }
   },
   "rockFar": {
     "albedo": "rockFar_albedo.jpg",
     "normal": "rockFar_normal.jpg",
     "orm": "rockFar_orm.jpg",
-    "tileMeters": 16.0,
+    "tileMeters": 16,
     "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "distant rock: darker massive beds, large joints, low fine detail"
+    "hero": false,
+    "heightM": 1.12548,
+    "source": "baked:build_textures_hq.py",
+    "description": "distant rock: dark massive beds, big joints",
+    "ktx2": {
+      "albedo": "rockFar_albedo.ktx2",
+      "normal": "rockFar_normal.ktx2",
+      "orm": "rockFar_orm.ktx2",
+      "normalHeightInB": true
+    },
+    "meanLuma": 0.01742
   },
   "flesh": {
     "albedo": "flesh_albedo.jpg",
@@ -41,7 +77,98 @@
     "orm": "flesh_orm.jpg",
     "tileMeters": 1.5,
     "size": 1024,
-    "source": "baked:build_textures.py",
-    "description": "dark wet sinew: fibre bundles, branching raised veins, capillaries, wet sheen"
+    "hero": false,
+    "heightM": 0.02322,
+    "source": "baked:build_textures_hq.py",
+    "description": "dark wet sinew: fibre bundles, raised veins, capillaries",
+    "ktx2": {
+      "albedo": "flesh_albedo.ktx2",
+      "normal": "flesh_normal.ktx2",
+      "orm": "flesh_orm.ktx2",
+      "normalHeightInB": true
+    },
+    "meanLuma": 0.00763
+  },
+  "detail": {
+    "normal": "detail_normal.png",
+    "tileMeters": 0.5,
+    "size": 512,
+    "source": "baked:build_textures_hq.py",
+    "description": "shared micro normal (RG) + grain (B), layered over every macro normal",
+    "ktx2": {
+      "normal": "detail_normal.ktx2"
+    }
+  },
+  "decals": {
+    "albedo": "decals_albedo.png",
+    "normal": "decals_normal.png",
+    "tileMeters": 1,
+    "size": 2048,
+    "layout": {
+      "crackA": [
+        0,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "crackB": [
+        0.25,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "grime": [
+        0.5,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "moss": [
+        0.75,
+        0.5,
+        0.25,
+        0.5
+      ],
+      "blood": [
+        0,
+        0,
+        0.25,
+        0.5
+      ],
+      "burn": [
+        0.25,
+        0,
+        0.25,
+        0.5
+      ],
+      "scratch": [
+        0.5,
+        0,
+        0.25,
+        0.5
+      ],
+      "impact": [
+        0.75,
+        0,
+        0.25,
+        0.5
+      ]
+    },
+    "names": [
+      "crackA",
+      "crackB",
+      "grime",
+      "moss",
+      "blood",
+      "burn",
+      "scratch",
+      "impact"
+    ],
+    "source": "baked:build_textures_hq.py",
+    "description": "decal atlas 4x2: cracks, grime, moss, blood smear, burn, claw scratches, impact (RGBA + normal)",
+    "ktx2": {
+      "albedo": "decals_albedo.ktx2",
+      "normal": "decals_normal.ktx2"
+    }
   }
 }

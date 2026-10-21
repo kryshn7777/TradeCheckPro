@@ -30,6 +30,9 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../sim/config3d.js';
+import { buildGearEnvironment } from './handsView.js';
+import { loadGLB } from './glbLoad.js';
+import { patchGearSurface } from './gearSurface.js';
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -37,8 +40,9 @@ const T = {
   upper: 0.3, // rest bone lengths are read from the skeleton; these are only fallbacks
   stub: 0.1,
   sleeveInset: 0.04, // the stub tip sits this far inside the arms' sleeve opening (m)
-  neckDrop: 0.1, // neck base below the head pivot (m)
-  pivot: [0, -0.09, 0.07], // head pivot relative to the eyes, in head space (m)
+  neckDrop: 0.17, // neck base below the eyes (m)
+  neckBack: 0.11, // ... and behind them (m), 0.20 when looking down (the head hangs forward of the neck)
+  neckBackDown: 0.21,
   armStretch: 1.35,
   torsoLimitXr: 0.65, // rad: the torso may lag the head yaw by this much before it is dragged along
   torsoLimitDesk: 0.5,
@@ -50,6 +54,13 @@ const T = {
   fade: 11, // clip weight fade rate (1/s)
   ikFade: 12,
   stand: 1.62, // standEye
+  // Looking down pushes the feet this far forward (along the torso heading) while the neck stays under the camera: the body
+  // leans back a little, so the chest, belt, thighs, knees and boots are inside the view (the desktop camera is a narrow
+  // 70-degree window; a real person sees them with peripheral vision).
+  shiftDesk: 0.28,
+  shiftXr: 0.16,
+  light: 0.5, // x the direct (lantern) light on the body: it is lit like the hands, not blown out
+  env: 1.1, // image based light (the hands' lit-room reflection)
 };
 
 // scratch (module level: no allocation in update)
@@ -123,6 +134,8 @@ export class BodyView {
     this._runDir = 1;
     this._stature = 0;
     this._k = 1;
+    this._shift = 0;
+    this._fill = 0;
     this._lastX = 0;
     this._lastZ = 0;
     this._pvx = 0;
@@ -140,13 +153,7 @@ export class BodyView {
 
   _load() {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
-    return import('three/addons/loaders/GLTFLoader.js')
-      .then(
-        (M) =>
-          new Promise((resolve, reject) => {
-            new M.GLTFLoader().load(BODY_URL, resolve, undefined, reject);
-          }),
-      )
+    return loadGLB(BODY_URL)
       .then((gltf) => {
         this._setup(gltf);
         return true;
@@ -178,8 +185,35 @@ export class BodyView {
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    this._lightU = { value: T.light };
+    const hvEnv = this.game.handsView && this.game.handsView._gearEnv;
+    let env = hvEnv || null;
+    if (!env) {
+      try {
+        const r = this.game.renderer && this.game.renderer.renderer;
+        if (r && typeof r.getContext === 'function') {
+          env = buildGearEnvironment(r);
+          this._ownEnv = env;
+        }
+      } catch {
+        env = null;
+      }
+    }
     for (const m of mats) {
       m.side = THREE.FrontSide;
+      const u = this._lightU;
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uBodyLight = u;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uBodyLight;')
+          .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uBodyLight;\n\treflectedLight.directSpecular *= uBodyLight;');
+      };
+      m.customProgramCacheKey = () => 'at3d-body-light';
+      patchGearSurface(m); // cloth weave + sheen, leather pores, dust (gearSurface.js)
+      if (env) {
+        m.envMap = env.texture;
+        m.envMapIntensity = T.env;
+      }
       m.needsUpdate = true;
     }
     // rest data
@@ -262,6 +296,7 @@ export class BodyView {
   dispose() {
     this._disposed = true;
     if (this.root.parent) this.root.parent.remove(this.root);
+    if (this._ownEnv && this._ownEnv.dispose) this._ownEnv.dispose();
     if (this.mesh) {
       this.mesh.geometry.dispose();
       const mats = Array.isArray(this.mesh.material) ? this.mesh.material : [this.mesh.material];
@@ -369,6 +404,12 @@ export class BodyView {
       if (this._stillT > 0.5) this._yaw = wrapPi(this._yaw + wrapPi(headYaw - this._yaw) * Math.min(1, dt * T.idleRecentre));
     }
 
+    // ---- look-down forward shift ----
+    const pitchDown = Math.asin(clamp(-_fwd.y, -1, 1));
+    const shT = (xr ? T.shiftXr : T.shiftDesk) * sstep(0.3, 1.1, pitchDown);
+    this._shift += (shT - this._shift) * Math.min(1, dt * 9);
+    if (first) this._shift = shT;
+
     // ---- clip selection ----
     if (!p.grounded) {
       this._airT += dt;
@@ -381,7 +422,7 @@ export class BodyView {
     const air = !p.grounded && this._airT > 0.08;
     this._wasAir = air;
     const th = game.tethers;
-    _ropeAccum(this, th, p);
+    _ropeAccum(this, th, p, game.climb);
     const ropes = this._ropes;
     const wt = this._wt || (this._wt = { Idle_Stand: 0, Run: 0, Hang_Swing: 0, Fall: 0, Land: 0 });
     wt.Idle_Stand = wt.Run = wt.Hang_Swing = wt.Fall = wt.Land = 0;
@@ -415,7 +456,8 @@ export class BodyView {
 
     // ---- root ----
     const root = this.root;
-    root.position.set(p.rx, feetY, p.rz);
+    _bfwd.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw));
+    root.position.set(p.rx + _bfwd.x * this._shift, feetY, p.rz + _bfwd.z * this._shift);
     root.rotation.set(0, this._yaw, 0);
     root.scale.setScalar(k);
     root.updateMatrixWorld(true);
@@ -461,16 +503,20 @@ export class BodyView {
     pel.updateMatrixWorld(true);
 
     // ---- neck base target ----
-    _v.set(T.pivot[0], T.pivot[1], T.pivot[2]).applyQuaternion(_qh);
-    _Nt.copy(_H).add(_v);
-    _Nt.y -= T.neckDrop;
+    const back = T.neckBack + (T.neckBackDown - T.neckBack) * sstep(0.3, 1.1, pitchDown);
+    _Nt.set(_H.x + Math.sin(headYaw) * back, _H.y - T.neckDrop - 0.02 * sstep(0.3, 1.1, pitchDown), _H.z + Math.cos(headYaw) * back);
     // pelvis under it
     const Ls = (this.len.spine1 + this.len.spine2) * k;
     _S.set(root.position.x, 0, root.position.z);
-    const px = _S.x + (_Nt.x - _S.x) * 0.55;
-    const pz = _S.z + (_Nt.z - _S.z) * 0.55;
+    const px = _S.x + (_Nt.x - _S.x) * 0.62;
+    const pz = _S.z + (_Nt.z - _S.z) * 0.62;
     const hxz2 = (_Nt.x - px) * (_Nt.x - px) + (_Nt.z - pz) * (_Nt.z - pz);
     let py = _Nt.y - Math.sqrt(Math.max(0.0004, Ls * Ls - hxz2));
+    // the legs must reach the planted feet: hip (0.08 below Spine1's head) to ankle <= leg length
+    const legL = (this.len.thigh + this.len.shin) * k * 0.985;
+    const dxz2 = (px - _S.x) * (px - _S.x) + (pz - _S.z) * (pz - _S.z);
+    const reachY = feetY + (this.len.ankle + 0.08) * k + Math.sqrt(Math.max(0.01, legL * legL - dxz2));
+    if (this._ikW > 0.5 && py > reachY) py = reachY;
     py = clamp(py, feetY + 0.3 * k, feetY + 1.04 * k);
     // pelvis bone position so that Spine1's head lands on (px, py, pz)
     worldQuat(pel, _qa);
@@ -637,6 +683,14 @@ export class BodyView {
     drive(this._spr.pack, 0.012, 0.01, 90, 7, 0.22);
     drive(this._spr.pouchL, 0.02, 0.02, 70, 5, 0.5);
     drive(this._spr.pouchR, 0.02, 0.02, 70, 5, 0.5);
+    // fullness: the bag's items fill the pack (a flat empty satchel -> a stuffed one), eased
+    const bag = this.game.bag;
+    if (bag && bag.counts && B.Pack) {
+      let have = 0;
+      for (let i = 0; i < bag.counts.length; i++) have += bag.counts[i];
+      this._fill += (Math.min(1, have / 6) - this._fill) * Math.min(1, dt * 4);
+      B.Pack.scale.setScalar(this.rest.Pack.s.x * (0.93 + 0.1 * this._fill));
+    }
     this._swing(B.Pack, this._spr.pack);
     this._swing(B.Pouch_L, this._spr.pouchL);
     this._swing(B.Pouch_R, this._spr.pouchR);
@@ -659,10 +713,25 @@ export class BodyView {
 }
 
 /** Counts the attached ropes and the mean unit direction anchor -> player (into view._ropeDir). */
-function _ropeAccum(view, th, p) {
+function _ropeAccum(view, th, p, climb) {
   view._ropes = 0;
   view._ropeDir.set(0, 0, 0);
-  if (!th || !th.hands) return;
+  // WP-CLIMB: a body hanging from a hold on the wall dangles like one on a rope: each gripping hand counts as a line from its
+  // hold (the legs trail below it, the pelvis leans along it).
+  if (climb && climb.holding) {
+    for (const h of ['left', 'right']) {
+      const st = climb.hands[h];
+      if (!st.gripping) continue;
+      view._ropes++;
+      _v.set(p.rx - st.ax, p.ry - st.ay, p.rz - st.az);
+      const l = _v.length();
+      if (l > 0.05) view._ropeDir.addScaledVector(_v, 1 / l);
+    }
+  }
+  if (!th || !th.hands) {
+    if (view._ropes > 1) view._ropeDir.multiplyScalar(1 / view._ropes);
+    return;
+  }
   for (const h of ['left', 'right']) {
     const rope = th.hands[h] && th.hands[h].rope;
     if (!rope || !rope.attached || !rope.anchor) continue;

@@ -33,13 +33,17 @@ Conventions (three.js space: +Y up; Blender Z-up is converted on export):
   ch1_env_growth           flesh     back-centre; a sinew burl Ø 1.4 clinging to a wall (z ≥ 0)
   ch1_env_saint            stone     bottom-back-centre; hooded saint on a bracket in a pointed niche, h = 1.28 (figure 0.8), w 0.4, d 0.23
   ch1_env_gear             metal     centre on the wall (z = 0); iron cog, r = 1 (teeth), rim face z 0.16, hub z 0.3
+  ch1_env_geartrain        metal     centre of the big cog on the wall (z = 0); VR hero: three meshing cogs (22/12/7 teeth, r = 1 / 0.56 / 0.34), bearing
+                                     blocks + straps, a rack bar and a chain over the big cog; bbox x -1.25..1.95, y -1.3..1.75, z to 0.46 (~2.1 k tris)
+  ch1_env_corbel_hero      stone     top-back-centre; VR hero: carved corbel head 1.0 w x 1.9 h x 1.1 d, stepped tiers, dentils, volutes, leaves, dead lantern (~0.9 k)
+  ch1_env_arch_fragment    stone     bottom-back-centre; VR hero: crumbling pointed-arch relief 1.22 w x 1.0 h x 0.42 d on a shelf with fallen stones (~0.3 k)
   ch1_env_far_colossus     stone     bottom-centre; hooded Lanternwright, lantern held forward (+z), h = 1
   ch1_env_far_column       stone     bottom-centre; fluted colossal column, broken top, h = 1 (r 0.07)
   ch1_env_far_spire        stone     top-centre; inverted spire with fins and pinnacles, y 0 → −1
   ch1_env_far_arcade       stone     deck-top-centre; three pointed arches on piers, w 1 (x ±0.5), y 0 → −1
 
 Run (Blender 4.2+/5.x, or the `bpy` Python module):
-  blender -b -P build_env_kit.py -- [--out <dir>] [--render]
+  blender -b -P build_env_kit.py -- [--out <dir>] [--render] [--focus name,name]
   python build_env_kit.py [--out <dir>] [--render]
 """
 
@@ -63,6 +67,7 @@ ap.add_argument("--out", default=DEFAULT_OUT)
 ap.add_argument("--render", action="store_true", help="render a Cycles preview of every part")
 ap.add_argument("--seed", type=int, default=11)
 ap.add_argument("--ao-rays", type=int, default=40)
+ap.add_argument("--focus", default="", help="comma list of part names: --render shows only these (a closer look)")
 args = ap.parse_args(argv)
 os.makedirs(args.out, exist_ok=True)
 RNG = random.Random(args.seed)
@@ -674,26 +679,298 @@ def part_gear():
     return g
 
 
+# -----------------------------------------------------------------------------
+# VR hero pieces (WP-GFX-VR-POLISH): a few high-detail props the eye can linger on from a ledge at 1:1 scale.
+# Geometry carries the detail (the shared baked masonry / metal sets are projected onto them in metres, vertex AO as for
+# every kit part). Placed by LevelView._icon / the corbel table in the "bays" away from the route, a handful per section.
+# -----------------------------------------------------------------------------
+def prism(poly, z0, z1, smooth=False):
+    """Extrudes a 2D polygon [(x, y)] (counter-clockwise seen from +z) from z0 to z1."""
+    g = Geo()
+    n = len(poly)
+    a = [g.v(x, y, z0) for x, y in poly]
+    b = [g.v(x, y, z1) for x, y in poly]
+    for i in range(n):
+        j = (i + 1) % n
+        g.face([a[i], a[j], b[j], b[i]], smooth)
+    g.face(list(reversed(a)))
+    g.face(b)
+    return g
+
+
+def gear_disc(r_tip, teeth, z0, z1, root=0.86, rim=0.72, spokes=0, hub=0.0, phase=0.0):
+    """A cog in the XY plane (tooth centre at angle `phase` from +y, clockwise), chamfered teeth, optional spokes and hub."""
+    g = Geo()
+    pitch = TAU / teeth
+    outer = []
+    for i in range(teeth):
+        a0 = phase + pitch * i
+        # (fraction of the pitch, radius): root, flank up, tip, tip, flank down  — tooth centred on a0
+        for f, r in ((-0.5, root), (-0.33, root), (-0.18, 1.0), (0.18, 1.0), (0.33, root)):
+            a = a0 + pitch * f
+            outer.append((math.sin(a) * r * r_tip, math.cos(a) * r * r_tip))
+    n = len(outer)
+    inner = []
+    for i in range(n):
+        a = math.atan2(outer[i][0], outer[i][1])
+        inner.append((math.sin(a) * rim * r_tip, math.cos(a) * rim * r_tip))
+    of = [g.v(x, y, z1) for x, y in outer]
+    ob = [g.v(x, y, z0) for x, y in outer]
+    inf = [g.v(x, y, z1) for x, y in inner]
+    inb = [g.v(x, y, z0) for x, y in inner]
+    for i in range(n):
+        j = (i + 1) % n
+        g.face([inf[i], inf[j], of[j], of[i]])
+        g.face([of[i], of[j], ob[j], ob[i]])
+        g.face([inb[i], inb[j], inf[j], inf[i]])
+    zm = (z0 + z1) / 2
+    if spokes:
+        for k in range(spokes):
+            a = TAU * k / spokes + phase + pitch * 0.5
+            L = rim * r_tip - hub * 0.6
+            w0, w1 = 0.07 * r_tip, 0.04 * r_tip
+            g.add(loft_rect([(hub * 0.5, -w0, w0, zm - 0.03, zm + 0.03), (hub * 0.5 + L, -w1, w1, zm - 0.03, zm + 0.03)]), xf(rz=-a))
+            g.add(box(-0.012 * r_tip, hub * 0.5, zm + 0.03, 0.012 * r_tip, hub * 0.5 + L, zm + 0.05), xf(rz=-a))
+    else:
+        # a dished web closes the disc (small cogs)
+        g.add(lathe([(0.0, zm - 0.02), (rim * r_tip, zm - 0.02), (rim * r_tip, zm + 0.02), (0.0, zm + 0.03)], seg=16, smooth=False, cap_bottom=False), xf(rx=math.pi / 2))
+    if hub > 0:
+        g.add(lathe([(hub, z0 - 0.02), (hub, z1 + 0.02), (hub * 0.8, z1 + 0.07), (hub * 0.4, z1 + 0.09), (0.0, z1 + 0.09)], seg=10, smooth=False, cap_bottom=False), xf(rx=math.pi / 2))
+    return g
+
+
+def chain_links(path, link_len=0.115, link_w=0.07, wire=0.015, sides=4):
+    """Chain links along a polyline [(x, y, z)]: alternate links turned 90 degrees about the path."""
+    g = Geo()
+    pts = [Vector(p) for p in path]
+    # resample at link_len * 0.78 (links overlap)
+    step = link_len * 0.78
+    samples = []
+    acc = 0.0
+    samples.append((pts[0], (pts[1] - pts[0]).normalized()))
+    for i in range(1, len(pts)):
+        seg = pts[i] - pts[i - 1]
+        L = seg.length
+        d = seg.normalized()
+        while acc + step <= L:
+            acc += step
+            samples.append((pts[i - 1] + d * acc, d))
+        acc -= L
+    for k, (p, d) in enumerate(samples):
+        side = Vector((0, 0, 1)) if k % 2 == 0 else d.cross(Vector((0, 0, 1))).normalized()
+        if d.cross(side).length < 1e-6:
+            side = Vector((1, 0, 0))
+        w = link_w / 2
+        h = link_len / 2 - wire
+        # stadium loop in the (d, side) plane
+        loop = []
+        for t in range(6):
+            a = math.pi * t / 5
+            loop.append(p + d * (h + w * math.sin(a) * 0.9) + side * (w * math.cos(a)))
+        for t in range(6):
+            a = math.pi * t / 5
+            loop.append(p - d * (h + w * math.sin(a) * 0.9) - side * (w * math.cos(a)))
+        # tube() takes an open path: close the loop by repeating the first point
+        loop.append(loop[0])
+        g.add(tube([tuple(q) for q in loop], [wire] * len(loop), sides=sides, smooth=True, cap=False))
+    return g
+
+
+def part_geartrain():
+    """A machine-room gear train sunk in the wall (unit = the big cog radius 1; back on the wall at z = 0): three meshing iron cogs
+    (22 / 12 / 7 teeth, phased to mesh) on riveted bearing blocks with a strapped housing, axles through the hubs, and a chain
+    hauled over the big cog and hanging free. Rim faces at z 0.08-0.24, housing to z 0.44. Scaled 2-6 m in-engine."""
+    g = Geo()
+    # cog centres (x, y) and radii; line of centres 1->2 at 24 deg above horizontal, 2->3 at 78 deg
+    c1 = (0.0, 0.0)
+    r1, n1 = 1.0, 22
+    a12 = math.radians(24)
+    r2, n2 = 0.56, 12
+    d12 = (0.93 + 0.52)  # pitch radii sum (pitch ~ 0.93 of the tip radius)
+    c2 = (c1[0] + math.cos(a12) * d12, c1[1] + math.sin(a12) * d12)
+    a23 = math.radians(72)
+    r3, n3 = 0.34, 7
+    d23 = 0.52 + 0.31
+    c3 = (c2[0] + math.cos(a23) * d23, c2[1] + math.sin(a23) * d23)
+    z0, z1 = 0.08, 0.24
+    # phases: tooth of cog 1 on the line of centres (angle measured from +y clockwise: line direction a12 from +x = pi/2 - a12)
+    ang12 = math.pi / 2 - a12
+    ph1 = ang12
+    ph2 = ang12 + math.pi - math.pi / n2
+    ang23 = math.pi / 2 - a23
+    # cog 2 tooth positions: ph2 + k*2pi/n2. cog 3 gap on the line 2->3: choose a tooth of 2 at ang23 -> adjust by lattice
+    k = round((ang23 - ph2) / (TAU / n2))
+    ph2b = ph2 + (ang23 - (ph2 + k * TAU / n2))  # nudge so a tooth of cog 2 points at cog 3 ...
+    ph2 = ph2b
+    ph3 = ang23 + math.pi - math.pi / n3
+    g.add(gear_disc(r1, n1, z0, z1, spokes=6, hub=0.22, phase=ph1), xf(tx=c1[0], ty=c1[1]))
+    g.add(gear_disc(r2, n2, z0, z1, spokes=4, hub=0.13, phase=ph2), xf(tx=c2[0], ty=c2[1]))
+    g.add(gear_disc(r3, n3, z0, z1, spokes=0, hub=0.09, phase=ph3), xf(tx=c3[0], ty=c3[1]))
+    # backing plate: a rounded iron plate behind the three cogs with a rivet line
+    def blob(cx, cy, rr, n=14):
+        return [(cx + rr * math.cos(TAU * i / n), cy + rr * math.sin(TAU * i / n)) for i in range(n)]
+    # strap housing: a pad round each bearing, joined by flat straps over the front of the hubs
+    for (cx, cy), rr, hubr in ((c1, 0.34, 0.22), (c2, 0.24, 0.13), (c3, 0.17, 0.09)):
+        g.add(prism(blob(cx, cy, rr, 12), 0.30, 0.40), xf())
+        g.add(lathe([(0.0, 0.40), (hubr * 0.7, 0.40), (hubr * 0.7, 0.44), (0.0, 0.46)], seg=8, smooth=False, cap_bottom=False), xf(rx=math.pi / 2, tx=cx, ty=cy))
+        # axle through the hub, to the wall, with a keeper nut
+        g.add(lathe([(0.045, 0.0), (0.045, 0.32), (0.07, 0.32), (0.07, 0.36)], seg=8, smooth=False, cap_bottom=False), xf(rx=math.pi / 2, tx=cx, ty=cy))
+        for k in range(4):
+            a = TAU * k / 4 + 0.4
+            g.add(cone(0.026, 0.03, seg=6, y0=0.0), xf(rx=math.pi / 2, tx=cx + math.cos(a) * rr * 0.72, ty=cy + math.sin(a) * rr * 0.72, tz=0.40))
+    for (pa, pb, wdt) in ((c1, c2, 0.1), (c2, c3, 0.07)):
+        dx, dy = pb[0] - pa[0], pb[1] - pa[1]
+        L = math.hypot(dx, dy)
+        ang = math.atan2(dy, dx)
+        g.add(box(0.0, -wdt / 2, 0.34, L, wdt / 2, 0.38), xf(rz=ang, tx=pa[0], ty=pa[1]))
+    # a rack bar bolted to the wall under the big cog (what the chain pawl engages)
+    g.add(box(-1.25, -1.28, 0.0, 1.0, -1.18, 0.12))
+    for i in range(7):
+        g.add(cone(0.03, 0.035, seg=6, y0=0.0), xf(rx=math.pi / 2, tx=-1.1 + i * 0.33, ty=-1.23, tz=0.12))
+    # the chain: over the top of the big cog, down its right side and free
+    path = []
+    for i in range(0, 16):
+        a = math.radians(150) - math.radians(100) * i / 15
+        rr = 1.03
+        path.append((math.cos(a) * rr, math.sin(a) * rr, 0.16))
+    for i in range(1, 11):
+        path.append((path[-1][0] + 0.02 * math.sin(i), path[-1][1] - 0.115, 0.16))
+    g.add(chain_links(path))
+    return g
+
+
+def part_corbel_hero():
+    """A carved corbel / buttress head (wall-mounted, hangs from y = 0; 1.0 w x 1.9 h x 1.1 d): three stepped tiers with a dentil
+    course, an ogee, a pair of side volutes, an acanthus-like leaf cluster down the front and a dead lantern hung from a short chain
+    at the nose — the order's emblem. Hero version of ch1_env_corbel for the bays you can reach."""
+    g = Geo()
+    W = 0.5
+    # side profile: back top -> down the wall -> stepped, ogee front -> nose
+    prof = [(0.0, 0.0), (0.0, -1.9), (0.1, -1.9), (0.16, -1.8)]
+    for i in range(1, 11):
+        t = i / 10
+        z = 0.16 + 0.5 * t
+        y = -1.8 + 0.95 * t + 0.1 * math.sin(t * math.pi)
+        prof.append((z, y))
+    prof += [(0.7, -0.84), (0.82, -0.78), (0.84, -0.64), (0.78, -0.6), (0.9, -0.56), (0.9, -0.4), (1.02, -0.36), (1.02, -0.14), (1.1, -0.1), (1.1, 0.0)]
+    g.add(extrude_x(prof, -W, W))
+    # dentil course under the top slab
+    for i in range(9):
+        x = -0.42 + i * 0.105
+        g.add(box(x - 0.03, -0.31, 0.92, x + 0.03, -0.22, 1.0))
+    # side volutes: a scroll on each cheek
+    for sx in (-1, 1):
+        pts = []
+        for i in range(15):
+            t = i / 14
+            a = 1.2 + t * 4.4
+            rr = 0.27 * (1 - 0.62 * t)
+            pts.append((sx * (W + 0.03), -0.72 + math.cos(a) * rr * 0.9, 0.58 + math.sin(a) * rr))
+        g.add(tube(pts, [0.045 - 0.02 * i / 14 for i in range(15)], sides=5))
+        g.add(lathe([(0.0, 0.0), (0.075, 0.0), (0.075, 0.035), (0.0, 0.05)], seg=8, smooth=False), xf(rz=-sx * math.pi / 2, tx=sx * (W + 0.03), ty=-0.72, tz=0.6))
+    # acanthus: leaf pairs curling over the ogee
+    for k in range(4):
+        t = k / 3
+        y = -1.55 + 0.7 * t
+        z = 0.2 + 0.45 * t
+        for sx in (-1, 1):
+            pts = [(sx * 0.03, y, z + 0.02), (sx * 0.13, y + 0.02, z + 0.07), (sx * 0.22, y + 0.07, z + 0.1), (sx * 0.26, y + 0.15, z + 0.08), (sx * 0.22, y + 0.2, z + 0.03)]
+            g.add(tube(pts, [0.05, 0.055, 0.05, 0.04, 0.025], sides=5))
+    # median rib
+    rib = [(0.0, -1.7 + 0.1 * i, 0.24 + 0.05 * i) for i in range(8)]
+    g.add(tube(rib, [0.04] * 8, sides=5))
+    # the dead lantern: chain, cage, cap (hangs from the nose)
+    g.add(chain_links([(0.0, -0.1, 1.06), (0.0, -0.5, 1.06)], link_len=0.1, link_w=0.055, wire=0.012))
+    g.add(cone(0.075, 0.1, seg=6, y0=-0.5, tip_up=True), xf(tz=1.06))
+    g.add(lathe([(0.07, -0.7), (0.085, -0.62), (0.085, -0.55), (0.075, -0.5)], seg=6, smooth=False, cap_top=False, cap_bottom=True), xf(tz=1.06))
+    for k in range(6):
+        a = TAU * k / 6
+        g.add(box(-0.007, -0.7, -0.007, 0.007, -0.5, 0.007), xf(tx=math.sin(a) * 0.08, tz=1.06 + math.cos(a) * 0.08))
+    g.add(cone(0.085, 0.09, seg=6, y0=-0.7, tip_up=False), xf(tz=1.06))
+    return g
+
+
+def part_arch_fragment():
+    """A crumbling pointed arch relief (wall-mounted, bottom y = 0, 1.0 w x 1.15 h x 0.38 d): a rib of wedge voussoirs with missing
+    stones and a broken, stair-stepped end, a dropped keystone with a lamp relief, one intact springer pier with a capital,
+    a stump on the other side, and fallen stones caught on a small shelf. Scale 3-10 m."""
+    g = Geo()
+    w, rise = 0.78, 0.7
+    base_y = 0.3
+    pts = pointed_arch_pts(w, rise, n=8)  # intrados from (-w/2, 0) over the apex
+    thick = 0.15
+    # outward normals (rotate the tangent)
+    outer = []
+    for i, (x, y) in enumerate(pts):
+        a = pts[max(0, i - 1)]
+        b = pts[min(len(pts) - 1, i + 1)]
+        tx, ty = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(tx, ty) or 1.0
+        nx, ny = ty / L, -tx / L  # to the left of the travel direction is inside; right is outside (travel is left -> right over the top)
+        outer.append((x + nx * thick, y + ny * thick))
+    rng = random.Random(77)
+    n = len(pts) - 1
+    missing = {1, 2, 3}  # left haunch collapsed
+    for i in range(n):
+        if i in missing:
+            continue
+        a0, a1 = pts[i], pts[i + 1]
+        b1, b0 = outer[i + 1], outer[i]
+        # small gaps between stones
+        def sh(p, q, f):
+            return (p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f)
+        poly = [sh(a0, a1, 0.025), sh(a1, a0, 0.025), sh(b1, b0, 0.025), sh(b0, b1, 0.025)]
+        depth = 0.30 + rng.uniform(-0.03, 0.05)
+        piece = prism([(x, y + base_y) for x, y in poly], 0.0, depth)
+        g.add(piece)
+    # keystone: a larger, dropped wedge with a lamp relief
+    ak = pts[n // 2]
+    ok = outer[n // 2]
+    kx = [(ak[0] - 0.06, ak[1] + base_y - 0.02), (ak[0] + 0.06, ak[1] + base_y - 0.02), (ok[0] + 0.075, ok[1] + base_y + 0.03), (ok[0] - 0.075, ok[1] + base_y + 0.03)]
+    g.add(prism(kx, 0.0, 0.36), xf(ty=-0.035))
+    g.add(lathe([(0.0, 0.0), (0.04, 0.0), (0.05, 0.03), (0.0, 0.05)], seg=8, smooth=False), xf(rx=math.pi / 2, tx=(ak[0] + ok[0]) / 2, ty=(ak[1] + ok[1]) / 2 + base_y - 0.035, tz=0.36))
+    # right springer pier (intact) with a capital; left stump, jagged
+    px = w / 2 + 0.02
+    g.add(box(px, 0.0, 0.0, px + thick + 0.04, base_y + 0.03, 0.32))
+    g.add(loft_rect([(base_y + 0.03, px - 0.02, px + thick + 0.06, 0.0, 0.34), (base_y + 0.08, px - 0.045, px + thick + 0.085, 0.0, 0.37)]))
+    lx = -w / 2 - thick - 0.04
+    stump = [(lx, 0.0), (lx + thick + 0.06, 0.0), (lx + thick + 0.06, 0.2), (lx + thick * 0.55, 0.26), (lx + thick * 0.4, 0.2), (lx, 0.33)]
+    g.add(prism(stump, 0.0, 0.32))
+    # shelf under the arch with fallen stones
+    g.add(box(-0.5, 0.0, 0.0, 0.5, 0.06, 0.42))
+    for (x, z, rot, s) in ((-0.2, 0.2, 0.4, 1.0), (0.05, 0.27, -0.3, 0.85), (-0.35, 0.3, 0.9, 0.7), (0.28, 0.17, 0.2, 0.9)):
+        blk = prism([(-0.07 * s, -0.04 * s), (0.065 * s, -0.045 * s), (0.075 * s, 0.05 * s), (-0.06 * s, 0.045 * s)], 0.0, 0.1 * s)
+        g.add(blk, xf(rx=-math.pi / 2, rz=rot, tx=x, ty=0.06 + 0.1 * s, tz=z + 0.05))
+    return g
+
+
 # (name, material, builder, options) — options.tris: decimation target (Quest budget:
 # these parts are instanced by the hundred along the descent, so every one is lean)
 PARTS = [
-    ("ch1_env_corbel", "stone", part_corbel, {"wall": True, "ceiling": True, "tris": 170}),
-    ("ch1_env_corbel_figure", "stone", part_corbel_figure, {"wall": True, "ceiling": True, "tris": 300}),
-    ("ch1_env_capital", "stone", part_capital, {"wall": True, "ceiling": True, "tris": 190}),
+    ("ch1_env_corbel", "stone", part_corbel, {"wall": True, "ceiling": True, "tris": 100}),
+    ("ch1_env_corbel_figure", "stone", part_corbel_figure, {"wall": True, "ceiling": True, "tris": 220}),
+    ("ch1_env_capital", "stone", part_capital, {"wall": True, "ceiling": True, "tris": 120}),
     ("ch1_env_base", "stone", part_base, {"wall": True, "floor": True}),
-    ("ch1_env_boss", "stone", part_boss, {"ceiling": True, "tris": 200}),
+    ("ch1_env_boss", "stone", part_boss, {"ceiling": True, "tris": 120}),
     ("ch1_env_bracket", "metal", part_bracket, {"wall": True, "ceiling": True}),
-    ("ch1_env_root_a", "flesh", lambda: root_cluster(5.0, 1.0, 3, 2), {"wall": True, "tris": 220}),
-    ("ch1_env_root_b", "flesh", lambda: root_cluster(7.5, 1.4, 17, 3), {"wall": True, "tris": 340}),
-    ("ch1_env_root_c", "flesh", lambda: root_cluster(10.0, 1.8, 29, 3), {"wall": True, "tris": 460}),
-    ("ch1_env_growth", "flesh", part_growth, {"wall": True, "tris": 300}),
-    ("ch1_env_saint", "stone", part_saint, {"wall": True, "floor": True, "tris": 600}),
-    ("ch1_env_gear", "metal", part_gear, {"wall": True, "tris": 520}),
+    ("ch1_env_root_a", "flesh", lambda: root_cluster(5.0, 1.0, 3, 2), {"wall": True, "tris": 140}),
+    ("ch1_env_root_b", "flesh", lambda: root_cluster(7.5, 1.4, 17, 3), {"wall": True, "tris": 210}),
+    ("ch1_env_root_c", "flesh", lambda: root_cluster(10.0, 1.8, 29, 3), {"wall": True, "tris": 290}),
+    ("ch1_env_growth", "flesh", part_growth, {"wall": True, "tris": 190}),
+    ("ch1_env_saint", "stone", part_saint, {"wall": True, "floor": True, "tris": 400}),
+    ("ch1_env_gear", "metal", part_gear, {"wall": True, "tris": 400}),
+    ("ch1_env_geartrain", "metal", part_geartrain, {"wall": True, "tris": 2100}),
+    ("ch1_env_corbel_hero", "stone", part_corbel_hero, {"wall": True, "ceiling": True, "tris": 900}),
+    ("ch1_env_arch_fragment", "stone", part_arch_fragment, {"wall": True, "floor": True, "tris": 700}),
     ("ch1_env_far_colossus", "stone", part_far_colossus, {"floor": True, "noao": True, "tris": 200}),
     ("ch1_env_far_column", "stone", part_far_column, {"floor": True, "noao": True, "tris": 140}),
     ("ch1_env_far_spire", "stone", part_far_spire, {"noao": True, "tris": 200}),
     ("ch1_env_far_arcade", "stone", part_far_arcade, {"noao": True, "tris": 240}),
 ]
+# WP-ART-PASS: authored wall panels, buttresses, column clusters, stair fragments, pipe runs, lanterns (env_kit2_parts.py)
+import env_kit2_parts  # noqa: E402
+
+PARTS += env_kit2_parts.parts(globals())
 
 
 # -----------------------------------------------------------------------------
@@ -739,6 +1016,8 @@ def make_object(name, geo, mat):
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
     me.materials.append(mat)
+    if getattr(geo, "norecalc", False):  # authored winding, vertex order matters (per-vertex tone): no weld / no recalc
+        return ob
     # merge coincident verts per part (keeps flat/smooth split via sharp edges from face flags)
     bm = bmesh.new()
     bm.from_mesh(me)
@@ -886,6 +1165,7 @@ def main():
         "stone": principled("stone", (0.62, 0.58, 0.52)),
         "metal": principled("metal", (0.3, 0.29, 0.28), metallic=0.8, roughness=0.55),
         "flesh": principled("flesh", (0.24, 0.17, 0.16), roughness=0.75),
+        "glow": principled("glow", (1.0, 0.7, 0.34), roughness=0.4),
     }
     objects = []
     stats = []
@@ -899,9 +1179,12 @@ def main():
         else:
             me = ob.data
             attr = me.color_attributes.new(name="Color", type="BYTE_COLOR", domain="POINT")
+            vc = opts.get("vcol", (1.0, 1.0, 1.0))
             for i in range(len(me.vertices)):
-                attr.data[i].color = (1.0, 1.0, 1.0, 1.0)
+                attr.data[i].color = (vc[0], vc[1], vc[2], 1.0)
             me.color_attributes.active_color = attr
+        if getattr(geo, "post", None):
+            geo.post(ob, geo)
         tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
         stats.append((name, mat, tris, tuple(round(d, 2) for d in ob.dimensions)))
         objects.append(ob)
@@ -912,7 +1195,8 @@ def main():
     print("total tris", sum(s[2] for s in stats))
     print("wrote", path, os.path.getsize(path), "bytes")
     if args.render:
-        preview(objects, os.path.join(args.out if args.out != DEFAULT_OUT else os.getcwd(), "ch1_env_kit_preview.png"))
+        shown = [o for o in objects if o.name in args.focus.split(",")] if args.focus else objects
+        preview(shown, os.path.join(args.out if args.out != DEFAULT_OUT else os.getcwd(), "ch1_env_kit_preview.png"))
 
 
 main()

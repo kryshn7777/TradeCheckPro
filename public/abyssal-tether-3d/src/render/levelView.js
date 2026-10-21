@@ -54,6 +54,7 @@ const DETAIL_BAND_H = 32; // finer bands for small dressing (kit parts, arcades,
 const DETAIL_DIST = 38; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
 const SMALL_ITEM = 1.6; // m: items smaller than this on every axis
 const NEIGHBOUR_DIST = 40; // m: chunks of the neighbouring sections
+const NEAR_DIST = 26; // 'near' tier (rubble: sub-pixel and fogged past this)
 const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhouettes against the haze, not as relief)
 // Dressing categories that live in the finer, nearer tiers whatever they are placed on (the Quest trim of the
 // densest sections): small relief that is sub-pixel past a few tens of metres.
@@ -450,6 +451,7 @@ const DECOR = {
     if (sy / 2 > top) P.cyl('metal', 0, (top + sy / 2) / 2, 0, r * 0.05, r * 0.05, sy / 2 - top, 5);
   },
   lamp(P, sx, sy, sz, item) {
+    if (P.kitLamps) return; // the kit's wall lantern (+ glass) replaces the procedural cage (planned in _buildDressing)
     const s = Math.max(0.15, Math.min(sx, sy));
     const lit = !item || item.lit !== false;
     P.box('metal', 0, s * 0.35, -sz / 2 + s * 0.25, s * 0.12, s * 0.12, s * 0.5);
@@ -850,6 +852,50 @@ function buildGlyphGeometry() {
   return shapeGeometry(parts, false);
 }
 
+/**
+ * A forged iron ring for the near field (VR: the eye lingers on the ring in reach; a 5-sided torus read as a pipe). Slightly
+ * oval, hand-forged thickness (swells where it was hammered, worn thin at the bottom where the line bears), indexed with smooth
+ * normals. XY plane, centred on the origin. ~450 triangles (the old torus: 140).
+ */
+function forgedRing(R, r, seg = 28, sides = 8) {
+  const pos = [];
+  const idx = [];
+  for (let i = 0; i < seg; i++) {
+    const th = (i / seg) * Math.PI * 2;
+    const worn = Math.exp(-Math.pow(Math.atan2(Math.sin(th + Math.PI / 2), Math.cos(th + Math.PI / 2)), 2) / 0.28);
+    const rr = r * (1 + 0.1 * Math.sin(th * 3 + 0.6) + 0.05 * Math.cos(th * 5) - 0.17 * worn);
+    const cx = R * 0.97 * Math.cos(th);
+    const cy = R * 1.04 * Math.sin(th);
+    // frame: radial direction and the ring's normal (z)
+    const rx = Math.cos(th);
+    const ry = Math.sin(th);
+    for (let j = 0; j < sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      // slightly squarer section (forged bar stock, not a pipe)
+      const f = 1 + 0.12 * Math.abs(Math.sin(2 * a));
+      pos.push(cx + rx * ca * rr * f, cy + ry * ca * rr * f, sa * rr * 0.95 * f);
+    }
+  }
+  for (let i = 0; i < seg; i++) {
+    const i1 = (i + 1) % seg;
+    for (let j = 0; j < sides; j++) {
+      const j1 = (j + 1) % sides;
+      const a = i * sides + j;
+      const b = i1 * sides + j;
+      const c = i1 * sides + j1;
+      const d = i * sides + j1;
+      idx.push(a, b, d, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 /** Anchor mounts, one light geometry per shape: [ring, hook, fragile, stub]. Local +Z = mount normal. */
 function buildMountGeometries() {
   const plate = (parts, shape, s = 1) => {
@@ -857,7 +903,7 @@ function buildMountGeometries() {
     g.translate(0, 0, -0.2);
     parts.push({ geo: g, shape, glow: 0, plate: 1 });
     for (let i = 0; i < 4; i++) {
-      const b = new THREE.CylinderGeometry(0.018, 0.018, 0.03, 4, 1);
+      const b = new THREE.CylinderGeometry(0.019, 0.019, 0.03, 6, 1);
       b.rotateX(Math.PI / 2);
       b.translate((i % 2 ? 0.075 : -0.075) * s, (i < 2 ? 0.075 : -0.075) * s, -0.17);
       parts.push({ geo: b, shape, glow: 0, plate: 1 });
@@ -878,19 +924,24 @@ function buildMountGeometries() {
   {
     const parts = [];
     plate(parts, 0);
-    const bolt = new THREE.CylinderGeometry(0.024, 0.024, 0.2, 5, 1);
+    const bolt = new THREE.CylinderGeometry(0.024, 0.024, 0.2, 8, 1);
     bolt.rotateX(Math.PI / 2);
     bolt.translate(0, 0.13, -0.1);
     parts.push({ geo: bolt, shape: 0, glow: 0, plate: 1 });
     shackle(parts, 0, 0.15);
-    parts.push({ geo: new THREE.TorusGeometry(0.135, 0.028, 5, 14), shape: 0, glow: 0.6 });
+    parts.push({ geo: forgedRing(0.135, 0.028), shape: 0, glow: 0.6 });
+    // the collar where the ring hangs from its eye (a swollen weld) and a keeper pin through it
+    const collar = new THREE.CylinderGeometry(0.034, 0.04, 0.05, 8, 1);
+    collar.rotateZ(Math.PI / 2);
+    collar.translate(0, 0.152, 0);
+    parts.push({ geo: collar, shape: 0, glow: 0 });
     out.push(shapeGeometry(parts, true));
   }
   // 1 hook: bolt + J hook curling outward
   {
     const parts = [];
     plate(parts, 1);
-    const bolt = new THREE.CylinderGeometry(0.026, 0.026, 0.2, 5, 1);
+    const bolt = new THREE.CylinderGeometry(0.026, 0.026, 0.2, 8, 1);
     bolt.rotateX(Math.PI / 2);
     bolt.translate(0, 0.08, -0.1);
     parts.push({ geo: bolt, shape: 1, glow: 0, plate: 1 });
@@ -903,7 +954,11 @@ function buildMountGeometries() {
       new THREE.Vector3(0, -0.13, 0.15),
       new THREE.Vector3(0, -0.04, 0.16),
     ]);
-    parts.push({ geo: new THREE.TubeGeometry(curve, 10, 0.03, 5, false), shape: 1, glow: 0.6 });
+    parts.push({ geo: new THREE.TubeGeometry(curve, 16, 0.03, 8, false), shape: 1, glow: 0.6 });
+    // the forged point: a blunt ball on the end of the hook
+    const tip = new THREE.SphereGeometry(0.036, 8, 6);
+    tip.translate(0, -0.04, 0.16);
+    parts.push({ geo: tip, shape: 1, glow: 0.6 });
     out.push(shapeGeometry(parts, true));
   }
   // 2 fragile: corroded plate + stub + cracked diamond knob in two halves (they part under load)
@@ -1021,7 +1076,7 @@ function buildHighlightGeometry(hand) {
 }
 
 /** Radial glow sprite for Points. */
-function glowTexture(size = 64) {
+export function glowTexture(size = 128) {
   let c = null;
   if (typeof document !== 'undefined') {
     c = document.createElement('canvas');
@@ -1030,13 +1085,31 @@ function glowTexture(size = 64) {
   }
   if (!c) return null;
   const ctx = c.getContext('2d');
+  // soft bloom: a hot core, a wide skirt
   const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.18, 'rgba(255,255,255,0.55)');
-  g.addColorStop(0.45, 'rgba(255,255,255,0.14)');
+  g.addColorStop(0.1, 'rgba(255,255,255,0.7)');
+  g.addColorStop(0.22, 'rgba(255,255,255,0.32)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.09)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
+  // gentle anamorphic streak: a thin horizontal flare through the centre, fading to nothing at both ends
+  const sg = ctx.createLinearGradient(0, 0, size, 0);
+  sg.addColorStop(0, 'rgba(255,255,255,0)');
+  sg.addColorStop(0.28, 'rgba(255,255,255,0.12)');
+  sg.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+  sg.addColorStop(0.72, 'rgba(255,255,255,0.12)');
+  sg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = sg;
+  const th = Math.max(1, size / 64);
+  ctx.globalAlpha = 0.07;
+  ctx.fillRect(0, size / 2 - th * 4, size, th * 8);
+  ctx.globalAlpha = 0.14;
+  ctx.fillRect(0, size / 2 - th * 1.5, size, th * 3);
+  ctx.globalAlpha = 0.26;
+  ctx.fillRect(0, size / 2 - th * 0.5, size, th);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -1167,6 +1240,12 @@ const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
 const COG = [0, 2, 2, 3, 2, 3, 4, 3];
 const WET_RAMP = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const COG_MAX = 48;
+/** Sections (S1..S8) that get flying-buttress style wall buttresses / emissive cracks / pipe runs / broken stair flights. */
+const BUTT = [1, 1, 1, 0, 1, 0, 0, 0];
+const PIPES = [0, 1, 1, 0, 1, 1, 0, 0];
+const STAIRS = [1, 2, 1, 1, 1, 1, 0, 0];
+/** Emissive cracks per section: [colour, strength, density per 100 m²] — the machine's furnace and the growth's phosphor showing through the stone. */
+const CRACKS = [null, null, null, null, ['#ff6a2a', 0.9, 0.5], ['#ff7a30', 1.0, 0.7], ['#5fe0d0', 0.85, 0.5], ['#ffb050', 1.0, 0.8]];
 const DR = {
   wallMinH: 4.5, // solids taller than this are walls; lower ones are slabs
   anchorClear: 1.3, // no carving within this of an anchor ...
@@ -1183,6 +1262,9 @@ const DR = {
   iconsPerFace: 2, // saints / gears per wall face (and GRADE caps per section)
   trunksPerFace: 3, // sinew trunks down a wall face (× growth)
   nearWall: 90, // arcades / growth only on faces whose opposite wall is nearer than this (far walls are fog)
+  panelR: 11, // authored ashlar panels (kit wall_a/b/c, 4 x 4 m): wall cells whose centre is within this of the route (anchors, checkpoints, spawn)
+  panelAcross: 70, // ... on faces whose opposite wall is nearer than this
+  panelCap: [14, 16, 16, 10, 12, 14, 10, 10], // ... at most this many per section (S1..S8), nearest to the route first
 };
 const ROOTS = [
   ['ch1_env_root_c', 10, 1.8],
@@ -1764,6 +1846,155 @@ class DressSpace {
   }
 }
 
+/**
+ * Surface geometry helpers (WP-GFX-QUEST-MAT). Both are tiny, flat-shaded, non-indexed (they merge into the decor chunks
+ * like every other part) and carry vertex colour = baked AO x stone tone.
+ *
+ * rubbleGeo: a cluster of fractured stone chunks (jittered icosahedra, 20 triangles each) resting on y = baseY in world space.
+ */
+const _ico = new THREE.IcosahedronGeometry(1, 0).attributes.position.array;
+function _vhash(x, y, z, k) {
+  let h = Math.imul(Math.round(x * 997) ^ 0x9e3779b9, 73856093) ^ Math.imul(Math.round(y * 991) + k, 19349663) ^ Math.imul(Math.round(z * 983), 83492791);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+function rubbleGeo(rng, cx, baseY, cz, radius, n) {
+  const pos = [];
+  const col = [];
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const m = new THREE.Matrix4();
+  const sc = new THREE.Vector3();
+  const tp = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) {
+    const a = rng() * Math.PI * 2;
+    const rr = radius * Math.sqrt(rng());
+    const size = (0.06 + rng() * 0.2) * (1 - 0.55 * (rr / Math.max(radius, 0.1)));
+    sc.set(size * (0.8 + rng() * 0.8), size * (0.45 + rng() * 0.5), size * (0.8 + rng() * 0.8));
+    e.set((rng() - 0.5) * 0.9, rng() * 6.283, (rng() - 0.5) * 0.9);
+    q.setFromEuler(e);
+    tp.set(cx + Math.cos(a) * rr, baseY + sc.y * 0.42, cz + Math.sin(a) * rr);
+    m.compose(tp, q, sc);
+    const tone = 0.62 + 0.38 * rng();
+    const k = i * 13;
+    for (let j = 0; j < _ico.length; j += 3) {
+      const d = 0.72 + 0.56 * _vhash(_ico[j], _ico[j + 1], _ico[j + 2], k);
+      v.set(_ico[j] * d, _ico[j + 1] * d, _ico[j + 2] * d).applyMatrix4(m);
+      pos.push(v.x, v.y, v.z);
+      const ao = 0.5 + 0.5 * Math.min(1, Math.max(0, (v.y - baseY) / (sc.y * 1.6)));
+      col.push(tone * ao, tone * ao, tone * ao);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals(); // non-indexed: flat per-triangle normals
+  return g;
+}
+
+/**
+ * blockPatchGeo: a patch of dressed ashlar proud of a wall (face-local: x along the face, y up, z out of it): cols x rows
+ * blocks in staggered courses, each 2.5-9 cm proud with chamfered, irregularly chipped arrises; some blocks are missing.
+ */
+function blockPatchGeo(rng, cols, rows, bw, bh) {
+  const pos = [];
+  const col = [];
+  const c3 = new THREE.Vector3();
+  const quad = (a, b, c, d, cen, shade) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const mx = (a[0] + c[0]) / 2 - cen[0], my = (a[1] + c[1]) / 2 - cen[1], mz = (a[2] + c[2]) / 2 - cen[2];
+    const flip = nx * mx + ny * my + nz * mz < 0;
+    const order = flip ? [a, c, b, a, d, c] : [a, b, c, a, c, d];
+    for (const p of order) {
+      pos.push(p[0], p[1], p[2]);
+      const k = p[2] < 1e-4 ? shade * 0.5 : shade;
+      col.push(k, k, k);
+    }
+  };
+  for (let r = 0; r < rows; r++) {
+    const off = (r % 2) * bw * 0.5;
+    for (let cI = 0; cI < cols; cI++) {
+      if (rng() < 0.18) continue;
+      const x0 = cI * bw + off + 0.02;
+      const x1 = x0 + bw - 0.04;
+      const y0 = r * bh + 0.02;
+      const y1 = y0 + bh - 0.04;
+      const p = 0.025 + rng() * 0.065;
+      const c = Math.min(0.045, p * 0.9, (y1 - y0) * 0.3);
+      const j = () => (rng() - 0.5) * c * 1.4;
+      const T = [
+        [x0 + c + j(), y0 + c + j(), p],
+        [x1 - c + j(), y0 + c + j(), p],
+        [x1 - c + j(), y1 - c + j(), p],
+        [x0 + c + j(), y1 - c + j(), p],
+      ];
+      const B = [
+        [x0, y0, 0],
+        [x1, y0, 0],
+        [x1, y1, 0],
+        [x0, y1, 0],
+      ];
+      c3.set((x0 + x1) / 2, (y0 + y1) / 2, p * 0.4);
+      const cen = [c3.x, c3.y, c3.z];
+      const tone = 0.82 + 0.18 * rng();
+      quad(T[0], T[1], T[2], T[3], cen, tone);
+      quad(B[0], B[1], T[1], T[0], cen, 0.55 * tone); // underside of the block: shadowed
+      quad(B[1], B[2], T[2], T[1], cen, 0.8 * tone);
+      quad(B[2], B[3], T[3], T[2], cen, 0.95 * tone); // top: catches the shaft light
+      quad(B[3], B[0], T[0], T[3], cen, 0.8 * tone);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  if (!pos.length) return null;
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * Decals (WP-GFX-QUEST-MAT): one merged, alpha-blended, lit quad mesh for the whole level (a single draw call), cut from
+ * the 4 x 2 atlas assets/textures/decals_*.{ktx2,png} (tools/abyssal-tether-3d/build_textures_hq.py). Types in atlas order;
+ * W = quad size range [width], [height] in metres; `sec` = relative weight per section S1..S8 (cracks and impacts everywhere,
+ * moss in the wet sections, claw scratches and smears deeper where the Mason has been).
+ */
+const DECAL_TYPES = [
+  { name: 'crackA', w: [1.8, 3.4], h: null, rot: true, a: [0.8, 1], sec: [3, 3, 3, 3, 3, 3, 3, 3] },
+  { name: 'crackB', w: [1.4, 2.6], h: null, rot: true, a: [0.7, 1], sec: [1, 2, 3, 2, 2, 3, 2, 2] },
+  { name: 'grime', w: [0.9, 1.9], h: [2.2, 4.2], rot: false, a: [0.5, 0.9], sec: [2, 3, 4, 3, 4, 4, 3, 4] },
+  { name: 'moss', w: [1.2, 2.5], h: null, rot: true, a: [0.6, 1], sec: [0, 0, 2, 1, 3, 4, 2, 4] },
+  { name: 'blood', w: [1.2, 2.4], h: null, rot: false, a: [0.6, 0.95], sec: [0, 0, 0, 0, 1, 1, 2, 2] },
+  { name: 'burn', w: [1.2, 2.0], h: [1.5, 2.6], rot: false, a: [0.7, 1], sec: [0, 0, 1, 1, 0, 2, 1, 0] },
+  { name: 'scratch', w: [0.9, 1.6], h: null, rot: true, a: [0.8, 1], sec: [0, 0, 0, 1, 2, 2, 3, 3] },
+  { name: 'impact', w: [0.5, 1.1], h: null, rot: true, a: [0.7, 1], sec: [1, 1, 1, 1, 1, 1, 1, 1] },
+];
+const DECAL_PAD = 0.006; // atlas inset (uv) so mips / filtering never bleed a neighbouring cell
+function decalCell(i) {
+  const col = i % 4;
+  const row = (i / 4) | 0;
+  return [col * 0.25 + DECAL_PAD, 1 - (row + 1) * 0.5 + DECAL_PAD, 0.25 - 2 * DECAL_PAD, 0.5 - 2 * DECAL_PAD];
+}
+function pickDecal(rng, sec, floor) {
+  let tot = 0;
+  for (const t of DECAL_TYPES) tot += t.sec[sec] || 0;
+  if (tot <= 0) return 0;
+  let r = rng() * tot;
+  for (let i = 0; i < DECAL_TYPES.length; i++) {
+    r -= DECAL_TYPES[i].sec[sec] || 0;
+    if (r <= 0) {
+      // drips and burn tongues belong on walls, not on the floor: they become a smear / crack there
+      if (floor && (i === 2 || i === 5)) return i === 2 ? 4 : 0;
+      return i;
+    }
+  }
+  return 0;
+}
+
 /** World AABB of an item-local box [x0,x1]×[y0,y1]×[z0,z1] placed by a face frame (axis-aligned faces only). */
 function frameBox(F, x0, x1, y0, y1, z0, z1) {
   // U = Y × N (horizontal), N horizontal or vertical not supported here (walls only)
@@ -1791,6 +2022,7 @@ class Dresser {
     this.gears = []; // colossal turning cogs: { m (Matrix4, unit-radius → world), spin (rad/s), phase, tint, sec }
     this.stats = { faces: 0, piers: 0, courses: 0, crowns: 0, corbels: 0, roots: 0, arches: 0, braces: 0, burls: 0, lancets: 0, cords: 0 };
     this._m = new THREE.Matrix4();
+    this.dec = { p: [], n: [], uv: [], c: [] }; // decal quads (world space), drained by LevelView._flushDecals
   }
 
   /** Section wetness (0..1) at world height y, as the renderer's ramp. */
@@ -1878,6 +2110,7 @@ class Dresser {
     this.stats.faces = faces.length;
     this._openings(faces);
     this._crossings();
+    this._planPanels(faces);
     yield -1;
     const items = [];
     for (const F of faces) items.push([F.o.y + F.H, 0, F]);
@@ -1965,6 +2198,93 @@ class Dresser {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WP-ART-PASS: authored ashlar panels on the walls the route actually looks at
+  // ---------------------------------------------------------------------------
+  _routePts() {
+    const pts = [];
+    for (const a of this.S.anchors) pts.push(a.x, a.y, a.z);
+    for (const sc of this.secs) if (sc && sc.checkpoint) pts.push(sc.checkpoint.x, sc.checkpoint.y + 1, sc.checkpoint.z);
+    const sp = this.level.spawn;
+    if (sp) pts.push(sp.x, sp.y + 1, sp.z);
+    return pts;
+  }
+
+  _routeDist(x, y, z) {
+    const p = this._route || (this._route = this._routePts());
+    let best = 1e12;
+    for (let i = 0; i < p.length; i += 3) {
+      const dx = p[i] - x;
+      const dy = p[i + 1] - y;
+      const dz = p[i + 2] - z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  }
+
+  /** Picks the 4 x 4 m wall cells nearest the route (per-section cap) and stores them on their faces (F.panels). */
+  _planPanels(faces) {
+    const S = this.S;
+    const cand = [];
+    const climb = Array.isArray(this.level.climb) ? this.level.climb : [];
+    for (const F of faces) {
+      if (F.across > DR.panelAcross || F.s.kind === 'crumble') continue;
+      const hosts = new Set([F.s]);
+      for (const [a, b] of F.spans) {
+        const nU = Math.floor((b - a - 0.4) / 4);
+        if (nU < 1) continue;
+        const u0 = a + (b - a - 4 * nU) / 2;
+        for (let i = 0; i < nU; i++) {
+          const uc = u0 + 4 * i + 2;
+          for (let y0 = 0; y0 + 4 <= F.H + 0.01; y0 += 4) {
+            const p = this._facePt(F, uc, y0 + 2, 1.2);
+            const d = this._routeDist(p[0], p[1], p[2]);
+            if (d > DR.panelR) continue;
+            const box = frameBox(F, uc - 2, uc + 2, y0, y0 + 4, 0, 0.3);
+            if (S.blocked(box, hosts, false, DR.anchorClear + 0.3)) continue;
+            let hit = false;
+            for (const c of climb) {
+              if (c.maxX >= box.minX - 0.3 && c.minX <= box.maxX + 0.3 && c.maxY >= box.minY && c.minY <= box.maxY && c.maxZ >= box.minZ - 0.3 && c.minZ <= box.maxZ + 0.3) {
+                hit = true;
+                break;
+              }
+            }
+            if (hit) continue;
+            const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(F.o.y + y0 + 2) | 0)) : 0;
+            cand.push({ F, uc, y0, d, sec });
+          }
+        }
+      }
+    }
+    cand.sort((p, q) => p.d - q.d);
+    const used = new Array(8).fill(0);
+    for (const c of cand) {
+      if (used[c.sec] >= DR.panelCap[c.sec]) continue;
+      used[c.sec]++;
+      (c.F.panels || (c.F.panels = [])).push(c);
+    }
+    this.stats.panels = used.slice();
+  }
+
+  _placePanels(F) {
+    if (!F.panels) return;
+    const rng = makeRng(hashStr(`pnl${F.s.id}|${F.N.x},${F.N.z}`));
+    for (const c of F.panels) {
+      const g = this.grade(F.o.y + c.y0 + 2);
+      const r = rng();
+      const deep = g.growth > 0.5;
+      const part = c.d < 5 ? (r < 0.6 ? 'ch1_env_wall_b' : r < 0.85 ? 'ch1_env_wall_a' : 'ch1_env_wall_c') : r < 0.45 ? 'ch1_env_wall_a' : r < (deep ? 0.9 : 0.75) ? 'ch1_env_wall_c' : 'ch1_env_wall_b';
+      const k = 0.9 + 0.2 * rng();
+      const tint = [g.stone[0] * k, g.stone[1] * k * (0.97 + 0.06 * rng()), g.stone[2] * k * (0.95 + 0.1 * rng())];
+      this._cat = 'panel';
+      this.kit(F, part, c.uc, c.y0, tint, 'stone', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      this.S.decor.push(frameBox(F, c.uc - 2, c.uc + 2, c.y0, c.y0 + 4, 0, 0.3));
+      this.stats.panelCells = (this.stats.panelCells || 0) + 1;
+    }
+  }
+
   /** A wall face, as generator steps (one per course / pier run): `sec` is yielded back. */
   *_dressWall(F, sec) {
     const S = this.S;
@@ -1972,6 +2292,7 @@ class Dresser {
     const s = F.s;
     const midY = (s.minY + s.maxY) / 2;
     const rng = makeRng(hashStr(`${s.id}|${F.N.x},${F.N.z}`));
+    this._placePanels(F);
     // --- string courses ---------------------------------------------------
     const courses = [];
     for (const sec of this.secs) {
@@ -2018,7 +2339,7 @@ class Dresser {
           this.put(F, geo, u0, yc - s.minY, 'stone', g.stone);
           this.stats.courses++;
           // water stains run down from the course (wear obeys gravity): darker, tapering, in front of the wall only
-          const nSt = Math.floor((len / 3) * (0.5 + 0.8 * this._wet(yc)) + rng() * 0.9);
+          const nSt = Math.floor((len / 3) * (0.5 + 0.8 * this._wet(yc)) * 0.4 + rng() * 0.5);
           this._cat = 'stain';
           for (let k = 0; k < nSt; k++) {
             const su = u0 + 0.4 + rng() * Math.max(0.1, len - 0.8);
@@ -2045,6 +2366,7 @@ class Dresser {
         yield sec;
         const u = pierU[pi];
         this._pier(F, u, hosts, near ? courses : null);
+        if (BUTT[sec] && near && pi % 2 === 1) this._buttress(F, u, hosts);
         // every few piers a colossal engaged column swallows the pilaster (big sections)
         if (g0.giant && (pi + gp) % g0.giantEvery === 0 && len > 14) this._column(F, u, hosts, courses, g0.giant);
       }
@@ -2100,9 +2422,300 @@ class Dresser {
       }
     }
     if (!near) this._farWall(F, hosts, rng);
+    else if (F.s.kind === 'wall' || F.s.kind === 'stone') this._blocks(F, hosts, makeRng(hashStr(`blk${s.id}|${F.N.x},${F.N.z}`)));
+    this._decalsWall(F, hosts, makeRng(hashStr(`dec${s.id}|${F.N.x},${F.N.z}`)));
     this._cogs(F, hosts, rng);
+    if (near) {
+      const r2 = makeRng(hashStr(`art${s.id}|${F.N.x},${F.N.z}`));
+      if (STAIRS[sec]) this._stairs(F, hosts, r2, STAIRS[sec]);
+      if (PIPES[sec]) this._pipes(F, hosts, r2);
+    }
+    if (CRACKS[sec]) this._cracks(F, hosts, makeRng(hashStr(`crk${s.id}|${F.N.x},${F.N.z}`)), CRACKS[sec]);
   }
 
+  /** A battered buttress (kit modules stacked, weathered cap) at face u, hanging on a corbel in the player space, in the free stretches only. */
+  _buttress(F, u, hosts) {
+    const S = this.S;
+    const s = F.s;
+    const box = frameBox(F, u - 1.0, u + 1.0, 0, F.H, 0, 1.12);
+    const segs = S.cut(box, 'y', s.minY, s.maxY, hosts, true, 9, DR.propClear);
+    for (const [y0, y1] of segs) {
+      const g = this.grade((y0 + y1) / 2);
+      const above = S.inSolid(...this._facePt(F, u, y1 - s.minY + 0.1, 0.3));
+      const floorBelow = S.inSolid(...this._facePt(F, u, y0 - s.minY - 0.1, 0.3));
+      const capH = above ? 0 : 1.6;
+      const len = y1 - y0 - capH - (floorBelow ? 0 : 1.1);
+      if (len < 5) continue;
+      const base = y0 - s.minY + (floorBelow ? 0 : 1.1);
+      if (!floorBelow) this.kit(F, 'ch1_env_corbel', u, base, g.stone, 'stone', 1.5, 1, 1.15);
+      const m = Math.max(1, Math.round(len / 4));
+      const sy = len / (4 * m);
+      this._cat = 'buttress';
+      for (let i = 0; i < m; i++) this.kit(F, 'ch1_env_buttress_lo', u, base + i * 4 * sy, g.stone, 'stone', 1, sy, 1, null, true);
+      if (capH) this.kit(F, 'ch1_env_buttress_cap', u, base + len, g.stone, 'stone', 1, 1, 1, null, true);
+      this._cat = null;
+      this.stats.buttresses = (this.stats.buttresses || 0) + 1;
+      this.S.decor.push(frameBox(F, u - 1.0, u + 1.0, y0 - s.minY, y1 - s.minY, 0, 1.12));
+      break;
+    }
+  }
+
+  /** Broken stair flights hanging off a wall high above the route (what the Lanternwrights climbed before they went down). */
+  _stairs(F, hosts, rng, want) {
+    if (F.H < 16) return;
+    const S = this.S;
+    let n = want;
+    for (let t = 0; t < 16 && n > 0; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 8) continue;
+      const u = a + 3.2 + rng() * (b - a - 6.4);
+      const y = 5 + rng() * (F.H - 10);
+      const box = frameBox(F, u - 2.1, u + 2.1, y - 0.8, y + 3.0, 0, 1.3);
+      if (S.blocked(box, hosts, true, DR.propClear)) continue;
+      const g = this.grade(F.o.y + y);
+      this._cat = 'stairs';
+      this.kit(F, 'ch1_env_stair_fragment', u, y, g.stone, 'stone', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      S.decor.push(box);
+      n--;
+    }
+  }
+
+  /** Iron pipe runs along a wall on clamps (flanges, bolts, a valve wheel). */
+  _pipes(F, hosts, rng) {
+    if (F.H < 8) return;
+    const S = this.S;
+    for (let t = 0; t < 10; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 8) continue;
+      const u = a + 2.4 + rng() * (b - a - 4.8);
+      const y = 3 + rng() * (F.H - 6);
+      const box = frameBox(F, u - 2.1, u + 2.1, y - 0.3, y + 1.1, 0, 0.9);
+      if (S.blocked(box, hosts, true, DR.propClear)) continue;
+      this._cat = 'pipe_run';
+      this.kit(F, 'ch1_env_pipe_run', u, y, [1, 1, 1], 'metal', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      S.decor.push(box);
+      return;
+    }
+  }
+
+  /** Emissive cracks: jagged hairlines of furnace light / phosphor in the wall (glow list: no extra draw, no light). */
+  _cracks(F, hosts, rng, spec) {
+    const [colHex, k, dens] = spec;
+    const S = this.S;
+    _c.set(colHex);
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    let n = Math.min(6, Math.floor((span * F.H * dens) / 100 + rng()));
+    for (let t = 0; t < n * 5 + 2 && n > 0; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 4) continue;
+      const u = a + 1.5 + rng() * (b - a - 3);
+      const y = 2 + rng() * Math.max(0.5, F.H - 5);
+      const box = frameBox(F, u - 1.6, u + 1.6, y - 1.6, y + 1.6, 0, 0.3);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const pos = [];
+      const col = [];
+      const quad = (x0, y0, x1, y1, w0, w1, e0, e1) => {
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const L = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / L) * 0.5;
+        const ny = (dx / L) * 0.5;
+        const P = [
+          [x0 - nx * w0, y0 - ny * w0, e0], [x0 + nx * w0, y0 + ny * w0, e0], [x1 + nx * w1, y1 + ny * w1, e1], [x1 - nx * w1, y1 - ny * w1, e1],
+        ];
+        for (const i of [0, 1, 2, 0, 2, 3]) {
+          pos.push(P[i][0], P[i][1], 0.03);
+          col.push(_c.r * k * P[i][2], _c.g * k * P[i][2], _c.b * k * P[i][2]);
+        }
+      };
+      const walk = (x, yy, ang, segs, w) => {
+        for (let i = 0; i < segs; i++) {
+          const L = 0.35 + rng() * 0.6;
+          const a2 = ang + (rng() - 0.5) * 1.5;
+          const x2 = x + Math.cos(a2) * L;
+          const y2 = yy + Math.sin(a2) * L;
+          const f0 = 1 - i / segs;
+          const f1 = 1 - (i + 1) / segs;
+          quad(x, yy, x2, y2, w * (0.4 + 0.6 * f0), w * (0.4 + 0.6 * f1), 0.35 + 0.65 * f0, 0.35 + 0.65 * f1);
+          if (i === 3 && rng() < 0.7) walk(x2, y2, a2 + (rng() < 0.5 ? 0.9 : -0.9), 3 + Math.floor(rng() * 3), w * 0.7);
+          x = x2;
+          yy = y2;
+          ang = a2;
+        }
+      };
+      walk(0, 0, (rng() < 0.5 ? Math.PI / 2 : 0) + (rng() - 0.5) * 0.8, 7 + Math.floor(rng() * 6), 0.07);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      this._cat = 'crack';
+      this.put(F, geo, u, y, 'glow', [1, 1, 1], null, true);
+      this._cat = null;
+      this.stats.cracks = (this.stats.cracks || 0) + 1;
+      n--;
+    }
+  }
+
+
+  /** Appends one decal quad: centre, in-plane axes A (right) / B (up), normal N (A x B), half sizes, rotation, atlas cell. */
+  _decalQuad(cx, cy, cz, A, B, N, hw, hh, th, type, alpha, tint) {
+    const D = this.dec;
+    const cs = Math.cos(th);
+    const sn = Math.sin(th);
+    const ax = A[0] * cs + B[0] * sn;
+    const ay = A[1] * cs + B[1] * sn;
+    const az = A[2] * cs + B[2] * sn;
+    const bx = -A[0] * sn + B[0] * cs;
+    const by = -A[1] * sn + B[1] * cs;
+    const bz = -A[2] * sn + B[2] * cs;
+    const [u0, v0, du, dv] = decalCell(type);
+    const cr = [
+      [-1, -1, u0, v0],
+      [1, -1, u0 + du, v0],
+      [1, 1, u0 + du, v0 + dv],
+      [-1, 1, u0, v0 + dv],
+    ];
+    for (const k of [0, 1, 2, 0, 2, 3]) {
+      const [sx, sy, u, v] = cr[k];
+      D.p.push(cx + ax * hw * sx + bx * hh * sy, cy + ay * hw * sx + by * hh * sy, cz + az * hw * sx + bz * hh * sy);
+      D.n.push(N[0], N[1], N[2]);
+      D.uv.push(u, v);
+      D.c.push(tint, tint, tint, alpha);
+    }
+    this.stats.decals = (this.stats.decals || 0) + 1;
+  }
+
+  /** Decals on a wall face: cracks, grime runs, moss in the wet sections, smears and claw marks deeper, impacts. */
+  _decalsWall(F, hosts, rng) {
+    const S = this.S;
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    const n = Math.max(2, Math.min(22, Math.round((span * F.H) / 110)));
+    const ux = F.N.z;
+    const uz = -F.N.x;
+    for (let i = 0, put = 0; i < n * 3 && put < n; i++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 2.6 || F.H < 3) continue;
+      const y = 0.7 + rng() * (F.H - 1.4);
+      const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(F.o.y + y) | 0)) : 0;
+      const ti = pickDecal(rng, sec, false);
+      const T = DECAL_TYPES[ti];
+      const w = T.w[0] + rng() * (T.w[1] - T.w[0]);
+      const h = T.h ? T.h[0] + rng() * (T.h[1] - T.h[0]) : w;
+      const u = a + 1 + rng() * (b - a - 2);
+      const box = frameBox(F, u - w / 2, u + w / 2, y - h / 2, y + h / 2, 0, 0.25);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const wet = this._wet(F.o.y + y);
+      const al = (T.a[0] + rng() * (T.a[1] - T.a[0])) * (ti === 2 || ti === 3 ? 0.55 + 0.6 * wet : 1);
+      const c = this._facePt(F, u, y, 0.012);
+      const th = T.rot ? rng() * 6.283 : (rng() - 0.5) * 0.12;
+      this._decalQuad(c[0], c[1], c[2], [ux, 0, uz], [0, 1, 0], [F.N.x, 0, F.N.z], w / 2, h / 2, th, ti, Math.min(1, al), 0.85 + 0.15 * rng());
+      put++;
+    }
+  }
+
+  /** Decals on a walkable top: wear, stains and the marks of what has been dragged across it. */
+  _decalsFloor(s, rng) {
+    const W = s.maxX - s.minX;
+    const D = s.maxZ - s.minZ;
+    if (W < 1.5 || D < 1.5) return;
+    const S = this.S;
+    const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(s.maxY) | 0)) : 0;
+    const n = Math.max(2, Math.min(18, Math.round((W * D) / 60 + (W + D) / 14)));
+    for (let i = 0, put = 0; i < n * 3 && put < n; i++) {
+      const ti = pickDecal(rng, sec, true);
+      const T = DECAL_TYPES[ti];
+      const w = T.w[0] + rng() * (T.w[1] - T.w[0]);
+      const h = T.h ? T.h[0] + rng() * (T.h[1] - T.h[0]) : w;
+      const x = s.minX + 0.4 + rng() * Math.max(0.01, W - 0.8);
+      const z = s.minZ + 0.4 + rng() * Math.max(0.01, D - 0.8);
+      if (S.inSolid(x, s.maxY + 0.25, z)) continue;
+      const wet = this._wet(s.maxY);
+      const al = (T.a[0] + rng() * (T.a[1] - T.a[0])) * (ti === 2 || ti === 3 ? 0.55 + 0.6 * wet : 1);
+      // atlas up (v) points toward -z; any yaw
+      this._decalQuad(x, s.maxY + 0.008, z, [1, 0, 0], [0, 0, -1], [0, 1, 0], w / 2, h / 2, rng() * 6.283, ti, Math.min(1, al), 0.85 + 0.15 * rng());
+      put++;
+    }
+  }
+
+  /**
+   * Chipped ashlar patches proud of a wall face (sparse, near tier only): the flat box face stops being a texture alone, and
+   * stereo parallax finally has edges to work with. Budget: <= 8 patches per face, ~80 triangles each.
+   */
+  _blocks(F, hosts, rng) {
+    const S = this.S;
+    if (F.H < 4) return;
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    let n = Math.min(8, Math.floor((span * F.H) / 160 + rng()));
+    for (let tries = 0; tries < n * 4 + 2 && n > 0; tries++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      const cols = 2 + Math.floor(rng() * 3);
+      const rows = 1 + Math.floor(rng() * 3);
+      const bw = 0.5 + rng() * 0.4;
+      const bh = 0.26 + rng() * 0.16;
+      const w = cols * bw + 0.5;
+      const h = rows * bh;
+      if (b - a < w + 2.4 || F.H < h + 3) continue;
+      const u = a + 1.2 + rng() * (b - a - w - 2.4);
+      const y = 1.2 + rng() * (F.H - h - 3);
+      const box = frameBox(F, u - 0.2, u + w + 0.2, y - 0.2, y + h + 0.2, 0, 0.3);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const geo = blockPatchGeo(rng, cols, rows, bw, bh);
+      if (!geo) continue;
+      this._cat = 'chip';
+      this.put(F, geo, u, y, 'stone', this.grade(F.o.y + y).stone, null, true);
+      this._cat = null;
+      this.stats.blocks = (this.stats.blocks || 0) + 1;
+      n--;
+    }
+  }
+
+  /** Rubble on a walkable top: clusters of broken ashlar near the edges and wall feet (detail tier only). */
+  _rubble(s, rng) {
+    const W = s.maxX - s.minX;
+    const D = s.maxZ - s.minZ;
+    if (W < 2 || D < 2) return;
+    const S = this.S;
+    const n = Math.min(7, Math.max(1, Math.round((2 * (W + D)) / 90 + rng() * 1.5))); // WP-ART-PASS: half the rubble (paid for the authored panels)
+    const g = this.grade(s.maxY);
+    let left = n;
+    for (let i = 0; i < n * 3 && left > 0; i++) {
+      // a point along the rim (inset 0.4 .. 1.8 m) most of the time, else anywhere on the top
+      let x;
+      let z;
+      if (rng() < 0.75) {
+        const side = rng();
+        const inset = 0.4 + rng() * 1.4;
+        if (side < 0.5) {
+          x = s.minX + rng() * W;
+          z = rng() < 0.5 ? s.minZ + inset : s.maxZ - inset;
+        } else {
+          z = s.minZ + rng() * D;
+          x = rng() < 0.5 ? s.minX + inset : s.maxX - inset;
+        }
+      } else {
+        x = s.minX + 0.5 + rng() * (W - 1);
+        z = s.minZ + 0.5 + rng() * (D - 1);
+      }
+      if (x < s.minX + 0.3 || x > s.maxX - 0.3 || z < s.minZ + 0.3 || z > s.maxZ - 0.3) continue;
+      if (S.inSolid(x, s.maxY + 0.3, z)) continue; // a wall stands here
+      let near = false;
+      for (const a of S.anchors) {
+        if (Math.abs(a.y - s.maxY) < 2.5 && (a.x - x) * (a.x - x) + (a.z - z) * (a.z - z) < 2.2 * 2.2) near = true;
+      }
+      if (near) continue;
+      const geo = rubbleGeo(rng, x, s.maxY, z, 0.35 + rng() * 0.7, 4 + Math.floor(rng() * 5));
+      tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
+      worldUV(geo);
+      this._count('rubble', s.maxY, geo.attributes.position.count / 3);
+      this.emit(geo, 'stone', true); // broken ashlar: same list / draw as the other near stone dressing (no extra call)
+      this.stats.rubble = (this.stats.rubble || 0) + 1;
+      left--;
+    }
+  }
 
   /**
    * Colossal turning cogs sunk half into a far-ish wall: the order's machine
@@ -2192,13 +2805,15 @@ class Dresser {
           const cx = a + bay * (j + 0.5);
           const w = bay - 5;
           const rise = w * 0.85;
-          if (rng() < 0.3 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
+          if (rng() < 0.55 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
           this._cat = 'farlancet';
           this._lancet(F, cx, y0, w, jamb, rise, 0.7, 0.9, g.stone, 'stone', true, false);
-          if (rng() < 0.45) {
-            const k = 0.1 + rng() * 0.14;
+          if (rng() < 0.7) {
+            // WP-ART-PASS: lit panes are the far layer of the picture (the glow list is fog-capped, so they stay visible at 150 m):
+            // brighter than the haze, mostly cold, one in four a warm lantern-lit window
+            const k = 0.3 + rng() * 0.3;
             this._cat = 'pane';
-            this.put(F, archPanel(w - 1.4, jamb, rise - 0.7, y0, 0.2, 1, 9), cx, 0, 'glow', [k * 0.55, k, k * 0.95]);
+            this.put(F, archPanel(w - 1.4, jamb, rise - 0.7, y0, 0.2, 1, 9), cx, 0, 'glow', rng() < 0.25 ? [k * 1.0, k * 0.72, k * 0.4] : [k * 0.5, k * 0.95, k * 0.9]);
           }
         }
       }
@@ -2527,6 +3142,20 @@ class Dresser {
     const gearFirst = wantGear && (!wantSaint || (u.gears + u.saints + sec) % 2 === 1);
     for (const kind of gearFirst ? ['gear', 'saint'] : ['saint', 'gear']) {
       if (kind === 'saint' && wantSaint) {
+        // VR hero piece: every third bay gets a crumbling pointed-arch relief instead of a saint (when it fits)
+        const scA = Math.min((H - 0.2) / 1.0, (W - 0.4) / 1.22, 7);
+        if (scA >= 3.4 && (u.saints + sec) % 3 === 2) {
+          const szA = Math.min(scA * 0.8, 3);
+          const boxA = frameBox(F, cx - 0.61 * scA, cx + 0.61 * scA, y0, y0 + scA, 0, 0.42 * szA);
+          if (!S.blocked(boxA, hosts, true, DR.propClear)) {
+            this.kit(F, 'ch1_env_arch_fragment', cx, y0, g.stone, 'stone', scA, scA, szA, null, true);
+            u.saints++;
+            this.stats.saints = (this.stats.saints || 0) + 1;
+            this.stats.heroes = (this.stats.heroes || 0) + 1;
+            F.budget.icons--;
+            return true;
+          }
+        }
         const sc = Math.min((H - 0.2) / 1.28, (W - 0.4) / 0.42, 13);
         if (sc < 3.4) continue;
         const sz = sc * 0.72; // a shallow relief: 0.26 × 0.72 × scale deep
@@ -2539,6 +3168,22 @@ class Dresser {
         return true;
       }
       if (kind === 'gear' && wantGear) {
+        // VR hero piece: a machine-room gear train (three meshing cogs, iron housings, chain) in the bigger bays
+        const sT = Math.min((H - 0.3) / 3.05, (W - 0.4) / 3.2, 5.5);
+        if (sT >= 1.5 && (u.gears + sec) % 2 === 0) {
+          const szT = Math.min(sT * 0.55, 1.6);
+          const gx = cx - 0.35 * sT;
+          const gy = y0 + H / 2 - 0.22 * sT;
+          const boxT = frameBox(F, gx - 1.3 * sT, gx + 1.95 * sT, gy - 1.3 * sT, gy + 1.75 * sT, 0, 0.5 * szT);
+          if (!S.blocked(boxT, hosts, true, DR.propClear)) {
+            this.kit(F, 'ch1_env_geartrain', gx, gy, [0.95, 0.9, 0.86], 'metal', sT, sT, szT, null, true);
+            u.gears++;
+            this.stats.gears = (this.stats.gears || 0) + 1;
+            this.stats.heroes = (this.stats.heroes || 0) + 1;
+            F.budget.icons--;
+            return true;
+          }
+        }
         const r = Math.min(H / 2 - 0.3, W / 2 - 0.2, 6.5);
         if (r < 1.6) continue;
         const sz = Math.min(r * 0.55, 2); // ≤ 0.6 m deep
@@ -2994,6 +3639,8 @@ class Dresser {
     const rng = makeRng(hashStr(`slab${s.id}`));
     const metal = s.kind === 'metal' || s.kind === 'bridge' || s.kind === 'grate';
     if (metal && s.kind !== 'grate') this._dressIron(s);
+    if (!metal && s.kind !== 'crumble') this._rubble(s, makeRng(hashStr(`rub${s.id}`)));
+    if (s.kind !== 'grate' && s.kind !== 'crumble') this._decalsFloor(s, makeRng(hashStr(`dcf${s.id}`)));
     const sides = [
       { N: { x: 1, y: 0, z: 0 }, c: s.maxX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
       { N: { x: -1, y: 0, z: 0 }, c: s.minX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
@@ -3147,6 +3794,17 @@ class Dresser {
             const u = off + i * step;
             const fig = !floor && span >= 6 && i % 3 === 1 && g.growth < 0.5 && figs < 2;
             if (fig) figs++;
+            // VR hero corbel: a carved head with a leaf cluster and a dead lantern, every fourth plain one on ledges you can reach
+            const heroSec = typeof this.level.sectionIndexAt === 'function' ? this.level.sectionIndexAt(W.o.y) | 0 : 0;
+            const heroUsed = this._heroCorbels || (this._heroCorbels = {});
+            const hero = !fig && !floor && i % 4 === 2 && (heroUsed[heroSec] || 0) < 6;
+            if (hero && !S.blocked(frameBox(W, u - 0.55, u + 0.55, -1.9, 0, 0, 1.15), hostsW, true, DR.propClear)) {
+              heroUsed[heroSec] = (heroUsed[heroSec] || 0) + 1;
+              this.kit(W, 'ch1_env_corbel_hero', u, 0, g.stone, 'stone');
+              this.stats.corbels++;
+              this.stats.heroes = (this.stats.heroes || 0) + 1;
+              continue;
+            }
             const part = fig ? 'ch1_env_corbel_figure' : 'ch1_env_corbel';
             const h = fig ? 2.1 : 1.1;
             const d = fig ? 0.86 : 0.8;
@@ -3209,7 +3867,7 @@ function parseEnvKit(gltf) {
     if (!g.attributes.normal) g.computeVertexNormals();
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     const mname = (o.material && o.material.name) || 'stone';
-    const list = /metal|iron/.test(mname) ? 'metal' : /flesh|sinew/.test(mname) ? 'flesh' : 'stone';
+    const list = /metal|iron/.test(mname) ? 'metal' : /flesh|sinew/.test(mname) ? 'flesh' : /glow|emit/.test(mname) ? 'glow' : 'stone';
     out.set(name, { geo: g, list, tris: n / 3 });
   });
   return out;
@@ -3240,7 +3898,7 @@ export class LevelView {
     this._mountGeos = buildMountGeometries();
     this._hazGeos = buildHazardGeometries();
     this._shared = new Set([this._unitBox, this._glyphGeo, ...this._hazGeos, ...this._mountGeos]);
-    this._glowTex = glowTexture(64);
+    this._glowTex = glowTexture(128);
     this.highlights = {
       left: this._makeHighlight('left', PALETTE.handLeft),
       right: this._makeHighlight('right', PALETTE.handRight),
@@ -3290,6 +3948,7 @@ export class LevelView {
     this._kitPlan = null;
     this._dressJob = null;
     this._cogs = null;
+    this._decals = null;
     this._colossal = null;
     this._colossalParts = [];
     this._lightGlow = null;
@@ -3409,7 +4068,17 @@ export class LevelView {
     for (const bucket of SOLID_BUCKETS) {
       const list = lists[bucket];
       if (!list || !list.length) continue;
-      const mesh = new THREE.InstancedMesh(this._unitBox, this.mats.get(bucket), list.length);
+      // lightmaps: each bucket has its own copy of the unit box carrying the per-instance chart row (iLm = row + 1, 0 = none)
+      const bucketMat = this.mats.get(bucket);
+      if (bucketMat && !(bucketMat.defines && bucketMat.defines.AT_LM !== undefined)) {
+        bucketMat.defines = Object.assign({}, bucketMat.defines, { AT_LM: '' });
+        bucketMat.needsUpdate = true;
+      }
+      const bucketGeo = this._unitBox.clone();
+      const lmAttr = new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1);
+      lmAttr.setUsage(THREE.DynamicDrawUsage);
+      bucketGeo.setAttribute('iLm', lmAttr);
+      const mesh = new THREE.InstancedMesh(bucketGeo, bucketMat, list.length);
       mesh.name = `solids_${bucket}`;
       mesh.count = 0;
       mesh.frustumCulled = false;
@@ -3422,9 +4091,10 @@ export class LevelView {
         tints[i * 3 + 2] = _c.b;
       }
       this.root.add(mesh);
-      this._solidSets.push({ mesh, list, tints });
+      this._solidSets.push({ mesh, list, tints, lm: new Float32Array(list.length), lmAttr });
       this.stats.solids += list.length;
     }
+    this._applyLightmap();
     this._packAt = new THREE.Vector3(1e9, 1e9, 1e9);
     this._packDist = 0;
     this._packStamp = 0;
@@ -3450,6 +4120,37 @@ export class LevelView {
     this.stats.solids += this._crumbles.length;
   }
 
+  /**
+   * Lightmaps (render/lighting.js): hands the chart index (assets/lighting/lm_ch1_index.json) to the solids, or null to
+   * drop it. A solid takes part when the index has its id and the same box (cm); the others keep the baked volume.
+   * Returns how many solids carry a chart.
+   */
+  setLightmapIndex(idx) {
+    this._lmIndex = idx && idx.solids && idx.boxes ? idx : null;
+    return this._applyLightmap();
+  }
+
+  _applyLightmap() {
+    const idx = this._lmIndex;
+    let n = 0;
+    for (const set of this._solidSets || []) {
+      for (let i = 0; i < set.list.length; i++) {
+        const s = set.list[i];
+        let row = 0;
+        if (idx && s && idx.solids[s.id] !== undefined) {
+          const b = idx.boxes[s.id];
+          if (b && Math.round(s.minX * 100) === b[0] && Math.round(s.minY * 100) === b[1] && Math.round(s.minZ * 100) === b[2] && Math.round(s.maxX * 100) === b[3] && Math.round(s.maxY * 100) === b[4] && Math.round(s.maxZ * 100) === b[5]) {
+            row = idx.solids[s.id] + 1;
+            n++;
+          }
+        }
+        set.lm[i] = row;
+      }
+    }
+    if (this._packAt) this._packAt.set(1e9, 1e9, 1e9); // re-pack on the next update
+    return n;
+  }
+
   /** Re-packs the static solids within `vd` of the head (only when needed). */
   _packSolids(head, vd, force) {
     const moved = this._packAt.distanceToSquared(head) > 1.5 * 1.5;
@@ -3462,7 +4163,7 @@ export class LevelView {
     // Pack a little wider than the view so small moves never reveal a hole.
     const r = vd + 4;
     for (const set of this._solidSets) {
-      const { mesh, list, tints } = set;
+      const { mesh, list, tints, lm, lmAttr } = set;
       let n = 0;
       for (let i = 0; i < list.length; i++) {
         const s = list[i];
@@ -3474,8 +4175,10 @@ export class LevelView {
         mesh.setMatrixAt(n, this._solidMatrix(s, 0, 0, 0, _m4));
         _c.setRGB(tints[i * 3], tints[i * 3 + 1], tints[i * 3 + 2]);
         mesh.setColorAt(n, _c);
+        lmAttr.array[n] = lm[i];
         n++;
       }
+      lmAttr.needsUpdate = true;
       mesh.count = n;
       mesh.visible = n > 0;
       mesh.instanceMatrix.needsUpdate = true;
@@ -3492,7 +4195,7 @@ export class LevelView {
 
   _solidTint(s, out) {
     const r = makeRng(hashStr(s.id != null ? s.id : `${s.minX},${s.minY},${s.minZ}`));
-    const k = 0.84 + r() * 0.26;
+    const k = 0.8 + r() * 0.38; // WP-ART-PASS: wider per-solid value spread, so neighbouring slabs / walls never share one grey
     this._solidTintBase(s, r, k, out);
     if (s.kind !== 'metal' && s.kind !== 'bridge' && s.kind !== 'grate') {
       // the section grade (pale and ordered above; soot, rust and dark below), a little softer than on carving
@@ -3514,7 +4217,7 @@ export class LevelView {
         out.setRGB(0.95 * k, 0.96 * k, 1.0 * k);
         break;
       case 'wall':
-        out.setRGB(k, k * (0.97 + r() * 0.04), k * (0.93 + r() * 0.06));
+        out.setRGB(k * (0.95 + r() * 0.1), k * (0.96 + r() * 0.06), k * (0.9 + r() * 0.12));
         break;
       default:
         out.setRGB(k, k, k);
@@ -3704,6 +4407,8 @@ export class LevelView {
     let count = 0;
     const getBand = (y) => this._bandLists(bands, y);
     const P = new Parts();
+    P.kitLamps = true;
+    this._lampPlans = [];
     const itemM = new THREE.Matrix4();
     /** Build in item-local space (front = +Z), rotate by rotY, move into the band of y. */
     const tris = (this.stats.decorTris = {});
@@ -3790,6 +4495,7 @@ export class LevelView {
         continue;
       }
       if (type === 'grate') haveGrate = true;
+      if (type === 'lamp' || type === 'lantern') this._lampPlans.push({ x: d.x, y: d.y, z, rotY, lit: d.lit !== false });
       const fn = DECOR[type] || DECOR[d.type];
       if (!fn) {
         skipped.add(type);
@@ -3836,7 +4542,7 @@ export class LevelView {
 
   /** The decor lists of the band holding y (created on demand); detail → the finer, nearer tier. */
   _bandLists(bands, y, detail = false) {
-    const bi = detail ? `${detail === 'mid' ? 'm' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
+    const bi = detail ? `${detail === 'mid' ? 'm' : detail === 'near' ? 'n' : 'd'}${this._band(y)}_${Math.max(0, Math.floor((this._topY - y) / DETAIL_BAND_H))}` : this._band(y);
     if (!bands.has(bi)) bands.set(bi, { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] });
     return bands.get(bi);
   }
@@ -3865,10 +4571,18 @@ export class LevelView {
    */
   _buildDressing(level) {
     this._kitPlan = [];
+    for (const l of this._lampPlans || []) {
+      const m = new THREE.Matrix4().makeRotationY(l.rotY);
+      m.setPosition(l.x, l.y, l.z);
+      const sec = this._band(l.y);
+      this._kitPlan.push({ part: 'ch1_env_lantern', m, tint: [1, 1, 1], list: 'metal', big: false, sec, drawn: false });
+      if (l.lit) this._kitPlan.push({ part: 'ch1_env_lantern_glass', m, tint: [1, 1, 1], list: 'glow', big: false, sec, drawn: false });
+    }
     this.stats.dressTris = { procedural: 0, kit: 0, detail: 0 };
     const tris = this.stats.dressTris;
     const job = { bands: new Map(), it: null, sec: -1, merge: [] };
     this._makeCogMesh();
+    this._makeDecalMesh();
     const emit = (geo, list, detail) => {
       geo.computeBoundingBox();
       const bb = geo.boundingBox;
@@ -3897,6 +4611,54 @@ export class LevelView {
     }
   }
 
+
+  /** The decal mesh (one draw for the whole level), created empty so the renderer compiles its program on the menu. */
+  _makeDecalMesh() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(18), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(18), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(12), 2));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(24), 4));
+    const mesh = new THREE.Mesh(g, this.mats.get('decal'));
+    mesh.name = 'decals';
+    mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.renderOrder = 2;
+    mesh.visible = false;
+    this.root.add(mesh);
+    this._decals = { mesh, count: 0 };
+  }
+
+  /** Moves the decal quads the Dresser has planned so far into the decal mesh. */
+  _flushDecals() {
+    const job = this._dressJob;
+    const D = job && job.D && job.D.dec;
+    const dm = this._decals;
+    if (!D || !dm || !D.p.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(D.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(D.n, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(D.uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(D.c, 4));
+    const prev = dm.mesh.geometry;
+    let merged = g;
+    if (dm.count > 0) {
+      try {
+        merged = mergeGeometries([prev, g], false) || g;
+      } catch {
+        merged = g;
+      }
+      if (merged !== g) g.dispose();
+    }
+    prev.dispose();
+    dm.mesh.geometry = merged;
+    dm.count = merged.attributes.position.count / 3;
+    this.stats.decalTris = dm.count;
+    D.p.length = 0;
+    D.n.length = 0;
+    D.uv.length = 0;
+    D.c.length = 0;
+  }
 
   /**
    * One InstancedMesh for every colossal cog (turned and distance-culled in
@@ -3966,12 +4728,16 @@ export class LevelView {
         const r = job.it.next();
         if (r.done) {
           this._flushDressing(Infinity);
+          this._flushDecals();
           this._buildCogs(job.D && job.D.gears);
           job.finished = true;
           continue;
         }
         if (r.value > job.sec) {
-          if (job.sec >= 0) this._flushDressing(r.value - 1);
+          if (job.sec >= 0) {
+            this._flushDressing(r.value - 1);
+            this._flushDecals();
+          }
           job.sec = r.value;
         }
       } while (now() - t0 < ms);
@@ -4031,7 +4797,8 @@ export class LevelView {
         }
       }
       tintColors(g, it.tint[0], it.tint[1], it.tint[2]);
-      worldUV(g);
+      if ((it.list || part.list) === 'glow') g.deleteAttribute('normal'); // emissive parts: position + colour only (like Parts.glow)
+      else worldUV(g);
       byPart[it.part] = (byPart[it.part] || 0) + part.tris;
       const T = this.stats.dress && this.stats.dress.tris;
       if (T) {
@@ -4057,7 +4824,7 @@ export class LevelView {
   _mergeBands(bands, append) {
     if (!this._chunkByKey) this._chunkByKey = new Map();
     for (const [bi, lists] of bands) {
-      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : '';
+      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : String(bi).startsWith('n') ? 'n' : '';
       const detail = kind !== '';
       for (const k of Object.keys(lists)) {
         const list = lists[k];
@@ -4096,7 +4863,7 @@ export class LevelView {
           mesh.name = sl < 0 ? `decor_${k}_${bi}` : `decor_${k}_${bi}_s${sl}`;
           mesh.matrixAutoUpdate = false;
           if (k === 'shaft') mesh.renderOrder = 10;
-          this._addChunk(mesh, kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi, kind);
+          this._addChunk(mesh, kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : kind === 'n' ? NEAR_DIST : Infinity, detail ? parseInt(String(bi).slice(1), 10) : bi, kind);
           this._chunkByKey.set(key, this._chunks[this._chunks.length - 1]);
         }
         lists[k] = [];
@@ -4550,6 +5317,7 @@ export class LevelView {
   update(dt, game, head, viewDist, fogInfo) {
     if (!this.level) return;
     if (this._dressJob) this._pumpDressing(game && game.state === 'playing' ? 2 : 8);
+    if (this._decals) this._decals.mesh.visible = this._decals.count > 0 && !!this.mats.get('decal').map;
     this.time += dt;
     const t = this.time;
     // Chunk culling: the head's band (section) and its neighbours only (the
@@ -4559,12 +5327,13 @@ export class LevelView {
     const vd = fogNear + (viewDist - fogNear) * this._cullT + VIEW_MARGIN;
     const dd = DETAIL_DIST * this._detailScale;
     const dm = MID_DIST * this._detailScale;
+    const dn = NEAR_DIST * this._detailScale;
     const nd = NEIGHBOUR_DIST * this._detailScale;
     const hb = this._band(head.y);
     for (let i = 0; i < this._chunks.length; i++) {
       const ch = this._chunks[i];
       const near = ch.band < 0 || (ch.band >= hb - 1 && ch.band <= hb + 1);
-      let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.maxDist;
+      let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.kind === 'n' ? dn : ch.maxDist;
       // the neighbouring sections lie behind their floors: only what is near the opening is in sight
       if (ch.band !== hb && ch.band >= 0 && md > nd) md = nd;
       ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
