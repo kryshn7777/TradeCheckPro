@@ -143,9 +143,35 @@ await ok('a bare GLTFLoader (as game.js creates it) reads the compressed kit thr
   assert.ok(gltf.scene.children.length > 0);
 });
 
-await ok('the five models together are below the old 26.9 MB (geometry compressed; images unchanged)', () => {
-  assert.ok(total < 20.5e6, 'total ' + total);
-  console.log('      total ' + (total / 1e6).toFixed(2) + ' MB (was 26.88 MB)');
+await ok('the five models together are below the old 26.9 MB + the KTX2 images (geometry meshopt-compressed; images KTX2 UASTC / ETC1S)', () => {
+  assert.ok(total < 31e6, 'total ' + total);
+  console.log('      total ' + (total / 1e6).toFixed(2) + ' MB (was 26.88 MB with 2048 JPEG / WebP images, 18.1 MB geometry-compressed)');
+});
+
+// GPU residency of the model textures (compress_glb_textures.mjs): ASTC 4x4 / BC7 = 1 byte per texel, +33 % for the mip chain
+await ok('every GLB image is KTX2 (KHR_texture_basisu, required) and the player + Mason textures stay under 70 MB resident', () => {
+  return (async () => {
+    let arms = 0;
+    let rest = 0;
+    for (const name of Object.keys(EXPECT)) {
+      const g = await readGLB(path.join(MODELS_DIR, name + '.glb'));
+      assert.ok((g.js.extensionsRequired || []).includes('KHR_texture_basisu'), name + ' requires KHR_texture_basisu');
+      for (const tex of g.js.textures || []) {
+        const ext = tex.extensions && tex.extensions.KHR_texture_basisu;
+        const img = g.js.images[ext ? ext.source : tex.source];
+        const bytes = Buffer.from(g.view(img.bufferView));
+        if (img.mimeType === 'image/ktx2') {
+          assert.equal(bytes.toString('latin1', 1, 7), 'KTX 20', name + ' KTX2 identifier');
+          const mb = (bytes.readUInt32LE(20) * bytes.readUInt32LE(24) * 1.34) / 1e6;
+          if (name === 'player_arms') arms += mb;
+          else if (name === 'mason_rig' || name === 'player_body') rest += mb; // what is resident together with the hands
+        } else assert.ok(bytes.length < 100e3, name + ' keeps only tiny non-KTX2 images (' + img.mimeType + ')');
+      }
+    }
+    console.log('      resident GPU: arms ' + arms.toFixed(1) + ' MB, body + Mason rig ' + rest.toFixed(1) + ' MB');
+    assert.ok(arms <= 40, 'arms ' + arms);
+    assert.ok(arms + rest <= 70, 'total ' + (arms + rest));
+  })();
 });
 
 console.log(n + ' tests passed');

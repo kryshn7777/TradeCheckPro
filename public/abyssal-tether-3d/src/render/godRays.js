@@ -367,7 +367,7 @@ export class GodRays {
     this.params = {
       gain: 0.1, // 1/m: optical depth per metre of the densest part of a beam
       g: 0.6, // Henyey-Greenstein anisotropy
-      lantern: 0.3, // strength of the lantern cone relative to a shaft
+      lantern: 0.16, // strength of the lantern cone relative to a shaft
       lanternHalf: 0.62, // rad
       lanternLen: 14,
       streak: 0.75,
@@ -676,7 +676,7 @@ export class GodRays {
     C[o + 1] = (lc.g / mx) * k;
     C[o + 2] = (lc.b / mx) * k;
     C[o + 3] = 3.7;
-    K[o] = 0; K[o + 1] = 0.8; K[o + 2] = 2; K[o + 3] = 0.55;
+    K[o] = 0; K[o + 1] = 1.0; K[o + 2] = 2; K[o + 3] = 0.55;
     return i + 1;
   }
 

@@ -97,6 +97,7 @@ const MODULES = {
   ui: './ui/ui3d.js',
   audio: './audio/audio3d.js',
   gltf: 'three/addons/loaders/GLTFLoader.js',
+  glbLoad: './render/glbLoad.js', // KTX2 loader for the KHR_texture_basisu GLB textures (attachKTX2)
   // WP-RELEASE: platform + meta modules (every one optional; the game plays without them)
   loadingScene: './platform/loadingScene.js',
   resilience: './platform/resilience.js',
@@ -1299,6 +1300,7 @@ export class Game3D {
     }
     try {
       const loader = new M.gltf.GLTFLoader();
+      if (M.glbLoad && typeof M.glbLoad.attachKTX2 === 'function') M.glbLoad.attachKTX2(loader); // KTX2 textures of the GLB
       loader.load(
         KIT_URL,
         (gltf) => {
@@ -1356,6 +1358,7 @@ export class Game3D {
     }
     try {
       const loader = new M.gltf.GLTFLoader();
+      if (M.glbLoad && typeof M.glbLoad.attachKTX2 === 'function') M.glbLoad.attachKTX2(loader); // KTX2 textures of the GLB
       loader.load(
         RIG_URL,
         (gltf) => {

@@ -179,7 +179,7 @@ browser has Worker + WebAssembly, otherwise (or if any map of a set fails) the J
 vertex-cache reorder, KHR_mesh_quantization of POSITION (14 bit; the two player GLBs keep float32 positions because
 `render/gearSurface.js` reads them in metres), NORMAL / TANGENT (10), TEXCOORD (12), WEIGHTS (8), then EXT_meshopt_compression on every
 buffer view (lossless codec, no decoder filters). The custom attributes `_SPINE_S`, `_PART`, `_MASK`, `_OWNER`, JOINTS and COLOR are
-never quantized. 26.9 MB -> 18.5 MB (images are untouched). Re-run it after every Blender re-export (the build scripts write
+never quantized. 26.9 MB -> 18.5 MB (images are untouched here; see the next section). Re-run it after every Blender re-export (the build scripts write
 uncompressed GLBs; already-compressed files are skipped):
 
 ```bash
@@ -192,6 +192,25 @@ Runtime: `src/render/glbLoad.js` (`createGLTFLoader` / `loadGLB`) attaches the v
 (`vendor/three/addons/libs/meshopt_decoder.module.js`); the vendored `GLTFLoader` also defaults to it, so loaders created in game.js read the
 same files. `tests/render/test-glb-meshopt.mjs` decodes every accessor with that decoder, checks the custom attributes and loads each file
 through three's GLTFLoader.
+
+### Texture compression of the GLBs (KHR_texture_basisu / KTX2)
+
+The GLB images used to be 2048 JPEG / WebP, which a browser decodes to RGBA8 (about 22 MB per map with mips, ~230 MB for hands + body +
+Mason: Quest tab memory pressure). `compress_glb_textures.mjs` replaces every image of the five GLBs with a KTX2 (Basis Universal, full mips;
+KHR_texture_basisu declared required) that is transcoded to ASTC 4x4 on Quest (1 byte / texel: 2048 map = 5.6 MB, 1024 map = 1.4 MB). Sizes:
+`player_arms` 2048 albedo / normal / ORM (close up) + 1024 emissive, `player_body` 1024, `mason_*` albedo + normal 1024 (ORM stays 512).
+UASTC + zstd for normals / ORM / the hands, ETC1S for body and Mason albedo. Resident total for hands + body + Mason rig is about 27 MB
+(was ~230 MB); the GLBs grow from 18.1 to 29.9 MB (the sw precache from 60.4 to 70.6 MB, cap 80). Run it after `compress_glbs.mjs`
+(KTX2 images are skipped, so it is idempotent), then `npm run at3d:sw`:
+
+```bash
+GLTF_TOOLS=$TOOLS KTX2_TOOLS=$KTX_TOOLS node tools/abyssal-tether-3d/compress_glb_textures.mjs [--only player_arms] [--dir D --out D2]   # ~100 s per 2048 map
+```
+
+Runtime: every GLTFLoader that reads these files needs a KTX2Loader: `glbLoad.js` `createGLTFLoader` / `loadGLB` attach it, game.js
+(kit + rig loaders) calls `attachKTX2(loader)`, and `Renderer3D` hands the renderer over (`setKTX2Renderer`) for the format detection. The
+transcoder workers are ended 4 s after the last GLB finished. A browser without Worker / WebAssembly cannot load these models (the
+procedural hands / kit creature fallbacks apply). `tests/render/test-glb-meshopt.mjs` checks the KTX2 images and the resident budget.
 
 ## Player arms + tether launchers
 

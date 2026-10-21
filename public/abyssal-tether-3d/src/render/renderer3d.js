@@ -52,7 +52,7 @@ import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
 import { Lighting } from './lighting.js';
 import { RenderGovernor } from './renderGovernor.js';
-import { createGLTFLoader } from './glbLoad.js';
+import { createGLTFLoader, setKTX2Renderer } from './glbLoad.js';
 import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
@@ -270,6 +270,7 @@ export class Renderer3D {
 
     this.materials = new MaterialLibrary(r);
     configureTextureLoading({ renderer: r }); // KTX2 (GPU-compressed) texture sets need the renderer's compressed-format support
+    setKTX2Renderer(r); // ... and so do the KHR_texture_basisu textures of the shipped GLBs (hands, body, Mason)
     this._game = null;
     this._bus = null;
     this._lampFlick = 1;
