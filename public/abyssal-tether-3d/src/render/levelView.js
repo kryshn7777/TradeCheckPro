@@ -1264,7 +1264,7 @@ const DR = {
   nearWall: 90, // arcades / growth only on faces whose opposite wall is nearer than this (far walls are fog)
   panelR: 11, // authored ashlar panels (kit wall_a/b/c, 4 x 4 m): wall cells whose centre is within this of the route (anchors, checkpoints, spawn)
   panelAcross: 70, // ... on faces whose opposite wall is nearer than this
-  panelCap: [22, 24, 24, 16, 20, 22, 16, 16], // ... at most this many per section (S1..S8), nearest to the route first
+  panelCap: [14, 16, 16, 10, 12, 14, 10, 10], // ... at most this many per section (S1..S8), nearest to the route first
 };
 const ROOTS = [
   ['ch1_env_root_c', 10, 1.8],
