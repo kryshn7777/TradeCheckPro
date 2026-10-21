@@ -184,27 +184,42 @@ export class ButtonMachine {
  * the button also looks (hold fire and aim at once). `top`: measured from the top instead of the bottom.
  */
 export const LAYOUT = [
-  { id: 'fireR', side: 'r', x: 0.35, y: 0.45, s: 1.4, look: true, hand: 'right' },
-  { id: 'fireL', side: 'r', x: 1.95, y: 0.35, s: 1.2, look: true, hand: 'left' },
-  { id: 'fire', side: 'r', x: 0.35, y: 0.45, s: 1.4, look: true, hand: 'sel' }, // 'toggle' launcher mode: one button + chip
-  { id: 'jump', side: 'r', x: 0.35, y: 2.15, s: 1.0 },
-  { id: 'grip', side: 'r', x: 1.55, y: 1.85, s: 1.0, look: true },
-  { id: 'reel', side: 'l', x: 0.35, y: 3.1, s: 1.0 },
-  { id: 'out', side: 'l', x: 0.35, y: 4.35, s: 1.0 },
-  { id: 'bag', side: 'r', x: 0.35, y: 3.45, s: 1.0, top: false },
-  { id: 'pause', side: 'r', x: 0.35, y: 0.35, s: 0.8, top: true },
+  { id: 'fireR', side: 'r', x: 0.3, y: 0.3, s: 1.3, look: true, hand: 'right' },
+  { id: 'fireL', side: 'r', x: 1.85, y: 0.3, s: 1.1, look: true, hand: 'left' },
+  { id: 'fire', side: 'r', x: 0.3, y: 0.3, s: 1.3, look: true, hand: 'sel' }, // 'toggle' launcher mode: one button + chip
+  { id: 'jump', side: 'r', x: 0.3, y: 1.75, s: 1.0 },
+  { id: 'grip', side: 'r', x: 1.7, y: 1.7, s: 1.0, look: true },
+  { id: 'bag', side: 'r', x: 1.7, y: 3.0, s: 1.0 },
+  { id: 'reel', side: 'l', x: 0.3, y: 2.6, s: 1.0 },
+  { id: 'out', side: 'l', x: 0.3, y: 1.4, s: 1.0 },
+  { id: 'pause', side: 'r', x: 0.3, y: 0.3, s: 0.875, top: true },
 ];
 
 export const BASE_UNIT = 64;
 
 /**
  * Where a layout entry sits for a scale and handedness: { side: 'left' | 'right', x, y, size, top } in px (x from that side's
- * edge, y from the bottom — or from the top when `top`). Mirroring swaps every side; sizes never drop below 56 px.
+ * edge, y from the bottom — or from the top when `top`). Mirroring swaps every side; sizes never drop below 56 px. `viewH`
+ * (the viewport height) shrinks the unit on a short landscape screen so the right-hand column (4 units tall) still fits.
  */
-export function placeButton(def, scale, mirror) {
-  const u = BASE_UNIT * clamp(fin(scale, 1), 0.9, 1.5);
+export function placeButton(def, scale, mirror, viewH) {
+  let u = BASE_UNIT * clamp(fin(scale, 1), 0.9, 1.5);
+  if (viewH > 0) u = Math.min(u, Math.max(TOUCH_TUNING.minButton, (viewH - 30) / 4));
   const side = (def.side === 'r') !== !!mirror ? 'right' : 'left';
   return { side, x: def.x * u, y: def.y * u, size: Math.max(TOUCH_TUNING.minButton, def.s * u), top: !!def.top };
+}
+
+/** Screen rectangles { x0, y0, x1, y1 } of every button for a viewport (no safe-area insets); the layout tests check them. */
+export function layoutRects(w, h, scale, mirror, launcher) {
+  const out = {};
+  for (const def of LAYOUT) {
+    if (launcher === 'toggle' ? def.id === 'fireR' || def.id === 'fireL' : def.id === 'fire') continue;
+    const p = placeButton(def, scale, mirror, h);
+    const x0 = p.side === 'left' ? p.x : w - p.x - p.size;
+    const y0 = p.top ? p.y : h - p.y - p.size;
+    out[def.id] = { x0, y0, x1: x0 + p.size, y1: y0 + p.size };
+  }
+  return out;
 }
 
 /** Whether the touch layer is wanted: 'on' / 'off' win; 'auto' follows a coarse primary pointer or a touch seen on a hybrid. */

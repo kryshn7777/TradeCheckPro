@@ -89,7 +89,7 @@ tethered hand = yank** that rope; **left stick = move / swing / air control** (r
 **right stick X = smooth turn** (no snap), **right stick Y = reel** (up = in); **A = jump**,
 **B / menu (≡) = pause**; hold X (1 s) = restart while paused/dead. Haptics on attach, rope tension, landing, death,
 creature lunge. Desktop: pointer-lock mouse look; **LMB = right tether, RMB = left tether** (both aim
-along the view centre); WASD move; **Space = jump / reel in when tethered**; Shift = reel out; C = brake;
+along the view centre); WASD move (phone / tablet: the touch layer, WP-TOUCH, builds the same intent: stick = WASD, ROPE R / L = LMB / RMB, REEL / LET OUT = Space / Shift, GRIP = F, JUMP = Space edge, BAG = 1-4 / X); **Space = jump / reel in when tethered**; Shift = reel out; C = brake;
 F = yank both; Esc = pause; R = restart; Enter = confirm.
 
 ## 3. Level (`src/sim/level3d.js`, `src/data/level-data-3d.js`)

@@ -541,7 +541,11 @@ export class TouchInput {
 
   _syncHands() {
     const d = this.im && this.im.desktop;
-    if (!d) return;
+    if (!d || this.im.xrActive) return; // never touch the XR trigger state
+    const b = this._btn;
+    const any = b.fireL.held || b.fireR.held || b.fire.held;
+    if (!any && !this._firing) return; // no touch rope to start or to release
+    this._firing = any;
     d._syncHand('left');
     d._syncHand('right');
   }
@@ -607,7 +611,7 @@ export class TouchInput {
 
   _layoutKey() {
     const s = this.settings;
-    return `${s.scale}|${s.mirror}|${s.launcher}|${s.rope}|${this.sel}|${s.colorSafe}`;
+    return `${s.scale}|${s.mirror}|${s.launcher}|${s.rope}|${this.sel}|${s.colorSafe}|${this.win ? this.win.innerHeight : 0}`;
   }
 
   _layoutIfChanged() {
@@ -753,11 +757,12 @@ export class TouchInput {
     this._lastKey = this._layoutKey();
     const E = this.els;
     const two = st.launcher === 'two';
+    const vh = (this.win && this.win.innerHeight) || 0;
     const place = (id, defId) => {
       const b = E[id];
       if (!b) return;
       const def = LAYOUT.find((d) => d.id === (defId || id));
-      const p = placeButton(def, st.scale, st.mirror);
+      const p = placeButton(def, st.scale, st.mirror, vh);
       const s = b.style;
       s.width = s.height = `${p.size}px`;
       s.left = s.right = s.top = s.bottom = 'auto';
@@ -774,14 +779,14 @@ export class TouchInput {
     E.fire.querySelector('svg').innerHTML = ICON[this.sel === 'left' ? 'fireL' : 'fireR'];
     E.fire.querySelector('span').textContent = this.sel === 'left' ? 'ROPE L' : 'ROPE R';
     E.sel.querySelector('span').textContent = this.sel === 'left' ? 'L' : 'R';
-    // the L / R chip sits just above the single rope button
-    const fp = placeButton(LAYOUT.find((d) => d.id === 'fire'), st.scale, st.mirror);
+    // the L / R chip sits beside the single rope button (where the second button would be)
+    const fp = placeButton(LAYOUT.find((d) => d.id === 'fire'), st.scale, st.mirror, vh);
     const cs = E.sel.style;
     cs.left = cs.right = cs.top = 'auto';
-    cs[fp.side] = `calc(${Math.round(fp.x + (fp.size - 56) / 2)}px + env(safe-area-inset-${fp.side}, 0px))`;
-    cs.bottom = `calc(${Math.round(fp.y + fp.size + 8)}px + env(safe-area-inset-bottom, 0px))`;
+    cs[fp.side] = `calc(${Math.round(fp.x + fp.size + 10)}px + env(safe-area-inset-${fp.side}, 0px))`;
+    cs.bottom = `calc(${Math.round(fp.y + (fp.size - 36) / 2)}px + env(safe-area-inset-bottom, 0px))`;
     // the bag row opens beside the bag button, toward the middle of the screen
-    const bp = placeButton(LAYOUT.find((d) => d.id === 'bag'), st.scale, st.mirror);
+    const bp = placeButton(LAYOUT.find((d) => d.id === 'bag'), st.scale, st.mirror, vh);
     const ps = E.bagPanel.style;
     ps.left = ps.right = ps.top = 'auto';
     ps[bp.side] = `calc(${Math.round(bp.x + bp.size + 10)}px + env(safe-area-inset-${bp.side}, 0px))`;

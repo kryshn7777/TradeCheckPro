@@ -136,6 +136,26 @@ function near(a, b, eps, msg) {
     ok(L.placeButton(def, 1.2, true).side === (def.side === 'r' ? 'left' : 'right'), `${def.id} mirrored side`);
   }
   near(L.placeButton(L.LAYOUT[0], 1, false).size / L.placeButton(L.LAYOUT[0], 1.5, false).size, 1 / 1.5, 1e-9, 'scale scales the size');
+  // no two buttons overlap on common landscape phones / tablets (two-button and single-button launcher, both handednesses)
+  const rectsOverlap = (p, q) => p.x0 < q.x1 - 0.5 && q.x0 < p.x1 - 0.5 && p.y0 < q.y1 - 0.5 && q.y0 < p.y1 - 0.5;
+  for (const [w, h] of [[640, 360], [740, 360], [844, 390], [932, 430], [1180, 820]]) {
+    for (const scale of [1, 1.25, 1.5]) {
+      for (const mirror of [false, true]) {
+        for (const launcher of ['two', 'toggle']) {
+          const r = L.layoutRects(w, h, scale, mirror, launcher);
+          const ids = Object.keys(r);
+          let bad = '';
+          for (let i = 0; i < ids.length; i++) {
+            const A = r[ids[i]];
+            if (A.x0 < 0 || A.y0 < 0 || A.x1 > w || A.y1 > h) bad = `${ids[i]} off screen`;
+            for (let j = i + 1; j < ids.length; j++) if (rectsOverlap(A, r[ids[j]])) bad = `${ids[i]} overlaps ${ids[j]}`;
+          }
+          ok(!bad, `layout ${w}x${h} scale ${scale} mirror ${mirror} ${launcher}: ${bad}`);
+        }
+      }
+    }
+  }
+  ok(L.layoutRects(800, 400, 1, false, 'two').fire === undefined && L.layoutRects(800, 400, 1, false, 'toggle').fireL === undefined, 'launcher mode picks the right rope buttons');
   ok(L.touchModeOn('auto', { coarse: true }) && !L.touchModeOn('auto', { coarse: false }), 'auto follows a coarse pointer');
   ok(L.touchModeOn('auto', { touchSeen: true }), 'auto turns on at the first touch on a hybrid');
   ok(L.touchModeOn('on', {}) && !L.touchModeOn('off', { coarse: true }), 'on / off win');
