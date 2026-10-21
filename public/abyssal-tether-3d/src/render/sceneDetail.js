@@ -48,6 +48,7 @@ const MAX_I = 3 * 8000;
 const MAX_DECALS = 260;
 const MAX_PUDDLES = 30;
 const REPACK_DIST = 2.0;
+const DECAL_RECTS = Array.from({ length: 8 }, (_, i) => decalCell(i)); // uv rectangles of the decal atlas (no allocation per re-pack)
 
 // -----------------------------------------------------------------------------
 // Procedural atlases (DataTexture, no canvas: also works headless)
@@ -92,14 +93,17 @@ const sstep = (a, b, x) => {
 };
 const CELL = 128;
 
-/** Paints cell i of a (cols x rows) atlas: fn(u, v, out) with v UP (v = 1 is the top of the cell), out = [r, g, b, a] in 0..255. */
-function paintCell(data, W, rows, i, fn) {
+/**
+ * Paints rows [py0, py1) of cell i of a (4 x rows) atlas: fn(u, v, out) with v UP (v = 1 is the top of the cell), out = [r, g, b, a]
+ * in 0..255. Bands let the view paint the atlases a few ms per frame instead of one long stall at load.
+ */
+function paintBand(data, W, rows, i, fn, py0, py1) {
   const c = i & 3;
   const r = i >> 2;
   const x0 = c * CELL;
   const y0 = (rows - 1 - r) * CELL;
   const out = [0, 0, 0, 255];
-  for (let py = 0; py < CELL; py++) {
+  for (let py = py0; py < py1; py++) {
     const v = (py + 0.5) / CELL;
     for (let px = 0; px < CELL; px++) {
       const u = (px + 0.5) / CELL;
@@ -114,17 +118,47 @@ function paintCell(data, W, rows, i, fn) {
     }
   }
 }
+const BAND = 16;
 const grey = (o, v, tr = 1, tg = 1, tb = 1) => {
   o[0] = v * 255 * tr;
   o[1] = v * 255 * tg;
   o[2] = v * 255 * tb;
 };
 
-/** The props atlas (4 x 4 cells of 128 px; vertex colours carry the hue, the cells carry grain, weave, holes and tears). */
-export function paintPropsAtlas() {
+function atlasJob(data, W, H, rows, defs, name) {
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.name = name;
+  function* steps() {
+    for (const [i, fn] of defs) {
+      for (let y = 0; y < CELL; y += BAND) {
+        paintBand(data, W, rows, i, fn, y, y + BAND);
+        yield;
+      }
+    }
+  }
+  return { tex, steps: steps() };
+}
+
+function runJob(job) {
+  for (const r = job.steps; !r.next().done; );
+  job.tex.needsUpdate = true;
+  return job.tex;
+}
+
+/**
+ * The props atlas job (4 x 4 cells of 128 px; vertex colours carry the hue, the cells carry grain, weave, holes and tears):
+ * { tex, steps } where steps is a generator painting one 16-row band per step (the texture needs `needsUpdate` when it is done).
+ */
+export function propsAtlasJob() {
   const W = CELL * 4;
   const data = new Uint8Array(W * W * 4);
-  const cell = (i, fn) => paintCell(data, W, 4, i, fn);
+  const defs = [];
+  const cell = (i, fn) => defs.push([i, fn]);
   cell(P.GRAIN, (u, v, o) => grey(o, 0.74 + 0.3 * (fbm(u * 9, v * 9, 1, 4) - 0.5) - (h2((u * 90) | 0, (v * 90) | 0, 2) > 0.93 ? 0.16 : 0), 1, 0.985, 0.96));
   const wood = (seedA, dark) => (u, v, o) => {
     const g = fbm(u * 3, v * 30, seedA, 3);
@@ -233,23 +267,21 @@ export function paintPropsAtlas() {
     o[2] = 60 + 150 * core;
     o[3] = a * 255;
   });
-  const tex = new THREE.DataTexture(data, W, W, THREE.RGBAFormat, THREE.UnsignedByteType);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = true;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.needsUpdate = true;
-  tex.name = 'at3dDetailProps';
-  return tex;
+  return atlasJob(data, W, W, 4, defs, 'at3dDetailProps');
 }
 
-/** The decal atlas (4 x 2 cells): rgb = colour (kept under zero alpha: no dark halos), a = coverage. */
-export function paintDecalAtlas() {
+/** Paints the whole props atlas now (tests, tools). */
+export function paintPropsAtlas() {
+  return runJob(propsAtlasJob());
+}
+
+/** The decal atlas job (4 x 2 cells): rgb = colour (kept under zero alpha: no dark halos), a = coverage. */
+export function decalAtlasJob() {
   const W = CELL * 4;
   const H = CELL * 2;
   const data = new Uint8Array(W * H * 4);
-  const cell = (i, fn) => paintCell(data, W, 2, i, fn);
+  const defs = [];
+  const cell = (i, fn) => defs.push([i, fn]);
   cell(D.RUST, (u, v, o) => {
     // a streak running down from the top: wide at its source, thin and broken toward the foot
     const w = (0.07 + 0.2 * fbm(v * 6, 1.3, 40, 2)) * (0.25 + 0.75 * v);
@@ -358,15 +390,12 @@ export function paintDecalAtlas() {
     o[2] = 16;
     o[3] = m * streak * (1 - v * 0.65) * 255;
   });
-  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.generateMipmaps = true;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.needsUpdate = true;
-  tex.name = 'at3dDetailDecals';
-  return tex;
+  return atlasJob(data, W, H, 2, defs, 'at3dDetailDecals');
+}
+
+/** Paints the whole decal atlas now (tests, tools). */
+export function paintDecalAtlas() {
+  return runJob(decalAtlasJob());
 }
 
 // -----------------------------------------------------------------------------
@@ -484,7 +513,7 @@ function makePuddleMaterial(U) {
     polygonOffsetUnits: -4,
     roughness: 0.05,
     metalness: 0,
-    envMapIntensity: 1.1,
+    envMapIntensity: 0.8,
   });
   mat.name = 'at3dDetailPuddles';
   patchMaterial(mat, { lit: true, grade: true, wetMin: 1 });
@@ -633,8 +662,11 @@ export class SceneDetail {
 
   _build() {
     const U = this.uniforms;
-    this.propsTex = paintPropsAtlas();
-    this.decalTex = paintDecalAtlas();
+    // the atlases are painted a few ms per frame (update), not in one stall
+    this._jobs = [propsAtlasJob(), decalAtlasJob()];
+    this._texReady = false;
+    this.propsTex = this._jobs[0].tex;
+    this.decalTex = this._jobs[1].tex;
     const aniso = this.renderer && this.renderer.renderer && this.renderer.renderer.capabilities ? Math.min(4, this.renderer.renderer.capabilities.getMaxAnisotropy() || 1) : 1;
     this.propsTex.anisotropy = aniso;
     this.decalTex.anisotropy = aniso;
@@ -643,7 +675,7 @@ export class SceneDetail {
     this.puddleMat = makePuddleMaterial(U);
     const lighting = this.renderer && this.renderer.lighting;
     if (lighting && typeof lighting.applyLookTo === 'function') {
-      lighting.applyLookTo(this.puddleMat, { env: 1.1, force: true });
+      lighting.applyLookTo(this.puddleMat, { env: 0.8, force: true });
     }
 
     // props: one merged dynamic geometry
@@ -754,6 +786,18 @@ export class SceneDetail {
     this._planMs = 0;
   }
 
+  _stepTex(budgetMs) {
+    const t0 = performance.now();
+    while (this._jobs.length && performance.now() - t0 < budgetMs) {
+      const job = this._jobs[0];
+      if (job.steps.next().done) {
+        job.tex.needsUpdate = true;
+        this._jobs.shift();
+      }
+    }
+    if (!this._jobs.length) this._texReady = true;
+  }
+
   _stepPlan(budgetMs) {
     if (!this._gen) return;
     const t0 = performance.now();
@@ -762,6 +806,7 @@ export class SceneDetail {
       if (r.done) {
         this.plan = r.value;
         this.seed = this._genSeed;
+        if (!this._sel || this._sel.length < this.plan.nItems) this._sel = new Int32Array(this.plan.nItems + 256);
         this._gen = null;
         this._dirty = true;
         this._last.set(1e9, 1e9, 1e9);
@@ -805,7 +850,9 @@ export class SceneDetail {
     if (!this.enabled) return;
     const lvl = game ? game.level : null;
     if (lvl !== this.level) this._startPlan(lvl, game);
-    if (this._gen) this._stepPlan(game && game.state === 'playing' ? 2.5 : 8);
+    const playing = !!game && game.state === 'playing';
+    if (!this._texReady) this._stepTex(playing ? 1.5 : 6);
+    if (this._gen) this._stepPlan(playing ? 1.5 : 6);
     if (!this._apiDone && typeof window !== 'undefined' && window.AT3D) {
       this._apiDone = true;
       try {
@@ -819,7 +866,7 @@ export class SceneDetail {
         /* a frozen debug object */
       }
     }
-    if (!this.plan) {
+    if (!this.plan || !this._texReady) {
       for (const m of this.meshes) m.visible = false;
       return;
     }
@@ -1044,7 +1091,7 @@ export class SceneDetail {
       dm[m + 13] = dec[o + 1];
       dm[m + 14] = dec[o + 2];
       dm[m + 15] = 1;
-      const r = decalCell(dec[o + 8]);
+      const r = DECAL_RECTS[dec[o + 8] | 0];
       dc[s * 4] = r[0];
       dc[s * 4 + 1] = r[1];
       dc[s * 4 + 2] = r[2] - r[0];

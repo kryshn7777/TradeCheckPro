@@ -165,6 +165,26 @@ browser has Worker + WebAssembly, otherwise (or if any map of a set fails) the J
 `fetch_polyhaven.py` swaps in CC0 Poly Haven sets (same manifest format) when the network allows
 (`polyhaven.com`, `api.polyhaven.com`, `dl.polyhaven.org`); `--list <category>` and `--set name=id` choose assets.
 
+### Geometry compression (EXT_meshopt_compression)
+
+`compress_glbs.mjs` post-processes the five big GLBs (`mason_rig`, `player_arms`, `mason_hero`, `mason_kit`, `player_body`): meshopt
+vertex-cache reorder, KHR_mesh_quantization of POSITION (14 bit; the two player GLBs keep float32 positions because
+`render/gearSurface.js` reads them in metres), NORMAL / TANGENT (10), TEXCOORD (12), WEIGHTS (8), then EXT_meshopt_compression on every
+buffer view (lossless codec, no decoder filters). The custom attributes `_SPINE_S`, `_PART`, `_MASK`, `_OWNER`, JOINTS and COLOR are
+never quantized. 26.9 MB -> 18.5 MB (images are untouched). Re-run it after every Blender re-export (the build scripts write
+uncompressed GLBs; already-compressed files are skipped):
+
+```bash
+mkdir -p $TOOLS && cd $TOOLS && npm init -y && npm i meshoptimizer@0.22.0 @gltf-transform/core @gltf-transform/extensions @gltf-transform/functions   # once; not shipped
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs [--only mason_rig,player_arms] [--dir D --out D2] [--force]
+npm run at3d:sw        # precache list + hashes
+```
+
+Runtime: `src/render/glbLoad.js` (`createGLTFLoader` / `loadGLB`) attaches the vendored `MeshoptDecoder`
+(`vendor/three/addons/libs/meshopt_decoder.module.js`); the vendored `GLTFLoader` also defaults to it, so loaders created in game.js read the
+same files. `tests/render/test-glb-meshopt.mjs` decodes every accessor with that decoder, checks the custom attributes and loads each file
+through three's GLTFLoader.
+
 ## Player arms + tether launchers
 
 `build_hands.py` builds the first-person gloved forearms and the strapped-on grapple launchers in Blender (all from

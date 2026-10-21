@@ -69,21 +69,21 @@ export function decalCell(i) {
 // -----------------------------------------------------------------------------
 // Palette (linear albedo)
 // -----------------------------------------------------------------------------
-const STONE = [0.16, 0.15, 0.135];
-const STONE_D = [0.1, 0.095, 0.09];
+const STONE = [0.22, 0.205, 0.185];
+const STONE_D = [0.14, 0.133, 0.125];
 const BONE = [0.4, 0.35, 0.27];
 const BONE_D = [0.27, 0.22, 0.16];
-const WOOD = [0.14, 0.095, 0.06];
-const WOOD_D = [0.07, 0.05, 0.036];
-const IRON = [0.07, 0.068, 0.07];
-const RUSTC = [0.19, 0.085, 0.04];
+const WOOD = [0.2, 0.135, 0.085];
+const WOOD_D = [0.1, 0.07, 0.05];
+const IRON = [0.1, 0.098, 0.1];
+const RUSTC = [0.26, 0.115, 0.055];
 const ROPEC = [0.3, 0.23, 0.14];
 const CLOTH_R = [0.2, 0.06, 0.045];
 const CLOTH_T = [0.07, 0.1, 0.105];
 const CLOTH_C = [0.2, 0.17, 0.12];
 const WAXC = [0.52, 0.47, 0.36];
-const ROOTC = [0.07, 0.05, 0.035];
-const SINEWC = [0.19, 0.088, 0.072];
+const ROOTC = [0.1, 0.072, 0.05];
+const SINEWC = [0.26, 0.12, 0.098];
 const FUNGC = [0.07, 0.2, 0.18];
 const PAPERC = [0.5, 0.45, 0.36];
 const SALT = [0.4, 0.385, 0.34];
@@ -614,23 +614,23 @@ def('lantern', 'tool', (b) => {
 
 // ---- hanging -----------------------------------------------------------------------------------------------------------
 function chainLinks(b, n, o = {}) {
-  const pitch = 0.052;
+  const pitch = 0.07;
   b.sway = hang(n * pitch, o.amp || 0.035);
   b.box(0, 0.01, 0, 0.05, 0.02, 0.03, IRON, P.RUST); // staple
   for (let i = 0; i < n; i++) {
     const ry = (i & 1) * (Math.PI / 2);
     const loop = [];
-    for (let k = 0; k <= 6; k++) {
-      const a = (k / 6) * TAU;
-      loop.push([Math.cos(a) * 0.012, Math.sin(a) * 0.03, 0]);
+    for (let k = 0; k <= 5; k++) {
+      const a = (k / 5) * TAU;
+      loop.push([Math.cos(a) * 0.017, Math.sin(a) * 0.04, 0]);
     }
-    b.xf(0, -0.024 - i * pitch, 0, ry);
-    b.tube(loop, 0.0062, 3, i > n - 3 ? RUSTC : IRON, i > n - 3 ? RUSTC : IRON, P.RUST, { closed: true });
+    b.xf(0, -0.03 - i * pitch, 0, ry);
+    b.tube(loop, 0.0072, 3, i > n - 3 ? RUSTC : IRON, i > n - 3 ? RUSTC : IRON, P.RUST, { closed: true });
   }
   b.reset();
 }
-def('chain4', 'chain', (b) => chainLinks(b, 4, { amp: 0.03 }), { hang: true });
-def('chain7', 'chain', (b) => chainLinks(b, 7, { amp: 0.045 }), { hang: true });
+def('chain4', 'chain', (b) => chainLinks(b, 5, { amp: 0.03 }), { hang: true });
+def('chain7', 'chain', (b) => chainLinks(b, 8, { amp: 0.045 }), { hang: true });
 def('ropeHang', 'rope', (b) => {
   b.sway = hang(1.3, 0.07);
   b.blob(0, 0.0, 0, 0.034, 0.03, 0.034, 0, 0.18, ROPEC, P.ROPE); // knot round the beam
