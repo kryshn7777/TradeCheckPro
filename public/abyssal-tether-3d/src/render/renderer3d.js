@@ -25,6 +25,10 @@
  *   .droppedProps                   thrown / dropped bag items with weight (droppedProps.js); .spawn(kind, x,y,z, vx,vy,vz);
  *                                   bus 'prop:impact' {kind,x,y,z,speed,surface} is the impact-sound hook
  *   .lighting                       reflections (envProbe.js) + baked GI (lighting.js) + wet glint; see lighting.js
+ *   .lanternShadow                  real-time shadow of the carried lantern (lanternShadow.js): cached static depth map + small
+ *                                   dynamic one, sampled by the lantern term only; tiers low off / quest 1024 / high 2048, reduced
+ *                                   by the governor (level 2) and off at level 3. API: setEnabled(bool) · setTier('low'|'quest'|'high'|null)
+ *                                   · stats; the passes are counted in .stats (render() resets renderer.info once per frame)
  *   setQualityTier('low'|'quest'|'high'|null) · .qualityTier        lighting/detail tier (null = automatic: ?fx=, settings,
  *                                   reducedEffects, XR); uniforms and distances only, never a recompile
  *   .governor.update(frameMs) · .governor.level · .governor.on(fn)  frame-time hook (mirrors platform/governor.js when
@@ -51,6 +55,7 @@ import { RenderGovernor } from './renderGovernor.js';
 import { createGLTFLoader } from './glbLoad.js';
 import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
+import { LanternShadow } from './lanternShadow.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -170,7 +175,8 @@ export class Renderer3D {
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.25;
-    r.shadowMap.enabled = false;
+    r.shadowMap.enabled = false; // three.js' own shadow maps stay off: the lantern shadow is custom (lanternShadow.js)
+    r.info.autoReset = false; // render() resets it once per frame so the shadow passes and the main pass add up in stats
     r.xr.enabled = true;
     try {
       // cap every foveation request at the tier's level (see XR_FOVEATION_CAP); `this` is not built yet: read the tier lazily
@@ -289,6 +295,8 @@ export class Renderer3D {
     // dropped / thrown bag items with weight (one dynamic mesh, hidden while nothing is in flight)
     this.contactShadows = new ContactShadows(this.scene);
     this.droppedProps = new DroppedProps(this.scene);
+    // WP-SHADOWS: the lantern's real-time shadow (cached static depth + small dynamic depth; quest 1024 / high 2048 / low off)
+    this.lanternShadow = new LanternShadow(this);
 
     this.level = null;
     this.time = 0;
@@ -395,6 +403,7 @@ export class Renderer3D {
     this.lightingReady = this.lighting.loadGI();
     this._prepareEnvLights(level);
     this.levelView.build(level);
+    this.lanternShadow.setLevel(level);
     this._themeInit = false;
     this.applyTextures(textures);
     this.precompile();
@@ -736,6 +745,7 @@ export class Renderer3D {
     this.fx.update(d, game, head, this.threat);
     this.droppedProps.update(d, game);
     this.contactShadows.update(d, game, head, this);
+    this.lanternShadow.update(d, game);
 
     // Pulse the glyph of an anchor the moment a tether bites.
     if (game && game.bus && game.bus !== this._bus) this._bindBus(game.bus);
@@ -891,8 +901,21 @@ export class Renderer3D {
   render() {
     const r = this.renderer;
     const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
-    r.render(this.scene, this.camera);
     const info = r.info;
+    info.reset(); // autoReset is off: one reset per frame, the lantern-shadow passes and the main render add up
+    const ls = this.lanternShadow;
+    let shCalls = 0;
+    if (ls && this.level) {
+      try {
+        ls.render();
+        shCalls = ls.stats.calls;
+      } catch (err) {
+        ls.setEnabled(false); // a failing shadow pass must never take the frame down
+        if (typeof console !== 'undefined') console.warn('[AT3D] lantern shadow disabled', err);
+      }
+    }
+    r.render(this.scene, this.camera);
+    this.stats.shadowCalls = shCalls;
     this.stats.calls = info.render.calls;
     this.stats.triangles = info.render.triangles;
     this.stats.points = info.render.points;
@@ -925,6 +948,7 @@ export class Renderer3D {
     if (this._busOff) this._busOff();
     this.lighting.dispose();
     this.contactShadows.dispose();
+    this.lanternShadow.dispose();
     this.droppedProps.dispose();
     this.fx.dispose();
     this.ropeView.dispose();

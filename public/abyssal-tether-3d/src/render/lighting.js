@@ -543,14 +543,21 @@ export class Lighting {
   /** Applies the look to every unclaimed standard material in `root`; returns how many were changed. */
   sweep(root) {
     let n = 0;
+    const ls = this.r3d.lanternShadow; // every lit standard material also receives the lantern's shadow (once)
     root.traverse((o) => {
       const m = o.material;
       if (!m || o.isPoints || o.isSprite) return;
       if (Array.isArray(m)) {
-        for (const mm of m) if (this._unclaimed(mm)) (this.applyLookTo(mm), n++);
-      } else if (this._unclaimed(m)) {
-        this.applyLookTo(m);
-        n++;
+        for (const mm of m) {
+          if (this._unclaimed(mm)) (this.applyLookTo(mm), n++);
+          if (ls && ls.attach(mm)) n++;
+        }
+      } else {
+        if (this._unclaimed(m)) {
+          this.applyLookTo(m);
+          n++;
+        }
+        if (ls && ls.attach(m)) n++;
       }
     });
     this.stats.swept += n;

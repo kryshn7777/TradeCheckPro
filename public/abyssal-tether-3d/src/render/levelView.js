@@ -451,6 +451,7 @@ const DECOR = {
     if (sy / 2 > top) P.cyl('metal', 0, (top + sy / 2) / 2, 0, r * 0.05, r * 0.05, sy / 2 - top, 5);
   },
   lamp(P, sx, sy, sz, item) {
+    if (P.kitLamps) return; // the kit's wall lantern (+ glass) replaces the procedural cage (planned in _buildDressing)
     const s = Math.max(0.15, Math.min(sx, sy));
     const lit = !item || item.lit !== false;
     P.box('metal', 0, s * 0.35, -sz / 2 + s * 0.25, s * 0.12, s * 0.12, s * 0.5);
@@ -1239,6 +1240,12 @@ const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
 const COG = [0, 2, 2, 3, 2, 3, 4, 3];
 const WET_RAMP = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const COG_MAX = 48;
+/** Sections (S1..S8) that get flying-buttress style wall buttresses / emissive cracks / pipe runs / broken stair flights. */
+const BUTT = [1, 1, 1, 0, 1, 0, 0, 0];
+const PIPES = [0, 1, 1, 0, 1, 1, 0, 0];
+const STAIRS = [1, 2, 1, 1, 1, 1, 0, 0];
+/** Emissive cracks per section: [colour, strength, density per 100 m²] — the machine's furnace and the growth's phosphor showing through the stone. */
+const CRACKS = [null, null, null, null, ['#ff6a2a', 0.9, 0.5], ['#ff7a30', 1.0, 0.7], ['#5fe0d0', 0.85, 0.5], ['#ffb050', 1.0, 0.8]];
 const DR = {
   wallMinH: 4.5, // solids taller than this are walls; lower ones are slabs
   anchorClear: 1.3, // no carving within this of an anchor ...
@@ -1255,6 +1262,9 @@ const DR = {
   iconsPerFace: 2, // saints / gears per wall face (and GRADE caps per section)
   trunksPerFace: 3, // sinew trunks down a wall face (× growth)
   nearWall: 90, // arcades / growth only on faces whose opposite wall is nearer than this (far walls are fog)
+  panelR: 11, // authored ashlar panels (kit wall_a/b/c, 4 x 4 m): wall cells whose centre is within this of the route (anchors, checkpoints, spawn)
+  panelAcross: 70, // ... on faces whose opposite wall is nearer than this
+  panelCap: [30, 32, 32, 26, 28, 30, 24, 26], // ... at most this many per section (S1..S8), nearest to the route first
 };
 const ROOTS = [
   ['ch1_env_root_c', 10, 1.8],
@@ -2100,6 +2110,7 @@ class Dresser {
     this.stats.faces = faces.length;
     this._openings(faces);
     this._crossings();
+    this._planPanels(faces);
     yield -1;
     const items = [];
     for (const F of faces) items.push([F.o.y + F.H, 0, F]);
@@ -2187,6 +2198,93 @@ class Dresser {
     return out;
   }
 
+  // ---------------------------------------------------------------------------
+  // WP-ART-PASS: authored ashlar panels on the walls the route actually looks at
+  // ---------------------------------------------------------------------------
+  _routePts() {
+    const pts = [];
+    for (const a of this.S.anchors) pts.push(a.x, a.y, a.z);
+    for (const sc of this.secs) if (sc && sc.checkpoint) pts.push(sc.checkpoint.x, sc.checkpoint.y + 1, sc.checkpoint.z);
+    const sp = this.level.spawn;
+    if (sp) pts.push(sp.x, sp.y + 1, sp.z);
+    return pts;
+  }
+
+  _routeDist(x, y, z) {
+    const p = this._route || (this._route = this._routePts());
+    let best = 1e12;
+    for (let i = 0; i < p.length; i += 3) {
+      const dx = p[i] - x;
+      const dy = p[i + 1] - y;
+      const dz = p[i + 2] - z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < best) best = d;
+    }
+    return Math.sqrt(best);
+  }
+
+  /** Picks the 4 x 4 m wall cells nearest the route (per-section cap) and stores them on their faces (F.panels). */
+  _planPanels(faces) {
+    const S = this.S;
+    const cand = [];
+    const climb = Array.isArray(this.level.climb) ? this.level.climb : [];
+    for (const F of faces) {
+      if (F.across > DR.panelAcross || F.s.kind === 'crumble') continue;
+      const hosts = new Set([F.s]);
+      for (const [a, b] of F.spans) {
+        const nU = Math.floor((b - a - 0.4) / 4);
+        if (nU < 1) continue;
+        const u0 = a + (b - a - 4 * nU) / 2;
+        for (let i = 0; i < nU; i++) {
+          const uc = u0 + 4 * i + 2;
+          for (let y0 = 0; y0 + 4 <= F.H + 0.01; y0 += 4) {
+            const p = this._facePt(F, uc, y0 + 2, 1.2);
+            const d = this._routeDist(p[0], p[1], p[2]);
+            if (d > DR.panelR) continue;
+            const box = frameBox(F, uc - 2, uc + 2, y0, y0 + 4, 0, 0.3);
+            if (S.blocked(box, hosts, false, DR.anchorClear + 0.3)) continue;
+            let hit = false;
+            for (const c of climb) {
+              if (c.maxX >= box.minX - 0.3 && c.minX <= box.maxX + 0.3 && c.maxY >= box.minY && c.minY <= box.maxY && c.maxZ >= box.minZ - 0.3 && c.minZ <= box.maxZ + 0.3) {
+                hit = true;
+                break;
+              }
+            }
+            if (hit) continue;
+            const sec = typeof this.level.sectionIndexAt === 'function' ? Math.max(0, Math.min(7, this.level.sectionIndexAt(F.o.y + y0 + 2) | 0)) : 0;
+            cand.push({ F, uc, y0, d, sec });
+          }
+        }
+      }
+    }
+    cand.sort((p, q) => p.d - q.d);
+    const used = new Array(8).fill(0);
+    for (const c of cand) {
+      if (used[c.sec] >= DR.panelCap[c.sec]) continue;
+      used[c.sec]++;
+      (c.F.panels || (c.F.panels = [])).push(c);
+    }
+    this.stats.panels = used.slice();
+  }
+
+  _placePanels(F) {
+    if (!F.panels) return;
+    const rng = makeRng(hashStr(`pnl${F.s.id}|${F.N.x},${F.N.z}`));
+    for (const c of F.panels) {
+      const g = this.grade(F.o.y + c.y0 + 2);
+      const r = rng();
+      const deep = g.growth > 0.5;
+      const part = c.d < 5 ? (r < 0.6 ? 'ch1_env_wall_b' : r < 0.85 ? 'ch1_env_wall_a' : 'ch1_env_wall_c') : r < 0.45 ? 'ch1_env_wall_a' : r < (deep ? 0.9 : 0.75) ? 'ch1_env_wall_c' : 'ch1_env_wall_b';
+      const k = 0.9 + 0.2 * rng();
+      const tint = [g.stone[0] * k, g.stone[1] * k * (0.97 + 0.06 * rng()), g.stone[2] * k * (0.95 + 0.1 * rng())];
+      this._cat = 'panel';
+      this.kit(F, part, c.uc, c.y0, tint, 'stone', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      this.S.decor.push(frameBox(F, c.uc - 2, c.uc + 2, c.y0, c.y0 + 4, 0, 0.3));
+      this.stats.panelCells = (this.stats.panelCells || 0) + 1;
+    }
+  }
+
   /** A wall face, as generator steps (one per course / pier run): `sec` is yielded back. */
   *_dressWall(F, sec) {
     const S = this.S;
@@ -2194,6 +2292,7 @@ class Dresser {
     const s = F.s;
     const midY = (s.minY + s.maxY) / 2;
     const rng = makeRng(hashStr(`${s.id}|${F.N.x},${F.N.z}`));
+    this._placePanels(F);
     // --- string courses ---------------------------------------------------
     const courses = [];
     for (const sec of this.secs) {
@@ -2267,6 +2366,7 @@ class Dresser {
         yield sec;
         const u = pierU[pi];
         this._pier(F, u, hosts, near ? courses : null);
+        if (BUTT[sec] && near && pi % 2 === 1) this._buttress(F, u, hosts);
         // every few piers a colossal engaged column swallows the pilaster (big sections)
         if (g0.giant && (pi + gp) % g0.giantEvery === 0 && len > 14) this._column(F, u, hosts, courses, g0.giant);
       }
@@ -2325,6 +2425,137 @@ class Dresser {
     else if (F.s.kind === 'wall' || F.s.kind === 'stone') this._blocks(F, hosts, makeRng(hashStr(`blk${s.id}|${F.N.x},${F.N.z}`)));
     this._decalsWall(F, hosts, makeRng(hashStr(`dec${s.id}|${F.N.x},${F.N.z}`)));
     this._cogs(F, hosts, rng);
+    if (near) {
+      const r2 = makeRng(hashStr(`art${s.id}|${F.N.x},${F.N.z}`));
+      if (STAIRS[sec]) this._stairs(F, hosts, r2, STAIRS[sec]);
+      if (PIPES[sec]) this._pipes(F, hosts, r2);
+    }
+    if (CRACKS[sec]) this._cracks(F, hosts, makeRng(hashStr(`crk${s.id}|${F.N.x},${F.N.z}`)), CRACKS[sec]);
+  }
+
+  /** A battered buttress (kit modules stacked, weathered cap) at face u, hanging on a corbel in the player space, in the free stretches only. */
+  _buttress(F, u, hosts) {
+    const S = this.S;
+    const s = F.s;
+    const box = frameBox(F, u - 1.0, u + 1.0, 0, F.H, 0, 1.12);
+    const segs = S.cut(box, 'y', s.minY, s.maxY, hosts, true, 9, DR.propClear);
+    for (const [y0, y1] of segs) {
+      const g = this.grade((y0 + y1) / 2);
+      const above = S.inSolid(...this._facePt(F, u, y1 - s.minY + 0.1, 0.3));
+      const floorBelow = S.inSolid(...this._facePt(F, u, y0 - s.minY - 0.1, 0.3));
+      const capH = above ? 0 : 1.6;
+      const len = y1 - y0 - capH - (floorBelow ? 0 : 1.1);
+      if (len < 5) continue;
+      const base = y0 - s.minY + (floorBelow ? 0 : 1.1);
+      if (!floorBelow) this.kit(F, 'ch1_env_corbel', u, base, g.stone, 'stone', 1.5, 1, 1.15);
+      const m = Math.max(1, Math.round(len / 4));
+      const sy = len / (4 * m);
+      this._cat = 'buttress';
+      for (let i = 0; i < m; i++) this.kit(F, 'ch1_env_buttress_lo', u, base + i * 4 * sy, g.stone, 'stone', 1, sy, 1, null, true);
+      if (capH) this.kit(F, 'ch1_env_buttress_cap', u, base + len, g.stone, 'stone', 1, 1, 1, null, true);
+      this._cat = null;
+      this.stats.buttresses = (this.stats.buttresses || 0) + 1;
+      this.S.decor.push(frameBox(F, u - 1.0, u + 1.0, y0 - s.minY, y1 - s.minY, 0, 1.12));
+      break;
+    }
+  }
+
+  /** Broken stair flights hanging off a wall high above the route (what the Lanternwrights climbed before they went down). */
+  _stairs(F, hosts, rng, want) {
+    if (F.H < 16) return;
+    const S = this.S;
+    let n = want;
+    for (let t = 0; t < 16 && n > 0; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 8) continue;
+      const u = a + 3.2 + rng() * (b - a - 6.4);
+      const y = 5 + rng() * (F.H - 10);
+      const box = frameBox(F, u - 2.1, u + 2.1, y - 0.8, y + 3.0, 0, 1.3);
+      if (S.blocked(box, hosts, true, DR.propClear)) continue;
+      const g = this.grade(F.o.y + y);
+      this._cat = 'stairs';
+      this.kit(F, 'ch1_env_stair_fragment', u, y, g.stone, 'stone', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      S.decor.push(box);
+      n--;
+    }
+  }
+
+  /** Iron pipe runs along a wall on clamps (flanges, bolts, a valve wheel). */
+  _pipes(F, hosts, rng) {
+    if (F.H < 8) return;
+    const S = this.S;
+    for (let t = 0; t < 10; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 8) continue;
+      const u = a + 2.4 + rng() * (b - a - 4.8);
+      const y = 3 + rng() * (F.H - 6);
+      const box = frameBox(F, u - 2.1, u + 2.1, y - 0.3, y + 1.1, 0, 0.9);
+      if (S.blocked(box, hosts, true, DR.propClear)) continue;
+      this._cat = 'pipe_run';
+      this.kit(F, 'ch1_env_pipe_run', u, y, [1, 1, 1], 'metal', rng() < 0.5 ? -1 : 1, 1, 1);
+      this._cat = null;
+      S.decor.push(box);
+      return;
+    }
+  }
+
+  /** Emissive cracks: jagged hairlines of furnace light / phosphor in the wall (glow list: no extra draw, no light). */
+  _cracks(F, hosts, rng, spec) {
+    const [colHex, k, dens] = spec;
+    const S = this.S;
+    _c.set(colHex);
+    let span = 0;
+    for (const [a, b] of F.spans) span += b - a;
+    let n = Math.min(6, Math.floor((span * F.H * dens) / 100 + rng()));
+    for (let t = 0; t < n * 5 + 2 && n > 0; t++) {
+      const [a, b] = F.spans[Math.floor(rng() * F.spans.length)];
+      if (b - a < 4) continue;
+      const u = a + 1.5 + rng() * (b - a - 3);
+      const y = 2 + rng() * Math.max(0.5, F.H - 5);
+      const box = frameBox(F, u - 1.6, u + 1.6, y - 1.6, y + 1.6, 0, 0.3);
+      if (S.blocked(box, hosts, false, DR.anchorClear)) continue;
+      const pos = [];
+      const col = [];
+      const quad = (x0, y0, x1, y1, w0, w1, e0, e1) => {
+        const dx = x1 - x0;
+        const dy = y1 - y0;
+        const L = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / L) * 0.5;
+        const ny = (dx / L) * 0.5;
+        const P = [
+          [x0 - nx * w0, y0 - ny * w0, e0], [x0 + nx * w0, y0 + ny * w0, e0], [x1 + nx * w1, y1 + ny * w1, e1], [x1 - nx * w1, y1 - ny * w1, e1],
+        ];
+        for (const i of [0, 1, 2, 0, 2, 3]) {
+          pos.push(P[i][0], P[i][1], 0.03);
+          col.push(_c.r * k * P[i][2], _c.g * k * P[i][2], _c.b * k * P[i][2]);
+        }
+      };
+      const walk = (x, yy, ang, segs, w) => {
+        for (let i = 0; i < segs; i++) {
+          const L = 0.35 + rng() * 0.6;
+          const a2 = ang + (rng() - 0.5) * 1.5;
+          const x2 = x + Math.cos(a2) * L;
+          const y2 = yy + Math.sin(a2) * L;
+          const f0 = 1 - i / segs;
+          const f1 = 1 - (i + 1) / segs;
+          quad(x, yy, x2, y2, w * (0.4 + 0.6 * f0), w * (0.4 + 0.6 * f1), 0.35 + 0.65 * f0, 0.35 + 0.65 * f1);
+          if (i === 3 && rng() < 0.7) walk(x2, y2, a2 + (rng() < 0.5 ? 0.9 : -0.9), 3 + Math.floor(rng() * 3), w * 0.7);
+          x = x2;
+          yy = y2;
+          ang = a2;
+        }
+      };
+      walk(0, 0, (rng() < 0.5 ? Math.PI / 2 : 0) + (rng() - 0.5) * 0.8, 7 + Math.floor(rng() * 6), 0.07);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      this._cat = 'crack';
+      this.put(F, geo, u, y, 'glow', [1, 1, 1], null, true);
+      this._cat = null;
+      this.stats.cracks = (this.stats.cracks || 0) + 1;
+      n--;
+    }
   }
 
 
@@ -3634,7 +3865,7 @@ function parseEnvKit(gltf) {
     if (!g.attributes.normal) g.computeVertexNormals();
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     const mname = (o.material && o.material.name) || 'stone';
-    const list = /metal|iron/.test(mname) ? 'metal' : /flesh|sinew/.test(mname) ? 'flesh' : 'stone';
+    const list = /metal|iron/.test(mname) ? 'metal' : /flesh|sinew/.test(mname) ? 'flesh' : /glow|emit/.test(mname) ? 'glow' : 'stone';
     out.set(name, { geo: g, list, tris: n / 3 });
   });
   return out;
@@ -3962,7 +4193,7 @@ export class LevelView {
 
   _solidTint(s, out) {
     const r = makeRng(hashStr(s.id != null ? s.id : `${s.minX},${s.minY},${s.minZ}`));
-    const k = 0.84 + r() * 0.26;
+    const k = 0.8 + r() * 0.38; // WP-ART-PASS: wider per-solid value spread, so neighbouring slabs / walls never share one grey
     this._solidTintBase(s, r, k, out);
     if (s.kind !== 'metal' && s.kind !== 'bridge' && s.kind !== 'grate') {
       // the section grade (pale and ordered above; soot, rust and dark below), a little softer than on carving
@@ -3984,7 +4215,7 @@ export class LevelView {
         out.setRGB(0.95 * k, 0.96 * k, 1.0 * k);
         break;
       case 'wall':
-        out.setRGB(k, k * (0.97 + r() * 0.04), k * (0.93 + r() * 0.06));
+        out.setRGB(k * (0.95 + r() * 0.1), k * (0.96 + r() * 0.06), k * (0.9 + r() * 0.12));
         break;
       default:
         out.setRGB(k, k, k);
@@ -4174,6 +4405,8 @@ export class LevelView {
     let count = 0;
     const getBand = (y) => this._bandLists(bands, y);
     const P = new Parts();
+    P.kitLamps = true;
+    this._lampPlans = [];
     const itemM = new THREE.Matrix4();
     /** Build in item-local space (front = +Z), rotate by rotY, move into the band of y. */
     const tris = (this.stats.decorTris = {});
@@ -4260,6 +4493,7 @@ export class LevelView {
         continue;
       }
       if (type === 'grate') haveGrate = true;
+      if (type === 'lamp' || type === 'lantern') this._lampPlans.push({ x: d.x, y: d.y, z, rotY, lit: d.lit !== false });
       const fn = DECOR[type] || DECOR[d.type];
       if (!fn) {
         skipped.add(type);
@@ -4335,6 +4569,13 @@ export class LevelView {
    */
   _buildDressing(level) {
     this._kitPlan = [];
+    for (const l of this._lampPlans || []) {
+      const m = new THREE.Matrix4().makeRotationY(l.rotY);
+      m.setPosition(l.x, l.y, l.z);
+      const sec = this._band(l.y);
+      this._kitPlan.push({ part: 'ch1_env_lantern', m, tint: [1, 1, 1], list: 'metal', big: false, sec, drawn: false });
+      if (l.lit) this._kitPlan.push({ part: 'ch1_env_lantern_glass', m, tint: [1, 1, 1], list: 'glow', big: false, sec, drawn: false });
+    }
     this.stats.dressTris = { procedural: 0, kit: 0, detail: 0 };
     const tris = this.stats.dressTris;
     const job = { bands: new Map(), it: null, sec: -1, merge: [] };
@@ -4554,7 +4795,8 @@ export class LevelView {
         }
       }
       tintColors(g, it.tint[0], it.tint[1], it.tint[2]);
-      worldUV(g);
+      if ((it.list || part.list) === 'glow') g.deleteAttribute('normal'); // emissive parts: position + colour only (like Parts.glow)
+      else worldUV(g);
       byPart[it.part] = (byPart[it.part] || 0) + part.tris;
       const T = this.stats.dress && this.stats.dress.tris;
       if (T) {

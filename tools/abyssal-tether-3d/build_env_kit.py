@@ -967,6 +967,10 @@ PARTS = [
     ("ch1_env_far_spire", "stone", part_far_spire, {"noao": True, "tris": 200}),
     ("ch1_env_far_arcade", "stone", part_far_arcade, {"noao": True, "tris": 240}),
 ]
+# WP-ART-PASS: authored wall panels, buttresses, column clusters, stair fragments, pipe runs, lanterns (env_kit2_parts.py)
+import env_kit2_parts  # noqa: E402
+
+PARTS += env_kit2_parts.parts(globals())
 
 
 # -----------------------------------------------------------------------------
@@ -1012,6 +1016,8 @@ def make_object(name, geo, mat):
     ob = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(ob)
     me.materials.append(mat)
+    if getattr(geo, "norecalc", False):  # authored winding, vertex order matters (per-vertex tone): no weld / no recalc
+        return ob
     # merge coincident verts per part (keeps flat/smooth split via sharp edges from face flags)
     bm = bmesh.new()
     bm.from_mesh(me)
@@ -1159,6 +1165,7 @@ def main():
         "stone": principled("stone", (0.62, 0.58, 0.52)),
         "metal": principled("metal", (0.3, 0.29, 0.28), metallic=0.8, roughness=0.55),
         "flesh": principled("flesh", (0.24, 0.17, 0.16), roughness=0.75),
+        "glow": principled("glow", (1.0, 0.7, 0.34), roughness=0.4),
     }
     objects = []
     stats = []
@@ -1172,9 +1179,12 @@ def main():
         else:
             me = ob.data
             attr = me.color_attributes.new(name="Color", type="BYTE_COLOR", domain="POINT")
+            vc = opts.get("vcol", (1.0, 1.0, 1.0))
             for i in range(len(me.vertices)):
-                attr.data[i].color = (1.0, 1.0, 1.0, 1.0)
+                attr.data[i].color = (vc[0], vc[1], vc[2], 1.0)
             me.color_attributes.active_color = attr
+        if getattr(geo, "post", None):
+            geo.post(ob, geo)
         tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
         stats.append((name, mat, tris, tuple(round(d, 2) for d in ob.dimensions)))
         objects.append(ob)

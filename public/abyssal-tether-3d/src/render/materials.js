@@ -125,6 +125,21 @@ export const LOOK = {
   uPudK: { value: new THREE.Vector4(1, 0.045, 0.4, 0.9) },
 };
 
+/**
+ * Lantern shadow (WP-SHADOWS, render/lanternShadow.js): the carried lantern's real-time shadow, as shared uniform holders. Two
+ * hardware-compare depth maps (sampler2DShadow) + the world -> map matrices: S = the cached STATIC map (level solids, rendered only
+ * when the lantern has moved / turned), D = the DYNAMIC map (creature, body, hands, rope, props; every frame). uLSK: x strength
+ * (0 = off: the receivers return at once), y / z world size of one S / D texel per metre of distance (normal-offset and bias scale),
+ * w range (m) over which the shadow fades back to the unshadowed lantern. Receivers get these through patchLanternShadow().
+ */
+export const LSHADOW = {
+  uLSMapS: { value: null },
+  uLSMapD: { value: null },
+  uLSMS: { value: new THREE.Matrix4() },
+  uLSMD: { value: new THREE.Matrix4() },
+  uLSK: { value: new THREE.Vector4(0, 0.003, 0.006, 14) },
+};
+
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
 /** Fallback texture resolution (px) generated at boot, before the baked sets load. */
@@ -873,6 +888,120 @@ vec3 atIBLRadiance( const in vec3 viewDir, const in vec3 normal, const in float 
 #endif
 `;
 
+// -----------------------------------------------------------------------------
+// Lantern shadow receiver (WP-SHADOWS)
+// -----------------------------------------------------------------------------
+
+/**
+ * Declared in lights_pars_begin under AT_LSHADOW (defined per program by patchLanternShadow(), so every other program compiles to
+ * exactly the stock code). The lantern is the point light with decay < 1.8 (the pooled lamps have 2): atLanternShadow() returns its
+ * visibility 0..1 for the fragment, from the view-space position / normal / light position:
+ *  - the point is moved off the surface along the geometric normal (normal-offset bias, scaled by the texel size at this distance and
+ *    by the grazing angle) and a little toward the light (slope-scaled depth bias), then projected into the cached static map and the
+ *    dynamic map; outside the cone, beyond the range or at the frustum edge the shadow fades back to 1 (the unshadowed lantern, as
+ *    before this feature);
+ *  - static: 4 hardware-compare (bilinear) taps on a rotated grid = a soft ~12-sample PCF; dynamic: 2 taps;
+ *  - back-facing fragments (n.l <= 0) get nothing from the lantern anyway: no fetch.
+ */
+const LS_PARS = `
+#ifdef AT_LSHADOW
+uniform sampler2DShadow uLSMapS;
+uniform sampler2DShadow uLSMapD;
+uniform highp mat4 uLSMS;
+uniform highp mat4 uLSMD;
+uniform vec4 uLSK;
+vec3 atLsRot( const in vec3 v ) {
+	return ( vec4( v, 0.0 ) * viewMatrix ).xyz; // view -> world rotation (viewMatrix is a rigid transform)
+}
+float atLanternShadow( const in vec3 vpos, const in vec3 vnrm, const in vec3 vlp ) {
+	if ( uLSK.x < 0.002 ) return 1.0;
+	vec3 lv = vlp - vpos;
+	float d = length( lv );
+	float nl = dot( vnrm, lv ) / max( d, 1e-3 );
+	if ( nl <= 0.02 ) return 1.0;
+	float fr = 1.0 - smoothstep( 0.72, 1.0, d / uLSK.w );
+	if ( fr <= 0.001 ) return 1.0;
+	vec3 wn = atLsRot( vnrm );
+	vec3 wl = atLsRot( lv ) / max( d, 1e-3 );
+	vec3 wp = atLsRot( vpos ) + cameraPosition;
+	float sinT = sqrt( max( 1.0 - nl * nl, 0.0 ) );
+	float slope = min( sinT / max( nl, 0.15 ), 4.0 );
+	float vis = 1.0;
+	vec4 cs = uLSMS * vec4( wp + wn * ( d * uLSK.y * ( 1.0 + 1.5 * sinT ) ) + wl * ( d * uLSK.y * ( 0.5 + 1.1 * slope ) ), 1.0 );
+	if ( cs.w > 0.0 ) {
+		vec3 c = cs.xyz / cs.w;
+		vec2 e = min( c.xy, 1.0 - c.xy );
+		float f = smoothstep( 0.0, 0.06, min( e.x, e.y ) ) * step( c.z, 1.0 );
+		if ( f > 0.001 ) {
+			float t = 1.4 / float( textureSize( uLSMapS, 0 ).x );
+			float s = texture( uLSMapS, vec3( c.xy + vec2( 0.5, 1.4 ) * t, c.z ) ) + texture( uLSMapS, vec3( c.xy + vec2( -1.4, 0.5 ) * t, c.z ) )
+				+ texture( uLSMapS, vec3( c.xy + vec2( -0.5, -1.4 ) * t, c.z ) ) + texture( uLSMapS, vec3( c.xy + vec2( 1.4, -0.5 ) * t, c.z ) );
+			vis = mix( 1.0, s * 0.25, f );
+		}
+	}
+	vec4 cd = uLSMD * vec4( wp + wn * ( d * uLSK.z * ( 1.0 + 1.5 * sinT ) ) + wl * ( d * uLSK.z * ( 0.5 + 1.1 * slope ) ), 1.0 );
+	if ( cd.w > 0.0 ) {
+		vec3 c = cd.xyz / cd.w;
+		vec2 e = min( c.xy, 1.0 - c.xy );
+		float f = smoothstep( 0.0, 0.06, min( e.x, e.y ) ) * step( c.z, 1.0 );
+		if ( f > 0.001 ) {
+			float t = 1.2 / float( textureSize( uLSMapD, 0 ).x );
+			float s = 0.5 * ( texture( uLSMapD, vec3( c.xy + vec2( 0.7, 0.7 ) * t, c.z ) ) + texture( uLSMapD, vec3( c.xy - vec2( 0.7, 0.7 ) * t, c.z ) ) );
+			vis *= mix( 1.0, s, f );
+		}
+	}
+	return mix( 1.0, vis, fr * uLSK.x );
+}
+#endif
+`;
+
+/**
+ * Installs the lantern-shadow hooks into three's stock chunks (idempotent): the function above in lights_pars_begin, the visibility
+ * variable at the top of lights_fragment_begin and the multiply on the lantern's direct light inside the point-light loop. Must run
+ * before buildLightsBeginGI() reads the chunk. Returns false when this three build's chunks lack the expected anchors.
+ */
+function installLanternShadowChunks() {
+  const SC = THREE.ShaderChunk;
+  if (SC.lights_fragment_begin.includes('atLsVis')) return true;
+  const mPoint = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
+  if (!SC.lights_pars_begin || !SC.lights_fragment_begin.includes(mPoint)) return false;
+  SC.lights_pars_begin = SC.lights_pars_begin + LS_PARS;
+  SC.lights_fragment_begin =
+    'float atLsVis = 1.0;\n' +
+    SC.lights_fragment_begin.replace(
+      mPoint,
+      mPoint + '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }\n#endif',
+    );
+  return true;
+}
+const LS_CHUNKS_OK = installLanternShadowChunks();
+
+/** Gives one program the lantern shadow: the define, the shared uniforms. Call from an onBeforeCompile on a lights_pars_begin material. */
+export function patchLanternShadow(shader) {
+  if (!LS_CHUNKS_OK) return;
+  Object.assign(shader.uniforms, LSHADOW);
+  shader.fragmentShader = '#define AT_LSHADOW\n' + shader.fragmentShader;
+}
+
+/**
+ * Makes another module's MeshStandardMaterial / MeshPhysicalMaterial receive the lantern shadow: chains onto its onBeforeCompile
+ * and program cache key (the earlier patch runs first). Idempotent; returns true when the material was newly attached (it then
+ * recompiles once). userData.noShadowRecv opts a material out.
+ */
+export function attachLanternShadow(mat) {
+  if (!LS_CHUNKS_OK || !mat || !mat.isMeshStandardMaterial || mat.userData.lsAttached || mat.userData.noShadowRecv) return false;
+  mat.userData.lsAttached = true;
+  const prev = mat.onBeforeCompile;
+  const baseKey = String(mat.customProgramCacheKey());
+  mat.onBeforeCompile = (shader, renderer) => {
+    if (typeof prev === 'function') prev.call(mat, shader, renderer);
+    patchLanternShadow(shader);
+  };
+  mat.customProgramCacheKey = () => baseKey + '|at3d-ls';
+  mat.needsUpdate = true;
+  return true;
+}
+
 /**
  * three's lights_fragment_begin with the baked volume folded in (one trilinear fetch per fragment, branch-skipped when
  * the tier turns it off). The volume (RGBA8) holds R sqrt-encoded static bounce light (lamps, shaft fill), G its warmth
@@ -985,7 +1114,7 @@ if ( uLanternC.a > 0.001 && atWet > 0.03 ) {
 		float atSp = D_GGX( atAl, atNH ) * V_GGX_SmithCorrelated( atAl, atNL, atNV ) * F_Schlick( vec3( 0.04 ), 1.0, atVH ).x;
 		atSp = 4.0 * atSp / ( 4.0 + atSp ); // soft shoulder: the hand-held glint never blows out to a white dot
 		float atAt = pow2( saturate( 1.0 - pow4( atLd / uLanternR.x ) ) ) / max( pow( atLd, uLanternR.y ), 0.01 );
-		reflectedLight.directSpecular += uLanternC.rgb * ( atAt * atNL * atSp * uLanternC.a * atWet );
+		reflectedLight.directSpecular += uLanternC.rgb * ( atAt * atNL * atSp * uLanternC.a * atWet${LS_CHUNKS_OK ? ' * atLsVis' : ''} );
 	}
 }
 `;
@@ -1304,8 +1433,9 @@ export function patchMaterial(mat, opts = {}) {
   const grade = lit && !!opts.grade;
   const bevel = lit && uvMode === 'box' && !!opts.bevel;
   mat.userData.hq = hq;
+  if (lit) mat.userData.lsAttached = true; // receives the lantern shadow through this patch
   mat.userData.hqDetail = opts.detail != null ? opts.detail : 1;
-  const key = `at3d|hq:${hq ? 1 : 0}|gr:${grade ? 1 : 0}|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|bv:${bevel ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|fog:${fog}`;
+  const key = `at3d|hq:${hq ? 1 : 0}|gr:${grade ? 1 : 0}|uv:${uvMode}|ash:${ash ? 1 : 0}|crack:${crack ? 1 : 0}|macro:${macro ? 1 : 0}|bv:${bevel ? 1 : 0}|shapes:${shapes ? 1 : 0}|shaft:${shaft ? 1 : 0}|shade:${shade ? 1 : 0}|lit:${lit ? 1 : 0}|br:${breathe}|an:${aniso}|gi:${gi ? 1 : 0}|ls:${lit && LS_CHUNKS_OK ? 1 : 0}|fog:${fog}`;
 
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
@@ -1314,6 +1444,11 @@ export function patchMaterial(mat, opts = {}) {
     let fs = shader.fragmentShader;
     let vDecl = '';
     let fDecl = '';
+    if (lit && LS_CHUNKS_OK) {
+      // the lantern's real-time shadow (render/lanternShadow.js): shared uniforms + the AT_LSHADOW define (see patchLanternShadow)
+      Object.assign(shader.uniforms, LSHADOW);
+      fs = '#define AT_LSHADOW\n' + fs;
+    }
 
     if (uvMode) {
       vDecl += 'uniform float uTexScale;\nvarying float vAtTop;\nvarying vec2 vAtUv;\n';
