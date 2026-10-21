@@ -2,7 +2,10 @@
  * Volumetric light shafts without a pass, a depth texture or raymarching through the level: ONE draw call (instanced) for
  *  - the authored 'shaft-light' beams of the level (cold light falling down the shafts),
  *  - window beams: the cold baked lights that pour through the S1 / S2 windows (level.lights: cool, steady, strong),
- *  - the carried lantern's cone in the haze (a wide soft cone along the look direction, angular streaks like light through the cage).
+ *  - the carried lantern's cone in the haze (a wide soft cone along the look direction, angular streaks like light through the cage),
+ *  - the lantern's omnidirectional glow (lanternHalo.js' closed-form atan integral): folded into this draw as a camera-facing square
+ *    (instance kind 3: the hull's vertices are mapped onto a square) so the whole volumetric layer costs ONE call; the halo's own mesh
+ *    only draws when the rays are off (low tier / reduced effects).
  * Each instance is a cheap low-poly hull (10-gon frustum, 40 tris) around a light volume. The fragment shader intersects the
  * view ray with the volume ANALYTICALLY: the volume is a cylinder of radius R(s) with the compact density (1 - d²/R²)², whose
  * line integral is a closed-form polynomial (a·t² + 2b·t + c is the squared distance of the ray to the axis), evaluated for
@@ -20,7 +23,7 @@ import * as THREE from 'three';
 import { DITHER_GLSL } from './vrShade.js';
 import { LOOK } from './materials.js';
 
-const MAX = 8; // instances: lantern + window beams + nearest shafts
+const MAX = 9; // instances: lantern cone + lantern glow + window beams + nearest shafts
 const MAX_SHAFTS = 5;
 const SIDES = 10;
 const HULL = 1.07; // circumradius of the 10-gon over the density radius (cos 18° = 0.951)
@@ -38,6 +41,7 @@ attribute vec4 iB;
 attribute vec4 iC;
 attribute vec4 iK;
 uniform float uHull;
+uniform float uHHalf;
 flat varying vec4 fA;
 flat varying vec4 fB;
 flat varying vec4 fC;
@@ -45,6 +49,21 @@ flat varying vec4 fK;
 flat varying float fIn;
 varying vec3 vWorld;
 void main() {
+  if ( iK.z > 2.5 ) {
+    // lantern glow: a camera-facing square at the lantern (the hull's ring vertices are projected onto the square's border)
+    vec2 pq = position.xy / max( max( abs( position.x ), abs( position.y ) ), 1e-3 );
+    vec3 right = vec3( viewMatrix[ 0 ][ 0 ], viewMatrix[ 1 ][ 0 ], viewMatrix[ 2 ][ 0 ] );
+    vec3 up = vec3( viewMatrix[ 0 ][ 1 ], viewMatrix[ 1 ][ 1 ], viewMatrix[ 2 ][ 1 ] );
+    vec3 hp = iA.xyz + ( right * pq.x + up * pq.y ) * uHHalf;
+    fA = iA;
+    fB = iB;
+    fC = iC;
+    fK = iK;
+    fIn = 0.0;
+    vWorld = hp;
+    gl_Position = projectionMatrix * viewMatrix * vec4( hp, 1.0 );
+    return;
+  }
   vec3 A = iA.xyz;
   vec3 ax = iB.xyz - A;
   float L = max( length( ax ), 1e-3 );
@@ -84,6 +103,13 @@ uniform vec2 uFogNF;
 uniform vec3 uFog;
 uniform vec4 uProbeC;
 uniform vec3 uProbeH;
+uniform float uHHalf;
+uniform float uHGain;
+uniform float uHCore;
+uniform float uHReach;
+uniform float uHTint;
+uniform float uHSharp;
+uniform vec3 uHCol;
 flat varying vec4 fA;
 flat varying vec4 fB;
 flat varying vec4 fC;
@@ -101,9 +127,38 @@ float hg( float c, float g ) {
   float k = 1.0 + g * g - 2.0 * g * c;
   return ( 1.0 - g * g ) / ( k * sqrt( k ) );
 }
+// the lantern's glow in the haze (lanternHalo.js, unchanged maths): the 1/(r²+a²) integral along the view ray is an atan
+void haloMain() {
+  vec3 C = cameraPosition;
+  vec3 v = normalize( vWorld - C );
+  vec3 w = fA.xyz - C;
+  float ang = pow( max( 0.5 + 0.5 * dot( v, w / max( length( w ), 1e-3 ) ), 0.0 ), uHSharp );
+  if ( ang < 0.004 ) discard;
+  float t0 = dot( w, v );
+  float b2 = max( dot( w, w ) - t0 * t0, 0.0 );
+  float b = sqrt( b2 + uHCore * uHCore );
+  float I = ( atan( uHReach / b ) + atan( t0 / b ) ) / b;
+  vec3 q = ( C + v * max( t0, 0.0 ) ) * ( 1.0 / 7.0 ) + vec3( 0.006, - 0.004, 0.004 ) * uTime;
+  float n = texture( uNoise, q ).r;
+  I *= ( 0.55 + 0.9 * n ) * ang;
+  float h = 1.0 - exp( - I * uHGain );
+  vec3 hue = uFog / max( dot( uFog, vec3( 0.2126, 0.7152, 0.0722 ) ), 1e-4 );
+  vec3 tint = mix( vec3( 1.0 ), hue, uHTint );
+  vec3 col = uHCol * ( h * 0.9 ) * mix( vec3( 1.0 ), tint, 0.35 );
+  gl_FragColor = vec4( col, 1.0 );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.rgb += atDither3( gl_FragCoord.xy ) * ( 1.0 / 255.0 ) * min( 1.0, h * 12.0 );
+  gl_FragColor.a = h * 0.18; // premultiplied: the colour is the light the haze adds, the alpha the little it veils
+}
+
 void main() {
   // inside the volume only the back faces draw, outside only the front faces
   if ( gl_FrontFacing == ( fIn > 0.5 ) ) discard;
+  if ( fK.z > 2.5 ) {
+    haloMain();
+    return;
+  }
   vec3 C = cameraPosition;
   vec3 v = normalize( vWorld - C );
   vec3 A = fA.xyz;
@@ -181,7 +236,7 @@ void main() {
       if ( td <= tc ) discard;
     }
     float dtc = ( td - tc ) / 6.0;
-    float jit = atIGN( gl_FragCoord.xy );
+    float jit = 0.5; // no jitter: the density is smooth, a jitter would print its pattern (diagonal hatching) into the streaks
     for ( int i = 0; i < 6; i++ ) {
       float t = tc + dtc * ( float( i ) + jit );
       vec3 lp = C + v * t - A;
@@ -193,9 +248,9 @@ void main() {
       f *= f;
       float axc = smoothstep( 0.03, 0.2, s ) * ( 1.0 - smoothstep( 0.45, 1.0, s ) ) / ( 1.0 + 3.0 * s );
       vec3 dir = lp / max( length( lp ), 1e-3 );
-      vec3 q = vec3( dot( dir, U ), dot( dir, W ), dot( dir, D ) ) * 5.5 + vec3( seed * 0.173, seed * 0.311, uTime * 0.02 );
+      vec3 q = vec3( dot( dir, U ), dot( dir, W ), dot( dir, D ) ) * 3.2 + vec3( seed * 0.173, seed * 0.311, uTime * 0.02 );
       float n = texture( uNoise, q ).r;
-      float mc = max( 1.0 + fK.y * ( n - 0.5 ) * 1.8, 0.0 );
+      float mc = max( 1.0 + fK.y * ( n - 0.5 ) * 1.5, 0.0 );
       sum += f * axc * mc * ( 1.0 - rayFog( t ) ) * dtc;
     }
   } else {
@@ -296,9 +351,11 @@ export class GodRays {
    * @param {THREE.Scene} scene
    * @param {object} lightUniforms FxLighting.uniforms
    * @param {THREE.Data3DTexture} noise
+   * @param {object} [halo] LanternHalo: its uniforms drive the folded-in glow, its own mesh hides while the rays draw
    */
-  constructor(scene, lightUniforms, noise) {
+  constructor(scene, lightUniforms, noise, halo) {
     this.scene = scene;
+    this.halo = halo || null;
     this._lightUniforms = lightUniforms;
     this.materials = null; // the material library (lightShaft shells are hidden while the rays draw)
     this.level = null;
@@ -349,6 +406,15 @@ export class GodRays {
       uProbeC: LOOK.uProbeC,
       uProbeH: LOOK.uProbeH,
     };
+    const hu = halo ? halo.uniforms : null;
+    // the glow's numbers are the halo's (shared uniform objects: LanternHalo.update keeps driving them)
+    this.uniforms.uHHalf = hu ? hu.uHalf : { value: 7 };
+    this.uniforms.uHGain = hu ? hu.uGain : { value: 0.016 };
+    this.uniforms.uHCore = hu ? hu.uCore : { value: 0.5 };
+    this.uniforms.uHReach = hu ? hu.uReach : { value: 4 };
+    this.uniforms.uHTint = hu ? hu.uTint : { value: 0.5 };
+    this.uniforms.uHSharp = hu ? hu.uSharp : { value: 12 };
+    this.uniforms.uHCol = hu ? hu.uLanternCol : { value: new THREE.Color(0, 0, 0) };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dGodRays',
       uniforms: this.uniforms,
@@ -361,15 +427,15 @@ export class GodRays {
       side: THREE.DoubleSide,
       forceSinglePass: true,
       blending: THREE.CustomBlending,
-      blendSrc: THREE.OneFactor,
-      blendDst: THREE.OneFactor,
-      blendSrcAlpha: THREE.ZeroFactor,
-      blendDstAlpha: THREE.OneFactor,
+      blendSrc: THREE.OneFactor, // premultiplied: the rays write alpha 0 (= additive), the glow a little alpha
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blendSrcAlpha: THREE.OneFactor,
+      blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
     });
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.name = 'fxGodRays';
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 11; // after the opaque world and the old shells (10), before the fog cards (12)
+    this.mesh.renderOrder = 13; // after the opaque world, the old shells (10) and the fog cards (12): rays and glow sit in front of the haze cards
     scene.add(this.mesh); // visible until the first update (so a precompile pass sees it)
   }
 
@@ -437,7 +503,7 @@ export class GodRays {
       const az = l.z + oz * out;
       this.src.push({
         ax, ay: l.y + ex, az, bx: ax + dirx * len, by: l.y + ex + diry * len, bz: az + dirz * len,
-        r0: 5.2, r1: 8.5, r: _col.r, g: _col.g, b: _col.b, seed: seed++, kind: 1, k: 1, strength: 1.15,
+        r0: 5.2, r1: 8.5, r: _col.r, g: _col.g, b: _col.b, seed: seed++, kind: 1, k: 1, strength: 0.5,
       });
     }
     this._shaftIdx = [];
@@ -514,7 +580,11 @@ export class GodRays {
       if (np < MAX_SHAFTS) np++;
     }
     let n = 0;
-    // 0: the lantern cone
+    // the lantern: the glow (the halo's, merged into this draw) and the cone
+    if (this.halo) {
+      if (lanternLevel > 0.001) n = this._writeHalo(n);
+      this.halo.mesh.visible = false;
+    }
     if (lanternLevel > 0.001 && this.gov < 2) n = this._writeLantern(n, lanternLevel, camera, dt);
     // window beams in range
     let nw = 0;
@@ -557,6 +627,23 @@ export class GodRays {
     K[o] = 0; K[o + 1] = this.params.streak; K[o + 2] = s.kind; K[o + 3] = 1;
   }
 
+  /** The lantern glow (instance kind 3): only the position matters, the rest comes from the halo's uniforms. */
+  _writeHalo(i) {
+    const lp = this._lightUniforms.uLanternPos.value;
+    const o = i * 4;
+    const A = this._iA.array;
+    const B = this._iB.array;
+    const C = this._iC.array;
+    const K = this._iK.array;
+    A[o] = B[o] = lp.x;
+    A[o + 1] = B[o + 1] = lp.y;
+    A[o + 2] = B[o + 2] = lp.z;
+    A[o + 3] = B[o + 3] = 1;
+    C[o] = C[o + 1] = C[o + 2] = C[o + 3] = 0;
+    K[o] = 0; K[o + 1] = 0; K[o + 2] = 3; K[o + 3] = 1;
+    return i + 1;
+  }
+
   /** The lantern's cone: apex at the lantern, along the (smoothed) look direction tilted a little down. */
   _writeLantern(i, level, camera, dt) {
     const P = this.params;
@@ -589,7 +676,7 @@ export class GodRays {
     C[o + 1] = (lc.g / mx) * k;
     C[o + 2] = (lc.b / mx) * k;
     C[o + 3] = 3.7;
-    K[o] = 0; K[o + 1] = 1.05; K[o + 2] = 2; K[o + 3] = 0.55;
+    K[o] = 0; K[o + 1] = 0.8; K[o + 2] = 2; K[o + 3] = 0.55;
     return i + 1;
   }
 

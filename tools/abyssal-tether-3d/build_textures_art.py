@@ -192,6 +192,7 @@ def enrich_stone(F, m, c):
     # ---- roughness: damp patches gloss, pits and crust are rougher, polished arrises (finish() adds more), tooling anisotropy
     rough = rough - 0.20 * damp * face + 0.10 * lich + 0.10 * np.clip(pk_bowl, 0, 1) + 0.08 * crack + 0.05 * spk * face + 0.05 * tool * np.abs(chis)
     rough = rough + 0.08 * joint
+    a = a * c.get('gain', 1.0)  # the damp / lichen / crack / pit layers darken the mean: hold the calm pass's mean luminance (meanLuma)
     m.update(albedo=np.clip(a, 0, 1), height=h, rough=np.clip(rough, 0.18, 1.0))
     return m
 
@@ -313,7 +314,7 @@ def mat_wall_calm(F):
     a = lerp_rgb(mortar_c, a, prof)
     rough = 0.84 - 0.14 * run * face + 0.06 * (1.0 - prof) - 0.04 * edge_zone
     m = dict(albedo=a, height=h, rough=rough, metal=np.zeros(shp), ao_k=2.4, ao_scales=(0.004, 0.012, 0.03, 0.08), nstrength=1.15, albedo_ao=0.5)
-    return enrich_stone(F, m, dict(blk=blk, nb=nb, face=face, prof=prof, run=run, wall=True))
+    return enrich_stone(F, m, dict(blk=blk, nb=nb, face=face, prof=prof, run=run, wall=True, gain=1.11))
 
 
 def mat_floor_calm(F):
@@ -357,7 +358,7 @@ def mat_floor_calm(F):
     a = lerp_rgb(mortar_c, a, prof)
     rough = 0.80 - 0.10 * wear * face + 0.07 * (1.0 - prof) + 0.04 * w_lo
     m = dict(albedo=a, height=h, rough=rough, metal=np.zeros(shp), ao_k=2.0, ao_scales=(0.004, 0.012, 0.03, 0.08), nstrength=1.0, albedo_ao=0.45)
-    return enrich_stone(F, m, dict(blk=blk, nb=nb, face=face, prof=prof, run=None, wall=False, wear=wear))
+    return enrich_stone(F, m, dict(blk=blk, nb=nb, face=face, prof=prof, run=None, wall=False, wear=wear, gain=1.065))
 
 
 def mat_iron_calm(F):

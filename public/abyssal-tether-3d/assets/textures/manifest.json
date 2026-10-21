@@ -7,9 +7,9 @@
     "size": 2048,
     "hero": true,
     "heightM": 0.05719,
-    "meanLuma": 0.04639,
+    "meanLuma": 0.05676,
     "source": "baked:build_textures_hq.py",
-    "description": "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation",
+    "description": "Lanternwright wall ashlar (PBR v2): staggered blocks, per-block finish (smooth / tooled / pecked / rock-faced), chisel marks, pits, spalls, erosion, hairline cracks, damp stains, lichen",
     "ktx2": {
       "albedo": "rock_albedo.ktx2",
       "normal": "rock_normal.ktx2",
@@ -25,9 +25,9 @@
     "size": 2048,
     "hero": true,
     "heightM": 0.02274,
-    "meanLuma": 0.06393,
+    "meanLuma": 0.07247,
     "source": "baked:build_textures_hq.py",
-    "description": "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits",
+    "description": "worn flagstone floor (PBR v2): slabs with tooling, foot-worn dishing, spalls, pits, scuffs, damp patches, gritty joints",
     "ktx2": {
       "albedo": "masonry_albedo.ktx2",
       "normal": "masonry_normal.ktx2",

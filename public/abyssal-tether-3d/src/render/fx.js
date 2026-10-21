@@ -106,7 +106,7 @@ export class FX {
     this._noise = makeNoise3D(64);
     this.atmosphere = new Atmosphere(scene, this.lighting, this._noise, this._rng);
     this.halo = new LanternHalo(scene, this.lighting.uniforms, this._noise);
-    this.godRays = new GodRays(scene, this.lighting.uniforms, this._noise);
+    this.godRays = new GodRays(scene, this.lighting.uniforms, this._noise, this.halo);
     this.trickles = new Trickles(scene, this.lighting.uniforms, this._rng);
     this.trickles.burst = (kind, x, y, z, opts) => this.burst(kind, x, y, z, opts);
     this._buildDust();

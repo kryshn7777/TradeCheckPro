@@ -407,8 +407,11 @@ export class MasonLegs {
       L.lastCyc = cyc;
       if (d > g.minStep * reach && speed > 0.12) go = true;
     }
-    if (d > g.maxDisp * reach) {
-      go = true;
+    const hx = L.fx - HX;
+    const hy = L.fy - HY;
+    const hz = L.fz - HZ;
+    if (d > g.maxDisp * reach || hx * hx + hy * hy + hz * hz > reach * reach * 1.06 * 1.06) {
+      go = true; // dragged past the limit of the leg: lift at once
       urgent = true;
     }
     if (go && (urgent || this._canStep(L))) {
@@ -416,6 +419,18 @@ export class MasonLegs {
       const dur = clamp((this.stride * (1 - g.duty)) / Math.max(speed, 0.6), g.minDur, g.maxDur) * (urgent ? 0.8 : 1);
       const lead = reach * 0.2 + clamp(speed, 0, 16) * dur * 0.9;
       this._probeSurface(L, level, HX, HY, HZ, ix + fx * lead, iy + fy * lead, iz + fz * lead, ux, uy, uz, reach);
+      // the landing spot must be within the leg's reach of where the hip will be then
+      const lx = L.tx - HX - fx * speed * dur;
+      const ly = L.ty - HY - fy * speed * dur;
+      const lz = L.tz - HZ - fz * speed * dur;
+      const ld = Math.sqrt(lx * lx + ly * ly + lz * lz);
+      const lim = reach * 0.97;
+      if (ld > lim) {
+        const k = lim / ld;
+        L.tx = HX + fx * speed * dur + lx * k;
+        L.ty = HY + fy * speed * dur + ly * k;
+        L.tz = HZ + fz * speed * dur + lz * k;
+      }
       L.ox = L.fx;
       L.oy = L.fy;
       L.oz = L.fz;

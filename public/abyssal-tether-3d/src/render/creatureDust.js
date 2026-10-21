@@ -97,7 +97,7 @@ export class CreatureDust {
           '#include <begin_vertex>',
           `#include <begin_vertex>
   vSeed = aSeed;
-  vColor.rgb *= min( uAmbient + atLightAt( transformed, normalize( transformed - cameraPosition ), 0.2 ) * 0.32, vec3( 1.5 ) );`,
+  vColor.rgb *= min( uAmbient + atLightAt( transformed, normalize( transformed - cameraPosition ), 0.2 ) * 0.22, vec3( 1.2 ) );`,
         )
         .replace('gl_PointSize = size;', 'gl_PointSize = size * aSize;')
         .replace(
@@ -193,7 +193,7 @@ export class CreatureDust {
     this.grow[i] = grow;
     this.alpha[i] = alpha;
     // dry: grey-brown stone dust; wet: pale cold mist
-    const g = 0.28 + r() * 0.08;
+    const g = 0.22 + r() * 0.07;
     this.cr[i] = g * (1.0 - 0.2 * wet);
     this.cg[i] = g * (1 + 0.02 * wet);
     this.cb[i] = g * (0.94 + 0.22 * wet);
@@ -227,7 +227,7 @@ export class CreatureDust {
    */
   foot(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz) {
     if (!this._near(x, y, z, 55 * Math.max(0.5, size))) return;
-    const n = this._count((0.6 + strength * 2.2) * (size < 0.6 ? 0.6 : 1));
+    const n = this._count((0.4 + strength * 1.4) * (size < 0.6 ? 0.6 : 1));
     if (n <= 0) return;
     const B = this._b || (this._b = new Float32Array(6));
     this._basis(nx, ny, nz, B);
@@ -253,8 +253,8 @@ export class CreatureDust {
         cy * sp + wvy * 0.25,
         cz * sp + wvz * 0.25,
         sz,
-        (0.1 + 0.1 * strength) * (1 - 0.35 * wet),
-        (0.8 + r() * 0.7) * (1 + 0.8 * wet),
+        (0.05 + 0.06 * strength) * (1 - 0.35 * wet),
+        (0.6 + r() * 0.5) * (1 + 0.8 * wet),
         wet,
         0.6,
         1.1 + 0.8 * wet,
@@ -267,7 +267,7 @@ export class CreatureDust {
 
   /** A low drifting wisp under the body while it moves (call a few times a second per creature). */
   trail(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz) {
-    if (!this._near(x, y, z, 50 * Math.max(0.5, size))) return;
+    if (!this._near(x, y, z, 40 * Math.max(0.5, size))) return;
     if (this._count(1) <= 0) return;
     const r = this.rng;
     const sz = size * (0.8 + r() * 0.8) * (0.6 + 0.6 * strength);
@@ -282,8 +282,8 @@ export class CreatureDust {
       wvy * 0.3 + (r() - 0.5) * 0.4 * size,
       wvz * 0.3 + (r() - 0.5) * 0.4 * size,
       sz,
-      (0.05 + 0.06 * strength) * (1 - 0.3 * wet),
-      (1.4 + r() * 1.2) * (1 + 0.9 * wet),
+      (0.025 + 0.035 * strength) * (1 - 0.3 * wet),
+      (1.0 + r() * 0.9) * (1 + 0.9 * wet),
       wet,
       0.9,
       0.9 + 0.7 * wet,
@@ -306,7 +306,7 @@ export class CreatureDust {
       const cx = B[0] * c + B[3] * s;
       const cy = B[1] * c + B[4] * s;
       const cz = B[2] * c + B[5] * s;
-      this._spawn(x + nx * sz * 0.45, y + ny * sz * 0.45, z + nz * sz * 0.45, nx, ny, nz, cx * sp, cy * sp, cz * sp, sz, (0.14 + 0.1 * strength) * (1 - 0.3 * wet), (1.1 + r() * 1.0) * (1 + 0.8 * wet), wet, 0.2, 1.3 + wet);
+      this._spawn(x + nx * sz * 0.45, y + ny * sz * 0.45, z + nz * sz * 0.45, nx, ny, nz, cx * sp, cy * sp, cz * sp, sz, (0.09 + 0.07 * strength) * (1 - 0.3 * wet), (0.9 + r() * 0.8) * (1 + 0.8 * wet), wet, 0.2, 1.3 + wet);
     }
   }
 
