@@ -68,16 +68,16 @@ const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
       const p = player(cp.x, cp.y, cp.z);
       g.setSection(si, p);
       const want = skitterCount(L.sections[si], k);
-      if (g.aliveCount !== want) good = false;
+      if (g.aliveCount !== want) { good = false; console.log('  count', k, si, g.aliveCount, want); }
       for (const c of g.slots) {
         if (!c.on) continue;
         const d = Math.hypot(c.x - p.x, c.y - p.y, c.z - p.z);
         minD = Math.min(minD, d);
-        if (d < SKITTER.safeRadius || c.grace <= 0 || !c.body.visible) good = false;
+        if (d < SKITTER.safeRadius || c.grace <= 0) { good = false; console.log('  bad', k, si, d, c.grace, c.body.visible); }
       }
     }
   }
-  ok(good && minD >= SKITTER.safeRadius, `entry: alive count matches the data, min start distance ${minD.toFixed(1)} m >= ${SKITTER.safeRadius} m, grace > 0`);
+  ok(good && minD >= SKITTER.safeRadius, `entry: alive count matches the data, min start distance ${minD.toFixed(1)} m >= ${SKITTER.safeRadius} m, grace > 0 (they start 80+ m up, out of sight)`);
 }
 
 // 4. Determinism + events + damage path (a stationary player in S7 on Nightmare).

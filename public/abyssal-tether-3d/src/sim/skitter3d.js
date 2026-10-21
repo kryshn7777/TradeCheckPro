@@ -14,6 +14,7 @@ import { Creature3D, CREATURE_VARIANTS } from './creature3d.js';
 export const SKITTER = {
   maxAlive: 2,
   safeRadius: 26, // m: a skitterling never begins closer than this to the player / the checkpoint they are standing at
+  hurtCooldown: 1.5, // s after a hit during which further skitterling hits do nothing (a bite is an event, not a drain)
   extraOffset: 16, // slot 1 spawns this much higher than slot 0 (they arrive one after the other)
   lethalOnly: true, // only in lethal creature sections (S5 'stalk' and up) and only where the data asks for it
 };
@@ -55,6 +56,7 @@ export class SkitterGroup {
     this.slots = [];
     this.sectionIndex = -1;
     this.pendingDamage = 0;
+    this._hurt = 0;
     this.hits = 0;
     this.spawned = 0;
     this.minSpawnDistance = Infinity;
@@ -154,12 +156,15 @@ export class SkitterGroup {
 
   update(dt, player, time) {
     if (!this.enabled) return;
+    if (this._hurt > 0) this._hurt -= dt;
     for (let i = 0; i < this.slots.length; i++) {
       const c = this.slots[i];
       if (!c.on) continue;
       c.update(dt, player, time);
       if (c.hitPlayer) {
         c.hitPlayer = false;
+        if (this._hurt > 0) continue;
+        this._hurt = SKITTER.hurtCooldown;
         this.pendingDamage += skitterDamage(this._tuneKey);
         this.hits++;
       }
