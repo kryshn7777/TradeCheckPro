@@ -54,8 +54,8 @@ function makeProto(chain, mirror) {
   return { H, K, A, T, X, a, b, Fu, Fl, offA: sub(A, K), offT: sub(T, K), offX: sub(X, K), total: a + b, hip: H };
 }
 
-export const GAIT_MASON = { delta: 0.1, duty: 0.7, strideK: 0.8, minDur: 0.24, maxDur: 0.8, minStep: 0.12, maxDisp: 0.62, lift: 0.16 };
-export const GAIT_SKITTER = { delta: 0.15, duty: 0.55, strideK: 1.15, minDur: 0.09, maxDur: 0.4, minStep: 0.1, maxDisp: 0.62, lift: 0.2 };
+export const GAIT_MASON = { delta: 0.1, duty: 0.7, strideK: 0.8, minDur: 0.24, maxDur: 0.8, minStep: 0.12, maxDisp: 0.62, lift: 0.13 };
+export const GAIT_SKITTER = { delta: 0.15, duty: 0.55, strideK: 1.15, minDur: 0.09, maxDur: 0.4, minStep: 0.1, maxDisp: 0.62, lift: 0.14 };
 
 /**
  * @param {Object<string, THREE.Bone>} bones  name → Bone
@@ -251,9 +251,11 @@ export class MasonLegs {
       const gy = ik[5] - ty;
       const gz = ik[6] - tz;
       const gap = Math.sqrt(gx * gx + gy * gy + gz * gz);
+      L.gap = gap;
+      // only planted feet count as a slide (a raised foot may fall short of its lifted target mid-swing)
       if (L.kind === 'lead') {
-        if (gap > slideLead) slideLead = gap;
-      } else if (gap > slide) slide = gap;
+        if (limbs && limbs[L.simLimb] && limbs[L.simLimb].planted && gap > slideLead) slideLead = gap;
+      } else if (L.step < 0 && gap > slide) slide = gap;
       const KX = ik[0];
       const KY = ik[1];
       const KZ = ik[2];
