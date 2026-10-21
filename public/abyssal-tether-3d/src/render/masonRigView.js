@@ -21,6 +21,8 @@ import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/maso
 import { HeadFit } from './mason/masonFit.js';
 import { MasonLegs } from './mason/masonLegs.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
+import { cloneRigged } from './mason/skitterClone.js';
+import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
 import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
 
 const DEFAULTS = {
@@ -29,6 +31,11 @@ const DEFAULTS = {
   hideDistance: 260,
   glowPierce: 0.35,
   sightingFogCap: 0.55,
+  variant: '', // 'skitter': a small red clone sharing the Mason's geometry / clips (WP-SKITTER)
+  size: 1,
+  clipRate: 1, // mixer speed (the skitterling twitches 1.5x faster)
+  twitch: 0, // procedural quiver amplitude (fraction of the link length)
+  farDistance: 0, // beyond this the pose is refreshed every 2nd frame (CPU LOD)
   bodyScale: 0.93, // vertebra scale = link / rest pitch x this (a hair under, so the mortar-flesh joints show)
 };
 const SEG = 20;
@@ -57,7 +64,7 @@ export class MasonRigView {
     this.scene = scene || null;
     this.bus = null;
     this.root = new THREE.Group();
-    this.root.name = 'MasonRigView';
+    this.root.name = this.opts.variant ? 'SkitterRigView' : 'MasonRigView';
     this.root.visible = false;
     this._time = 0;
     this.info = { rig: true, drawCalls: 0, triangles: 0, trianglesLod1: 0, bones: 0, lod: 0, clips: 0, legsStepping: 0, headScale: 1, fit: [0, 0, 0, 0] };
@@ -83,7 +90,9 @@ export class MasonRigView {
     this._havePrev = false;
     this._speed = 0;
     this._wasVisible = false;
-    this._hug = 3.2;
+    this._hug = 3.2 * this.opts.size;
+    this._farAcc = 0;
+    this._farTick = 0;
     this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0 };
     this._forced = null;
     this._dbg = null;
@@ -125,6 +134,19 @@ export class MasonRigView {
     }
     if (!this.meshes[0].length) throw new Error('mason_rig.glb: no LOD0 mesh');
     if (!this.meshes[1].length) this.meshes[1] = this.meshes[0];
+    if (this.opts.variant) {
+      // own red material set (clones: maps / textures stay shared), never a shadow caster (cheap dynamic shadow budget)
+      const clones = new Map();
+      for (const m of skinned) {
+        const mats = Array.isArray(m.material) ? m.material : [m.material];
+        const out = mats.map((mat) => {
+          if (!clones.has(mat)) clones.set(mat, mat.clone());
+          return clones.get(mat);
+        });
+        m.material = Array.isArray(m.material) ? out : out[0];
+        m.userData.noShadowCast = true;
+      }
+    }
     this.skeleton = skinned[0].skeleton;
     for (const b of this.boneList) {
       b.matrixAutoUpdate = false;
@@ -154,7 +176,8 @@ export class MasonRigView {
   }
 
   _buildMaterials() {
-    this.uniforms = makeMasonUniforms();
+    const skit = !!this.opts.variant;
+    this.uniforms = skit ? makeSkitterUniforms() : makeMasonUniforms();
     this.uniforms.uGlowPierce.value = this.opts.glowPierce;
     this.materials = [];
     this.emissive = null;
@@ -166,7 +189,8 @@ export class MasonRigView {
           if (!mat || seen.has(mat)) continue;
           seen.add(mat);
           mat.vertexColors = false;
-          patchMasonMaterial(mat, this.uniforms);
+          if (skit) patchSkitterMaterial(mat, this.uniforms);
+          else patchMasonMaterial(mat, this.uniforms);
           this.materials.push(mat);
           if (/Emissive/i.test(mat.name)) {
             this.emissive = mat;
@@ -208,12 +232,13 @@ export class MasonRigView {
 
   _buildActions(gltf, meta) {
     this.mixer = new THREE.AnimationMixer(gltf.scene);
+    this.mixer.timeScale = this.opts.clipRate;
     this.act = {};
     this.clipInfo = {};
     for (const clip of gltf.animations || []) {
       const mi = meta.clips && meta.clips[clip.name];
       if (!mi || mi.kind === 'template') continue;
-      if (mi.kind === 'additive' || mi.kind === 'parametric') THREE.AnimationUtils.makeClipAdditive(clip);
+      if ((mi.kind === 'additive' || mi.kind === 'parametric') && !gltf.sharedClips) THREE.AnimationUtils.makeClipAdditive(clip);
       const a = this.mixer.clipAction(clip);
       a.enabled = true;
       if (mi.loop) a.setLoop(THREE.LoopRepeat, Infinity);
@@ -274,6 +299,7 @@ export class MasonRigView {
     }
     dt = dt > 0 ? Math.min(dt, 0.1) : 0;
     this._time += dt;
+    const size = B.size || 1;
     const sp = B.spine;
     const o = this.opts;
 
@@ -296,6 +322,14 @@ export class MasonRigView {
     const lodWant = camD > (this._lod === 1 ? o.lodDistance - o.lodHysteresis : o.lodDistance) ? 1 : 0;
     this._setLod(lodWant);
     const lodFar = this._lod === 1;
+    if (o.farDistance && camD > o.farDistance) {
+      // far skitterlings: the whole pose is refreshed every 2nd frame (the stale pose is drawn in between)
+      this._farAcc += dt;
+      this._farTick ^= 1;
+      if (this._farTick) return;
+      dt = this._farAcc;
+      this._farAcc = 0;
+    } else this._farAcc = 0;
 
     // ---- teleports / respawns: forget footholds and springs ----
     const hx0 = sp[0];
@@ -337,8 +371,8 @@ export class MasonRigView {
     if (C.level) this._level = C.level;
     const cap = sectionHeadScale(C);
     this.fit.update(dt, level, F[0], F[1], F[2], F[6], F[7], F[8], F[9], F[10], F[11], cap);
-    const hs = this.fit.scale;
-    const lift = this.fit.lift;
+    const hs = this.fit.scale * size;
+    const lift = this.fit.lift * size;
     // lift the crown (and the first links) off the wall it clings to
     for (let i = 0; i < LIFT_FALLOFF.length; i++) {
       const k = lift * LIFT_FALLOFF[i];
@@ -353,8 +387,9 @@ export class MasonRigView {
     for (let i = 1; i < SEG; i++) {
       const a = len3(sp[i * 3] - sp[i * 3 - 3], sp[i * 3 + 1] - sp[i * 3 - 2], sp[i * 3 + 2] - sp[i * 3 - 1]);
       const b = i < SEG - 1 ? len3(sp[i * 3 + 3] - sp[i * 3], sp[i * 3 + 4] - sp[i * 3 + 1], sp[i * 3 + 5] - sp[i * 3 + 2]) : a;
-      S[i] = clamp((a + b) * 0.5 * bs, 0.4, 1.6);
+      S[i] = clamp((a + b) * 0.5 * bs, size < 1 ? 0.08 : 0.4, 1.6);
     }
+    if (o.twitch > 0) this._twitch(F, S, o.twitch, B);
 
     // ---- crown aim (spring) ----
     this._aim(dt, B, F);
@@ -365,6 +400,10 @@ export class MasonRigView {
     this._poseLegs(dt, B, F, S, level, g, lodFar);
 
     // ---- shading uniforms ----
+    if (o.variant) {
+      this.uniforms.uSkTime.value = this._time % 1000;
+      this.uniforms.uCrawl.value = clamp(0.55 + this._speed / 14 + (B.jitter || 0) * 0.6 + (this.graph.snapshot.listening ? 0.2 : 0), 0.4, 1.5);
+    }
     const sighting = !!C.sighting;
     this.uniforms.uFogCap.value = sighting ? o.sightingFogCap : 1;
     this.uniforms.uGlowPierce.value = sighting ? 1 : o.glowPierce;
@@ -381,6 +420,21 @@ export class MasonRigView {
     this.info.fit[1] = this.fit.clear[1];
     this.info.fit[2] = this.fit.clear[2];
     this.info.fit[3] = this.fit.clear[3];
+  }
+
+  /** Nervous quiver (skitterling): a high-frequency sideways shiver and swell per vertebra, travelling down the body. Zero allocation. */
+  _twitch(F, S, amp, B) {
+    const t = this._time;
+    const k = amp * (0.5 + 0.5 * clamp(this._speed / 8 + (B.jitter || 0), 0, 1)) * (B.size || 1);
+    for (let i = 0; i < SEG; i++) {
+      const q = Math.sin(t * 47 + i * 1.9) * Math.sin(t * 19 + i * 0.7);
+      const o = i * 12;
+      const sh = q * k * 1.5;
+      F[o] += F[o + 9] * sh;
+      F[o + 1] += F[o + 10] * sh;
+      F[o + 2] += F[o + 11] * sh;
+      S[i] *= 1 + 0.045 * Math.sin(t * 61 + i * 2.3);
+    }
   }
 
   _snapshot(C, B) {
@@ -658,7 +712,7 @@ export class MasonRigView {
     }
     const sph = this._sphere;
     sph.center.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-    sph.radius = len3(maxX - minX, maxY - minY, maxZ - minZ) / 2 + 12 + 9 * hs;
+    sph.radius = len3(maxX - minX, maxY - minY, maxZ - minZ) / 2 + (this.opts.size < 1 ? 3 : 12) + 9 * hs;
     const list = this.meshes[this._lod];
     for (let i = 0; i < list.length; i++) list[i].boundingSphere.copy(sph);
   }
@@ -719,7 +773,7 @@ export class MasonRigView {
         const sy = Math.sin(yaw);
         const dx = fx * cy - fz * sy;
         const dz = fx * sy + fz * cy;
-        const dist = o.distance == null ? 12 : o.distance;
+        const dist = o.distance == null ? (self.opts.size < 1 ? 5 : 12) : o.distance;
         const hx = P.x + dx * dist;
         const hz = P.z + dz * dist;
         const hy = P.y + (o.height || 0);
@@ -742,7 +796,7 @@ export class MasonRigView {
           ffz = nz;
         }
         const up = o.up || [0, 1, 0];
-        self._dbg = { creature: makeSyntheticCreature(hx, hy, hz, ffx, ffy, ffz, up, o.state || 'OBSERVING', o.hug || 1.45, self._lastCreature) };
+        self._dbg = { creature: makeSyntheticCreature(hx, hy, hz, ffx, ffy, ffz, up, o.state || 'OBSERVING', o.hug || 1.45 * self.opts.size, self._lastCreature, self.opts.size) };
         self._dbg.creature.speed = o.speed || 0;
         self.legs.reset();
         self.fit.reset();
@@ -784,10 +838,14 @@ export class MasonRigView {
       for (const m of l) {
         if (seen.has(m)) continue;
         seen.add(m);
-        m.geometry.dispose();
+        if (!this.opts.variant) m.geometry.dispose(); // clones share the Mason's geometry
       }
     }
     for (const mat of this.materials) {
+      if (this.opts.variant) {
+        mat.dispose(); // textures are the Mason's
+        continue;
+      }
       for (const k of Object.keys(mat)) {
         const v = mat[k];
         if (v && v.isTexture) v.dispose();
@@ -816,7 +874,8 @@ const LIMB_DEFS = [
   [15, -1, 5.4],
 ];
 
-function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
+function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real, size) {
+  size = size || 1;
   let ux = up[0];
   let uy = up[1];
   let uz = up[2];
@@ -843,9 +902,9 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
     const t = i / (SEG - 1);
     const taper = 1 - 0.45 * Math.pow(Math.max(0, (t - 0.06) / 0.94), 1.25);
     scale[i] = taper;
-    if (i > 0) cum += 1.5 * 0.5 * (scale[i - 1] + taper);
-    const sway = Math.sin(cum * 0.28) * 1.6 * Math.min(1, cum / 6);
-    const arch = i > 0 ? 0.65 * Math.sin(Math.PI * i / (SEG - 1)) * Math.min(1, i / 4) : 0;
+    if (i > 0) cum += 1.5 * size * 0.5 * (scale[i - 1] + taper);
+    const sway = Math.sin((cum / size) * 0.28) * 1.6 * size * Math.min(1, cum / (6 * size));
+    const arch = i > 0 ? 0.65 * size * Math.sin(Math.PI * i / (SEG - 1)) * Math.min(1, i / 4) : 0;
     spine[i * 3] = hx - fx * cum + rx * sway + u2x * arch;
     spine[i * 3 + 1] = hy - fy * cum + ry * sway + u2y * arch;
     spine[i * 3 + 2] = hz - fz * cum + rz * sway + u2z * arch;
@@ -858,11 +917,11 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
     const hipx = spine[i * 3];
     const hipy = spine[i * 3 + 1];
     const hipz = spine[i * 3 + 2];
-    const out = def[2] * 0.42 * def[1];
+    const out = def[2] * size * 0.42 * def[1];
     return {
       seg: i,
       side: def[1],
-      reach: def[2],
+      reach: def[2] * size,
       weight: 1,
       planted: true,
       lift: 0,
@@ -871,9 +930,9 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
       t: { x: 0, y: 0, z: 0 },
       hip: { x: hipx, y: hipy, z: hipz },
       foot: {
-        x: hipx + rx * out - u2x * (hug + 0.6),
-        y: hipy + ry * out - u2y * (hug + 0.6),
-        z: hipz + rz * out - u2z * (hug + 0.6),
+        x: hipx + rx * out - u2x * (hug + 0.6 * size),
+        y: hipy + ry * out - u2y * (hug + 0.6 * size),
+        z: hipz + rz * out - u2z * (hug + 0.6 * size),
       },
     };
   });
@@ -895,6 +954,7 @@ function makeSyntheticCreature(hx, hy, hz, fx, fy, fz, up, state, hug, real) {
     level: real && real.level ? real.level : null,
     sectionIndex: real ? real.sectionIndex : -1,
     body: {
+      size,
       spine,
       up: upA,
       scale,
@@ -936,7 +996,7 @@ function advanceSynthetic(C, dt) {
     L.hip.y = hy;
     L.hip.z = hz;
     const out = L.reach * 0.42 * L.side;
-    const down = C.hug + 0.6;
+    const down = C.hug + 0.6 * (C.body.size || 1);
     const ix = hx + C.r[0] * out - C.u[0] * down + f[0] * L.reach * 0.2;
     const iy = hy + C.r[1] * out - C.u[1] * down + f[1] * L.reach * 0.2;
     const iz = hz + C.r[2] * out - C.u[2] * down + f[2] * L.reach * 0.2;
@@ -973,4 +1033,38 @@ function advanceSynthetic(C, dt) {
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// WP-SKITTER: clones of the loaded rig for the skitterlings (one GLB download, shared geometry / textures / clips)
+// ---------------------------------------------------------------------------------------------------------------------
+export const SKITTER_VIEW = {
+  variant: 'skitter',
+  size: 0.45,
+  clipRate: 1.5, // clips play 1.5x speed
+  twitch: 0.06, // procedural quiver (m of sideways shiver per vertebra at full agitation, before the size)
+  lodDistance: 6, // LOD1 (20k tris) beyond 6 m; LOD0 only when it is on top of you
+  lodHysteresis: 1,
+  farDistance: 34, // beyond this the pose refreshes every 2nd frame
+  hideDistance: 110,
+  glowPierce: 0.6,
+  bodyScale: 0.98,
+};
+
+/** Clones the glTF scene `n` times. Call BEFORE the Mason's own view is built (it moves the meshes out of gltf.scene). */
+export function cloneSkitterScenes(gltf, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(cloneRigged(gltf.scene));
+  return out;
+}
+
+/** Builds the skitterling views from the clones, AFTER the Mason's view made the additive clips additive (they are shared). */
+export function makeSkitterViews(scene, gltf, clones) {
+  const views = [];
+  for (let i = 0; i < clones.length; i++) {
+    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: true }, SKITTER_VIEW);
+    v.root.name = 'SkitterRigView' + i;
+    views.push(v);
+  }
+  return views;
 }

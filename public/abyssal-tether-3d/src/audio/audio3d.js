@@ -2597,6 +2597,7 @@ export class AudioManager3D {
   }
 
   _onCreatureStep(p) {
+    if (p.skit) return this._sfxSkitter(p, 'step');
     if (this._cs && this._cs.seen.plant) return; // the rig reports every leg plant (mason:plant): those sound instead
     this._sfxCreatureStep(p);
   }
@@ -2713,6 +2714,7 @@ export class AudioManager3D {
    * the surge once the hold is over. `commit` (a real lunge) pushes harder.
    */
   _onCreatureBurst(p) {
+    if (p.skit) return this._sfxSkitter(p, 'burst');
     const x = num(p.x, NaN);
     const y = num(p.y, NaN);
     const z = num(p.z, NaN);
@@ -2728,6 +2730,7 @@ export class AudioManager3D {
   }
 
   _onCreatureAttack(p) {
+    if (p.skit) return this._sfxSkitter(p, 'attack');
     // A lunge is emitted at wind-up start. The 3D creature reports the contact itself
     // (creature:strike, with the true strike point and hit / near miss): then the
     // impact belongs to the strike. Without strike events (or before the first one
@@ -2758,6 +2761,7 @@ export class AudioManager3D {
    * past the head — the near miss you are meant to survive.
    */
   _onCreatureStrike(p) {
+    if (p.skit) return this._sfxSkitter(p, p.hit ? 'bite' : 'snap');
     this._strikeSeen = true;
     const x = num(p.x, NaN);
     const y = num(p.y, NaN);
@@ -2769,6 +2773,7 @@ export class AudioManager3D {
   }
 
   _onCreatureRetreat(p) {
+    if (p.skit) return;
     this._sfxRetreat(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
   }
 
@@ -3870,6 +3875,42 @@ export class AudioManager3D {
   }
 
   /** Burst: a rising surge of grinding noise, a heavy push-off and a flurry of limb clicks. */
+  /**
+   * WP-SKITTER: the small red hunters reuse the creature bus and tick train, pitched up and run faster (a dry, quick scritch of
+   * claws and chitin, no low body): kind = step | burst | attack | bite | snap. Small voice budget (2 'cstep' voices at most).
+   */
+  _sfxSkitter(p, kind) {
+    if (this._countAlive('cstep') >= 5) return;
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const inten = U.clamp(num(p.intensity, kind === 'step' ? 0.5 : 0.9), 0.1, 1);
+    const base = (kind === 'step' ? 1.5 : 2.2) * (0.4 + 0.6 * inten);
+    if (base * sp.gain < 0.02) return;
+    const dur = kind === 'burst' ? 0.9 : kind === 'attack' ? 0.8 : 0.35;
+    const v = this._begin('cstep', 0, 0.04, dur + 0.3 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff + 900, this._cPos(sp), 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = kind === 'step' ? 4 + Math.floor(Math.random() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
+    this._tickTrain(v, t, n, dur * 0.8, 0.55, 3800, 7600, 9, 0.004, 0.35);
+    if (kind === 'burst' || kind === 'attack') {
+      const nz = this._vNoise(v, this._pink, t, 1);
+      const bp = this._vFilter(v, 'bandpass', 1400, 2.2);
+      bp.frequency.setValueAtTime(1400, t);
+      bp.frequency.exponentialRampToValueAtTime(5200, t + dur);
+      const g = this._vGain(v, 0);
+      this._swell(g.gain, t, 0.45, dur * 0.7, 0.05, 0.1);
+      nz.connect(bp);
+      bp.connect(g);
+      g.connect(v.out);
+    } else if (kind === 'bite' || kind === 'snap') {
+      const o = this._vOsc(v, 'triangle', 1500, t);
+      o.frequency.setTargetAtTime(520, t, 0.025);
+      const og = this._vGain(v, 0);
+      this._perc(og.gain, t, kind === 'bite' ? 0.5 : 0.28, 0.001, 0.07);
+      o.connect(og);
+      og.connect(v.out);
+    }
+    this._commit(v);
+  }
   _sfxBurst(x, y, z, dHint, hold, commit) {
     const sp = this._spatial(x, y, z, dHint);
     const delay = (hold > 0 ? hold : 0) + sp.delay;

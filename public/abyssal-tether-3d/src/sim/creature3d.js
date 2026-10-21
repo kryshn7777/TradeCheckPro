@@ -179,6 +179,23 @@ const DIFF_REF = {
   abyss: { speed: 1.34, staminaDrain: 0.8, staminaRegen: 1.5 },
 };
 
+/**
+ * Per-instance variants of the same sim (WP-SKITTER). `skitterling` is the Ossuary Column's little kin: same rules, same rig,
+ * 0.45 scale, EXACTLY 1.5x the big creature's approach / pursue / burst / creep / wind-up-advance speeds (DIFF_TUNE x mode x
+ * section, see _applyScaling), a wind-up 1.5x shorter and a shorter reach so it stays fair, and a hit that costs health instead
+ * of killing outright (`hitDamage`, fraction of full hp per difficulty).
+ */
+export const CREATURE_VARIANTS = {
+  skitterling: {
+    scale: 0.45,
+    speedMul: 1.5,
+    windupMul: 1 / 1.5,
+    killRadiusMul: 0.62,
+    steerMul: 1.5,
+    hitDamage: { normal: 0.26, nightmare: 0.32, abyss: 0.4 },
+  },
+};
+
 /** Per-mode behaviour profiles (multipliers on DIFF_TUNE). */
 export const CREATURE_MODES = {
   dormant: { speed: 0.5, burst: 0, listen: 1, recover: 1, observe: 1, creep: 1, menace: 1, commit: 0, stall: 1 },
@@ -391,12 +408,12 @@ function linkBus(bus, creature) {
   link.creature = creature;
 }
 
-function makeLimb(def, i, rand) {
+function makeLimb(def, i, rand, sc) {
   const p = () => ({ x: 0, y: 0, z: 0 });
   return {
     seg: def[0],
     side: def[1],
-    reach: def[2],
+    reach: def[2] * sc,
     fwd: def[3],
     weight: def[4],
     partner: i ^ 1,
@@ -424,9 +441,19 @@ export class Creature3D {
    * @param {Level3D} level
    * @param {object} diff   DIFFICULTY[key] (config3d.js)
    * @param {EventBus} bus
-   * @param {{seed?:number}} [options]  deterministic seed (tooling); random by default
+   * @param {{seed?:number, variant?:string}} [options]  deterministic seed (tooling); random by default; variant = a
+   *   CREATURE_VARIANTS key (WP-SKITTER: smaller, 1.5x faster, hits for damage; it never listens to the sighting / call triggers)
    */
   constructor(level, diff, bus, options) {
+    this.variant = options && CREATURE_VARIANTS[options.variant] ? options.variant : '';
+    this.v = this.variant ? CREATURE_VARIANTS[this.variant] : null;
+    const sc = this.v ? this.v.scale : 1;
+    this._scale = sc;
+    this._hug = T.hug * sc;
+    this._minClear = T.minClear * (0.45 + 0.55 * sc);
+    this._arch = T.arch * sc;
+    this._rearMax = T.rear * sc;
+    this._spacing = T.spacing * sc;
     this.level = level || null;
     this.diff = diff || {};
     this.bus = bus || null;
@@ -437,7 +464,7 @@ export class Creature3D {
       aggression: Math.max(0.5, num(cd.aggression, 1)),
       staminaDrain: Math.max(0.05, num(cd.staminaDrain, 1)),
       staminaRegen: Math.max(0.05, num(cd.staminaRegen, 1)),
-      killRadius: Math.max(0.8, num(cd.killRadius, 2.6)),
+      killRadius: Math.max(0.8, num(cd.killRadius, 2.6) * (this.v ? this.v.killRadiusMul : 1)),
     };
     /** false in sandbox (diff.creature.enabled === false): never appears, never kills, silent. */
     this.active = this.cfg.enabled;
@@ -459,7 +486,8 @@ export class Creature3D {
       spine: new Float32Array(SEG * 3),
       up: new Float32Array(SEG * 3),
       scale: new Float32Array(SEG),
-      limbs: LIMBS.map((def, i) => makeLimb(def, i, this._rand)),
+      limbs: LIMBS.map((def, i) => makeLimb(def, i, this._rand, this._scale)),
+      size: sc, // 1 = the Mason; the renderer scales the rig by this
       frondOpen: 0.3,
       glow: 0.1,
       lunge: 0,
@@ -473,7 +501,7 @@ export class Creature3D {
     let off = 0;
     for (let i = 0; i < SEG; i++) {
       this.body.scale[i] = taperAt(i);
-      if (i > 0) off += T.spacing * 0.5 * (taperAt(i - 1) + taperAt(i));
+      if (i > 0) off += this._spacing * 0.5 * (taperAt(i - 1) + taperAt(i));
       this._segOff[i] = off;
     }
     this.bodyLength = off;
@@ -491,7 +519,7 @@ export class Creature3D {
     this._surfTmp = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._hit = { t: 0, az: 0 };
 
-    linkBus(this.bus, this);
+    if (!this.v) linkBus(this.bus, this); // variants ignore the sighting / call triggers
     this.reset(null);
   }
 
@@ -522,6 +550,7 @@ export class Creature3D {
     this.distance = FAR;
     this.lethal = false;
     this.caughtPlayer = false;
+    this.hitPlayer = false;
     this.sighting = null;
     this.sightingDone = false;
     this.inPlay = false;
@@ -1047,8 +1076,8 @@ export class Creature3D {
         const az = az0 + (j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2) * (Math.PI / 4));
         if (!this._rayWall(player.x, y, player.z, az, 80)) continue;
         const h = this._hit;
-        this.x = player.x + Math.cos(az) * (h.t - T.hug);
-        this.z = player.z + Math.sin(az) * (h.t - T.hug);
+        this.x = player.x + Math.cos(az) * (h.t - this._hug);
+        this.z = player.z + Math.sin(az) * (h.t - this._hug);
         this.y = y;
         this._clampToBounds();
         if (!this._clearAt(this.x, this.y, this.z)) continue;
@@ -1333,9 +1362,9 @@ export class Creature3D {
     // the shortest path head → rim → target wins.
     const a = axis === 0 ? 1 : 0;
     const c = axis === 2 ? 1 : 2;
-    const m = T.hug + 1.5;
-    const headSide = P[axis] >= (mn[axis] + mx[axis]) * 0.5 ? mx[axis] + T.hug : mn[axis] - T.hug;
-    const farSide = Q[axis] < mn[axis] ? mn[axis] - T.hug : Q[axis] > mx[axis] ? mx[axis] + T.hug : headSide;
+    const m = this._hug + 1.5;
+    const headSide = P[axis] >= (mn[axis] + mx[axis]) * 0.5 ? mx[axis] + this._hug : mn[axis] - this._hug;
+    const farSide = Q[axis] < mn[axis] ? mn[axis] - this._hug : Q[axis] > mx[axis] ? mx[axis] + this._hug : headSide;
     const G = this._dG;
     let bestCost = Infinity;
     let ba = 0;
@@ -1518,7 +1547,8 @@ export class Creature3D {
       a.lx = player.x;
       a.ly = player.y;
       a.lz = player.z;
-      this.caughtPlayer = true;
+      if (this.v) this.hitPlayer = true; // variants hurt (game applies hitDamage); only the Mason kills outright
+      else this.caughtPlayer = true;
       this.stats.hits++;
     } else {
       let ext = Math.min(d, reach + 1.6);
@@ -1883,18 +1913,19 @@ export class Creature3D {
     const sm = U.clamp(num(c.speedMul, 1), 0.5, 1.6);
     const secEff = sm > 1 ? 1 + (sm - 1) * 0.5 : Math.max(0.75, sm);
     const mEff = Math.min(prof.speed * secEff, Math.max(prof.speed, T.maxModeSpeed));
-    const spd = this.cfg.speedRatio * mEff;
+    const vs = this.v ? this.v.speedMul : 1;
+    const spd = this.cfg.speedRatio * mEff * vs;
     this.speedScale = spd;
     k.approach = D.approach * spd;
     k.pursue = D.pursue * spd;
     k.burst = D.burst * spd;
     k.windupAdv = D.windupAdv * spd;
-    k.creep = D.creep * prof.creep * this.cfg.speedRatio;
+    k.creep = D.creep * prof.creep * this.cfg.speedRatio * vs;
     k.menace = D.menace * prof.menace;
     k.holdBack = D.holdBack;
     k.listenDelay = D.listenDelay * prof.listen;
     k.listenDur = D.listenDur * prof.listen;
-    k.windup = D.windup;
+    k.windup = D.windup * (this.v ? this.v.windupMul : 1);
     k.snap = D.snap;
     // section.burstRate (if given) scales relative to a nominal 2.6 surges/min.
     const secBurst = num(c.burstRate, 0) > 0 ? U.clamp(c.burstRate / 2.6, 0.5, 2) : 1;
@@ -1926,9 +1957,9 @@ export class Creature3D {
     const ok = this._wallPointAt(px, y, pz, this.az);
     if (ok) {
       const h = this._hit;
-      this.x = px + Math.cos(h.az) * (h.t - T.hug);
+      this.x = px + Math.cos(h.az) * (h.t - this._hug);
       this.y = y;
-      this.z = pz + Math.sin(h.az) * (h.t - T.hug);
+      this.z = pz + Math.sin(h.az) * (h.t - this._hug);
     } else {
       this.x = px;
       this.y = y;
@@ -2079,7 +2110,7 @@ export class Creature3D {
         this.nz = sf.nz;
       }
       if (stick > 0) {
-        const err = (T.hug - d) * Math.min(1, T.adhesionRate * dt) * stick;
+        const err = (this._hug - d) * Math.min(1, T.adhesionRate * dt) * stick;
         this.x += sf.nx * err;
         this.y += sf.ny * err;
         this.z += sf.nz * err;
@@ -2128,7 +2159,7 @@ export class Creature3D {
   _keepClear() {
     const lv = this.level;
     if (!lv || typeof lv.querySolids !== 'function') return;
-    const r = T.minClear;
+    const r = this._minClear;
     const list = lv.querySolids(this.x - r, this.y - r, this.z - r, this.x + r, this.y + r, this.z + r, this._solids);
     const o = this._surf2;
     for (let i = 0; i < list.length; i++) {
@@ -2177,7 +2208,7 @@ export class Creature3D {
   _clearAt(x, y, z) {
     const lv = this.level;
     if (!lv || typeof lv.querySolids !== 'function') return true;
-    const r = T.minClear;
+    const r = this._minClear;
     const list = lv.querySolids(x - r, y - r, z - r, x + r, y + r, z + r, this._solids);
     const o = this._surf2;
     for (let i = 0; i < list.length; i++) {
@@ -2297,7 +2328,7 @@ export class Creature3D {
     this._hugPZ = player.z;
     if (this._wallPointAt(player.x, player.y, player.z, this.az)) {
       const h = this._hit;
-      const r = Math.max(0, h.t - T.hug);
+      const r = Math.max(0, h.t - this._hug);
       this._hugX = player.x + Math.cos(h.az) * r;
       this._hugY = player.y;
       this._hugZ = player.z + Math.sin(h.az) * r;
@@ -2306,9 +2337,9 @@ export class Creature3D {
     }
     const sf = this._surf2;
     if (this._findSurface(player.x, player.y, player.z, 40, sf) < Infinity) {
-      this._hugX = sf.x + sf.nx * T.hug;
+      this._hugX = sf.x + sf.nx * this._hug;
       this._hugY = player.y;
-      this._hugZ = sf.z + sf.nz * T.hug;
+      this._hugZ = sf.z + sf.nz * this._hug;
       this._hugOK = true;
       return;
     }
@@ -2622,7 +2653,7 @@ export class Creature3D {
     // The column arches off the wall mid-length and slowly heaves (breathing masonry).
     const heave = 1 + 0.18 * Math.sin(this._t * 0.9 + this.seed);
     for (let i = 1; i < SEG; i++) {
-      const a = T.arch * heave * Math.sin((Math.PI * i) / (SEG - 1)) * (i < 4 ? i / 4 : 1);
+      const a = this._arch * heave * Math.sin((Math.PI * i) / (SEG - 1)) * (i < 4 ? i / 4 : 1);
       sp[i * 3] += up[i * 3] * a;
       sp[i * 3 + 1] += up[i * 3 + 1] * a;
       sp[i * 3 + 2] += up[i * 3 + 2] * a;
@@ -2682,7 +2713,7 @@ export class Creature3D {
     L.hip.y = sp[i * 3 + 1] + ry * w + uy * 0.1;
     L.hip.z = sp[i * 3 + 2] + rz * w + uz * 0.1;
     const R = L.reach;
-    const down = T.hug + 0.4;
+    const down = this._hug + 0.4;
     L.d.x = L.hip.x + rx * R * 0.6 + fx * R * L.fwd - ux * down;
     L.d.y = L.hip.y + ry * R * 0.6 + fy * R * L.fwd - uy * down;
     L.d.z = L.hip.z + rz * R * 0.6 + fz * R * L.fwd - uz * down;
@@ -2833,7 +2864,7 @@ export class Creature3D {
     if (st === S.ATTACK && a.phase) {
       if (a.phase === 'windup') {
         const wk = U.clamp(a.t / Math.max(a.windup, 0.05), 0, 1);
-        rear = T.rear * Math.sin(wk * Math.PI * 0.5);
+        rear = this._rearMax * Math.sin(wk * Math.PI * 0.5);
         lunge = wk * 0.8;
       } else if (a.phase === 'strike') lunge = 1;
       else lunge = 1 - U.clamp(a.t / T.postStrike, 0, 1);
@@ -2901,13 +2932,18 @@ export class Creature3D {
 
   _emit(type, payload) {
     if (!this.active || !this.bus) return;
+    if (this.v) {
+      // variants share the Mason's sound / haptic / caption hooks, tagged so they can pitch up; no sightings or distant calls
+      if (type === 'creature:sighting' || type === 'creature:call') return;
+      payload.skit = true;
+    }
     this.bus.emit(type, payload);
   }
 
   _emitStep(x, y, z, intensity, distance, force) {
     if (!force && this._stepCd > 0) return;
     this._stepCd = T.stepInterval;
-    this._emit('creature:step', { x, y, z, intensity: U.clamp(intensity, 0, 1), distance });
+    this._emit('creature:step', { x, y, z, intensity: U.clamp(this.v ? intensity * 0.6 : intensity, 0, 1), distance });
   }
 
   _updateAudio(player) {

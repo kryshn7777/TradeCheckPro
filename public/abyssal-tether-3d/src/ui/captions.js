@@ -43,6 +43,10 @@ export const RULES = Object.freeze({
   vast: R('[Something vast passes]', 'creature', 1, 'sighting', 4, 4),
   retreat: R('[It withdraws]', 'creature', 0, 'retreat', 4),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
+  skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
+  skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
+  skitBite: R('[A sharp bite]', 'creature', 2, 'skitstrike', 1.2),
+  skitMiss: R('[Small jaws snap, missing]', 'creature', 1, 'skitstrike', 1.2),
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
@@ -91,6 +95,21 @@ const finite = (v) => typeof v === 'number' && isFinite(v);
  */
 export function captionForEvent(type, p) {
   const e = p || {};
+  if (e.skit) {
+    // WP-SKITTER: the small red hunters share the creature events, tagged skit:true
+    switch (type) {
+      case 'creature:attack':
+        return RULES.skitLunge;
+      case 'creature:burst':
+        return RULES.skitSteps;
+      case 'creature:strike':
+        return e.hit ? RULES.skitBite : RULES.skitMiss;
+      case 'creature:step':
+        return finite(e.distance) && e.distance < 26 && finite(e.intensity) && e.intensity > 0.25 ? RULES.skitSteps : null;
+      default:
+        return null;
+    }
+  }
   switch (type) {
     case 'creature:clip': {
       let ev = e.event == null || e.event === 'begin' ? 'start' : String(e.event);

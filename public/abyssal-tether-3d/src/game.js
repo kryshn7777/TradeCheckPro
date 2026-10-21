@@ -81,6 +81,7 @@ const MODULES = {
   level: './sim/level3d.js',
   levelData: './data/level-data-3d.js',
   creature: './sim/creature3d.js',
+  skitter: './sim/skitter3d.js',
   threat: './sim/threat3d.js',
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
@@ -191,6 +192,15 @@ function scopedBus(bus) {
     offs.length = 0;
   };
   return scope;
+}
+
+/** `?skitter=off` disables the skitterlings (sim and views). */
+function skitterOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]skitter=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
 }
 
 /** Copy of a difficulty preset whose creature never enters play (menu attract). */
@@ -796,6 +806,8 @@ export class Game3D {
     this.deathCause = null;
     this.deathT = 0;
     this.creatureView = null;
+    this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
+    this.skitterViews = [];
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
@@ -1349,8 +1361,10 @@ export class Game3D {
         (gltf) => {
           if (this.creatureView !== kitView) return;
           try {
+            const clones = this._cloneSkitterScenes(gltf); // BEFORE the Mason takes the meshes out of the glTF scene
             const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
             rig.bindBus(this.bus);
+            this.skitterViews = this._buildSkitterViews(gltf, clones);
             this._kitView = kitView;
             if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
             this.creatureView = rig;
@@ -1368,6 +1382,31 @@ export class Game3D {
     }
   }
 
+  /**
+   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded glTF (geometry, textures and clips are shared: no second
+   * download or GPU upload; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
+   */
+  _cloneSkitterScenes(gltf) {
+    const M = this.modules;
+    if (skitterOff() || !M.masonRigView || typeof M.masonRigView.cloneSkitterScenes !== 'function') return [];
+    try {
+      return M.masonRigView.cloneSkitterScenes(gltf, 2);
+    } catch (err) {
+      this._fault('skitterView', err);
+      return [];
+    }
+  }
+
+  _buildSkitterViews(gltf, clones) {
+    if (!clones || !clones.length) return [];
+    try {
+      return this.modules.masonRigView.makeSkitterViews(this.renderer.scene, gltf, clones);
+    } catch (err) {
+      this._fault('skitterView', err);
+      return [];
+    }
+  }
+
   /** The rigged view failed at run time: back to the kit CreatureView. */
   _fallbackToKit(rig) {
     const kit = this._kitView;
@@ -1378,6 +1417,8 @@ export class Game3D {
       /* already broken */
     }
     this._kitView = null;
+    for (const v of this.skitterViews) if (v.root.parent) v.root.parent.remove(v.root); // they share the rig's geometry: retire with it
+    this.skitterViews = [];
     if (kit) {
       if (kit.root && !kit.root.parent && this.renderer && this.renderer.scene) this.renderer.scene.add(kit.root);
       this.creatureView = kit;
@@ -1500,7 +1541,7 @@ export class Game3D {
         this.flash = Math.max(this.flash, 0.55);
         return;
       }
-      if (this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(0.7, 150);
+      if (this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(e && e.skit ? 0.4 : 0.7, e && e.skit ? 90 : 150);
     });
     bus.on('creature:strike', (e) => {
       if (!this._inRun() || (e && e.hit) || !this._creatureNear(e, 7)) return;
@@ -1509,7 +1550,7 @@ export class Game3D {
       this.flash = Math.max(this.flash, 0.18);
     });
     bus.on('creature:burst', (e) => {
-      if (this._inRun() && this._creatureNear(e, CREATURE_HAPTIC_RANGE)) this._hapticBoth(0.35, 80);
+      if (this._inRun() && this._creatureNear(e, e && e.skit ? 14 : CREATURE_HAPTIC_RANGE)) this._hapticBoth(e && e.skit ? 0.2 : 0.35, 60);
     });
     bus.on('trigger:rumble', (e) => {
       if (!this._inRun()) return;
@@ -1840,6 +1881,7 @@ export class Game3D {
 
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
+    this._try('skitter', () => this.skitters && this.skitters.reset());
     this._face(finiteOr(sp.yaw, 0));
 
     this.settings.lastDifficulty = key;
@@ -1922,6 +1964,7 @@ export class Game3D {
     if (idx !== this.sectionIndex) this._enterSection(idx, 'respawn');
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
+    this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.flash = 0;
@@ -2008,6 +2051,7 @@ export class Game3D {
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._enterSection(idx, 'warp');
     this._try('creature', () => this.creature.onRespawn(p));
+    this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
@@ -2088,6 +2132,15 @@ export class Game3D {
       }
     }
     if (!this.creature) this.creature = nullCreature();
+    this.skitters = null;
+    const SkitterCls = M.skitter && M.skitter.SkitterGroup;
+    if (typeof SkitterCls === 'function' && !skitterOff()) {
+      try {
+        this.skitters = new SkitterCls(lvl, cdiff, this._runBus, { seed: (0x9e3779b1 * (this._runCount + 1)) >>> 0 });
+      } catch (err) {
+        this._fault('skitter', err);
+      }
+    }
     const tc = this._threatCtx;
     tc.player = this.player;
     tc.creature = this.creature;
@@ -2224,6 +2277,7 @@ export class Game3D {
     this.diff = DIFFICULTY[key];
     this._buildWorld(this.diff, true);
     this._try('creature', () => this.creature.reset(this.player));
+    this._try('skitter', () => this.skitters && this.skitters.reset());
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this.hidePlayer = true;
     this.time = 0;
@@ -2676,6 +2730,7 @@ export class Game3D {
     this._creatureSection = idx;
     const sec = this.level.sections[idx];
     this._try('creature', () => this.creature.setSection(idx, sec, this.player));
+    this._try('skitter', () => this.skitters && this.skitters.setSection(idx, this.player));
   }
 
   _queueHint(hint) {
@@ -3037,6 +3092,23 @@ export class Game3D {
     } catch (err) {
       this._fault('creature', err);
     }
+    this._updateSkitters(dt);
+  }
+
+  /** WP-SKITTER: the little hunters step with the Mason; a hit costs health (health3d), and only an empty bar kills. */
+  _updateSkitters(dt) {
+    const g = this.skitters;
+    if (!g || !g.enabled) return;
+    try {
+      g.update(dt, this.player, this._runClock);
+      const dmg = g.takeDamage();
+      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health) {
+        const h = this.physics.health;
+        if (h.damage(dmg, 'skitter', 0)) this.physics.kill(this.player, this.tethers, 'creature');
+      }
+    } catch (err) {
+      this._fault('skitter', err);
+    }
   }
 
   _updateThreat(dt) {
@@ -3232,6 +3304,20 @@ export class Game3D {
       } catch (err) {
         this._fault('creatureView', err);
         if (cv.isRig) this._fallbackToKit(cv);
+      }
+    }
+    const sv = this.skitterViews;
+    if (sv.length && this.skitters) {
+      const cam = this.renderer && this.renderer.camera;
+      for (let i = 0; i < sv.length; i++) {
+        try {
+          sv[i].update(this.skitters.slots[i] || null, dt, cam);
+        } catch (err) {
+          this._fault('skitterView', err);
+          sv[i].root.visible = false;
+          sv.splice(i, 1); // a broken view retires; the sim keeps running (no visuals, only sound)
+          i--;
+        }
       }
     }
     // A HandsView the input manager created is updated by the input manager.
@@ -3761,6 +3847,39 @@ export class Game3D {
         clear: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.clear()),
         set: (patch) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.set(patch)),
         state: () => (this.creatureView && this.creatureView.debug ? this.creatureView.debug.state() : { rig: false }),
+        // WP-SKITTER: placeSkitter({distance, height, yaw, up, state, count}) puts synthetic skitterlings near the player (screenshots);
+        // clearSkitter() returns them to the sim; spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
+        placeSkitter: (o) => {
+          const sv = this.skitterViews;
+          const out = [];
+          const n = Math.max(1, Math.min(sv.length, (o && o.count) | 0 || 1));
+          for (let i = 0; i < n; i++) {
+            const oo = Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {});
+            if (i) oo.yaw = (oo.yaw || 0) + 38 * i;
+            if (i) oo.distance = (oo.distance == null ? 4 : oo.distance) + 1.5 * i;
+            out.push(sv[i].debug.place(oo));
+          }
+          return out;
+        },
+        clearSkitter: () => {
+          for (const v of this.skitterViews) v.debug.clear();
+          return true;
+        },
+        spawnSkitter: (n) => {
+          const g = this.skitters;
+          return g && g.enabled ? g.force(Math.max(1, Math.min(2, n | 0 || 1)), this.player) : 0;
+        },
+        skitter: () => ({
+          enabled: !!(this.skitters && this.skitters.enabled),
+          off: skitterOff(),
+          views: this.skitterViews.length,
+          alive: this.skitters ? this.skitters.aliveCount : 0,
+          hits: this.skitters ? this.skitters.hits : 0,
+          slots: this.skitters
+            ? this.skitters.slots.map((c) => ({ on: c.on, state: c.state, distance: Math.round(c.distance), speed: +c.speed.toFixed(2), visible: c.body.visible }))
+            : [],
+          views_: this.skitterViews.map((v) => ({ visible: v.root.visible, lod: v._lod, calls: v.info.drawCalls, tris: v.info.triangles })),
+        }),
         view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
       },
       state: () => this.debugState(),

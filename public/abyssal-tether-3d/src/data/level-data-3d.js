@@ -867,7 +867,9 @@ CL('c-s8-w3', 'w', -12, -8, -1, -546.4, -535.2);
 // =============================================================================
 // Sections (themes, creature behaviour, hints, triggers)
 // =============================================================================
-const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0) => ({ mode, lethal, speedMul, burstRate, spawnOffsetY });
+const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitter = null) => (skitter ? { mode, lethal, speedMul, burstRate, spawnOffsetY, skitter } : { mode, lethal, speedMul, burstRate, spawnOffsetY });
+// WP-SKITTER: the Ossuary Column's little kin (small, red, 1.5x faster hunters) per difficulty; deeper sections of Chapter I only.
+const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
 const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
 const sections = [
@@ -1003,7 +1005,7 @@ const sections = [
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
-    creature: creature('hunt', true, 120),
+    creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
     hints: [], // the fork is briefed in S5 (see its second hint)
     triggers: [
       { y: -209, name: 'call', data: { intensity: 0.9 } },
@@ -1016,7 +1018,7 @@ const sections = [
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
     theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
-    creature: creature('frenzy', true, 110),
+    creature: creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)),
     hints: [
       {
         y: -287, duration: 7,
@@ -1036,7 +1038,7 @@ const sections = [
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
     theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
-    creature: creature('escape', true, 100),
+    creature: creature('escape', true, 100, 1, 0, skit(1, 1, 2)),
     hints: [
       {
         y: -548, duration: 5,
