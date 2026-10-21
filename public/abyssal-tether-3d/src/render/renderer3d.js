@@ -127,7 +127,7 @@ const SURFACE_TIERS = {
   high: { parallax: 1, parMax: 13, parFade: 5, steps: 10, stepMax: 5, stepFade: 1.8, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
 };
 // Parallax-corrected probe box: the shaft box is inflated a little so the far window overhead and the lancets ring stay beyond the walls.
-const PROBE_BOX_GROW = 1.25;
+const PROBE_BOX_GROW = 1.0;
 const PROBE_BOX_EASE = 3; // 1/s: the box eases between sections (the theme blend band is ~18 m wide)
 // WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
 // governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
@@ -742,6 +742,8 @@ export class Renderer3D {
     this._fogInfo.near = fog.near;
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
+    this.fx.godRays.materials = this.materials;
+    this.fx.godRays.setQuality(this.lighting.tier, this.governor.level, this.settings && this.settings.reducedEffects);
     this.fx.update(d, game, head, this.threat);
     this.droppedProps.update(d, game);
     this.contactShadows.update(d, game, head, this);

@@ -25,11 +25,11 @@ function blankClimb() {
 }
 
 /** A world: level + physics + tethers + a player at (x, y, z). */
-function world(x, y, z, diffKey = 'normal', variant = 'normal') {
+function world(x, y, z, diffKey = 'normal', variant = 'normal', data) {
   const bus = new EventBus();
   const ev = [];
   for (const t of ['climb:grab', 'climb:release', 'climb:scrape', 'climb:strain', 'climb:slip', 'climb:hop', 'health:damage', 'player:land', 'player:wallhit']) bus.on(t, (p) => ev.push([t, p]));
-  const level = new Level3D(undefined, variant);
+  const level = new Level3D(data, variant);
   const diff = DIFFICULTY[diffKey];
   const th = new TetherSystem(level, diff, bus, {});
   const ph = new Physics3D(level, diff, bus);
@@ -374,6 +374,172 @@ function holdOnEast(w, hands = ['right']) {
   c2.stamina = 0.1;
   c2.restore(s);
   ok(c2.stamina === 0.5, 'snapshot / restore round-trips the stamina');
+}
+
+// ---- 7. Procedural edge holds (any exposed solid edge) ---------------------------------------------------------------------------
+// A synthetic level: a ledge slab (top lip y = 10 along x at z = 0, outward +z), a pillar (6..7 x 6..7, y 0..20), a crumbling slab, a
+// spike patch beside a second pillar, and an authored zone on a wall to compare the stamina rates.
+const SYN = {
+  name: 'syn',
+  sections: [{ yTop: 60, yBottom: -20, checkpoint: { x: 0, y: 50, z: 0, yaw: 0 } }],
+  solids: [
+    { id: 'ledge', minX: -3, maxX: 3, minY: 9, maxY: 10, minZ: -3, maxZ: 0, kind: 'stone' },
+    { id: 'pillar', minX: 6, maxX: 7, minY: 0, maxY: 20, minZ: 6, maxZ: 7, kind: 'pillar' },
+    { id: 'crumb', minX: -20, maxX: -16, minY: 9, maxY: 10, minZ: -3, maxZ: 3, kind: 'crumble' },
+    { id: 'pillar2', minX: 16, maxX: 17, minY: 0, maxY: 20, minZ: 6, maxZ: 7, kind: 'pillar' },
+    { id: 'wall', minX: -31, maxX: -30, minY: -10, maxY: 40, minZ: -10, maxZ: 10, kind: 'wall' },
+  ],
+  hazards: [{ id: 'sp', minX: 15.4, maxX: 15.6, minY: 5, maxY: 6, minZ: 5.9, maxZ: 7.1, kind: 'spikes' }],
+  climb: [{ id: 'zw', kind: 'masonry', minX: -30, maxX: -29.6, minY: 0, maxY: 30, minZ: -5, maxZ: 5, n: { x: 1, y: 0, z: 0 }, face: -30 }],
+};
+{
+  const L1 = new Level3D(SYN, 'normal');
+  const L2 = new Level3D(SYN, 'normal');
+  const ser = (L) => JSON.stringify(L.edges.map((e) => [e.id, e.ea, e.minX, e.minY, e.minZ, e.maxX, e.maxY, e.maxZ, e.lip, e.src.id]));
+  ok(L1.edges.length > 0 && ser(L1) === ser(L2), `edge extraction is deterministic (${L1.edges.length} edges on the synthetic level)`);
+  const R = new Level3D(undefined, 'normal');
+  const R2 = new Level3D(undefined, 'normal');
+  ok(R.edges.length > 300 && ser(R) === ser(R2), `Chapter I yields ${R.edges.length} edges, identical on a rebuild`);
+  ok(!L1.edges.some((e) => e.src.kind === 'crumble'), 'a crumbling ledge offers no edge');
+  const ledge = L1.edges.find((e) => e.lip && e.src.id === 'ledge' && e.minZ === 0 && e.ea === 0);
+  ok(ledge && ledge.ea === 0 && ledge.maxY === 10 && ledge.minZ === 0 && ledge.minX === -3 && ledge.maxX === 3 && ledge.mz === -1, 'the ledge top lip is a standable lip with the mantle direction onto the slab');
+  ok(L1.edges.some((e) => e.ea === 1 && e.src.id === 'pillar' && e.len === 20), 'a pillar has full-height vertical corner edges');
+  ok(!L1.edges.some((e) => e.ea === 1 && e.src.id === 'pillar' && e.minZ === 6 && e.minX === 6 && e.lip), 'vertical edges are never lips');
+  let clear = true;
+  for (const e of L1.edges) for (const h of L1.hazards) if (Math.hypot(Math.max(h.minX - e.maxX, e.minX - h.maxX, 0), Math.max(h.minY - e.maxY, e.minY - h.maxY, 0), Math.max(h.minZ - e.maxZ, e.minZ - h.maxZ, 0)) < 0.6 - 1e-6) clear = false;
+  ok(clear && L1.edges.some((e) => e.src.id === 'pillar2'), 'no edge hold within 0.6 m of a hazard volume (the pillar beside the spikes keeps its far stretches)');
+  let rclear = true;
+  for (const e of R.edges) for (const h of R.hazards) if (Math.hypot(Math.max(h.minX - e.maxX, e.minX - h.maxX, 0), Math.max(h.minY - e.maxY, e.minY - h.maxY, 0), Math.max(h.minZ - e.maxZ, e.minZ - h.maxZ, 0)) < 0.6 - 1e-6) rclear = false;
+  ok(rclear, 'Chapter I: no edge hold within 0.6 m of a hazard');
+  const out = [];
+  R.edgeNear(0, 20, 0, 0.5, out);
+  ok(out.length === 0, 'edgeNear finds nothing in open air');
+  // query cost and no allocation growth
+  const t0 = process.hrtime.bigint();
+  let hits = 0;
+  for (let i = 0; i < 100000; i++) hits += R.edgeNear(Math.sin(i) * 10, -(i % 500), Math.cos(i) * 10, 0.62, out).length;
+  const us = Number(process.hrtime.bigint() - t0) / 1e3 / 100000;
+  ok(us < 20 && hits >= 0, `edgeNear costs ${us.toFixed(2)} us per query (< 20)`);
+}
+{
+  // nearest-edge query in VR: a palm 0.2 m off a pillar's vertical corner hovers on the corner line; mid-face it does not
+  const w = world(6.6, 8, 5.2, 'normal', 'normal', SYN);
+  w.p.grounded = false;
+  setHand(w, 'right', -0.35, 0.3, 0.6, false); // hand at (6.25, 8.3, 5.8): 0.32 from the vertical corner line (6, 6)
+  w.cl.probe(w.p, w.c);
+  const r = w.cl.hands.right;
+  ok(r.hover, 'a palm near a pillar edge hovers');
+  ok(!r.hoverIn, 'beyond the 0.24 m grab reach it only hovers');
+  setHand(w, 'right', -0.1, 0.3, 0.7, false); // (6.5, 8.3, 5.9): mid-face, 0.5 from either corner line
+  w.cl.probe(w.p, w.c);
+  ok(!w.cl.hands.right.hover, 'a palm mid-face (0.5 m from either corner) does not hover: plain faces are not holds');
+  setHand(w, 'right', -0.4, 0.3, 0.7, false); // (6.2, 8.3, 5.9): 0.22 from the corner line (6, 6) -> in reach
+  w.cl.probe(w.p, w.c);
+  const q = w.cl.hands.right;
+  ok(q.hoverIn && Math.abs(q.hx - 6) < 1e-9 && Math.abs(q.hz - 6) < 1e-9 && Math.abs(q.hy - 8.3) < 1e-9, 'the hold is the closest point of the edge segment (the corner line at the palm height)');
+  setHand(w, 'right', -0.4, 0.3, 0.7, true);
+  frame(w);
+  ok(w.cl.holding && count(w, 'climb:grab', (e) => e.edge === true) === 1 && w.cl.hands.right.zone.edge === true, 'grip takes the edge hold (climb:grab carries edge: true)');
+}
+{
+  // stamina: edge-only grip drains edgeMul x the hang rate and gets no two-hand discount; an authored zone keeps its rate
+  const hang = (build, two) => {
+    const w = build();
+    const s0 = w.cl.stamina;
+    frames(w, 80); // 1 s
+    return { w, d: s0 - w.cl.stamina, two };
+  };
+  const edgeWorld = (two) => () => {
+    const w = world(6.6, 8, 5.2, 'normal', 'normal', SYN);
+    w.p.grounded = false;
+    w.p.y = 8;
+    setHand(w, 'right', -0.4, 0.3, 0.7, true);
+    if (two) setHand(w, 'left', -0.4, 0.3, 0.7, true);
+    frame(w);
+    w.p.grounded = false;
+    return w;
+  };
+  const a = hang(edgeWorld(false));
+  ok(a.w.cl.holding && a.w.cl.edgeHold && near(a.d, K.hangDrain * K.edgeMul, 0.004), `edge hang drains ${(a.d).toFixed(4)}/s ~ hangDrain x ${K.edgeMul}`);
+  const b = hang(edgeWorld(true));
+  ok(b.w.cl.gripCount === 2 && near(b.d, K.hangDrain * K.edgeMul, 0.004), 'two hands on edges: no two-hand discount');
+  const z = world(-29.2, 8, 0, 'normal', 'normal', SYN);
+  z.p.grounded = false;
+  setHand(z, 'right', -0.45, 0.3, 0, true);
+  frame(z);
+  z.p.grounded = false;
+  const s0 = z.cl.stamina;
+  frames(z, 80);
+  ok(z.cl.holding && !z.cl.edgeHold && near(s0 - z.cl.stamina, K.hangDrain, 0.004), 'an authored zone keeps the plain rate');
+}
+{
+  // VR lip mantle: hanging under the lip, the hand pulled down carries the body onto the ledge
+  const w = world(0, 9.55, 0.5, 'normal', 'normal', SYN);
+  w.p.grounded = false;
+  setHand(w, 'right', 0, 0.45, -0.4, true);
+  frame(w);
+  ok(w.cl.holding && w.cl.hands.right.zone.lip === true, 'the hand takes the ledge lip');
+  for (let i = 0; i < 60; i++) {
+    setHand(w, 'right', 0, 0.45 - 0.45 * Math.min(1, (i + 1) / 30), -0.4, true);
+    frame(w);
+  }
+  frames(w, 60);
+  ok(count(w, 'climb:release', (e) => e.reason === 'mantle') >= 1 && !w.cl.holding, 'pulling over the lip ends in a mantle release');
+  ok(w.p.grounded && near(w.p.y, 10 + CONFIG.player.radius, 0.06) && w.p.z < -0.3 && w.ph.health.hp === 1, `and the body stands on the ledge (y ${w.p.y.toFixed(2)}, z ${w.p.z.toFixed(2)}), unhurt`);
+  const lo = world(0, 8.9, 0.5, 'normal', 'normal', SYN); // too low: 1.1 m under the lip is an arm's length away
+  lo.p.grounded = false;
+  setHand(lo, 'right', 0, 1.1, -0.4, true);
+  frame(lo);
+  for (let i = 0; i < 40; i++) {
+    setHand(lo, 'right', 0, 1.1 - 0.5 * Math.min(1, (i + 1) / 30), -0.4, true);
+    frame(lo);
+  }
+  ok(!lo.cl.mantling && count(lo, 'climb:release', (e) => e.reason === 'mantle') === 0, 'a body far below the lip is not mantled');
+}
+{
+  // desktop: cling to the unauthored pillar corner, climb it, and mantle over the ledge lip with W / Space
+  const w = world(6.0 - 0.2, 8, 5.62, 'normal', 'normal', SYN); // beside the pillar's z = 6 face, 0.38 from it, 0.2 from the corner edge line
+  w.p.grounded = false;
+  w.c.grab.left = w.c.grab.right = true;
+  frame(w);
+  ok(w.cl.holding && w.cl.mode === 2 && w.cl.hands.right.zone.edge === true, 'desktop: F clings to an unauthored vertical edge');
+  const y0 = w.p.y;
+  w.c.fwd = 1;
+  frames(w, 40);
+  ok(w.p.y > y0 + 0.6 && w.cl.holding, `desktop: W climbs the edge (+${(w.p.y - y0).toFixed(2)} m in 0.5 s)`);
+  const dr0 = w.cl.stamina;
+  frames(w, 40);
+  ok(w.cl.stamina < dr0 && w.cl.edgeHold, 'and it drains as an edge hold');
+  const m = world(0, 9.6, 0.46, 'normal', 'normal', SYN);
+  m.p.grounded = false;
+  m.c.grab.left = m.c.grab.right = true;
+  frame(m);
+  ok(m.cl.holding && m.cl.hands.right.zone.lip === true, 'desktop: F under the ledge lip takes the lip');
+  m.c.fwd = 1;
+  frames(m, 90);
+  ok(count(m, 'climb:release', (e) => e.reason === 'mantle' && e.last) === 1 && m.p.z < -0.3 && near(m.p.y, 10 + CONFIG.player.radius, 0.08), `desktop: W with the head at the lip mantles onto the ledge (y ${m.p.y.toFixed(2)}, z ${m.p.z.toFixed(2)})`);
+  const sp = world(0, 9.6, 0.46, 'normal', 'normal', SYN);
+  sp.p.grounded = false;
+  sp.c.grab.left = sp.c.grab.right = true;
+  frame(sp);
+  sp.it.jumpPressed = true;
+  frames(sp, 90);
+  ok(count(sp, 'climb:release', (e) => e.reason === 'mantle' && e.last) === 1 && count(sp, 'climb:hop') === 0 && sp.p.z < -0.3, 'desktop: Space with the head at the lip also mantles (instead of hopping off)');
+  const lowc = world(6.0 - 0.2, 8, 5.62, 'normal', 'normal', SYN);
+  lowc.p.grounded = false;
+  lowc.c.grab.left = lowc.c.grab.right = true;
+  frame(lowc);
+  lowc.it.jumpPressed = true;
+  frame(lowc);
+  ok(count(lowc, 'climb:hop') === 1 && count(lowc, 'climb:release', (e) => e.reason === 'mantle') === 0, 'desktop: Space on a plain edge (no lip) still hops off');
+}
+{
+  // a crumbled ledge's edges are gone from the query at grip time
+  const w = world(-15.7, 9.6, 0, 'normal', 'normal', SYN);
+  w.p.grounded = false;
+  w.c.grab.left = w.c.grab.right = true;
+  frame(w);
+  ok(!w.cl.holding, 'a crumbling ledge cannot be gripped');
 }
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED` : '\nclimb: all checks passed');

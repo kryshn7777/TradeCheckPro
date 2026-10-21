@@ -127,7 +127,15 @@ export const CONFIG = {
     hangDrain: 0.03, // hanging by a hand in the air (~33 s from full)
     moveDrain: 0.05, // extra while the body moves at moveRef m/s (climbing; VR: pulling)
     moveRef: 1.4,
-    twoHand: 0.62, // x the drain with both hands on holds
+    twoHand: 0.62, // x the drain with both hands on holds (authored holds only: two hands on edges are no steadier)
+    edgeMul: 1.5, // x the drain on a procedural EDGE hold (any exposed solid edge): low-grade; authored zones keep their rate
+    edgeLink: 0.7, // m: two edge holds this close are one continuous run (the verifier's 'max continuous edge climb')
+    mantleBelow: 0.6, // m: a lip mantle starts when the body centre is within this below the lip (VR: and pulled up)
+    mantleVy: 0.5, // m/s: VR pull speed (low-passed) that counts as pulling over the lip
+    mantleHead: 0.25, // m: desktop - the head (eye) this near the lip height (or above) allows W / Space to mantle
+    mantleUp: 3.4, // m/s climbing over the lip
+    mantleIn: 2.2, // m/s onto the ledge
+    mantleTime: 1.1, // s: a mantle that has not finished by now is abandoned
     wetMul: 1.7, // x on a wet zone
     regenGround: 0.4, // standing on solid ground (a full refill in ~2.5 s)
     regenAir: 0.05, // swinging on a rope / falling (a slow breath)

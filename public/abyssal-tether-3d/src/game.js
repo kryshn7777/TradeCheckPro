@@ -1364,7 +1364,10 @@ export class Game3D {
             const clones = this._cloneSkitterScenes(gltf); // BEFORE the Mason takes the meshes out of the glTF scene
             const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
             rig.bindBus(this.bus);
+            const dust = this.renderer && this.renderer.fx && this.renderer.fx.creatureDust;
+            rig.bindDust(dust);
             this.skitterViews = this._buildSkitterViews(gltf, clones);
+            for (const v of this.skitterViews) v.bindDust(dust);
             this._kitView = kitView;
             if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
             this.creatureView = rig;
@@ -1588,6 +1591,9 @@ export class Game3D {
     });
     bus.on('climb:hop', () => {
       if (this._inRun()) this._hapticBoth(0.35, 50);
+    });
+    bus.on('climb:mantle', () => {
+      if (this._inRun()) this._hapticBoth(0.3, 60);
     });
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;

@@ -330,6 +330,87 @@ function climbChecks(L, P) {
   out.perSection.forEach((n, i) => {
     if (n < 1 || n > 4) P(`section ${L.sections[i].id} has ${n} climb zones (want 1-4)`);
   });
+  out.edges = edgeChecks(L, P);
+  return out;
+}
+
+/** Edge extent along y, in m (a degenerate box). */
+const EDGE_WARN_RUN = 14; // m: a continuous run of edge holds taller than this is reported as a warning
+
+/**
+ * WP-CLIMB, procedural edge holds (sim/climbEdges.js): sanity of the derived set. Counts, hazard clearance (0.6 m, the rule the
+ * authored zones obey), no hold buried in another solid, no hold on a crumbling solid, and the SPARSENESS report: the tallest
+ * continuous run of edge holds. A run is a set of non-lip edges chained hand to hand (gaps <= K.edgeLink); standable lips are
+ * rests (stamina refills) and break a run. Stamina caps a free climb on edges at 1 / cost-per-metre regardless; runs >= 14 m
+ * are listed as a warning, not a failure.
+ */
+function edgeChecks(L, P) {
+  if (!Array.isArray(L.edges) || typeof L.edgeNear !== 'function') return null;
+  const K = CONFIG.climb;
+  const E = L.edges;
+  const out = { count: E.length, lips: 0, vertical: 0, maxRun: 0, maxRunAt: null, staminaRun: 0, warn: [] };
+  const scratch = [];
+  const box = (x, y, z) => L.querySolids(x - 0.001, y - 0.001, z - 0.001, x + 0.001, y + 0.001, z + 0.001, scratch);
+  for (const e of E) {
+    if (e.lip) out.lips++;
+    if (e.ea === 1) out.vertical++;
+    if (e.src.kind === 'crumble') P(`edge hold ${e.id} sits on crumbling solid ${e.src.id}`);
+    for (const hz of L.hazards) {
+      const d = Math.hypot(Math.max(hz.minX - e.maxX, 0, e.minX - hz.maxX), Math.max(hz.minY - e.maxY, 0, e.minY - hz.maxY), Math.max(hz.minZ - e.maxZ, 0, e.minZ - hz.maxZ));
+      if (d < 0.6 - 1e-6) P(`edge hold ${e.id} is within 0.6 m of hazard ${hz.id}`);
+    }
+    // the mid point nudged out along the bisector must be open (a hold beside solid rock is a wall, not an edge)
+    const mx = (e.minX + e.maxX) / 2 + e.ux * 0.03;
+    const my = (e.minY + e.maxY) / 2 + e.uy * 0.03;
+    const mz = (e.minZ + e.maxZ) / 2 + e.uz * 0.03;
+    for (const o of box(mx, my, mz)) if (mx > o.minX && mx < o.maxX && my > o.minY && my < o.maxY && mz > o.minZ && mz < o.maxZ) P(`edge hold ${e.id} is buried in solid ${o.id}`);
+  }
+  // runs: union-find over the non-lip edges within K.edgeLink of each other
+  const idx = new Map();
+  const nodes = [];
+  for (const e of E) if (!e.lip) idx.set(e, nodes.push(e) - 1);
+  const parent = nodes.map((_, i) => i);
+  const find = (i) => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]];
+      i = parent[i];
+    }
+    return i;
+  };
+  const near = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const e = nodes[i];
+    const cx = (e.minX + e.maxX) / 2;
+    const cy = (e.minY + e.maxY) / 2;
+    const cz = (e.minZ + e.maxZ) / 2;
+    const r = Math.hypot(e.maxX - e.minX, e.maxY - e.minY, e.maxZ - e.minZ) / 2 + K.edgeLink;
+    L.edgeNear(cx, cy, cz, r, near);
+    for (const o of near) {
+      if (o === e || !idx.has(o)) continue;
+      const d = Math.hypot(Math.max(o.minX - e.maxX, 0, e.minX - o.maxX), Math.max(o.minY - e.maxY, 0, e.minY - o.maxY), Math.max(o.minZ - e.maxZ, 0, e.minZ - o.maxZ));
+      if (d <= K.edgeLink) parent[find(i)] = find(idx.get(o));
+    }
+  }
+  const comp = new Map();
+  for (let i = 0; i < nodes.length; i++) {
+    const r = find(i);
+    const c = comp.get(r) || { lo: Infinity, hi: -Infinity, n: 0 };
+    c.lo = Math.min(c.lo, nodes[i].minY);
+    c.hi = Math.max(c.hi, nodes[i].maxY);
+    c.n++;
+    comp.set(r, c);
+  }
+  const runs = [];
+  for (const c of comp.values()) runs.push({ h: c.hi - c.lo, lo: c.lo, hi: c.hi, n: c.n });
+  runs.sort((a, b) => b.h - a.h);
+  if (runs.length) {
+    out.maxRun = Math.round(runs[0].h * 10) / 10;
+    out.maxRunAt = `y ${runs[0].lo.toFixed(1)}..${runs[0].hi.toFixed(1)} (${runs[0].n} edges)`;
+  }
+  const dm = DIFFICULTY.abyss.climb ? DIFFICULTY.abyss.climb.drainMul : 1;
+  out.staminaRun = Math.round((1 / (((K.hangDrain + K.moveDrain) / K.moveRef) * K.edgeMul * dm)) * 10) / 10; // m of edge-only climbing a full grip pays for (Abyss)
+  out.runsOver = runs.filter((r) => r.h >= EDGE_WARN_RUN).length;
+  for (const r of runs.slice(0, 3)) if (r.h >= EDGE_WARN_RUN) out.warn.push(`WARN edge-hold run of ${r.h.toFixed(1)} m at y ${r.lo.toFixed(1)}..${r.hi.toFixed(1)} (${r.n} edges, >= ${EDGE_WARN_RUN} m; stamina ends a free edge-only climb after ~${out.staminaRun} m)`);
   return out;
 }
 
@@ -552,6 +633,11 @@ async function verifyChapter(ch) {
   for (const v of VARIANTS) {
     report.integrity[v] = integrity(ch, v);
     console.log(`  ${v}: ${report.integrity[v].ok ? 'OK' : 'PROBLEMS'}  recovery anchors: ${report.integrity[v].recovery.join(', ')}`);
+    const eg = report.integrity[v].climb ? report.integrity[v].climb.edges : null;
+    if (eg) {
+      console.log(`     edge holds: ${eg.count} (${eg.lips} lips, ${eg.vertical} vertical); max continuous edge-climb run ${eg.maxRun} m ${eg.maxRunAt || ''}; ${eg.runsOver} run(s) >= ${EDGE_WARN_RUN} m; a full grip pays for ~${eg.staminaRun} m of edge-only climbing (Abyss)`);
+      for (const w of eg.warn) console.log(`     ${w}`);
+    }
   }
 
   console.log('== Full runs (spawn → goal, one continuous run)');

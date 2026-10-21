@@ -77,8 +77,13 @@ export const LOOK = {
   uVG: { value: 0.3 },
   uTime: { value: 0.0 },
   // Reflection (render/envProbe.js): x global scale of the procedural environment (0 = off: the fetch is skipped),
-  // y wet boost (a wet surface reflects 1 + y times more), z how far the water film flattens the normal used for it.
+  // y wet boost (a wet surface reflects 1 + y times more), z how far the water film flattens the normal used for it,
+  // w streak of the reflection along the plane of incidence on wet floors (0 = off).
   uEnvK: { value: new THREE.Vector4(1, 3, 0.6, 0) },
+  // Average radiance of the shown reflection probe (up / horizon / down), for the launcher gauge glass (gearSurface.js).
+  uSkyUp: { value: new THREE.Color(0.05, 0.07, 0.08) },
+  uSkyHz: { value: new THREE.Color(0.04, 0.05, 0.05) },
+  uSkyDn: { value: new THREE.Color(0.01, 0.01, 0.01) },
   // Wet film glint from the carried lantern (a smooth clear-coat lobe on the geometric normal, no MeshPhysicalMaterial).
   uLanternW: { value: new THREE.Vector3(0, 1e5, 0) }, // world position
   uLanternC: { value: new THREE.Vector4(0, 0, 0, 0) }, // rgb colour × candela, a = film strength (0 = off)
@@ -885,6 +890,24 @@ vec3 atIBLRadiance( const in vec3 viewDir, const in vec3 normal, const in float 
 	}
 	return textureCubeUV( envMap, envMapRotation * rv, roughness ).rgb * envMapIntensity;
 }
+// Wet floors: the micro-roughness of a film smears the reflection along the plane of incidence (the streaked, stretched look of a
+// wet floor): three taps tilted by +-s in that plane (high tier only: stretch 0 = the plain fetch).
+vec3 atIBLRadianceW( const in vec3 viewDir, const in vec3 normal, const in float roughness, const in vec3 wpos, const in float stretch ) {
+	vec3 c0 = atIBLRadiance( viewDir, normal, roughness, wpos );
+	if ( stretch < 0.02 ) return c0;
+	vec3 rv = reflect( - viewDir, normal );
+	vec3 t = normal - rv * dot( normal, rv );
+	float tl = length( t );
+	if ( tl < 1e-3 ) return c0;
+	t /= tl;
+	float s = stretch * ( 0.045 + 0.35 * roughness );
+	return 0.5 * c0 + 0.25 * ( atIBLRadiance( viewDir, normalize( normal + t * s ), roughness, wpos ) + atIBLRadiance( viewDir, normalize( normal - t * s ), roughness, wpos ) );
+}
+// Specular occlusion (Lagarde / Rousiers): how much of the reflection lobe the baked occlusion really blocks depends on the view
+// angle and the roughness (a mirror at a grazing angle looks away from a crevice; a rough lobe sees all of it).
+float atSpecOcc( const in float nv, const in float ao, const in float rough ) {
+	return clamp( pow( nv + ao, exp2( - 16.0 * rough - 1.0 ) ) - 1.0 + ao, 0.0, 1.0 );
+}
 #endif
 `;
 
@@ -1094,7 +1117,9 @@ const LIGHTS_MAPS_LIT = `
 	if ( uEnvK.x * envMapIntensity > 0.0005 ) {
 		vec3 atEn = normalize( mix( normal, nonPerturbedNormal, atWet * uEnvK.z ) );
 		#ifdef ENVMAP_TYPE_CUBE_UV
-		radiance += atIBLRadiance( geometryViewDir, atEn, material.roughness, vAtW ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y + atPud * uPudK.w ) * mix( 1.0, atGv.a, uGIK.y ) );
+		float atSO = mix( 1.0, atSpecOcc( saturate( dot( atEn, geometryViewDir ) ), atGv.a, material.roughness ), uGIK.y );
+		float atFlr = saturate( ( dot( nonPerturbedNormal, viewMatrix[ 1 ].xyz ) - 0.7 ) * 3.3 );
+		radiance += atIBLRadianceW( geometryViewDir, atEn, material.roughness, vAtW, uEnvK.w * saturate( atWet * 1.6 + atPud ) * atFlr ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y + atPud * uPudK.w ) * atSO );
 		#else
 		radiance += getIBLRadiance( geometryViewDir, atEn, material.roughness ) * ( uEnvK.x * ( 1.0 + atWet * uEnvK.y ) * mix( 1.0, atGv.a, uGIK.y ) );
 		#endif
