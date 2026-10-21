@@ -100,4 +100,4 @@ Status: DONE = in the build (light-checked, headset-unverified) · PART = partly
 | Real-time shadows for key objects | PART | cheap blob/contact shadows + lantern-lit key props; no shadow-map pass on Quest budget -> GFX-PARITY decides |
 | WebXR-compatible post-processing | N/A (cost) | no full-screen passes; tonemap/grade in-shader (LOOK uniforms), vignette as shader/quad |
 | Smooth locomotion, stable head tracking | DONE | 1:1 height, comfort options in WP-UX |
-
+| WP-GFX-PARITY addendum 2026-10-21 (owner: 'Add parallax mapping to Floors') | steep parallax occlusion mapping on floor tops (quest 6 steps/3 m, high 10/5 m, low 1-tap), unshifted UV for lightmaps, calmer floor height field | materials.js | sent to PARITY agent |

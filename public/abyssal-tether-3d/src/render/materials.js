@@ -119,7 +119,7 @@ export const LOOK = {
   uProbeC: { value: new THREE.Vector4(0, 0, 0, 0) },
   uProbeH: { value: new THREE.Vector3(20, 20, 20) },
   // Standing water: x puddle strength (0 = no puddles), y mirror roughness, z albedo darkening, w reflection boost.
-  uPudK: { value: new THREE.Vector4(1, 0.045, 0.5, 2.2) },
+  uPudK: { value: new THREE.Vector4(1, 0.045, 0.55, 0.35) },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -1435,7 +1435,7 @@ ${
     if ( uPudK.x > 0.001 && atPw > 0.12 ) {
       float atPl = 0.70 - 0.26 * atPw;
       atWet = max( atWet, 0.8 * smoothstep( atPl - 0.09, atPl, atPn ) * ${dry} * atPw );
-      atPud = smoothstep( atPl, atPl + 0.03, atPn ) * ${dry} * uPudK.x;
+      atPud = smoothstep( atPl, atPl + 0.07, atPn ) * ${dry} * uPudK.x;
 ${hq ? '      if ( uHeightM > 0.0 ) atPud *= 1.0 - 0.75 * smoothstep( 0.4, 0.62, atHN );\n' : ''}      atWet = max( atWet, atPud );
     }
   }`
