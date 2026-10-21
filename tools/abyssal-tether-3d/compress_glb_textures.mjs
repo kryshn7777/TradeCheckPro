@@ -11,7 +11,7 @@
 //
 // Geometry, skins, clips, extras and the custom vertex attributes pass through unchanged (the document is decoded and re-written with
 // the same lossless EXT_meshopt_compression settings as compress_glbs.mjs). Images that are already KTX2 are skipped, so re-running
-// is a no-op; tiny images (< 64 KB, the 256x128 ECG screen) are left as they are. KHR_texture_basisu is declared REQUIRED: the
+// is a no-op; tiny images (edge <= 256 texels, the ECG screen) are left as they are. KHR_texture_basisu is declared REQUIRED: the
 // loader must have a KTX2Loader (src/render/glbLoad.js attaches one).
 //
 // One-time tool install (not shipped, not in package.json):
@@ -52,7 +52,7 @@ const PLAN = {
 // etc1s: roles encoded as ETC1S (about 5x smaller downloads, same 1 byte / texel on the GPU); everything else is UASTC (clean normals,
 // the close-up hands)
 const only = opt('only', Object.keys(PLAN).join(',')).split(',').map((s) => s.trim()).filter(Boolean);
-const MIN_BYTES = 64 * 1024;
+const MIN_EDGE = 256; // smaller images (the ECG screen) stay PNG: 0.1 MB resident
 
 const reqG = createRequire(path.join(path.resolve(gltfTools), 'node_modules', 'x.js'));
 const reqK = createRequire(path.join(path.resolve(ktxTools), 'node_modules', 'x.js'));
@@ -119,7 +119,7 @@ for (const name of only) {
   let changed = 0;
   for (const t of doc.getRoot().listTextures()) {
     const img = t.getImage();
-    if (!img || t.getMimeType() === 'image/ktx2' || img.length < MIN_BYTES) continue;
+    if (!img || t.getMimeType() === 'image/ktx2' || Math.max(...t.getSize()) <= MIN_EDGE) continue;
     const r = role.get(t) || 'albedo';
     const size = PLAN[name][r];
     const t0 = Date.now();
