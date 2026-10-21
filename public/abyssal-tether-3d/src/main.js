@@ -134,7 +134,11 @@ function startPlatformServices(game) {
       pwa.requestPersistentStorage().then((persisted) => (game.persisted = persisted));
       const updates = await pwa.registerServiceWorker({
         isXRActive: () => game.xrActive,
-        onUpdateReady: (u) => game.bus.emit('app:update-ready', { apply: () => u.apply() }),
+        onUpdateReady: (u) => {
+          game.bus.emit('app:update-ready', { apply: () => u.apply() });
+          // A new build is waiting: take it right away while the player is only in the menu (never in VR or mid-run).
+          if (!game.xrActive && game.state === 'menu') u.apply();
+        },
       });
       game.updates = updates;
       game.bus.emit('app:pwa', { policy: updates.policy, registered: updates.registered });
