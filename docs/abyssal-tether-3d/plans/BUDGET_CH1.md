@@ -1,0 +1,61 @@
+# BUDGET_CH1: Quest draw-call / triangle trim (2026-10-21)
+
+Budget (OWNER RULE): whole frame <= 150 calls and <= 350k triangles stereo, quest tier, 72 fps. Measured with the mock-XR
+harness (enterVR, quest tier, dressing finished, `renderer.info` with autoReset off so the lantern shadow pass is included,
+camera at each section's warp point, min calls over 4 frames). The mock counts both eye draws, so every level object is 2 calls;
+the shadow pass is mono. Scripts: scratchpad `budget/attr.mjs` (wraps `renderBufferDirect`, attributes every call to its object).
+
+## Before / after (calls / stereo kilo-triangles, no creature in view)
+
+| Section | before | after |
+|---|---|---|
+| S1 | 129 / 273k | 119 / 217k |
+| S2 | 139 / 343k | 115 / 256k |
+| S3 | 147 / 371k | 123 / 303k |
+| S4 | 145 / 342k | 127 / 302k |
+| S5 | 150 / 332k | 137 / 262k |
+| S6 | 163 / 393k | 141 / 341k |
+| S7 | 152 / 360k | 133 / 305k |
+| S8 | 137 / 314k | 122 / 257k |
+
+Other tiers after the trim (S3 / S6 / S7): high 141 / 350k, 147 / 369k, 143 / 321k (richer, not budget-bound); low 112 / 260k, 126 / 297k, 118 / 274k.
+Creature at 12-24 m (rig LOD1 now; LOD0 before, `lodDistance` 38): before S3 157 / 493k, S6 162 / 502k, S7 162 / 494k; after S3 132 / 345k,
+S6 143 / 381k, S7 141 / 347k.
+
+## Attribution (calls / stereo tris, S6 before -> after)
+
+| Contributor | before | after |
+|---|---|---|
+| decor stone, section slabs | 8 / 76k | 8 / 64k |
+| hands + launchers (12 draws per eye, 2 GLB meshes of 5.4k + 8.4k per hand, untouched) | 24 / 58k | 24 / 58k |
+| decor stone, 32 m detail bands (kit panels, buttresses, hero props, relief) | 8 / 55k | 8 / 49k |
+| lantern shadow pass (static + dynamic) | 11 / 48k | 9 / 18k |
+| level misc (anchor mounts, cogs, rebar, decals, glyphs) | 20 / 35k | 20 / 27k |
+| decor flesh | 10 / 29k | 6 / 33k |
+| body (9k per eye) | 2 / 18k | 2 / 18k |
+| pickups, fx / fog / rays / dust, sky, solids, contact shadows | 32 / 15k | 32 / 15k |
+| colossal silhouettes | 10 / 10k | 6 / 5k |
+| scene-detail | 6 / 10k | 6 / 9k |
+| decor metal (section + mid + detail) | 16 / 23k | 10 / 29k |
+| decor glow + shaft | 14 / 12k | 8 / 14k |
+
+## What was cut
+
+- **Shadow pass**: hands, launchers, body and creature LOD1 cast through welded low-poly stand-ins
+  (`render/lanternShadowProxy.js`, grid-clustered skinned copies sharing the skeleton; hands 14k -> ~2.5k each, body 9k -> 4k, creature 25k ->
+  a few k). Static decor chunks in the shadow pass: 2 -> 1, 9k -> 6k triangles. Shadow pass ~48k -> ~18k tris.
+- **Draw calls**: glow/shaft kit parts always in the section chunk (no per-32 m detail chunks); metal and flesh detail-band lists folded into the section slab
+  chunks (`FOLD_DETAIL`); colossal silhouettes only +-1 section on quest/low (+-2 on high); plaque distance 22 m x detail scale.
+- **Distances (quest detail scale 1 -> 0.85, high 1.35 and low 0.55 unchanged)**: far-detail 38 -> 32 m, mid 64 -> 54 m, neighbour-section chunks 40 -> 28 m (x scale = 24 m),
+  cogs <= 46 m x scale, anchor mounts 42 -> 34 m (glyph billboards still carry the route).
+- **Content caps (all tiers)**: panelCap [14,16,16,10,12,14,10,10] -> [11,12,12,8,10,10,8,8], lancetsPerFace 14 -> 10, trunksPerFace 3 -> 2, rootsPerFace 3 -> 2,
+  far lancet frames 45% -> 30% kept, S6 course 8 -> 11 / pier 7.3 -> 10 / lancets every 3rd tier / one cog less. Scene-detail quest tier: 5.2k -> 4.6k tris, radius 22 -> 20.
+- **Creature**: Mason LOD0 -> LOD1 switch at 16 m on quest (11 m low, 38 m high), set from game.js per tier (masonRigView untouched).
+
+## Residual risks
+
+- S6 is still the tightest section (341k stereo, 9k under budget). A creature in view adds about 40k and 2-6 calls at LOD1 (S6 381k); LOD0 close up is +80k more.
+  The governor is the only protection there; a lighter LOD0 for the Mason needs the asset work (not in this pass).
+- Hands + launchers (58k, 24 calls of which 14 are tiny gauge/screen/sprite draws) and body (18k) are untouched (GLB assets, near field).
+- The folded metal/flesh slabs now draw a little more far relief in S6-S8 (+10k vs the old detail tier) in exchange for -8 calls.
+- Not measured on a headset; Quest multiview may count calls differently from the mock. Run `npm run at3d:sw` at release (new file lanternShadowProxy.js).

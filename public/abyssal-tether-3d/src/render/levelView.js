@@ -53,20 +53,21 @@ const BAND_H = 64; // metres per decor culling band (levels without sections)
 const DETAIL_BAND_H = 32; // finer bands for small dressing (kit parts, arcades, rings) ...
 const DETAIL_DIST = 38; // ... drawn only this close: past it the fog has them (≈ 70 % fogged)
 const SMALL_ITEM = 1.6; // m: items smaller than this on every axis
-const NEIGHBOUR_DIST = 40; // m: chunks of the neighbouring sections
+const NEIGHBOUR_DIST = 28; // m: chunks of the neighbouring sections
 const NEAR_DIST = 26; // 'near' tier (rubble: sub-pixel and fogged past this)
 const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhouettes against the haze, not as relief)
 // Dressing categories that live in the finer, nearer tiers whatever they are placed on (the Quest trim of the
 // densest sections): small relief that is sub-pixel past a few tens of metres.
 const DETAIL_CATS = new Set(['stain', 'organ', 'bead']);
 const MID_CATS = new Set(['farlancet']);
+const FOLD_DETAIL = new Set(['metal', 'flesh']); // detail-band lists drawn from the section slab chunks instead (fewer draw calls)
 const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
 const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
 // slabs within sight are drawn: a section is 40-140 m tall and drew whole whenever any of it was in view
 const SLAB_KINDS = new Set(['stone', 'metal', 'flesh']);
 const GLYPH_MAX_DIST = 110;
-const MOUNT_MAX_DIST = 42; // physical anchor meshes beyond this are sub-pixel / fogged: glyphs carry them
-const PLAQUE_DIST = 26;
+const MOUNT_MAX_DIST = 34; // physical anchor meshes beyond this are sub-pixel / fogged: glyphs carry them
+const PLAQUE_DIST = 22; // x detail scale (Quest 0.85: 19 m)
 const GATE_ACCEL = 120; // m/s²: the portcullis falls 7.5 m in ~0.35 s
 const GATE_LIP = 0.5; // metres of the raised gate (spiked lip) left showing below the opening
 const DECOR_MAT = { stone: 'decorStone', metal: 'decorMetal', rock: 'decorRock', flesh: 'decorFlesh', glow: 'decorGlow', shaft: 'lightShaft' };
@@ -1230,16 +1231,17 @@ const GRADE = [
   { stone: [1.0, 0.98, 0.92], growth: 0.2, inlay: 0.8, course: 8, pier: 7.5, arcade: true, saints: 3, gears: 1 }, // S3 Broken Gallery
   { stone: [0.94, 0.97, 0.99], growth: 0.32, inlay: 0.75, course: 10, pier: 9, arcade: true, saints: 2, gears: 3, giant: 1.7, giantEvery: 3 }, // S4 Listening Vault
   { stone: [0.9, 0.8, 0.72], growth: 0.65, inlay: 0.35, course: 6, pier: 6, arcade: false, saints: 0, gears: 2 }, // S5 Gullet Stair
-  { stone: [0.86, 0.82, 0.77], growth: 0.75, inlay: 0.3, course: 8, pier: 7.3, arcade: true, saints: 2, gears: 3, giant: 1.3, giantEvery: 3 }, // S6 Two Descents
+  { stone: [0.86, 0.82, 0.77], growth: 0.75, inlay: 0.3, course: 11, pier: 10, arcade: true, lancetEvery: 3, saints: 2, gears: 3, giant: 1.3, giantEvery: 3 }, // S6 Two Descents (course 8 -> 11, pier 7.3 -> 10, lancets every 3rd tier: BUDGET_CH1)
   { stone: [0.84, 0.86, 0.88], growth: 0.85, inlay: 0.5, course: 12, pier: 10, arcade: true, saints: 10, gears: 2, giant: 2.3, giantEvery: 2 }, // S7 Hollow Nave
   { stone: [0.78, 0.68, 0.62], growth: 1.0, inlay: 0.0, course: 7, pier: 6.6, arcade: false, saints: 4, gears: 1, giant: 1.6, giantEvery: 3 }, // S8 Last Throat
 ];
 /** Colossal turning cogs per section (S1..S8): the machine shows through the masonry from the second section down. */
 /** Organ-pipe banks per section (S1..S8). */
 const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
-const COG = [0, 2, 2, 3, 2, 3, 4, 3];
+const COG = [0, 2, 2, 3, 2, 2, 4, 3];
 const WET_RAMP = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const COG_MAX = 48;
+const COG_DIST = 46; // x detail scale: the great cogs are silhouettes in the haze beyond this
 /** Sections (S1..S8) that get flying-buttress style wall buttresses / emissive cracks / pipe runs / broken stair flights. */
 const BUTT = [1, 1, 1, 0, 1, 0, 0, 0];
 const PIPES = [0, 1, 1, 0, 1, 1, 0, 0];
@@ -1256,15 +1258,15 @@ const DR = {
   interiorRay: 260, // a face is interior when rays from it hit another solid within this
   inlayK: 0.55, // phosphor inlay (ledge lips, kerbs) emissive strength (× grade.inlay): a faint edge, never a neon line
   rootK: 0.03, // hanging roots per metre of course (× growth)
-  rootsPerFace: 3,
+  rootsPerFace: 2,
   burlsPerFace: 2,
-  lancetsPerFace: 14,
+  lancetsPerFace: 10,
   iconsPerFace: 2, // saints / gears per wall face (and GRADE caps per section)
-  trunksPerFace: 3, // sinew trunks down a wall face (× growth)
+  trunksPerFace: 2, // sinew trunks down a wall face (× growth)
   nearWall: 90, // arcades / growth only on faces whose opposite wall is nearer than this (far walls are fog)
   panelR: 11, // authored ashlar panels (kit wall_a/b/c, 4 x 4 m): wall cells whose centre is within this of the route (anchors, checkpoints, spawn)
   panelAcross: 70, // ... on faces whose opposite wall is nearer than this
-  panelCap: [14, 16, 16, 10, 12, 14, 10, 10], // ... at most this many per section (S1..S8), nearest to the route first
+  panelCap: [11, 12, 12, 8, 10, 10, 8, 8], // ... at most this many per section (S1..S8), nearest to the route first (BUDGET_CH1: was 14,16,16,10,12,14,10,10)
 };
 const ROOTS = [
   ['ch1_env_root_c', 10, 1.8],
@@ -2805,7 +2807,7 @@ class Dresser {
           const cx = a + bay * (j + 0.5);
           const w = bay - 5;
           const rise = w * 0.85;
-          if (rng() < 0.55 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
+          if (rng() < 0.7 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
           this._cat = 'farlancet';
           this._lancet(F, cx, y0, w, jamb, rise, 0.7, 0.9, g.stone, 'stone', true, false);
           if (rng() < 0.7) {
@@ -3080,7 +3082,7 @@ class Dresser {
       const yBot = courses[ci + 1] + 0.1;
       const g = this.grade((yTop + yBot) / 2);
       const H = yTop - yBot;
-      const lancets = g.arcade && !((ci + parity) % 2) && H >= 4 && H <= 16; // every other tier: rhythm, and triangles
+      const lancets = g.arcade && !((ci + parity) % (g.lancetEvery || 2)) && H >= 4 && H <= 16; // every other tier: rhythm, and triangles
       for (let j = 0; j + 1 < us.length; j++) {
         const a = us[j] + (j === 0 ? 0.3 : 0.62);
         const b = us[j + 1] - (j + 1 === us.length - 1 ? 0.3 : 0.62);
@@ -4588,6 +4590,7 @@ export class LevelView {
       const bb = geo.boundingBox;
       // small relief (every extent under SMALL_ITEM) is sub-pixel past a few tens of metres: the near tier
       if (!detail && list !== 'glow' && list !== 'shaft' && Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) < SMALL_ITEM) detail = true;
+      if (list === 'glow' || list === 'shaft') detail = false; // emissive cards: a few triangles each, one call per section beats one per 32 m detail band
       const y = (geo.boundingBox.min.y + geo.boundingBox.max.y) / 2;
       this._bandLists(job.bands, y, detail)[list].push(geo);
       const n = geo.attributes.position.count / 3;
@@ -4689,10 +4692,11 @@ export class LevelView {
     const C = this._cogs;
     if (!C) return;
     const mesh = C.mesh;
+    const cvd = Math.min(vd, COG_DIST * this._detailScale);
     let n = 0;
     for (let i = 0; i < C.items.length; i++) {
       const c = C.items[i];
-      if (c.pos.distanceTo(head) - c.r * 1.1 > vd) continue;
+      if (c.pos.distanceTo(head) - c.r * 1.1 > cvd) continue;
       _m4.makeRotationZ(c.phase + c.spin * t);
       _m4b.multiplyMatrices(c.m, _m4);
       mesh.setMatrixAt(n, _m4b);
@@ -4809,7 +4813,8 @@ export class LevelView {
       }
       g.computeBoundingBox();
       const y = (g.boundingBox.min.y + g.boundingBox.max.y) / 2;
-      this._bandLists(bands, y, !it.big)[it.list || part.list].push(g);
+      const lst = it.list || part.list;
+      this._bandLists(bands, y, lst === 'glow' || lst === 'shaft' ? false : !it.big)[lst].push(g);
       t += g.attributes.position.count / 3;
     }
     if (this.stats.dressTris) this.stats.dressTris.kit += t;
@@ -4823,12 +4828,17 @@ export class LevelView {
    */
   _mergeBands(bands, append) {
     if (!this._chunkByKey) this._chunkByKey = new Map();
-    for (const [bi, lists] of bands) {
-      const kind = String(bi).startsWith('d') ? 'd' : String(bi).startsWith('m') ? 'm' : String(bi).startsWith('n') ? 'n' : '';
-      const detail = kind !== '';
+    for (const [bi0, lists] of bands) {
+      const kind0 = String(bi0).startsWith('d') ? 'd' : String(bi0).startsWith('m') ? 'm' : String(bi0).startsWith('n') ? 'n' : '';
       for (const k of Object.keys(lists)) {
         const list = lists[k];
         if (!list.length) continue;
+        // metal / flesh relief of the 32 m detail bands joins its section's slab chunks (BUDGET_CH1: -1 draw per band and material;
+        // the slabs are culled by distance as before, only the 32 m / 38 m far-detail cut-off of these two materials is gone)
+        const fold = kind0 === 'd' && FOLD_DETAIL.has(k);
+        const bi = fold ? parseInt(String(bi0).slice(1), 10) : bi0;
+        const kind = fold ? '' : kind0;
+        const detail = kind !== '';
         // large section chunks: one group per vertical slab (by the part's centre height)
         const groups = new Map();
         if (!detail && SLAB_KINDS.has(k)) {
@@ -5339,10 +5349,11 @@ export class LevelView {
       ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
     }
     const cp = this._colossalParts;
-    if (cp) for (let i = 0; i < cp.length; i++) cp[i].mesh.visible = cp[i].band >= hb - 2 && cp[i].band <= hb + 2;
+    const reach = this._detailScale >= 1.2 ? 2 : 1; // colossal silhouettes: the sections beyond the neighbours are pure haze on Quest / low
+    if (cp) for (let i = 0; i < cp.length; i++) cp[i].mesh.visible = cp[i].band >= hb - reach && cp[i].band <= hb + reach;
     for (let i = 0; i < this._plaques.length; i++) {
       const p = this._plaques[i];
-      p.mesh.visible = p.pos.distanceTo(head) < PLAQUE_DIST;
+      p.mesh.visible = p.pos.distanceTo(head) < PLAQUE_DIST * this._detailScale;
     }
     if (fogInfo && fogInfo.color && this._colossal) {
       // Silhouettes: well darker than the haze; the capped fog (stronger with

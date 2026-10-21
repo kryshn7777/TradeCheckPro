@@ -74,6 +74,7 @@ const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before b
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
+const CREATURE_LOD = { low: 11, quest: 16, high: 38 }; // creature LOD0 -> LOD1 switch distance (m) per render tier (hysteresis 5 m in the view)
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -3309,6 +3310,8 @@ export class Game3D {
     const cv = this.creatureView;
     if (cv) {
       try {
+        // LOD0 (60 k triangles, x2 eyes) only close up on Quest / low: LOD1 (25 k) beyond (BUDGET_CH1); high keeps the long range
+        if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);

@@ -43,7 +43,7 @@ import { RenderGovernor } from './renderGovernor.js';
 const TIER_ALIAS = { low: 'low', reduced: 'low', quest: 'quest', xr: 'quest', medium: 'quest', high: 'high', desktop: 'high' };
 export const QUALITY_TIERS = Object.freeze({
   low: Object.freeze({ name: 'low', env: 0, envSize: 32, gi: false, lm: false, coat: 0, detail: 0.55 }),
-  quest: Object.freeze({ name: 'quest', env: 1, envSize: 128, gi: true, lm: true, coat: 1, detail: 1 }),
+  quest: Object.freeze({ name: 'quest', env: 1, envSize: 128, gi: true, lm: true, coat: 1, detail: 0.85 }), // detail: far-detail / mid / neighbour draw distances x0.85 (BUDGET_CH1)
   high: Object.freeze({ name: 'high', env: 1.1, envSize: 256, gi: true, lm: true, coat: 1, detail: 1.35 }),
 });
 export const GI_URL = new URL('../../assets/lighting/gi_ch1.bin', import.meta.url).href;
