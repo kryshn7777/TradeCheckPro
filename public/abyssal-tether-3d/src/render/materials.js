@@ -103,6 +103,9 @@ export const LOOK = {
   uDetailK: { value: new THREE.Vector4(0.9, 5, 16, 0) },
   // Parallax offset mapping: x on/off, y max distance (m), z fade length (m), w depth scale. Driven by the quality tier.
   uParallaxK: { value: new THREE.Vector4(1, 8, 3, 1) },
+  // Steep parallax (WP-GFX-PARITY, FLOORS only: surfaces facing up): x max ray-march steps (< 2 = off, the 1-tap above applies),
+  // y max distance (m) beyond which the 1-tap applies, z fade length (m) over which the step count falls to 2, w unused.
+  uParallaxS: { value: new THREE.Vector4(6, 3, 1.2, 0) },
   // Height-based blending in cracks and joints: x grime, y moss, z standing water (× wetness).
   uCrevK: { value: new THREE.Vector4(0.55, 0.55, 0.7, 0) },
   // In-shader filmic grade (no post pass): x contrast about mid grey, y saturation, z extra desaturation at depth
@@ -119,7 +122,7 @@ export const LOOK = {
   uProbeC: { value: new THREE.Vector4(0, 0, 0, 0) },
   uProbeH: { value: new THREE.Vector3(20, 20, 20) },
   // Standing water: x puddle strength (0 = no puddles), y mirror roughness, z albedo darkening, w reflection boost.
-  uPudK: { value: new THREE.Vector4(1, 0.045, 0.55, 0.35) },
+  uPudK: { value: new THREE.Vector4(1, 0.045, 0.4, 0.9) },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -1040,6 +1043,7 @@ uniform float uHeightM;
 uniform float uTexScale;
 uniform vec4 uDetailK;
 uniform vec4 uParallaxK;
+uniform vec4 uParallaxS;
 uniform vec4 uCrevK;
 `;
 
@@ -1062,15 +1066,52 @@ vec2 atGx = dFdx( vAtUv );
 vec2 atGy = dFdy( vAtUv );
 #ifdef USE_NORMALMAP
 if ( uHeightM > 0.0 ) {
-	atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
 	float atPf = uParallaxK.x * ( 1.0 - smoothstep( uParallaxK.y - uParallaxK.z, uParallaxK.y, atDist ) ) * smoothstep( 0.16, 0.5, atNv );
 	if ( atPf > 0.001 ) {
 		mat3 atTbn = getTangentFrame( - vViewPosition, normalize( vNormal ), vAtUv );
 		vec3 atV = normalize( vViewPosition );
 		vec2 atVt = vec2( dot( atV, atTbn[ 0 ] ), dot( atV, atTbn[ 1 ] ) );
 		float atVz = max( dot( atV, atTbn[ 2 ] ), 0.3 );
-		atPUv = vAtUv + atVt / atVz * ( ( atHN - 0.5 ) * uHeightM * uParallaxK.w * atPf * uTexScale );
-		atHN = textureGrad( normalMap, atPUv, atGx, atGy ).b;
+		// full-depth uv offset of the height field along the view ray (clamped by atVz >= 0.3, faded at grazing angles by atPf)
+		vec2 atOff = atVt / atVz * ( uHeightM * uParallaxK.w * atPf * uTexScale );
+		if ( vAtTop > 0.7 && uParallaxS.x > 1.5 && atDist < uParallaxS.y ) {
+			// FLOORS: steep parallax. The ray enters at the top of the height field (h = 1) and descends N layers; the first layer under
+			// the surface ends the march and the last two samples are linearly interpolated (the refine, no extra fetch). N falls with
+			// distance (to 2 over uParallaxS.z) and at grazing angles. The height is read from a blurred level (x2 gradients) so the
+			// fine grain of the packed field never makes the layers step noisily. Same sign convention as the 1-tap below: the surface
+			// at height h shifts the uv by atOff * ( h - 0.5 ), i.e. the ray at layer L sits at vAtUv + atOff * ( L - 0.5 ).
+			float atFd = 1.0 - smoothstep( uParallaxS.y - uParallaxS.z, uParallaxS.y, atDist );
+			float atN = clamp( floor( uParallaxS.x * atFd * mix( 0.6, 1.0, smoothstep( 0.2, 0.6, atNv ) ) + 0.5 ), 2.0, uParallaxS.x );
+			vec2 atG2x = atGx * 2.0;
+			vec2 atG2y = atGy * 2.0;
+			vec2 atStep = - atOff / atN;
+			vec2 atUc = vAtUv + atOff * 0.5;
+			float atLc = 1.0;
+			float atHc = textureGrad( normalMap, atUc, atG2x, atG2y ).b;
+			vec2 atUp = atUc;
+			float atLp = atLc;
+			float atHp = atHc;
+			for ( int i = 0; i < 12; i ++ ) {
+				if ( float( i ) >= atN || atHc >= atLc ) break;
+				atUp = atUc;
+				atLp = atLc;
+				atHp = atHc;
+				atUc += atStep;
+				atLc -= 1.0 / atN;
+				atHc = textureGrad( normalMap, atUc, atG2x, atG2y ).b;
+			}
+			float atDp = max( atLp - atHp, 0.0 );
+			float atDc = max( atHc - atLc, 0.0 );
+			float atW = atDp / max( atDp + atDc, 1e-4 );
+			atPUv = mix( atUp, atUc, atW );
+			atHN = mix( atHp, atHc, atW );
+		} else {
+			atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
+			atPUv = vAtUv + atOff * ( atHN - 0.5 );
+			atHN = textureGrad( normalMap, atPUv, atGx, atGy ).b;
+		}
+	} else {
+		atHN = textureGrad( normalMap, vAtUv, atGx, atGy ).b;
 	}
 }
 #endif
@@ -1433,7 +1474,7 @@ ${
     float atPw = clamp( uWet * ${wetK.toFixed(3)} * 1.7, 0.0, 1.0 );
     atWet = max( atWet, atPw * smoothstep( 0.4, 0.62, atPn ) * ${dry} );
     if ( uPudK.x > 0.001 && atPw > 0.12 ) {
-      float atPl = 0.70 - 0.26 * atPw;
+      float atPl = 0.74 - 0.22 * atPw;
       atWet = max( atWet, 0.8 * smoothstep( atPl - 0.09, atPl, atPn ) * ${dry} * atPw );
       atPud = smoothstep( atPl, atPl + 0.07, atPn ) * ${dry} * uPudK.x;
 ${hq ? '      if ( uHeightM > 0.0 ) atPud *= 1.0 - 0.75 * smoothstep( 0.4, 0.62, atHN );\n' : ''}      atWet = max( atWet, atPud );
@@ -1494,6 +1535,7 @@ ${
     float atRim = pow( 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 ), 3.0 );
     atRim *= 1.0 - 0.75 * clamp( dot( normalize( normal ), viewMatrix[ 1 ].xyz ), 0.0, 1.0 ); // floors keep their stone: the haze edge belongs to verticals
     totalEmissiveRadiance += uRimColor * ( atRim * uRim ) * ( 0.25 + diffuseColor.rgb );
+    totalEmissiveRadiance += uRimColor * ( atPud * 0.1 ); // standing water carries the haze's colour even when it mirrors a dark wall
   }`,
       );
     }

@@ -311,7 +311,7 @@ void main() {
   // scene's direct light (handsView gearLight), so the reflection is capped and scaled the same way (a hot spot, never a white disc)
   vec3 lan = uLanC.rgb * min( att, 24.0 ) * 0.12;
   vec3 col = uSky * ( F * 1.1 ) + lan * ( spec + spec2 ) * ( 0.5 + 0.5 * F ) + lan * sc * ( 0.35 + 3.0 * spec ) + vec3( 0.25, 0.24, 0.22 ) * dust * ( 0.1 + 0.5 * dot( lan, vec3( 0.33 ) ) );
-  float a = clamp( 0.04 + 0.5 * F + 0.18 * dust + 0.12 * sc, 0.0, 0.8 );
+  float a = clamp( 0.03 + 0.45 * F + 0.1 * dust + 0.1 * sc, 0.0, 0.8 );
   gl_FragColor = vec4( col, a );
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

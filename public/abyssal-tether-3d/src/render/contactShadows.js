@@ -207,7 +207,7 @@ export class ContactShadows {
       const px = typeof p.rx === 'number' ? p.rx : p.x;
       const py = typeof p.ry === 'number' ? p.ry : p.y;
       const pz = typeof p.rz === 'number' ? p.rz : p.z;
-      this._cast(lv, px, py, pz, 0, -1, 0, 7, 0.4, 0.09, 0.62, true);
+      this._cast(lv, px, py, pz, 0, -1, 0, 7, 0.4, 0.09, 0.75, true);
     }
     // ---- the hands: down, and along the barrel ----------------------------------------------------------------------------
     const inp = game.input;

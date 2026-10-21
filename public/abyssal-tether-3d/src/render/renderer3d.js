@@ -117,9 +117,9 @@ const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 // Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
 // the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
 const SURFACE_TIERS = {
-  low: { parallax: 0, parMax: 6, parFade: 2, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
-  quest: { parallax: 1, parMax: 8, parFade: 3, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
-  high: { parallax: 1, parMax: 13, parFade: 5, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
+  low: { parallax: 1, parMax: 5, parFade: 2, steps: 0, stepMax: 0, stepFade: 1, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, steps: 6, stepMax: 3, stepFade: 1.2, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, steps: 10, stepMax: 5, stepFade: 1.8, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
 };
 // Parallax-corrected probe box: the shaft box is inflated a little so the far window overhead and the lancets ring stay beyond the walls.
 const PROBE_BOX_GROW = 1.25;
@@ -800,8 +800,10 @@ export class Renderer3D {
   _driveSurfaceLook(th, tk) {
     const P = SURFACE_TIERS[this.lighting.tier] || SURFACE_TIERS.quest;
     const lvl = this.governor.level;
-    const par = lvl >= 2 ? 0 : P.parallax; // parallax is the first thing the governor drops
+    // parallax is the first thing the governor drops: level 2 = the 1-tap only (no steep floor march), level 3 = none
+    const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
+    LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);
     LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
     LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
     // edge bevel (box solids) and standing water: tier levers; the governor drops the bevel first at level 2 (pure ALU)

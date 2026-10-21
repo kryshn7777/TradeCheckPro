@@ -61,7 +61,7 @@ const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhoue
 const DETAIL_CATS = new Set(['stain', 'organ', 'bead']);
 const MID_CATS = new Set(['farlancet']);
 const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
-const SLAB_H = 24; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
+const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
 // slabs within sight are drawn: a section is 40-140 m tall and drew whole whenever any of it was in view
 const SLAB_KINDS = new Set(['stone', 'metal', 'flesh']);
 const GLYPH_MAX_DIST = 110;

@@ -115,6 +115,14 @@ ok('shader patches: bevel, puddles, parallax-corrected probe, near octave retune
   assert.ok(iAniso > 0 && iFlat > iAniso && iBev > iFlat, 'normal edits in order');
   assert.ok(fs_.includes('0.24 * atNear') && fs_.includes('uDetailScale * 2.4'), 'near-field octave retuned (0.24, 2.4x)');
   assert.ok(/smoothstep\( 0\.7, 2\.2, atDist \)/.test(fs_), 'near-field octave fades out by 2.2 m');
+  // steep parallax on floors: bounded march, refine by interpolation, same uv convention as the 1-tap, tier uniform bound
+  assert.ok(fs_.includes('uParallaxS') && 'uParallaxS' in shader.uniforms && 'uParallaxS' in LOOK, 'uParallaxS bound');
+  assert.ok(/vAtTop > 0\.7 && uParallaxS\.x > 1\.5/.test(fs_), 'steep parallax is floor-only and tier gated');
+  assert.ok(/for \( int i = 0; i < 12; i \+\+ \)/.test(fs_) && /textureGrad\( normalMap, atUc, atG2x, atG2y \)/.test(fs_), 'bounded ray march with blurred height taps');
+  assert.ok(/atPUv = mix\( atUp, atUc, atW \)/.test(fs_), 'linear refine between the last two layers');
+  assert.ok(/#define vMapUv atPUv/.test(fs_) && /#define vNormalMapUv atPUv/.test(fs_) && /#define vRoughnessMapUv atPUv/.test(fs_), 'shifted uv feeds albedo / normal / ORM taps');
+  assert.ok(/uDetailScale \)/.test(fs_) && fs_.includes('atPUv * ( uDetailScale'), 'detail normal uses the shifted uv');
+  assert.ok(vs_.includes('vLmUv') === false || !/vLmUv = .*atPUv/.test(fs_), 'lightmap uv is never the shifted one');
   // materials without the bevel flag do not pay for it
   const plain = new THREE.MeshStandardMaterial({ map: tex });
   patchMaterial(plain, { uv: 'box', macro: tex, lit: true, hq: false });
