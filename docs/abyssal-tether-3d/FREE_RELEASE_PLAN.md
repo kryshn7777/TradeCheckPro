@@ -77,28 +77,28 @@ Status: DONE = in the build (light-checked, headset-unverified) · PART = partly
 | Target | State | Where / next |
 |---|---|---|
 | Baked GI / baked indirect | DONE | GI volume + Node path-traced lightmaps (QUEST-LIGHT) |
-| PBR materials, normal + roughness maps, 2K ASTC (KTX2) | DONE hero set | QUEST-MAT; extend coverage in GFX-PARITY if gaps |
-| Reflection captures, wet/metal reflections | PART | envProbe per section; wet puddle/roughness response -> GFX-PARITY |
+| PBR materials, normal + roughness maps, 2K ASTC (KTX2) | DONE hero set | QUEST-MAT; steep (ray-marched) parallax on floors: quest 6 steps / 3 m, high 10 / 5 m, 1-tap fallback (GFX-PARITY) |
+| Reflection captures, wet/metal reflections | DONE | envProbe per section + parallax-corrected (shaft-box) fetch, wet film, mirror puddles (height-aware, flattened normal, haze tint), metal wetK 0.6 + lantern glint (GFX-PARITY 2026-10-21) |
 | Selective real-time lights | DONE | lantern + pooled lamps; shadows baked |
-| Contact shadows / AO | PART | baked AO in lightmaps; dynamic contact shadows for body/hands/creature/props -> GFX-PARITY |
-| Beveled edges | PART | env kit bevelled; unit-box solids get shader edge-bevel normals -> GFX-PARITY |
-| Fingerprint/scratch/dust/wear, decals | PART | decals + detail maps; hands/launcher wear maps + wear decals -> GFX-PARITY, SCENE-DETAIL |
-| Glass/transparent | PART | lantern glass/halo; launcher gauge glass -> GFX-PARITY |
+| Contact shadows / AO | DONE | baked AO + render/contactShadows.js: 1 instanced batch (<= 24 quads) for body, hands (down + barrel ray), creature feet, supplies, rope end, dropped items |
+| Beveled edges | DONE | env kit bevelled + shader edge bevel on rock/masonry/crumble/metal boxes (uBevelK, footprint-faded, tier + governor gated) |
+| Fingerprint/scratch/dust/wear, decals | DONE | decals + detail maps; render/gearSurface.js wear texture (prints, scratches, grain, dust) on gloves, launchers, body; wear decals -> SCENE-DETAIL |
+| Glass/transparent | DONE | lantern glass/halo; launcher gauge glass dome (fresnel, lantern reflections, scratches, dust), 1 call per launcher |
 | Fog/depth, controlled particles | DONE | atmosphere/debris/ropeFx budgets |
-| Fixed foveated rendering, 4x MSAA, render scale | DONE (governor) | tune on headset; confirm samples=4 in XR -> GFX-PARITY |
+| Fixed foveated rendering, 4x MSAA, render scale | DONE (governor) | confirmed in code: antialias canvas -> XR layer samples 4 (three r170), foveation only while presenting, capped per tier; Renderer3D.xrSettings(); tune on headset |
 | Vulkan / mobile forward / Multiview | N/A | Quest Browser WebXR (single-pass multiview used by three r170 when OVR_multiview2 present) |
-| 90 FPS target | TODO | currently 72 Hz target; add 90 Hz option with auto fallback via updateTargetFrameRate -> GFX-PARITY |
-| LOD, occlusion culling, fewer draw calls | PART | creature LODs, instancing, section culling; verify section/portal culling + prop LODs -> GFX-PARITY |
-| Hand tracking + gripping poses | TODO | controllers only today -> WP-HANDTRACK (optional hand-tracking, pinch/fist = trigger/grip) |
-| Object weight/inertia, interactions | PART | rope/pendulum + pickups; dropped/thrown bag items with inertia -> WP-HANDTRACK/GFX-PARITY tail |
+| 90 FPS target | DONE (option) | settings.frameRate '72' (default) / '90' / 'auto' (falls back to 72 on sustained overrun); governor.setFrameRate; UX row hook = frameRate |
+| LOD, occlusion culling, fewer draw calls | DONE (verified) | levelView culls decor chunks by section band (+-1) and distance tiers, colossal parts +-2, solids packed by distance; numbers in the GFX-PARITY report |
+| Hand tracking + gripping poses | PART | controller-driven poses DONE (trigger / grip / thumbstick-A-B-thumbrest capacitive touch, per-finger smoothing, fist on climb grip, relaxed idle); XRHand hand tracking stays OUT (sticks/grips needed) |
+| Object weight/inertia, interactions | DONE | rope/pendulum + pickups; render/droppedProps.js: spent / fumbled bag items fall, bounce, settle (render-side, sim untouched); bus 'prop:impact' = sound hook (audio listener pending) |
 | Character models + animation | DONE | body + rigged Mason |
-| Skin/fabric/wood/stone/metal shaders | PART | stone/metal done; fabric sheen + skin on arms/body -> GFX-PARITY |
+| Skin/fabric/wood/stone/metal shaders | DONE | stone/metal; cloth sheen + weave, leather pores, skin scatter fringe on arms/body (gearSurface.js) |
 | Variation/imperfections, controlled sightlines, far simplification | PART | SCENE-DETAIL, VR-POLISH |
 | (2nd list 2026-10-20 'WebXR realism optimization points') WebXR immersive-vr, WebGL2, three.js, PBR, IBL/HDR env, KTX2/Basis, mips + anisotropy, foveation, multiview, instancing, LOD, particles, dynamic resolution | DONE/PART | already in build (anisotropy set on level/hero textures; confirm mips on all KTX2) |
 | WebGPU | N/A | Quest Browser WebXR is WebGL2 only today; keep WebGL2 path |
-| Draco/Meshopt geometry compression | TODO | GLBs total ~26 MB raw (rig 7.9, arms 5.8, hero 5.6, kit 5.5, body 2.1); add EXT_meshopt_compression (npm meshoptimizer encoder + vendored MeshoptDecoder, GLTFLoader.setMeshoptDecoder) -> GFX-PARITY |
+| Draco/Meshopt geometry compression | DONE | tools/abyssal-tether-3d/compress_glbs.mjs: 26.9 -> 18.5 MB (EXT_meshopt_compression + quantization, custom attributes intact), vendored decoder, test-glb-meshopt |
 | Screen-space reflections | N/A (cost) | replaced by probe reflections + wet-surface response; no SSR on Quest |
-| Real-time shadows for key objects | PART | cheap blob/contact shadows + lantern-lit key props; no shadow-map pass on Quest budget -> GFX-PARITY decides |
+| Real-time shadows for key objects | DONE (no shadow-map) | contact shadows batch (see above); no shadow-map pass on the Quest budget |
 | WebXR-compatible post-processing | N/A (cost) | no full-screen passes; tonemap/grade in-shader (LOOK uniforms), vignette as shader/quad |
 | Smooth locomotion, stable head tracking | DONE | 1:1 height, comfort options in WP-UX |
 | WP-GFX-PARITY addendum 2026-10-21 (owner: 'Add parallax mapping to Floors') | steep parallax occlusion mapping on floor tops (quest 6 steps/3 m, high 10/5 m, low 1-tap), unshifted UV for lightmaps, calmer floor height field | materials.js | sent to PARITY agent |
