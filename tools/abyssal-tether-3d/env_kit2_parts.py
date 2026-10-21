@@ -185,21 +185,21 @@ def parts(ns):
         L = 4.0
         r = 0.2
         cz = 0.34
-        pipe = lathe([(r, -L / 2), (r, L / 2)], seg=10, smooth=True, cap_top=False, cap_bottom=False)
+        pipe = lathe([(r, -L / 2), (r, L / 2)], seg=8, smooth=True, cap_top=False, cap_bottom=False)
         g.add(pipe, xf(tz=cz, ty=0.35, rz=-math.pi / 2))
         for x in (-1.3, 0.0, 1.3):
-            ring = lathe([(r, -0.045), (r + 0.1, -0.045), (r + 0.1, 0.045), (r, 0.045)], seg=10, smooth=False, cap_top=False, cap_bottom=False)
+            ring = lathe([(r, -0.045), (r + 0.1, -0.045), (r + 0.1, 0.045), (r, 0.045)], seg=8, smooth=False, cap_top=False, cap_bottom=False)
             g.add(ring, xf(tx=x, ty=0.35, tz=cz, rz=-math.pi / 2))
-            for k in range(8):
-                a = TAU * k / 8
-                g.add(cone(0.03, 0.04, seg=4), xf(tx=x + 0.05, ty=0.35 + math.sin(a) * (r + 0.065), tz=cz + math.cos(a) * (r + 0.065), rz=-math.pi / 2))
+            for k in range(4):
+                a = TAU * (k + 0.5) / 8
+                g.add(cone(0.03, 0.04, seg=3), xf(tx=x + 0.05, ty=0.35 + math.sin(a) * (r + 0.065), tz=cz + math.cos(a) * (r + 0.065), rz=-math.pi / 2))
         # wall clamps: straps over the pipe on stand-off plates
         for x in (-0.65, 0.65, 1.95, -1.95):
             g.add(box(x - 0.05, 0.35 - r - 0.05, cz - r - 0.03, x + 0.05, 0.35 + r + 0.05, cz + r + 0.03).transformed(lambda p: p))
             g.add(box(x - 0.06, 0.35 - 0.14, 0.0, x + 0.06, 0.35 + 0.14, cz - r * 0.6))
         # valve wheel on a stem
         g.add(box(-0.7 - 0.02, 0.35 + r, cz - 0.02, -0.7 + 0.02, 0.35 + r + 0.28, cz + 0.02))
-        wheel = lathe([(0.0, 0.0), (0.2, 0.0), (0.2, 0.03), (0.17, 0.03), (0.17, 0.0)], seg=10, smooth=False, cap_top=False, cap_bottom=False)
+        wheel = lathe([(0.0, 0.0), (0.2, 0.0), (0.2, 0.03), (0.17, 0.03), (0.17, 0.0)], seg=8, smooth=False, cap_top=False, cap_bottom=False)
         g.add(wheel, xf(tx=-0.7, ty=0.35 + r + 0.3, tz=cz))
         for k in range(4):
             g.add(box(-0.01, 0.0, -0.18, 0.01, 0.02, 0.18), xf(tx=-0.7, ty=0.35 + r + 0.31, tz=cz, ry=k * math.pi / 4))

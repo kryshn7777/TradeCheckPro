@@ -2339,7 +2339,7 @@ class Dresser {
           this.put(F, geo, u0, yc - s.minY, 'stone', g.stone);
           this.stats.courses++;
           // water stains run down from the course (wear obeys gravity): darker, tapering, in front of the wall only
-          const nSt = Math.floor((len / 3) * (0.5 + 0.8 * this._wet(yc)) + rng() * 0.9);
+          const nSt = Math.floor((len / 3) * (0.5 + 0.8 * this._wet(yc)) * 0.4 + rng() * 0.5);
           this._cat = 'stain';
           for (let k = 0; k < nSt; k++) {
             const su = u0 + 0.4 + rng() * Math.max(0.1, len - 0.8);
@@ -2679,7 +2679,7 @@ class Dresser {
     const D = s.maxZ - s.minZ;
     if (W < 2 || D < 2) return;
     const S = this.S;
-    const n = Math.min(12, Math.max(1, Math.round((2 * (W + D)) / 50 + rng() * 2)));
+    const n = Math.min(7, Math.max(1, Math.round((2 * (W + D)) / 90 + rng() * 1.5))); // WP-ART-PASS: half the rubble (paid for the authored panels)
     const g = this.grade(s.maxY);
     let left = n;
     for (let i = 0; i < n * 3 && left > 0; i++) {
@@ -2707,7 +2707,7 @@ class Dresser {
         if (Math.abs(a.y - s.maxY) < 2.5 && (a.x - x) * (a.x - x) + (a.z - z) * (a.z - z) < 2.2 * 2.2) near = true;
       }
       if (near) continue;
-      const geo = rubbleGeo(rng, x, s.maxY, z, 0.35 + rng() * 0.7, 5 + Math.floor(rng() * 8));
+      const geo = rubbleGeo(rng, x, s.maxY, z, 0.35 + rng() * 0.7, 4 + Math.floor(rng() * 5));
       tintColors(geo, g.stone[0], g.stone[1], g.stone[2]);
       worldUV(geo);
       this._count('rubble', s.maxY, geo.attributes.position.count / 3);
@@ -2805,13 +2805,15 @@ class Dresser {
           const cx = a + bay * (j + 0.5);
           const w = bay - 5;
           const rise = w * 0.85;
-          if (rng() < 0.3 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
+          if (rng() < 0.55 || S.blocked(frameBox(F, cx - w / 2 - 1, cx + w / 2 + 1, y0, y0 + jamb + rise, 0, 1.5), hosts, false, 6)) continue;
           this._cat = 'farlancet';
           this._lancet(F, cx, y0, w, jamb, rise, 0.7, 0.9, g.stone, 'stone', true, false);
-          if (rng() < 0.45) {
-            const k = 0.1 + rng() * 0.14;
+          if (rng() < 0.7) {
+            // WP-ART-PASS: lit panes are the far layer of the picture (the glow list is fog-capped, so they stay visible at 150 m):
+            // brighter than the haze, mostly cold, one in four a warm lantern-lit window
+            const k = 0.3 + rng() * 0.3;
             this._cat = 'pane';
-            this.put(F, archPanel(w - 1.4, jamb, rise - 0.7, y0, 0.2, 1, 9), cx, 0, 'glow', [k * 0.55, k, k * 0.95]);
+            this.put(F, archPanel(w - 1.4, jamb, rise - 0.7, y0, 0.2, 1, 9), cx, 0, 'glow', rng() < 0.25 ? [k * 1.0, k * 0.72, k * 0.4] : [k * 0.5, k * 0.95, k * 0.9]);
           }
         }
       }
