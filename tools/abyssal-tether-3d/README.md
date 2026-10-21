@@ -123,6 +123,14 @@ Seamless PBR sets (every map periodic by construction) live in `public/abyssal-t
 
 Each set has `albedo` (sRGB), `normal` (OpenGL +Y) and `orm` (R = AO, G = roughness, B = metalness).
 
+**WP-TEX-PBR (2026-10-21)** - `build_textures_art.py` is now the source of the three hero sets (`rock`, `masonry`, `metal`): the calm
+layouts plus `enrich_stone` / `enrich_iron` (per-block finish classes, chisel tooth, peck bowls, rock-faced cleavage, spalls, erosion,
+hairline cracks, grit joints, damp / lichen in albedo + roughness; iron: dents, blistered rust scale, pitting, scratches, rivet weeps).
+Bake: `build_textures_art.py --work W --out OUT --sets rock,masonry,metal`, then
+`encode_ktx2.mjs --work W --out OUT --sets rock,masonry,metal` (`--maps orm --orm-size 1024 --orm-rdo 0.8` re-encodes only the ORM; the
+2048 ORM costs 4 MB per set, so the shipped ORM stays 1024). Hero KTX2 sizes (MB, albedo / normal / orm): rock 3.84 / 5.38 / 1.24,
+masonry 3.90 / 5.39 / 1.21, metal 3.41 / 5.13 / 1.30.
+
 Run (the Blender venv python has numpy + Pillow; ~2.8 GB for a 2048 set, one process at a time):
 
 ```bash

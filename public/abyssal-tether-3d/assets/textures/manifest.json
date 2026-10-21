@@ -6,8 +6,8 @@
     "tileMeters": 4,
     "size": 2048,
     "hero": true,
-    "heightM": 0.05581,
-    "meanLuma": 0.05872,
+    "heightM": 0.05719,
+    "meanLuma": 0.04639,
     "source": "baked:build_textures_hq.py",
     "description": "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation",
     "ktx2": {
@@ -24,8 +24,8 @@
     "tileMeters": 4,
     "size": 2048,
     "hero": true,
-    "heightM": 0.02243,
-    "meanLuma": 0.07386,
+    "heightM": 0.02274,
+    "meanLuma": 0.06393,
     "source": "baked:build_textures_hq.py",
     "description": "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits",
     "ktx2": {
@@ -42,8 +42,8 @@
     "tileMeters": 2,
     "size": 2048,
     "hero": true,
-    "heightM": 0.00797,
-    "meanLuma": 0.03511,
+    "heightM": 0.00842,
+    "meanLuma": 0.03372,
     "source": "baked:build_textures_hq.py",
     "description": "calm riveted iron plate: grooved seams, rivet rows, per-plate value, soft rust blooms",
     "ktx2": {

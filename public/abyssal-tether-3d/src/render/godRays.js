@@ -161,49 +161,88 @@ void main() {
   float kind = fK.z; // 0 shaft, 1 window beam, 2 lantern cone
   float seed = fC.w;
   vec3 wind = uWind * uTime;
-  for ( int i = 0; i < 5; i++ ) {
-    if ( float( i ) >= N ) break;
-    float t1 = ta + dt * float( i );
-    float t2 = t1 + dt;
-    float tmid = 0.5 * ( t1 + t2 );
-    float s = clamp( ( md + vd * tmid ) / L, 0.0, 1.0 );
-    float R = mix( fA.w, fB.w, s );
-    // this segment against its own radius
-    float dR = b * b - a * ( cc - R * R );
-    if ( dR <= 0.0 ) continue;
-    float sr = sqrt( dR ) / a;
-    float lo = max( t1, tm - sr ) - tm;
-    float hi = min( t2, tm + sr ) - tm;
-    if ( hi <= lo ) continue;
-    float f0 = 1.0 - ( cc - b * b / a ) / ( R * R );
-    float k = a / ( R * R );
-    // integral of ( f0 - k·tau² )² over [lo, hi]
-    float lo2 = lo * lo;
-    float hi2 = hi * hi;
-    float I = f0 * f0 * ( hi - lo ) - ( 2.0 / 3.0 ) * f0 * k * ( hi2 * hi - lo2 * lo ) + 0.2 * k * k * ( hi2 * hi2 * hi - lo2 * lo2 * lo );
-    // axial profile
-    float ax_ = kind > 1.5
-      ? ( 1.0 / ( 1.0 + s * s * 60.0 ) ) * ( 1.0 - smoothstep( 0.7, 1.0, s ) )
-      : ( kind > 0.5 ? ( 0.25 + 0.75 * ( 1.0 - s ) * ( 1.0 - s ) ) : ( 0.12 + 0.88 * ( 1.0 - s ) * ( 1.0 - s ) ) ) * smoothstep( 0.0, 0.06, s ) * ( 1.0 - smoothstep( 0.8, 1.0, s ) );
-    // streaks: noise in the beam frame (long along the axis; angular for the lantern cone), drifting
-    vec3 p = C + v * clamp( tmid, ta, tb );
-    vec3 lp = p - A;
-    float ls = dot( lp, D );
-    vec3 q;
-    if ( kind > 1.5 ) {
-      float z = max( ls, 0.35 );
-      q = vec3( dot( lp, U ) / z, dot( lp, W ) / z, ls * 0.035 ) * vec3( 1.7, 1.7, 1.0 );
-    } else {
-      q = vec3( dot( lp, U ) * 0.32, dot( lp, W ) * 0.32, ls * 0.045 );
+  if ( kind > 1.5 ) {
+    // the lantern's cone: a true cone (compact density in r / R(s)), integrated numerically with 6 jittered samples; the streaks are
+    // angular noise (a function of the direction from the lantern only), so they fan out from it like light through the cage
+    // chord inside the cone itself: a·t² + 2b·t + cc <= ( r(m) + k·vd·t )² with r(m) the radius at the eye's axial position
+    float kk = ( fB.w - fA.w ) / L;
+    float rm = fA.w + kk * md;
+    float A2 = a - kk * kk * vd * vd;
+    float B2 = b - kk * vd * rm;
+    float C2 = cc - rm * rm;
+    float D2 = B2 * B2 - A2 * C2;
+    float tc = ta;
+    float td = tb;
+    if ( A2 > 1e-4 ) {
+      if ( D2 <= 0.0 ) discard;
+      float sd = sqrt( D2 );
+      tc = max( ta, ( - B2 - sd ) / A2 );
+      td = min( tb, ( - B2 + sd ) / A2 );
+      if ( td <= tc ) discard;
     }
-    q += vec3( seed * 0.173, seed * 0.311, seed * 0.097 ) + wind * ( kind > 1.5 ? 2.0 : 1.0 );
-    float n = texture( uNoise, q ).r;
-    if ( uOct > 1.5 ) n = 0.62 * n + 0.38 * texture( uNoise, q * 2.7 + vec3( 0.31, 0.17, uTime * 0.01 ) ).r;
-    // dust and fog drift: fine grain stays inside a bright core
-    float mod_ = max( 1.0 + fK.y * ( n - 0.5 ) * 2.4, 0.0 );
-    // fog transmittance to this segment
-    float tr = 1.0 - rayFog( tmid );
-    sum += I * ax_ * mod_ * tr;
+    float dtc = ( td - tc ) / 6.0;
+    float jit = atIGN( gl_FragCoord.xy );
+    for ( int i = 0; i < 6; i++ ) {
+      float t = tc + dtc * ( float( i ) + jit );
+      vec3 lp = C + v * t - A;
+      float ls = dot( lp, D );
+      float s = ls / L;
+      vec3 pr = lp - D * ls;
+      float Rc = mix( fA.w, fB.w, clamp( s, 0.0, 1.0 ) );
+      float f = max( 1.0 - dot( pr, pr ) / ( Rc * Rc ), 0.0 );
+      f *= f;
+      float axc = smoothstep( 0.03, 0.2, s ) * ( 1.0 - smoothstep( 0.45, 1.0, s ) ) / ( 1.0 + 3.0 * s );
+      vec3 dir = lp / max( length( lp ), 1e-3 );
+      vec3 q = vec3( dot( dir, U ), dot( dir, W ), dot( dir, D ) ) * 5.5 + vec3( seed * 0.173, seed * 0.311, uTime * 0.02 );
+      float n = texture( uNoise, q ).r;
+      float mc = max( 1.0 + fK.y * ( n - 0.5 ) * 1.8, 0.0 );
+      sum += f * axc * mc * ( 1.0 - rayFog( t ) ) * dtc;
+    }
+  } else {
+    for ( int i = 0; i < 5; i++ ) {
+      if ( float( i ) >= N ) break;
+      float t1 = ta + dt * float( i );
+      float t2 = t1 + dt;
+      float tmid = 0.5 * ( t1 + t2 );
+      float s = clamp( ( md + vd * tmid ) / L, 0.0, 1.0 );
+      float R = mix( fA.w, fB.w, s );
+      // this segment against its own radius
+      float dR = b * b - a * ( cc - R * R );
+      if ( dR <= 0.0 ) continue;
+      float sr = sqrt( dR ) / a;
+      float lo = max( t1, tm - sr ) - tm;
+      float hi = min( t2, tm + sr ) - tm;
+      if ( hi <= lo ) continue;
+      float f0 = 1.0 - ( cc - b * b / a ) / ( R * R );
+      float k = a / ( R * R );
+      // integral of ( f0 - k·tau² )² over [lo, hi]
+      float lo2 = lo * lo;
+      float hi2 = hi * hi;
+      float I = f0 * f0 * ( hi - lo ) - ( 2.0 / 3.0 ) * f0 * k * ( hi2 * hi - lo2 * lo ) + 0.2 * k * k * ( hi2 * hi2 * hi - lo2 * lo2 * lo );
+      // axial profile
+      float ax_ = kind > 1.5
+        ? ( 1.0 / ( 1.0 + s * s * 60.0 ) ) * ( 1.0 - smoothstep( 0.7, 1.0, s ) )
+        : ( kind > 0.5 ? ( 0.25 + 0.75 * ( 1.0 - s ) * ( 1.0 - s ) ) : ( 0.12 + 0.88 * ( 1.0 - s ) * ( 1.0 - s ) ) ) * smoothstep( 0.0, 0.06, s ) * ( 1.0 - smoothstep( 0.8, 1.0, s ) );
+      // streaks: noise in the beam frame (long along the axis; angular for the lantern cone), drifting
+      vec3 p = C + v * clamp( tmid, ta, tb );
+      vec3 lp = p - A;
+      float ls = dot( lp, D );
+      vec3 q;
+      if ( kind > 1.5 ) {
+        float z = max( ls, 0.35 );
+        q = vec3( dot( lp, U ) / z, dot( lp, W ) / z, ls * 0.035 ) * vec3( 1.7, 1.7, 1.0 );
+      } else {
+        q = vec3( dot( lp, U ) * 0.32, dot( lp, W ) * 0.32, ls * 0.045 );
+      }
+      q += vec3( seed * 0.173, seed * 0.311, seed * 0.097 ) + wind * ( kind > 1.5 ? 2.0 : 1.0 );
+      float n = texture( uNoise, q ).r;
+      if ( uOct > 1.5 ) n = 0.62 * n + 0.38 * texture( uNoise, q * 2.7 + vec3( 0.31, 0.17, uTime * 0.01 ) ).r;
+      // dust and fog drift: fine grain stays inside a bright core
+      float mod_ = max( 1.0 + fK.y * ( n - 0.5 ) * 2.4, 0.0 );
+      // fog transmittance to this segment
+      float tr = 1.0 - rayFog( tmid );
+      sum += I * ax_ * mod_ * tr;
+    }
   }
   // phase: light travels along D; the eye looks along v
   float c = dot( D, - v );
@@ -271,9 +310,9 @@ export class GodRays {
     this.params = {
       gain: 0.1, // 1/m: optical depth per metre of the densest part of a beam
       g: 0.6, // Henyey-Greenstein anisotropy
-      lantern: 0.55, // strength of the lantern cone relative to a shaft
+      lantern: 0.3, // strength of the lantern cone relative to a shaft
       lanternHalf: 0.62, // rad
-      lanternLen: 15,
+      lanternLen: 14,
       streak: 0.75,
       windowLen: 34,
     };

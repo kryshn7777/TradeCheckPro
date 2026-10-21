@@ -128,7 +128,7 @@ export class MasonLegs {
     this._r = new Float64Array(9);
     this._phase = 0;
     this.solids = [];
-    this.stats = { stepping: 0, planted: 0, slide: 0 };
+    this.stats = { stepping: 0, planted: 0, slide: 0, slideLead: 0 };
     this._probe = 0;
   }
 
@@ -155,6 +155,7 @@ export class MasonLegs {
     let totL = 0;
     let totR = 0;
     let slide = 0;
+    let slideLead = 0;
     const ik = this._ik;
     for (let li = 0; li < legs.length; li++) {
       const L = legs[li];
@@ -250,7 +251,9 @@ export class MasonLegs {
       const gy = ik[5] - ty;
       const gz = ik[6] - tz;
       const gap = Math.sqrt(gx * gx + gy * gy + gz * gz);
-      if (gap > slide) slide = gap;
+      if (L.kind === 'lead') {
+        if (gap > slideLead) slideLead = gap;
+      } else if (gap > slide) slide = gap;
       const KX = ik[0];
       const KY = ik[1];
       const KZ = ik[2];
@@ -320,6 +323,7 @@ export class MasonLegs {
     this.stats.stepping = nStep;
     this.stats.planted = nPlanted;
     this.stats.slide = slide;
+    this.stats.slideLead = slideLead;
     this.loadL = totL ? swL / totL : 0;
     this.loadR = totR ? swR / totR : 0;
     this._probe = starts;

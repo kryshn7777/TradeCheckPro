@@ -750,7 +750,7 @@ export class MasonRigView {
     const mv = clamp(sp / (3 * Math.max(size, 0.3) ** 0.5), 0, 2);
     if (mv < 0.12 && !(this._wet > 0.3)) return;
     // emission by distance travelled and a slow idle seep over wet stone
-    const perM = this.opts.variant ? 2.2 : 1.1; // wisps per metre of travel
+    const perM = this.opts.variant ? 1.6 : 1.1; // wisps per metre of travel
     this._trailAcc += dt * (sp * perM + this._wet * (0.5 + 0.8 * mv));
     let guard = 0;
     while (this._trailAcc >= 1 && guard++ < 3) {

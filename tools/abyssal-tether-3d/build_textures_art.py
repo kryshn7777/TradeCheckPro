@@ -10,6 +10,12 @@ toolkit, hq `finish()` for curvature wear, 2048 px, normal.B = height, ORM) but 
            Brighter than before (mean albedo ~ sRGB 80) so the baked light has something to read on.
   masonry  (4 m tile) calm flagstones / dressed slabs: 1.2-2.0 m slabs, shallow joints, soft tone variation, no pits.
 
+WP-TEX-PBR (2026-10-21): enrich_stone / enrich_iron add the sculpted detail on top of the calm layouts (see their comments):
+per-block finish classes, chisel tooth in three directions, pecked bowls, rock-faced cleavage, spalls, erosion + bedding, pinholes,
+hairline cracks, grit in the joints, damp (dark, cool, glossy) patches, lichen crust, boot scuffs and foot-worn dishing on floors;
+iron: plate offsets, hammered dents, blistered rust scale + pitting, brushed grain, scratches, rivet weeps; roughness / metalness
+carry the wet-dry, scale-vs-bare-metal and scratch structure; normal strength 1.0-1.15 (physical slope), 4 mm AO scale added.
+
 Run (blender venv python, ~2.5 GB, one process):
   python build_textures_art.py --work <masters dir> [--sets rock,masonry] [--tilecheck <dir>]
 then encode_ktx2.mjs --work <masters dir> --sets rock,masonry (as in README).
@@ -404,9 +410,9 @@ def mat_iron_calm(F):
     return enrich_iron(F, m, dict(pid=pid, groove=groove, rivet=rivet, rust_zone=rust_zone, w_lo=w_lo))
 
 
-hq.SETS["rock"] = (mat_wall_calm, 4.0, 2048, 1101, True, 0.00012, "stone", "calm Lanternwright wall ashlar: big staggered blocks, deep joints, chipped corners, per-block value variation")
-hq.SETS["metal"] = (mat_iron_calm, 2.0, 2048, 3303, True, 0.00005, "metal", "calm riveted iron plate: grooved seams, rivet rows, per-plate value, soft rust blooms")
-hq.SETS["masonry"] = (mat_floor_calm, 4.0, 2048, 2202, True, 0.0001, "stone", "calm flagstones / dressed slabs: soft tone variation, shallow joints, no pits")
+hq.SETS["rock"] = (mat_wall_calm, 4.0, 2048, 1101, True, 0.00012, "stone", "Lanternwright wall ashlar (PBR v2): staggered blocks, per-block finish (smooth / tooled / pecked / rock-faced), chisel marks, pits, spalls, erosion, hairline cracks, damp stains, lichen")
+hq.SETS["metal"] = (mat_iron_calm, 2.0, 2048, 3303, True, 0.00005, "metal", "riveted iron plate (PBR v2): grooved seams, rivets, hammered dents, blistered rust scale, pitting, scratches, rivet weeps")
+hq.SETS["masonry"] = (mat_floor_calm, 4.0, 2048, 2202, True, 0.0001, "stone", "worn flagstone floor (PBR v2): slabs with tooling, foot-worn dishing, spalls, pits, scuffs, damp patches, gritty joints")
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
