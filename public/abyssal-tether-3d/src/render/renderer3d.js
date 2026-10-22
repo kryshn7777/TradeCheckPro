@@ -74,6 +74,7 @@ const THEME_BLEND = 9; // metres either side of a section boundary
 const AMBIENT_SCALE = 3.0; // theme.ambient → hemisphere intensity
 const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
+const FOG_THICKNESS = 2; // the haze is twice as thick: the distance fog closes in at half the range (the volumetric fog doubles in atmosphere.js)
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
@@ -703,8 +704,8 @@ export class Renderer3D {
     const lum = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
     if (lum < FOG_LUM_FLOOR) fog.color.multiplyScalar(FOG_LUM_FLOOR / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
-    fog.near = Math.max(0.5, th.fogNear * (1 - tk * 0.3));
-    fog.far = Math.max(fog.near + 4, th.fogFar * (1 - tk * 0.18));
+    fog.near = Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
+    fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
     this.scene.background.copy(fog.color);
     if (this.sky) this.sky.position.copy(head);
 

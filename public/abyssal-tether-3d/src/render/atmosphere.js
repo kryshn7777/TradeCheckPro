@@ -644,7 +644,7 @@ export class Atmosphere {
       uTintSat: { value: 1.3 },
     });
     /** Look parameters (tuned on screenshots; per-section mood multiplies density/mist). */
-    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 2, key: 0.06, tint: 1.3 };
+    this.params = { density: 0.34, mist: 0.44, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 2, key: 0.06, tint: 1.3 };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dFog',
       uniforms: this.uniforms,
