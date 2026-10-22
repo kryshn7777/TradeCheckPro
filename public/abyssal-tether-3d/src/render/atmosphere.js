@@ -378,6 +378,9 @@ const TIERS = [
 ];
 
 // Section mood (index = section): fog thickness, mist on ledges, abyss smoke.
+/** Thickness of the volumetric fog per fx tier (low / quest / desktop). Denser cards shade more pixels (the early-out below skips only the thin ones), so the headset keeps
+ *  most of its budget and leans on the cheap distance fog (renderer3d FOG_THICKNESS) for the rest. */
+const TIER_THICKNESS = [1, 1.25, 2];
 const SECTION_DENSITY = [0.8, 0.85, 1.0, 0.9, 1.15, 1.0, 0.95, 1.1];
 // S5 / S8: the brown-amber fog hue sat over every floor as a flat orange wash; their sheets are thinner now
 // air hue saturation: the brown-amber S5 / S8 fog read as an orange wash at full saturation
@@ -644,7 +647,7 @@ export class Atmosphere {
       uTintSat: { value: 1.3 },
     });
     /** Look parameters (tuned on screenshots; per-section mood multiplies density/mist). */
-    this.params = { density: 0.34, mist: 0.44, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 2, key: 0.06, tint: 1.3 };
+    this.params = { density: 0.17, mist: 0.22, scatter: 0.8, base: 1.1, ambient: 0.3, cover: 0.25, floor: 0.28, lantern: 2.0, lanternK: 1.9, glow: 2, key: 0.06, tint: 1.3 };
     const mat = new THREE.ShaderMaterial({
       name: 'at3dFog',
       uniforms: this.uniforms,
@@ -743,8 +746,9 @@ export class Atmosphere {
     this.tintK += ((SECTION_TINT[si] || 1) - this.tintK) * k;
     // Threat thickens the air a little and stirs it upward (the shaft breathes in).
     const P = this.params;
-    U.uDensity.value = P.density * this.density * (1 + threat * 0.25);
-    U.uMist.value = P.mist * this.mist;
+    const thick = TIER_THICKNESS[Math.max(0, Math.min(2, tier | 0))];
+    U.uDensity.value = P.density * this.density * (1 + threat * 0.25) * thick;
+    U.uMist.value = P.mist * this.mist * thick;
     U.uWind.value.y = (-0.004 + threat * 0.012) * (1 + this.lighting.creatureNear);
     U.uScatter.value = P.scatter;
     U.uBase.value = P.base;

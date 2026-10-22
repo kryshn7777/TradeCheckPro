@@ -19,7 +19,7 @@ import { windAngle, windGust, windSquall } from './wind.js';
 const WISPS = 340;
 const TRAIL = 5; // samples per wisp (head + 4 fading behind it)
 const HALF = 10; // metres: half-size of the wrapped cube around the head
-const FRACTION = [0, 0.45, 1]; // share of the wisps drawn per fx tier (low / reduced draws none, quest, desktop)
+const FRACTION = [0.15, 0.3, 1]; // share of the wisps drawn per fx tier (low, quest, desktop); reducedEffects draws none
 
 function rngOf(seed) {
   let s = seed >>> 0 || 1;
