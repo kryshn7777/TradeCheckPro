@@ -1,4 +1,4 @@
-// WP-SKITTER unit checks (Node): the skitterling variant's config (exactly 1.5x speeds, smaller, shorter wind-up), spawn data in the
+// WP-SKITTER unit checks (Node): the skitterling variant's config (exactly 4.5x speeds, smaller, shorter wind-up), spawn data in the
 // real Chapter I level, determinism, safe spawn distance, tagged events, the damage path and the Mason's own trigger link.
 //   node skitter.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
@@ -13,7 +13,7 @@ const KEYS = ['normal', 'nightmare', 'abyss'];
 const player = (x, y, z) => ({ x, y, z, vx: 0, vy: 0, vz: 0, alive: true, grounded: true });
 const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
 
-// 1. Config: scale, exact 1.5x speeds, wind-up, reach, per mode x difficulty.
+// 1. Config: scale, exact 4.5x speeds, wind-up, reach, per mode x difficulty.
 {
   let worst = 0;
   let okAll = true;
@@ -27,13 +27,13 @@ const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
       sm.setSection(si, L.sections[si], p);
       for (const f of ['approach', 'pursue', 'burst', 'windupAdv', 'creep']) {
         const r = sm.k[f] / big.k[f];
-        worst = Math.max(worst, Math.abs(r - 1.5));
-        if (Math.abs(r - 1.5) > 1e-9) okAll = false;
+        worst = Math.max(worst, Math.abs(r - 4.5));
+        if (Math.abs(r - 4.5) > 1e-9) okAll = false;
       }
       if (Math.abs(sm.k.windup / big.k.windup - 1 / 1.5) > 1e-9 || sm.k.menace !== big.k.menace || sm.k.snap !== big.k.snap) okAll = false;
     }
   }
-  ok(okAll, `variant speeds = exactly 1.5x the Mason's (approach/pursue/burst/windupAdv/creep) on 3 difficulties x S6-S8 (worst error ${worst.toExponential(1)}); wind-up /1.5; menace + snap unchanged`);
+  ok(okAll, `variant speeds = exactly 4.5x the Mason's (approach/pursue/burst/windupAdv/creep) on 3 difficulties x S6-S8 (worst error ${worst.toExponential(1)}); wind-up /1.5; menace + snap unchanged`);
   const L = lvl('normal');
   const big = new Creature3D(L, DIFFICULTY.normal, null, { seed: 1 });
   const sm = new Creature3D(L, DIFFICULTY.normal, null, { seed: 1, variant: 'skitterling' });

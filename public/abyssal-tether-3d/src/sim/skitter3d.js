@@ -1,6 +1,6 @@
 /* ABYSSAL TETHER 3D — skitter3d.js (WP-SKITTER)
  * SkitterGroup — the Ossuary Column's little kin: up to MAX_ALIVE "skitterlings", each one a Creature3D with
- * `variant: 'skitterling'` (0.45 scale, exactly 1.5x the Mason's pursuit / crawl / burst speeds, a 1.5x shorter wind-up and a
+ * `variant: 'skitterling'` (0.45 scale, exactly 4.5x the Mason's pursuit / crawl / burst speeds, a 1.5x shorter wind-up and a
  * shorter reach, a hit that costs health instead of ending the run — see CREATURE_VARIANTS in creature3d.js).
  *
  * Spawns are data-driven: a section's `creature.skitter = { normal, nightmare, abyss }` (level-data-3d.js; S6 1, S7 1-2, S8 1-2).

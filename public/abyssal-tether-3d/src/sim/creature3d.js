@@ -181,14 +181,14 @@ const DIFF_REF = {
 
 /**
  * Per-instance variants of the same sim (WP-SKITTER). `skitterling` is the Ossuary Column's little kin: same rules, same rig,
- * 0.45 scale, EXACTLY 1.5x the big creature's approach / pursue / burst / creep / wind-up-advance speeds (DIFF_TUNE x mode x
+ * 0.45 scale, EXACTLY 4.5x the big creature's approach / pursue / burst / creep / wind-up-advance speeds (DIFF_TUNE x mode x
  * section, see _applyScaling), a wind-up 1.5x shorter and a shorter reach so it stays fair, and a hit that costs health instead
  * of killing outright (`hitDamage`, fraction of full hp per difficulty).
  */
 export const CREATURE_VARIANTS = {
   skitterling: {
     scale: 0.45,
-    speedMul: 1.5,
+    speedMul: 4.5,
     windupMul: 1 / 1.5,
     killRadiusMul: 0.62,
     steerMul: 1.5,
@@ -442,7 +442,7 @@ export class Creature3D {
    * @param {object} diff   DIFFICULTY[key] (config3d.js)
    * @param {EventBus} bus
    * @param {{seed?:number, variant?:string}} [options]  deterministic seed (tooling); random by default; variant = a
-   *   CREATURE_VARIANTS key (WP-SKITTER: smaller, 1.5x faster, hits for damage; it never listens to the sighting / call triggers)
+   *   CREATURE_VARIANTS key (WP-SKITTER: smaller, 4.5x faster, hits for damage; it never listens to the sighting / call triggers)
    */
   constructor(level, diff, bus, options) {
     this.variant = options && CREATURE_VARIANTS[options.variant] ? options.variant : '';

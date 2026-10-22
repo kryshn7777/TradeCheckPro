@@ -868,7 +868,7 @@ CL('c-s8-w3', 'w', -12, -8, -1, -546.4, -535.2);
 // Sections (themes, creature behaviour, hints, triggers)
 // =============================================================================
 const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitter = null) => (skitter ? { mode, lethal, speedMul, burstRate, spawnOffsetY, skitter } : { mode, lethal, speedMul, burstRate, spawnOffsetY });
-// WP-SKITTER: the Ossuary Column's little kin (small, red, 1.5x faster hunters) per difficulty; deeper sections of Chapter I only.
+// WP-SKITTER: the Ossuary Column's little kin (small, red, 4.5x faster hunters) per difficulty; deeper sections of Chapter I only.
 const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
 const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
