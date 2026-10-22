@@ -33,10 +33,10 @@ const BASE_R = 0.0065; // metres at the hand
 const R_PER_M = 0.0013; // extra radius per metre from the head
 const HANDS = ['left', 'right'];
 // Twisted-strand look (VR polish): a 3-strand lay computed in the fragment shader from (cos, sin, length) of each ring vertex, so the
-// tube needs no UVs or texture. Relief is a bump of ~1.2 mm with a 3.6 cm lay length; fades out beyond a few metres (it would
-// shimmer below a pixel) and the roughness is raised a little: fibre, not plastic.
+// tube needs no UVs or texture. The lay is a faint albedo ridge (+-4 %, 3.6 cm lay length) that fades out beyond 1.5 m and is below a
+// pixel by 4.5 m: fibre, not plastic. It is not a derivative-based bump: screen derivatives notch along the grazing silhouette.
 const LAY_PER_M = 28;
-const STRAND_BUMP = 0.0012;
+const STRAND_TINT = 0.08;
 const MISS_TIME = (CONFIG.rope && CONFIG.rope.missTime) || 0.24;
 const RAMP = (CONFIG.rope && CONFIG.rope.attachRamp) || 0.2;
 const SETTLE = RAMP + 0.12; // s after the bite the shape is still driven by the flight model (snap-taut + crack)
@@ -124,20 +124,15 @@ class RopeStrand {
         .replace('#include <common>', '#include <common>\nvarying vec3 vRope;')
         .replace(
           '#include <normal_fragment_maps>',
-          `#include <normal_fragment_maps>
-  {
-    // three strands twisted along the rope: a ridge per strand, a little fibre fuzz, bump-mapped from screen derivatives
+          `  {
+    // three strands twisted along the rope, as a faint lit ridge per strand in the albedo. No screen derivatives here: a bump
+    // computed from them notched along the grazing silhouette of the tube.
     float atP = 3.0 * atan( vRope.y, vRope.x ) * 0.159155 + vRope.z * ${LAY_PER_M.toFixed(1)};
-    float atH = sqrt( sin( 3.14159 * fract( atP ) ) ) * ( 0.88 + 0.12 * sin( vRope.z * 700.0 + atP * 5.0 ) );
-    atH *= ${STRAND_BUMP.toFixed(4)} * step( 0.5, dot( vRope.xy, vRope.xy ) ) * ( 1.0 - smoothstep( 1.5, 4.5, length( vViewPosition ) ) );
-    vec3 atQ0 = dFdx( - vViewPosition );
-    vec3 atQ1 = dFdy( - vViewPosition );
-    vec3 atR1 = cross( atQ1, normal );
-    vec3 atR0 = cross( normal, atQ0 );
-    float atDet = dot( atQ0, atR1 );
-    vec3 atGrad = sign( atDet ) * ( dFdx( atH ) * atR1 + dFdy( atH ) * atR0 );
-    normal = normalize( abs( atDet ) * normal - atGrad );
-  }`,
+    float atH = 0.5 - 0.5 * cos( 6.28318 * atP );
+    float atF = step( 0.5, dot( vRope.xy, vRope.xy ) ) * ( 1.0 - smoothstep( 1.5, 4.5, length( vViewPosition ) ) );
+    diffuseColor.rgb *= 1.0 + ${STRAND_TINT.toFixed(2)} * ( atH - 0.5 ) * atF;
+  }
+#include <normal_fragment_maps>`,
         );
     };
     this.mat.customProgramCacheKey = () => 'at3dRopeStrands';
