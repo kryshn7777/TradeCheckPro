@@ -7,11 +7,19 @@
 import { castBox } from './masonLegs.js';
 import { clamp } from './masonPose.js';
 
-const EXT = { down: 5.2, up: 6.1, right: 3.2, left: 2.6 }; // crown extents at kit scale (headBounds in the glTF extras)
+const EXT = { down: 5.2, up: 6.1, right: 3.2, left: 2.6 }; // v1 crown extents at kit scale (the default when the GLB has no headBounds)
+
+/** Crown extents from the rig's glTF extras (headBounds lo / hi, glTF axes: +x right, +y dorsal); EXT when absent. */
+export function headExtents(bounds) {
+  if (!bounds || !bounds.lo || !bounds.hi) return EXT;
+  return { down: Math.max(0.5, -bounds.lo[1]), up: Math.max(0.5, bounds.hi[1]), right: Math.max(0.5, bounds.hi[0]), left: Math.max(0.5, -bounds.lo[0]) };
+}
 const MAX_T = 14;
 
 export class HeadFit {
-  constructor() {
+  /** @param {{down:number, up:number, right:number, left:number}} [ext]  crown extents at kit scale (headExtents(meta.headBounds)) */
+  constructor(ext) {
+    this.ext = ext || EXT;
     this.scale = 0.7;
     this.lift = 0;
     this.clear = new Float32Array(4); // down, up, right, left
@@ -57,13 +65,14 @@ export class HeadFit {
       c[2] = Math.min(c[2], shaftExit(sh, hx, hz, rx, rz));
       c[3] = Math.min(c[3], shaftExit(sh, hx, hz, -rx, -rz));
     }
-    const hsV = (c[0] + c[1] - 0.6) / (EXT.down + EXT.up);
-    const hsR = (c[2] - 0.3) / EXT.right;
-    const hsL = (c[3] - 0.3) / EXT.left;
+    const E = this.ext;
+    const hsV = (c[0] + c[1] - 0.6) / (E.down + E.up);
+    const hsR = (c[2] - 0.3) / E.right;
+    const hsL = (c[3] - 0.3) / E.left;
     const target = clamp(Math.min(cap, hsV, hsR, hsL), this.minScale, this.maxScale);
     // lift along the dorsal axis so the portal's lower edge clears the surface it clings to (and the top clears the ceiling)
-    let liftT = clamp(EXT.down * target - c[0] + 0.4, 0, EXT.down * target);
-    const room = c[1] - EXT.up * target - 0.25;
+    let liftT = clamp(E.down * target - c[0] + 0.4, 0, E.down * target);
+    const room = c[1] - E.up * target - 0.25;
     if (liftT > room) liftT = Math.max(0, room);
     if (!this._init) {
       this.scale = target;

@@ -20,7 +20,7 @@
  */
 import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
-import { HeadFit } from './mason/masonFit.js';
+import { HeadFit, headExtents } from './mason/masonFit.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet } from './creatureDust.js';
@@ -94,7 +94,7 @@ export class MasonRigView {
     this._gv = new Float32Array(3); // the body's velocity (the dust follows the wake)
     this._wet = 0;
     this._camD = 0;
-    this.fit = new HeadFit();
+    this.fit = new HeadFit(headExtents(meta.headBounds));
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
     this.S = new Float32Array(SEG);
@@ -439,7 +439,11 @@ export class MasonRigView {
     this.uniforms.uGlowPierce.value = sighting ? 1 : o.glowPierce;
     if (this.emissive) {
       const glow = clamp(B.glow == null ? 0.3 : B.glow, 0, 1);
-      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow);
+      // a living ember: a slow double beat (lub-dub, ~1.5 s), quicker and harder as it closes in
+      const rate = 0.65 + 0.5 * clamp(glow, 0, 1);
+      const ph = (this._time * rate) % 1;
+      const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
+      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow) * (0.72 + 0.45 * beat);
     }
 
     // ---- bounds ----
