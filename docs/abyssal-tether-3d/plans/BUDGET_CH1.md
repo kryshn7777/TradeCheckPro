@@ -99,3 +99,21 @@ Quest stereo triangles S1..S8 (quest tier, mock XR, the richer lean kit above): 
 - **Governor warm-up** (`platform/governor.js`, `warmup` 5 s): frames do not count for 5 s after a session start and after play begins or resumes, nor
   while the level is being dressed. The load spikes of a start (shader programs, texture / lightmap uploads, the dressing job) were stepping the governor
   down within a second or two, which switches the god rays off and thins the fog (fx tier 'low' at level 3) for 10+ s of recovery.
+
+## Kit levels of detail (2026-10-23, last)
+
+The kit is one GLB again (`ch1_env_kit.glb`, 2.5 MB), every detailed part at up to three levels built in Blender (`build_env_kit.py`, `--lods 0` for the medium level only):
+`ch1_env_<part>_lod0` rich (about 1.65-2.4x the original triangles), `ch1_env_<part>` medium (the former lean kit), `ch1_env_<part>_lod2` far (40 % of the medium
+level, min 36; skipped where the silhouette guard would keep it above 80 %: `root_c`, `buttress_lo`). Each level is decimated from the same bevelled / weathered source and
+must keep its bounds within 10 % of the source on every axis longer than 0.5 m (the plain collapse took a 4 m buttress to 2.4 m).
+
+Engine (`levelView.js`): every kit placement with levels is a record in a `LodSet`, one per section / material / vertical slab (so the LOD chunks replace the 32 m
+detail-band chunks of the kit parts: no extra draw calls). The set owns one merged soup of all levels of all its records (vertices compacted to 32 bytes: position /
+uv float32, normal 16-bit snorm, colour half float) and an index buffer holding only the level each record shows now. Every 3rd frame, once the head moved 15 cm, each
+record's level is chosen from the distance to its surface: rich within `LOD_NEAR` (10 m) x detailScale, medium to `LOD_MID` (24 m) x detailScale, far beyond, with a 12 %
+hysteresis; beyond the old detail-band distance (32 m x detailScale, for the small parts) or the fog cull distance a record is not drawn at all. A change rewrites the
+index (tens of thousands of integers) and nothing else: materials, draw calls and chunk culling are untouched. The rich level is not built on the low detail scale.
+`?lod=0` shows the medium level everywhere. Kit chunks (`decorlod_*`) are not lantern shadow casters.
+
+Quest stereo triangles S1..S8 (quest tier, mock XR): 173k / 193k / 231k / 227k / 208k / **268k** / 247k / 205k (306k at S6 before the LODs, 350k budget), calls <= 149.
+Cost: about +41 MB of chunk vertex data (89 MB against 48 MB with the medium level only: the soup holds three levels of every placement of the whole level).

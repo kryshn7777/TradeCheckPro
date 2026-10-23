@@ -46,8 +46,8 @@ Conventions (three.js space: +Y up; Blender Z-up is converted on export):
 
 Run (Blender 4.2+/5.x, or the `bpy` Python module):
   blender -b -P build_env_kit.py -- [--out <dir>] [--render] [--focus name,name]
-  python build_env_kit.py [--out <dir>] [--render] [--kit quest|hi] [--detail 0|1]
-  (quest -> ch1_env_kit.glb, the Quest / low budget; hi -> ch1_env_kit_hi.glb, the desktop high tier; then
+  python build_env_kit.py [--out <dir>] [--render] [--lods 0|1] [--detail 0|1]
+  (one GLB: every detailed part at three levels, ch1_env_<part>_lod0 / ch1_env_<part> / ch1_env_<part>_lod2; then
    node tools/abyssal-tether-3d/bake/decor_part_boxes.mjs)
 """
 
@@ -70,7 +70,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--out", default=DEFAULT_OUT)
 ap.add_argument("--render", action="store_true", help="render a Cycles preview of every part")
 ap.add_argument("--seed", type=int, default=11)
-ap.add_argument("--kit", choices=["quest", "hi"], default="quest", help="quest: ch1_env_kit.glb (Quest / low budget), hi: ch1_env_kit_hi.glb (desktop / high tier)")
+ap.add_argument("--lods", type=int, default=1, help="1: every detailed part is exported at three levels (ch1_env_<part>_lod0 rich, ch1_env_<part> medium, ch1_env_<part>_lod2 far); 0: the medium level only")
 ap.add_argument("--detail", type=int, default=1, help="1: bevel + subdivide + weather every near part and decimate to DETAIL_TRIS; 0: the original lean kit")
 ap.add_argument("--ao-rays", type=int, default=40)
 ap.add_argument("--focus", default="", help="comma list of part names: --render shows only these (a closer look)")
@@ -1046,6 +1046,34 @@ def hemisphere_dirs(n, seed=3):
     return out
 
 
+def drop_object(ob):
+    me = ob.data
+    bpy.data.objects.remove(ob)
+    if me.users == 0:
+        bpy.data.meshes.remove(me)
+
+
+def decimated_level(src, name, target, keep=0.9, cap=0):
+    """A copy of `src` decimated to about `target` triangles whose bounds stay within `keep` of the source's on every axis longer than 0.5 m
+    (the collapse can eat a tall thin part: a 4 m buttress came out 2.4 m tall at 78 triangles); the target grows until it keeps them.
+    cap > 0: None when that takes more than `cap` triangles (the level would not be much cheaper than the next one up)."""
+    t = target
+    for _ in range(6):
+        c = clone_object(src, name)
+        decimate(c, t)
+        tris = sum(len(p.vertices) - 2 for p in c.data.polygons)
+        if cap and tris > cap:
+            drop_object(c)
+            return None
+        if all(c.dimensions[a] >= keep * src.dimensions[a] for a in range(3) if src.dimensions[a] > 0.5):
+            return c
+        drop_object(c)
+        t = int(t * 1.25) + 4
+    c = clone_object(src, name)
+    decimate(c, t)
+    return c
+
+
 def decimate(ob, target):
     """Collapse-decimates a part to about `target` triangles (keeps its silhouette). One collapse pass can stop well above the
     ratio on beveled / weathered parts (many tiny faces that pair up), so it repeats until within 8 % of the target."""
@@ -1204,32 +1232,33 @@ DETAIL_TRIS = {
     "ch1_env_pipe_run": 490,
     "ch1_env_lantern": 240,
 }
-# High tier (--kit hi -> ch1_env_kit_hi.glb, loaded on desktops: "richer, not budget-bound"): about 2x the original counts.
+# LOD0 (ch1_env_<part>_lod0): the rich level, about 2x the original counts, drawn only close to the player (LevelView swaps the level per
+# instance by distance, see render/levelView.js LodChunk). LOD2 (ch1_env_<part>_lod2) is the medium level decimated to LOD2_RATIO of its triangles.
 DETAIL_TRIS_HI = {
-    "ch1_env_corbel": 240,
-    "ch1_env_corbel_figure": 420,
-    "ch1_env_capital": 300,
-    "ch1_env_base": 240,
-    "ch1_env_boss": 280,
-    "ch1_env_bracket": 320,
-    "ch1_env_root_a": 280,
-    "ch1_env_root_b": 420,
-    "ch1_env_root_c": 560,
-    "ch1_env_growth": 380,
-    "ch1_env_saint": 700,
-    "ch1_env_gear": 700,
-    "ch1_env_geartrain": 3000,
-    "ch1_env_corbel_hero": 1500,
-    "ch1_env_arch_fragment": 700,
-    "ch1_env_wall_a": 400,
-    "ch1_env_wall_b": 600,
-    "ch1_env_wall_c": 500,
-    "ch1_env_buttress_lo": 220,
-    "ch1_env_buttress_cap": 180,
-    "ch1_env_column_cluster": 900,
-    "ch1_env_stair_fragment": 520,
-    "ch1_env_pipe_run": 650,
-    "ch1_env_lantern": 340,
+    "ch1_env_corbel": 340,
+    "ch1_env_corbel_figure": 590,
+    "ch1_env_capital": 420,
+    "ch1_env_base": 340,
+    "ch1_env_boss": 390,
+    "ch1_env_bracket": 450,
+    "ch1_env_root_a": 390,
+    "ch1_env_root_b": 590,
+    "ch1_env_root_c": 780,
+    "ch1_env_growth": 530,
+    "ch1_env_saint": 980,
+    "ch1_env_gear": 980,
+    "ch1_env_geartrain": 4200,
+    "ch1_env_corbel_hero": 2100,
+    "ch1_env_arch_fragment": 980,
+    "ch1_env_wall_a": 560,
+    "ch1_env_wall_b": 840,
+    "ch1_env_wall_c": 700,
+    "ch1_env_buttress_lo": 310,
+    "ch1_env_buttress_cap": 250,
+    "ch1_env_column_cluster": 1260,
+    "ch1_env_stair_fragment": 730,
+    "ch1_env_pipe_run": 910,
+    "ch1_env_lantern": 480,
 }
 # per material: (edge length to subdivide to, bevel width, [(feature size m, amplitude m)] of the weathering noise)
 WEATHER = {
@@ -1238,6 +1267,21 @@ WEATHER = {
     "flesh": (0.1, 0.0, [(0.4, 0.04), (0.12, 0.016), (0.05, 0.005)]),
 }
 MAX_FACES = 60000
+LOD2_RATIO = 0.4
+LOD2_MIN = 36
+
+
+def lod2_target(lean):
+    return max(LOD2_MIN, int(round(lean * LOD2_RATIO / 10.0)) * 10)
+
+
+def clone_object(ob, name):
+    c = ob.copy()
+    c.data = ob.data.copy()
+    c.name = name
+    c.data.name = name
+    bpy.context.scene.collection.objects.link(c)
+    return c
 
 
 def enrich(ob, mat, opts, seed):
@@ -1291,32 +1335,49 @@ def main():
     for pi, (name, mat, fn, opts) in enumerate(PARTS):
         geo = fn()
         ob = make_object(name, geo, mats[mat])
-        targets = DETAIL_TRIS_HI if args.kit == "hi" else DETAIL_TRIS
-        hi = args.detail and name in targets
+        rich = args.detail and name in DETAIL_TRIS
         has_post = bool(getattr(geo, "post", None))
-        if hi and not has_post:  # welded parts: weather + decimate first, then the AO sees the new relief
+        if rich and not has_post:  # welded parts: weather first, then decimate each level, then the AO sees the new relief
             enrich(ob, mat, opts, pi)
-            decimate(ob, targets[name])
-        elif opts.get("tris"):
+        elif not rich and opts.get("tris"):
             decimate(ob, opts["tris"])
-        if not opts.get("noao"):
-            bake_ao(ob, opts, args.ao_rays)
-        else:
-            me = ob.data
-            attr = me.color_attributes.new(name="Color", type="BYTE_COLOR", domain="POINT")
-            vc = opts.get("vcol", (1.0, 1.0, 1.0))
-            for i in range(len(me.vertices)):
-                attr.data[i].color = (vc[0], vc[1], vc[2], 1.0)
-            me.color_attributes.active_color = attr
+        if has_post or not rich:
+            if not opts.get("noao"):
+                bake_ao(ob, opts, args.ao_rays)
+            else:
+                me = ob.data
+                attr = me.color_attributes.new(name="Color", type="BYTE_COLOR", domain="POINT")
+                vc = opts.get("vcol", (1.0, 1.0, 1.0))
+                for i in range(len(me.vertices)):
+                    attr.data[i].color = (vc[0], vc[1], vc[2], 1.0)
+                me.color_attributes.active_color = attr
         if has_post:
-            geo.post(ob, geo)
-            if hi:  # vertex order is the post's contract (per-stone tone): weather only after it, colours interpolate
+            geo.post(ob, geo)  # vertex order is the post's contract (per-stone tone): weather only after it, colours interpolate
+            if rich:
                 enrich(ob, mat, opts, pi)
-                decimate(ob, targets[name])
-        tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
-        stats.append((name, mat, tris, tuple(round(d, 2) for d in ob.dimensions)))
-        objects.append(ob)
-    path = os.path.join(args.out, "ch1_env_kit_hi.glb" if args.kit == "hi" else "ch1_env_kit.glb")
+        if rich:
+            ob.name = name + "_src"
+            ob.data.name = name + "_src"
+            lean = DETAIL_TRIS[name]
+            levels = [(name, lean)]
+            if args.lods:
+                levels = [(name + "_lod0", DETAIL_TRIS_HI[name]), (name, lean), (name + "_lod2", lod2_target(lean))]
+            for lname, target in levels:
+                lob = decimated_level(ob, lname, target, cap=int(lean * 0.8) if lname.endswith("_lod2") else 0)
+                if lob is None:  # no real saving over the medium level: the engine uses that one for the far range too
+                    print("  (no lod2 for", name + ")")
+                    continue
+                if not has_post:
+                    bake_ao(lob, opts, args.ao_rays)
+                tris = sum(len(p.vertices) - 2 for p in lob.data.polygons)
+                stats.append((lob.name, mat, tris, tuple(round(d, 2) for d in lob.dimensions)))
+                objects.append(lob)
+            drop_object(ob)
+        else:
+            tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+            stats.append((name, mat, tris, tuple(round(d, 2) for d in ob.dimensions)))
+            objects.append(ob)
+    path = os.path.join(args.out, "ch1_env_kit.glb")
     export_glb(objects, path)
     for s in stats:
         print("  %-24s %-6s %5d tris  dims(blender xyz) %s" % s)

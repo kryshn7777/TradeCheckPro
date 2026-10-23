@@ -82,8 +82,6 @@ const LANTERN_DECAY = 1.6; // gentler than physical so the lantern still grazes 
 const DEFAULT_TEXTURE_MANIFEST = 'assets/textures/manifest.json';
 /** The Underspire environment kit (tools/abyssal-tether-3d/build_env_kit.py), relative to this module. */
 const ENV_KIT_URL = new URL('../../assets/models/env/ch1_env_kit.glb', import.meta.url).href;
-// The high tier (desktops, not budget-bound) loads the richer kit (build_env_kit.py --kit hi); Quest / phones / reduced effects keep the lean one.
-const ENV_KIT_HI_URL = new URL('../../assets/models/env/ch1_env_kit_hi.glb', import.meta.url).href;
 const SKY_RADIUS = 330; // sky dome: inside camera.far (400), beyond every section's fog far (fully fogged)
 const DESKTOP_FOV = 70; // WebXR overwrites camera.fov with the headset's; resize() restores this
 // Material slots + uniform holders scanned by precompile() for textures to upload early.
@@ -373,10 +371,12 @@ export class Renderer3D {
       .then(
         (loader) =>
           new Promise((resolve) => {
-            const lean = () => loader.load(ENV_KIT_URL, (gltf) => resolve(gltf), undefined, () => resolve(null));
-            if (this.lighting && this.lighting.tier === 'high' && !(this.settings && this.settings.reducedEffects)) {
-              loader.load(ENV_KIT_HI_URL, (gltf) => resolve(gltf), undefined, lean); // a missing rich kit falls back to the lean one
-            } else lean();
+            loader.load(
+              ENV_KIT_URL,
+              (gltf) => resolve(gltf),
+              undefined,
+              () => resolve(null),
+            );
           }),
       )
       .then((gltf) => {

@@ -33,6 +33,7 @@ const suites = [
   ['render: baked GI (deterministic bake, level hash, asset size, format) + render governor hook', 'render/test-lighting.mjs'],
   ['render: surface detail (hq shader patch, KTX2 manifest, decal atlas)', 'render/test-surface.mjs'],
   ['render: scene detail (WP-SCENE-DETAIL: kit soundness, seeded placement determinism, section mixes, vignettes, anchor clearance, tier budgets <= 3 calls / 15 k stereo triangles, view re-pack + shader patches)', 'render/test-scene-detail.mjs'],
+  ['render: kit levels of detail (ch1_env_kit.glb: rich / medium / far levels per part, bounds kept; LodSet: level per distance, hysteresis, missing levels, hidden beyond limits, index contents, append, throttle; cullBuried)', 'render/test-kit-lod.mjs'],
   ['render: geometry-compressed GLBs (EXT_meshopt_compression decode, custom attributes, GLTFLoader + vendored decoder, byte savings)', 'render/test-glb-meshopt.mjs'],
   ['render: GFX-PARITY (edge bevel / puddle / probe-box shader chunks, contact shadows, dropped props physics, wear maps, gauge glass, finger curls)', 'render/test-gfx-parity.mjs'],
   ['render: WP-SHADOWS (tier table + governor / reducedEffects reduction, cone fit, cache-refresh thresholds, receiver shader chunks, static box proxy, caster layers)', 'render/test-lantern-shadow.mjs'],

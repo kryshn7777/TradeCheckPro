@@ -3859,7 +3859,7 @@ const _buriedQ = [];
 const BURIED_ON = !(typeof location !== 'undefined' && /[?&]cull=0\b/.test(location.search || ''));
 
 /** `geo` (non-indexed, position + normal) without the triangles buried in the level's solids; the same geometry when none are. */
-function cullBuried(geo, level) {
+export function cullBuried(geo, level) {
   const p = geo.attributes.position;
   const n = geo.attributes.normal;
   if (!p || !n || geo.index || typeof level.querySolidsStatic !== 'function') return { geo, removed: 0 };
@@ -3915,6 +3915,130 @@ function cullBuried(geo, level) {
   }
   geo.dispose();
   return { geo: out, removed: tris - kept };
+}
+
+// Levels of detail of the kit parts. A part exists at up to three levels (ch1_env_<part>_lod0 rich / ch1_env_<part> medium / ch1_env_<part>_lod2 far);
+// every placement of it is one record in a LodSet, which owns ONE merged soup of all the levels of all its records and an index buffer that lists
+// only the level each record shows right now. A change of level rewrites that index (a few tens of thousands of integers, only when something
+// crossed a distance): the draw calls, the materials and the culling of the chunk stay exactly what they were.
+const LOD_NEAR = 10; // m (x detailScale): the rich level within this distance of the head (measured to the part's surface)
+const LOD_MID = 24; // m (x detailScale): the medium level up to here, the far level beyond
+const LOD_HYST = 0.12; // a level is only left once the distance is this share past its limit
+const LOD_EVERY = 3; // frames between two evaluations
+const LOD_ON = !(typeof location !== 'undefined' && /[?&]lod=0\b/.test(location.search || '')); // ?lod=0: the medium level everywhere
+
+/** Vertex format of a LodSet: 32 bytes a vertex instead of 44 (normal 16-bit snorm, colour half float; position and the metric UVs stay float32). */
+function compactVertices(g) {
+  const n = g.attributes.normal;
+  if (n && !n.normalized) {
+    const src = n.array;
+    const out = new Int16Array(src.length);
+    for (let i = 0; i < src.length; i++) out[i] = Math.round(Math.max(-1, Math.min(1, src[i])) * 32767);
+    g.setAttribute('normal', new THREE.BufferAttribute(out, 3, true));
+  }
+  const c = g.attributes.color;
+  if (c && c.array instanceof Float32Array) g.setAttribute('color', new THREE.Float16BufferAttribute(c.array, c.itemSize));
+  return g;
+}
+
+export class LodSet {
+  constructor() {
+    this.recs = [];
+    this.soup = null;
+    this.index = null;
+    this.rg = null;
+    this.stats = [0, 0, 0];
+    this._hx = Infinity;
+    this._frame = 0;
+  }
+
+  /** Adds records { geos: [lod0|null, lod1, lod2|null], x, y, z, r }; returns the new render geometry (the caller swaps it in). */
+  add(recs) {
+    const geos = [];
+    let off = 0;
+    if (this.soup) {
+      geos.push(this.soup);
+      off = this.soup.attributes.position.count;
+    }
+    for (const r of recs) {
+      r.off = [0, 0, 0];
+      r.cnt = [0, 0, 0];
+      r.cur = -1;
+      for (let l = 0; l < 3; l++) {
+        const g = r.geos[l];
+        if (!g || !g.attributes.position.count) continue;
+        compactVertices(g);
+        r.off[l] = off;
+        r.cnt[l] = g.attributes.position.count;
+        off += r.cnt[l];
+        geos.push(g);
+      }
+      this.recs.push(r);
+    }
+    const merged = mergeGeometries(geos, false);
+    for (const g of geos) g.dispose();
+    for (const r of recs) r.geos = null;
+    for (const r of this.recs) r.cur = -1;
+    this.soup = merged;
+    const rg = new THREE.BufferGeometry();
+    for (const name of Object.keys(merged.attributes)) rg.setAttribute(name, merged.attributes[name]);
+    this.index = new THREE.BufferAttribute(new Uint32Array(merged.attributes.position.count), 1);
+    this.index.setUsage(THREE.DynamicDrawUsage);
+    rg.setIndex(this.index);
+    rg.setDrawRange(0, 0);
+    this.rg = rg;
+    this._hx = Infinity;
+    return rg;
+  }
+
+  /** Picks each record's level for a head at (x, y, z); rewrites the index when one changed. `force` skips the frame / distance throttle. */
+  update(x, y, z, d0, d1, dScale, vd, force) {
+    if (!this.rg) return false;
+    if (!force) {
+      if (++this._frame % LOD_EVERY !== 0 && this._hx !== Infinity) return false;
+      if (Math.abs(x - this._hx) + Math.abs(y - this._hy) + Math.abs(z - this._hz) < 0.15) return false;
+    }
+    this._hx = x;
+    this._hy = y;
+    this._hz = z;
+    const st = this.stats;
+    st[0] = st[1] = st[2] = 0;
+    let changed = false;
+    const h = LOD_HYST;
+    for (let i = 0; i < this.recs.length; i++) {
+      const r = this.recs[i];
+      const d = Math.max(0, Math.hypot(r.x - x, r.y - y, r.z - z) - r.r);
+      let l;
+      if (d > Math.min(r.maxD * dScale, vd)) {
+        // beyond the distance its band used to be drawn to (the 32 m detail bands) or into the fog: not drawn
+        if (r.cur !== 3) changed = true;
+        r.cur = 3;
+        continue;
+      }
+      if (d < d0 * (r.cur === 0 ? 1 + h : 1 - h)) l = 0;
+      else if (d < d1 * (r.cur === 0 || r.cur === 1 ? 1 + h : 1 - h)) l = 1;
+      else l = 2;
+      if (!r.cnt[l]) l = l === 0 ? (r.cnt[1] ? 1 : 2) : l === 2 ? (r.cnt[1] ? 1 : 0) : r.cnt[0] ? 0 : 2; // a level this part does not have
+      st[l]++;
+      if (l !== r.cur) {
+        r.cur = l;
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    const a = this.index.array;
+    let w = 0;
+    for (let i = 0; i < this.recs.length; i++) {
+      const r = this.recs[i];
+      if (r.cur === 3) continue;
+      const o = r.off[r.cur];
+      const c = r.cnt[r.cur];
+      for (let k = 0; k < c; k++) a[w++] = o + k;
+    }
+    this.index.needsUpdate = true;
+    this.rg.setDrawRange(0, w);
+    return true;
+  }
 }
 
 function parseEnvKit(gltf) {
@@ -3983,6 +4107,7 @@ export class LevelView {
     this.gate = null; // the chamber portcullis (see _buildGate)
     this.fx = null; // optional FX (set by Renderer3D): grit trickles from loaded crumbling ledges
     this._detailScale = 1;
+    this._lodNear = true; // the rich level of the kit parts is built (not on the low detail scale: setKit)
     this._cullT = 0.78;
   }
 
@@ -4865,6 +4990,29 @@ export class LevelView {
     }
   }
 
+  /** One placement of a kit part: its geometry through the placement matrix, mirrored fix, tint and metric UVs. */
+  _kitGeo(part, it, lst) {
+    const g = part.geo.clone();
+    g.applyMatrix4(it.m);
+    // mirrored placements (negative determinant) would turn the part inside out
+    if (it.m.determinant() < 0) {
+      const p = g.attributes.position;
+      const n = g.attributes.normal;
+      const c = g.attributes.color;
+      for (let i = 0; i < p.count; i += 3) {
+        for (const a of [p, n, c]) {
+          const x = a.getX(i + 1), y = a.getY(i + 1), z = a.getZ(i + 1);
+          a.setXYZ(i + 1, a.getX(i + 2), a.getY(i + 2), a.getZ(i + 2));
+          a.setXYZ(i + 2, x, y, z);
+        }
+      }
+    }
+    tintColors(g, it.tint[0], it.tint[1], it.tint[2]);
+    if (lst === 'glow') g.deleteAttribute('normal'); // emissive parts: position + colour only (like Parts.glow)
+    else worldUV(g);
+    return g;
+  }
+
   /** Instantiates the planned kit parts into band lists (world space, graded, metric UVs). */
   _emitKitPlan(bands, maxSec = Infinity) {
     const kit = this._kit;
@@ -4880,24 +5028,11 @@ export class LevelView {
         missing.add(it.part);
         continue;
       }
-      const g = part.geo.clone();
-      g.applyMatrix4(it.m);
-      // mirrored placements (negative determinant) would turn the part inside out
-      if (it.m.determinant() < 0) {
-        const p = g.attributes.position;
-        const n = g.attributes.normal;
-        const c = g.attributes.color;
-        for (let i = 0; i < p.count; i += 3) {
-          for (const a of [p, n, c]) {
-            const x = a.getX(i + 1), y = a.getY(i + 1), z = a.getZ(i + 1);
-            a.setXYZ(i + 1, a.getX(i + 2), a.getY(i + 2), a.getZ(i + 2));
-            a.setXYZ(i + 2, x, y, z);
-          }
-        }
-      }
-      tintColors(g, it.tint[0], it.tint[1], it.tint[2]);
-      if ((it.list || part.list) === 'glow') g.deleteAttribute('normal'); // emissive parts: position + colour only (like Parts.glow)
-      else worldUV(g);
+      const lstEarly = it.list || part.list;
+      const g = this._kitGeo(part, it, lstEarly);
+      const lod0 = this._lodNear ? kit.get(it.part + '_lod0') : null;
+      const lod2 = kit.get(it.part + '_lod2');
+      const lodded = LOD_ON && (lod0 || lod2) && lstEarly !== 'glow' && lstEarly !== 'shaft';
       byPart[it.part] = (byPart[it.part] || 0) + part.tris;
       const T = this.stats.dress && this.stats.dress.tris;
       if (T) {
@@ -4909,7 +5044,19 @@ export class LevelView {
       g.computeBoundingBox();
       const y = (g.boundingBox.min.y + g.boundingBox.max.y) / 2;
       const lst = it.list || part.list;
-      this._bandLists(bands, y, lst === 'glow' || lst === 'shaft' ? false : !it.big)[lst].push(g);
+      const into = this._bandLists(bands, y, lst === 'glow' || lst === 'shaft' ? false : !it.big)[lst];
+      if (lodded) {
+        const bb = g.boundingBox;
+        into.push({
+          isLodRec: true,
+          maxD: it.big ? Infinity : DETAIL_DIST, // small parts were drawn from the 32 m detail bands, the big ones with their section
+          geos: [lod0 ? this._kitGeo(lod0, it, lst) : null, g, lod2 ? this._kitGeo(lod2, it, lst) : null],
+          x: (bb.min.x + bb.max.x) / 2,
+          y,
+          z: (bb.min.z + bb.max.z) / 2,
+          r: Math.hypot(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) / 2,
+        });
+      } else into.push(g);
       t += g.attributes.position.count / 3;
     }
     if (this.stats.dressTris) this.stats.dressTris.kit += t;
@@ -4930,6 +5077,54 @@ export class LevelView {
     list.length = w;
   }
 
+  /** Merges kit placements with levels of detail into LOD chunks (one per band, material and slab, like the plain chunks). */
+  _mergeLodRecs(recs, k, bi0) {
+    const level = this.level;
+    // one chunk set per SECTION (the culling band) and material, in vertical slabs: the per-instance distance limits live in the LodSet, so
+    // the 32 m detail bands (one more draw call per band and material) are not needed
+    const bi = typeof bi0 === 'number' ? bi0 : parseInt(String(bi0).slice(1), 10);
+    const groups = new Map();
+    for (const r of recs) {
+      if (BURIED_ON && level && typeof level.querySolidsStatic === 'function' && (k === 'stone' || k === 'metal' || k === 'flesh')) {
+        r.geos = r.geos.map((g) => {
+          if (!g) return null;
+          const c = cullBuried(g, level);
+          this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
+          return c.geo.attributes.position.count ? c.geo : null;
+        });
+        if (!r.geos[1]) {
+          // the medium level is always there: one that vanished entirely was buried whole (every level of it)
+          for (const g of r.geos) if (g) g.dispose();
+          continue;
+        }
+      }
+      const sl = SLAB_KINDS.has(k) ? Math.floor((this._topY - r.y) / SLAB_H) : -1;
+      if (!groups.has(sl)) groups.set(sl, []);
+      groups.get(sl).push(r);
+    }
+    for (const [sl, items] of groups) {
+      const key = sl < 0 ? `lod|${bi}|${k}` : `lod|${bi}|${k}|${sl}`;
+      const prev = this._chunkByKey.get(key);
+      const set = prev ? prev.lod : new LodSet();
+      const rg = set.add(items);
+      rg.computeBoundingSphere();
+      rg.computeBoundingBox();
+      if (prev) {
+        prev.obj.geometry.dispose();
+        prev.obj.geometry = rg;
+        prev.box.copy(rg.boundingBox);
+        continue;
+      }
+      const mesh = new THREE.Mesh(rg, this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone'));
+      mesh.name = sl < 0 ? `decorlod_${k}_${bi}` : `decorlod_${k}_${bi}_s${sl}`;
+      mesh.matrixAutoUpdate = false;
+      this._addChunk(mesh, Infinity, bi, '');
+      const ch = this._chunks[this._chunks.length - 1];
+      ch.lod = set;
+      this._chunkByKey.set(key, ch);
+    }
+  }
+
   /**
    * Merges band lists into one mesh per band per material (the decor chunks,
    * distance-culled in update). append: merge into the existing chunk of the
@@ -4948,8 +5143,18 @@ export class LevelView {
         const bi = fold ? parseInt(String(bi0).slice(1), 10) : bi0;
         const kind = fold ? '' : kind0;
         const detail = kind !== '';
+        const recs = list.filter((x) => x.isLodRec); // kit placements with levels of detail (LodSet)
+        if (recs.length) {
+          const rest = list.filter((x) => !x.isLodRec);
+          list.length = 0;
+          for (const g of rest) list.push(g);
+          this._mergeLodRecs(recs, k, bi0);
+        }
         if (k === 'stone' || k === 'metal' || k === 'flesh') this._cullBuriedList(list);
-        if (!list.length) continue;
+        if (!list.length) {
+          lists[k] = [];
+          continue;
+        }
         // large section chunks: one group per vertical slab (by the part's centre height)
         const groups = new Map();
         if (!detail && SLAB_KINDS.has(k)) {
@@ -4999,6 +5204,7 @@ export class LevelView {
    */
   setKit(gltf) {
     if (this._kit || !gltf) return false;
+    this._lodNear = this._detailScale >= 0.7;
     try {
       this._kit = parseEnvKit(gltf);
     } catch (err) {
@@ -5450,6 +5656,8 @@ export class LevelView {
     const dm = MID_DIST * this._detailScale;
     const dn = NEAR_DIST * this._detailScale;
     const nd = NEIGHBOUR_DIST * this._detailScale;
+    const lodNear = LOD_NEAR * this._detailScale;
+    const lodMid = LOD_MID * this._detailScale;
     const hb = this._band(head.y);
     for (let i = 0; i < this._chunks.length; i++) {
       const ch = this._chunks[i];
@@ -5458,6 +5666,7 @@ export class LevelView {
       // the neighbouring sections lie behind their floors: only what is near the opening is in sight
       if (ch.band !== hb && ch.band >= 0 && md > nd) md = nd;
       ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
+      if (ch.lod && ch.obj.visible) ch.lod.update(head.x, head.y, head.z, lodNear, lodMid, this._detailScale, vd, false);
     }
     const cp = this._colossalParts;
     const reach = this._detailScale >= 1.2 ? 2 : 1; // colossal silhouettes: the sections beyond the neighbours are pure haze on Quest / low

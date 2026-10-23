@@ -44,21 +44,27 @@ function frame(x, y, z, a = 0, sx = 1, sy = 1, sz = 1) {
   ok(!('wall_a' in DECOR_PARTS) && !('gear' in DECOR_PARTS) && !('root_a' in DECOR_PARTS), 'flush wall relief, cogs and roots do not collide');
 }
 
-// 2. The boxes lie inside the parts of both kits (the lean kit is the source, the rich kit is the same shapes).
-for (const file of ['ch1_env_kit.glb', 'ch1_env_kit_hi.glb']) {
-  const g = await readGLB(path.join(GAME_ROOT, 'assets', 'models', 'env', file));
-  const tol = file.includes('_hi') ? 0.06 : 0.01;
-  let good = true;
-  let seen = 0;
+// 2. The boxes lie inside the parts of every level of detail (the medium level is the source, the others are the same shapes).
+{
+  const g = await readGLB(path.join(GAME_ROOT, 'assets', 'models', 'env', 'ch1_env_kit.glb'));
+  const nodes = new Map();
   g.js.nodes.forEach((node) => {
-    if (node.mesh === undefined) return;
-    const part = (node.name || '').replace(/^ch1_env_/, '');
-    if (!DECOR_PARTS[part]) return;
-    const a = g.js.accessors[g.js.meshes[node.mesh].primitives[0].attributes.POSITION];
-    seen++;
-    for (const b of DECOR_PARTS[part]) for (let k = 0; k < 3; k++) if (b[k] < a.min[k] - tol || b[k + 3] > a.max[k] + tol) good = false;
+    if (node.mesh !== undefined) nodes.set((node.name || '').replace(/^ch1_env_/, ''), g.js.accessors[g.js.meshes[node.mesh].primitives[0].attributes.POSITION]);
   });
-  ok(good && seen === Object.keys(DECOR_PARTS).length, `${file}: every collision box is inside its part (${seen} parts, tolerance ${tol} m)`);
+  for (const [suffix, tol] of [['', 0.01], ['_lod0', 0.06], ['_lod2', 0.4]]) {
+    let good = true;
+    let seen = 0;
+    for (const part of Object.keys(DECOR_PARTS)) {
+      const a = nodes.get(part + suffix);
+      if (!a) continue;
+      seen++;
+      for (const b of DECOR_PARTS[part]) for (let k = 0; k < 3; k++) if (b[k] < a.min[k] - tol || b[k + 3] > a.max[k] + tol) good = false;
+    }
+    ok(good && seen >= (suffix === '_lod2' ? 12 : Object.keys(DECOR_PARTS).length), `ch1_env_kit.glb ${suffix || 'medium'}: every collision box is inside its part (${seen} parts, tolerance ${tol} m)`);
+  }
+  let all = 0;
+  for (const name of nodes.keys()) if (name.endsWith('_lod0')) all++;
+  ok(all >= 20, `${all} parts have a rich (lod0) level`);
 }
 
 // 3. Frames and world boxes.
