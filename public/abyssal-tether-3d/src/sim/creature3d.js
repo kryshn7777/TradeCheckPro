@@ -188,7 +188,9 @@ const DIFF_REF = {
 export const CREATURE_VARIANTS = {
   skitterling: {
     scale: 0.45,
-    speedMul: 4.5,
+    speedMul: 4.5, // x the Mason's pursuit / crawl / burst speeds (a third of the original 1.5x design speed per notch: 4.5 = 3x it)
+    // Nightmare and Abyss: 5x the original 1.5x design speed (7.5x the Mason's); the other difficulties keep speedMul
+    speedMulBy: { nightmare: 7.5, abyss: 7.5 },
     windupMul: 1 / 1.5,
     killRadiusMul: 0.62,
     steerMul: 1.5,
@@ -554,6 +556,7 @@ export class Creature3D {
     this._upz = 0;
     this._upReady = false;
     this._bodyDt = 0;
+    this._belowSign = 1; // -1: this one entered from below (skitterling slot 2)
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
@@ -684,7 +687,7 @@ export class Creature3D {
     if (lethalMode) {
       this.lethal = c.lethal === true;
       if (!this.inPlay) {
-        this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection);
+        this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection, c.spawnBelow === true);
         this._introT = T.introTime; // respawns / warps clear it (onRespawn)
       }
     } else {
@@ -1072,7 +1075,7 @@ export class Creature3D {
     // Prefer a clear spot on a wall high above you from which you are in
     // reach (nothing solid between); otherwise any clear spot.
     const tries = this._relTries;
-    tries[0] = 38 + this._rand() * 10;
+    tries[0] = (38 + this._rand() * 10) * this._belowSign;
     let found = false;
     let fx = 0;
     let fy = 0;
@@ -1080,7 +1083,7 @@ export class Creature3D {
     let fallback = false;
     const az0 = this._nearestWallAz(player.x, player.y + tries[0], player.z);
     for (let k = 0; k < tries.length && !found; k++) {
-      const y = player.y + tries[k];
+      const y = player.y + (k === 0 ? tries[0] : tries[k] * this._belowSign);
       for (let j = 0; j < 8 && !found; j++) {
         const az = az0 + (j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2) * (Math.PI / 4));
         if (!this._rayWall(player.x, y, player.z, az, 80)) continue;
@@ -1922,7 +1925,7 @@ export class Creature3D {
     const sm = U.clamp(num(c.speedMul, 1), 0.5, 1.6);
     const secEff = sm > 1 ? 1 + (sm - 1) * 0.5 : Math.max(0.75, sm);
     const mEff = Math.min(prof.speed * secEff, Math.max(prof.speed, T.maxModeSpeed));
-    const vs = this.v ? this.v.speedMul : 1;
+    const vs = this.v ? (this.v.speedMulBy && this.v.speedMulBy[this.tuneKey] != null ? this.v.speedMulBy[this.tuneKey] : this.v.speedMul) : 1;
     const spd = this.cfg.speedRatio * mEff * vs;
     this.speedScale = spd;
     k.approach = D.approach * spd;
@@ -1953,13 +1956,20 @@ export class Creature3D {
     return U.clamp(Math.abs(num(v, SECTION_DEFAULTS.spawnOffsetY)), T.spawnAboveMin, T.spawnAboveMax);
   }
 
-  _enterPlay(player, above, grace) {
+  _enterPlay(player, above, grace, below = false) {
+    this._belowSign = below ? -1 : 1; // a skitterling that comes up from below stays below when it relocates (see _relocate)
     const lv = this.level;
     const sp = lv && lv.spawn ? lv.spawn : { x: 0, y: 0, z: 0 };
     const px = player ? player.x : num(sp.x, 0);
     const py = player ? player.y : num(sp.y, 0);
     const pz = player ? player.z : num(sp.z, 0);
-    const y = py + Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    let y = py + this._belowSign * Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    const b = lv && lv.bounds;
+    if (this._belowSign < 0 && b && y < b.minY + 8) {
+      // no shaft left below the player (the last stretch): this one comes from above after all
+      this._belowSign = 1;
+      y = py + Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    }
     const near = this._nearestWallAz(px, y, pz);
     this.az = this._rand() < 0.65 ? near : near + Math.PI * (0.5 + this._rand());
     // Start on that wall, high above.
@@ -1976,10 +1986,10 @@ export class Creature3D {
     }
     this._clampToBounds();
     this.vx = 0;
-    this.vy = -6;
+    this.vy = -6 * this._belowSign;
     this.vz = 0;
     this.hx = 0;
-    this.hy = -1;
+    this.hy = -this._belowSign; // it faces the way it came: down from above, up from below
     this.hz = 0;
     if (this._findSurface(this.x, this.y, this.z, T.surfaceSearch * 2, this._surf) < Infinity) {
       this.nx = this._surf.nx;
@@ -1990,7 +2000,7 @@ export class Creature3D {
       this.ny = 0;
       this.nz = -Math.sin(this.az);
     }
-    this._layBody(0, -1, 0);
+    this._layBody(0, -this._belowSign, 0);
     this.inPlay = true;
     this.lethal = this.sectionCfg.lethal === true && LETHAL_MODES[this.mode] === true;
     this.sighting = null;

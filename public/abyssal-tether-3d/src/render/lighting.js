@@ -93,6 +93,7 @@ export class Lighting {
       lmLoaded: false, lmState: 'none', lmBytes: 0, lmMs: 0, lmPages: 0, lmGpuBytes: 0, lmSolids: 0,
     };
     this.lmTune = Object.assign({}, LM_TUNE); // live grading knobs (exposure, ambient floor)
+    this.dark = 0; // 0..1, the difficulty's darkness (setDarkness): dims the baked light
     this._lm = null; // { tex, tab, index }
     this._lmPromise = null;
     this._lmForcedOff = false; // pinned / ?fx= low tier: the old volume only
@@ -437,6 +438,14 @@ export class Lighting {
     return n;
   }
 
+  /** The difficulty's darkness 0..1 (renderer3d eases it): the baked irradiance and its ambient floor are dimmed by it. */
+  setDarkness(d) {
+    const v = Math.max(0, Math.min(1, +d || 0));
+    if (Math.abs(v - this.dark) < 0.002) return;
+    this.dark = v;
+    this._applyUniforms(false);
+  }
+
   /** Effective numbers after the governor steps. */
   _effective() {
     const c = this.cfg;
@@ -458,8 +467,8 @@ export class Lighting {
     LOOK.uEnvK.value.w = probeOk && this.tier === 'high' && this.govLevel < 1 ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
-    LOOK.uLMK.value.y = this.lmTune.exposure;
-    LOOK.uLMK.value.w = this.lmTune.floor;
+    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark);
+    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark);
     LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);

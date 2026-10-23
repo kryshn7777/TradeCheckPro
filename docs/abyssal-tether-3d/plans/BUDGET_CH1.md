@@ -128,3 +128,15 @@ rate limited to 7 rad/s, no history after a teleport; the legacy `creatureView` 
 (`_updateHeading`: a target behind the crown turns about the up instead of collapsing). View aim (`masonRigView._aim`): the focus gain is eased (it was a step per state, and an
 attack dropped it to 0), a player behind the crown fades the aim out instead of flipping the head from side to side, damping 0.55 -> 0.8 and the swing is capped at 290 / 230 deg/s.
 Frames over 300 deg/s fell from 651 to 42 per 36 x 90 s runs (the rest are relocations 28-53 m above the player and the cap itself); `tests/creature/headturn.mjs`.
+
+## Nightmare: faster small hunters, one from below, a darker shaft (2026-10-23)
+
+- `CREATURE_VARIANTS.skitterling.speedMulBy`: the skitterling is 7.5x the Mason's pursuit / crawl / burst speeds on Nightmare and Abyss (5x its original 1.5x design speed; Normal keeps
+  4.5x = 3x). Measured in the sim (90 s, 5 seeds, S7): lunge peak 75 -> 117 m/s, chase mean 11.2 -> 15.4 m/s, no NaN, nothing outside the level. The sim's own speed ceiling is
+  near: even 22.5x only reaches 124 m/s on lunges (chase 21 m/s), so the multiplier is cheap to push but past ~7.5x mostly raises the chase speed.
+- `SKITTER.below` / slot 2 (`SkitterGroup._spawnBelow`): on Nightmare and Abyss, in the sections that have skitterlings at all (S6-S8), one more skitterling enters play at a random
+  5-16 s after the player enters the section (or respawns), 32-48 m BELOW the player on a random wall (`spawnBelow` -> `Creature3D._enterPlay(..., below)`: it faces up, its
+  relocations stay below), and hunts upward. Deterministic per run seed. Three slots / three rig views now (`SKITTER.maxAlive = 3`, `dataSlots = 2`).
+- `DIFFICULTY[..].darkness` (Normal 0, Nightmare 0.72, Abyss 0.85): `renderer3d.js` eases it in and applies it to the theme target (ambient x(1-0.95d), fog colour x(1-0.85d), light colour
+  x(1-0.5d), a lower fog luminance floor), the level's lamps (x(1-0.6d)) and the baked lightmaps (`lighting.setDarkness`: exposure x(1-0.85d), ambient floor x(1-0.95d)). The player's
+  lantern is untouched. Mean frame luminance at the same spots: Nightmare 0.63-0.69 of Normal, Abyss 0.55-0.56.

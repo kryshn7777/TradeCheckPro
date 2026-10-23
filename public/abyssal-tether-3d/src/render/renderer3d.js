@@ -330,6 +330,7 @@ export class Renderer3D {
       w: 0,
     };
     this._themeInit = false;
+    this._dark = 0;
     this._fogInfo = { color: this.scene.fog.color, light: this._theme.light };
     this.stats = { calls: 0, triangles: 0, points: 0, programs: 0, frameMs: 0 };
     this._texCache = new Map(); // manifest URL or object → Promise<sets|null>
@@ -654,7 +655,7 @@ export class Renderer3D {
         f = 1 - e.src.flicker * 0.45 * (0.5 + 0.5 * Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1.3));
         if (Math.sin(t * 0.73) > 0.985) f *= 0.4;
       }
-      e.light.intensity = e.src.candela * e.level * f;
+      e.light.intensity = e.src.candela * e.level * f * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
       if (f < flickMin) flickMin = f;
     }
     this._lampFlick += (flickMin - this._lampFlick) * 0.2;
@@ -681,8 +682,19 @@ export class Renderer3D {
     const threat = THREE.MathUtils.clamp(num(threatSys && (typeof threatSys === 'number' ? threatSys : threatSys.value), 0), 0, 1);
     this.threat += (threat - this.threat) * (1 - Math.exp(-3 * d));
 
+    // The difficulty's darkness (Nightmare / Abyss): eased in, then applied to the theme target below and to the baked light / the lamps.
+    const wantDark = num(game && game.diff && game.diff.darkness, 0);
+    this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
+    const dark = this._dark;
+    this.lighting.setDarkness(dark);
+
     // Section theme (blended in space, eased in time; snaps after teleports).
     const tgt = this.themeAt(head.y, this._themeTarget);
+    if (dark > 0.001) {
+      tgt.ambient *= 1 - 0.95 * dark; // hemisphere + key + everything that reads the theme's ambient
+      tgt.fog.multiplyScalar(1 - 0.85 * dark);
+      tgt.light.multiplyScalar(1 - 0.5 * dark);
+    }
     const th = this._theme;
     const jumped = this._lastHead && this._lastHead.distanceToSquared(head) > 20 * 20;
     const k = this._themeInit && !jumped ? 1 - Math.exp(-2.5 * d) : 1;
@@ -702,7 +714,8 @@ export class Renderer3D {
     const fog = this.scene.fog;
     fog.color.copy(th.fog).multiplyScalar(FOG_GAIN);
     const lum = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
-    if (lum < FOG_LUM_FLOOR) fog.color.multiplyScalar(FOG_LUM_FLOOR / Math.max(lum, 1e-4));
+    const lumFloor = FOG_LUM_FLOOR * (1 - 0.95 * dark); // the haze may go darker than the floor of the other difficulties
+    if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
     fog.near = Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
     fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);

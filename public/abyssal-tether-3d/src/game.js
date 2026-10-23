@@ -1398,7 +1398,7 @@ export class Game3D {
     const M = this.modules;
     if (skitterOff() || !M.masonRigView || typeof M.masonRigView.cloneSkitterScenes !== 'function') return [];
     try {
-      return M.masonRigView.cloneSkitterScenes(gltf, 2);
+      return M.masonRigView.cloneSkitterScenes(gltf, 3); // one per skitterling slot (SKITTER.maxAlive: two from the data, one from below)
     } catch (err) {
       this._fault('skitterView', err);
       return [];

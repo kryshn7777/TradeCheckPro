@@ -185,6 +185,7 @@ export const CONFIG = {
 export const DIFFICULTY = {
   normal: {
     key: 'normal',
+    darkness: 0, // 0..1: how much darker the world is (render/renderer3d.js: ambient, fog, key, baked light, lamps; the lantern is untouched)
     label: 'Normal',
     blurb: 'The intended descent. Generous aim assist, recovery anchors, a patient predator.',
     levelVariant: 'normal',
@@ -203,8 +204,9 @@ export const DIFFICULTY = {
   },
   nightmare: {
     key: 'nightmare',
+    darkness: 0.72,
     label: 'Nightmare',
-    blurb: 'Faster hunter, tighter aim, fewer recovery anchors, nastier geometry.',
+    blurb: 'Faster hunters (the small ones far faster, and one more that climbs up from below), a much darker shaft, tighter aim, fewer recovery anchors, nastier geometry.',
     levelVariant: 'nightmare',
     aimRange: 29,
     aimConeDeg: 8,
@@ -221,6 +223,7 @@ export const DIFFICULTY = {
   },
   abyss: {
     key: 'abyss',
+    darkness: 0.85,
     label: 'Abyss',
     blurb: 'For speedrunners. Minimal assist, almost no recovery, no checkpoints.',
     levelVariant: 'abyss',
@@ -239,6 +242,7 @@ export const DIFFICULTY = {
   },
   sandbox: {
     key: 'sandbox',
+    darkness: 0,
     label: 'Sandbox',
     blurb: 'No predator, no lethal falls. Practise the tethers at your own pace.',
     levelVariant: 'normal',

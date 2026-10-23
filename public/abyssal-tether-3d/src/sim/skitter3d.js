@@ -3,7 +3,8 @@
  * `variant: 'skitterling'` (0.45 scale, exactly 4.5x the Mason's pursuit / crawl / burst speeds, a 1.5x shorter wind-up and a
  * shorter reach, a hit that costs health instead of ending the run — see CREATURE_VARIANTS in creature3d.js).
  *
- * Spawns are data-driven: a section's `creature.skitter = { normal, nightmare, abyss }` (level-data-3d.js; S6 1, S7 1-2, S8 1-2).
+ * Spawns are data-driven: a section's `creature.skitter = { normal, nightmare, abyss }` (level-data-3d.js; S6 1, S7 1-2, S8 1-2); on
+ * Nightmare / Abyss one more comes up from BELOW at a random time (SKITTER.below, slot 2).
  * Deterministic (per-slot seeds from the run seed). A slot enters play through the same _enterPlay as the Mason: >= 28 m ABOVE
  * the player with a grace period, so it never starts inside the checkpoint / safe radius (SAFE_RADIUS is asserted on entry).
  * DOM-free, three.js-free. The route bots / verify tools do not instantiate it (game.js owns the group), so the pass/fail
@@ -12,11 +13,16 @@
 import { Creature3D, CREATURE_VARIANTS } from './creature3d.js';
 
 export const SKITTER = {
-  maxAlive: 2,
+  maxAlive: 3, // slots: dataSlots from the section data (above the player) + the one that comes up from below
+  dataSlots: 2,
   safeRadius: 26, // m: a skitterling never begins closer than this to the player / the checkpoint they are standing at
   hurtCooldown: 1.5, // s after a hit during which further skitterling hits do nothing (a bite is an event, not a drain)
   extraOffset: 16, // slot 1 spawns this much higher than slot 0 (they arrive one after the other)
   lethalOnly: true, // only in lethal creature sections (S5 'stalk' and up) and only where the data asks for it
+  // The extra one (Nightmare and Abyss, in the sections that have skitterlings at all): it enters play at a random moment, on a random wall,
+  // a random distance BELOW the player, and hunts upward. delay: seconds after the player enters the section (or respawns); offset: metres
+  // below the player (>= safeRadius), the hunt's own rubber band keeps it from falling hopelessly behind.
+  below: { difficulties: { nightmare: true, abyss: true }, delay: [5, 16], offset: [32, 48] },
 };
 
 function hashSeed(seed, slot) {
@@ -31,7 +37,7 @@ export function skitterCount(section, diffKey) {
   const s = section && section.creature && section.creature.skitter;
   if (!s) return 0;
   const n = typeof s === 'number' ? s : s[diffKey];
-  return n > 0 ? Math.min(SKITTER.maxAlive, n | 0) : 0;
+  return n > 0 ? Math.min(SKITTER.dataSlots, n | 0) : 0;
 }
 
 /** Health fraction a skitterling hit costs on this difficulty key. */
@@ -61,6 +67,8 @@ export class SkitterGroup {
     this.spawned = 0;
     this.minSpawnDistance = Infinity;
     this._tuneKey = null;
+    this._belowT = -1; // seconds until the slot-2 skitterling enters from below (-1: none pending)
+    this._belowRng = hashSeed(this.seed, 99);
     if (!this.enabled) return;
     for (let i = 0; i < SKITTER.maxAlive; i++) {
       const c = new Creature3D(level, diff, bus, { seed: hashSeed(this.seed, i), variant: 'skitterling' });
@@ -86,6 +94,7 @@ export class SkitterGroup {
   /** Back to the start of a run (all slots off). */
   reset() {
     this.sectionIndex = -1;
+    this._belowT = -1;
     this.pendingDamage = 0;
     for (const c of this.slots) this._off(c);
   }
@@ -112,6 +121,39 @@ export class SkitterGroup {
     this.spawned++;
   }
 
+  _belowRand() {
+    // mulberry32 on the group's own state: deterministic per run seed, independent of the creatures' streams
+    this._belowRng = (this._belowRng + 0x6d2b79f5) >>> 0;
+    let t = this._belowRng;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  _belowOn() {
+    return !!(SKITTER.below.difficulties[this._tuneKey] && this.slots.length > SKITTER.dataSlots);
+  }
+
+  /** The extra skitterling enters play 32-48 m below the player, on a random wall (the creature's own seeded choice), hunting upward. */
+  _spawnBelow(player, index) {
+    const c = this.slots[SKITTER.dataSlots];
+    if (!c || c.on || !player) return;
+    const lv = this.level;
+    const sec = lv && lv.sections ? lv.sections[index] : null;
+    const [lo, hi] = SKITTER.below.offset;
+    const off = lo + this._belowRand() * (hi - lo);
+    c.active = true;
+    c.on = true;
+    c.reset(null);
+    const cr = sec && sec.creature ? sec.creature : {};
+    const over = Object.assign({}, sec, { creature: Object.assign({}, cr, { spawnOffsetY: off, spawnBelow: true }) });
+    c.setSection(index, over, player);
+    const d = Math.hypot(c.x - player.x, c.y - player.y, c.z - player.z);
+    this.minSpawnDistance = Math.min(this.minSpawnDistance, d);
+    this.spawned++;
+    this.belowSpawns = (this.belowSpawns || 0) + 1;
+  }
+
   /** The player's section changed (or a warp / respawn put them somewhere): bring slots in or out per the data. */
   setSection(index, player) {
     if (!this.enabled) return;
@@ -120,7 +162,17 @@ export class SkitterGroup {
     const prev = this.sectionIndex;
     this.sectionIndex = index;
     const want = skitterCount(sec, this._tuneKey);
-    for (let i = 0; i < this.slots.length; i++) {
+    // the one from below: wherever the section has skitterlings at all, on the harder difficulties, at a random moment
+    const below = this.slots.length > SKITTER.dataSlots ? this.slots[SKITTER.dataSlots] : null;
+    if (below) {
+      if (want > 0 && this._belowOn()) {
+        if (!below.on && this._belowT < 0) this._belowT = SKITTER.below.delay[0] + this._belowRand() * (SKITTER.below.delay[1] - SKITTER.below.delay[0]);
+      } else {
+        this._belowT = -1;
+        if (below.on) this._off(below);
+      }
+    }
+    for (let i = 0; i < SKITTER.dataSlots && i < this.slots.length; i++) {
       const c = this.slots[i];
       if (i < want) {
         if (!c.on) this._on(c, i, player, sec, index);
@@ -157,6 +209,15 @@ export class SkitterGroup {
   update(dt, player, time) {
     if (!this.enabled) return;
     if (this._hurt > 0) this._hurt -= dt;
+    if (this._belowT >= 0) {
+      this._belowT -= dt;
+      if (this._belowT < 0) {
+        if (player && player.alive !== false && this.sectionIndex >= 0) {
+          this._belowT = -1;
+          this._spawnBelow(player, this.sectionIndex);
+        } else this._belowT = 1; // not now (the player is down): try again in a second
+      }
+    }
     for (let i = 0; i < this.slots.length; i++) {
       const c = this.slots[i];
       if (!c.on) continue;
