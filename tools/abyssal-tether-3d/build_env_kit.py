@@ -66,6 +66,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--out", default=DEFAULT_OUT)
 ap.add_argument("--render", action="store_true", help="render a Cycles preview of every part")
 ap.add_argument("--seed", type=int, default=11)
+ap.add_argument("--kit", choices=["quest", "hi"], default="quest", help="quest: ch1_env_kit.glb (Quest / low budget), hi: ch1_env_kit_hi.glb (desktop / high tier)")
+ap.add_argument("--detail", type=int, default=1, help="1: bevel + subdivide + weather every near part and decimate to DETAIL_TRIS; 0: the original lean kit")
 ap.add_argument("--ao-rays", type=int, default=40)
 ap.add_argument("--focus", default="", help="comma list of part names: --render shows only these (a closer look)")
 args = ap.parse_args(argv)
@@ -1041,18 +1043,20 @@ def hemisphere_dirs(n, seed=3):
 
 
 def decimate(ob, target):
-    """Collapse-decimates a part to about `target` triangles (keeps its silhouette)."""
-    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
-    if tris <= target:
-        return
-    mod = ob.modifiers.new("decimate", "DECIMATE")
-    mod.decimate_type = "COLLAPSE"
-    mod.ratio = max(0.05, target / tris)
-    mod.use_collapse_triangulate = True
-    bpy.context.view_layer.objects.active = ob
-    for o in bpy.context.view_layer.objects:
-        o.select_set(o is ob)
-    bpy.ops.object.modifier_apply(modifier=mod.name)
+    """Collapse-decimates a part to about `target` triangles (keeps its silhouette). One collapse pass can stop well above the
+    ratio on beveled / weathered parts (many tiny faces that pair up), so it repeats until within 8 % of the target."""
+    for _ in range(4):
+        tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+        if tris <= target * 1.08:
+            return
+        mod = ob.modifiers.new("decimate", "DECIMATE")
+        mod.decimate_type = "COLLAPSE"
+        mod.ratio = max(0.02, target / tris)
+        mod.use_collapse_triangulate = True
+        bpy.context.view_layer.objects.active = ob
+        for o in bpy.context.view_layer.objects:
+            o.select_set(o is ob)
+        bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
 def bake_ao(ob, opts, rays):
@@ -1159,6 +1163,117 @@ def preview(objects, path):
     bpy.ops.render.render(write_still=True)
 
 
+# -----------------------------------------------------------------------------
+# Detail pass: the original kit was authored lean (80-500 tris a part, "instanced by the hundred"), which reads as
+# flat low-poly up close. Every near part is now bevelled (edges catch the lantern), subdivided and weathered
+# (chips, pitting, lumps: displacement along the normal) BEFORE the decimator runs, so the collapse keeps real carved
+# detail in the silhouette instead of the few big planes the primitives start with. The far silhouettes (scaled to
+# 60-220 m) are left alone. DETAIL_TRIS / DETAIL_TRIS_HI are the decimation targets per tier (see below).
+# -----------------------------------------------------------------------------
+# Quest / low tier (the default build, ch1_env_kit.glb): the parts that are instanced by the hundred near the player (corbels,
+# capitals, buttresses) grow ~20 %, the hero pieces up to ~40 %: that is what the Quest budget (350k stereo triangles, S6 is the
+# tightest) leaves, since nearly all of the triangles are within 10 m of the head. The weathering / bevel pass still improves
+# the shapes at the same count.
+DETAIL_TRIS = {
+    "ch1_env_corbel": 140,
+    "ch1_env_corbel_figure": 280,
+    "ch1_env_capital": 170,
+    "ch1_env_base": 140,
+    "ch1_env_boss": 170,
+    "ch1_env_bracket": 200,
+    "ch1_env_root_a": 180,
+    "ch1_env_root_b": 270,
+    "ch1_env_root_c": 370,
+    "ch1_env_growth": 250,
+    "ch1_env_saint": 490,
+    "ch1_env_gear": 480,
+    "ch1_env_geartrain": 2150,
+    "ch1_env_corbel_hero": 950,
+    "ch1_env_arch_fragment": 420,
+    "ch1_env_wall_a": 200,
+    "ch1_env_wall_b": 400,
+    "ch1_env_wall_c": 270,
+    "ch1_env_buttress_lo": 120,
+    "ch1_env_buttress_cap": 90,
+    "ch1_env_column_cluster": 640,
+    "ch1_env_stair_fragment": 260,
+    "ch1_env_pipe_run": 490,
+    "ch1_env_lantern": 240,
+}
+# High tier (--kit hi -> ch1_env_kit_hi.glb, loaded on desktops: "richer, not budget-bound"): about 2x the original counts.
+DETAIL_TRIS_HI = {
+    "ch1_env_corbel": 240,
+    "ch1_env_corbel_figure": 420,
+    "ch1_env_capital": 300,
+    "ch1_env_base": 240,
+    "ch1_env_boss": 280,
+    "ch1_env_bracket": 320,
+    "ch1_env_root_a": 280,
+    "ch1_env_root_b": 420,
+    "ch1_env_root_c": 560,
+    "ch1_env_growth": 380,
+    "ch1_env_saint": 700,
+    "ch1_env_gear": 700,
+    "ch1_env_geartrain": 3000,
+    "ch1_env_corbel_hero": 1500,
+    "ch1_env_arch_fragment": 700,
+    "ch1_env_wall_a": 400,
+    "ch1_env_wall_b": 600,
+    "ch1_env_wall_c": 500,
+    "ch1_env_buttress_lo": 220,
+    "ch1_env_buttress_cap": 180,
+    "ch1_env_column_cluster": 900,
+    "ch1_env_stair_fragment": 520,
+    "ch1_env_pipe_run": 650,
+    "ch1_env_lantern": 340,
+}
+# per material: (edge length to subdivide to, bevel width, [(feature size m, amplitude m)] of the weathering noise)
+WEATHER = {
+    "stone": (0.1, 0.028, [(0.5, 0.022), (0.16, 0.011), (0.06, 0.0045)]),
+    "metal": (0.14, 0.012, [(0.3, 0.004), (0.07, 0.002)]),
+    "flesh": (0.1, 0.0, [(0.4, 0.04), (0.12, 0.016), (0.05, 0.005)]),
+}
+MAX_FACES = 60000
+
+
+def enrich(ob, mat, opts, seed):
+    """Bevel + subdivide + weather `ob` in place (see DETAIL_TRIS). Mount planes stay flush."""
+    from mathutils import noise
+
+    edge, bevel, layers = WEATHER[mat]
+    me = ob.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    if bevel > 0:
+        hard = [e for e in bm.edges if len(e.link_faces) == 2 and e.calc_length() > 0.1 and e.calc_face_angle(0.0) > 0.6]
+        if hard:
+            try:
+                bmesh.ops.bevel(bm, geom=hard, offset=bevel, offset_type="OFFSET", segments=2, profile=0.55, affect="EDGES")
+            except Exception as ex:  # non-manifold primitives: keep the part unbevelled
+                print("  bevel skipped for", ob.name, ex)
+    for _ in range(3):
+        long = [e for e in bm.edges if e.calc_length() > edge]
+        if not long or len(bm.faces) > MAX_FACES:
+            break
+        bmesh.ops.subdivide_edges(bm, edges=long, cuts=1, use_grid_fill=True)
+    bm.normal_update()
+    bm.verts.ensure_lookup_table()
+    # mount planes (Blender space): wall y = 0, ceiling / floor z = 0 -> vertices lying on one do not move
+    pin = 0.004
+    for v in bm.verts:
+        c = v.co
+        if (opts.get("wall") and abs(c.y) < pin) or ((opts.get("ceiling") or opts.get("floor")) and abs(c.z) < pin):
+            continue
+        d = 0.0
+        for size, amp in layers:
+            d += amp * noise.fractal(c / size + Vector((seed * 7.1, seed * 3.3, seed * 1.9)), 0.55, 2.0, 2, noise_basis="PERLIN_ORIGINAL")
+        v.co += v.normal * d
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+
+
+
 def main():
     reset_scene()
     mats = {
@@ -1169,10 +1284,16 @@ def main():
     }
     objects = []
     stats = []
-    for name, mat, fn, opts in PARTS:
+    for pi, (name, mat, fn, opts) in enumerate(PARTS):
         geo = fn()
         ob = make_object(name, geo, mats[mat])
-        if opts.get("tris"):
+        targets = DETAIL_TRIS_HI if args.kit == "hi" else DETAIL_TRIS
+        hi = args.detail and name in targets
+        has_post = bool(getattr(geo, "post", None))
+        if hi and not has_post:  # welded parts: weather + decimate first, then the AO sees the new relief
+            enrich(ob, mat, opts, pi)
+            decimate(ob, targets[name])
+        elif opts.get("tris"):
             decimate(ob, opts["tris"])
         if not opts.get("noao"):
             bake_ao(ob, opts, args.ao_rays)
@@ -1183,12 +1304,15 @@ def main():
             for i in range(len(me.vertices)):
                 attr.data[i].color = (vc[0], vc[1], vc[2], 1.0)
             me.color_attributes.active_color = attr
-        if getattr(geo, "post", None):
+        if has_post:
             geo.post(ob, geo)
+            if hi:  # vertex order is the post's contract (per-stone tone): weather only after it, colours interpolate
+                enrich(ob, mat, opts, pi)
+                decimate(ob, targets[name])
         tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
         stats.append((name, mat, tris, tuple(round(d, 2) for d in ob.dimensions)))
         objects.append(ob)
-    path = os.path.join(args.out, "ch1_env_kit.glb")
+    path = os.path.join(args.out, "ch1_env_kit_hi.glb" if args.kit == "hi" else "ch1_env_kit.glb")
     export_glb(objects, path)
     for s in stats:
         print("  %-24s %-6s %5d tris  dims(blender xyz) %s" % s)
