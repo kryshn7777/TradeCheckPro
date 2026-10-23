@@ -152,3 +152,18 @@ keep fx tier `quest`); god rays, fog, lighting tier, surface look, lantern shado
 god-ray segments, fog range and shadow plan equal to level 0. `?gov=off` still turns the governor off entirely.
 Not measured on a headset: if frames are missed, the picture now gets blurrier (viewport scale 0.7) instead of thinner.
 The menu is not judged any more (`platform/governor.js` and the render-side governor in `game.js` count only `playing` / `dead` frames): an independent review found that resolution and foveation still stepped down in the menu at the end of the 5 s warm-up, which looked like the picture degrading. Play still re-arms the warm-up.
+
+## The Mason v2 (2026-10-23)
+
+The big Mason was redesigned (hooded saint face over a split jaw, bone ribs, skeletal-hand feet; `tools/abyssal-tether-3d/README.md`).
+The skitterlings keep the v1 model (`skitter_rig.glb`, 56.7 k / 20.7 k, unchanged).
+
+| `mason_rig.glb` | v1 | v2 |
+|---|---|---|
+| LOD0 / LOD1 triangles | 56.7 k / 20.7 k | 63.4 k / 23.2 k (+11.7 % / +12.3 %) |
+| Draw calls per view | 4 | 4 |
+| File (meshopt + KTX2) | 5.4 MB | 5.6 MB (kit 4.4 MB, hero 4.5 MB) |
+| Textures | 2 atlases + flat emissive | same (Crown / Body 1024 KTX2, ORM 512) |
+
+The stereo budget harness was not re-run (rise < 15 %). Not measured on a Quest GPU.
+
