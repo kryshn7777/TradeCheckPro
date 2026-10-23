@@ -26,6 +26,7 @@ const suites = [
   ['climb: WP-CLIMB (zones, VR hand-delta pull + throw, alternating hands, stretch, collision safety, grip stamina drain / slip / refill / difficulty, desktop cling + hop, rope + grip, determinism)', 'climb/unit.mjs'],
   ['audio: WP-AUDIO (impulse responses, rope/footstep/music/creature-clip modules, voice cap, reduced tier, 10 simulated minutes no growth, NaN-free)', 'audio/unit.mjs'],
   ['physics: swing bench checks (near grab, pendulum, catches, two ropes, bot routes, reel)', 'physics/swingbench.mjs', ['--check']],
+  ['physics: decor collision (kit part boxes inside both kits, placement frames, safety rules, Level3D decor solids, line of sight / raycast, landing on one)', 'physics/decor.mjs'],
   ['release: save data (E05: schema, migration, adapters, SaveService, Continue slot)', 'release/test-save.mjs'],
   ['release: entitlement (E06: nine store scenarios, chapter gate, release-channel mock lock)', 'release/test-entitlement.mjs'],
   ['release: XR governor (steps, hysteresis, reduced effects, no allocation)', 'release/test-governor.mjs'],

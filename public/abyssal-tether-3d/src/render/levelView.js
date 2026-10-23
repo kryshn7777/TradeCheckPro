@@ -40,6 +40,7 @@
  */
 
 import * as THREE from 'three';
+import { decorColliders } from '../sim/decorColliders.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
 
@@ -1778,7 +1779,7 @@ class DressSpace {
 
   /** Active solid containing the point (shrunk by eps)? */
   inSolid(x, y, z, eps = 0.02) {
-    const res = this.level.querySolids(x - eps, y - eps, z - eps, x + eps, y + eps, z + eps, this._q) || this._q;
+    const res = staticSolids(this.level, x - eps, y - eps, z - eps, x + eps, y + eps, z + eps, this._q) || this._q;
     for (const s of res) {
       if (s.active === false) continue;
       if (x > s.minX + eps && x < s.maxX - eps && y > s.minY + eps && y < s.maxY - eps && z > s.minZ + eps && z < s.maxZ - eps) return s;
@@ -1789,7 +1790,7 @@ class DressSpace {
   /** Obstacles overlapping the box; hosts (Set) are ignored; deep pieces also respect the player space. */
   _each(b, hosts, deep, fn, clear = DR.anchorClear) {
     const e = 0.03;
-    const res = this.level.querySolids(b.minX + e, b.minY + e, b.minZ + e, b.maxX - e, b.maxY - e, b.maxZ - e, this._q) || this._q;
+    const res = staticSolids(this.level, b.minX + e, b.minY + e, b.minZ + e, b.maxX - e, b.maxY - e, b.maxZ - e, this._q) || this._q;
     for (const s of res) {
       if (hosts && hosts.has(s)) continue;
       if (s.maxX <= b.minX + e || s.minX >= b.maxX - e || s.maxY <= b.minY + e || s.minY >= b.maxY - e || s.maxZ <= b.minZ + e || s.minZ >= b.maxZ - e) continue;
@@ -3843,6 +3844,11 @@ function pointedArch(w, rise, n) {
 }
 
 /** Kit parts from the env GLB: name → { geo (non-indexed position/normal/color), list }. */
+/** Solids as the dressing sees them: the level's own boxes only, never the colliding dressing it produced itself (sim/decorColliders.js). */
+function staticSolids(level, minX, minY, minZ, maxX, maxY, maxZ, out) {
+  return typeof level.querySolidsStatic === 'function' ? level.querySolidsStatic(minX, minY, minZ, maxX, maxY, maxZ, out) : level.querySolids(minX, minY, minZ, maxX, maxY, maxZ, out);
+}
+
 function parseEnvKit(gltf) {
   const out = new Map();
   const root = gltf && (gltf.scene || (gltf.scenes && gltf.scenes[0]));
@@ -4255,7 +4261,7 @@ export class LevelView {
             hi[axis] = maxv[axis] + 0.25;
           }
           scratch.length = 0;
-          const res = level.querySolids(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], scratch) || scratch;
+          const res = staticSolids(level, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], scratch) || scratch;
           for (const s of res) {
             if (s.maxX < lo[0] || s.minX > hi[0] || s.maxY < lo[1] || s.minY > hi[1] || s.maxZ < lo[2] || s.minZ > hi[2]) continue;
             return true;
@@ -4572,6 +4578,7 @@ export class LevelView {
    * there (setKit). finishDressing() runs the job to the end synchronously.
    */
   _buildDressing(level) {
+    if (typeof level.clearDecorColliders === 'function') level.clearDecorColliders(); // a re-dressing starts without the old colliders
     this._kitPlan = [];
     for (const l of this._lampPlans || []) {
       const m = new THREE.Matrix4().makeRotationY(l.rotY);
@@ -4731,6 +4738,7 @@ export class LevelView {
         }
         const r = job.it.next();
         if (r.done) {
+          this._collideDecor();
           this._flushDressing(Infinity);
           this._flushDecals();
           this._buildCogs(job.D && job.D.gears);
@@ -4750,6 +4758,20 @@ export class LevelView {
       if (this.stats.dress) this.stats.dress.error = String(err && err.message);
       this._dressJob = null;
     }
+  }
+
+  /**
+   * The planned kit parts that project into the open become solid for the sim (sim/decorColliders.js: compound boxes, minus the ones
+   * that could take an anchor, a grip, a walkway or a checkpoint away). The plan is seeded and does not depend on the kit GLB or its
+   * tier, so every device builds the same colliders.
+   */
+  _collideDecor() {
+    const level = this.level;
+    if (!level || typeof level.addDecorColliders !== 'function' || !this._kitPlan) return;
+    const { boxes, stats } = decorColliders(level, this._kitPlan);
+    level.clearDecorColliders();
+    level.addDecorColliders(boxes);
+    this.stats.decorColliders = Object.assign({ boxes: boxes.length }, stats);
   }
 
   /** Runs the dressing job to the end now (tests, tools, a renderer precompile). */
@@ -5067,7 +5089,7 @@ export class LevelView {
       if (typeof level.querySolids === 'function' && !box.isEmpty()) {
         tmpBox.copy(box).expandByScalar(4);
         scratch.length = 0;
-        const res = level.querySolids(tmpBox.min.x, tmpBox.min.y, tmpBox.min.z, tmpBox.max.x, tmpBox.max.y, tmpBox.max.z, scratch) || scratch;
+        const res = staticSolids(level, tmpBox.min.x, tmpBox.min.y, tmpBox.min.z, tmpBox.max.x, tmpBox.max.y, tmpBox.max.z, scratch) || scratch;
         for (const s of res) {
           if (s.maxX < tmpBox.min.x || s.minX > tmpBox.max.x || s.maxY < tmpBox.min.y || s.minY > tmpBox.max.y || s.maxZ < tmpBox.min.z || s.minZ > tmpBox.max.z) continue;
           hit = true;

@@ -8,7 +8,9 @@ collision boxes at load time:
   public/abyssal-tether-3d/assets/models/env/ch1_env_kit.glb
   (+ optional Cycles preview: --render → <out>/ch1_env_kit_preview.png)
 
-Parts are purely visual dressing (collision stays the level's boxes). No UVs and
+Parts are dressing: the level's boxes stay the collision of the shaft itself, and the parts that project into the open get collision
+boxes of their own from the built kit (bake/decor_part_boxes.mjs -> src/data/decor-parts-3d.js, placed by sim/decorColliders.js; re-run
+it after a rebuild). No UVs and
 no textures are exported: LevelView projects the shared baked sets
 (assets/textures: masonry / metal / flesh) in world metres, and every part
 carries a baked ambient-occlusion term in COLOR_0 (grey) so carved detail reads
@@ -44,7 +46,9 @@ Conventions (three.js space: +Y up; Blender Z-up is converted on export):
 
 Run (Blender 4.2+/5.x, or the `bpy` Python module):
   blender -b -P build_env_kit.py -- [--out <dir>] [--render] [--focus name,name]
-  python build_env_kit.py [--out <dir>] [--render]
+  python build_env_kit.py [--out <dir>] [--render] [--kit quest|hi] [--detail 0|1]
+  (quest -> ch1_env_kit.glb, the Quest / low budget; hi -> ch1_env_kit_hi.glb, the desktop high tier; then
+   node tools/abyssal-tether-3d/bake/decor_part_boxes.mjs)
 """
 
 import argparse

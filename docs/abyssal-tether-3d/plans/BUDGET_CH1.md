@@ -59,3 +59,24 @@ S6 143 / 381k, S7 141 / 347k.
 - Hands + launchers (58k, 24 calls of which 14 are tiny gauge/screen/sprite draws) and body (18k) are untouched (GLB assets, near field).
 - The folded metal/flesh slabs now draw a little more far relief in S6-S8 (+10k vs the old detail tier) in exchange for -8 calls.
 - Not measured on a headset; Quest multiview may count calls differently from the mock. Run `npm run at3d:sw` at release (new file lanternShadowProxy.js).
+
+## Environment kit detail pass + collision (2026-10-23)
+
+`tools/abyssal-tether-3d/build_env_kit.py` (Blender, bpy 5.2.2 headless) now bevels, subdivides and weathers every near kit part before the
+decimator runs, so the collapse keeps carved detail in the silhouette. Two kits come out of it (`--kit quest|hi`):
+
+| Kit | Used on | Unique triangles | Stereo triangles at S1..S8 (quest tier, mock XR) |
+|---|---|---|---|
+| `ch1_env_kit.glb` | Quest, phones, reduced effects (and the fallback) | 8.7k -> 10.2k | 224k / 273k / 327k / 318k / 264k / 350k (349.6k) / 315k / 263k, all <= 150 calls |
+| `ch1_env_kit_hi.glb` | desktop high tier (`renderer3d.js` picks it by `lighting.tier`) | 15.2k | not budget-bound (high tier) |
+
+Before this pass (same fog) the quest tier was 210k / 248k / 299k / 298k / 248k / 327k / 300k / 252k. Nearly all of a section's triangles are within 10 m
+of the head, so distance culling does not buy room: the lean kit's growth (+22 %) is what S6 (the tightest section) leaves under 350k. The
+Blender triangle targets per part are `DETAIL_TRIS` (quest) and `DETAIL_TRIS_HI`.
+
+Collision: the parts that project into the open (corbels, buttresses, stair fragments, pipes, columns, bracket, saint, arch, gear train, lanterns, 16 parts)
+now collide. `bake/decor_part_boxes.mjs` derives compound boxes per part from the built kit (`src/data/decor-parts-3d.js`); `sim/decorColliders.js` places
+them where `LevelView` dressed the part (seeded, the same on every device and kit tier: 479 of 568 placements, 1145 boxes) and drops a placement
+that could take an anchor, a grip / edge hold, a walkway's headroom, a hazard's neighbour, the spawn or a checkpoint. They live in `Level3D.decorSolids`
+(not in `solids`: the view draws those as slabs and plans against them); `querySolids` includes them, `querySolidsStatic` does not. The bot routes
+play identically with and without them (`AT3D_DECOR=<json> npm run verify:at3d`: all variants pass, same splits).
