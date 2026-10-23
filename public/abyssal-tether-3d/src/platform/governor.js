@@ -43,7 +43,7 @@
  *            dressing job) are not the steady cost of the picture, and a step taken for them took the god rays and the fog away
  *            seconds after the start, for 10+ s of recovery
  *   ignored  frames longer than HITCH_MS (loading, a suspended page, a system dialog) and frames while the game
- *            is not 'playing' / 'menu' / 'dead' (paused, victory)
+ *            is not 'playing' / 'dead' (the menu, paused, victory: the menu is a still room, a step taken there only blurred the picture seconds after opening it)
  * sample() allocates nothing.
  */
 
@@ -297,7 +297,7 @@ export class QualityGovernor {
       return false;
     }
     const st = this.game.state;
-    if (st !== 'playing' && st !== 'menu' && st !== 'dead') {
+    if (st !== 'playing' && st !== 'dead') {
       this._lastState = st;
       this._reset();
       return false;

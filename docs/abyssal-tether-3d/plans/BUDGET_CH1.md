@@ -151,3 +151,4 @@ keep fx tier `quest`); god rays, fog, lighting tier, surface look, lantern shado
 `settings.reducedEffects` (the player's own switch) still lowers them. Checked in the mock XR menu: level 4 leaves tier, fx tier,
 god-ray segments, fog range and shadow plan equal to level 0. `?gov=off` still turns the governor off entirely.
 Not measured on a headset: if frames are missed, the picture now gets blurrier (viewport scale 0.7) instead of thinner.
+The menu is not judged any more (`platform/governor.js` and the render-side governor in `game.js` count only `playing` / `dead` frames): an independent review found that resolution and foveation still stepped down in the menu at the end of the 5 s warm-up, which looked like the picture degrading. Play still re-arms the warm-up.

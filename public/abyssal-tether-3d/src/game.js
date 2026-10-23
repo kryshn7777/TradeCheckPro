@@ -2396,7 +2396,7 @@ export class Game3D {
     if (rgov) {
       // render-side governor (lighting tiers): mirrors platform/governor.js in XR, steps by itself on desktop; 0 = not a measuring state
       const st = this.state;
-      rgov.update(st === 'playing' || st === 'menu' || st === 'dead' ? realDt * 1000 : 0);
+      rgov.update(st === 'playing' || st === 'dead' ? realDt * 1000 : 0);
     }
     try {
       if (this._frozen) {

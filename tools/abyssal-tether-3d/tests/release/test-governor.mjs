@@ -238,13 +238,21 @@ function run(g, gov, seconds, dt, frame) {
 
 // warm-up: the load spikes of a start do not count (they took the god rays and the fog away a couple of seconds after the start)
 {
-  const f = fakeGame({ state: 'menu' });
+  const f = fakeGame({ state: 'playing' });
   const gov = new QualityGovernor(f.game); // default warm-up
   gov.onSessionStart(f.session);
   run(f.game, gov, 4.5, 1 / 40, f.frame); // 25 ms frames for 4.5 s: all misses, all inside the warm-up
   ok(gov.level === 0 && gov.stats.degrades === 0 && gov.stats.misses === 0, 'a slow first 4.5 s of a session does not degrade (warm-up)');
   run(f.game, gov, 3, 1 / 40, f.frame);
   ok(gov.level >= 1, 'the same frames after the warm-up do degrade (the governor still works)');
+}
+// the menu is never judged: slow frames there change nothing
+{
+  const f = fakeGame({ state: 'menu' });
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
+  gov.onSessionStart(f.session);
+  run(f.game, gov, 20, 1 / 20, f.frame);
+  ok(gov.level === 0 && gov.stats.frames === 0, 'a slow menu does not degrade');
 }
 {
   const f = fakeGame({ state: 'menu' });
