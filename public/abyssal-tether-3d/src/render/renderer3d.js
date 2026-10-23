@@ -254,6 +254,7 @@ export class Renderer3D {
     this.lanternFlare.scale.set(0.42, 0.42, 1);
     this.lanternFlare.renderOrder = 70;
     this.lanternFlare.material.userData.noLook = true;
+    this.lanternFlare.visible = false; // the fake bloom is OFF (owner's call); the sprite stays so the API and the dispose path are unchanged
     this.lanternGroup.add(this.lanternFlare);
     this.lanternBase = LANTERN_CANDELA;
     this.setLanternParent(this.camera);

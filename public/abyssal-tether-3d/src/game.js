@@ -77,7 +77,9 @@ const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
 // the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
 const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
-const CREATURE_LOD = { low: 11, quest: 16, high: 38 }; // creature LOD0 -> LOD1 switch distance (m) per render tier (hysteresis 5 m in the view)
+// The Mason always draws its full LOD0 mesh (owner's call, every tier): the LOD0 -> LOD1 switch distance is infinite. The small hunters keep
+// their own short LOD (SKITTER_VIEW in masonRigView.js). Set a finite value per tier here to bring the switch back.
+const CREATURE_LOD = { low: Infinity, quest: Infinity, high: Infinity };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
