@@ -978,6 +978,11 @@ import env_kit2_parts  # noqa: E402
 
 PARTS += env_kit2_parts.parts(globals())
 
+# the statues (saint, atlas figure, hero corbel) are rebuilt with real anatomy (env_statues.py)
+import env_statues  # noqa: E402
+
+PARTS = env_statues.replace(PARTS, globals())
+
 
 # -----------------------------------------------------------------------------
 # Blender objects, AO bake into COLOR_0, export
@@ -1208,7 +1213,7 @@ def preview(objects, path):
 # the shapes at the same count.
 DETAIL_TRIS = {
     "ch1_env_corbel": 140,
-    "ch1_env_corbel_figure": 280,
+    "ch1_env_corbel_figure": 900,
     "ch1_env_capital": 170,
     "ch1_env_base": 140,
     "ch1_env_boss": 170,
@@ -1217,10 +1222,10 @@ DETAIL_TRIS = {
     "ch1_env_root_b": 270,
     "ch1_env_root_c": 370,
     "ch1_env_growth": 250,
-    "ch1_env_saint": 490,
+    "ch1_env_saint": 1500,
     "ch1_env_gear": 480,
     "ch1_env_geartrain": 2150,
-    "ch1_env_corbel_hero": 950,
+    "ch1_env_corbel_hero": 1500,
     "ch1_env_arch_fragment": 420,
     "ch1_env_wall_a": 200,
     "ch1_env_wall_b": 400,
@@ -1236,7 +1241,7 @@ DETAIL_TRIS = {
 # instance by distance, see render/levelView.js LodChunk). LOD2 (ch1_env_<part>_lod2) is the medium level decimated to LOD2_RATIO of its triangles.
 DETAIL_TRIS_HI = {
     "ch1_env_corbel": 340,
-    "ch1_env_corbel_figure": 590,
+    "ch1_env_corbel_figure": 2200,
     "ch1_env_capital": 420,
     "ch1_env_base": 340,
     "ch1_env_boss": 390,
@@ -1245,10 +1250,10 @@ DETAIL_TRIS_HI = {
     "ch1_env_root_b": 590,
     "ch1_env_root_c": 780,
     "ch1_env_growth": 530,
-    "ch1_env_saint": 980,
+    "ch1_env_saint": 3600,
     "ch1_env_gear": 980,
     "ch1_env_geartrain": 4200,
-    "ch1_env_corbel_hero": 2100,
+    "ch1_env_corbel_hero": 3200,
     "ch1_env_arch_fragment": 980,
     "ch1_env_wall_a": 560,
     "ch1_env_wall_b": 840,
@@ -1289,6 +1294,8 @@ def enrich(ob, mat, opts, seed):
     from mathutils import noise
 
     edge, bevel, layers = WEATHER[mat]
+    edge = opts.get("edge", edge)  # the statues subdivide finer (0.03 m): they are small and carved, not walls
+    layers = [(sz, amp * opts.get("wscale", 1.0)) for sz, amp in layers]  # ... and their weathering is gentler
     me = ob.data
     bm = bmesh.new()
     bm.from_mesh(me)

@@ -16,8 +16,8 @@ import * as THREE from 'three';
 import { FX_LIGHT_GLSL } from './atmosphere.js';
 import { DITHER_GLSL } from './vrShade.js';
 
-const MAX = 300;
-const CAPS = [110, 210, 300]; // live particles per fx tier (0 low / reduced, 1 quest, 2 desktop)
+const MAX = 520;
+const CAPS = [160, 330, 520]; // live particles per fx tier (0 low / reduced, 1 quest, 2 desktop)
 const SECTION_WET = [0, 0.1, 0.25, 0.45, 0.85, 0.6, 0.75, 1]; // mirrors fx.js
 
 /** Wetness 0..1 of a level section (the mist). */
@@ -192,11 +192,11 @@ export class CreatureDust {
     this.size[i] = size;
     this.grow[i] = grow;
     this.alpha[i] = alpha;
-    // dry: grey-brown stone dust; wet: pale cold mist
-    const g = 0.22 + r() * 0.07;
-    this.cr[i] = g * (1.0 - 0.2 * wet);
-    this.cg[i] = g * (1 + 0.02 * wet);
-    this.cb[i] = g * (0.94 + 0.22 * wet);
+    // dirt: a warm brown (a lit puff reads as brown smoke, an unlit one as a dark brown smudge); wet sections pale it a little
+    const g = 0.5 + r() * 0.14;
+    this.cr[i] = g * (1.0 - 0.15 * wet);
+    this.cg[i] = g * (0.68 + 0.1 * wet);
+    this.cb[i] = g * (0.42 + 0.22 * wet);
     this.drift[i] = drift;
     this.stats.spawned++;
   }
@@ -253,8 +253,8 @@ export class CreatureDust {
         cy * sp + wvy * 0.25,
         cz * sp + wvz * 0.25,
         sz,
-        (0.05 + 0.06 * strength) * (1 - 0.35 * wet),
-        (0.6 + r() * 0.5) * (1 + 0.8 * wet),
+        (0.13 + 0.12 * strength) * (1 - 0.3 * wet),
+        (0.8 + r() * 0.6) * (1 + 0.6 * wet),
         wet,
         0.6,
         1.1 + 0.8 * wet,
@@ -282,12 +282,43 @@ export class CreatureDust {
       wvy * 0.3 + (r() - 0.5) * 0.4 * size,
       wvz * 0.3 + (r() - 0.5) * 0.4 * size,
       sz,
-      (0.025 + 0.035 * strength) * (1 - 0.3 * wet),
-      (1.0 + r() * 0.9) * (1 + 0.9 * wet),
+      (0.07 + 0.08 * strength) * (1 - 0.25 * wet),
+      (1.2 + r() * 1.0) * (1 + 0.7 * wet),
       wet,
       0.9,
       0.9 + 0.7 * wet,
     );
+  }
+
+  /**
+   * Brown dirt smoke kicked up by a leg while the creature moves: a fat puff at the foot that rises off the surface and trails back
+   * with the wake (call a few times a second per creature, one leg at a time). size = the creature's leg scale (Mason ~ 1).
+   */
+  smoke(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz) {
+    if (!this._near(x, y, z, 50 * Math.max(0.5, size))) return;
+    const n = this._count(1.6);
+    const r = this.rng;
+    for (let k = 0; k < n; k++) {
+      const sz = size * (0.9 + r() * 0.9) * (0.75 + 0.5 * strength);
+      const up = (0.35 + r() * 0.55) * size;
+      this._spawn(
+        x + (r() - 0.5) * size * 0.5 + nx * sz * 0.5,
+        y + (r() - 0.5) * size * 0.5 + ny * sz * 0.5,
+        z + (r() - 0.5) * size * 0.5 + nz * sz * 0.5,
+        nx,
+        ny,
+        nz,
+        wvx * 0.3 + (r() - 0.5) * 0.7 * size + nx * up,
+        wvy * 0.3 + (r() - 0.5) * 0.7 * size + ny * up,
+        wvz * 0.3 + (r() - 0.5) * 0.7 * size + nz * up,
+        sz,
+        (0.16 + 0.12 * strength) * (1 - 0.25 * wet),
+        1.5 + r() * 1.1,
+        wet,
+        0.85,
+        1.5,
+      );
+    }
   }
 
   /** A strike / slam: a ring of dust driven out along the surface from the impact point. */
@@ -306,7 +337,7 @@ export class CreatureDust {
       const cx = B[0] * c + B[3] * s;
       const cy = B[1] * c + B[4] * s;
       const cz = B[2] * c + B[5] * s;
-      this._spawn(x + nx * sz * 0.45, y + ny * sz * 0.45, z + nz * sz * 0.45, nx, ny, nz, cx * sp, cy * sp, cz * sp, sz, (0.09 + 0.07 * strength) * (1 - 0.3 * wet), (0.9 + r() * 0.8) * (1 + 0.8 * wet), wet, 0.2, 1.3 + wet);
+      this._spawn(x + nx * sz * 0.45, y + ny * sz * 0.45, z + nz * sz * 0.45, nx, ny, nz, cx * sp, cy * sp, cz * sp, sz, (0.16 + 0.12 * strength) * (1 - 0.25 * wet), (1.1 + r() * 0.9) * (1 + 0.6 * wet), wet, 0.2, 1.4 + wet);
     }
   }
 

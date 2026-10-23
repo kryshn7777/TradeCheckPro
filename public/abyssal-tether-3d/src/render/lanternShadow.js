@@ -101,7 +101,7 @@ export class LanternShadow {
   /** @param {object} r3d Renderer3D (.renderer .scene .camera .lantern .lighting .governor .settings .levelView) */
   constructor(r3d) {
     this.r3d = r3d;
-    this._apiOn = true;
+    this._apiOn = false; // the real-time lantern shadow map is OFF by default (owner's call); renderer.lanternShadow.setEnabled(true) brings it back
     this._tierOverride = null;
     this.plan = shadowPlan('low');
     this.k = 0; // strength 0..1 (eased: no pop when the tier / governor switches it)
@@ -180,7 +180,7 @@ export class LanternShadow {
   // ---------------------------------------------------------------------------
   // API
   // ---------------------------------------------------------------------------
-  /** Master switch of the feature (default on; the tier / governor still decide). */
+  /** Master switch of the feature (default OFF; the tier / governor still decide once it is on). */
   setEnabled(on) {
     this._apiOn = on !== false;
     return this._apiOn;

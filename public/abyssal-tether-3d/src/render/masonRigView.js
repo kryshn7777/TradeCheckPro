@@ -89,6 +89,8 @@ export class MasonRigView {
     this.motion = new BodyMotion(SEG, skit ? MOTION_SKITTER : MOTION_MASON);
     this.dust = null;
     this._trailAcc = 0;
+    this._smokeAcc = 0;
+    this._smokeI = 0;
     this._trailI = 3;
     this._gu = new Float32Array([0, 1, 0]); // the body's up near the shoulders (the dust's surface normal)
     this._gv = new Float32Array(3); // the body's velocity (the dust follows the wake)
@@ -742,6 +744,7 @@ export class MasonRigView {
     this.legs.hug = this._hug;
     const freeze = g.freeze || !!(this._forced && this._forced.hold);
     this.legs.update(dt, F, S, limbs, level, freeze, lodFar, this._speed);
+    this._legSmoke(dt, limbs);
   }
 
   // ---- ground dust ------------------------------------------------------------------------------------------------
@@ -752,6 +755,41 @@ export class MasonRigView {
     const v = this._gv;
     const size = this.opts.size;
     d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2]);
+  }
+
+  /** Brown dirt smoke at the feet while it moves: one leg at a time, round robin, more the faster it goes. */
+  _legSmoke(dt, limbs) {
+    const d = this.dust;
+    if (!d || this._camD > 90) return;
+    const sp = this._speed;
+    const size = this.opts.size;
+    const mv = clamp(sp / (2.5 * Math.max(size, 0.3) ** 0.5), 0, 1.6);
+    if (mv < 0.1) return;
+    const list = this.legs.legs;
+    if (!list.length) return;
+    this._smokeAcc += dt * (2 + sp * 1.1) * (this.opts.variant ? 0.8 : 1);
+    const u = this._gu;
+    const v = this._gv;
+    let guard = 0;
+    while (this._smokeAcc >= 1 && guard++ < 4) {
+      this._smokeAcc -= 1;
+      const L = list[this._smokeI++ % list.length];
+      let x;
+      let y;
+      let z;
+      if (L.kind === 'lead') {
+        const sim = limbs && limbs[L.simLimb];
+        if (!sim) continue;
+        x = sim.foot.x;
+        y = sim.foot.y;
+        z = sim.foot.z;
+      } else {
+        x = L.fx;
+        y = L.fy;
+        z = L.fz;
+      }
+      d.smoke(x, y, z, u[0], u[1], u[2], size * (L.kind === 'lead' ? 1.1 : 0.8), clamp(mv, 0.25, 1), this._wet, v[0] * 0.5, v[1] * 0.5, v[2] * 0.5);
+    }
   }
 
   /** Under-body wake: a low drifting wisp every so often while it moves (more when fast), the slam on a strike's contact. */
