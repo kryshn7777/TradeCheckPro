@@ -20,6 +20,7 @@ const suites = [
   ['input: uiio fixes (eye height, controller loss, hold X, head-pivot turn, double Enter VR)', 'input/test-uiio-fixes.mjs'],
   ['input: WP-TOUCH (joystick vector / dead zone / curve, floating base, look + gyro scaling, hold / latch buttons, handedness mirror, 56 px layout floor, mode decision, settings sanitising, device profile, InputManager integration: stick/look/ropes/reel/jump/grip/bag/pause)', 'input/test-touch.mjs'],
   ['creature: behaviour units', 'creature/unit.mjs'],
+  ['creature: head turning (the crown facing / dorsal up turn continuously on the real level: capped rates, no roll flips at corners; spine frames hold and rate-limit the roll)', 'creature/headturn.mjs'],
   ['creature: WP-SKITTER (variant config: exactly 4.5x speeds, 0.45 scale, wind-up/reach, spawn data S6-S8, safe entry distance, determinism, tagged events, damage path, Mason trigger link)', 'creature/skitter.mjs'],
   ['health: fall damage curve, cooldown, regen, events, difficulty scaling, determinism, Physics3D drops and hazards', 'health/unit.mjs'],
   ['bag: apply times, cancel on damage, caps, adrenaline timing + speed multiplier, heal API, deterministic fair spawns, pickups, lantern charge, VR gesture', 'bag/unit.mjs'],

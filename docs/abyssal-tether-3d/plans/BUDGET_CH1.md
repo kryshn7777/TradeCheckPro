@@ -117,3 +117,14 @@ index (tens of thousands of integers) and nothing else: materials, draw calls an
 
 Quest stereo triangles S1..S8 (quest tier, mock XR): 173k / 193k / 231k / 227k / 208k / **268k** / 247k / 205k (306k at S6 before the LODs, 350k budget), calls <= 149.
 Cost: about +41 MB of chunk vertex data (89 MB against 48 MB with the medium level only: the soup holds three levels of every placement of the whole level).
+
+## Creature head turning (2026-10-23)
+
+Measured on the real level (Mason, 4 sections x 3 seeds x still / moving player, 90 s): the crown's dorsal up flipped by up to 150 degrees in ONE frame (9000 deg/s,
+643 frames over 90 s per run) wherever the clinging normal was nearly along the facing (a corner of two surfaces): the projection of the normal onto the plane
+perpendicular to the facing is noise there. The view used it raw, so the head and neck snapped. Fixed in the sim (`Creature3D._headUp`: the last up is kept where the
+normal is ill-defined, then the roll toward the normal is rate limited, 300 deg/s) and in the shared spine frames (`masonPose.computeFrames`: roll about the facing
+rate limited to 7 rad/s, no history after a teleport; the legacy `creatureView` uses it too). The facing is eased along the arc (not the chord) at 4/s with a 280 deg/s cap
+(`_updateHeading`: a target behind the crown turns about the up instead of collapsing). View aim (`masonRigView._aim`): the focus gain is eased (it was a step per state, and an
+attack dropped it to 0), a player behind the crown fades the aim out instead of flipping the head from side to side, damping 0.55 -> 0.8 and the swing is capped at 290 / 230 deg/s.
+Frames over 300 deg/s fell from 651 to 42 per 36 x 90 s runs (the rest are relocations 28-53 m above the player and the cap itself); `tests/creature/headturn.mjs`.

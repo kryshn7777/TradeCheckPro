@@ -107,7 +107,7 @@ export class MasonRigView {
     this._hug = 3.2 * this.opts.size;
     this._farAcc = 0;
     this._farTick = 0;
-    this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0 };
+    this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0, gain: 0 };
     this._forced = null;
     this._dbg = null;
     this._level = null;
@@ -373,7 +373,7 @@ export class MasonRigView {
       this.motion.reset();
       this.fit.reset();
       const f = this._focus;
-      f.yaw = f.pitch = f.vyaw = f.vpitch = 0;
+      f.yaw = f.pitch = f.vyaw = f.vpitch = f.gain = 0;
       this._speed = 0;
     }
     this._wasVisible = true;
@@ -387,7 +387,7 @@ export class MasonRigView {
     // ---- spine frames, head fit ----
     const F = this.F;
     const S = this.S;
-    computeFrames(B, SEG, F);
+    computeFrames(B, SEG, F, dt, jump);
     // the gait clock: one cycle per stride of distance travelled (the legs and the body's wave share it), frozen while it listens
     const gs = this.graph.out;
     if (!gs.freeze && dt > 0) this.legs.cycle += (this._speed * dt) / this.legs.stride;
@@ -592,6 +592,7 @@ export class MasonRigView {
     const foc = B.focus;
     let ty = 0;
     let tp = 0;
+    let gt = 0; // the wanted focus gain
     const attacking = this.graph.snapshot.phase !== null;
     if (foc && !attacking) {
       const dx = foc.x - F[0];
@@ -600,23 +601,38 @@ export class MasonRigView {
       const lr = dx * F[9] + dy * F[10] + dz * F[11];
       const lu = dx * F[6] + dy * F[7] + dz * F[8];
       const lf = dx * F[3] + dy * F[4] + dz * F[5];
-      const gain = clamp((foc.amount || 0) * 1.5 + (this.graph.snapshot.listening ? 0.5 : 0), 0, 1);
-      if (gain > 0.001 && len3(dx, dy, dz) > 1) {
+      gt = clamp((foc.amount || 0) * 1.5 + (this.graph.snapshot.listening ? 0.5 : 0), 0, 1);
+      if (gt > 0.001 && len3(dx, dy, dz) > 1) {
         const lim = 70 * (Math.PI / 180);
         const limP = 45 * (Math.PI / 180);
-        ty = clamp(-Math.atan2(lr, lf), -lim, lim) * gain;
-        tp = clamp(Math.atan2(lu, Math.sqrt(lr * lr + lf * lf)), -limP, limP) * gain;
+        const a = -Math.atan2(lr, lf);
+        const aa = Math.abs(a);
+        // a target behind the crown must not flip the head from one side to the other (atan2 wraps there): past 100 degrees the aim
+        // fades back to neutral, gone at 150
+        let back = 1;
+        if (aa > 1.745) {
+          const e = (aa - 1.745) / 0.873;
+          back = e >= 1 ? 0 : 1 - e * e * (3 - 2 * e);
+        }
+        ty = clamp(a, -lim, lim) * back;
+        tp = clamp(Math.atan2(lu, Math.sqrt(lr * lr + lf * lf)), -limP, limP) * back;
       }
     }
-    // underdamped spring: ~0.3 s lag, ~12 % overshoot
+    // the state's focus amount is a step (and an attack drops it to nothing): ease it, so the head turns where it looks instead of snapping
+    fc.gain += (gt - fc.gain) * (dt > 0 ? 1 - Math.exp(-5 * dt) : 1);
+    ty *= fc.gain;
+    tp *= fc.gain;
+    // spring: ~0.3 s lag, ~2 % overshoot (damping 0.8), and a cap on how fast the head may swing (290 / 230 deg/s)
     const w0 = 8.5;
-    const z = 0.55;
+    const z = 0.8;
     const n = dt > 0 ? Math.max(1, Math.ceil(dt / 0.016)) : 0;
     const h = n ? dt / n : 0;
     for (let i = 0; i < n; i++) {
       fc.vyaw += (w0 * w0 * (ty - fc.yaw) - 2 * z * w0 * fc.vyaw) * h;
+      fc.vyaw = clamp(fc.vyaw, -5.05, 5.05);
       fc.yaw += fc.vyaw * h;
       fc.vpitch += (w0 * w0 * (tp - fc.pitch) - 2 * z * w0 * fc.vpitch) * h;
+      fc.vpitch = clamp(fc.vpitch, -4, 4);
       fc.pitch += fc.vpitch * h;
     }
   }
