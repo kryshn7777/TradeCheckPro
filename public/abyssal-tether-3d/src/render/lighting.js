@@ -432,8 +432,7 @@ export class Lighting {
     const gov = game && game.governor;
     if (gov && typeof gov.level === 'number' && gov.active !== false) gl = gov.level;
     else gl = this.r3d.governor ? this.r3d.governor.level : 0;
-    if (gl >= 3 && !this.pinned) n = 'low';
-    this.govLevel = gl;
+    this.govLevel = gl; // reported only: the governor changes the resolution, never the tier or the look (see platform/governor.js)
     this._lmForcedOff = (this.pinned || urlTier()) === 'low';
     return n;
   }
@@ -449,12 +448,11 @@ export class Lighting {
   /** Effective numbers after the governor steps. */
   _effective() {
     const c = this.cfg;
-    const gl = this.govLevel;
     return {
-      env: c.env * (gl >= 2 ? 0.9 : 1),
+      env: c.env,
       gi: c.gi,
-      coat: gl >= 2 ? 0 : c.coat,
-      detail: c.detail * (gl >= 2 ? 0.85 : 1),
+      coat: c.coat,
+      detail: c.detail,
       // lightmaps are free: only a pinned / ?fx=low tier drops them (reducedEffects and the governor's low step keep them)
       lm: c.lm || !this._lmForcedOff,
     };
@@ -464,7 +462,7 @@ export class Lighting {
     const e = this._effective();
     const probeOk = !!this.probe;
     LOOK.uEnvK.value.x = probeOk ? e.env : 0;
-    LOOK.uEnvK.value.w = probeOk && this.tier === 'high' && this.govLevel < 1 ? 1 : 0;
+    LOOK.uEnvK.value.w = probeOk && this.tier === 'high' ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
     LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark);

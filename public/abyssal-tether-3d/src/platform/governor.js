@@ -6,8 +6,13 @@
  *   0  foveation 0.5   scale 1.0   fx 'quest'      (the Quest tier fx.js uses in XR by default)
  *   1  foveation 1.0   scale 1.0   fx 'quest'
  *   2  foveation 1.0   scale 0.9   fx 'quest'
- *   3  foveation 1.0   scale 0.8   fx 'low'        (fog cards, dust and debris streams thinned: settings.reducedEffects tier)
- *   4  foveation 1.0   scale 0.7   fx 'low'        (last resort)
+ *   3  foveation 1.0   scale 0.8   fx 'quest'
+ *   4  foveation 1.0   scale 0.7   fx 'quest'      (last resort)
+ *
+ * The governor only trades RESOLUTION (foveation, viewport scale) for frame time. It never touches the picture itself: the fog,
+ * the god rays, the dust, the lantern shadow and the surface detail are the same at every level. (They used to be thinned at
+ * level 3, which took the whole atmosphere away a few seconds after the start on a headset that misses frames.) Only the player's
+ * own settings.reducedEffects lowers the effects.
  *
  * Quality tiers and settings (the semantics fx.js / atmosphere.js / debris.js already implement):
  *   - settings.reducedEffects === true  -> the player asked for minimal effects: the governor never goes below
@@ -46,8 +51,8 @@ export const GOVERNOR_STEPS = Object.freeze([
   Object.freeze({ level: 0, tier: 'quest', foveation: 0.5, scale: 1.0, fx: 'quest' }),
   Object.freeze({ level: 1, tier: 'quest', foveation: 1.0, scale: 1.0, fx: 'quest' }),
   Object.freeze({ level: 2, tier: 'quest', foveation: 1.0, scale: 0.9, fx: 'quest' }),
-  Object.freeze({ level: 3, tier: 'low', foveation: 1.0, scale: 0.8, fx: 'low' }),
-  Object.freeze({ level: 4, tier: 'low', foveation: 1.0, scale: 0.7, fx: 'low' }),
+  Object.freeze({ level: 3, tier: 'quest', foveation: 1.0, scale: 0.8, fx: 'quest' }),
+  Object.freeze({ level: 4, tier: 'quest', foveation: 1.0, scale: 0.7, fx: 'quest' }),
 ]);
 export const REDUCED_FLOOR = 3;
 /** Frame rates the game asks the headset for (Quest 3: 72 default, 90 optional). */

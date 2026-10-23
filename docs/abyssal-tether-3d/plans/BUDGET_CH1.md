@@ -140,3 +140,14 @@ Frames over 300 deg/s fell from 651 to 42 per 36 x 90 s runs (the rest are reloc
 - `DIFFICULTY[..].darkness` (Normal 0, Nightmare 0.72, Abyss 0.85): `renderer3d.js` eases it in and applies it to the theme target (ambient x(1-0.95d), fog colour x(1-0.85d), light colour
   x(1-0.5d), a lower fog luminance floor), the level's lamps (x(1-0.6d)) and the baked lightmaps (`lighting.setDarkness`: exposure x(1-0.85d), ambient floor x(1-0.95d)). The player's
   lantern is untouched. Mean frame luminance at the same spots: Nightmare 0.63-0.69 of Normal, Abyss 0.55-0.56.
+
+## The frame governor no longer touches the picture (effects vanishing a few seconds after the start)
+
+Reported on Quest: fog and god rays revert exactly 5 s after the page opens, in the menu too. 5 s is the end of the governor's warm-up
+(`WARMUP`): from then on a headset that misses frames steps down, and the old steps changed the picture, not only the resolution
+(level 3: fx tier `low` = god rays and fog cards off; level 2: god rays at 2 segments, wet film off, surface detail x0.85; lantern shadow
+off at 3; contact shadows, parallax and bevel dropped). Now the governor trades resolution only (foveation, viewport scale; levels 3 / 4
+keep fx tier `quest`); god rays, fog, lighting tier, surface look, lantern shadow and contact shadows ignore its level.
+`settings.reducedEffects` (the player's own switch) still lowers them. Checked in the mock XR menu: level 4 leaves tier, fx tier,
+god-ray segments, fog range and shadow plan equal to level 0. `?gov=off` still turns the governor off entirely.
+Not measured on a headset: if frames are missed, the picture now gets blurrier (viewport scale 0.7) instead of thinner.

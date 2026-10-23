@@ -353,7 +353,7 @@ export class LanternShadow {
     this._dt = dt > 0 ? dt : this._dt;
     this._time += this._dt;
     if (!this._readyS || !this._readyD) this._useDummy();
-    const gov = r3d.governor ? r3d.governor.level : 0;
+    const gov = 0; // the frame governor trades resolution only; the shadow keeps its tier
     const settings = (game && game.settings) || r3d.settings || {};
     const plan = shadowPlan(this.tier, { govLevel: gov, reduced: !!settings.reducedEffects, enabled: this._apiOn });
     this.plan = plan;

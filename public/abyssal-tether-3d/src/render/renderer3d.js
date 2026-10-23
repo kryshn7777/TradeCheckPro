@@ -759,7 +759,7 @@ export class Renderer3D {
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.godRays.materials = this.materials;
-    this.fx.godRays.setQuality(this.lighting.tier, this.governor.level, this.settings && this.settings.reducedEffects);
+    this.fx.godRays.setQuality(this.lighting.tier, 0, this.settings && this.settings.reducedEffects);
     this.fx.update(d, game, head, this.threat);
     this.droppedProps.update(d, game);
     this.contactShadows.update(d, game, head, this);
@@ -827,8 +827,7 @@ export class Renderer3D {
   /** Per frame: the tier / governor levers of the surface shader (parallax, detail normal, crevices) and the section grade. */
   _driveSurfaceLook(th, tk) {
     const P = SURFACE_TIERS[this.lighting.tier] || SURFACE_TIERS.quest;
-    const lvl = this.governor.level;
-    // parallax is the first thing the governor drops: level 2 = the 1-tap only (no steep floor march), level 3 = none
+    const lvl = 0; // the frame governor trades resolution only (platform/governor.js): the surface look follows the tier alone
     const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
     LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);

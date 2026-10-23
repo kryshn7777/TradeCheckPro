@@ -70,7 +70,7 @@ function run(g, gov, seconds, dt, frame) {
   run(f.game, gov, 12, 1 / 40, f.frame); // 25 ms frames: every frame a miss
   ok(gov.level === GOVERNOR_STEPS.length - 1, `degrades to the last level (got ${gov.level})`);
   ok(changes.join(',') === '1,2,3,4', `one step at a time: ${changes.join(',')}`);
-  ok(f.game.settings.fxQuality === 'low', 'level 3+ forces the low fx tier');
+  ok(f.game.settings.fxQuality === 'quest', 'every level keeps the quest fx tier: the governor trades resolution, never fog or god rays');
   ok(f.fov[f.fov.length - 1] === 1, 'high foveation at the cheap levels');
   gov.sample(T, f.frame);
   ok(f.scales[f.scales.length - 1] === 0.7, 'scale 0.7 at the last level');
@@ -149,7 +149,7 @@ function run(g, gov, seconds, dt, frame) {
   const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   gov.setLevel(3, 'test');
-  ok(f.game.settings.fxQuality === 'low', 'low fx set');
+  ok(f.game.settings.fxQuality === 'quest', 'the fx tier stays quest at level 3');
   gov.onSessionEnd();
   ok(f.game.settings.fxQuality === undefined && !gov.active, 'session end removes the fx override');
 }
@@ -164,7 +164,7 @@ function run(g, gov, seconds, dt, frame) {
   gov.onSessionStart(f.session);
   for (let i = 0; i < 72 * 14; i++) gov.onFrame(i < 80 ? 13.9 : 25);
   ok(calls.length >= 3 && calls[0][3] === 1 && calls[0][4] === 'degrade', 'onStep fires on every level change');
-  ok(calls.some((c) => c[0] === 'low') && tiers.includes('low') && tiers[0] === 'quest', 'tier names reach onStep and renderer.setQualityTier');
+  ok(calls.every((c) => c[0] === 'quest') && tiers.length >= 3 && tiers.every((t) => t === 'quest'), 'the tier reaching onStep and renderer.setQualityTier is always quest');
   off();
   const n = calls.length;
   gov.setLevel(0, 'test');
