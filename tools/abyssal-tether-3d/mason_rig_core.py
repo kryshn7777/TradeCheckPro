@@ -89,7 +89,7 @@ def load_kit(path):
                 sspine=read_acc(js, bn, at["_SPINE_S"])[:, 0].astype(np.float64),
             )
             prims.append(d)
-        out.setdefault(key, {})["lod%d" % lod] = dict(prims=prims, owners=owners)
+        out.setdefault(key, {})["lod%d" % lod] = dict(prims=prims, owners=owners, pivots=rm.get("pivots") or {})
     return out, js, bn
 
 
@@ -207,8 +207,11 @@ def bone_name_leg(side, point, j):
 
 
 def head_geometry(kit):
-    """Pivots and axes of the crown parts, from the head module's ownership (glTF space)."""
+    """Pivots and axes of the crown parts, from the head module's ownership (glTF space). A v2 kit (build_mason.py 2026-10) also
+    carries the joint pivots the builder knows (`pivots` in the Head node's rig_module extras): door hinges, jaw joints, eye
+    clusters, shoulders and wrists; those win over the centroid estimates."""
     mod = kit["Head"]["lod0"]
+    pv = {k: np.asarray(v, float) for k, v in (mod.get("pivots") or {}).items()}
     inv = {v: k for k, v in mod["owners"].items()}
     P = np.concatenate([p["P"] for p in mod["prims"]])
     O = np.concatenate([p["owner"][:, 0] for p in mod["prims"]])
@@ -222,7 +225,7 @@ def head_geometry(kit):
         if nm == "crown":
             continue
         Q = pts(nm)
-        info[nm] = dict(c=Q.mean(0), lo=Q.min(0), hi=Q.max(0), n=len(Q))
+        info[nm] = dict(c=Q.mean(0), lo=Q.min(0), hi=Q.max(0), n=len(Q), pivot=pv.get(nm))
     # arms: root = the end farthest from the hand, wrist = the end next to the hand (principal axis of the sleeve)
     arms = {}
     for n in range(5):
@@ -232,15 +235,19 @@ def head_geometry(kit):
         v /= np.linalg.norm(v) + 1e-9
         t = (a - ca) @ v
         root, wrist = ca + v * t.min(), ca + v * t.max()
+        if "arm_%d_0" % n in pv and "arm_%d_1" % n in pv:
+            root, wrist = pv["arm_%d_0" % n], pv["arm_%d_1" % n]
+            v = (wrist - root) / (np.linalg.norm(wrist - root) + 1e-9)
         arms[n] = dict(root=root, wrist=wrist, tip=b[np.argmax((b - ca) @ v)], axis=v)
     info["arms"] = arms
     # pits: centroid + facing (away from the crown axis, toward the front)
     pits = {}
     for j in range(7):
-        c = pts("pit_%d" % j).mean(0)
+        c = pv["pit_%d" % j] if "pit_%d" % j in pv else pts("pit_%d" % j).mean(0)
         d = np.array([c[0], c[1] * 0.35, -1.0])  # toward the front (-Z) and a little outward
         pits[j] = dict(c=c, dir=d / np.linalg.norm(d))
     info["pits"] = pits
+    info["v2"] = bool(pv)
     return info
 
 
@@ -256,21 +263,29 @@ def build_rig(kit, tpl, followers="all"):
     rig.add("tail_1", "tail_0", (0, 0, (NVERT + 1.9) * P0), 0.9 * P0)
     # crown subtree
     H = head_geometry(kit)
+    v2 = H["v2"]
+    P = lambda nm, default: H[nm]["pivot"] if H[nm].get("pivot") is not None else np.asarray(default, float)
     rig.add("crown", "neck", (0, 0, 0), 1.0)
     for j in range(3):
         a = H["portal_arch_%d" % j]
-        rig.add("portal_arch_%d" % j, "crown", (0, a["c"][1], a["c"][2]), 0.6, order=j)
+        rig.add("portal_arch_%d" % j, "crown", P("portal_arch_%d" % j, (0, a["c"][1], a["c"][2])), 0.6, order=j)
+    # v1: four comb rows that retract into the jambs; v2: the two halves of the split face (doors hinged at their outer back edge,
+    # L0 / R0) and the rows of teeth on the split edges (L1 / R1, riding their door)
     for nm in ("portal_comb_L0", "portal_comb_L1", "portal_comb_R0", "portal_comb_R1"):
-        rig.add(nm, "crown", H[nm]["c"], 0.5, axis="retract")
+        par = "portal_comb_%s0" % nm[-2] if (v2 and nm.endswith("1")) else "crown"
+        rig.add(nm, par, P(nm, H[nm]["c"]), 0.5, axis="hinge" if (v2 and nm.endswith("0")) else "retract")
     for j in range(2):
         h = H["portal_hinge_%d" % j]
-        # pivot on the top edge of the dropped slab (rotation about X), at the slab's x centre
-        rig.add("portal_hinge_%d" % j, "crown", (h["c"][0] if j else 0.0, h["c"][1], h["hi"][2] * 0.0 + h["c"][2] + 0.0), 0.6)
+        # v1: pivot on the top edge of the dropped slab (rotation about X); v2: the jaw joint of each half of the broken jaw
+        rig.add("portal_hinge_%d" % j, "crown", P("portal_hinge_%d" % j, (h["c"][0] if j else 0.0, h["c"][1], h["c"][2])), 0.6)
     for j in range(3):
         g = H["gullet_%d" % j]
-        rig.add("gullet_%d" % j, "crown", (0, g["c"][1], g["c"][2]), 0.5, depth=j)
+        rig.add("gullet_%d" % j, "crown", P("gullet_%d" % j, (0, g["c"][1], g["c"][2])), 0.5, depth=j)
     for j in range(7):
-        rig.add("pit_%d" % j, "crown", H["pits"][j]["c"], 0.3, dir=[float(x) for x in H["pits"][j]["dir"]])
+        c = H["pits"][j]["c"]
+        # v2: the eye clusters sit in the sockets of the face halves, so they ride the doors
+        par = ("portal_comb_L0" if c[0] < 0 else "portal_comb_R0") if v2 else "crown"
+        rig.add("pit_%d" % j, par, c, 0.3, dir=[float(x) for x in H["pits"][j]["dir"]])
     for n in range(5):
         A = H["arms"][n]
         rig.add("arm_%d_0" % n, "crown", A["root"], 0.5, phase=n)

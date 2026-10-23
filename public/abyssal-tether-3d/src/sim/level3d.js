@@ -285,6 +285,10 @@ export class Level3D {
 
     // ---- spatial indices --------------------------------------------------------
     this._solidIndex = new YIndex(this.solids, (s) => s.minY, (s) => s.maxY);
+    // Kit dressing that collides (sim/decorColliders.js): a list of its own, never part of `solids` (the view draws those as slabs, the
+    // dressing planner treats them as walls); querySolids() includes it, querySolidsStatic() does not.
+    this.decorSolids = [];
+    this._decorIndex = null;
     this._hazardIndex = new YIndex(this.hazards, (s) => s.minY, (s) => s.maxY);
     this._anchorIndex = new YIndex(this.anchors, (a) => a.y, (a) => a.y);
     this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
@@ -357,9 +361,55 @@ export class Level3D {
   // Queries — all write into a caller-owned `out` array (cleared first).
   // ===========================================================================
 
-  /** Solids whose AABB overlaps the box (includes inactive ones; callers check `.active !== false`). */
+  /**
+   * Solids whose AABB overlaps the box (includes inactive ones; callers check `.active !== false`), the colliding kit dressing
+   * (decorSolids, `decor: true`) included.
+   */
   querySolids(minX, minY, minZ, maxX, maxY, maxZ, out) {
+    this._queryBoxes(this._solidIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
+    if (this.decorSolids.length) {
+      if (!this._decorIndex) this._decorIndex = new YIndex(this.decorSolids, (s) => s.minY, (s) => s.maxY);
+      this._queryBoxes(this._decorIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
+    }
+    return out;
+  }
+
+  /** Only the level's own solids (what the view plans against: the dressing must not depend on its own colliders). */
+  querySolidsStatic(minX, minY, minZ, maxX, maxY, maxZ, out) {
     return this._queryBoxes(this._solidIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
+  }
+
+  /** Adds colliding kit dressing: boxes [minX, minY, minZ, maxX, maxY, maxZ]. Returns how many were added. */
+  addDecorColliders(boxes) {
+    let n = 0;
+    for (const b of boxes) {
+      this.decorSolids.push({
+        id: `dcr${this.decorSolids.length}`,
+        kind: 'stone',
+        decor: true,
+        tag: 'decor',
+        minX: b[0],
+        minY: b[1],
+        minZ: b[2],
+        maxX: b[3],
+        maxY: b[4],
+        maxZ: b[5],
+        section: this.sectionIndexAt((b[1] + b[4]) / 2),
+        active: true,
+        load: 0,
+        life: 1,
+        fallen: false,
+      });
+      n++;
+    }
+    this._decorIndex = null;
+    return n;
+  }
+
+  /** Drops every colliding kit piece (the view re-dresses the level). */
+  clearDecorColliders() {
+    this.decorSolids.length = 0;
+    this._decorIndex = null;
   }
 
   /** Hazards whose AABB overlaps the box. */
@@ -367,10 +417,10 @@ export class Level3D {
     return this._queryBoxes(this._hazardIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
   }
 
-  _queryBoxes(index, minX, minY, minZ, maxX, maxY, maxZ, out) {
+  _queryBoxes(index, minX, minY, minZ, maxX, maxY, maxZ, out, from = 0) {
     // Indexed writes + one length at the end: `out.length = 0` up front drops V8's
-    // backing store, so every non-empty query regrew it (per-frame allocation).
-    let n = 0;
+    // backing store, so every non-empty query regrew it (per-frame allocation). `from`: append after that many results.
+    let n = from;
     const stamp = index.nextStamp();
     const b0 = index.bucketOf(minY);
     const b1 = index.bucketOf(maxY);

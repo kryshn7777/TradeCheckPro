@@ -93,6 +93,7 @@ export class Lighting {
       lmLoaded: false, lmState: 'none', lmBytes: 0, lmMs: 0, lmPages: 0, lmGpuBytes: 0, lmSolids: 0,
     };
     this.lmTune = Object.assign({}, LM_TUNE); // live grading knobs (exposure, ambient floor)
+    this.dark = 0; // 0..1, the difficulty's darkness (setDarkness): dims the baked light
     this._lm = null; // { tex, tab, index }
     this._lmPromise = null;
     this._lmForcedOff = false; // pinned / ?fx= low tier: the old volume only
@@ -431,21 +432,27 @@ export class Lighting {
     const gov = game && game.governor;
     if (gov && typeof gov.level === 'number' && gov.active !== false) gl = gov.level;
     else gl = this.r3d.governor ? this.r3d.governor.level : 0;
-    if (gl >= 3 && !this.pinned) n = 'low';
-    this.govLevel = gl;
+    this.govLevel = gl; // reported only: the governor changes the resolution, never the tier or the look (see platform/governor.js)
     this._lmForcedOff = (this.pinned || urlTier()) === 'low';
     return n;
+  }
+
+  /** The difficulty's darkness 0..1 (renderer3d eases it): the baked irradiance and its ambient floor are dimmed by it. */
+  setDarkness(d) {
+    const v = Math.max(0, Math.min(1, +d || 0));
+    if (Math.abs(v - this.dark) < 0.002) return;
+    this.dark = v;
+    this._applyUniforms(false);
   }
 
   /** Effective numbers after the governor steps. */
   _effective() {
     const c = this.cfg;
-    const gl = this.govLevel;
     return {
-      env: c.env * (gl >= 2 ? 0.9 : 1),
+      env: c.env,
       gi: c.gi,
-      coat: gl >= 2 ? 0 : c.coat,
-      detail: c.detail * (gl >= 2 ? 0.85 : 1),
+      coat: c.coat,
+      detail: c.detail,
       // lightmaps are free: only a pinned / ?fx=low tier drops them (reducedEffects and the governor's low step keep them)
       lm: c.lm || !this._lmForcedOff,
     };
@@ -455,11 +462,11 @@ export class Lighting {
     const e = this._effective();
     const probeOk = !!this.probe;
     LOOK.uEnvK.value.x = probeOk ? e.env : 0;
-    LOOK.uEnvK.value.w = probeOk && this.tier === 'high' && this.govLevel < 1 ? 1 : 0;
+    LOOK.uEnvK.value.w = probeOk && this.tier === 'high' ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
-    LOOK.uLMK.value.y = this.lmTune.exposure;
-    LOOK.uLMK.value.w = this.lmTune.floor;
+    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark);
+    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark);
     LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);

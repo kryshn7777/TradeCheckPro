@@ -5,6 +5,8 @@
  * Conventions (glTF / three): X right, Y dorsal, Z backward (the head faces -Z); every bone is identity-oriented at rest.
  */
 
+/** Fastest roll of a spine frame's up about its facing (rad/s): the sim's head roll is capped at 300 deg/s, the body may be a little quicker. */
+export const ROLL_RATE = 7;
 export const HUG = 1.45; // CREATURE_TUNING.hug: the head's height above the surface while crawling
 export const BODY_SCALE = 1.15; // world metres per kit metre at the shoulders (the sim's 1.5 m link / the rest pitch 1.24, a touch under)
 
@@ -35,10 +37,11 @@ export function headLift(hs) {
 
 /**
  * Spine frames from the sim body: for point i, F[i*12 ..] = pos(3), forward(3), up(3), right(3). The crown (i = 0) uses
- * body.head. Same maths as CreatureView.
+ * body.head. Same maths as CreatureView. dt: the frame time (the roll limit); snap: no history (the first frame, a teleport).
  */
-export function computeFrames(B, SEG, F) {
+export function computeFrames(B, SEG, F, dt = 1 / 60, snap = false) {
   const sp = B.spine;
+  const maxRoll = ROLL_RATE * (dt > 0.1 ? 0.1 : dt > 0 ? dt : 1 / 60);
   for (let i = 0; i < SEG; i++) {
     let fx;
     let fy;
@@ -66,6 +69,45 @@ export function computeFrames(B, SEG, F) {
     uy -= fy * d;
     uz -= fz * d;
     l = len3(ux, uy, uz);
+    // F still holds the previous frame's up. The clinging normal is (nearly) along the facing at a corner of two surfaces: its perpendicular
+    // part is then noise (it used to flip the roll by up to 150 degrees in one frame), so below |n_perp| 0.15 the last up is the target; and
+    // the roll about the facing toward the target is rate limited (ROLL_RATE), so even a real half turn (the normal swinging through the
+    // facing) is a roll the eye can follow. snap: no history (the first frame, a teleport).
+    const q = i * 12 + 6;
+    let pux = F[q];
+    let puy = F[q + 1];
+    let puz = F[q + 2];
+    const dp = pux * fx + puy * fy + puz * fz;
+    pux -= fx * dp;
+    puy -= fy * dp;
+    puz -= fz * dp;
+    const pl = len3(pux, puy, puz);
+    if (!snap && pl > 0.3) {
+      pux /= pl;
+      puy /= pl;
+      puz /= pl;
+      let tx = pux;
+      let ty = puy;
+      let tz = puz;
+      if (l > 0.15) {
+        tx = ux / l;
+        ty = uy / l;
+        tz = uz / l;
+      }
+      // signed roll from the previous up to the target about the facing
+      const cs = pux * tx + puy * ty + puz * tz;
+      const sn = (puy * tz - puz * ty) * fx + (puz * tx - pux * tz) * fy + (pux * ty - puy * tx) * fz;
+      let roll = Math.atan2(sn, cs);
+      if (roll > maxRoll) roll = maxRoll;
+      else if (roll < -maxRoll) roll = -maxRoll;
+      const c = Math.cos(roll);
+      const sr = Math.sin(roll);
+      // previous up rotated about the facing by `roll`: p cos + (f x p) sin
+      ux = pux * c + (fy * puz - fz * puy) * sr;
+      uy = puy * c + (fz * pux - fx * puz) * sr;
+      uz = puz * c + (fx * puy - fy * pux) * sr;
+      l = len3(ux, uy, uz);
+    }
     if (l < 1e-4) {
       ux = Math.abs(fy) < 0.9 ? 0 : 1;
       uy = Math.abs(fy) < 0.9 ? 1 : 0;

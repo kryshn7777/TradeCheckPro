@@ -15,13 +15,19 @@ Verification and tests (each folder has its own README):
 
 ## The Mason (predator)
 
-`build_mason.py` is the production builder of the creature (Blender 5.2 / `bpy`, procedural, deterministic, seed 1313):
-"architecture that learned to hunt", a 29.5 m predator of 27 split masonry vertebrae with wet sinew, rib legs (flying
-buttress, wrong-way bone shank, iron ankle, grapnel foot), a crown made of a broken rose-window **wheel** behind a
-**lancet portal** (three stepped archivolt orders of small wedge voussoirs sunk in flesh) whose cracked ventral third
-has dropped open onto a 5.6 m throat of ten receding rings of teeth/ribs with one far glow, seven listening pits
-(a few sealed by eardrums), a ring of five raised stone arms, drool, tongue. Ember only in the throat and the pits.
-No eyes, antennae or mandibles.
+`build_mason.py` is the production builder of the creature (Blender 5.2 / `bpy`, procedural, deterministic, seed 1313).
+**v2 (2026-10-23), the hooded saint:** a 29.5 m centipede of 27 split masonry vertebrae (snapped bone ribs round the flanks,
+iron staples across the fractures, a skeleton hand clawing out of every third crack) on skeletal-hand feet with iron manacles,
+under a head that is a carved saint's face split down the middle: a stone mask in two halves (doors, hairline crack at rest,
+broken nose cavity, black orbits full of small clustered bloodshot eyes with milky irises, tear stains, flaked-off patches
+showing wet flesh) over human teeth on gum bands, a broken bone mandible that hangs open, three toothed oral discs and an
+ember throat behind it, a hood of carved soot-black drapery, a broken halo of thin moulded arcs with thorns, five long bone
+arms with skeletal hands, a victim hanging from the jaw. Emissive (`MasonEmissive`, heartbeat-pulsed by `masonRigView.js`)
+only in the throat and the coals at the back of two orbits.
+
+**v1 is kept for the small hunters:** `assets/models/skitter_rig.glb` is the original Mason (do not rebuild it from v2);
+`build_mason_v1.py` + `mason_rig_clips_v1.py` are the frozen v1 sources (`build_mason_rig.py` picks the v1 clips when the
+kit has no head pivots). The byte-exact shipped v1 assets came from `git show 09b6f21:tools/abyssal-tether-3d/build_mason.py`.
 
 | Output | Contents |
 |---|---|
@@ -52,8 +58,11 @@ posed creature). Rigid parts (stone, iron, bone, teeth) carry one owner; flesh g
 (throat fissure, pit coal) are in material `MasonEmissive`; everything else uses `MasonCrown` or `MasonBody`
 (`MeshStandardMaterial`, no clearcoat/transmission/sheen). Drool, glass and oil are render-only.
 
-Budgets (`export_report.json`): assembled by today's `CreatureView` (head + 18 segments + tail + 10 legs + fronds +
-pits) 48.8 k triangles at LOD0 (limit 60 k), about 17 k at LOD1 (limit 25 k), 2 draw calls per eye.
+Budgets: the rig (what the game draws) is 63.4 k triangles at LOD0 / 23.2 k at LOD1 (v1: 56.7 k / 20.7 k; limit +15 %),
+still 4 draw calls; shipped GLBs (meshopt + KTX2, atlases 1024 / ORM 512): `mason_rig.glb` 5.6 MB, `mason_kit.glb` 4.4 MB,
+`mason_hero.glb` 4.5 MB. v2 options: `--gamecam x,y,z,lens` + `--lantern W` and the shots `game` (climber's view under the
+lantern) and `profile`; previews `previews/mason_approach.png` (game) and `mason_profile.png`. The other `previews/mason_*`
+images (hero, full, kit, rig clip sheets) still show v1 and were not re-rendered.
 
 ### Run
 
@@ -77,7 +86,7 @@ the exported GLBs (it packs `_MASK` / `_OWNER`).
 
 `build_mason_rig.py` (+ `mason_rig_core.py` kit reader / rest-pose assembly / bone table / skin arrays, `mason_rig_clips.py` the
 clips authored in code, `mason_rig_gltf.py` the glTF writer, `mason_rig_preview.py` the Blender contact sheets) turns the rig-ready
-kit (`mason_kit.glb` + the leg template of `mason_hero.glb`) into `public/abyssal-tether-3d/assets/models/mason_rig.glb` (7.9 MB):
+kit (`mason_kit.glb` + the leg template of `mason_hero.glb`) into `public/abyssal-tether-3d/assets/models/mason_rig.glb` (8.4 MB raw, 5.6 MB after `compress_glbs.mjs` + `compress_glb_textures.mjs`):
 no remodelling, the kit's per-vertex `_OWNER` attribute IS the skin (rigid stone / iron / bone / teeth = 100 % on the owner bone, flesh
 = 2 influences by `_SPINE_S`), the kit's two atlases are copied byte for byte (re-encoded JPEG q68 to stay under 8 MB).
 
@@ -91,8 +100,10 @@ node tools/abyssal-tether-3d/tests/render/test-mason-rig.mjs          # structur
 | | |
 |---|---|
 | Skeleton | 170 bones: `root`, `neck`, `spine_00..17` (one per sim block, flat under the root: the view writes their world frames), `tail_0/1`, the crown subtree (`crown`, `portal_arch_0..2`, `portal_comb_L0/L1/R0/R1`, `portal_hinge_0/1`, `gullet_0..2`, `pit_0..6`, `arm_0..4_0/1`) and 36 legs: 10 lead (`leg_{L,R}NN_0..3` = IK'd to the sim's planted hooks) + 26 followers (`_0..2`, metachronal wave). `extras.mason` carries P0, the leg chain, leg table, pit directions, clip table (kind, loop, events, phase) |
-| Meshes | `Mason_LOD0` 56.7 k tris, `Mason_LOD1` 20.7 k, one shared skin, 4 primitives (= draw calls) each: MasonCrown, MasonBody (spine) + MasonBody (legs), MasonEmissive. Attributes: `_MASK` (flesh, wet, thickness, class) kept for the shader |
+| Meshes | `Mason_LOD0` 63.4 k tris, `Mason_LOD1` 23.2 k (v2; v1 / skitter_rig: 56.7 k / 20.7 k), one shared skin, 4 primitives (= draw calls) each: MasonCrown, MasonBody (spine) + MasonBody (legs), MasonEmissive. Attributes: `_MASK` (flesh, wet, thickness, class) kept for the shader |
 | Clips (30 fps, in place, root never keyed) | base: `crown_idle` `listen` `notice_snap` `rear_windup` (0.75 s, scrubbed over the sim wind-up) `strike` (0.40 s, portal slams at 0.16 s = the sim strike time) `roar_display` `linger_breathe` `take_close`; additive: `recoil` `plate_shiver` `breathe_seams` `portal_snap` `flinch` `retreat_fold`; parametric (time = value x duration): `arms_flare` `pit_dilate` `portal_open`; template `leg_probe` (the view taps the lead legs procedurally on re-plant) |
+
+v2 head: the kit's `Mason_Head` extras carry `pivots` (door, tooth-row, jaw, oral-disc, gullet, arm and eye joints); `mason_rig_core.py` uses them, `meta.headBounds` sizes the head fit (`masonFit.headExtents`). The clips keep v1's names, kinds, durations and events (strike contact 0.16 s) but drive the new anatomy (doors part, jaw drops, discs thrust).
 
 Runtime: `src/render/masonRigView.js` + `src/render/mason/*` (clip graph, pose maths, legs, head fit, material patch); `game.js` loads
 the GLB after the kit and swaps views, with the kit `CreatureView` as the automatic fallback (`?mason=kit` forces it).

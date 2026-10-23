@@ -60,6 +60,8 @@ ap.add_argument("--approachcam", default="3.5,-0.35,0.0,0.0,-1.0,0.0,0.0,18",
 ap.add_argument("--belowcam", default="2.0,-44.0,9.0,0.0,14.0,2.0,40",
                 help="arc-x,z,height-off-wall of camera, then of target, lens (player's view from 50 m below)")
 ap.add_argument("--hero-light", type=float, default=3500.0)
+ap.add_argument("--gamecam", default="8.5,-1.6,0.0,24", help="game/profile shots: fwd,dorsal,side,lens (crown frame, kit metres)")
+ap.add_argument("--lantern", type=float, default=900.0, help="the player's warm lantern (game / profile shots), watts")
 ap.add_argument("--climber-at", type=float, default=0.8, help="climber position along full cam -> crown")
 ap.add_argument("--climber-side", type=float, default=3.4)
 ap.add_argument("--app-light", type=float, default=550.0)
@@ -220,9 +222,10 @@ class Acc:
     def __init__(self, name):
         self.name = name
         self.V, self.flat, self.sizes, self.uv, self.m, self.g, self.d, self.p = [], [], [], [], [], [], [], []
+        self.e = []
         self.n = 0
 
-    def add(self, V, faces, uv=None, m=None, g=None, d=None):
+    def add(self, V, faces, uv=None, m=None, g=None, d=None, e=None):
         V = np.asarray(V, float).reshape(-1, 3)
         if len(V) == 0:
             return
@@ -254,6 +257,7 @@ class Acc:
             gg = np.broadcast_to(np.asarray(g, float), (len(V),)).copy()
         self.g.append(gg)
         self.d.append(np.zeros(len(V)) if d is None else np.broadcast_to(np.asarray(d, float), (len(V),)).copy())
+        self.e.append(np.zeros(len(V)) if e is None else np.broadcast_to(np.asarray(e, float), (len(V),)).copy())
         self.p.append(np.full(len(V), float(PART_STACK[-1])))
         self.n += len(V)
 
@@ -309,6 +313,8 @@ class Acc:
         at.data.foreach_set("value", np.concatenate(self.d).astype(np.float32))
         at = me.attributes.new("part", "FLOAT", "POINT")
         at.data.foreach_set("value", np.concatenate(self.p).astype(np.float32))
+        at = me.attributes.new("grime", "FLOAT", "POINT")
+        at.data.foreach_set("value", np.concatenate(self.e).astype(np.float32))
         if self.name.startswith("Ossuary_"):
             at = me.attributes.new("spine_s", "FLOAT", "POINT")
             at.data.foreach_set("value", spine_param(V).astype(np.float32))
@@ -650,7 +656,8 @@ def frame_zx(origin, z, x_hint):
 
 A = {k: Acc("Ossuary_" + k) for k in
      ("Stone", "Carved", "Flesh", "Tendon", "Marrow", "Bone", "Iron", "Teeth", "Ember", "Frond",
-      "Mucus", "Vein", "Membrane", "Gum", "Pit", "Bronze", "Seam", "Glass", "Rope", "Oil", "IronTooth", "Soot")}
+      "Mucus", "Vein", "Membrane", "Gum", "Pit", "Bronze", "Seam", "Glass", "Rope", "Oil", "IronTooth", "Soot",
+      "Mask", "Eye", "Skin")}
 ENV = {k: Acc("Shaft_" + k) for k in ("Rock", "Masonry", "Iron", "Glow", "Rubble", "Oil", "Crack", "Puddle", "Climber",
                                      "Rope")}
 
@@ -1253,7 +1260,52 @@ def _build_vertebra(idx, s, k):
     surface_veins(M, dims, k, rng.randint(2, 5))
     if rng.random() < 0.35:
         glyphs(M, np.array([rng.choice((-1, 1)) * (W / 2 + 0.004), 0.0, rng.uniform(-0.1, 0.15) * H]), k)
+    vertebra_horror(idx, M, dims, cracks, k)
     VERTS.append(dict(idx=idx, s=s, k=k, W=W, H=H, Lb=Lb, M=M))
+
+
+def vertebra_horror(idx, M, dims, cracks, k):
+    """v2: what the body has taken in. Pale ribs (its own, or what it kept) curve down round both flanks under the leg roots; crude iron
+    staples are driven across the fractures; on every third block a skeleton hand claws out of the crack, as if someone were still
+    trying to climb out. Vertebra-local frame: x lateral, y head-ward, z dorsal."""
+    W, Lb, H = dims
+    hr = random.Random(SEED * 31 + idx * 7)           # own stream: the rest of the body keeps its dice
+    for sx in (-1, 1):
+        for q in range(2):
+            y0 = (q - 0.5) * 0.42 * Lb + hr.uniform(-0.06, 0.06)
+            P = np.array([[sx * 0.44 * W, y0, 0.05 * H], [sx * 0.66 * W, y0 - 0.04, -0.22 * H], [sx * 0.66 * W, y0 - 0.08, -0.52 * H],
+                          [sx * 0.46 * W, y0 - 0.1, -0.74 * H]])
+            P = P * np.array([1.0 + hr.uniform(-0.05, 0.08), 1.0, 1.0])
+            P = catmull(P, 4 if LOW else 10)
+            t = np.linspace(0, 1, len(P))
+            snap = hr.random() < 0.25
+            if snap:                                    # a snapped rib, the end splintered
+                n_ = max(3, int(len(P) * hr.uniform(0.5, 0.75)))
+                P, t = P[:n_], t[:n_]
+            r = (0.055 - 0.02 * t + 0.03 * np.exp(-(t / 0.1) ** 2)) * k
+            V, F, uv, al = tube(xf(P, M), r, sides=6 if LOW else 10, nz_amp=0.08, nz_freq=6.0, seed=hr.random() * 9)
+            A["Bone"].add(V, F, uv, m=0.45)
+    for (p, n, g) in cracks[:1]:
+        n = nrm(n)
+        u_ = perp(n)
+        for q in range(2 if LOW else 3):
+            d_ = rot(n, hr.uniform(0, 2 * math.pi)) @ u_
+            c_ = p + d_ * box_support(dims, d_) * hr.uniform(0.75, 0.9)
+            a_ = c_ - n * (g / 2 + 0.12 * k)
+            b_ = c_ + n * (g / 2 + 0.12 * k)
+            out_ = nrm(d_)
+            st_ = np.array([a_ - out_ * 0.1 * k, a_ + out_ * 0.05 * k, b_ + out_ * 0.05 * k, b_ - out_ * 0.1 * k])
+            A["Iron"].add_tube(xf(resample(st_, 4 if LOW else 10), M), 0.028 * k, sides=4 if LOW else 7, m=0.0)
+    if idx % 3 == 1 and cracks:
+        p, n, g = cracks[0]
+        n = nrm(n)
+        up_ = np.array([0.0, 0.0, 1.0])
+        d_ = nrm(up_ - up_.dot(n) * n) if abs(n[2]) < 0.9 else perp(n)
+        wrist = p + d_ * box_support(dims, d_) * 0.55
+        reach = nrm(d_ * 1.0 + n * 0.15 + np.array([0.3, 0.0, 0.0]))
+        back = nrm(np.cross(reach, n))
+        tips = statue_hand(xf(wrist[None], M)[0], xd(reach, M), xd(back, M), 0.42 * k, [0.85, 0.9, 0.95, 1.0], 0.5, hr, A["Bone"],
+                           tip="m", m0=0.5, rf=0.9, skeletal=True)
 
 
 def _build_disc(va, vb):
@@ -1661,39 +1713,22 @@ def oil_trail(p, nout, length, w0=0.06):
 
 
 def _grapnel(Aj, F, nout, side_vec, Dv, k, planted=True):
-    """Big iron meat-hook grapnel: a main scythe hook driven into the rock plus two splayed barbs."""
-    nin = -nout
-    if planted:
-        tip = F + nout * 0.32 * k
-        c1 = Aj + (F - Aj) * 0.3 + Dv * 0.75 * k + side_vec * 0.3 * k
-        c2 = F + nin * 0.85 * k + side_vec * 0.18 * k
-        P = bezier([Aj, c1, c2, tip], 30)
-    else:
-        dd = nrm(F - Aj)
-        P = bezier([Aj, Aj + dd * 0.7 * k + Dv * 0.35 * k, Aj + dd * 1.25 * k - Dv * 0.1 * k,
-                    Aj + dd * 1.1 * k - Dv * 0.65 * k - dd * 0.3 * k], 28)
-    t = np.linspace(0, 1, len(P))
-    r = 0.105 * k * (1 - t) ** 0.85 + 0.004
-    A["Iron"].add_tube(P, r, sides=9, up=side_vec, ry=r * 0.6, cap1=False, m=t, g=0.0)
-    axis = nrm(P[-1] - P[0])
-    for sgn in (-1, 1):  # splayed barbs
-        dd = rot(axis, sgn * math.radians(rng.uniform(60, 85))) @ nrm(P[6] - P[0])
-        L = rng.uniform(0.6, 0.95) * k
-        Q = bezier([Aj, Aj + dd * L * 0.6 + Dv * 0.15 * k, Aj + dd * L + Dv * -0.05,
-                    Aj + dd * L * 0.85 - Dv * 0.4 * k], 16)
-        tt = np.linspace(0, 1, len(Q))
-        rq = 0.06 * k * (1 - tt) + 0.003
-        A["Iron"].add_tube(Q, rq, sides=7, ry=rq * 0.6, up=np.cross(axis, dd), cap1=False, m=tt)
-    ax = nrm(P[3] - P[0])
-    iron_hoop(Aj + ax * 0.06, ax, 0.11 * k, k, w=0.045, rivets=6, heat=0.0)
+    """v2: the foot is a long skeleton HAND: an iron manacle at the wrist (the end of the metatarsus), the metacarpals and the too-long
+    fingers hooked into the masonry (planted), or curled into a claw (lifted). Rubble, grit and oil-blood where it bites."""
+    ax = np.asarray(F, float) - Aj
+    Lh = float(np.linalg.norm(ax))
+    ax = ax / max(Lh, 1e-6)
+    b0 = nout - nout.dot(ax) * ax
+    back = nrm(b0) if np.linalg.norm(b0) > 0.2 else nrm(np.cross(ax, side_vec))
+    size = Lh / 0.95
+    curl = [0.55, 0.62, 0.66, 0.7] if planted else [1.0, 1.05, 1.1, 1.1]
+    tips = statue_hand(np.asarray(Aj, float), ax, back, size, curl, 0.55, rng, A["Bone"], tip="m", m0=0.5, rf=0.82, skeletal=True)
+    iron_hoop(Aj - ax * 0.04 * size, ax, 0.1 * size, k, w=0.06, rivets=6, heat=0.0)
     if planted:
         bite = F + nout * 0.02
         rubble(bite, nout, k)
         oil_trail(bite - UP * 0.05, nout, rng.uniform(0.6, 1.8) * k, 0.05 * k)
-        for _ in range(rng.randint(1, 2)):
-            i = rng.randint(len(P) // 2, len(P) - 6)
-            hang_strand(P[i] + nin * 0.02, rng.uniform(0.15, 0.6), 0.012 * k, A["Oil"])
-    return P
+    return np.array(tips)
 
 
 def lancet2d(w, H, sharp=1.55):
@@ -1761,7 +1796,7 @@ def leg_shank(P0, P1, side_vec, r0, r1, acc, barbs=0, k=1.0, bow=0.12, m0=0.0, m
         pdir = rot(tg, rng.uniform(0, 2 * math.pi)) @ perp(tg)
         V, F, uv, al = shard(shank[i] + pdir * r[i] * 0.8, nrm(pdir - tg * 0.8), rng.uniform(0.12, 0.26) * k,
                              0.035 * k, hook_dir=-tg, hook=0.35, sides=4, rings=5)
-        A["Carved"].add(V, F, uv, al)
+        A["Carved"].add(V, F, uv, 0.0)
     return shank, r
 
 
@@ -2262,138 +2297,544 @@ def _listening_pit(c, axis, r, depth, hue, power, membrane=False, cames=0, face_
 
 
 # =============================================================================
-# The crown, round 3: a lancet PORTAL (three stepped archivolt orders of small wedge voussoirs sunk in wet
-# flesh) opening onto a deep throat; the ventral third has cracked off and dropped; behind and above it stands a
-# broken rose-window WHEEL (tracery ring, irregular spokes, bored listening pits). Teeth only on the inner arris
-# of the portal (two interlocking combs, a portcullis) and in eight receding rings in the throat.
+# THE CROWN, v2 (2026-10): "the saint that learned to hunt"
+#
+# A cathedral saint's colossal pale stone FACE, split down the midline and pried apart like a pair of church doors
+# (portal_comb_L0 / R0, hinged at their outer back edges). Human teeth line both edges of the split and run on into the
+# upper dental arch (portal_comb_L1 / R1, children of the halves). The lower jaw is broken in two and hangs at two
+# different wrong angles from the jaw joints (portal_hinge_0 / 1). Behind the split three telescoping rings of hooked
+# fangs (portal_arch_0..2: they shoot forward through the face at the strike) guard a lamprey throat (gullet_0..2) with
+# one ember far down. The statue's blank eyes are bored through: small, blind, wet eyes cluster in the sockets over a dim
+# coal (pit_0..6: eye rolls / bulges), weeping black down the cheeks. Five long statue arms (arm_n_0 shoulder + forearm,
+# arm_n_1 hand) reach round the face with too-long fingers; behind the head a broken rose-window halo of soot-black
+# voussoirs and gilded thorns. A climber half absorbed into the left temple; a rope caught in the teeth.
+#
+# Face-local frame (metres, kit scale): x right, y up (dorsal), z out of the face. The face is tilted FACE_TILT down toward
+# the climber below and sits on the crown frame (S, D, T) at CROWN["C"] (crown-local = (x, y, z) along S, D, T).
 # =============================================================================
-PORT_H, PORT_YB, PORT_YS, PORT_R = 0.95, -1.95, 0.30, 2.25    # half width, threshold, springing line, arch radius
-PORT_W, PORT_STEP, PORT_ZF, PORT_NORD = 0.36, 0.30, 0.62, 3   # order width, step back per order, front face
-Y_GAP = -0.95                                                  # the ventral piece broke off below this
-
-
-class Lancet:
-    """Pointed-arch outline (left jamb up, arc over the apex, right jamb down), parameterised by arc length s
-    measured along the curve offset `dm` outward from the opening's edge. eval() returns the base (offset 0)
-    point and outward normal, so a point at offset d is base + n * d (offset curves of arcs are arcs)."""
-
-    def __init__(self, dm=0.0):
-        self.dm = dm
-        self.c = PORT_R - PORT_H
-        self.r = PORT_R + dm
-        self.th_a = math.acos(-self.c / self.r)
-        self.Lj = PORT_YS - PORT_YB
-        self.La = self.r * (math.pi - self.th_a)
-        self.L = 2 * (self.Lj + self.La)
-
-    def eval(self, s):
-        s = np.atleast_1d(np.asarray(s, float))
-        h, R, c = PORT_H, PORT_R, self.c
-        x = np.zeros_like(s)
-        y = np.zeros_like(s)
-        nx = np.zeros_like(s)
-        ny = np.zeros_like(s)
-        m1 = s <= self.Lj
-        m2 = (s > self.Lj) & (s <= self.Lj + self.La)
-        m3 = (s > self.Lj + self.La) & (s <= self.Lj + 2 * self.La)
-        m4 = s > self.Lj + 2 * self.La
-        x[m1], y[m1], nx[m1] = -h, PORT_YB + s[m1], -1.0
-        th = math.pi - (s[m2] - self.Lj) / self.r
-        x[m2], y[m2], nx[m2], ny[m2] = c + R * np.cos(th), PORT_YS + R * np.sin(th), np.cos(th), np.sin(th)
-        ph = (math.pi - self.th_a) - (s[m3] - self.Lj - self.La) / self.r
-        x[m3], y[m3], nx[m3], ny[m3] = -c + R * np.cos(ph), PORT_YS + R * np.sin(ph), np.cos(ph), np.sin(ph)
-        x[m4], y[m4], nx[m4] = h, PORT_YS - (s[m4] - self.Lj - 2 * self.La), 1.0
-        return x, y, nx, ny
-
+FACE_TILT = math.radians(13.0)
+FACE_PIV = np.array([0.0, 0.7, 0.0])
+FACE_Z0 = 1.05          # front of the face at the cheek reference
+X_EYE, Y_EYE = 0.97, 1.43
+Y_LIPE = -0.12          # lower edge of the upper lip: the upper halves end here at the split
+Y_FTOP = 3.3            # top of the forehead at the split
+FACE_TH = 0.36          # stone thickness of the mask
+TMJ = np.array([1.42, 0.52, -0.42])       # jaw joint (x mirrored per side)
+JAW_DROP = (math.radians(32.0), math.radians(45.0))     # rest drop of the left / right jaw half (asymmetric: broken)
+JAW_SPLAY = (math.radians(15.0), math.radians(22.0))     # ... and how far each half has splayed out from the break
+# eye sockets: side, centre (X, Y), radii, bore depth, eyes [(dx, dy) in radii, eye radius]
+SOCKETS = [   # eyes: (dx, dy) in socket radii, radius, pit bone
+    dict(side=-1, c=(X_EYE, Y_EYE - 0.04), rx=0.42, ry=0.36, depth=0.85,
+         eyes=[(-0.42, 0.28, 0.072, 0), (-0.05, 0.4, 0.06, 0), (0.36, 0.22, 0.085, 0), (-0.3, -0.25, 0.075, 1),
+               (0.05, -0.05, 0.052, 1), (0.3, -0.42, 0.09, 2)]),
+    dict(side=1, c=(X_EYE + 0.05, Y_EYE - 0.12), rx=0.47, ry=0.47, depth=0.95,
+         eyes=[(-0.25, 0.25, 0.11, 3), (0.22, 0.38, 0.062, 3), (0.35, 0.02, 0.07, 3), (-0.12, -0.3, 0.05, 4),
+               (0.18, -0.45, 0.058, 4), (0.42, -0.62, 0.045, 4), (-0.38, -0.6, 0.048, 4)]),
+    dict(side=-1, c=(1.18, 0.55), rx=0.22, ry=0.18, depth=0.42, eyes=[(-0.15, 0.1, 0.08, 5), (0.35, -0.2, 0.05, 5)]),
+    dict(side=1, c=(0.46, 2.5), rx=0.09, ry=0.24, depth=0.36, eyes=[(0.0, 0.05, 0.066, 6)]),
+]
 
 
 def place(bm, Vw):
-    """Move a block's vertices to their final world positions (warped onto the portal / wheel) and fix its normals."""
+    """Move a block's vertices to their final world positions and fix its normals."""
     for v, p_ in zip(bm.verts, Vw):
         v.co = Vector(p_)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     return bm
 
 
-_LR = {}
+def face_gap(Y):
+    """Half width of the split at height Y: a crack in the forehead, wide at the mouth, ragged."""
+    Y = np.asarray(Y, float)
+    t = np.clip((Y_FTOP - Y) / (Y_FTOP - Y_LIPE), 0, 1)
+    q = np.stack([Y.ravel() * 3.1, np.full(Y.size, 1.7), np.zeros(Y.size)], -1)
+    return 0.03 + 0.05 * t ** 1.5 + 0.012 * NZ.fbm(q, 3).reshape(Y.shape)
 
 
-def lancet_radial(a, d=0.0):
-    """Radius of the (closed) portal outline offset by d, along polar angle a about the portal centre."""
-    key = round(float(d), 3)
-    if key not in _LR:
-        ln = Lancet(0.0)
-        s = np.linspace(0, ln.L, 700)
-        x, y, nx, ny = ln.eval(s)
-        x, y = x + nx * d, y + ny * d
-        xb = np.linspace(x[-1], x[0], 90)[1:-1]
-        X = np.concatenate([x, xb])
-        Y = np.concatenate([y, np.full(len(xb), PORT_YB - d)])
-        ang = np.arctan2(Y, X)
-        o = np.argsort(ang)
-        _LR[key] = (ang[o], np.hypot(X, Y)[o])
-    ang, r = _LR[key]
-    return np.interp(np.asarray(a, float), ang, r, period=2 * math.pi)
+def face_outline(Y, sgn):
+    """Outer half width of the mask at height Y (an egg with a broken edge)."""
+    Y = np.asarray(Y, float)
+    a = np.clip(np.abs((Y - 0.85) / 2.6), 0, 1)
+    w = 1.68 * (1 - a ** 2.8) ** (1 / 2.8)
+    q = np.stack([Y.ravel() * 2.3, np.full(Y.size, 4.0 + sgn), np.zeros(Y.size)], -1)
+    w = w * (1 + 0.05 * NZ.fbm(q, 3).reshape(Y.shape) + 0.025 * NZ.fbm(q * 4.0, 2).reshape(Y.shape))
+    if sgn > 0:      # a great chunk broken out of the right side of the forehead
+        w = w - 0.55 * np.exp(-((Y - 2.45) / 0.32) ** 2)
+    else:            # and a bite out of the left temple
+        w = w - 0.3 * np.exp(-((Y - 1.75) / 0.22) ** 2)
+    return w
 
 
-def pleated_tube(P, r, lobes=7, amp=0.12, phase=0.0, cap0=True, cap1=True):
-    """A robed sleeve: tube whose cross-section is a lobed (pleated) circle."""
+def face_uv(U, V, sgn):
+    ybot = np.interp(U, [0.0, 0.45, 0.7, 0.86, 1.0], [Y_LIPE, Y_LIPE - 0.02, 0.0, -0.3, -0.8])
+    ytop = np.interp(U, [0.0, 0.45, 1.0], [Y_FTOP, 3.12, 2.4])
+    Y = ybot + V * (ytop - ybot)
+    g = face_gap(Y)
+    w = face_outline(Y, sgn)
+    return g + U * (w - g), Y
+
+
+def _g2(X, Y, cx, cy, sx, sy, p=1.0):
+    q = ((X - cx) / sx) ** 2 + ((Y - cy) / sy) ** 2
+    return np.exp(-q ** p)
+
+
+def _seg_dist(X, Y, a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    d = b - a
+    t = np.clip(((X - a[0]) * d[0] + (Y - a[1]) * d[1]) / float(d @ d), 0, 1)
+    return np.hypot(X - (a[0] + t * d[0]), Y - (a[1] + t * d[1]))
+
+
+def nasal_cavity(X, Y):
+    """The hole the broken nose left (an inverted heart at the midline, 0..1)."""
+    w = np.interp(Y, [0.18, 0.3, 0.55, 0.75, 0.92], [0.0, 0.2, 0.27, 0.2, 0.0])
+    q = np.stack([X.ravel() * 11.0, Y.ravel() * 11.0, np.full(X.size, 6.6)], -1)
+    w = w * (1 + 0.15 * NZ.fbm(q, 2).reshape(X.shape))
+    return 1 - smoothstep(0.75, 1.05, X / np.maximum(w, 1e-3))
+
+
+def face_relief(X, Y):
+    """Depth of the carved saint's face (z out of the face, before FACE_Z0) at X = |x|, Y. Symmetric; damage separately."""
+    X, Y = np.asarray(X, float), np.asarray(Y, float)
+    z = -0.5 * X ** 2 - 0.05 * (Y - 0.9) ** 2
+    z = z - 0.2 * np.clip(Y - 2.2, 0, None) ** 1.5 - 0.6 * np.clip(X - 1.05, 0, None) ** 2
+    bm = smoothstep(0.04, 0.32, X) * (1 - smoothstep(1.3, 1.68, X))
+    z = z + 0.27 * np.exp(-((Y - 1.92 + 0.12 * (X - 0.75) ** 2) / 0.18) ** 2) * bm          # brow ridge
+    z = z + 0.06 * _g2(X, Y, 0.0, 1.78, 0.3, 0.3)                                          # glabella
+    z = z - 0.62 * _g2(X, Y, X_EYE, Y_EYE - 0.02, 0.58, 0.4, 1.4)                          # the orbit
+    z = z + 0.1 * _g2(X, Y, X_EYE + 0.02, Y_EYE - 0.04, 0.3, 0.2)                          # what is left of the stone eye
+    z = z + 0.09 * _g2(X, Y, X_EYE, Y_EYE + 0.24, 0.36, 0.07)                              # carved upper lid
+    hN = np.interp(Y, [0.18, 0.3, 0.48, 0.75, 1.15, 1.55, 1.85], [0.0, 0.26, 0.66, 0.56, 0.36, 0.2, 0.08])
+    wN = np.interp(Y, [0.18, 0.5, 1.0, 1.7], [0.31, 0.27, 0.19, 0.16])
+    z = z + hN * np.exp(-(X / wN) ** 2)                                                    # nose
+    # the nose has broken off below the bridge: a jagged stump, then the nasal cavity (an inverted heart, black)
+    q = np.stack([X.ravel() * 9.0, Y.ravel() * 9.0, np.full(X.size, 3.3)], -1)
+    brk = 0.86 + 0.06 * NZ.fbm(q, 2).reshape(X.shape)
+    z = z - hN * np.exp(-(X / wN) ** 2) * smoothstep(brk + 0.05, brk - 0.08, Y)
+    z = z + 0.12 * _g2(X, Y, 0.3, 0.42, 0.13, 0.12)                                        # what is left of the alar wing
+    z = z - 0.55 * nasal_cavity(X, Y)
+    z = z + 0.2 * _g2(X, Y, 1.2, 0.98, 0.32, 0.2)                                          # cheekbone
+    z = z - 0.3 * _g2(X, Y, 1.0, 0.12, 0.34, 0.42)                                         # gaunt hollow
+    z = z - 0.12 * _g2(X, Y, 1.45, 1.95, 0.22, 0.45)                                       # temple
+    z = z - 0.07 * np.exp(-(_seg_dist(X, Y, (0.42, 0.4), (0.84, -0.18)) / 0.07) ** 2)      # nasolabial fold
+    lipm = 1 - smoothstep(0.6, 1.0, X)
+    z = z + 0.13 * np.exp(-((Y - 0.06 + 0.1 * X ** 2) / 0.1) ** 2) * lipm                   # upper lip
+    z = z - 0.12 * _g2(X, Y, 1.05, -0.05, 0.3, 0.2)                                        # the torn corner sinks in
+    return z
+
+
+def socket_field(X, Y, sgn):
+    """Bores of the eye sockets on this half: (dz, inside 0..1)."""
+    dz = np.zeros_like(X)
+    ins = np.zeros_like(X)
+    for so in SOCKETS:
+        if so["side"] != sgn:
+            continue
+        cx, cy = so["c"]
+        q = np.stack([X.ravel() * 4.0 + cx * 7, Y.ravel() * 4.0, np.full(X.size, 2.0 + sgn)], -1)
+        jag = 1 + 0.12 * NZ.fbm(q, 3).reshape(X.shape) * (so["rx"] > 0.2)
+        r = np.hypot((X - cx) / so["rx"], (Y - cy) / so["ry"]) * jag
+        h = 1 - smoothstep(0.82, 1.08, r)
+        dz = dz - so["depth"] * h
+        ins = np.maximum(ins, 1 - smoothstep(0.75, 1.55, r))
+    return dz, ins
+
+
+def socket_rim(so):
+    """Face-local centre of a socket's mouth (on the relief) and its axis (into the head)."""
+    cx, cy = so["c"]
+    X = np.array([cx])
+    Y = np.array([cy])
+    z = FACE_Z0 + face_relief(X, Y)[0] + 0.08
+    return np.array([so["side"] * cx, cy, z])
+
+
+def face_tears(X, Y, sgn):
+    """Black weeping streaks under the sockets, the nostril and the brow slit (0..1)."""
+    out = np.zeros_like(X)
+    srcs = []
+    for so in SOCKETS:
+        if so["side"] == sgn and so["rx"] > 0.15:
+            cx, cy = so["c"]
+            out = np.maximum(out, 0.45 * _g2(X, Y, cx, cy - so["ry"] * 0.9, so["rx"] * 0.9, so["ry"] * 0.55))
+            srcs.append((cx - 0.3 * so["rx"], cy - so["ry"] * 0.85, 0.022, 1.25 + 0.35 * sgn, 1.0))
+            srcs.append((cx + 0.35 * so["rx"], cy - so["ry"] * 0.8, 0.016, 0.7, 0.85))
+    if sgn > 0:
+        srcs.append((0.2, 0.26, 0.018, 0.7, 0.8))       # the nostril runs
+    for (xs, ys, w, L, st) in srcs:
+        q = np.stack([Y.ravel() * 2.0, np.full(X.size, xs * 13.0 + sgn), np.zeros(X.size)], -1)
+        mx = 0.06 * NZ.fbm(q, 3).reshape(X.shape) + 0.02 * NZ.fbm(q * 4.0, 2).reshape(X.shape)
+        f = np.clip((ys - Y) / L, 0, 1)
+        on = (Y < ys).astype(float) * (1 - f) ** 0.5 * (1 - smoothstep(0.92, 1.0, f))
+        ww = w * (1 + 0.4 * f + 1.6 * np.exp(-((f - 0.9) / 0.05) ** 2))      # it beads into a drip at the end
+        out = np.maximum(out, st * on * np.exp(-((X - xs - mx * (0.2 + f)) / ww) ** 2))
+    return np.clip(out, 0, 1)
+
+
+# cracks across the mask, face-local polylines (X, Y) per side
+FACE_CRACKS = {
+    -1: [[(0.12, 3.05), (0.35, 2.7), (0.42, 2.35), (0.66, 2.1), (0.7, 1.75)],
+         [(1.55, 1.2), (1.4, 0.95), (1.45, 0.6), (1.3, 0.25), (1.38, -0.2)],
+         [(0.55, 0.9), (0.72, 0.6), (0.68, 0.3)]],
+    1: [[(0.2, 3.2), (0.48, 2.95), (0.62, 2.62), (0.95, 2.4), (1.1, 1.95), (1.0, 1.7)],
+        [(1.3, 1.05), (1.15, 0.75), (0.96, 0.62), (0.95, 0.3), (1.05, 0.0), (1.1, -0.35)],
+        [(1.62, 2.1), (1.45, 2.0), (1.33, 2.2)]],
+}
+
+
+def face_cracks(X, Y, sgn):
+    out = np.zeros_like(X)
+    for pl in FACE_CRACKS[sgn]:
+        for a, b in zip(pl[:-1], pl[1:]):
+            out = np.maximum(out, np.exp(-(_seg_dist(X, Y, a, b) / 0.016) ** 2))
+    return out
+
+
+FLAKES = {-1: [(1.62, 2.2, 0.55, 0.62), (0.3, 2.95, 0.22, 0.16), (1.7, 0.1, 0.36, 0.55), (0.62, 0.62, 0.12, 0.1),
+               (0.75, 3.15, 0.42, 0.22)],
+          1: [(1.15, 2.85, 0.75, 0.5), (1.68, 1.05, 0.34, 0.5), (0.35, 0.05, 0.14, 0.09), (1.4, -0.4, 0.36, 0.34),
+              (1.45, 0.45, 0.1, 0.12)]}
+
+
+def face_flakes(X, Y, sgn):
+    """Where the stone skin has flaked off and the creature's own flesh shows (0..1): the ragged edges of the damage."""
+    out = np.zeros_like(X)
+    q = np.stack([X.ravel() * 6.0, Y.ravel() * 6.0, np.full(X.size, 5.0 + sgn)], -1)
+    jag = 1 + 0.35 * NZ.fbm(q, 3).reshape(X.shape)
+    for (cx, cy, rx, ry) in FLAKES[sgn]:
+        out = np.maximum(out, 1 - smoothstep(0.75, 1.0, np.hypot((X - cx) / rx, (Y - cy) / ry) * jag))
+    return out
+
+
+def _grid_quads(nu, nv, flip=False):
+    idx = np.arange((nu + 1) * (nv + 1)).reshape(nu + 1, nv + 1)
+    q = np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4)
+    return q[:, ::-1] if flip else q
+
+
+def _boundary(nu, nv):
+    """Grid indices of the boundary loop: bottom (v=0) left->right, right column up, top right->left, left column down."""
+    idx = np.arange((nu + 1) * (nv + 1)).reshape(nu + 1, nv + 1)
+    return np.concatenate([idx[:, 0], idx[-1, 1:], idx[-2::-1, -1], idx[0, -2:0:-1]])
+
+
+def _shell_walls(front, back, loop, centre):
+    """Quads joining the boundary loop of a front grid to the same loop of its back grid, wound outward."""
+    n = len(loop)
+    F = []
+    nf = len(front)
+    for i in range(n):
+        a, b = loop[i], loop[(i + 1) % n]
+        quad = [a, b, nf + b, nf + a]
+        p = np.array([front[a], front[b], back[b], back[a]])
+        nrm_ = np.cross(p[1] - p[0], p[3] - p[0])
+        if np.dot(nrm_, p.mean(0) - centre) < 0:
+            quad = quad[::-1]
+        F.append(quad)
+    return F
+
+
+def human_tooth(root, axis, face, kind, w, th, L, sides, rings, trunc=1.0, lean=0.06):
+    """A human tooth (incisor / canine / premolar / molar): rounded-rectangle sections along the axis, root narrow (it hides in
+    the gum), crown widening then closing to an edge, a point or a cusped table. Returns (V, F, al)."""
+    axis = nrm(axis)
+    face = nrm(face - face.dot(axis) * axis)
+    side = np.cross(face, axis)
+    tt, ww, hh = TOOTH_PROF[kind]
+    t = np.linspace(0.0, 1.0, rings) * trunc
+    a = np.interp(t, tt, ww) * w / 2
+    b = np.interp(t, tt, hh) * th / 2
+    P = np.asarray(root, float)[None] + axis[None] * (L * t)[:, None] - face[None] * (lean * L * t ** 2)[:, None]
+    ang = np.linspace(0, 2 * math.pi, sides, endpoint=False) + math.pi / sides
+    ca, sa = np.cos(ang), np.sin(ang)
+    ex = 2.0 / 2.8
+    cx = np.sign(ca) * np.abs(ca) ** ex
+    cy = np.sign(sa) * np.abs(sa) ** ex
+    prof = np.stack([cx[None] * a[:, None], cy[None] * b[:, None]], -1)
+    Tn = np.broadcast_to(axis, P.shape)
+    V, F, uv, al = loft(P, prof, fr=(Tn, np.broadcast_to(side, P.shape), np.broadcast_to(face, P.shape)), cap0=True, cap1=True)
+    if kind in ("molar", "premolar") and trunc >= 1.0:
+        V = V.copy()
+        V[-1] = V[-1] - axis * (0.14 * L)            # the cusped table: its centre sinks into a fissure
+    return V, F, al * trunc
+
+
+TOOTH_PROF = {
+    "incisor": ([0.0, 0.3, 0.45, 0.75, 0.93, 1.0], [0.35, 0.62, 0.72, 1.0, 0.97, 0.9], [0.45, 0.8, 0.85, 0.7, 0.32, 0.12]),
+    "canine": ([0.0, 0.3, 0.45, 0.65, 0.88, 1.0], [0.35, 0.65, 0.78, 1.0, 0.55, 0.08], [0.5, 0.85, 0.92, 0.85, 0.45, 0.08]),
+    "premolar": ([0.0, 0.3, 0.45, 0.72, 0.92, 1.0], [0.4, 0.65, 0.78, 1.0, 0.9, 0.62], [0.5, 0.85, 0.95, 1.0, 0.85, 0.55]),
+    "molar": ([0.0, 0.3, 0.45, 0.72, 0.92, 1.0], [0.55, 0.75, 0.85, 1.05, 1.0, 0.8], [0.55, 0.85, 0.95, 1.05, 0.95, 0.75]),
+}
+TOOTH_SIZE = {"incisor": (0.12, 0.08, 0.38), "canine": (0.11, 0.1, 0.46), "premolar": (0.11, 0.12, 0.32),
+              "molar": (0.15, 0.14, 0.3)}       # width, thickness, total length (root + crown)
+
+
+def gum_band(P, outd, upd, thick, height, centres, spacing):
+    """A scalloped band of gum along a tooth row: a lens-shaped section (thick toward `outd`, rising toward `upd`, the tooth
+    tips), the crest dipping round every tooth and rising between them. P, outd, upd: (n, 3). Returns (V, F)."""
     P = np.asarray(P, float)
     n = len(P)
-    K = lobes * (2 if LOW else 3)
-    th = np.linspace(0, 2 * math.pi, K, endpoint=False)
-    rr = np.broadcast_to(np.asarray(r, float), (n,))
-    mod = 1 + amp * np.cos(lobes * th + phase)
-    prof = np.stack([np.cos(th)[None, :] * rr[:, None] * mod[None, :], np.sin(th)[None, :] * rr[:, None] * mod[None, :]], -1)
-    return loft(P, prof, cap0=cap0, cap1=cap1)
+    L = arclen(P)
+    d = np.min(np.abs(L[:, None] - np.asarray(centres)[None, :]), axis=1) if len(centres) else np.full(n, spacing)
+    sc = 0.62 + 0.5 * smoothstep(0.12, 0.5, d / spacing)
+    K = 10
+    th_ = np.linspace(0, 2 * math.pi, K, endpoint=False)
+    rings = []
+    for i in range(n):
+        o, u = nrm(outd[i]), nrm(upd[i])
+        hh = height * sc[i]
+        x = np.cos(th_) * thick * (1.0 + 0.25 * (np.cos(th_) > 0))
+        y = np.where(np.sin(th_) > 0, np.sin(th_) * hh, np.sin(th_) * height * 0.6)
+        rings.append(P[i][None] + x[:, None] * o[None] + y[:, None] * u[None])
+    R = np.array(rings)
+    R = np.concatenate([R, R[:, :1]], 1)
+    idx = np.arange(n * (K + 1)).reshape(n, K + 1)
+    quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+    Vr = R.reshape(-1, 3)
+    qm = quads[(n // 2) * K + 2]
+    nn_ = np.cross(Vr[qm[1]] - Vr[qm[0]], Vr[qm[3]] - Vr[qm[0]])
+    if np.dot(nn_, Vr[qm].mean(0) - P[n // 2]) < 0:
+        quads = quads[:, ::-1]
+    return Vr, quads
 
 
-def stone_arm(root, dirv, palm_n, L=1.5, size=1.0, owner=("arm_0_0", "arm_0_1"), Mh=None):
-    """A carved stone forearm in a pleated robe sleeve with an open, empty, sooted-fingertip hand: the church
-    statue's arm, grown out of the facade (two rigid joints: forearm + hand)."""
-    root = np.asarray(root, float)
-    d = nrm(dirv)
-    pn = nrm(np.asarray(palm_n, float) - np.dot(palm_n, d) * d)
-    side = np.cross(d, pn)
-    n = 14
-    bend = pn * 0.14 * L
-    P = bezier([root, root + d * L * 0.5 + bend * 0.5, root + d * L + bend], n)
-    t = np.linspace(0, 1, n)
-    rs = size * (0.24 - 0.1 * t + 0.08 * smoothstep(0.72, 1.0, t))
-    with tag("Own:" + owner[0], Mh if Mh is not None else np.eye(4)):
-        V, F, uv, al = pleated_tube(P, rs, 7, 0.16, phase=rng.uniform(0, 6), cap0=True, cap1=False)
-        A["Carved"].add(V, F, uv, m=0.0)
-        wr = P[-1] + d * 0.3 * size
-        Pf = np.vstack([P[8:], wr[None]])
-        A["Carved"].add_tube(Pf, np.linspace(0.085, 0.06, len(Pf)) * size, sides=7, cap0=False, cap1=True, m=0.0)
-    with tag("Own:" + owner[1], Mh if Mh is not None else np.eye(4)):
-        pc = wr + d * 0.1 * size
-        bm = stone_bm((0.28 * size, 0.07 * size, 0.28 * size), chamfer=0.25, wear=0.008, chips=1, subdiv=1)
-        co = np.array([v.co[:] for v in bm.verts])
-        Vw = pc + np.outer(co[:, 0], side) + np.outer(co[:, 1], pn) + np.outer(co[:, 2], d)
-        place(bm, Vw)
-        A["Carved"].add_bm(bm)
-        fl = np.array([0.2, 0.25, 0.23, 0.17]) * size
+def uv_sphere(c, fwd, r, nlat, nlon, sx=1.0):
+    """Sphere with its poles on +-fwd (radial topology round the front pole: the iris). Returns (V, F, cosine to fwd)."""
+    fwd = nrm(fwd)
+    e1 = perp(fwd)
+    e2 = np.cross(fwd, e1)
+    th = np.linspace(0, math.pi, nlat + 1)[1:-1]
+    ph = np.linspace(0, 2 * math.pi, nlon, endpoint=False)
+    TH, PH = np.meshgrid(th, ph, indexing="ij")
+    d = (np.cos(TH)[..., None] * fwd + np.sin(TH)[..., None] * (np.cos(PH)[..., None] * e1 * sx + np.sin(PH)[..., None] * e2))
+    V = np.vstack([c + fwd * r, (c + d.reshape(-1, 3) * r), c - fwd * r])
+    cs = np.concatenate([[1.0], np.cos(TH).ravel(), [-1.0]])
+    F = []
+    rowi = lambda i, j: 1 + i * nlon + (j % nlon)
+    for j in range(nlon):
+        F.append([0, rowi(0, j), rowi(0, j + 1)])
+    for i in range(nlat - 2):
+        for j in range(nlon):
+            F.append([rowi(i, j), rowi(i + 1, j), rowi(i + 1, j + 1), rowi(i, j + 1)])
+    last = len(V) - 1
+    for j in range(nlon):
+        F.append([rowi(nlat - 2, j + 1), rowi(nlat - 2, j), last])
+    return V, F, cs
+
+
+def eye_with_lids(c, fwd, up, r, owner_pit, rc, lid_top=0.35, lid_bot=-0.55):
+    """A blind, wet, milky eye in fleshy lids. The lids are thick partial shells over the ball (not rings)."""
+    nl, no = (6, 10) if LOW else (16, 28)
+    V, F, cs = uv_sphere(c, fwd, r, nl, no)
+    A["Eye"].add(V, F, d=cs, m=rc.uniform(0.0, 1.0))
+    up = nrm(up - up.dot(fwd) * fwd)
+    for (lim, sgn_) in ((lid_top, 1.0), (lid_bot, -1.0)):
+        # the part of the ball beyond the lid line, offset out: a thick lid with a rounded edge
+        nl2, no2 = (3, 7) if LOW else (8, 18)
+        a0 = math.acos(np.clip(lim * sgn_, -0.95, 0.95))
+        th = np.linspace(0.0, a0, nl2 + 1)          # polar angle from the lid's own pole (= +-up)
+        ph = np.linspace(-1.9, 1.9, no2 + 1)        # round the front only (the back is inside the socket)
+        TH, PH = np.meshgrid(th, ph, indexing="ij")
+        pole = up * sgn_
+        e1 = fwd
+        e2 = np.cross(pole, e1)
+        d = (np.cos(TH)[..., None] * pole + np.sin(TH)[..., None] * (np.cos(PH)[..., None] * e1 + np.sin(PH)[..., None] * e2))
+        rr = r * (1.07 + 0.05 * np.sin(np.linspace(0, math.pi, nl2 + 1))[:, None])
+        Vo = c + d * rr[..., None]
+        Vi = c + d * (r * 1.005)
+        nu_, nv_ = nl2, no2
+        Vg = np.vstack([Vo.reshape(-1, 3), Vi.reshape(-1, 3)])
+        q = _grid_quads(nu_, nv_)
+        cen = c + pole * r * 0.5
+        Fq = list(q)
+        nfo = Vo.reshape(-1, 3).shape[0]
+        Fq += list(q[:, ::-1] + nfo)
+        # the free edge (th = a0): close the lid's lip
+        ia = np.arange(nv_ + 1) + nu_ * (nv_ + 1)
+        for j in range(nv_):
+            Fq.append([ia[j + 1], ia[j], nfo + ia[j], nfo + ia[j + 1]])
+        Fq = [list(f) for f in Fq]
+        # orient the outer shell outward
+        f0 = Fq[0]
+        nn_ = np.cross(Vg[f0[1]] - Vg[f0[0]], Vg[f0[3]] - Vg[f0[0]])
+        if np.dot(nn_, Vg[f0].mean(0) - c) < 0:
+            Fq = [f[::-1] for f in Fq]
+        A["Gum"].add(Vg, Fq, m=0.25, d=0.0)
+
+
+def finger(base, dirs, lens, r0, r1, side, palm_n, acc, tip="d", m0=0.0):
+    """A long finger along the joint chain (base + lens[i] * dirs[i]); an elliptic, tapering section with knuckle bulges at the
+    joints, a padded tip. Returns the tip point."""
+    pts = [np.asarray(base, float)]
+    for d, L in zip(dirs, lens):
+        pts.append(pts[-1] + nrm(d) * L)
+    pts = np.array(pts)
+    P = catmull(pts, 6 if LOW else 14)
+    P = resample(P, 3 + 3 * len(lens) if LOW else 10 * len(lens))
+    t = np.linspace(0, 1, len(P))
+    Lc = np.concatenate([[0.0], np.cumsum(lens)]) / sum(lens)
+    knk = sum(0.16 * np.exp(-((t - x) / 0.05) ** 2) for x in Lc[:-1])
+    r = (r0 + (r1 - r0) * t) * (1 + knk) * np.where(t > 0.9, np.sqrt(np.clip((1 - t) / 0.1, 0.05, 1.0)) * 0.5 + 0.5, 1.0)
+    T_, N_, B_ = frames(P, up=palm_n)
+    sides = 6 if LOW else 12
+    c = circle_prof(sides)
+    prof = np.stack([c[None, :, 0] * r[:, None] * 1.12, c[None, :, 1] * r[:, None] * 0.92], -1)
+    V, F, uv, al = loft(P, prof, fr=(T_, N_, B_), cap0=False, cap1=True)
+    tm = np.clip((al - 0.8) / 0.2, 0, 1)
+    if tip == "d":          # dark wet fingertips (the mask material's tear channel)
+        acc.add(V, F, uv, m=m0, d=tm)
+    else:                   # bone: the m channel's bloody ends
+        acc.add(V, F, uv, m=m0 + (1 - m0) * tm)
+    return P[-1]
+
+
+def statue_hand(wrist, axis, palm_n, size, curl, spread, rc, acc, tip="d", m0=0.0, rf=1.0, skeletal=False):
+    """A long-fingered stone hand: a cupped palm slab, four too-long fingers (three phalanges each), an opposed thumb.
+    curl: per-finger joint angles (rad) toward the palm; spread: fan angle (rad)."""
+    a = nrm(axis)
+    n = nrm(palm_n - palm_n.dot(a) * a)          # n is the BACK of the hand (the palm faces -n)
+    s = np.cross(n, a)
+    S_ = size
+    Lp = 0.5 * S_
+    tt = np.linspace(0, 1, 4 if LOW else 9)
+    P = wrist[None] + a[None] * (Lp * tt)[:, None] + n[None] * (0.04 * S_ * np.sin(math.pi * tt))[:, None]
+    wid = (0.25 + 0.2 * smoothstep(0.0, 0.8, tt)) * S_
+    thk = (0.12 - 0.02 * tt) * S_
+    sides = 8 if LOW else 16
+    c = circle_prof(sides)
+    ex_ = 2.0 / 3.2
+    cx = np.sign(c[:, 0]) * np.abs(c[:, 0]) ** ex_
+    cy = np.sign(c[:, 1]) * np.abs(c[:, 1]) ** ex_
+    prof = np.stack([cx[None] * wid[:, None] / 2, cy[None] * thk[:, None] / 2 - 0.02 * S_ * cx[None] ** 2], -1)
+    knuck = P[-1]
+    if not skeletal:
+        V, F, uv, al = loft(P, prof, fr=(np.broadcast_to(a, P.shape), np.broadcast_to(s, P.shape), np.broadcast_to(n, P.shape)))
+        acc.add(V, F, uv, m=m0)
+    else:
+        # carpal knot + four metacarpals fanning to the knuckles (a skeleton's hand, the palm is gone)
+        Vb, Fb = blob(wrist + a * 0.05 * S_, basis_axes(s, n, a, 0.13 * S_, 0.07 * S_, 0.09 * S_), sub=1 if LOW else 3, amp=0.2,
+                      freq=12.0 / S_, seed=rc.random() * 30)
+        acc.add(Vb, Fb, m=m0)
         for k in range(4):
-            base = pc + d * 0.1 * size + side * (k - 1.5) * 0.05 * size
-            dk = rot(pn, (k - 1.5) * 0.13) @ d
-            pts = [base]
-            cur = 0.0
-            for seg, frac in enumerate((0.45, 0.33, 0.22)):
-                cur += (0.12 + 0.2 * seg) * rng.uniform(0.7, 1.3) * (1.4 if k in (0, 3) else 1.0)
-                dd_ = rot(side, -cur) @ dk
-                pts.append(pts[-1] + dd_ * fl[k] * frac)
-            pts = np.array(pts)
-            rr_ = np.array([0.036, 0.032, 0.026, 0.018]) * size
-            A["Carved"].add_tube(resample(pts, 8) if not LOW else pts, np.interp(np.linspace(0, 1, 8 if not LOW else 4), np.linspace(0, 1, 4), rr_),
-                                 sides=5, cap0=False, cap1=True, m=0.0)
-            A["Soot"].add_tube(np.array([pts[-2] * 0.4 + pts[-1] * 0.6, pts[-1] + dd_ * 0.015]), 0.019 * size, sides=5)
-        # thumb
-        tb = pc + d * 0.0 + side * 0.105 * size
-        td = nrm(rot(pn, 0.9) @ d * 1.0 + side * 0.9)
-        pts = np.array([tb, tb + td * 0.1 * size, tb + rot(side, -0.5) @ td * 0.19 * size])
-        A["Carved"].add_tube(pts, np.array([0.04, 0.032, 0.02]) * size, sides=5, cap0=False, cap1=True, m=0.0)
-    return wr
+            off = (k - 1.5) * 0.105 * S_
+            p0_ = wrist + a * 0.08 * S_ + s * off * 0.35
+            p1_ = knuck + s * off - a * 0.03 * S_
+            Pm = resample(np.array([p0_, p1_]), 4 if LOW else 10)
+            tt_ = np.linspace(0, 1, len(Pm))
+            rm = (0.034 + 0.022 * (np.exp(-(tt_ / 0.15) ** 2) + np.exp(-((1 - tt_) / 0.15) ** 2))) * S_ * rf
+            V, F, uv, al = tube(Pm, rm, sides=5 if LOW else 10, cap0=True, cap1=True)
+            acc.add(V, F, uv, m=m0)
+    tips = []
+    lens = [0.6, 0.7, 0.66, 0.52]
+    for k in range(4):
+        off = (k - 1.5) * 0.105 * S_
+        base = knuck + s * off + n * (0.01 * S_ * (1 - abs(k - 1.5) / 1.5)) - a * 0.03 * S_
+        fan = rot(n, -spread * (k - 1.5) / 1.5)
+        d0 = fan @ a
+        L = lens[k] * S_ * rc.uniform(0.95, 1.06)
+        cs = curl[k] if isinstance(curl, (list, tuple)) else curl
+        dirs = []
+        ang = 0.0
+        for j, fr_ in enumerate((0.46, 0.31, 0.23)):
+            ang += cs * (0.6 + 0.25 * j) * rc.uniform(0.85, 1.15)
+            dirs.append(rot(s, -ang) @ d0)
+        tips.append(finger(base, dirs, [L * f for f in (0.46, 0.31, 0.23)], 0.05 * S_ * rf, 0.032 * S_ * rf, s, n, acc, tip, m0))
+    # thumb: from the wrist side of the palm, opposing
+    tb = wrist + a * 0.12 * S_ + s * (-0.15 * S_) - n * 0.03 * S_
+    td = nrm(a * 0.55 - s * 0.6 - n * 0.45)
+    dirs = [td, rot(n, 0.4) @ td, rot(n, 0.7) @ td]
+    tips.append(finger(tb, dirs, [0.2 * S_, 0.17 * S_, 0.13 * S_], 0.06 * S_ * rf, 0.038 * S_ * rf, s, n, acc, tip, m0))
+    return tips
+
+
+def bone_arm(shoulder, elbow, wrist, back_n, size, owner, Mh, rc, curl, spread):
+    """A long flayed arm out of the head: a knobbed humerus, radius and ulna side by side bound with taut sinew, rags of flesh at the
+    joints (owner[0]), and the long-fingered skeleton hand (owner[1])."""
+    S_ = size
+    ax = nrm(wrist - elbow)
+    bn = nrm(back_n - back_n.dot(ax) * ax)
+    sd = nrm(np.cross(ax, bn))
+
+    def long_bone(a_, b_, r_shaft, r_end, nring, sides):
+        P = resample(np.array([a_, b_]), nring)
+        t = np.linspace(0, 1, nring)
+        P = P + perp(nrm(b_ - a_))[None] * (0.03 * S_ * np.sin(math.pi * t))[:, None]
+        r = r_shaft + (r_end - r_shaft) * (np.exp(-(t / 0.13) ** 2) + np.exp(-((1 - t) / 0.13) ** 2))
+        V, F, uv, al = tube(P, r, sides=sides, nz_amp=0.07, nz_freq=6.0, seed=rc.random() * 9)
+        A["Bone"].add(V, F, uv, m=al)
+
+    nring, sides = (6, 7) if LOW else (20, 12)
+    with tag("Own:" + owner[0], Mh):
+        long_bone(shoulder, elbow, 0.08 * S_, 0.15 * S_, nring, sides)
+        for o in (-1, 1):
+            long_bone(elbow + sd * o * 0.05 * S_ - ax * 0.04 * S_, wrist + sd * o * 0.055 * S_ + bn * 0.015 * o * S_, 0.045 * S_,
+                      0.078 * S_, nring, sides)
+        for o in (-1.5, 0.1, 1.4):
+            a_ = elbow + sd * o * 0.065 * S_ - bn * 0.07 * S_ + ax * 0.1 * S_
+            b_ = wrist + sd * o * 0.045 * S_ - bn * 0.045 * S_
+            P = resample(np.array([a_, b_]), 4 if LOW else 10)
+            t = np.linspace(0, 1, len(P))
+            A["Tendon"].add_tube(P, (0.024 - 0.01 * np.sin(math.pi * t)) * S_, sides=4 if LOW else 6, cap0=False, cap1=False)
+        for c_, rr_ in ((elbow, 0.16), (shoulder + (elbow - shoulder) * 0.1, 0.24)):
+            Vb, Fb = blob(c_, basis_axes(sd, bn, ax, rr_ * S_, rr_ * 0.8 * S_, rr_ * 0.9 * S_), sub=2, amp=0.4, freq=4.0 / S_,
+                          seed=rc.random() * 30)
+            A["Flesh"].add(Vb, Fb, m=0.45)
+    with tag("Own:" + owner[1], Mh):
+        tips = statue_hand(wrist + ax * 0.04 * S_, ax, bn, 1.08 * S_, curl, spread, rc, A["Bone"], tip="m", m0=0.5, rf=0.72,
+                           skeletal=True)
+    return tips
+
+
+def human_figure(pelvis, up, fwd, scale, rc, reach_dir, acc_skin, sink=0.55):
+    """A climber half swallowed: torso, neck and head (mouth open), one arm reaching out of the flesh, the other gone in. Pale
+    corpse skin; the helmet still on, its lamp dead. Returns the head centre."""
+    up, fwd = nrm(up), nrm(fwd - fwd.dot(up) * up)
+    sd = np.cross(fwd, up)
+    k = scale
+    # torso: elliptic sections from the waist (buried) to the shoulders
+    zz = np.linspace(0, 1, 5 if LOW else 12)
+    P = pelvis[None] + up[None] * (0.55 * k * zz)[:, None]
+    wx = (0.15 + 0.06 * zz + 0.03 * np.sin(math.pi * zz)) * k
+    wy = (0.1 + 0.02 * zz) * k
+    c = circle_prof(8 if LOW else 16)
+    prof = np.stack([c[None, :, 0] * wx[:, None], c[None, :, 1] * wy[:, None]], -1)
+    V, F, uv, al = loft(P, prof, fr=(np.broadcast_to(up, P.shape), np.broadcast_to(sd, P.shape), np.broadcast_to(fwd, P.shape)))
+    acc_skin.add(V, F, uv, m=0.2)
+    sh = pelvis + up * 0.55 * k
+    # neck + head, thrown back, the jaw hanging
+    hc = sh + up * 0.2 * k + fwd * 0.03 * k
+    acc_skin.add_tube(np.array([sh, hc - up * 0.06 * k]), np.array([0.055, 0.05]) * k, sides=6 if LOW else 10, m=0.2)
+    V, F = blob(hc, basis_axes(sd, fwd, up, 0.085 * k, 0.1 * k, 0.115 * k), sub=2 if LOW else 4, amp=0.05, freq=6.0)
+    # the face: sockets and the open mouth pressed in
+    rel = V - hc
+    fz = rel @ fwd
+    for (ox, oy, dep, rx) in ((-0.032, 0.025, 0.03, 0.025), (0.032, 0.025, 0.03, 0.025), (0.0, -0.05, 0.05, 0.03)):
+        dd = np.hypot((rel @ sd - ox * k) / (rx * k), (rel @ up - oy * k) / (rx * k * (1.6 if oy < 0 else 1.0)))
+        V = V - fwd[None] * (dep * k * np.exp(-dd ** 2) * (fz > 0))[:, None]
+    acc_skin.add(V, F, m=0.3)
+    # the helmet (its lamp dead)
+    hax = nrm(up + fwd * 0.2)
+    prof_h = [(0.0, 0.135), (0.07, 0.125), (0.11, 0.095), (0.13, 0.05), (0.135, 0.0), (0.12, -0.01), (0.105, 0.02),
+              (0.09, 0.06), (0.06, 0.1), (0.0, 0.112)]
+    Vh, Fh = lathe([(a_ * k, b_ * k) for a_, b_ in prof_h], hc + hax * 0.01 * k, hax, 12 if LOW else 24)
+    A["Iron"].add(Vh, Fh, m=0.3)
+    lamp = hc + hax * 0.07 * k + fwd * 0.12 * k
+    A["Iron"].add_tube(np.array([lamp - fwd * 0.02 * k, lamp + fwd * 0.04 * k]), 0.03 * k, sides=6 if LOW else 12, m=0.0)
+    # the reaching arm: shoulder -> elbow -> wrist -> a hand with spread fingers
+    s0 = sh + sd * 0.17 * k - up * 0.03 * k
+    rd = nrm(reach_dir)
+    el = s0 + nrm(rd + up * 0.3) * 0.3 * k
+    wr = el + rd * 0.27 * k
+    acc_skin.add_tube(np.array([s0, el, wr]), np.array([0.05, 0.04, 0.032]) * k, sides=6 if LOW else 10, m=0.2)
+    hn = nrm(np.cross(rd, sd) + up * 0.2)
+    for q in range(4):
+        b0 = wr + rd * 0.08 * k + nrm(np.cross(rd, hn)) * (q - 1.5) * 0.02 * k
+        d0 = rot(hn, (q - 1.5) * 0.2) @ rd
+        tip = b0 + d0 * 0.08 * k + rot(np.cross(rd, hn), -0.7) @ d0 * 0.05 * k
+        acc_skin.add_tube(np.array([wr, b0, b0 + d0 * 0.05 * k, tip]), np.array([0.022, 0.012, 0.01, 0.007]) * k,
+                          sides=4 if LOW else 6, m=0.6)
+    return hc
 
 
 def _build_crown():
@@ -2401,7 +2842,16 @@ def _build_crown():
     C = O
     CROWN.update(C=C, T=T, D=D, S=S)
     Mh = mat4(S, T, D, O)
-    NORD, W_ = PORT_NORD, PORT_W
+    rc = random.Random(SEED * 7 + 11)            # the crown draws from its own stream (the body keeps its dice)
+    pivots = {}
+    CROWN["uvw"] = {}
+    CROWN["mask_parts"] = {}
+
+    def uvw(w, new_part=False):
+        """Texel weight of the geometry that follows (the export scales its UV islands): new_part opens a sibling part first."""
+        if new_part:
+            retag(PARTS[PART_STACK[-1]]["name"], PARTS[PART_STACK[-1]]["M"])
+        CROWN["uvw"][PART_STACK[-1]] = w
 
     def W3(loc):
         loc = np.asarray(loc, float).reshape(-1, 3)
@@ -2413,728 +2863,725 @@ def _build_crown():
     def D3(x, y, z):
         return x * S + y * D + z * T
 
-    # ---- the cracked-off ventral piece: one rigid drop about a hinge under the threshold, rolled so one side
-    #      hangs lower than the other (asymmetric)
-    ALPHA, BETA = math.radians(31.0), math.radians(8.0)
-    Hp = P3(0.0, PORT_YB - 0.12, -0.45)
-    R_low = rot(T, BETA) @ rot(S, -ALPHA)
+    Rt = rot(np.array([1.0, 0.0, 0.0]), FACE_TILT)
+    # the right half of the face has slipped: it sags and twists a little against the left (everything it carries follows: the
+    # eyes in its sockets, its row of teeth, the staples, the sinews). HALF[0] names the half being built (0: none)
+    HALF = [0]
+    SAG_R = rot(np.array([0.0, 0.0, 1.0]), math.radians(-2.6)) @ rot(np.array([0.0, 1.0, 0.0]), math.radians(3.0))
+    SAG_P = np.array([0.2, 1.4, 0.4])
+    SAG_D = np.array([0.0, -0.11, -0.02])
 
-    def lowT(V):
-        return Hp + (np.asarray(V, float).reshape(-1, 3) - Hp) @ R_low.T
+    def HT(p):
+        p = np.asarray(p, float).reshape(-1, 3)
+        return p if HALF[0] <= 0 else (p - SAG_P) @ SAG_R.T + SAG_P + SAG_D
 
-    CROWN.update(lowT=lowT, Hp=Hp)
+    def FL(p):
+        """face-local -> crown-local"""
+        return (HT(p) - FACE_PIV) @ Rt.T + FACE_PIV
 
-    def lowers(s_mid, ln):
-        s_lo = Y_GAP - PORT_YB
-        return s_mid < s_lo or s_mid > ln.L - s_lo
+    def FW(p):
+        return W3(FL(p))
 
-    LAN = [Lancet((i + 0.5) * W_) for i in range(NORD)]       # order 0 is the innermost / deepest
-    FACE = [PORT_ZF - (NORD - 1 - i) * PORT_STEP for i in range(NORD)]
-    ODEP = [1.0, 0.72, 0.56]
+    def FD(v):
+        v = np.asarray(v, float)
+        v = Rt @ (SAG_R @ v if HALF[0] > 0 else v)
+        return D3(*v)
 
-    # ------------------------------------------------------------------ listening pits (7, dull, asymmetric)
-    # wheel frame: leans toward the viewer below, rolled, off-centre (never a clean dartboard)
-    t_w = math.radians(7.0)
-    wn = nrm(np.array([0.0, -math.sin(t_w), math.cos(t_w)]))
-    wv = np.array([0.0, math.cos(t_w), math.sin(t_w)])
-    wu = np.array([1.0, 0.0, 0.0])
-    rw_ = math.radians(-9.0)
-    wu, wv = math.cos(rw_) * wu + math.sin(rw_) * wv, -math.sin(rw_) * wu + math.cos(rw_) * wv
-    Wc = np.array([0.35, 3.55, -0.8])
-    RW, WB, WD = 2.45, 0.52, 0.6
+    def piv(name, p_face):
+        q = FL(p_face)[0]
+        pivots[name] = [round(float(q[0]), 4), round(float(q[1]), 4), round(float(-q[2]), 4)]
 
-    def wl(a, r, z=0.0):
-        """wheel (angle, radius, depth) -> crown-frame coordinates, (n, 3)"""
-        a = np.atleast_1d(np.asarray(a, float))
-        r = np.broadcast_to(np.asarray(r, float), a.shape)
-        z = np.broadcast_to(np.asarray(z, float), a.shape)
-        return Wc[None] + np.outer(r * np.cos(a), wu) + np.outer(r * np.sin(a), wv) + np.outer(z, wn)
+    def jawT(sgn):
+        """face-local rigid transform of the dropped jaw half on side sgn (rotation about its joint's x axis + a twist)."""
+        j = 0 if sgn < 0 else 1
+        piv_ = TMJ * np.array([sgn, 1.0, 1.0])
+        R_ = rot(np.array([0.0, 1.0, 0]), sgn * JAW_SPLAY[j]) @ rot(np.array([1.0, 0, 0]), JAW_DROP[j])
+        if sgn > 0:
+            R_ = R_ @ rot(np.array([0.0, 0.25, 1.0]), math.radians(-7.0))
+        return lambda p: (np.asarray(p, float).reshape(-1, 3) - piv_) @ R_.T + piv_, R_
 
-    NSP = 9
-    sp_a = (np.arange(NSP) + np.array([rng.uniform(-0.2, 0.2) for _ in range(NSP)])) * 2 * math.pi / NSP + 0.35
-    cell_c = [(sp_a[k] + (sp_a[(k + 1) % NSP] + (2 * math.pi if k == NSP - 1 else 0))) / 2 for k in range(NSP)]
-    R_PIT = 1.88
-    pit_geo = []
-
-    def add_pit(c_w, axis_w, r, depth, hue, pw, memb=False, cames=0, host="wheel"):
-        pit_geo.append(dict(c=np.asarray(c_w, float), axis=nrm(axis_w), r=r, depth=depth, hue=hue, pw=pw, memb=memb,
-                            cames=cames, host=host, Tx=T))
-
-    # wheel pits: (cell, radius, depth, hue, power, eardrum)
-    for (cell, r, depth, hue, pw, memb, cam) in ((2, 0.34, 1.15, 0.32, 0.30, False, 1), (4, 0.2, 0.7, 0.8, 0.22, False, 0),
-                                                   (6, 0.15, 0.55, 0.15, 0.14, True, 0), (8, 0.11, 0.45, 0.45, 0.18, True, 0),
-                                                   (0, 0.085, 0.4, 0.05, 0.1, False, 0)):
-        a = cell_c[cell] + rng.uniform(-0.05, 0.05)
-        add_pit(W3(wl(a, R_PIT + rng.uniform(-0.08, 0.05), WD * 0.5 - 0.05))[0], -D3(*wn) + D3(*(wu * rng.uniform(-.08, .08))),
-                r, depth, hue, pw, memb, cam, host="cell%d" % cell)
-    # portal pits: two small holes bored into the outer order
-    for (s_f, r, depth, hue, pw, memb) in ((0.34, 0.115, 0.5, 0.6, 0.16, True), (0.78, 0.085, 0.4, 0.2, 0.12, False)):
-        ln = LAN[NORD - 1]
-        s0 = ln.Lj + ln.La * s_f
-        x, y, nx, ny = ln.eval(s0)
-        off = ln.dm
-        c = P3(x[0] + nx[0] * off, y[0] + ny[0] * off, FACE[NORD - 1] + 0.005)
-        add_pit(c, -T + D3(nx[0] * 0.1, ny[0] * 0.1, 0.0), r, depth, hue, pw, memb, 0, host="portal")
-
-    def pit_hits(cen, rad):
-        return [pit_cutter(p["c"], p["axis"], p["r"], p["depth"]) for p in pit_geo
-                if np.linalg.norm(p["c"] - cen) < rad + p["r"] + 0.06]
-
-    # ------------------------------------------------------------------ archivolt orders: wedge voussoirs
-    joints = []
-    all_tips = []
-    for i in range(NORD):
-        ln = LAN[i]
-        s_lo = Y_GAP - PORT_YB
-        marks = [0.0, s_lo, ln.Lj, ln.Lj + ln.La, ln.Lj + 2 * ln.La, ln.L - s_lo, ln.L]
-        cuts = [0.0]
-        for a_, b_ in zip(marks[:-1], marks[1:]):
-            seclen = b_ - a_
-            if seclen < 0.05:
-                continue
-            arcsec = a_ >= ln.Lj - 1e-6 and b_ <= ln.Lj + 2 * ln.La + 1e-6
-            avg = rng.uniform(0.27, 0.38) if arcsec else rng.uniform(0.3, 0.5)
-            n = max(1, int(round(seclen / avg)))
-            w = np.array([rng.uniform(0.72, 1.3) for _ in range(n)])
-            cuts += list(a_ + np.cumsum(w) / w.sum() * seclen)
-        cuts[-1] = ln.L
-        for bi in range(len(cuts) - 1):
-            s0, s1 = cuts[bi], cuts[bi + 1]
-            sm = (s0 + s1) / 2
-            low = lowers(sm, ln)
-            owner = "portal_arch_%d" % i if not low else ("portal_hinge_0" if sm < ln.L / 2 else "portal_hinge_1")
-            odep = ODEP[i] * rng.uniform(0.92, 1.08)
-            joints.append((i, s1, low))
-            with tag("Own:" + owner, Mh):
-                if rng.random() < 0.09 and not low:
-                    # torn-out voussoir: wet tissue bulges out of the socket, a stub of rebar
-                    x, y, nx, ny = ln.eval(sm)
-                    cc = P3(x[0] + nx[0] * ln.dm, y[0] + ny[0] * ln.dm, FACE[i] - odep * 0.55)
-                    V, F = blob(cc, basis_axes(D3(-ny[0], nx[0], 0), D3(nx[0], ny[0], 0), T, (s1 - s0) * 0.5, W_ * 0.5, odep * 0.4),
-                                sub=3, amp=0.22, freq=3.0)
-                    A["Flesh"].add(V, F, m=0.6, g=0.0)
-                    rebar(cc + T * 0.2, nrm(T + D3(nx[0], ny[0], 0) * 0.3), 0.45, -T, 0.4, 0.016)
-                    continue
-                bm = stone_bm((s1 - s0 - 0.024, odep, W_ - 0.02), chamfer=0.07, wear=0.012, chips=rng.randint(2, 4),
-                              subdiv=2)
-                askew = rng.random() < 0.2
-                lift = rng.uniform(0.02, 0.07) if askew else rng.uniform(-0.012, 0.014)
-                twk = rng.uniform(-0.14, 0.14) if askew else rng.uniform(-0.02, 0.02)
-                fwd = rng.uniform(0.03, 0.11) if askew else rng.uniform(-0.02, 0.015)
-                co = np.array([v.co[:] for v in bm.verts])
-                x, y, nx, ny = ln.eval(sm + co[:, 0])
-                off = ln.dm + co[:, 2] + lift + twk * co[:, 0]
-                loc = np.stack([x + nx * off, y + ny * off, FACE[i] - odep / 2 + co[:, 1] + fwd], -1)
-                Vw = W3(loc)
-                if low:
-                    Vw = lowT(Vw)
-                place(bm, Vw)
-                cen = Vw.mean(0)
-                cut = pit_hits(cen, (s1 - s0) * 0.5 + 0.1) if not low else []
-                if cut:
-                    bm = bool_cut(bm, cut, "vous")
-                A["Stone"].add_bm(bm)
-        # roll moulding on the inner arris of this order, in short drums with joints, broken here and there
-        with tag("Own:portal_arch_%d" % i, Mh):
-            ss = np.linspace(0.02, ln.L - 0.02, 150)
-            keep = NZ.fbm(np.stack([np.cos(ss * 1.3) * 3 + i, np.sin(ss * 1.3) * 3, ss * 0.2], -1), 2) > -0.03
-            run = []
-            for sidx, k_ in list(zip(ss, keep)) + [(None, False)]:
-                if k_:
-                    run.append(sidx)
-                    continue
-                if len(run) > 3:
-                    x, y, nx, ny = ln.eval(np.array(run))
-                    d_ = ln.dm - W_ / 2 + 0.04
-                    Pm = W3(np.stack([x + nx * d_, y + ny * d_, np.full(len(run), FACE[i] - 0.05)], -1))
-                    Pm = resample(Pm, step=0.02)
-                    Lm = arclen(Pm)
-                    edges_ = np.arange(0.0, Lm[-1], rng.uniform(0.28, 0.4))
-                    for e0, e1_ in zip(edges_[:-1], edges_[1:]):
-                        i0, i1 = np.searchsorted(Lm, e0 + 0.008), np.searchsorted(Lm, e1_ - 0.008)
-                        if i1 - i0 >= 2:
-                            lowseg = Pm[i0:i1 + 1]
-                            if np.dot(lowseg.mean(0) - C, D) < Y_GAP:
-                                lowseg = lowT(lowseg)
-                            A["Carved"].add_tube(lowseg, 0.055, sides=8, m=0.0, nz_amp=0.08, nz_freq=9.0,
-                                                 seed=rng.random() * 9)
-                run = []
-    # flesh the voussoirs are sunk into: a ribbon of wet tissue under every order (shows in the mortar joints),
-    # pillows squeezing out of about half of them
-    for i in range(NORD):
-        ln = LAN[i]
-        for (sa, sb, low) in ((0.0, Y_GAP - PORT_YB, True), (Y_GAP - PORT_YB, ln.L - (Y_GAP - PORT_YB), False),
-                              (ln.L - (Y_GAP - PORT_YB), ln.L, True)):
-            ss = np.linspace(sa, sb, max(6, int((sb - sa) / 0.06)))
-            x, y, nx, ny = ln.eval(ss)
-            Pp = W3(np.stack([x + nx * ln.dm, y + ny * ln.dm, np.full(len(ss), FACE[i] - ODEP[i] * 0.45)], -1))
-            if low:
-                Pp = lowT(Pp)
-            owner = "portal_arch_%d" % i if not low else ("portal_hinge_0" if sa < 1 else "portal_hinge_1")
-            with tag("Own:" + owner, Mh):
-                A["Flesh"].add_tube(Pp, W_ * 0.5 * (1 + 0.2 * NZ.fbm(Pp * 2.5, 2)), sides=8, nz_amp=0.12,
-                                    nz_freq=5.0, seed=rng.random() * 9, m=0.1, cap0=False, cap1=False)
-    for (i, sj, low) in joints:
-        if rng.random() < 0.5:
-            continue
-        ln = LAN[i]
-        d0, d1 = ln.dm - W_ / 2 + 0.05, ln.dm + W_ / 2 - 0.05
-        dd_ = np.linspace(d0, d1, 6)
-        x, y, nx, ny = ln.eval(np.full(6, sj))
-        Pp = W3(np.stack([x + nx * dd_, y + ny * dd_, np.full(6, FACE[i] + 0.012)], -1))
-        if low:
-            Pp = lowT(Pp)
-        with tag("Own:" + ("portal_arch_%d" % i if not low else ("portal_hinge_0" if sj < ln.L / 2 else "portal_hinge_1")), Mh):
-            A["Flesh"].add_tube(Pp, 0.012 + 0.016 * np.sin(np.linspace(0.2, math.pi - 0.2, 6)) * rng.uniform(0.6, 1.4),
-                                sides=7, m=0.2)
-
-    # ------------------------------------------------------------------ the cowl: wet flesh behind the portal,
-    #                                                           lancet-shaped at the front, round at the neck
-    with tag("Own:crown", Mh):
-        K = 56
-        az = np.arange(K) * 2 * math.pi / K
-        zs_c = np.array([-0.2, -0.55, -1.0, -1.5, -2.05, -2.6])
-        rings = []
-        for zc in zs_c:
-            wmix = float(smoothstep(-0.35, -2.2, zc))
-            rL = lancet_radial(az, 0.45 + 0.4 * (1 - wmix))
-            rC = 1.95 - 0.5 * float(smoothstep(-1.5, -2.6, zc))
-            rr = (1 - wmix) * rL + wmix * rC
-            rings.append(np.stack([np.cos(az) * rr, np.sin(az) * rr * 0.9 + (1 - wmix) * 0.05], -1))
-        # loft with explicit per-station profiles along the head axis
-        Pc = np.array([C + T * z for z in zs_c])
-        prof = np.array(rings)
-        fr_ = (np.broadcast_to(T, Pc.shape), np.broadcast_to(S, Pc.shape), np.broadcast_to(D, Pc.shape))
-        V, F, uv, al = loft(Pc, prof, fr=fr_, cap0=False, cap1=False, nz_amp=0.1, nz_freq=2.2, nz_seed=3.0, flip=True)
-        A["Flesh"].add(V, F, uv, m=0.1)
-        # lumpy cheeks flanking the portal and a heavy sill of tissue under the threshold
-        for sx in (-1, 1):
-            for (yy, rx, ry) in ((-0.5, 0.42, 0.7), (1.5, 0.3, 0.5)):
-                V, F = blob(P3(sx * (PORT_H + 3 * W_ + 0.12), yy, -0.55), basis_axes(S, D, T, rx, ry, 0.4), sub=3,
-                            amp=0.3, freq=3.2, seed=rng.random() * 50)
-                A["Flesh"].add(V, F, m=0.25 if sx < 0 else 0.1)
-
-    # ------------------------------------------------------------------ throat (a deep funnel through the neck)
-    s_front = GULLET_S0
-    GL = GULLET_L
-    ss = np.linspace(s_front, s_front + GL, 150)
-    Ot, Tt, Dt, St = [np.array(x) for x in zip(*[gullet_frame(x - s_front) for x in ss])]
-    depth = ss - s_front
-    # radius: the lancet mouth funnels to a round throat within ~1.2 m; cartilage ribs where each ring roots
-    rib = sum(np.exp(-((depth - z_) / 0.07) ** 2) for z_ in THROAT_RINGS)
-    rbase = 0.85 * (1 - 0.1 * rib + 0.05 * np.sin(2 * math.pi * depth / 0.21 + 0.6) * (1 - rib))
-    rbase = rbase * (1 - 0.8 * smoothstep(GL - 0.7, GL, depth))
-    Bt = Dt
-    az = np.arange(40) * 2 * math.pi / 40
-    wmouth = (1.0 - smoothstep(0.0, 2.3, depth)) ** 1.3
-    rL = lancet_radial(az, -0.03)
-    prof = []
-    for j in range(len(ss)):
-        rr = rbase[j] + (rL - rbase[j]) * wmouth[j]
-        prof.append(np.stack([np.cos(az) * rr, np.sin(az) * rr], -1))
-    prof = np.array(prof)
-    alv = np.clip((ss - s_front) / GL, 0, 1)
-    # three segments (gullet_0..2) sharing their boundary rings
-    for gi, (j0, j1) in enumerate(((0, 30), (29, 80), (79, len(ss)))):
-        sl = slice(j0, j1)
-        V, F, uv, al = loft(Ot[sl], prof[sl], fr=(Tt[sl], St[sl], Bt[sl]), cap0=False, cap1=(gi == 2), nz_amp=0.08,
-                            nz_freq=4.0, nz_seed=1.7 * gi, flip=False)
-        # the ventral piece takes the lower part of the mouth with it
-        rel = V - C
-        yrel = rel @ D
-        wfront = 1.0 - smoothstep(0.0, 0.18, np.clip(((V - C) @ -T - 0.45) / 1.6, 0, 1))
-        wl_ = smoothstep(Y_GAP + 0.25, Y_GAP - 0.25, yrel) * wfront ** 1.5
-        V = V + (lowT(V) - V) * wl_[:, None]
-        dd_ = np.clip(((V - C) @ -T - 0.5) / GL, 0, 1)
-        with tag("Own:gullet_%d" % gi, Mh):
-            A["Gum"].add(V, F, uv, m=0.0, g=0.12 * smoothstep(0.55, 1.0, dd_), d=np.clip(dd_ ** 0.85 * 1.7, 0, 1))
-    CROWN.update(throat_s=ss, throat_r=rbase)
-    # eight ragged, receding rings of back-hooked fangs (a lamprey funnel), each ring rotated, gaps and strays
-    TEETH = []
-    for ri_, dz0 in enumerate(THROAT_RINGS):
-        nr = max(5, int(round(10 - ri_ * 0.6)) + rng.randint(-1, 1))
-        a0 = rng.uniform(0, 2 * math.pi)
-        for q in range(nr):
-            if rng.random() < 0.12:
-                continue
-            TEETH.append((dz0 + rng.uniform(-0.05, 0.05), a0 + 2 * math.pi * q / nr + rng.uniform(-0.12, 0.12)))
-    for _ in range(12):
-        TEETH.append((rng.uniform(0.4, GL - 0.9), rng.uniform(0, 2 * math.pi)))
-    for (dz, a) in TEETH:
-        Oq, Tq, Dq, Sq = gullet_frame(dz)
-        rq = float(np.interp(dz, depth, rbase))
-        rd = math.cos(a) * Sq + math.sin(a) * Dq
-        root = Oq + rd * (rq * 0.96)
-        dd = nrm(-rd * 0.9 - Tq * 0.9 + np.cross(Tq, rd) * rng.uniform(-0.2, 0.2))
-        dfrac = dz / GL
-        roll = rng.random()
-        Lt = 0.52 - 0.33 * dfrac
-        Lx = Lt * rng.uniform(0.55, 1.25) * (1.4 if roll > 0.94 else 1.0)
-        gi = 0 if dz < 0.9 else (1 if dz < 2.3 else 2)
-        with tag("Own:gullet_%d" % gi, Mh):
-            if roll < 0.14:
-                V, F, uv, al = shard(root, dd, Lx * 0.9, Lt * 0.06, hook_dir=-Tq, hook=0.6, rings=8, sides=4, sink=0.05)
-                A["IronTooth"].add(V, F, uv, al, d=dfrac)
-                continue
-            tr_ = rng.uniform(0.35, 0.6) if roll < 0.28 else 1.0
-            flat = 0.45 if roll < 0.4 else 1.0
-            V, F, uv, al = shard(root, dd, Lx, Lt * 0.15, hook_dir=-Tq, hook=0.35, rings=8, sides=6, sink=0.06,
-                                 fang=True, trunc=tr_, flat=flat)
-            A["Teeth"].add(V, F, uv, al, d=dfrac)
-            if rng.random() < 0.6:
-                V, F = blob(root, basis_axes(np.cross(Tq, rd), Tq, rd, Lt * 0.22, Lt * 0.22, Lt * 0.1), sub=2, amp=0.25,
-                            freq=8.0)
-                A["Gum"].add(V, F, m=0.0, d=dfrac)
-    # carved stone rib rings along the gullet (the tunnel reads as a nave of ribs going down)
-    for ri_, dz0 in enumerate(THROAT_RINGS):
-        Oq, Tq, Dq, Sq = gullet_frame(dz0)
-        rq = float(np.interp(dz0, depth, rbase)) * 1.01
-        aa = np.linspace(0, 2 * math.pi, 36)
-        ringp = Oq[None] + (np.cos(aa)[:, None] * Sq[None] + np.sin(aa)[:, None] * Dq[None]) * rq
-        with tag("Own:gullet_%d" % (0 if dz0 < 0.9 else (1 if dz0 < 2.3 else 2)), Mh):
-            A["Carved"].add_tube(ringp, 0.055 * (1.0 - 0.3 * ri_ / 10), sides=6, cap0=False, cap1=False, m=0.0,
-                                 nz_amp=0.1, nz_freq=6.0)
-    # the one hot point: a fissure in the throat wall far down (off the axis: a glow round a corner, never a pupil)
-    Oe, Te, De, Se = gullet_frame(GL - 0.6)
-    Oe = Oe + Se * 0.5 - De * 0.04
-    V, F = blob(Oe, basis_axes(Se, Te, De, 0.07, 0.12, 0.36), sub=3, amp=0.25, freq=5.0)
-    A["Ember"].add(V, F, g=0.9)
-    th_ = np.linspace(0, 2 * math.pi, 30, endpoint=False)
-    lipr = Oe[None] + Se[None] * (np.cos(th_) * 0.13)[:, None] + De[None] * (np.sin(th_) * 0.45)[:, None] - Se[None] * 0.02
-    A["Gum"].add_tube(lipr, 0.06 * (1 + 0.3 * np.sin(th_ * 3)), sides=8, cap0=False, cap1=False, m=0.0, nz_amp=0.2,
-                      nz_freq=6.0)
-    CROWN["forge"] = Oe
-    CROWN["throat_light"] = gullet_frame(GL - 0.6)[0]
-    CROWN["mouth_light"] = gullet_frame(1.3)[0]
-    CROWN["mouth_light2"] = gullet_frame(3.0)[0]
-    CROWN["mouth_front"] = C + T * (PORT_ZF)
-
-    # ------------------------------------------------------------------ teeth of the portal: two interlocking
-    #                                    combs on the inner jambs (a portcullis), a few stalactites, lower lip
-    lanI = Lancet(0.0)
     tips = []
 
-    def tooth(root, dd, L, r0, owner, row_z=0.0, kind=None, lower=False):
-        """One portal tooth; kind: bone | stone | nail | molar."""
-        if kind is None:
-            kr = rng.random()
-            kind = "bone" if kr < 0.5 else ("stone" if kr < 0.96 else "nail")
-        roll = {"bone": rng.uniform(0.45, 0.99) if False else 0.5, "stone": 0.2, "nail": 0.05, "molar": 0.9}[kind]
-        if kind == "bone":
-            roll = rng.uniform(0.4, 0.84)
-        trunc = 1.0 if rng.random() > 0.22 else rng.uniform(0.4, 0.7)
-        with tag("Own:" + owner, Mh):
-            if kind == "molar":
-                h = L * 0.55
-                V, F = blob(root + dd * h * 0.5, basis_axes(perp(dd), np.cross(dd, perp(dd)), dd, r0 * 1.6, r0 * 1.3, h),
-                            sub=2, amp=0.1, freq=9.0)
-                if lower:
-                    V = lowT(V)
-                A["Teeth"].add(V, F, m=0.85)
-                tp = root + dd * h * 1.0
-            elif roll < 0.12:
-                V, F, uv, al = shard(root, dd, L, r0 * 0.4, hook_dir=-T, hook=0.12, rings=6, sides=4, sink=0.05)
-                if lower:
-                    V = lowT(V)
-                A["IronTooth"].add(V, F, uv, al)
-                tp = root + dd * L
-            elif roll < 0.38:
-                V, F, uv, al = shard(root, dd, L, r0 * 1.1, hook_dir=-T, hook=0.22, rings=7, sides=4, sink=0.06,
-                                     flat=0.55, trunc=trunc)
-                if lower:
-                    V = lowT(V)
-                A["Carved"].add(V, F, uv, al * 0.0 + np.clip((al - 0.4) / 0.6, 0, 1))
-                tp = root + dd * L * trunc
-                if trunc < 1.0 and rng.random() < 0.5:
-                    rb_ = root + dd * L * trunc - dd * 0.05
-                    rbv = np.array([rb_, rb_ + nrm(dd + perp(dd) * rng.uniform(-0.3, 0.3)) * 0.22])
-                    if lower:
-                        rbv = lowT(rbv)
-                    A["Iron"].add_tube(rbv, 0.014, sides=5, m=0.0)
-            else:
-                V, F, uv, al = shard(root, dd, L, r0, hook_dir=-T, hook=0.3, rings=8, sides=6, sink=0.06, fang=True,
-                                     trunc=trunc, flat=rng.uniform(0.6, 1.0))
-                if lower:
-                    V = lowT(V)
-                A["Teeth"].add(V, F, uv, al)
-                tp = root + dd * L * trunc
-            if lower:
-                tp = lowT(tp)[0]
-            tips.append(tp)
+    # ------------------------------------------------------------------ the mask halves (the doors), cracked, weeping
+    nu, nv = (20, 34) if LOW else (120, 200)
+    halves = {}
+    for sgn, side_name in ((-1, "L"), (1, "R")):
+        HALF[0] = sgn
+        u = np.linspace(0, 1, nu + 1) ** 1.2
+        v = np.linspace(0, 1, nv + 1)
+        U, Vv = np.meshgrid(u, v, indexing="ij")
+        X, Y = face_uv(U, Vv, sgn)
+        Z = FACE_Z0 + face_relief(X, Y)
+        dz, ins = socket_field(X, Y, sgn)
+        Z = Z + dz
+        ins = np.maximum(ins, smoothstep(0.2, 0.9, nasal_cavity(X, Y)))
+        if sgn < 0:
+            # the broken-out cheek where an eye has pushed through
+            q = np.stack([X.ravel() * 5, Y.ravel() * 5, np.full(X.size, 9.0)], -1)
+            rg = np.hypot((X - 1.2) / 0.3, (Y - 0.6) / 0.26) * (1 + 0.2 * NZ.fbm(q, 3).reshape(X.shape))
+            Z = Z - 0.12 * (1 - smoothstep(0.85, 1.15, rg))
+        cr = face_cracks(X, Y, sgn)
+        tear = face_tears(X, Y, sgn)
+        fl = face_flakes(X, Y, sgn)
+        Z = Z - 0.24 * fl
+        grime = np.clip(smoothstep(0.55, 1.0, U) * 0.8 + smoothstep(2.4, 3.3, Y) * 0.5 + 0.6 * smoothstep(0.0, 0.6, fl), 0, 1)
+        if not LOW:
+            q = np.stack([sgn * X.ravel(), Y.ravel(), np.zeros(X.size)], -1)
+            Z = Z + 0.0045 * NZ.fbm(q * 9.0, 3).reshape(X.shape) - 0.007 * np.clip(NZ.fbm(q * 4.0 + 3.0, 2).reshape(X.shape) - 0.25, 0, 1)
+            Z = Z - 0.03 * cr
+        # the split edge and the outline are broken stone: pull the rim back a little
+        Z = Z - 0.06 * (1 - smoothstep(0.0, 0.05, U)) - 0.08 * smoothstep(0.93, 1.0, U)
+        front = np.stack([sgn * X, Y, Z], -1).reshape(-1, 3)
+        Zb = FACE_Z0 - FACE_TH - 0.3 * X ** 2 - 0.045 * (Y - 0.9) ** 2 - 0.12 * np.clip(Y - 2.25, 0, None) ** 1.5
+        Zb = np.minimum(Zb, Z - 0.1)
+        back = np.stack([sgn * X * 0.985, Y, Zb], -1).reshape(-1, 3)
+        Ff = _grid_quads(nu, nv, flip=sgn > 0)
+        Fb = _grid_quads(nu, nv, flip=sgn < 0) + len(front)
+        loop = _boundary(nu, nv)
+        cen = np.array([sgn * 0.8, 1.2, FACE_Z0 - 0.5])
+        Fw = [f[::-1] for f in _shell_walls(front, back, loop, cen)]
+        Vall = FW(np.vstack([front, back]))
+        paint = fl.ravel()
+        e_in = ins.ravel()
+        with tag("Own:portal_comb_%s0" % side_name, Mh):
+            CROWN["mask_parts"][sgn] = PART_STACK[-1]       # the export gives these a planar UV island each
+            A["Mask"].add(Vall, [Ff, Fb, np.array(Fw)], m=np.concatenate([paint, np.zeros(len(back))]),
+                          g=np.concatenate([cr.ravel(), np.zeros(len(back))]),
+                          d=np.concatenate([np.maximum(tear.ravel(), e_in), np.zeros(len(back))]),
+                          e=np.concatenate([grime.ravel(), np.ones(len(back))]))
+        halves[sgn] = dict(X=X, Y=Y, Z=Z, U=U)
+        # the door hinge: the outer back edge at mid height
+        piv("portal_comb_%s0" % side_name, np.array([sgn * 1.45, 1.0, FACE_Z0 - 0.75]))
+    HALF[0] = 0
 
-    # the jamb combs: left jamb (sx=-1) rows at z=+0.1 and z=-0.38, right jamb offset in height so they interlock
-    for sx, side_name in ((-1, "L"), (1, "R")):
-        for row, zrow in enumerate((0.12, -0.4)):
-            y = PORT_YB + 0.12 + 0.07 * row + (0.0 if sx < 0 else 0.17)
-            n_ = 0
-            while y < PORT_YS + 0.18:
-                lowp = y < Y_GAP - 0.05
-                yy = y
-                Lr = (0.16 + 0.5 * rng.random() ** 2.0) * (1.9 if rng.random() < 0.07 else 1.0)
-                base_r = 0.06 + 0.13 * rng.random() ** 1.3
-                dd = nrm(np.array([-sx * 1.0, rng.uniform(0.12, 0.45) if lowp else rng.uniform(-0.5, -0.1),
-                                   rng.uniform(-0.2, 0.2)]))
-                root = P3(sx * (PORT_H + 0.04), yy, zrow + rng.uniform(-0.08, 0.08))
-                ddw = D3(*dd)
-                owner = ("portal_hinge_%d" % (0 if sx < 0 else 1)) if lowp else "portal_comb_%s%d" % (side_name, row)
-                if rng.random() < 0.07:
-                    pass          # a missing tooth: just the gum stump
+    # ------------------------------------------------------------------ eyes in the bored sockets (pit_0..6), coal behind
+    pit_geo = {}
+    for so in SOCKETS:
+        rim = socket_rim(so)
+        sgn = so["side"]
+        cx, cy = so["c"]
+        for (ex_, ey_, r_, pk) in so["eyes"]:
+            ec = np.array([sgn * (cx + ex_ * so["rx"]), cy + ey_ * so["ry"], rim[2] - 0.16 - r_ * 0.5 - 0.1 * (so["rx"] > 0.3) * (1 - abs(ey_))])
+            pit_geo.setdefault(pk, dict(so=so, eyes=[]))["eyes"].append((ec, r_))
+    for pk in sorted(pit_geo):
+        pg = pit_geo[pk]
+        so = pg["so"]
+        sgn = so["side"]
+        HALF[0] = sgn
+        cx, cy = so["c"]
+        rim = socket_rim(so)
+        cen = np.mean([e[0] for e in pg["eyes"]], axis=0)
+        cen_w = FW(cen)[0]
+        f0 = FD(np.array([0.0, -0.1, 1.0]))
+        with tag("Pit", mat4(perp(f0), -f0, np.cross(perp(f0), -f0), cen_w)):
+            for (ec, r_) in pg["eyes"]:
+                fwd_l = nrm(np.array([sgn * 0.15 + rc.uniform(-0.45, 0.45), -0.2 + rc.uniform(-0.35, 0.3), 1.0]))
+                if r_ >= 0.065:
+                    eye_with_lids(FW(ec)[0], FD(fwd_l), FD(nrm(np.array([rc.uniform(-0.5, 0.5), 1.0, 0.0]))), r_, pk, rc,
+                                  lid_top=rc.uniform(0.15, 0.45), lid_bot=-rc.uniform(0.35, 0.6))
                 else:
-                    tooth(root, ddw, Lr, base_r, owner, lower=lowp)
-                if rng.random() < 0.6:
-                    V, F = blob(root, basis_axes(D, T, S * sx, base_r * 1.5, base_r * 1.5, base_r * 0.8), sub=2, amp=0.25,
-                                freq=8.0)
-                    if lowp:
-                        V = lowT(V)
-                    with tag("Own:" + owner, Mh):
-                        A["Gum"].add(V, F, m=0.0)
-                y += rng.uniform(0.26, 0.45)
-                n_ += 1
-    # stalactites hanging from the intrados of the inner arch (three, uneven, hooked back)
-    for s_f, L_ in ((0.12, 0.7), (0.25, 1.15), (0.5, 1.45), (0.74, 0.9), (0.9, 0.55)):
-        s0 = lanI.Lj + lanI.La * s_f if s_f < 0.6 else lanI.Lj + lanI.La + lanI.La * (s_f - 0.5)
-        x, y, nx, ny = lanI.eval(s0)
-        root = P3(x[0] - nx[0] * 0.04, y[0] - ny[0] * 0.04, rng.uniform(-0.2, 0.1))
-        tooth(root, D3(-nx[0] * 0.3, -ny[0] * 0.95, -0.1), L_, rng.uniform(0.1, 0.15), "portal_comb_L0" if s_f < 0.6 else "portal_comb_R0",
-              kind="bone")
-    # more teeth along the arch, smaller
-    for q in range(8):
-        sfrac = rng.uniform(0.04, 0.96)
-        s0 = lanI.Lj + sfrac * 2 * lanI.La
-        x, y, nx, ny = lanI.eval(s0)
-        root = P3(x[0] - nx[0] * 0.04, y[0] - ny[0] * 0.04, rng.uniform(-0.3, 0.1))
-        tooth(root, D3(-nx[0] * 0.8, -ny[0] * 0.8 - 0.25, -0.1), rng.uniform(0.18, 0.42), rng.uniform(0.05, 0.1),
-              "portal_comb_L1" if s0 < lanI.Lj + lanI.La else "portal_comb_R1")
-    # the lower lip: a ridge of human-sized teeth along the sill (wrong scale, close-range horror)
-    with tag("Own:portal_hinge_0", Mh):
-        xs = np.linspace(-PORT_H + 0.15, PORT_H - 0.15, 15)
-        for q, xq in enumerate(xs):
-            hh = rng.uniform(0.045, 0.085)
-            root = P3(xq, PORT_YB + 0.05, 0.2 + rng.uniform(-0.04, 0.04))
-            V, F = blob(root + D * hh * 0.5, basis_axes(S, T, D, 0.02, 0.016, hh), sub=2, amp=0.12, freq=40.0)
-            A["Teeth"].add(lowT(V), F, m=0.85)
-        gum = np.array([P3(xq, PORT_YB + 0.03, 0.2) for xq in np.linspace(-PORT_H + 0.1, PORT_H - 0.1, 14)])
-        A["Gum"].add_tube(lowT(gum), 0.04, sides=7, m=0.0)
-        # the sill: three big dressed blocks the lip stands on, one cracked through
-        for q, (x0, x1) in enumerate(((-PORT_H - 3 * W_, -0.45), (-0.45, 0.4), (0.4, PORT_H + 3 * W_))):
-            bm = stone_bm((x1 - x0 - 0.03, 1.1, 0.42), chamfer=0.1, wear=0.014, chips=rng.randint(2, 4), subdiv=2)
-            co = np.array([v.co[:] for v in bm.verts])
-            loc = np.stack([(x0 + x1) / 2 + co[:, 0], PORT_YB - 0.22 + co[:, 2], 0.05 + co[:, 1]], -1)
-            Vw = lowT(W3(loc))
-            place(bm, Vw)
-            A["Stone"].add_bm(bm)
-        # wet tissue pad on the sill and tendons holding the dropped piece
-        pad = np.array([P3(xq, PORT_YB + 0.12 + 0.05 * math.sin(xq * 5), 0.15) for xq in np.linspace(-PORT_H, PORT_H, 20)])
-        A["Flesh"].add_tube(lowT(pad), 0.18 * (1 + 0.3 * NZ.fbm(pad * 3, 2)), sides=9, nz_amp=0.2, nz_freq=4.0, m=0.12)
-    # where the ventral piece broke away: bridges of sinew, torn pale membrane, tissue stretched along both jambs
-    with tag("Own:portal_hinge_0", Mh):
-        for sx in (-1, 1):
-            for q in range(7):
-                dx = sx * (PORT_H + rng.uniform(0.0, 3 * W_ - 0.05))
-                a_ = P3(dx, Y_GAP + 0.03, rng.uniform(-0.3, FACE[0] + 0.1))
-                b_ = lowT(P3(dx, Y_GAP + 0.03, a_ @ T * 0 + rng.uniform(-0.3, FACE[0] + 0.1)))[0]
-                Pq = sag_path(a_, b_, rng.uniform(0.0, 0.08), 12, toward=T * 0.05)
-                A["Tendon"].add_tube(Pq, rng.uniform(0.014, 0.034) * (1 + 0.5 * np.sin(np.linspace(0, math.pi, 12))),
-                                     sides=6, cap0=False, cap1=False)
-
-    CROWN["tips"] = np.array(tips) if tips else np.array([C + T * 0.3])
-
-    # ------------------------------------------------------------------ organic dressing of the maw
-    # (a) lips: lumpy wet tissue rolled round the inner arris of the portal, the teeth rooted in it
-    with tag("Own:crown", Mh):
-        for (zz, rad, dsh) in ((FACE[0] + 0.02, 0.1, 0.02), (-0.5, 0.13, 0.03)):
-            for (sa, sb, low) in ((0.0, Y_GAP - PORT_YB, True), (Y_GAP - PORT_YB, lanI.L - (Y_GAP - PORT_YB), False),
-                                  (lanI.L - (Y_GAP - PORT_YB), lanI.L, True)):
-                ssl = np.linspace(sa, sb, max(8, int((sb - sa) / 0.05)))
-                x, y, nx, ny = lanI.eval(ssl)
-                Pl = W3(np.stack([x - nx * dsh, y - ny * dsh, np.full(len(ssl), zz)], -1))
-                if low:
-                    Pl = lowT(Pl)
-                tt = np.linspace(0, 1, len(Pl))
-                A["Flesh"].add_tube(Pl, rad * (1 + 0.45 * np.sin(tt * 37 + zz) * 0.5 + 0.2 * NZ.fbm(Pl * 3.0, 2)), sides=9,
-                                    nz_amp=0.2, nz_freq=7.0, seed=rng.random() * 9, m=0.05, cap0=False, cap1=False)
-        # (b) muscle ropes: thick, taut, spiralling cords hauling the jaws, from the intrados back into the throat
-        for q in range(0 if 'ropes' in OMIT else 3):
-            sfr = rng.uniform(0.15, 0.85)
-            s0 = lanI.Lj + sfr * 2 * lanI.La
-            x, y, nx, ny = lanI.eval(s0)
-            a_ = P3(x[0] - nx[0] * 0.06, y[0] - ny[0] * 0.06, rng.uniform(-0.2, 0.3))
-            b_ = P3(x[0] * 0.2 + rng.uniform(-0.3, 0.3), y[0] * 0.1 - rng.uniform(0.0, 0.9), rng.uniform(-2.6, -1.4))
-            Pm = bezier([a_, (a_ + b_) / 2 + D3(-nx[0], -ny[0], 0) * rng.uniform(0.1, 0.4), b_], 18)
-            tt = np.linspace(0, 1, 18)
-            A["Flesh"].add_tube(Pm, (0.07 + 0.09 * np.sin(math.pi * tt) ** 0.8) * rng.uniform(0.8, 1.3), sides=9,
-                                nz_amp=0.15, nz_freq=6.0, seed=rng.random() * 20, m=0.15)
-            A["Tendon"].add_tube(Pm + D3(rng.uniform(-1, 1), rng.uniform(-1, 1), 0) * 0.05, 0.025 * rng.uniform(0.8, 1.3),
-                                 sides=6, cap0=False, cap1=False)
-        # (d) the tongue: a heavy, ridged, glistening slab out of the throat over the dropped lip, dripping
-        if 'tongue' not in OMIT:
-            tp_ = [(0.0, -0.55, -3.2), (0.0, -0.62, -2.2), (0.02, -0.95, -1.1), (0.05, PORT_YB + 0.52, -0.1),
-                   (0.08, PORT_YB + 0.45, 0.55), (0.12, PORT_YB + 0.15, 1.05), (0.18, PORT_YB - 0.6, 1.2), (0.2, PORT_YB - 1.5, 1.15)]
-            kp = []
-            for i_, (x_, y_, z_) in enumerate(tp_):
-                kp.append(P3(x_, y_, z_) if i_ < 3 else lowT(P3(x_, y_, z_))[0])
-            Pt = catmull(np.array(kp), 10)
-            Pt = resample(Pt, step=0.06)
-            tt = np.linspace(0, 1, len(Pt))
-            wid = (0.5 + 0.36 * np.clip(tt * 3, 0, 1)) * (1 - 0.5 * smoothstep(0.85, 1.0, tt))
-            thk = (0.13 + 0.05 * np.clip(tt * 2, 0, 1)) * (1 - 0.6 * smoothstep(0.9, 1.0, tt))
-            ridges = 1 + 0.035 * np.sin(arclen(Pt) * 22.0)
-            T_t, N_t, B_t = frames(Pt, up=D)
-            prof = []
-            for j in range(len(Pt)):
-                a_ = np.linspace(0, 2 * math.pi, 24, endpoint=False)
-                cx = np.cos(a_) * wid[j] * ridges[j]
-                cy = np.sin(a_) * thk[j] * ridges[j] - 0.05 * np.exp(-(np.cos(a_) / 0.28) ** 2) * (np.sin(a_) > 0) * thk[j]
-                prof.append(np.stack([cx, cy], -1))
-            V, F, uv, al = loft(Pt, np.array(prof), fr=(T_t, N_t, B_t), cap0=True, cap1=True, nz_amp=0.1, nz_freq=5.0,
-                                nz_seed=2.2)
-            A["Flesh"].add(V, F, uv, m=0.18 + 0.2 * np.clip(al - 0.6, 0, 1))
-            for q in range(5):
-                i_ = rng.randint(len(Pt) // 2, len(Pt) - 2)
-                hang_strand(Pt[i_] + (rng.uniform(-1, 1)) * S * wid[i_] * 0.6, rng.uniform(0.4, 1.6), rng.uniform(0.014, 0.03), A["Mucus"])
-
-
-    # ------------------------------------------------------------------ the ring of raised, empty stone arms
-    # asymmetric: three high on the left, two on the right, three low (on the dropped lip, hanging toward the player)
-    lanO = Lancet(0.0)
-    dout = NORD * W_ + 0.06
-    ARMS = [("L", lanO.Lj * 0.78, 0.35, 0.95, 0.35, 1.05, 0.62, False), ("L", lanO.Lj + lanO.La * 0.3, 0.4, 0.9, 0.4, 1.0, 0.58, False),
-            ("L", lanO.Lj + lanO.La * 0.86, 0.25, 0.95, 0.45, 1.1, 0.64, False),
-            ("R", lanO.Lj + lanO.La * 1.55, 0.35, 0.9, 0.4, 1.0, 0.6, False), ("R", lanO.L - 2.1, 0.3, 0.95, 0.35, 0.95, 0.56, False)]
-    for ai, (sd_, s_a, ox, oy, oz, La_, sz_, low_) in enumerate([] if 'arms' in OMIT else ARMS):
-        if sd_ == "M":
-            rootc = np.array([0.55, PORT_YB - 0.3, FACE[2] - 0.05])
-            dirc = nrm(np.array([0.15, oy, oz]))
-        else:
-            x, y, nx, ny = lanO.eval(s_a)
-            rootc = np.array([x[0] + nx[0] * dout, y[0] + ny[0] * dout, FACE[2] - 0.25])
-            dirc = nrm(np.array([nx[0] * ox, ny[0] * ox + (oy if not low_ else oy), oz]))
-        rw = P3(*rootc)
-        dw = D3(*dirc)
-        pw = D3(0.0, 0.5 if not low_ else 0.8, 0.8)
-        if low_:
-            rw = lowT(rw)[0]
-            dw = R_low @ dw
-            pw = R_low @ pw
-        stone_arm(rw, dw, pw, La_, sz_, ("arm_%d_0" % ai, "arm_%d_1" % ai), Mh)
-
-    # ------------------------------------------------------------------ drool: many thick strands
-    tp = list(CROWN["tips"])
-    for k in range(0 if 'strands' in OMIT else 6):
-        a_, b_ = rng.sample(tp, 2) if len(tp) >= 2 else (tp[0], tp[0] + D * 0.2)
-        if np.linalg.norm(a_ - b_) > 2.4 or np.linalg.norm(a_ - b_) < 0.2:
-            continue
-        strand(a_, b_, rng.uniform(0.25, 0.8), rng.uniform(0.022, 0.05))
-    for p_ in tp:
-        if rng.random() < 0.45:
-            hang_strand(p_, rng.uniform(0.15, 1.1), rng.uniform(0.02, 0.045), A["Mucus"])
-    lowp0 = lowT(np.array([P3(xq, PORT_YB + 0.25, 0.4) for xq in np.linspace(-PORT_H, PORT_H, 7)]))
-    for p_ in lowp0:
-        hang_strand(p_, rng.uniform(0.6, 2.6), rng.uniform(0.025, 0.05), A["Mucus"])
-    for k in range(40):
-        a_ = rng.uniform(0, 2 * math.pi)
-        p0 = P3(math.cos(a_) * rng.uniform(0.3, 1.7), math.sin(a_) * rng.uniform(0.5, 3.0) - 0.5, FACE[2] - rng.uniform(0.0, 0.5))
-        p0 = p0 + DOWN * rng.uniform(0.3, 4.5)
-        sz = rng.uniform(0.008, 0.02)
-        V, F = blob(p0, basis_axes(np.array([1.0, 0, 0]), np.array([0, 1.0, 0]), UP, sz, sz, sz * rng.uniform(1.5, 4.0)),
-                    sub=1, amp=0.05)
-        A["Mucus"].add(V, F)
-
-    # ------------------------------------------------------------------ the rose-window wheel
-    with tag("Own:crown", Mh):
-        rmid = RW - WB / 2
-        n_blk = int(round(2 * math.pi * rmid / 0.34))
-        gaps = set(int(v) for v in np.array([rng.randint(0, n_blk - 1) for _ in range(5)]))
-        for bi in range(n_blk):
-            if bi in gaps:
-                a_ = 2 * math.pi * (bi + 0.5) / n_blk
-                V, F = blob(W3(wl(a_, rmid, -0.1))[0], basis_axes(D3(*wu), D3(*wv), D3(*wn), 0.18, 0.22, 0.2), sub=3,
-                            amp=0.25, freq=3.0)
-                A["Flesh"].add(V, F, m=0.5, g=0.0)
-                continue
-            a0, a1 = 2 * math.pi * bi / n_blk, 2 * math.pi * (bi + 1) / n_blk
-            am = (a0 + a1) / 2
-            span = (a1 - a0) * rmid
-            bm = stone_bm((span - 0.024, WD * rng.uniform(0.85, 1.1), WB - 0.02), chamfer=0.07, wear=0.012,
-                          chips=rng.randint(2, 4), subdiv=2)
-            co = np.array([v.co[:] for v in bm.verts])
-            ang = am + co[:, 0] / rmid
-            r_ = rmid + co[:, 2] + rng.uniform(-0.012, 0.012)
-            Vw = W3(wl(ang, r_, co[:, 1] + rng.uniform(-0.03, 0.03)))
-            place(bm, Vw)
-            cen = Vw.mean(0)
-            cut = pit_hits(cen, span * 0.5 + 0.1)
-            if cut:
-                bm = bool_cut(bm, cut, "wh")
-            A["Stone"].add_bm(bm)
-            if rng.random() < 0.45:
-                Pp = np.array([W3(wl(a1, r, WD * 0.5 + 0.01))[0] for r in np.linspace(RW - WB + 0.05, RW - 0.05, 5)])
-                A["Flesh"].add_tube(Pp, 0.012 + 0.016 * np.sin(np.linspace(0.2, math.pi - 0.2, 5)), sides=7, m=0.2)
-        # crockets: small hooked leaves along the outer edge of the upper two thirds of the ring
-        for k in range(9):
-            a_ = math.radians(10 + 160 * k / 8 + rng.uniform(-2, 2))
-            root = W3(wl(a_, RW - 0.02, 0.05))[0]
-            outd = D3(*(wu * math.cos(a_) + wv * math.sin(a_)))
-            V, F, uv, al = shard(root, nrm(outd * 0.9 + D3(*wn) * 0.3), rng.uniform(0.18, 0.3), 0.1, hook_dir=-D3(*wn) + outd * 0.2,
-                                 hook=0.6, rings=6, sides=4, sink=0.05)
-            A["Carved"].add(V, F, uv)
-            if k == 6:
-                CROWN.setdefault("thorns", []).append((a_, root, nrm(outd), 0.4))
-        # spokes
-        hub = 0.58
-        rin = RW - WB + 0.03
-        for k in range(NSP):
-            a_ = sp_a[k]
-            broken = k in (3, 7)
-            Lk = (rin - hub) * (rng.uniform(0.38, 0.62) if broken else 1.0)
-            rm_ = hub + Lk / 2
-            bm = stone_bm((rng.uniform(0.22, 0.3), WD * 0.7, Lk), chamfer=0.14, wear=0.012, chips=rng.randint(2, 3), subdiv=1)
-            co = np.array([v.co[:] for v in bm.verts])
-            ca, sa_ = math.cos(a_), math.sin(a_)
-            rad = rm_ + co[:, 2]
-            loc = (Wc[None] + wu[None] * (rad * ca - co[:, 0] * sa_)[:, None] + wv[None] * (rad * sa_ + co[:, 0] * ca)[:, None]
-                   + wn[None] * co[:, 1:2])
-            Vw = W3(loc)
-            place(bm, Vw)
-            A["Stone"].add_bm(bm)
-            if broken:
-                tipp = W3(wl(a_, hub + Lk, 0.0))[0]
-                for _ in range(rng.randint(1, 3)):
-                    rebar(tipp - D3(*(wu * ca + wv * sa_)) * 0.1, nrm(D3(*(wu * ca + wv * sa_)) + perp(T) * rng.uniform(-0.5, 0.5)),
-                          rng.uniform(0.25, 0.5), -T, 0.3, 0.013)
-        # pointed arches (plate tracery) in about two thirds of the outer cells
-        for k in range(NSP):
-            if k in (4, 8):
-                continue
-            a0, a1 = sp_a[k], sp_a[(k + 1) % NSP] + (2 * math.pi if k == NSP - 1 else 0)
-            am = (a0 + a1) / 2
-            apex = rng.uniform(1.95, 2.15)
-            pts = [W3(wl(a0 + 0.07, 1.5, 0.05))[0], W3(wl(am, apex, 0.05))[0], W3(wl(a1 - 0.07, 1.5, 0.05))[0]]
-            Pq = np.vstack([bezier([pts[0], (pts[0] + pts[1]) / 2 + D3(*(wu * math.cos(a0) + wv * math.sin(a0))) * 0.05, pts[1]], 10),
-                            bezier([pts[1], (pts[1] + pts[2]) / 2 + D3(*(wu * math.cos(a1) + wv * math.sin(a1))) * 0.05, pts[2]], 10)[1:]])
-            if rng.random() < 0.3:
-                Pq = Pq[: int(len(Pq) * rng.uniform(0.5, 0.8))]
-            A["Carved"].add_tube(Pq, 0.05, sides=4, phase=math.pi / 4, m=0.0)
-        # hub: a stone boss with an iron star, nails driven round it
-        hb = stone_bm((1.0, 0.45, 1.0), chamfer=0.3, wear=0.02, chips=3, subdiv=1)
-        co = np.array([v.co[:] for v in hb.verts])
-        loc = Wc[None] + wu[None] * co[:, 0:1] + wv[None] * co[:, 2:3] + wn[None] * (co[:, 1:2] + 0.02)
-        place(hb, W3(loc))
-        A["Stone"].add_bm(hb)
-        sheave(W3(Wc[None] + wn[None] * 0.3)[0], D3(*wn), 0.34, 1.0)
-        # cell infill: pit plates, pale membranes, tissue bulges, open
-        for k in range(NSP):
-            a0, a1 = sp_a[k], sp_a[(k + 1) % NSP] + (2 * math.pi if k == NSP - 1 else 0)
-            am = (a0 + a1) / 2
-            host = [p for p in pit_geo if p["host"] == "cell%d" % k]
-            if host:
-                # a stone plate fills the cell's outer lancet; the pit is bored through it
-                wpl = 2 * R_PIT * math.sin((a1 - a0) / 2) * 0.82
-                bm = stone_bm((wpl, 0.3, 0.78), chamfer=0.14, wear=0.014, chips=3, subdiv=2)
-                co = np.array([v.co[:] for v in bm.verts])
-                ca, sa_ = math.cos(am), math.sin(am)
-                rad = R_PIT + co[:, 2]
-                loc = (Wc[None] + wu[None] * (rad * ca - co[:, 0] * sa_)[:, None] + wv[None] * (rad * sa_ + co[:, 0] * ca)[:, None]
-                       + wn[None] * (co[:, 1:2] + (WD * 0.5 - 0.17)))
-                Vw = W3(loc)
-                place(bm, Vw)
-                bm = bool_cut(bm, [pit_cutter(p["c"], p["axis"], p["r"], p["depth"]) for p in host], "plate")
-                A["Stone"].add_bm(bm)
-                continue
-            r_ = rng.random()
-            if r_ < 0.0:
-                rows = []
-                for q in range(6):
-                    rq = 1.0 + (RW - WB - 1.0) * q / 5
-                    aa = np.linspace(a0 + 0.07, a1 - 0.07, 9)
-                    rows.append(W3(wl(aa, np.full(9, rq), -0.12 + 0.1 * math.sin(q * 1.3)))
-                                + NZ.vec(W3(wl(aa, np.full(9, rq), 0.0)) * 3.0) * 0.03)
-                G = np.array(rows)
-                Vm = G.reshape(-1, 3)
-                idx = np.arange(6 * 9).reshape(6, 9)
-                quads = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
-                keep = NZ.fbm(Vm[quads].mean(1) * 3.0 + k, 2) < 0.2
-                A["Membrane"].add(Vm, quads[keep], m=0.5)
-                A["Membrane"].add(Vm, quads[keep][:, ::-1], m=0.5)
-            elif r_ < 0.55:
-                V, F = blob(W3(wl(am, 1.55, -0.1))[0], basis_axes(D3(*wu), D3(*wv), D3(*wn), 0.42, 0.5, 0.18), sub=3,
-                            amp=0.3, freq=3.0)
-                A["Flesh"].add(V, F, m=0.3, g=0.0)
-        # tendons and muscle cords hauling the wheel back to the neck
-        for q in range(9):
-            a_ = rng.uniform(0, 2 * math.pi)
-            p0 = W3(wl(a_, rng.uniform(0.9, RW - 0.4), -WD * 0.5))[0]
-            p1 = P3(rng.uniform(-1.3, 1.3), rng.uniform(-1.2, 1.4), -2.4)
-            Pm = sag_path(p0, p1, 0.0, 16, toward=(p0 - C) * 0.06)
-            tt = np.linspace(0, 1, 16)
-            A["Flesh"].add_tube(Pm, (0.07 + 0.08 * np.sin(math.pi * tt) ** 1.5) * rng.uniform(0.85, 1.2), sides=10,
-                                nz_amp=0.12, nz_freq=5.0, seed=rng.random() * 20, m=0.15)
-            A["Tendon"].add_tube(Pm + (p0 - C) * 0.02, (0.03 + 0.03 * np.sin(math.pi * tt)) * rng.uniform(0.8, 1.3),
-                                 sides=7, cap0=False, cap1=False)
-
-    # ------------------------------------------------------------------ listening pits (after the stone they cut)
-    def drape(q):
-        return q
-
-    for p in pit_geo:
-        listening_pit(p["c"], p["axis"], p["r"], p["depth"], p["hue"], p["pw"], p["memb"], p["cames"], face_n=T,
-                      drape=None)
+                    nl, no = (4, 7) if LOW else (12, 20)
+                    V, F, cs = uv_sphere(FW(ec)[0], FD(fwd_l), r_, nl, no)
+                    A["Eye"].add(V, F, d=cs, m=rc.random())
+            if pk == min(k for k in pit_geo if pit_geo[k]["so"] is so):
+                # the socket's coal, far behind the cluster
+                cc = np.array([sgn * cx, cy, rim[2] - so["depth"] * 0.85])
+                Vb, Fb_ = blob(FW(cc)[0], basis_axes(FD(np.array([1.0, 0, 0])), FD(np.array([0, 1.0, 0])), FD(np.array([0, 0, 1.0])),
+                                                     so["rx"] * 0.42, so["ry"] * 0.42, 0.05), sub=1 if LOW else 3, amp=0.3)
+                A["Pit"].add(Vb, Fb_, m=0.5 + 0.3 * rc.random(), g=0.1 + 0.06 * rc.random())
+        pivots["pit_%d" % pk] = [round(float(x), 4) for x in (FL(cen)[0] * np.array([1, 1, -1]))]
+    HALF[0] = 0
     CROWN["pits"] = pit_geo
 
-    # ------------------------------------------------------------------ pale fronds: short clusters (curl only)
-    def cluster(n, root_fn, dir_fn, Lr, r0r):
-        for _ in range(n):
-            root = root_fn()
-            dd = dir_fn(root)
-            ax = nrm(np.cross(dd, perp(dd)) * rng.choice((-1, 1)) + perp(dd) * rng.uniform(-0.5, 0.5))
-            frond(root, dd, rng.uniform(*Lr), ax, r0=rng.uniform(*r0r), curl=rng.uniform(0.8, 1.5), n=48)
+    # ------------------------------------------------------------------ teeth along the split + the upper arch (L1 / R1)
+    def tooth_at(root, axis, facing, kind, scale, owner_tr=None, rot_=0.0, trunc=None, rotten=0.0):
+        w, th, L = TOOTH_SIZE[kind]
+        w, th, L = w * scale, th * scale, L * scale
+        if trunc is None:
+            trunc = 1.0 if rc.random() > 0.12 else rc.uniform(0.55, 0.8)
+        facing = rot(axis, rot_) @ facing
+        V, F, al = human_tooth(root - axis * L * 0.42, axis, facing, kind, w, th, L, 6 if LOW else 12, 5 if LOW else 12, trunc)
+        if owner_tr is not None:
+            V = owner_tr(V)
+        A["Teeth"].add(V, F, m=al, d=rotten)
+        tips.append(V[-1])
+        return V
 
-    def gap_root():
-        sx = rng.choice((-1, 1))
-        return lowT(P3(sx * (PORT_H + rng.uniform(0.0, 3 * W_)), Y_GAP + 0.1, rng.uniform(0.0, FACE[0] + 0.2)))[0]
+    # above the nose the row sinks deep into the split, so the closed face shows a dark hairline (not a zipper of teeth);
+    # it is bared only when the halves swing open
+    ROW_SINK = lambda y: 0.3 * smoothstep(0.75, 1.45, y)
+    for sgn, side_name in ((-1, "L"), (1, "R")):
+        HALF[0] = sgn
+        H = halves[sgn]
+        with tag("Own:portal_comb_%s1" % side_name, Mh):
+            # (a) the vertical row: teeth rooted in the gum on the split edge, pointing across the gap (they interlock)
+            ys = []
+            y_ = Y_LIPE + 0.1 + (0.0 if sgn < 0 else 0.06)
+            while y_ < 2.15:
+                ys.append(y_)
+                y_ += rc.uniform(0.12, 0.22)
+            rowP, rowO, rowU, cents = [], [], [], []
+            yy = np.linspace(Y_LIPE + 0.02, 2.3, 16 if LOW else 60)
+            for y_ in yy:
+                g_ = float(face_gap(np.array([y_]))[0])
+                z_ = FACE_Z0 + float(face_relief(np.array([g_]), np.array([y_]))[0]) - 0.32 - ROW_SINK(y_)
+                rowP.append(FW(np.array([sgn * (g_ + 0.05), y_, z_]))[0])
+                rowO.append(FD(np.array([0.0, 0.0, 1.0])))
+                rowU.append(FD(np.array([-sgn * 1.0, 0.0, 0.0])))
+            rowP = np.array(rowP)
+            Lrow = arclen(rowP)
+            for y_ in ys:
+                if rc.random() < 0.08:
+                    continue
+                g_ = float(face_gap(np.array([y_]))[0])
+                z_ = FACE_Z0 + float(face_relief(np.array([g_]), np.array([y_]))[0]) - 0.3 - 0.06 * rc.random() - ROW_SINK(y_)
+                sc_ = 1.0 * (1.0 - 0.4 * smoothstep(0.8, 2.2, y_)) * rc.uniform(0.75, 1.15)
+                kr = rc.random()
+                kind = "incisor" if kr < 0.45 else ("canine" if kr < 0.75 else ("premolar" if kr < 0.9 else "molar"))
+                root = FW(np.array([sgn * (g_ + 0.02), y_, z_]))[0]
+                ax = FD(nrm(np.array([-sgn * 1.0, rc.uniform(-0.45, 0.2), rc.uniform(-0.35, -0.05)])))
+                tooth_at(root, ax, FD(np.array([0.0, 0.0, 1.0])), kind, sc_, rot_=rc.uniform(-0.6, 0.6),
+                         rotten=1.0 if rc.random() < 0.15 else 0.0)
+                if rc.random() < 0.3:      # crowding: a second tooth erupting behind the first
+                    tooth_at(root - FD(np.array([0, 0, 0.1])), FD(nrm(np.array([-sgn * 1.0, rc.uniform(-0.3, 0.3), -0.3]))),
+                             FD(np.array([0.0, 0.0, 1.0])), "canine" if rc.random() < 0.5 else "incisor", sc_ * 0.75,
+                             rot_=rc.uniform(-0.8, 0.8))
+                cents.append(float(np.interp(y_, yy, Lrow)))
+            V, F = gum_band(rowP, np.array(rowO), np.array(rowU), 0.085, 0.07, cents, 0.155)
+            A["Gum"].add(V, F, m=0.1)
+            # (b) the upper dental arch behind the carved lip: incisors at the split, molars far back
+            kinds = ["incisor", "incisor", "canine", "premolar", "premolar", "molar", "molar"]
+            g0 = float(face_gap(np.array([Y_LIPE]))[0])
+            xa = g0 + 0.07
+            arch = []
+            for i, kind in enumerate(kinds):
+                w_ = TOOTH_SIZE[kind][0] * 1.05
+                xa_c = xa + w_ / 2
+                t_ = np.clip((xa_c - g0) / 0.95, 0, 1)
+                zback = 0.55 * smoothstep(0.35, 1.0, t_)
+                xq = min(xa_c, 0.82 + 0.15 * t_)
+                z_ = FACE_Z0 + float(face_relief(np.array([min(xq, 0.75)]), np.array([0.02]))[0]) - 0.2 - zback
+                root = np.array([sgn * xq, Y_LIPE + 0.1, z_])
+                arch.append(root)
+                if rc.random() < 0.07:
+                    xa += w_
+                    continue
+                facing = nrm(np.array([sgn * smoothstep(0.3, 0.9, t_) * 0.9, 0.0, 1.0 - 0.6 * smoothstep(0.4, 1.0, t_)]))
+                tooth_at(FW(root)[0], FD(nrm(np.array([sgn * 0.08, -1.0, 0.1]))), FD(facing), kind, rc.uniform(0.95, 1.12),
+                         rot_=rc.uniform(-0.2, 0.2), rotten=1.0 if rc.random() < 0.12 else 0.0)
+                xa += w_
+            arch = np.array(arch)
+            Pa = resample(catmull(arch, 4), 10 if LOW else 40)
+            outd = np.array([FD(nrm(np.array([sgn * smoothstep(0.3, 0.9, i / (len(Pa) - 1)) * 0.9, 0.0, 1.0]))) for i in range(len(Pa))])
+            upd = np.broadcast_to(FD(np.array([0.0, -1.0, 0.0])), Pa.shape)
+            V, F = gum_band(FW(Pa + np.array([0, 0.03, 0])), outd, upd, 0.1, 0.075, [], 0.15)
+            A["Gum"].add(V, F, m=0.1)
+            piv("portal_comb_%s1" % side_name, np.array([sgn * 0.35, 1.2, FACE_Z0 - 0.1]))
+    HALF[0] = 0
 
-    cluster(14, gap_root, lambda p: nrm(T * 0.8 + D * 0.2 + NZ.vec(p[None] * 5.0)[0] * 0.9), (0.25, 0.7), (0.016, 0.03))
+    # ------------------------------------------------------------------ the broken lower jaw (portal_hinge_0 / 1)
+    for sgn, j in ((-1, 0), (1, 1)):
+        jt, Rj = jawT(sgn)
+        with tag("Own:portal_hinge_%d" % j, Mh):
+            # the jaw under the saint's face is bone, the creature's own: a mandible broken at the chin, each half a curved bar
+            # (body along the dental arch, then the ramus up to the joint), the lower teeth on its crest
+            yc_ = -0.62
+            body = np.array([(sgn * 0.035, yc_, FACE_Z0 - 0.1), (sgn * 0.45, yc_ - 0.01, FACE_Z0 - 0.2), (sgn * 0.82, yc_ - 0.02, FACE_Z0 - 0.5),
+                             (sgn * 1.08, yc_ - 0.06, FACE_Z0 - 0.95), (sgn * 1.2, yc_ - 0.16, FACE_Z0 - 1.28)])
+            ramus = np.array([(sgn * 1.2, yc_ - 0.16, FACE_Z0 - 1.28), (sgn * 1.3, -0.2, FACE_Z0 - 1.42), TMJ * np.array([sgn, 1, 1])])
+            Pb = resample(catmull(body, 8), 7 if LOW else 40)
+            Pr = resample(catmull(ramus, 8), 4 if LOW else 16)
+            mc = np.array([0.0, 0.0, FACE_Z0 - 0.95])                       # the middle of the mouth (plan view)
+            for (Pq, hh, tk, piece) in ((Pb, (0.5, 0.42, 0.36), (0.27, 0.22, 0.2), "body"), (Pr, (0.38, 0.34, 0.3), (0.15, 0.13, 0.13), "ramus")):
+                t_ = np.linspace(0, 1, len(Pq))
+                Tq = np.gradient(Pq, axis=0)
+                Tq = Tq / np.linalg.norm(Tq, axis=1, keepdims=True)
+                upv = np.array([0.0, 1.0, 0.0]) if piece == "body" else nrm(np.array([sgn * 0.0, 0.0, 1.0]))
+                Nq = upv[None] - (Tq @ upv)[:, None] * Tq
+                Nq = Nq / np.linalg.norm(Nq, axis=1, keepdims=True)
+                Bq = np.cross(Nq, Tq)                     # N x T: right-handed once mapped through the crown frame
+                h_ = np.interp(t_, [0, 0.5, 1], hh)
+                w_ = np.interp(t_, [0, 0.5, 1], tk)
+                if piece == "body":
+                    w_ = w_ * (1 + 0.35 * np.exp(-(t_ / 0.12) ** 2))     # the chin's protuberance
+                sides = 8 if LOW else 18
+                ang = np.linspace(0, 2 * math.pi, sides, endpoint=False) + math.pi / sides
+                ex_ = 2.0 / 3.0
+                cx = np.sign(np.cos(ang)) * np.abs(np.cos(ang)) ** ex_
+                cy = np.sign(np.sin(ang)) * np.abs(np.sin(ang)) ** ex_
+                prof = np.stack([cx[None] * h_[:, None] / 2, cy[None] * w_[:, None] / 2], -1)
+                V, F, uv, al = loft(FW(jt(Pq)), prof, fr=(np.array([FD(Rj @ v) for v in Tq]), np.array([FD(Rj @ v) for v in Nq]),
+                                                         np.array([FD(Rj @ v) for v in Bq])), cap0=True, cap1=True, nz_amp=0.05,
+                                    nz_freq=5.0, nz_seed=rc.random() * 9)
+                A["Bone"].add(V, F, uv, m=np.clip(0.04 + al * 0.92, 0, 1) if piece == "body" else 0.5)
+            # the lower teeth on the crest: incisors at the break, molars far back
+            kinds = ["incisor", "incisor", "canine", "premolar", "premolar", "molar", "molar"]
+            Lb_ = arclen(Pb)
+            s_ = 0.07
+            crest = []
+            for kind in kinds:
+                w0 = TOOTH_SIZE[kind][0]
+                s_c = s_ + w0 / 2
+                if s_c > Lb_[-1] * 0.8:
+                    break
+                i_ = int(np.searchsorted(Lb_, s_c))
+                p_ = Pb[i_] + np.array([0.0, np.interp(s_c / Lb_[-1], [0, 0.5, 1], (0.5, 0.42, 0.36)) / 2, 0.0])
+                crest.append(p_)
+                s_ += w0 * 1.04
+                if rc.random() < 0.1:
+                    continue
+                fac = nrm(np.array([p_[0] - mc[0], 0.0, p_[2] - mc[2]]))
+                tooth_at(FW(jt(p_))[0], FD(Rj @ nrm(np.array([0.0, 1.0, 0.0]) + fac * 0.08)), FD(Rj @ fac), kind, rc.uniform(0.92, 1.12),
+                         rot_=rc.uniform(-0.3, 0.3), rotten=1.0 if rc.random() < 0.14 else 0.0)
+            crest = np.array(crest)
+            Pa = resample(catmull(crest, 4), 8 if LOW else 30)
+            outd = np.array([FD(Rj @ nrm(np.array([p[0] - mc[0], 0.0, p[2] - mc[2]]))) for p in Pa])
+            upd = np.broadcast_to(FD(Rj @ np.array([0.0, 1.0, 0.0])), Pa.shape)
+            V, F = gum_band(FW(jt(Pa - np.array([0, 0.035, 0]))), outd, upd, 0.12, 0.08, [], 0.15)
+            A["Gum"].add(V, F, m=0.1)
+            # the joint: a knot of sinew and stone at the jaw hinge, the tendon sheet torn to the cheek
+            tm = TMJ * np.array([sgn, 1, 1])
+            Vb, Fb_ = blob(FW(tm)[0], basis_axes(S, D, T, 0.24, 0.3, 0.26), sub=2, amp=0.25, freq=3.5, seed=rc.random() * 20)
+            A["Flesh"].add(Vb, Fb_, m=0.3)
+        piv("portal_hinge_%d" % j, TMJ * np.array([sgn, 1, 1]))
+        # torn sheets of cheek skin from the jaw to the cheek, stretched by the drop (with holes); owned by the crown
+        with tag("Own:crown", Mh):
+            uvw(0.6)
+            for q in range(2):
+                xq0 = 0.95 + 0.25 * q
+                topc = np.array([[sgn * (xq0 + dx), -0.2 - 0.25 * q + 0.15 * dx, FACE_Z0 - 0.62 - 0.1 * q - 0.2 * dx] for dx in np.linspace(0, 0.35, 6)])
+                botc = jt(np.array([[sgn * (xq0 - 0.05 + dx), -0.65 - 0.2 * q + 0.1 * dx, FACE_Z0 - 0.5 - 0.1 * q - 0.2 * dx] for dx in np.linspace(0, 0.35, 6)]))
+                nr_ = 3 if LOW else 10
+                G = np.array([topc + (botc - topc) * t_ + FD(np.array([0, 0, -0.06 * math.sin(math.pi * t_)])) * 0 for t_ in np.linspace(0, 1, nr_ + 1)])
+                G = G + np.array([0, 0, 1.0]) * 0.0
+                Vs = FW(G.reshape(-1, 3))
+                Q = _grid_quads(nr_, 5)
+                keep = np.ones(len(Q), bool)
+                if not LOW:
+                    cen_ = Vs[Q].mean(1)
+                    keep = NZ.fbm(cen_ * 6.0 + q * 3.0, 2) < 0.22
+                A["Membrane"].add(Vs, Q[keep], m=0.6)
+                A["Membrane"].add(Vs, Q[keep][:, ::-1], m=0.6)
+                for t_ in (0.2, 0.55, 0.85):
+                    a_ = Vs[int(t_ * 5)]
+                    b_ = Vs[nr_ * 6 + int(t_ * 5)]
+                    A["Tendon"].add_tube(np.array([a_, b_]), np.array([0.022, 0.016]), sides=5, cap0=False, cap1=False)
 
-    def rim_root():
-        a_ = math.radians(rng.uniform(40, 150))
-        return W3(wl(a_, RW, rng.uniform(-0.1, 0.2)))[0]
-
-    cluster(10, rim_root, lambda p: nrm(T * 0.9 + nrm(p - C) * 0.6 + NZ.vec(p[None] * 4.0)[0] * 0.8), (0.25, 0.6),
-            (0.012, 0.022))
-
-    def throat_root():
-        dz = rng.uniform(0.9, 1.6)
-        Oq, Tq, Dq, Sq = gullet_frame(dz)
-        a_ = rng.uniform(0, 2 * math.pi)
-        return Oq + (math.cos(a_) * Sq + math.sin(a_) * Dq) * float(np.interp(dz, depth, rbase)) * 0.85
-
-    cluster(4, throat_root, lambda p: nrm(T * 1.0 + nrm(p - C) * 0.25 + NZ.vec(p[None] * 6.0)[0] * 0.6), (0.4, 0.8),
-            (0.016, 0.026))
-
-    # ------------------------------------------------------------------ neck: flesh collar to the first vertebra
-    ss_n = np.linspace(RING_S + 0.7, RING_S + 2.4, 14)
-    On, Tn, Dn, Sn = spine_frames(ss_n)
-    t = np.linspace(0, 1, len(ss_n))
-    rr = 1.65 - 0.2 * t
-    Bn = np.cross(Tn, Sn)
-    c_ = circle_prof(30)
-    prof = np.stack([c_[None, :, 0] * rr[:, None], c_[None, :, 1] * rr[:, None] * 0.85], -1)
-    V, F, uv, al = loft(On, prof, fr=(Tn, Sn, Bn), cap0=False, cap1=False, nz_amp=0.13, nz_freq=2.5)
+    # ------------------------------------------------------------------ the maw behind the split: a wet funnel to the throat
     with tag("Own:crown", Mh):
+        uvw(0.55)
+        K = 28 if LOW else 64
+        az = np.arange(K) * 2 * math.pi / K
+        rings = []
+        zs = [FACE_Z0 - 0.42, FACE_Z0 - 0.75, FACE_Z0 - 1.1, FACE_Z0 - 1.5]
+        for i, zf in enumerate(zs):
+            t_ = i / (len(zs) - 1)
+            ax_ = 0.9 - 0.08 * t_
+            ay_up, ay_dn = 2.25 - 1.45 * t_, 1.75 - 0.95 * t_
+            yc = 1.1 - 0.95 * t_
+            yv = np.where(np.sin(az) > 0, np.sin(az) * ay_up, np.sin(az) * ay_dn)
+            rings.append(np.stack([np.cos(az) * ax_, yc + yv, np.full(K, zf)], -1))
+        G = np.array(rings)
+        G = np.concatenate([G, G[:, :1]], 1)
+        nR = len(zs)
+        Vf = FW(G.reshape(-1, 3))
+        idx = np.arange(nR * (K + 1)).reshape(nR, K + 1)
+        Fq = np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4)
+        A["Gum"].add(Vf, Fq, m=0.0, d=np.repeat(np.linspace(0.0, 0.6, nR), K + 1))
+
+    # ------------------------------------------------------------------ three telescoping oral discs of hooked fangs (portal_arch_0..2)
+    # each a flat annulus of wet gum (a lamprey's mouth) facing out of the face, its inner edge ragged, fangs raked inward and back
+    RINGS = [(0.0, FACE_Z0 - 1.45, 0.72, 0.78, 0.74), (0.5, FACE_Z0 - 1.0, 0.7, 1.2, 1.1), (0.9, FACE_Z0 - 0.62, 0.62, 1.7, 1.45)]
+    for j, (yc, zc, ax_, ayu, ayd) in enumerate(RINGS):
+        with tag("Own:portal_arch_%d" % j, Mh):
+            K = 24 if LOW else 80
+            az = np.linspace(0, 2 * math.pi, K, endpoint=False)
+            oval = lambda sc_: np.stack([np.cos(az) * ax_ * sc_, yc + np.where(np.sin(az) > 0, np.sin(az) * ayu, np.sin(az) * ayd) * sc_], -1)
+            q = np.stack([np.cos(az) * 3.0, np.sin(az) * 3.0, np.full(K, 7.0 + j)], -1)
+            rag = 1.0 + 0.07 * NZ.fbm(q, 2)
+            radii = [0.74, 0.86, 1.0, 1.16]
+            front, back = [], []
+            for ri, sc_ in enumerate(radii):
+                o2 = oval(sc_ * (rag if ri == 0 else 1.0))
+                zf = zc + 0.06 * math.sin(math.pi * ri / (len(radii) - 1)) + (0.03 if ri == 0 else 0.0)
+                front.append(np.column_stack([o2, np.full(K, zf)]))
+                back.append(np.column_stack([o2, np.full(K, zc - 0.12)]))
+            Fr = np.array(front)
+            Bk = np.array(back)
+            nr = len(radii)
+            V = np.vstack([Fr.reshape(-1, 3), Bk.reshape(-1, 3)])
+            idx = np.arange(nr * K).reshape(nr, K)
+            idn = np.roll(idx, -1, axis=1)
+            qf = np.stack([idx[:-1], idn[:-1], idn[1:], idx[1:]], -1).reshape(-1, 4)
+            qb = qf[:, ::-1] + nr * K
+            inner = np.stack([idx[0], idn[0], idn[0] + nr * K, idx[0] + nr * K], -1)
+            outer = np.stack([idx[-1], idx[-1] + nr * K, idn[-1] + nr * K, idn[-1]], -1)
+            F = np.vstack([qf[:, ::-1], qb[:, ::-1], inner, outer])        # the crown frame is left-handed: flip the face-local winding
+            A["Gum"].add(FW(V), F, m=0.1, d=0.15 + 0.2 * (2 - j))
+            nt = max(9, int(round(2 * math.pi * math.sqrt((ax_ ** 2 + ayu * ayd) / 2) / 0.24)))
+            ta = (np.arange(nt) + rc.uniform(0, 1)) / nt * 2 * math.pi
+            for a_ in ta:
+                if rc.random() < 0.1:
+                    continue
+                i_ = int(a_ / (2 * math.pi) * K) % K
+                p_ = Fr[1, i_]
+                ind = nrm(np.array([-p_[0], yc - p_[1], 0.0]) + 1e-6)
+                dd = nrm(ind * 0.8 - np.array([0, 0, 1.0]) * 0.35 + np.array([0, 0, 1.0]) * 0.25 + np.array([rc.uniform(-0.15, 0.15), rc.uniform(-0.15, 0.15), 0]))
+                Lt = rc.uniform(0.2, 0.4) * (1.15 - 0.15 * j)
+                V2, F2, uv2, al2 = shard(FW(p_)[0], FD(dd), Lt, Lt * 0.18, hook_dir=FD(np.array([0, 0, -1.0])), hook=0.4,
+                                         rings=5 if LOW else 9, sides=5 if LOW else 7, sink=0.04, fang=True, rr=rc)
+                A["Teeth"].add(V2, F2, uv2, al2, d=0.15 * j)
+                tips.append(V2[-1])
+        piv("portal_arch_%d" % j, np.array([0.0, yc, zc]))
+
+    # ------------------------------------------------------------------ the throat (a deep funnel through the neck), ember far down
+    s_front = GULLET_S0
+    GL = GULLET_L
+    ss = np.linspace(s_front, s_front + GL, 50 if LOW else 150)
+    Ot, Tt, Dt, St = [np.array(x) for x in zip(*[gullet_frame(x - s_front) for x in ss])]
+    depth = ss - s_front
+    rib = sum(np.exp(-((depth - z_) / 0.09) ** 2) for z_ in THROAT_RINGS)
+    rbase = 0.82 * (1 - 0.12 * rib + 0.05 * np.sin(2 * math.pi * depth / 0.23 + 0.6) * (1 - rib))
+    rbase = rbase * (1 - 0.8 * smoothstep(GL - 0.7, GL, depth))
+    az = np.arange(18 if LOW else 40) * 2 * math.pi / (18 if LOW else 40)
+    prof = np.array([np.stack([np.cos(az) * r_, np.sin(az) * r_], -1) for r_ in rbase])
+    for gi, (j0, j1) in enumerate(((0, len(ss) // 5 + 1), (len(ss) // 5, len(ss) // 2 + 1), (len(ss) // 2, len(ss)))):
+        sl = slice(j0, j1)
+        V, F, uv, al = loft(Ot[sl], prof[sl], fr=(Tt[sl], St[sl], Dt[sl]), cap0=False, cap1=(gi == 2), nz_amp=0.08,
+                            nz_freq=4.0, nz_seed=1.7 * gi, flip=False)
+        dd_ = np.clip(((V - C) @ -T - 0.5) / GL, 0, 1)
+        with tag("Own:gullet_%d" % gi, Mh):
+            uvw(0.4)
+            A["Gum"].add(V, F, uv, m=0.0, g=0.12 * smoothstep(0.55, 1.0, dd_), d=np.clip(dd_ ** 0.85 * 1.7, 0, 1))
+    CROWN.update(throat_s=ss, throat_r=rbase)
+    for gi in range(3):
+        dzm = (0.1, 0.25, 0.65)[gi] * GL
+        Og = gullet_frame(dzm)[0]
+        rel = Og - C
+        pivots["gullet_%d" % gi] = [round(float(rel @ S), 4), round(float(rel @ D), 4), round(float(-(rel @ T)), 4)]
+    for ri_, dz0 in enumerate(THROAT_RINGS[2:]):
+        nr = max(5, 9 - ri_ // 2)
+        a0 = rc.uniform(0, 2 * math.pi)
+        for q in range(nr):
+            if rc.random() < 0.15:
+                continue
+            dz = dz0 + rc.uniform(-0.05, 0.05)
+            a = a0 + 2 * math.pi * q / nr + rc.uniform(-0.12, 0.12)
+            Oq, Tq, Dq, Sq = gullet_frame(dz)
+            rq = float(np.interp(dz, depth, rbase))
+            rd = math.cos(a) * Sq + math.sin(a) * Dq
+            root = Oq + rd * (rq * 0.96)
+            dd = nrm(-rd * 0.9 - Tq * 0.9 + np.cross(Tq, rd) * rc.uniform(-0.2, 0.2))
+            Lt = (0.45 - 0.28 * dz / GL) * rc.uniform(0.6, 1.2)
+            gi = 0 if dz < 0.9 else (1 if dz < 2.3 else 2)
+            with tag("Own:gullet_%d" % gi, Mh):
+                uvw(0.6)
+                V, F, uv, al = shard(root, dd, Lt, Lt * 0.15, hook_dir=-Tq, hook=0.35, rings=4 if LOW else 8, sides=4 if LOW else 6,
+                                     sink=0.06, fang=True, rr=rc)
+                A["Teeth"].add(V, F, uv, al, d=dz / GL)
+    Oe, Te, De, Se = gullet_frame(GL - 0.6)
+    Oe = Oe + Se * 0.45 - De * 0.04
+    with tag("Own:gullet_2", Mh):
+        V, F = blob(Oe, basis_axes(Se, Te, De, 0.08, 0.13, 0.4), sub=1 if LOW else 3, amp=0.25, freq=5.0)
+        A["Ember"].add(V, F, g=0.9)
+    CROWN["forge"] = Oe
+    CROWN["throat_light"] = gullet_frame(GL - 0.6)[0]
+    CROWN["mouth_light"] = gullet_frame(1.0)[0]
+    CROWN["mouth_light2"] = gullet_frame(2.8)[0]
+    CROWN["mouth_front"] = FW(np.array([0.0, 0.4, FACE_Z0]))[0]
+
+    # ------------------------------------------------------------------ the cranium: a cowl of flesh behind the mask, an ashlar vault
+    with tag("Own:crown", Mh):
+        uvw(0.42)
+        K = 30 if LOW else 72
+        az = np.arange(K) * 2 * math.pi / K
+        st = [(0.0, 1.38, 1.0, 1.05), (-0.45, 1.6, 1.08, 1.0), (-1.05, 1.74, 1.12, 0.85), (-1.7, 1.66, 1.06, 0.55), (-2.35, 1.5, 0.94, 0.25)]
+        rings = []
+        for (zc_, rx_, ry_, yc_) in st:
+            ryu = 2.15 * ry_
+            ryd = 1.55 * ry_
+            yv = np.where(np.sin(az) > 0, np.sin(az) * ryu, np.sin(az) * ryd)
+            rings.append(np.stack([np.cos(az) * rx_, yc_ + yv, np.full(K, zc_ + FACE_Z0 - 0.75)], -1))
+        G = np.array(rings)
+        if not LOW:
+            sub = []
+            for a_, b_ in zip(G[:-1], G[1:]):
+                for t_ in np.linspace(0, 1, 5, endpoint=False):
+                    sub.append(a_ + (b_ - a_) * t_)
+            sub.append(G[-1])
+            G = np.array(sub)
+        G = G + NZ.vec(G.reshape(-1, 3) * 1.6).reshape(G.shape) * 0.06
+        zz_ = G[..., 2]
+        fold = 1.0 + 0.055 * np.sin(np.arctan2(G[..., 1] - 1.0, G[..., 0]) * 11.0 + zz_ * 2.2) * smoothstep(0.2, -0.6, zz_)
+        G = np.concatenate([G[..., :2] * fold[..., None] + (1 - fold[..., None]) * np.array([0.0, 1.0]), G[..., 2:]], -1)
+        Gw = np.concatenate([G, G[:, :1]], 1)
+        nR = len(Gw)
+        Vc = FW(Gw.reshape(-1, 3))
+        idx = np.arange(nR * (K + 1)).reshape(nR, K + 1)
+        Fq = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4)
+        A["Flesh"].add(Vc, Fq, m=0.08)
+        uvw(0.9, True)
+        # the head's flesh has grown over the mask's edge in places: lumpy wet masses bulging forward round the outline
+        for (yq, sgn, rq) in ((2.75, 1, 0.45), (1.7, -1, 0.38), (-0.35, -1, 0.42), (0.2, 1, 0.34)):
+            HALF[0] = sgn
+            xq = float(face_outline(np.array([yq]), sgn)[0])
+            zq = FACE_Z0 + float(face_relief(np.array([xq * 0.92]), np.array([yq]))[0]) - 0.05
+            cq = np.array([sgn * xq * 0.97, yq, zq])
+            nq = FD(nrm(np.array([sgn * 0.6, 0.0, 0.8])))
+            Vb, Fb_ = blob(FW(cq)[0], basis_axes(FD(np.array([0, 1.0, 0])), np.cross(FD(np.array([0, 1.0, 0])), nq), nq,
+                                                 rq * rc.uniform(1.0, 1.4), rq * 0.75, rq * 0.3), sub=2 if LOW else 4, amp=0.5,
+                           freq=3.4 / rq, seed=rc.random() * 40)
+            A["Flesh"].add(Vb, Fb_, m=0.3)
+            HALF[0] = 0
+        uvw(0.6, True)
+        # the VEIL: the saint is hooded. Soot-black carved drapery frames the face, its folds raking back and down; the hem hangs past the
+        # jaw on both sides and is open below (the throat and the flesh of the head show under it). Outer and inner shell, a rim round the
+        # face, a ragged hem. Read at 30 m it is a hooded figure with a crown of thorns.
+        HR = [(0.32, 1.84, 2.2, 1.22, -1.5), (-0.15, 2.04, 2.5, 1.12, -1.95), (-0.85, 2.14, 2.62, 1.0, -2.2), (-1.6, 2.03, 2.45, 0.86, -2.05),
+              (-2.35, 1.74, 2.06, 0.64, -1.6)]          # (z, half width, arch height above yc, yc, hem y)
+        nk = 26 if LOW else 110
+        sub_ = 1 if LOW else 6
+        prof_ = []
+        for (zh, rxh, ryh, ych, yhem) in HR:
+            ctrl = np.array([(-0.9 * rxh, yhem), (-rxh, 0.5 * (ych + yhem)), (-rxh, ych), (-0.84 * rxh, ych + 0.6 * ryh), (-0.45 * rxh, ych + 0.93 * ryh),
+                             (0.0, ych + ryh), (0.45 * rxh, ych + 0.93 * ryh), (0.84 * rxh, ych + 0.6 * ryh), (rxh, ych), (rxh, 0.5 * (ych + yhem)),
+                             (0.9 * rxh, yhem)])
+            cc = catmull(np.column_stack([ctrl, np.zeros(len(ctrl))]), 8)
+            prof_.append(np.column_stack([resample(cc, nk)[:, :2], np.full(nk, zh)]))
+        prof_ = np.array(prof_)
+        stations = []
+        for a_, b_ in zip(prof_[:-1], prof_[1:]):
+            for t_ in np.linspace(0, 1, sub_, endpoint=False):
+                stations.append(a_ + (b_ - a_) * smoothstep(0, 1, t_))
+        stations.append(prof_[-1])
+        O_ = np.array(stations)                       # (ns, nk, 3) face-local
+        ns = len(O_)
+        sk = np.linspace(0, 1, nk)
+        tg = np.gradient(O_[..., :2], axis=1)
+        nrm2 = np.stack([tg[..., 1], -tg[..., 0]], -1)
+        nrm2 = nrm2 / (np.linalg.norm(nrm2, axis=-1, keepdims=True) + 1e-9)
+        cen2 = np.stack([np.zeros_like(O_[..., 0]), O_[..., 1] * 0 + 1.0], -1)
+        sgn2 = np.sign(np.sum(nrm2 * (O_[..., :2] - cen2), -1, keepdims=True))
+        nrm2 = nrm2 * np.where(sgn2 == 0, 1.0, sgn2)
+        zz = O_[..., 2]
+        rake = (FACE_Z0 - 0.75 + 0.4 - zz)
+        # deep pleats radiating back from the face opening (sharp crests, broad troughs), uneven in depth, plus a heavy slump
+        ph_ = math.pi * 9.0 * sk[None, :] + 1.1 * rake + 0.45 * np.sin(sk[None, :] * 17.0)
+        fold = np.abs(np.sin(ph_)) ** 0.35 - 0.55
+        fold = fold * (0.75 + 0.5 * np.abs(np.sin(sk[None, :] * 7.3 + 1.0)))
+        famp = 0.1 + 0.24 * smoothstep(0.32, -0.7, zz)
+        q = O_.reshape(-1, 3)
+        rag = NZ.fbm(q * 1.1 + 4.0, 3).reshape(zz.shape)
+        off = famp * fold + 0.09 * rag
+        O_ = O_ + np.concatenate([nrm2 * off[..., None], np.zeros_like(zz)[..., None]], -1)
+        # the hem: ragged, hanging lower at the back, a torn lappet on the left
+        hemw = smoothstep(0.12, 0.0, sk) + smoothstep(0.88, 1.0, sk)
+        drop = hemw[None, :] * (0.25 * np.abs(NZ.fbm(np.column_stack([sk * 9.0, np.full(nk, 2.0), np.zeros(nk)]), 2))[None, :] + 0.12 * smoothstep(0.3, -1.4, zz))
+        O_[..., 1] = O_[..., 1] - drop
+        I_ = O_.copy()
+        I_[..., :2] = I_[..., :2] - nrm2 * (0.08 + 0.05 * smoothstep(0.32, -0.3, zz))[..., None]
+        V = np.vstack([O_.reshape(-1, 3), I_.reshape(-1, 3)])
+        idx = np.arange(ns * nk).reshape(ns, nk)
+        NI = ns * nk
+        # winding: reversed from the face-local outward order (the crown frame is left-handed)
+        Fo = np.stack([idx[:-1, :-1], idx[1:, :-1], idx[1:, 1:], idx[:-1, 1:]], -1).reshape(-1, 4)
+        Fi = np.stack([idx[:-1, :-1], idx[:-1, 1:], idx[1:, 1:], idx[1:, :-1]], -1).reshape(-1, 4) + NI
+        rim = np.stack([idx[0, :-1], idx[0, 1:], idx[0, 1:] + NI, idx[0, :-1] + NI], -1)
+        back_ = np.stack([idx[-1, :-1] + NI, idx[-1, 1:] + NI, idx[-1, 1:], idx[-1, :-1]], -1)
+        hemL = np.stack([idx[:-1, 0] + NI, idx[1:, 0] + NI, idx[1:, 0], idx[:-1, 0]], -1)
+        hemR = np.stack([idx[:-1, -1], idx[1:, -1], idx[1:, -1] + NI, idx[:-1, -1] + NI], -1)
+        A["Carved"].add(FW(V), [Fo, Fi, rim, back_, hemL, hemR], m=0.0)
+        # where the arms and the climber break through the veil, and under the hem: the flesh of the head
+        for (cq, rq) in (((-2.08, -0.55, -0.62), 0.32), ((-2.12, 1.15, -0.78), 0.3), ((-1.0, 3.5, -0.9), 0.3), ((2.05, 2.0, -0.78), 0.3),
+                         ((2.08, -0.35, -0.62), 0.32), ((-2.0, 2.15, -0.8), 0.36), ((-1.75, -1.9, -0.6), 0.4), ((1.8, -2.0, -0.8), 0.42)):
+            nq = FD(nrm(np.array([cq[0], cq[1] - 1.0, 0.3])))
+            Vb, Fb_ = blob(FW(np.array(cq))[0], basis_axes(perp(nq), np.cross(nq, perp(nq)), nq, rq, rq * 0.85, rq * 0.5), sub=2 if LOW else 4,
+                           amp=0.45, freq=3.0 / rq, seed=rc.random() * 40)
+            A["Flesh"].add(Vb, Fb_, m=0.45)
+        uvw(0.8, True)
+        # the mask is nailed to the head: a few big iron staples across the seam (crude, bent, irregular)
+        for sgn in (-1, 1):
+            HALF[0] = sgn
+            Hh = halves[sgn]
+            Xo, Yo, Zo = Hh["X"][-1], Hh["Y"][-1], Hh["Z"][-1]
+            for i in sorted(rc.sample(range(3, len(Yo) - 3), 4)):
+                p_ = np.array([sgn * Xo[i], Yo[i], Zo[i] - 0.03])
+                tg = nrm(np.array([sgn * (Xo[i + 1] - Xo[i - 1]), Yo[i + 1] - Yo[i - 1], 0.0]))
+                outw = nrm(np.array([sgn * 1.0, 0.0, -0.7]))
+                a_ = p_ - outw * 0.16
+                b_ = p_ + outw * 0.24
+                bend = rc.uniform(-0.04, 0.04)
+                st_ = np.array([a_ - np.array([0, 0, 0.12]), a_ + np.array([0, 0, 0.05]), (a_ + b_) / 2 + np.array([0, 0, 0.09]) + tg * bend,
+                                b_ + np.array([0, 0, 0.05]), b_ - np.array([0, 0, 0.12])])
+                A["Iron"].add_tube(FW(resample(catmull(st_, 4), 8 if LOW else 20)), 0.03, sides=4 if LOW else 8, m=0.0)
+        HALF[0] = 0
+    # sinews stretched across the crack in the forehead (the halves pull them taut; two have torn); each half of a sinew rides
+    # its own door, so they part when the face opens
+    for q in range(7):
+        if True:                                  # (one sinew)
+            y_ = 2.3 + q * 0.13 + rc.uniform(-0.04, 0.04)
+            g_ = float(face_gap(np.array([y_]))[0])
+            zl = FACE_Z0 + float(face_relief(np.array([g_ + 0.05]), np.array([y_]))[0]) - 0.07
+            a_ = np.array([-(g_ + 0.06), y_ + rc.uniform(-0.05, 0.05), zl])
+            b_ = np.array([g_ + 0.06, y_ + rc.uniform(-0.05, 0.05), zl])
+            n_ = 4 if LOW else 12
+            P_ = np.array([a_ + (b_ - a_) * t_ + np.array([0, -0.015 * math.sin(math.pi * t_), 0]) for t_ in np.linspace(0, 1, n_)])
+            h_ = n_ // 2
+            torn = q in (2, 5)
+            for side_name, P2 in (("L", P_[:h_ + 1]), ("R", P_[-h_ - 1:][::-1])):
+                t2 = np.linspace(0, 1, len(P2))
+                if torn:              # two ragged ends curling back toward the stone
+                    P2 = P2[: max(2, len(P2) - 1)] + np.array([0, -0.05, 0.03])[None] * np.linspace(0, 1, max(2, len(P2) - 1))[:, None] ** 2
+                    t2 = np.linspace(0, 1, len(P2))
+                    r2 = 0.018 * (1 - 0.7 * t2)
+                else:
+                    r2 = 0.02 * (1.0 - 0.45 * np.sin(0.5 * math.pi * t2))
+                HALF[0] = -1 if side_name == "L" else 1
+                with tag("Own:portal_comb_%s0" % side_name, Mh):
+                    A["Tendon"].add_tube(FW(P2), r2, sides=4 if LOW else 6, cap0=False, cap1=torn)
+                HALF[0] = 0
+    with tag("Own:crown", Mh):
+        uvw(0.32)
+        # neck: flesh collar to the first vertebra
+        ss_n = np.linspace(RING_S + 0.7, RING_S + 2.4, 6 if LOW else 14)
+        On, Tn, Dn, Sn = spine_frames(ss_n)
+        t = np.linspace(0, 1, len(ss_n))
+        rr = 1.65 - 0.2 * t
+        Bn = np.cross(Tn, Sn)
+        c_ = circle_prof(30)
+        prof = np.stack([c_[None, :, 0] * rr[:, None], c_[None, :, 1] * rr[:, None] * 0.85], -1)
+        V, F, uv, al = loft(On, prof, fr=(Tn, Sn, Bn), cap0=False, cap1=False, nz_amp=0.13, nz_freq=2.5)
         A["Flesh"].add(V, F, uv, m=0.1)
-    # chains driven through the crown
-    with tag("Own:crown", Mh):
-        pierce(P3(2.0, -0.6, -0.3), D3(1, 0, 0) + DOWN * 0.6, 2.8)
-    # the previous climber's tether: grapple snagged on the dropped lip's iron spur, rope down to what is left
-    spur_root = lowT(P3(-(PORT_H + 3 * W_) + 0.1, PORT_YB - 0.35, 0.65))[0]
-    spur_dir = nrm(D3(-0.55, -0.7, 0.45))
-    V, F, uv, al = shard(spur_root, spur_dir, 0.75, 0.1, hook_dir=-spur_dir * 0.0 + D3(0.3, 0, 0), hook=0.3, rings=8, sides=5, sink=0.1)
-    A["Iron"].add(V, F, uv, m=al)
-    CROWN.setdefault("thorns", []).append((math.radians(250), spur_root, spur_dir, 0.75))
-    th_ = [t_ for t_ in CROWN.get("thorns", []) if t_[0] == math.radians(250)]
-    if th_ and 'tether' not in OMIT:
-        build_tether(th_[0])
+        uvw(0.8, True)
+        # under the jaw: pale ribs of the throat showing through the stretched skin of the neck (seen from below)
+        for q in range(5):
+            zq = FACE_Z0 - 1.25 - 0.4 * q
+            arc_ = np.array([[math.cos(a_) * (1.25 - 0.05 * q), -0.95 + 0.15 * q + math.sin(a_) * 1.1, zq + 0.12 * math.sin(a_ * 2)]
+                             for a_ in np.linspace(math.radians(200), math.radians(340), 6 if LOW else 16)])
+            V, F, uv, al = tube(FW(arc_), 0.07 - 0.006 * q, sides=5 if LOW else 9, ry=0.045, cap0=True, cap1=True,
+                                nz_amp=0.1, nz_freq=6.0, seed=rc.random() * 9)
+            A["Bone"].add(V, F, uv, m=al)
 
+    # ------------------------------------------------------------------ the halo: a broken rose window behind the head, thorns
+    with tag("Own:crown", Mh):
+        uvw(0.55)
+        Hc = np.array([0.0, 1.85, FACE_Z0 - 2.7])
+        hn = nrm(np.array([0.0, 0.38, 1.0]))
+        hu = np.array([1.0, 0.0, 0.0])
+        hv = np.cross(hn, hu)
+        RH, WH, DH = 3.55, 0.52, 0.44
+
+        def hl(a, r, z=0.0):
+            a = np.atleast_1d(np.asarray(a, float))
+            r = np.broadcast_to(np.asarray(r, float), a.shape)
+            z = np.broadcast_to(np.asarray(z, float), a.shape)
+            return Hc[None] + np.outer(r * np.cos(a), hu) + np.outer(r * np.sin(a), hv) + np.outer(z, hn)
+
+        # the arch itself: a moulded stone rib (a pointed, filleted section, not a pipe) broken into three pieces, an inner order of
+        # cusped tracery inside it; rebar where it snapped
+        prof_h = np.array([(0.0, 0.2), (0.07, 0.13), (0.15, 0.12), (0.16, 0.0), (0.15, -0.12), (0.07, -0.13), (0.0, -0.2),
+                           (-0.07, -0.13), (-0.15, -0.12), (-0.16, 0.0), (-0.15, 0.12), (-0.07, 0.13)]) * np.array([1.0, 1.25])
+        for (a0d, a1d, rr_, sc_) in ((-10.0, 48.0, RH, 0.72), (84.0, 138.0, RH, 0.72), (168.0, 214.0, RH, 0.72),
+                                     (12.0, 64.0, RH - 0.55, 0.45), (108.0, 160.0, RH - 0.55, 0.45)):
+            aa = np.radians(np.linspace(a0d + rc.uniform(-3, 3), a1d + rc.uniform(-3, 3), 9 if LOW else 40))
+            Pa = hl(aa, rr_ + 0.04 * np.sin(aa * 5.0), 0.0)
+            Tn_ = np.gradient(Pa, axis=0)
+            Tn_ = Tn_ / np.linalg.norm(Tn_, axis=1, keepdims=True)
+            Nn_ = np.broadcast_to(hn, Pa.shape)
+            Bn_ = np.cross(Nn_, Tn_)          # N x T: right-handed once mapped through the (left-handed) crown frame
+            V, F, uv, al = loft(FW(Pa), prof_h * sc_ * 1.15, fr=(np.array([FD(t_) for t_ in Tn_]), np.array([FD(n_) for n_ in Nn_]),
+                                                                 np.array([FD(b_) for b_ in Bn_])),
+                                cap0=True, cap1=True, nz_amp=0.06, nz_freq=4.0, nz_seed=rc.random() * 9)
+            A["Carved"].add(V, F, uv, m=0.0)
+            for end in (Pa[0], Pa[-1]):
+                if rc.random() < 0.6:
+                    rebar(FW(end)[0], FD(nrm(end - Hc) + hn * rc.uniform(-0.4, 0.4)), rc.uniform(0.3, 0.6), FD(-hn), 0.3, 0.018)
+        # trefoil cusps on the inner order (pointing in)
+        for k in range(9):
+            a_ = math.radians(10 + 165 * k / 8 + rc.uniform(-4, 4))
+            root = FW(hl(a_, RH - 0.65, 0.0))[0]
+            ind = FW(hl(a_, 1.0, 0.0))[0] - root
+            V, F, uv, al = shard(root, nrm(ind), rc.uniform(0.25, 0.4), 0.08, hook_dir=FD(hn), hook=0.2, rings=4 if LOW else 7,
+                                 sides=4, sink=0.04, rr=rc)
+            A["Carved"].add(V, F, uv, m=0.0)
+        # thorns: long, raked back, gilded at the tips; longest at the top, two snapped
+        for k in range(12):
+            a_ = math.radians(-12 + 205 * k / 11 + rc.uniform(-4, 4))
+            if 4 <= k <= 5:
+                continue
+            top_ = math.sin(a_)
+            L_ = (1.0 + 1.9 * max(top_, 0.0) ** 1.5) * rc.uniform(0.7, 1.15)
+            root = FW(hl(a_, RH - 0.06, 0.0))[0]
+            outd = FD(nrm(np.array([math.cos(a_), math.sin(a_) * 0.95, 0.0]) @ np.array([hu, hv, hn]) - hn * 0.35))
+            br = k in (2, 9)
+            V, F, uv, al = shard(root, outd, L_, 0.16, hook_dir=-FD(hn), hook=0.28, rings=5 if LOW else 9, sides=5,
+                                 sink=0.08, trunc=rc.uniform(0.45, 0.65) if br else 1.0, rr=rc)
+            A["Carved"].add(V, F, uv, m=np.clip((al - 0.55) / 0.45, 0, 1))
+        # mullions: broken radial spokes from the ring to the skull
+        for k in range(7):
+            a_ = math.radians(15 + 150 * k / 6 + rc.uniform(-5, 5))
+            if k == 4:
+                continue
+            p0_ = FW(hl(a_, 1.6, -0.1))[0]
+            p1_ = FW(hl(a_, RH - 0.6, 0.0))[0]
+            if k in (1, 5):
+                p1_ = p0_ + (p1_ - p0_) * rc.uniform(0.45, 0.65)
+            ln_ = np.linalg.norm(p1_ - p0_)
+            bm = stone_bm((0.15, 0.19, ln_), chamfer=0.25, wear=0.01, chips=rc.randint(1, 2), subdiv=1, rr=rc)
+            zz_ = nrm(p1_ - p0_)
+            xx_ = nrm(np.cross(zz_, FD(hn)))
+            yy_ = np.cross(zz_, xx_)
+            co = np.array([v.co[:] for v in bm.verts])
+            place(bm, (p0_ + p1_) / 2 + np.outer(co[:, 0], xx_) + np.outer(co[:, 1], yy_) + np.outer(co[:, 2], zz_))
+            A["Stone"].add_bm(bm)
+        CROWN["thorns"] = []
+
+    # ------------------------------------------------------------------ five statue arms round the face, too-long hands
+    ARMS = [  # shoulder, elbow, wrist (face-local), back of the hand, size, curl, spread
+        ((-1.55, -0.2, -0.95), (-2.7, -0.95, -0.2), (-1.85, -1.55, 1.25), (-0.4, -0.2, -1.0), 1.0, [0.42, 0.5, 0.55, 0.62], 0.3),
+        ((-1.7, 1.3, -1.1), (-3.0, 1.1, -0.35), (-2.25, 0.85, 1.25), (-0.5, 0.4, -0.8), 1.05, [0.3, 0.38, 0.45, 0.55], 0.35),
+        ((-0.9, 3.0, -1.2), (-1.85, 3.9, -0.55), (-1.25, 3.55, 0.95), (-0.3, 0.8, -0.5), 0.95, [0.55, 0.6, 0.62, 0.66], 0.25),
+        ((1.5, 2.2, -1.1), (2.75, 2.75, -0.35), (2.1, 2.2, 1.15), (0.5, 0.6, -0.7), 1.05, [0.35, 0.42, 0.5, 0.6], 0.32),
+        ((1.55, -0.1, -0.95), (2.75, -0.7, -0.15), (2.0, -1.25, 1.25), (0.4, -0.3, -1.0), 1.0, [0.5, 0.56, 0.6, 0.66], 0.28),
+    ]
+    for ai, (sh_, el_, wr_, bk_, sz_, curl_, spr_) in enumerate([] if 'arms' in OMIT else ARMS):
+        sh_w, el_w, wr_w = FW(np.array([sh_, el_, wr_]))
+        tps = bone_arm(sh_w, el_w, wr_w, FD(nrm(np.array(bk_))), sz_, ("arm_%d_0" % ai, "arm_%d_1" % ai), Mh, rc, curl_, spr_)
+        tips.extend(tps)
+        piv("arm_%d_0" % ai, np.array(sh_))
+        piv("arm_%d_1" % ai, np.array(wr_))
+
+    # ------------------------------------------------------------------ the climber the face is eating; his rope in the teeth
+    with tag("Own:crown", Mh):
+        uvw(1.3)
+        pel = FW(np.array([-1.95, 2.15, -0.85]))[0]
+        upw = FD(nrm(np.array([-0.75, 0.55, 0.45])))
+        fw_ = FD(nrm(np.array([-0.2, 0.2, 1.0])))
+        human_figure(pel, upw, fw_, 1.0, rc, FD(nrm(np.array([-0.3, 0.1, 1.0]))), A["Skin"])
+    with tag("Own:portal_hinge_0", Mh):
+        jt0, _ = jawT(-1)
+        top = FW(jt0(np.array([-0.5, Y_LIPE - 0.12, FACE_Z0 - 0.35])))[0]
+        n_, Lr_ = (8, 2.6) if LOW else (40, 2.6)
+        tt = np.linspace(0, 1, n_)
+        sway = NZ.vec(top[None] * 2.0)[0] * 0.15
+        R_ = top[None] + DOWN[None] * (Lr_ * tt)[:, None] + sway[None] * (tt ** 2)[:, None] + FD(np.array([0, 0, 0.25])) * (np.sin(math.pi * tt * 0.5))[:, None]
+        A["Rope"].add_tube(R_, 0.022, sides=5 if LOW else 8, cap0=True, cap1=True, m=tt * 0.5)
+
+    # ------------------------------------------------------------------ drool (render only)
+    tp = list(tips)
+    for k in range(10):
+        a_, b_ = rc.sample(tp, 2)
+        if np.linalg.norm(a_ - b_) > 1.4 or np.linalg.norm(a_ - b_) < 0.15:
+            continue
+        strand(a_, b_, rc.uniform(0.2, 0.6), rc.uniform(0.012, 0.03))
+    for p_ in tp[::3]:
+        if rc.random() < 0.3:
+            hang_strand(p_, rc.uniform(0.15, 0.9), rc.uniform(0.012, 0.03), A["Mucus"])
+
+    CROWN["tips"] = np.array(tips) if tips else np.array([C + T * 0.3])
+    CROWN["pivots"] = pivots
+    CROWN["face"] = dict(FL=FL, FW=FW, o=FW(np.zeros(3))[0], x=FD(np.array([1.0, 0, 0])), y=FD(np.array([0, 1.0, 0])),
+                         z=FD(np.array([0, 0, 1.0])))
 
 
 def build_tether(thorn):
@@ -3506,8 +3953,6 @@ def build_creature():
     log("crown done")
     n = len(VERTS)
     if args.lab == 'crown':
-        for sigma in (-1, 1):
-            build_leg(VERTS[0], sigma, "reach", 1.25, droot=0.3, lantern=(sigma > 0))
         build_cage(VERTS[1], 1.0)
         return
     # legs: pairs on most segments, irregular side gaps, giants and stunted ones, doubled legs; 2 broken,
@@ -3524,8 +3969,6 @@ def build_creature():
     special = {pool[0]: "broken", pool[1]: "broken", pool[2]: "missing"}
     for sl in pool[3:3 + len(slots) // 3]:
         special[sl] = "lifted"
-    for sigma in (-1, 1):
-        build_leg(VERTS[0], sigma, "reach", 1.25, droot=0.3, lantern=(sigma > 0))
     for (i, sigma) in sorted(slots):
         v = VERTS[i]
         kind = special.get((i, sigma), "normal")
@@ -3865,9 +4308,11 @@ def mat_stone(name="M_Stone", tint=(1.0, 1.0, 1.0), wet=0.6, value=1.0, carved=F
     base = g.mix(blood, base, (0.03, 0.004, 0.003, 1.0))
     wetf = g.math("MULTIPLY", streak, wet)
     if carved:
-        tipw = g.attr("m")
-        base = g.mix(g.math("MULTIPLY", tipw, 0.6), base, (0.05, 0.035, 0.025, 1.0))
-        wetf = g.math("MAXIMUM", wetf, tipw)
+        tipw = g.attr("m")          # v2: old gilding on the thorns of the halo (worn through to the stone)
+        gn_, _ = g.noise(co, 9.0, 4.0, 0.6)
+        gilt = g.math("MULTIPLY", tipw, g.maprange(gn_, 0.32, 0.55, 0.15, 0.95))
+        base = g.mix(gilt, base, (0.36, 0.24, 0.07, 1.0))
+        wetf = g.math("MAXIMUM", wetf, g.math("MULTIPLY", gilt, 0.6))
     rough = g.maprange(n2, 0.3, 0.7, 0.72, 0.95)
     rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", wetf, 0.45))
     pk, _ = g.voronoi(cw, 7.0, "F1")
@@ -4242,6 +4687,103 @@ def mat_soot():
     return m
 
 
+def mat_mask():
+    """v2: the saint's stone. Limestone gone a dirty grey-ivory, soot in every hollow, hairline crazing, pocks, gravity grime; black
+    tears (attr aux, glossy); cracks (attr glow); where the stone skin has flaked away (attr m) the creature's own wet flesh shows."""
+    m = bpy.data.materials.new("M_Mask")
+    g = NT(m)
+    co = g.coord("Object")
+    _, wn = g.noise(co, 0.6, 2.0)
+    cw = g.vadd(co, wn, 0.2)
+    n1, _ = g.noise(cw, 1.4, 6.0, 0.6)
+    n2, _ = g.noise(cw, 6.0, 5.0, 0.6)
+    n3, _ = g.noise(cw, 22.0, 4.0, 0.55)
+    base = g.ramp(n1, [(0.25, (0.12, 0.112, 0.1)), (0.5, (0.19, 0.18, 0.162)), (0.75, (0.27, 0.256, 0.23)),
+                       (0.95, (0.33, 0.315, 0.28))])
+    base = g.mix(g.maprange(n2, 0.35, 0.7, 0.0, 0.45), base, (0.07, 0.065, 0.058, 1.0))
+    pt = g.geo("Pointiness")
+    cav = g.maprange(pt, 0.44, 0.5, 1.0, 0.0)
+    base = g.mix(g.math("MULTIPLY", cav, 0.9), base, (0.012, 0.011, 0.01, 1.0))
+    edge = g.maprange(pt, 0.52, 0.6, 0.0, 1.0)
+    base = g.mix(g.math("MULTIPLY", edge, 0.5), base, (0.3, 0.29, 0.26, 1.0))
+    st = g.vscale(co, 7.0, 7.0, 0.3)
+    sn, _ = g.noise(st, 1.0, 4.0, 0.6)
+    streak = g.maprange(sn, 0.48, 0.72, 0.0, 0.75)
+    base = g.mix(streak, base, (0.03, 0.027, 0.024, 1.0))
+    crk = g.attr("glow")
+    vd, _ = g.voronoi(cw, 4.0, "DISTANCE_TO_EDGE")
+    craze = g.math("MULTIPLY", g.maprange(vd, 0.0, 0.006, 1.0, 0.0), g.maprange(n2, 0.5, 0.65, 0.0, 1.0))
+    crack = g.math("MAXIMUM", crk, g.math("MULTIPLY", craze, 0.8))
+    base = g.mix(crack, base, (0.004, 0.0035, 0.0035, 1.0))
+    pk, _ = g.voronoi(cw, 26.0, "F1")
+    pock = g.math("MULTIPLY", g.maprange(pk, 0.0, 0.25, 1.0, 0.0), g.maprange(n1, 0.45, 0.7, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", pock, 0.6), base, (0.03, 0.027, 0.024, 1.0))
+    # flaked away: the wet flesh under the stone skin, a dark rim of rot round it
+    fl = g.attr("m")
+    flk = g.maprange(fl, 0.25, 0.55, 0.0, 1.0)
+    rim = g.math("MULTIPLY", g.maprange(fl, 0.05, 0.25, 0.0, 1.0), g.maprange(fl, 0.55, 0.3, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", rim, 0.8), base, (0.02, 0.012, 0.01, 1.0))
+    fcol = g.ramp(n3, [(0.3, (0.018, 0.004, 0.005)), (0.6, (0.045, 0.012, 0.013)), (0.85, (0.075, 0.028, 0.026))])
+    base = g.mix(flk, base, fcol)
+    grm = g.math("MULTIPLY", g.attr("grime"), g.maprange(n2, 0.25, 0.75, 0.55, 1.0))
+    base = g.mix(g.math("MULTIPLY", grm, 0.85), base, (0.025, 0.02, 0.018, 1.0))
+    tear = g.attr("aux")
+    tf = g.maprange(tear, 0.08, 0.5, 0.0, 1.0)
+    base = g.mix(tf, base, (0.004, 0.0025, 0.0025, 1.0))
+    wet = g.math("MAXIMUM", tf, flk)
+    rough = g.maprange(n2, 0.3, 0.7, 0.58, 0.82)
+    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", wet, 0.5))
+    h = g.math("ADD", g.math("MULTIPLY", n2, 0.25), g.math("MULTIPLY", n3, 0.2))
+    h = g.math("SUBTRACT", h, g.math("MULTIPLY", crack, 0.6))
+    h = g.math("SUBTRACT", h, g.math("MULTIPLY", pock, 0.3))
+    h = g.math("ADD", h, g.math("MULTIPLY", tf, 0.12))
+    h = g.math("ADD", h, g.math("MULTIPLY", flk, g.math("MULTIPLY", n3, 0.5)))
+    g.p(base=base, rough=rough, normal=g.bump(h, 0.6, 0.02), coat=g.math("MULTIPLY", wet, 0.9), coat_rough=0.05, spec=0.5)
+    return m
+
+
+def mat_eye():
+    """v2: a blind eye. Yellowed, veined sclera, bloodshot toward the back, a clouded grey iris (attr aux = cosine to the eye's
+    own axis) and a milky cataract where the pupil should be. Very wet."""
+    m = bpy.data.materials.new("M_Eye")
+    g = NT(m)
+    co = g.coord("Object")
+    cs = g.attr("aux")
+    n1, _ = g.noise(co, 30.0, 4.0)
+    vd, _ = g.voronoi(co, 22.0, "DISTANCE_TO_EDGE")
+    vein = g.math("MULTIPLY", g.maprange(vd, 0.0, 0.025, 1.0, 0.0), g.maprange(cs, 0.85, 0.2, 0.0, 1.0))
+    base = g.ramp(n1, [(0.3, (0.16, 0.13, 0.08)), (0.7, (0.24, 0.2, 0.13))])
+    base = g.mix(g.maprange(cs, 0.75, 0.0, 0.0, 0.85), base, (0.16, 0.035, 0.025, 1.0))
+    base = g.mix(g.math("MULTIPLY", vein, 0.8), base, (0.24, 0.015, 0.012, 1.0))
+    iris = g.maprange(cs, 0.8, 0.84, 0.0, 1.0)
+    irc = g.ramp(n1, [(0.3, (0.07, 0.08, 0.085)), (0.7, (0.15, 0.165, 0.17))])
+    base = g.mix(iris, base, irc)
+    limb = g.maprange(g.math("ABSOLUTE", g.math("SUBTRACT", cs, 0.82)), 0.0, 0.02, 1.0, 0.0)
+    base = g.mix(g.math("MULTIPLY", limb, 0.8), base, (0.02, 0.02, 0.024, 1.0))
+    pup = g.maprange(cs, 0.95, 0.975, 0.0, 1.0)
+    base = g.mix(pup, base, (0.26, 0.27, 0.27, 1.0))
+    g.p(base=base, rough=0.12, coat=1.0, coat_rough=0.02, ssw=0.3, ssr=(0.9, 0.6, 0.5), sss=0.01, spec=0.6,
+        normal=g.bump(g.math("ADD", n1, g.math("MULTIPLY", iris, 0.2)), 0.15, 0.004))
+    return m
+
+
+def mat_skin():
+    """v2: a swallowed climber's skin: waxy grey, livid patches, dark veins, darkened finger ends (attr m)."""
+    m = bpy.data.materials.new("M_Skin")
+    g = NT(m)
+    co = g.coord("Object")
+    n1, _ = g.noise(co, 8.0, 5.0, 0.6)
+    n2, _ = g.noise(co, 2.0, 3.0)
+    base = g.ramp(n1, [(0.3, (0.15, 0.14, 0.14)), (0.7, (0.23, 0.21, 0.2))])
+    base = g.mix(g.maprange(n2, 0.5, 0.7, 0.0, 0.8), base, (0.09, 0.05, 0.08, 1.0))
+    vd, _ = g.voronoi(co, 12.0, "DISTANCE_TO_EDGE")
+    vein = g.math("MULTIPLY", g.maprange(vd, 0.0, 0.02, 1.0, 0.0), g.maprange(n2, 0.4, 0.6, 0.0, 1.0))
+    base = g.mix(g.math("MULTIPLY", vein, 0.5), base, (0.05, 0.05, 0.08, 1.0))
+    base = g.mix(g.math("MULTIPLY", g.maprange(g.attr("m"), 0.5, 0.7, 0.0, 1.0), 0.6), base, (0.04, 0.02, 0.02, 1.0))
+    g.p(base=base, rough=0.45, ssw=0.4, ssr=(0.9, 0.5, 0.4), sss=0.008, coat=0.6, coat_rough=0.1, normal=g.bump(n1, 0.2, 0.004))
+    return m
+
+
 def mat_wall():
     """Shaft lining: soot-dark ashlar (per-block value from attr m), black eroded joints (glow), broken-out
     sockets (aux), wet run-off and rare pale mineral streaks, fine grit bump."""
@@ -4454,14 +4996,14 @@ KIT_FAMILY = {
     "Crown": ("Head", "Pit", "PitMembrane", "Frond_0", "Frond_1", "Frond_2"),
     "Body": ("Segment_0", "Segment_1", "Segment_2", "Tail", "LimbUpper", "LimbLower", "Hook"),
 }
-KIT_TRIS = {"Head": 17500, "Pit": 110, "PitMembrane": 70, "Frond_0": 64, "Frond_1": 64, "Frond_2": 64,
+KIT_TRIS = {"Head": 21000, "Pit": 110, "PitMembrane": 70, "Frond_0": 64, "Frond_1": 64, "Frond_2": 64,
             "Segment_0": 1150, "Segment_1": 1050, "Segment_2": 950, "Tail": 560,
-            "LimbUpper": 640, "LimbLower": 420, "Hook": 150}
+            "LimbUpper": 640, "LimbLower": 420, "Hook": 320}
 LOD1_RATIO = 0.35
 ATLAS_PX = {"Crown": 2048, "Body": 2048}
 EMISSIVE_G = ("Ember", "Pit")
 KIT_SKIP = ("Mucus", "Oil", "Seam", "Glass")       # drool and glass are render-only (no transparency in the kit)
-BLEND_G = ("Flesh", "Marrow", "Gum", "Tendon", "Vein", "Membrane", "Mucus", "Oil", "Seam", "Frond")
+BLEND_G = ("Flesh", "Marrow", "Gum", "Tendon", "Vein", "Membrane", "Mucus", "Oil", "Seam", "Frond", "Skin")
 # (flesh, wet, thickness, class / 3)   class: stone 0, iron 1, flesh 2, bone 3
 GROUP_MASK = {
     "Stone": (0, 0.3, 0.0, 0.0), "Carved": (0, 0.3, 0.0, 0.0), "Soot": (0, 0.0, 0.0, 0.0),
@@ -4471,6 +5013,7 @@ GROUP_MASK = {
     "Vein": (1, 1, 0.4, 2 / 3), "Membrane": (0.6, 1, 1.0, 2 / 3), "Mucus": (0, 1, 0.5, 2 / 3), "Oil": (0, 1, 0, 2 / 3),
     "Seam": (0, 0.6, 0, 2 / 3), "Frond": (0.7, 0.8, 0.9, 2 / 3),
     "Teeth": (0, 0.7, 0.3, 1.0), "Bone": (0, 0.3, 0.2, 1.0),
+    "Mask": (0, 0.12, 0.0, 0.0), "Eye": (0.2, 1.0, 0.3, 1.0), "Skin": (1, 0.6, 0.5, 2 / 3),
 }
 GROUP_IDS = {g: i for i, g in enumerate(GROUP_MASK)}
 GROUP_NAMES = {i: g for g, i in GROUP_IDS.items()}
@@ -4576,7 +5119,7 @@ def kit_specs(Alow):
     head_ids = [i for i in head_all if names[i] != "Frond"]
     spec["Head"] = dict(ids=set(head_ids), M=PARTS[head]["M"], fam="Crown")
     nfr = len(fronds)
-    for q, fi in enumerate((fronds[nfr // 8], fronds[nfr // 2], fronds[(7 * nfr) // 8])):
+    for q, fi in enumerate((fronds[nfr // 8], fronds[nfr // 2], fronds[(7 * nfr) // 8]) if nfr else ()):
         spec["Frond_%d" % q] = dict(ids={fi}, M=PARTS[fi]["M"], fam="Crown")
     p0 = pits[0]
     memb = [i for i in head_all if names[i] == "PitMembrane"]
@@ -4993,7 +5536,12 @@ def hi_family_objects(objs, ids, fam, coll):
     return out
 
 
-def uv_pack_family(joined, size):
+# v2: texel density by importance (linear UV scale before packing): what the climber looks at gets the atlas
+UV_WEIGHT = {"Mask": 1.7, "Teeth": 1.5, "Eye": 1.7, "Skin": 1.2, "Bone": 1.15, "Gum": 0.95, "Flesh": 0.8, "Tendon": 0.75,
+             "Stone": 0.7, "Carved": 0.8, "Iron": 0.8, "Membrane": 0.7, "Rope": 0.8, "Marrow": 0.75, "Vein": 0.7}
+
+
+def uv_pack_family(joined, size, fam=""):
     for o in bpy.context.view_layer.objects:
         o.select_set(False)
     bpy.context.view_layer.objects.active = joined
@@ -5005,12 +5553,117 @@ def uv_pack_family(joined, size):
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
     bpy.context.scene.tool_settings.use_uv_select_sync = True
-    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=8.0 / size)
+    bpy.ops.uv.smart_project(angle_limit=math.radians(80), island_margin=3.0 / size)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    _PLANAR.clear()
+    if fam == "Crown" and CROWN.get("mask_parts"):
+        try:
+            _uv_face_planar(joined)
+        except Exception as e:  # noqa: BLE001
+            log("uv face planar:", e)
     try:
-        bpy.ops.uv.pack_islands(rotate=True, margin=8.0 / size)
+        _uv_weight_islands(joined)
+    except Exception as e:  # noqa: BLE001
+        log("uv weights:", e)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    try:
+        bpy.ops.uv.pack_islands(rotate=True, margin_method="FRACTION", margin=3.0 / size)
     except Exception as e:
         log("pack_islands:", e)
     bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def _uv_face_planar(ob):
+    """v2: the front of each half of the face gets ONE planar island (projected on the face plane): smart projection shatters the
+    decimated relief into hundreds of slivers, and the face is what the climber stares at."""
+    import bmesh as _bm
+    me = ob.data
+    part = np.rint(get_point_attr(me, "part")).astype(int)
+    grp = np.rint(get_point_attr(me, "grp")).astype(int)
+    fx, fy, fz, fo = (np.asarray(CROWN["face"][k], float) for k in ("x", "y", "z", "o"))
+    bm = _bm.new()
+    bm.from_mesh(me)
+    uvl = bm.loops.layers.uv.active
+    bm.faces.ensure_lookup_table()
+    # texel scale of the smart projection (UV units per metre), so the planar islands start at the same density
+    ratios = []
+    for f in list(bm.faces)[::7]:
+        a3 = f.calc_area()
+        if a3 < 1e-6 or len(f.loops) != 3 and len(f.loops) != 4:
+            continue
+        uv = [l[uvl].uv for l in f.loops]
+        a2 = 0.0
+        for i in range(1, len(uv) - 1):
+            a2 += abs((uv[i][0] - uv[0][0]) * (uv[i + 1][1] - uv[0][1]) - (uv[i + 1][0] - uv[0][0]) * (uv[i][1] - uv[0][1])) / 2
+        if a2 > 0:
+            ratios.append(a2 / a3)
+    k = math.sqrt(float(np.median(ratios))) if ratios else 0.05
+    mid = GROUP_IDS["Mask"]
+    n = 0
+    _PLANAR.clear()
+    for sgn, pid in CROWN["mask_parts"].items():
+        off = 0.0 if sgn < 0 else 4.0 / max(k, 1e-6)          # keep the two halves apart before packing
+        for f in bm.faces:
+            vs = [v.index for v in f.verts]
+            if any(part[i] != pid or grp[i] != mid for i in vs):
+                continue
+            if np.dot(np.array(f.normal[:]), fz) < 0.15:
+                continue
+            for l in f.loops:
+                p = np.array(l.vert.co[:]) - fo
+                l[uvl].uv = ((float(p @ fx) + off) * k, float(p @ fy) * k)
+            _PLANAR.add(f.index)
+            n += 1
+    bm.to_mesh(me)
+    bm.free()
+    log("uv face planar: %d faces on 2 islands (k %.4f)" % (n, k))
+
+
+_PLANAR = set()          # faces of the planar face islands (this family's pack)
+UV_FACE_FRONT = 2.2      # the front of the face
+UV_MASK_HIDDEN = 0.45    # the back and the broken walls of the mask halves
+
+
+def _uv_weight_islands(ob):
+    """Scale every UV island about its centre by its importance (the packer then fits them all): the front of the face first, then the
+    part's own weight (CROWN["uvw"]: the cowl, neck and throat get little), else its material group's (UV_WEIGHT)."""
+    import bmesh as _bm
+    from bpy_extras.bmesh_utils import bmesh_linked_uv_islands
+    me = ob.data
+    grp = np.rint(get_point_attr(me, "grp")).astype(int)
+    part = np.rint(get_point_attr(me, "part")).astype(int)
+    pw = CROWN.get("uvw") or {}
+    mparts = set((CROWN.get("mask_parts") or {}).values())
+    bm = _bm.new()
+    bm.from_mesh(me)
+    uvl = bm.loops.layers.uv.active
+    bm.faces.ensure_lookup_table()
+    n = 0
+    for isl in bmesh_linked_uv_islands(bm, uvl):
+        gs = [grp[v.index] for f in isl for v in f.verts]
+        ps = [part[v.index] for f in isl for v in f.verts]
+        gname = GROUP_NAMES.get(max(set(gs), key=gs.count), "Stone")
+        pid = max(set(ps), key=ps.count)
+        if _PLANAR and isl[0].index in _PLANAR:
+            w = UV_FACE_FRONT
+        elif pid in mparts:
+            w = UV_MASK_HIDDEN
+        elif pid in pw:
+            w = pw[pid]
+        else:
+            w = UV_WEIGHT.get(gname, 1.0)
+        if abs(w - 1.0) < 1e-3:
+            continue
+        uvs = np.array([l[uvl].uv[:] for f in isl for l in f.loops])
+        c = 0.5 * (uvs.min(0) + uvs.max(0))
+        for f in isl:
+            for l in f.loops:
+                l[uvl].uv = (c[0] + (l[uvl].uv[0] - c[0]) * w, c[1] + (l[uvl].uv[1] - c[1]) * w)
+        n += 1
+    bm.to_mesh(me)
+    bm.free()
+    log("uv weights: %d islands rescaled" % n)
 
 
 def split_module(joined, slot_names, name, coll):
@@ -5089,7 +5742,7 @@ def export_production():
         joined = bpy.context.view_layer.objects.active
         joined.name = "JOINED_" + fam
         size = ATLAS_PX[fam]
-        uv_pack_family(joined, size)
+        uv_pack_family(joined, size, fam)
         log("export: %s joined %d tris, uv packed" % (fam, tri_total(joined.data)))
         # hi faces of exactly these parts
         ids = set()
@@ -5171,7 +5824,10 @@ def export_production():
             sp["pitch"] = SEG_STEP * VERTS[sp["vert"]]["k"]
         own_tabs[m] = stamp_attributes(m, sp, ob, owner_tbl, info)
         stamp_attributes(m, sp, lod1[m], owner_tbl, info)
-        ob["rig_module"] = json.dumps(dict(module=m, owners={str(v): k for k, v in own_tabs[m].items()}))
+        rm_ = dict(module=m, owners={str(v): k for k, v in own_tabs[m].items()})
+        if m == "Head" and CROWN.get("pivots"):
+            rm_["pivots"] = CROWN["pivots"]          # v2: the joints the builder knows (glTF axes, Head module frame)
+        ob["rig_module"] = json.dumps(rm_)
         lod1[m]["rig_module"] = ob["rig_module"]
         M = spec[m]["M"]
         ob["pivot_world"] = json.dumps([[round(float(x), 5) for x in r] for r in np.asarray(M)])
@@ -5394,7 +6050,7 @@ def main():
                 Mucus=mat_mucus(), Vein=mat_vein(), Membrane=mat_membrane(),
                 Gum=mat_flesh("M_Gum", gum=True, glowmul=1.0), Pit=mat_pit(), Bronze=mat_bronze(),
                 Seam=mat_seam(), Glass=mat_glass(), Rope=mat_rope(), Oil=mat_oil(), IronTooth=mat_iron_tooth(),
-                Soot=mat_soot())
+                Soot=mat_soot(), Mask=mat_mask(), Eye=mat_eye(), Skin=mat_skin())
     for k, mt in mats.items():
         try:
             mt.cycles.emission_sampling = "AUTO" if k in ("Ember", "Pit") else "NONE"
@@ -5404,7 +6060,7 @@ def main():
     objs = {}
     for k, acc in A.items():
         ob = acc.build(mats[k], creature, smooth=k not in flat,
-                       sharp=math.radians(40) if k in ("Carved", "Iron", "Bronze", "IronTooth") else None)
+                       sharp=math.radians(40) if k in ("Carved", "Iron", "Bronze", "IronTooth", "Mask") else None)
         objs[k] = ob
     log("meshes built")
     tex = bpy.data.textures.new("StoneGrain", "CLOUDS")
@@ -5509,7 +6165,7 @@ def main():
     L_lant_f = light("L_LanternFull", "POINT", LANTERN["pos"], 2600.0, (1.0, 0.5, 0.18), 0.15)
     L_ffill = light("L_FullFill", "AREA", (14.0, -26.0, 26.0), 3500.0, (0.6, 0.72, 0.95), target=(-1.0, -1.0, 12.0))
     L_ffill.data.size = 10.0
-    L_miner = light("L_Miner", "POINT", LANTERN.get("miner", C), 6.0, (1.0, 0.5, 0.2), 0.04)
+    L_miner = light("L_Miner", "POINT", LANTERN.get("miner", C), 6.0 if "miner" in LANTERN else 0.0, (1.0, 0.5, 0.2), 0.04)
     L_cage = light("L_CageLantern", "POINT", LANTERN.get("cage", C), 8.0, (1.0, 0.45, 0.16), 0.04)
     clamp_, cfwd = LANTERN["climber"]
     L_climb = light("L_ClimberLamp", "SPOT", clamp_ + cfwd * 0.05, 2500.0, (0.8, 0.88, 1.0), 0.02,
@@ -5522,7 +6178,7 @@ def main():
                      (0.8, 0.88, 1.0), 0.02, target=C + Tc * 0.1, spot=math.radians(62), blend=0.7)
 
     # ------------------------------------------------------------------ cameras
-    def camera(name, loc, target, lens):
+    def camera(name, loc, target, lens, up=None):
         cd = bpy.data.cameras.new(name)
         cd.lens = lens
         cd.clip_start = 0.05
@@ -5531,7 +6187,13 @@ def main():
         sc.collection.objects.link(ob)
         ob.location = Vector(loc)
         d = Vector(target) - Vector(loc)
-        ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+        if up is None:
+            ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+        else:          # roll the camera so `up` is up in the frame (design shots: the face upright)
+            zc = -nrm(np.array(d[:]))
+            yc = nrm(np.asarray(up, float) - np.dot(up, zc) * zc)
+            xc = np.cross(yc, zc)
+            ob.rotation_euler = Matrix(np.stack([xc, yc, zc], 1).tolist()).to_euler()
         return ob
 
     tips = CROWN["tips"]
@@ -5558,6 +6220,17 @@ def main():
     cam_det.data.dof.aperture_fstop = 5.6
     L_det = light("L_DetailHelmet", "SPOT", det_loc + UP * 0.3 - Td * 0.4, args.detail_cam[3], (0.8, 0.88, 1.0), 0.03,
                   target=det_tgt, spot=math.radians(60), blend=0.7)
+    # v2 design shots: what the climber sees by his own warm lantern (game), and the head in profile
+    gcv = [float(x) for x in args.gamecam.split(",")]
+    face_c = CROWN["face"]["FW"](np.array([0.0, 1.0, FACE_Z0]))[0]
+    g_loc = C + Tc * gcv[0] + Dc * gcv[1] + Sc * gcv[2]
+    cam_game = camera("CAM_Game", g_loc, face_c, gcv[3], up=Dc)
+    g_right = nrm(np.cross(face_c - g_loc, Dc))
+    L_lant = light("L_PlayerLantern", "POINT", g_loc - Dc * 0.45 + g_right * 0.3 + Tc * 0.2, args.lantern, (1.0, 0.6, 0.3), 0.06)
+    p_loc = C + Sc * 10.5 + Tc * 2.0 + Dc * 0.3
+    cam_prof = camera("CAM_Profile", p_loc, C + Tc * 0.3 + Dc * 0.8, 24, up=Dc)
+    L_plant = light("L_ProfileLantern", "POINT", p_loc - Dc * 0.4 + Tc * 1.5, args.lantern * 1.3, (1.0, 0.6, 0.3), 0.06)
+    L_amb = light("L_ColdAmbient", "SUN", C + Dc * 10.0, 0.012, (0.55, 0.68, 0.85), 3.0, target=C)
     bc = [float(x) for x in args.belowcam.split(",")]
     below_loc = wall_point(bc[0], bc[1], bc[2], disp=False)[0]
     below_tgt = wall_point(bc[3], bc[4], bc[5], disp=False)[0]
@@ -5641,7 +6314,7 @@ def main():
     except Exception as e:
         log("compositor unavailable:", e)
     all_lights = [L_mouth, L_mouth2, L_throat, L_forge, L_top, L_helm_h, L_rimc, L_lant_f, L_ffill, L_miner, L_cage, L_climb, L_player,
-                  L_det]
+                  L_det, L_lant, L_plant, L_amb]
 
     def show_lights(on):
         for ob in all_lights:
@@ -5679,6 +6352,14 @@ def main():
                 mist_sock.default_value = args.hero_haze
             show_lights({"L_Forge", "L_Throat", "L_Mouth", "L_Mouth2", "L_ShaftTop", "L_PlayerHelmet", "L_Miner", "L_RimCold"})
             L_top.data.energy = 45000.0
+        elif shot in ("game", "profile"):
+            sc.camera = cam_game if shot == "game" else cam_prof
+            look(True)
+            vol.inputs["Density"].default_value = 0.0
+            if mist_sock is not None:
+                mist_sock.default_value = args.hero_haze
+            show_lights({"L_Forge", "L_Throat", "L_Mouth", "L_Mouth2", "L_ColdAmbient",
+                         "L_PlayerLantern" if shot == "game" else "L_ProfileLantern"})
         elif shot == "full":
             sc.camera = cam_full
             look(True)

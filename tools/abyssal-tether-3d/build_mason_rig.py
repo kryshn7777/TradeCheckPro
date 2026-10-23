@@ -26,7 +26,8 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import mason_rig_clips as K  # noqa: E402
+import mason_rig_clips as K2  # noqa: E402  (v2 crown, 2026-10)
+import mason_rig_clips_v1 as K1  # noqa: E402  (round-3 crown, frozen with build_mason_v1.py)
 import mason_rig_core as C  # noqa: E402
 import mason_rig_gltf as G  # noqa: E402
 
@@ -39,8 +40,19 @@ def log(*a):
     print("[%6.1fs]" % (time.time() - T0), *a, flush=True)
 
 
+def head_bounds(kit):
+    """Crown extents (glTF, kit scale) for the head fit: the 0.3 / 99.7 % quantiles of the head module (a hanging rope or a lone thorn
+    tip must not shrink the whole head in every shaft)."""
+    P = np.concatenate([p["P"] for p in kit["Head"]["lod0"]["prims"]])
+    lo, hi = np.quantile(P, 0.003, axis=0), np.quantile(P, 0.997, axis=0)
+    return dict(lo=[round(float(x), 3) for x in lo], hi=[round(float(x), 3) for x in hi])
+
+
 def build(args):
     kit, kit_js, kit_bn = C.load_kit(args.kit)
+    v2 = bool(kit["Head"]["lod0"].get("pivots"))
+    K = K2 if v2 else K1
+    log("kit design", "v2" if v2 else "v1")
     tpl = C.hero_leg_template(args.hero)
     rig, layout = C.build_rig(kit, tpl)
     log("bones", len(rig))
@@ -72,7 +84,8 @@ def build(args):
                    simLimb=lg["simLimb"], bones=lg["bones"]) for lg in layout["legs"]],
         pits=[dict(bone="pit_%d" % j, dir=[float(x) for x in head["pits"][j]["dir"]], c=[float(x) for x in head["pits"][j]["c"]]) for j in range(7)],
         arms=[dict(n=n, bones=["arm_%d_0" % n, "arm_%d_1" % n], side=-1 if n in K.ARMS_LEFT else 1) for n in range(5)],
-        headBounds=dict(lo=[-2.6, -5.2, -2.3], hi=[3.2, 6.1, 6.1]),
+        headBounds=head_bounds(kit) if v2 else dict(lo=[-2.6, -5.2, -2.3], hi=[3.2, 6.1, 6.1]),
+        design="v2" if v2 else "v1",
         lodTris=[len(lods[0][1]["I"]), len(lods[1][1]["I"])],
         legTemplate=K.LEG_TEMPLATE,
         clips={c.name: dict(kind=c.kind, loop=c.loop, duration=c.duration, events=[dict(name=n, u=u) for n, u in c.events],
@@ -93,7 +106,7 @@ def build(args):
     with open(os.path.join(rep_dir, "mason_rig_report.json"), "w") as f:
         json.dump(report, f, indent=1)
     log("wrote %s: %.2f MB, %d bones, LOD0 %d tris, LOD1 %d tris, %d clips" % (path, size / 1e6, len(rig), meta["lodTris"][0], meta["lodTris"][1], len(clips)))
-    return dict(path=path, rig=rig, layout=layout, clips=clips, meta=meta, report=report)
+    return dict(path=path, rig=rig, layout=layout, clips=clips, meta=meta, report=report, K=K)
 
 
 def main():

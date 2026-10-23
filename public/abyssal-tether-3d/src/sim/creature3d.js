@@ -137,6 +137,9 @@ export const CREATURE_TUNING = {
   spawnAboveMax: 80,
   farBelowMin: 85,
   farBelowMax: 135,
+  // Annoyed: a grapple shot whose aim line passes through its body (not the small variants). It is angry for `dur` seconds at
+  // `mul` x its speed, the first `burstDur` seconds at `burstMul` x; it can be provoked again `cooldown` s after the last time.
+  annoy: { dur: 3, mul: 1.5, burstDur: 0.3, burstMul: 6, cooldown: 20, radius: 2.2, pad: 0.35 },
 };
 const T = CREATURE_TUNING;
 
@@ -181,14 +184,16 @@ const DIFF_REF = {
 
 /**
  * Per-instance variants of the same sim (WP-SKITTER). `skitterling` is the Ossuary Column's little kin: same rules, same rig,
- * 0.45 scale, EXACTLY 1.5x the big creature's approach / pursue / burst / creep / wind-up-advance speeds (DIFF_TUNE x mode x
+ * 0.45 scale, EXACTLY 4.5x the big creature's approach / pursue / burst / creep / wind-up-advance speeds (DIFF_TUNE x mode x
  * section, see _applyScaling), a wind-up 1.5x shorter and a shorter reach so it stays fair, and a hit that costs health instead
  * of killing outright (`hitDamage`, fraction of full hp per difficulty).
  */
 export const CREATURE_VARIANTS = {
   skitterling: {
     scale: 0.45,
-    speedMul: 1.5,
+    speedMul: 4.5, // x the Mason's pursuit / crawl / burst speeds (a third of the original 1.5x design speed per notch: 4.5 = 3x it)
+    // Nightmare and Abyss: 5x the original 1.5x design speed (7.5x the Mason's); the other difficulties keep speedMul
+    speedMulBy: { nightmare: 7.5, abyss: 7.5 },
     windupMul: 1 / 1.5,
     killRadiusMul: 0.62,
     steerMul: 1.5,
@@ -216,6 +221,9 @@ const SECTION_DEFAULTS = { mode: 'dormant', lethal: false, speedMul: 1, burstRat
 const GLOW = { DORMANT: 0.1, DISTANT: 0.2, OBSERVING: 0.95, APPROACHING: 0.35, PURSUING: 0.45, BURST: 0.6, ATTACK: 1, RECOVERING: 0.1 };
 /** How strongly the fronds turn toward the player per state. */
 const FOCUS = { DORMANT: 0, DISTANT: 0.1, OBSERVING: 0.6, APPROACHING: 0.15, PURSUING: 0.25, BURST: 0.4, ATTACK: 0.2, RECOVERING: 0 };
+/** Fastest turn of the crown's facing (deg/s -> rad/s) and of its dorsal roll: the unbounded easing produced one-frame flips at the corners. */
+const HEAD_TURN_MAX = (280 * Math.PI) / 180;
+const HEAD_ROLL_MAX = (300 * Math.PI) / 180;
 /** Frond unfurl per state (1 = fully spread; the wind-up FLARES the crown past it). */
 const UNFURL = { DORMANT: 0.5, DISTANT: 0.8, OBSERVING: 1.15, APPROACHING: 0.95, PURSUING: 0.95, BURST: 0.7, ATTACK: 1.6, RECOVERING: 0.6 };
 /** Agitation (audio intensity) per state, before speed is mixed in. */
@@ -403,6 +411,9 @@ function linkBus(bus, creature) {
     bus.on('trigger:call', () => {
       if (link.creature) link.creature._onCallTrigger();
     });
+    bus.on('rope:shot', (p) => {
+      if (link.creature) link.creature._onShot(p);
+    });
     busLinks.set(bus, link);
   }
   link.creature = creature;
@@ -442,7 +453,7 @@ export class Creature3D {
    * @param {object} diff   DIFFICULTY[key] (config3d.js)
    * @param {EventBus} bus
    * @param {{seed?:number, variant?:string}} [options]  deterministic seed (tooling); random by default; variant = a
-   *   CREATURE_VARIANTS key (WP-SKITTER: smaller, 1.5x faster, hits for damage; it never listens to the sighting / call triggers)
+   *   CREATURE_VARIANTS key (WP-SKITTER: smaller, 4.5x faster, hits for damage; it never listens to the sighting / call triggers)
    */
   constructor(level, diff, bus, options) {
     this.variant = options && CREATURE_VARIANTS[options.variant] ? options.variant : '';
@@ -546,6 +557,15 @@ export class Creature3D {
     this.nx = 0; // smoothed normal of the surface it clings to
     this.ny = 0;
     this.nz = 1;
+    this._upx = 0; // the crown's dorsal up: continuous (see _headUp), not the raw normal
+    this._upy = 1;
+    this._upz = 0;
+    this._upReady = false;
+    this._bodyDt = 0;
+    this._belowSign = 1; // -1: this one entered from below (skitterling slot 2)
+    this._annoyT = -1; // seconds since it was provoked (-1: calm)
+    this._annoyCd = 0; // seconds until it can be provoked again
+    this.annoyCount = 0;
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
@@ -676,7 +696,7 @@ export class Creature3D {
     if (lethalMode) {
       this.lethal = c.lethal === true;
       if (!this.inPlay) {
-        this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection);
+        this._enterPlay(player, this._spawnAbove(c.spawnOffsetY), T.graceSection, c.spawnBelow === true);
         this._introT = T.introTime; // respawns / warps clear it (onRespawn)
       }
     } else {
@@ -707,6 +727,8 @@ export class Creature3D {
     this._stallX = NaN;
     this.listening = false;
     this._introT = 0;
+    this._annoyT = -1;
+    this._annoyCd = 0;
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -802,7 +824,13 @@ export class Creature3D {
   update(dt, player, time) {
     if (!(dt > 0)) return;
     if (dt > 0.1) dt = 0.1;
+    this._bodyDt = dt;
     this._t += dt;
+    if (this._annoyCd > 0) this._annoyCd -= dt;
+    if (this._annoyT >= 0) {
+      this._annoyT += dt;
+      if (this._annoyT >= T.annoy.dur) this._annoyT = -1;
+    }
     if (typeof time === 'number' && isFinite(time)) this.time = time;
     this.nearMiss = Math.max(0, this.nearMiss - dt * 1.1);
     if (!this.active) {
@@ -1063,7 +1091,7 @@ export class Creature3D {
     // Prefer a clear spot on a wall high above you from which you are in
     // reach (nothing solid between); otherwise any clear spot.
     const tries = this._relTries;
-    tries[0] = 38 + this._rand() * 10;
+    tries[0] = (38 + this._rand() * 10) * this._belowSign;
     let found = false;
     let fx = 0;
     let fy = 0;
@@ -1071,7 +1099,7 @@ export class Creature3D {
     let fallback = false;
     const az0 = this._nearestWallAz(player.x, player.y + tries[0], player.z);
     for (let k = 0; k < tries.length && !found; k++) {
-      const y = player.y + tries[k];
+      const y = player.y + (k === 0 ? tries[0] : tries[k] * this._belowSign);
       for (let j = 0; j < 8 && !found; j++) {
         const az = az0 + (j === 0 ? 0 : (j % 2 ? 1 : -1) * Math.ceil(j / 2) * (Math.PI / 4));
         if (!this._rayWall(player.x, y, player.z, az, 80)) continue;
@@ -1124,6 +1152,65 @@ export class Creature3D {
     const K = this.k;
     const bold = U.smoothstep(T.stallStart, K.stallCommit, this.stallTime);
     return K.menace * (1 - 0.5 * bold);
+  }
+
+  /** Speed multiplier of the annoyed state: burstMul for the first burstDur s, then mul until dur, else 1. */
+  get annoyMul() {
+    const t = this._annoyT;
+    const A = T.annoy;
+    if (t < 0 || t >= A.dur) return 1;
+    return t < A.burstDur ? A.burstMul : A.mul;
+  }
+
+  /** Provoked and still angry (the view / audio can read it). */
+  get annoyed() {
+    return this._annoyT >= 0;
+  }
+
+  /**
+   * A grapple was fired (bus 'rope:shot': the aim ray, normalised, and the hook's range). When the ray passes through the body it
+   * is annoyed: faster for a few seconds, a surge at the start, and it comes for the player. At most once per `cooldown` seconds.
+   */
+  _onShot(p) {
+    if (this.v || !this.active || !this.inPlay || this.victory || this._annoyCd > 0 || !p) return;
+    const A = T.annoy;
+    const sp = this.body.spine;
+    const range = Math.max(1, num(p.range, 30));
+    const ox = num(p.ox, NaN);
+    const oy = num(p.oy, NaN);
+    const oz = num(p.oz, NaN);
+    const dx = num(p.dx, 0);
+    const dy = num(p.dy, 0);
+    const dz = num(p.dz, 0);
+    if (!isFinite(ox + oy + oz) || !(len3(dx, dy, dz) > 0.5)) return;
+    let bestT = -1;
+    for (let i = 0; i < SEG; i++) {
+      const cx = sp[i * 3] - ox;
+      const cy = sp[i * 3 + 1] - oy;
+      const cz = sp[i * 3 + 2] - oz;
+      const t = U.clamp(cx * dx + cy * dy + cz * dz, 0, range);
+      const ex = cx - dx * t;
+      const ey = cy - dy * t;
+      const ez = cz - dz * t;
+      const r = A.radius * this.body.scale[i] * this._scale + A.pad;
+      if (ex * ex + ey * ey + ez * ez <= r * r && (bestT < 0 || t < bestT)) bestT = t;
+    }
+    if (bestT < 0) return;
+    const lv = this.level;
+    // the first thing on the line must be the creature, not a wall in front of it
+    if (lv && typeof lv.segmentBlocked === 'function' && bestT > 1.5) {
+      const t = bestT - 1.0;
+      if (lv.segmentBlocked(ox, oy, oz, ox + dx * t, oy + dy * t, oz + dz * t, 0.05)) return;
+    }
+    this._annoyCd = A.cooldown;
+    this._annoyT = 0;
+    this.annoyCount++;
+    this.listening = false;
+    this.creeping = false;
+    if (this.state === S.OBSERVING || this.state === S.APPROACHING) this._setState(S.PURSUING);
+    const dist = len3(this._px - this.x, this._py - this.y, this._pz - this.z);
+    this._emit('creature:annoyed', { x: this.x, y: this.y, z: this.z, distance: dist, dur: A.dur, burstDur: A.burstDur, count: this.annoyCount });
+    this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: dist, intensity: 1, annoyed: true });
   }
 
   /** It heard the player move: lunge if it has the strength, else give chase. */
@@ -1913,7 +2000,7 @@ export class Creature3D {
     const sm = U.clamp(num(c.speedMul, 1), 0.5, 1.6);
     const secEff = sm > 1 ? 1 + (sm - 1) * 0.5 : Math.max(0.75, sm);
     const mEff = Math.min(prof.speed * secEff, Math.max(prof.speed, T.maxModeSpeed));
-    const vs = this.v ? this.v.speedMul : 1;
+    const vs = this.v ? (this.v.speedMulBy && this.v.speedMulBy[this.tuneKey] != null ? this.v.speedMulBy[this.tuneKey] : this.v.speedMul) : 1;
     const spd = this.cfg.speedRatio * mEff * vs;
     this.speedScale = spd;
     k.approach = D.approach * spd;
@@ -1944,13 +2031,20 @@ export class Creature3D {
     return U.clamp(Math.abs(num(v, SECTION_DEFAULTS.spawnOffsetY)), T.spawnAboveMin, T.spawnAboveMax);
   }
 
-  _enterPlay(player, above, grace) {
+  _enterPlay(player, above, grace, below = false) {
+    this._belowSign = below ? -1 : 1; // a skitterling that comes up from below stays below when it relocates (see _relocate)
     const lv = this.level;
     const sp = lv && lv.spawn ? lv.spawn : { x: 0, y: 0, z: 0 };
     const px = player ? player.x : num(sp.x, 0);
     const py = player ? player.y : num(sp.y, 0);
     const pz = player ? player.z : num(sp.z, 0);
-    const y = py + Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    let y = py + this._belowSign * Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    const b = lv && lv.bounds;
+    if (this._belowSign < 0 && b && y < b.minY + 8) {
+      // no shaft left below the player (the last stretch): this one comes from above after all
+      this._belowSign = 1;
+      y = py + Math.max(T.spawnAboveMin * 0.5, num(above, 45));
+    }
     const near = this._nearestWallAz(px, y, pz);
     this.az = this._rand() < 0.65 ? near : near + Math.PI * (0.5 + this._rand());
     // Start on that wall, high above.
@@ -1967,10 +2061,10 @@ export class Creature3D {
     }
     this._clampToBounds();
     this.vx = 0;
-    this.vy = -6;
+    this.vy = -6 * this._belowSign;
     this.vz = 0;
     this.hx = 0;
-    this.hy = -1;
+    this.hy = -this._belowSign; // it faces the way it came: down from above, up from below
     this.hz = 0;
     if (this._findSurface(this.x, this.y, this.z, T.surfaceSearch * 2, this._surf) < Infinity) {
       this.nx = this._surf.nx;
@@ -1981,7 +2075,7 @@ export class Creature3D {
       this.ny = 0;
       this.nz = -Math.sin(this.az);
     }
-    this._layBody(0, -1, 0);
+    this._layBody(0, -this._belowSign, 0);
     this.inPlay = true;
     this.lethal = this.sectionCfg.lethal === true && LETHAL_MODES[this.mode] === true;
     this.sighting = null;
@@ -2028,6 +2122,11 @@ export class Creature3D {
    * plane of the wall it clings to (1 = crawls along the wall, 0 = free).
    */
   _moveToward(tx, ty, tz, speed, rate, dt, stick) {
+    const am = this.annoyMul;
+    if (am !== 1) {
+      speed *= am;
+      rate *= Math.min(3, 1 + 0.5 * (am - 1)); // the surge is felt: it also accelerates harder
+    }
     const dx = tx - this.x;
     const dy = ty - this.y;
     const dz = tz - this.z;
@@ -2433,10 +2532,62 @@ export class Creature3D {
       ty = U.lerp(ty, dy / d, 0.8);
       tz = U.lerp(tz, dz / d, 0.8);
     }
-    const k = 1 - Math.exp(-5 * dt);
-    this.hx += (tx - this.hx) * k;
-    this.hy += (ty - this.hy) * k;
-    this.hz += (tz - this.hz) * k;
+    // Turn toward the target along the arc, never through the chord: the eased angle is capped (HEAD_TURN_MAX deg/s) and a target
+    // behind the crown (the chord would collapse to zero) turns about the dorsal up instead of snapping.
+    const k = 1 - Math.exp(-4 * dt);
+    let tl = len3(tx, ty, tz);
+    if (tl < 1e-6) {
+      tx = this.hx;
+      ty = this.hy;
+      tz = this.hz;
+      tl = 1;
+    }
+    tx /= tl;
+    ty /= tl;
+    tz /= tl;
+    const cosA = U.clamp(this.hx * tx + this.hy * ty + this.hz * tz, -1, 1);
+    const ang = Math.acos(cosA);
+    if (ang > 1e-4 && dt > 0) {
+      const step = Math.min(ang * k, HEAD_TURN_MAX * dt);
+      // the turn axis: h x t, or the dorsal up when they are (nearly) opposite
+      let ax = this.hy * tz - this.hz * ty;
+      let ay = this.hz * tx - this.hx * tz;
+      let az = this.hx * ty - this.hy * tx;
+      let al = len3(ax, ay, az);
+      if (al < 1e-3) {
+        ax = this._upReady ? this._upx : this.nx;
+        ay = this._upReady ? this._upy : this.ny;
+        az = this._upReady ? this._upz : this.nz;
+        const d = ax * this.hx + ay * this.hy + az * this.hz;
+        ax -= this.hx * d;
+        ay -= this.hy * d;
+        az -= this.hz * d;
+        al = len3(ax, ay, az);
+        if (al < 1e-3) {
+          ax = Math.abs(this.hy) < 0.9 ? 0 : 1;
+          ay = Math.abs(this.hy) < 0.9 ? 1 : 0;
+          az = 0;
+          const d2 = ax * this.hx + ay * this.hy + az * this.hz;
+          ax -= this.hx * d2;
+          ay -= this.hy * d2;
+          az -= this.hz * d2;
+          al = len3(ax, ay, az) || 1;
+        }
+      }
+      ax /= al;
+      ay /= al;
+      az /= al;
+      // Rodrigues: rotate h about the axis by `step`
+      const c = Math.cos(step);
+      const sn = Math.sin(step);
+      const dot = ax * this.hx + ay * this.hy + az * this.hz;
+      const cx = ay * this.hz - az * this.hy;
+      const cy = az * this.hx - ax * this.hz;
+      const cz = ax * this.hy - ay * this.hx;
+      this.hx = this.hx * c + cx * sn + ax * dot * (1 - c);
+      this.hy = this.hy * c + cy * sn + ay * dot * (1 - c);
+      this.hz = this.hz * c + cz * sn + az * dot * (1 - c);
+    }
     const l = len3(this.hx, this.hy, this.hz);
     if (l < 1e-4) {
       this.hx = 0;
@@ -2447,6 +2598,94 @@ export class Creature3D {
       this.hy /= l;
       this.hz /= l;
     }
+  }
+
+  /**
+   * The crown's dorsal up for the body frames: the clinging normal made perpendicular to the facing, kept CONTINUOUS. Where the normal is
+   * (nearly) along the facing (it runs at a wall, a floor or a ceiling: the corner of two surfaces) the perpendicular part is noise and
+   * used to flip the head's roll by up to 150 deg in one frame: there the last up is kept (parallel transported to the new facing), the
+   * normal's say fades in with how well-defined it is, and the up turns toward it at a capped rate.
+   */
+  _headUp() {
+    const dt = this._bodyDt;
+    this._bodyDt = 0; // one smoothing step per update (_writeBodyFlags runs more than once on some paths)
+    const fx = this.hx;
+    const fy = this.hy;
+    const fz = this.hz;
+    // the normal perpendicular to the facing
+    let nx = this.nx;
+    let ny = this.ny;
+    let nz = this.nz;
+    const dn = nx * fx + ny * fy + nz * fz;
+    nx -= fx * dn;
+    ny -= fy * dn;
+    nz -= fz * dn;
+    const nl = len3(nx, ny, nz);
+    if (!this._upReady) {
+      if (nl > 1e-3) {
+        this._upx = nx / nl;
+        this._upy = ny / nl;
+        this._upz = nz / nl;
+        this._upReady = true;
+      } else if (!(this._upx || this._upy || this._upz)) this._upy = 1;
+    }
+    // the last up, perpendicular to the (new) facing
+    let px = this._upx;
+    let py = this._upy;
+    let pz = this._upz;
+    const dp = px * fx + py * fy + pz * fz;
+    px -= fx * dp;
+    py -= fy * dp;
+    pz -= fz * dp;
+    let pl = len3(px, py, pz);
+    if (pl < 1e-3) {
+      px = Math.abs(fy) < 0.9 ? 0 : 1;
+      py = Math.abs(fy) < 0.9 ? 1 : 0;
+      pz = 0;
+      const d2 = px * fx + py * fy + pz * fz;
+      px -= fx * d2;
+      py -= fy * d2;
+      pz -= fz * d2;
+      pl = len3(px, py, pz) || 1;
+    }
+    px /= pl;
+    py /= pl;
+    pz /= pl;
+    // the target: the normal's direction, weighted by how well defined it is (|n_perp| 0.15 .. 0.5)
+    let tx = px;
+    let ty = py;
+    let tz = pz;
+    if (nl > 1e-3) {
+      const w = U.smoothstep(0.15, 0.5, nl);
+      tx = px * (1 - w) + (nx / nl) * w;
+      ty = py * (1 - w) + (ny / nl) * w;
+      tz = pz * (1 - w) + (nz / nl) * w;
+      const tl = len3(tx, ty, tz);
+      if (tl > 1e-4) {
+        tx /= tl;
+        ty /= tl;
+        tz /= tl;
+      } else {
+        tx = px;
+        ty = py;
+        tz = pz;
+      }
+    }
+    if (dt > 0) {
+      const cosA = U.clamp(px * tx + py * ty + pz * tz, -1, 1);
+      const ang = Math.acos(cosA);
+      const k = Math.min(1 - Math.exp(-10 * dt), ang > 1e-4 ? (HEAD_ROLL_MAX * dt) / ang : 1);
+      px += (tx - px) * k;
+      py += (ty - py) * k;
+      pz += (tz - pz) * k;
+      const l = len3(px, py, pz) || 1;
+      px /= l;
+      py /= l;
+      pz /= l;
+    }
+    this._upx = px;
+    this._upy = py;
+    this._upz = pz;
   }
 
   _trailPush(x, y, z) {
@@ -2511,6 +2750,7 @@ export class Creature3D {
 
   /** Lays the trail out straight behind the head (forward = fx,fy,fz). */
   _layBody(fx, fy, fz) {
+    this._upReady = false; // a teleport / a re-lay: the dorsal up starts again from the surface
     const l = len3(fx, fy, fz) || 1;
     const ux = fx / l;
     const uy = fy / l;
@@ -2905,20 +3145,11 @@ export class Creature3D {
     h.fx = this.hx;
     h.fy = this.hy;
     h.fz = this.hz;
-    // Dorsal up: the clinging normal, orthogonalised against the facing.
-    let ux = this.nx;
-    let uy = this.ny;
-    let uz = this.nz;
-    const d = ux * h.fx + uy * h.fy + uz * h.fz;
-    ux -= h.fx * d;
-    uy -= h.fy * d;
-    uz -= h.fz * d;
-    const ul = len3(ux, uy, uz);
-    if (ul > 1e-4) {
-      h.ux = ux / ul;
-      h.uy = uy / ul;
-      h.uz = uz / ul;
-    }
+    // Dorsal up: the clinging normal, orthogonalised against the facing, kept continuous (_headUp).
+    this._headUp();
+    h.ux = this._upx;
+    h.uy = this._upy;
+    h.uz = this._upz;
     const f = B.focus;
     f.x = this._px;
     f.y = this._py;

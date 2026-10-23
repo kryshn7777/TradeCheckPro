@@ -475,6 +475,12 @@ export class TetherSystem {
 
   /** Pulls the trigger: the hook launches at the best target (and is in flight), else the shot whiffs. */
   fire(player, hand, aim) {
+    const a0 = aim || this.hands[hand].lastAim;
+    if (a0) {
+      // the aim ray itself (the creature gets annoyed when a shot passes through it, whether or not the hook finds an anchor)
+      const l0 = len3(a0.dx, a0.dy, a0.dz) || 1;
+      this.bus.emit('rope:shot', { hand, ox: a0.ox, oy: a0.oy, oz: a0.oz, dx: a0.dx / l0, dy: a0.dy / l0, dz: a0.dz / l0, range: this.diff.aimRange });
+    }
     const found = this.findTarget(player, aim, hand);
     if (found) {
       this.launch(player, hand, found.anchor, false);

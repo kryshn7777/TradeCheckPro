@@ -31,6 +31,7 @@
  */
 
 import * as THREE from 'three';
+import { computeFrames } from './mason/masonPose.js';
 
 const KIT_REQUIRED = ['Mason_Head', 'Mason_Tail', 'Mason_Pit', 'Mason_LimbUpper', 'Mason_LimbLower', 'Mason_Hook'];
 const KIT_OPTIONAL = ['Mason_Jaw', 'Mason_Spine', 'Mason_Membrane'];
@@ -747,62 +748,9 @@ export class CreatureView {
     const jit = B.jitter || 0;
     const jitPhase = Math.floor(t * 24);
     // ---- spine frames ----
+    const snapFrames = !this._frames;
     const F = this._frames || (this._frames = new Float32Array(this.SEG * 12));
-    for (let i = 0; i < SEG; i++) {
-      let fx;
-      let fy;
-      let fz;
-      if (i === 0) {
-        fx = B.head.fx;
-        fy = B.head.fy;
-        fz = B.head.fz;
-      } else {
-        const a = i - 1;
-        const c = Math.min(SEG - 1, i + 1);
-        fx = sp[a * 3] - sp[c * 3];
-        fy = sp[a * 3 + 1] - sp[c * 3 + 1];
-        fz = sp[a * 3 + 2] - sp[c * 3 + 2];
-      }
-      let l = len3(fx, fy, fz) || 1;
-      fx /= l;
-      fy /= l;
-      fz /= l;
-      let ux = i === 0 ? B.head.ux : B.up[i * 3];
-      let uy = i === 0 ? B.head.uy : B.up[i * 3 + 1];
-      let uz = i === 0 ? B.head.uz : B.up[i * 3 + 2];
-      const d = ux * fx + uy * fy + uz * fz;
-      ux -= fx * d;
-      uy -= fy * d;
-      uz -= fz * d;
-      l = len3(ux, uy, uz);
-      if (l < 1e-4) {
-        ux = Math.abs(fy) < 0.9 ? 0 : 1;
-        uy = Math.abs(fy) < 0.9 ? 1 : 0;
-        uz = 0;
-        const d2 = ux * fx + uy * fy + uz * fz;
-        ux -= fx * d2;
-        uy -= fy * d2;
-        uz -= fz * d2;
-        l = len3(ux, uy, uz) || 1;
-      }
-      ux /= l;
-      uy /= l;
-      uz /= l;
-      const o = i * 12;
-      F[o] = i === 0 ? B.head.x : sp[i * 3];
-      F[o + 1] = i === 0 ? B.head.y : sp[i * 3 + 1];
-      F[o + 2] = i === 0 ? B.head.z : sp[i * 3 + 2];
-      F[o + 3] = fx;
-      F[o + 4] = fy;
-      F[o + 5] = fz;
-      F[o + 6] = ux;
-      F[o + 7] = uy;
-      F[o + 8] = uz;
-      // right = forward × up
-      F[o + 9] = fy * uz - fz * uy;
-      F[o + 10] = fz * ux - fx * uz;
-      F[o + 11] = fx * uy - fy * ux;
-    }
+    computeFrames(B, SEG, F, dt, snapFrames); // shared with the rigged view: the roll about the facing is rate limited (no flips at corners)
 
     // ---- blocks, head, tail ----
     for (let i = SEG; i < this.SEG; i++) this._hideBone(this.bSpine[i].index);

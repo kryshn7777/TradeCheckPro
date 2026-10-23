@@ -251,7 +251,7 @@ ok('casters: addCaster flags the dynamic layer once, userData.noShadowCast opts 
   assert.equal(ls.plan.enabled, true);
   r3d.governor.level = 3;
   ls.update(0.016, { settings: {} });
-  assert.equal(ls.plan.enabled, false);
+  assert.equal(ls.plan.enabled, true, 'the frame governor never switches the shadow off');
   r3d.lighting.tier = 'low';
   r3d.governor.level = 0;
   ls.update(0.016, { settings: {} });

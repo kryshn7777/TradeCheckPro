@@ -1,39 +1,39 @@
 {
   "modules": {
     "Head": {
-      "lod0": 17499,
-      "lod1": 6124,
+      "lod0": 21000,
+      "lod1": 7349,
       "owners": {
-        "portal_hinge_0": 0,
-        "portal_arch_0": 1,
+        "crown": 0,
+        "portal_hinge_0": 1,
         "portal_hinge_1": 2,
-        "portal_arch_1": 3,
-        "portal_arch_2": 4,
-        "crown": 5,
-        "gullet_0": 6,
-        "gullet_1": 7,
-        "gullet_2": 8,
-        "portal_comb_L0": 9,
-        "portal_comb_L1": 10,
-        "portal_comb_R0": 11,
-        "portal_comb_R1": 12,
-        "arm_0_0": 13,
-        "arm_0_1": 14,
-        "arm_1_0": 15,
-        "arm_1_1": 16,
-        "arm_2_0": 17,
-        "arm_2_1": 18,
-        "arm_3_0": 19,
-        "arm_3_1": 20,
-        "arm_4_0": 21,
-        "arm_4_1": 22,
+        "arm_0_0": 3,
+        "arm_1_0": 4,
+        "arm_2_0": 5,
+        "arm_3_0": 6,
+        "arm_4_0": 7,
+        "portal_comb_L0": 8,
+        "portal_comb_R0": 9,
+        "arm_0_1": 10,
+        "arm_1_1": 11,
+        "arm_2_1": 12,
+        "arm_3_1": 13,
+        "arm_4_1": 14,
+        "portal_comb_L1": 15,
+        "portal_comb_R1": 16,
+        "portal_arch_0": 17,
+        "portal_arch_1": 18,
+        "portal_arch_2": 19,
+        "gullet_1": 20,
+        "gullet_2": 21,
+        "pit_0": 22,
         "pit_1": 23,
-        "pit_0": 24,
-        "pit_2": 25,
-        "pit_3": 26,
-        "pit_4": 27,
-        "pit_5": 28,
-        "pit_6": 29
+        "pit_2": 24,
+        "pit_3": 25,
+        "pit_5": 26,
+        "pit_6": 27,
+        "gullet_0": 28,
+        "pit_4": 29
       }
     },
     "Pit": {
@@ -43,36 +43,8 @@
         "pit": 0
       }
     },
-    "PitMembrane": {
-      "lod0": 88,
-      "lod1": 87,
-      "owners": {
-        "pit": 0
-      }
-    },
-    "Frond_0": {
-      "lod0": 55,
-      "lod1": 19,
-      "owners": {
-        "frond": 0
-      }
-    },
-    "Frond_1": {
-      "lod0": 45,
-      "lod1": 15,
-      "owners": {
-        "frond": 0
-      }
-    },
-    "Frond_2": {
-      "lod0": 55,
-      "lod1": 18,
-      "owners": {
-        "frond": 0
-      }
-    },
     "Segment_0": {
-      "lod0": 1149,
+      "lod0": 1150,
       "lod1": 402,
       "owners": {
         "spine_k": 0,
@@ -89,7 +61,7 @@
     },
     "Segment_2": {
       "lod0": 950,
-      "lod1": 332,
+      "lod1": 331,
       "owners": {
         "spine_k": 0,
         "spine_k1": 1
@@ -97,7 +69,7 @@
     },
     "Tail": {
       "lod0": 559,
-      "lod1": 194,
+      "lod1": 195,
       "owners": {
         "spine_k": 0,
         "spine_k1": 1,
@@ -114,7 +86,7 @@
     },
     "LimbLower": {
       "lod0": 419,
-      "lod1": 146,
+      "lod1": 145,
       "owners": {
         "leg_1": 0,
         "leg_2": 1,
@@ -122,21 +94,21 @@
       }
     },
     "Hook": {
-      "lod0": 150,
-      "lod1": 51,
+      "lod0": 320,
+      "lod1": 111,
       "owners": {
         "leg_3": 0
       }
     }
   },
   "files": {
-    "mason_kit.glb": 5548780,
-    "mason_hero.glb": 5568024
+    "mason_kit.glb": 5671992,
+    "mason_hero.glb": 5722656
   },
   "hero": {
-    "lod0_tris": 59916,
-    "lod1_tris": 24868,
-    "nodes_lod0": 67,
-    "nodes_lod1": 103
+    "lod0_tris": 58823,
+    "lod1_tris": 24891,
+    "nodes_lod0": 52,
+    "nodes_lod1": 85
   }
 }

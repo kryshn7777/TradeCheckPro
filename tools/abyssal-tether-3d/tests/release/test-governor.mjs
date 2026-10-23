@@ -42,7 +42,7 @@ function run(g, gov, seconds, dt, frame) {
 // session start: foveation of level 0, target frame rate, scale applied through the next frame, fx tier
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   ok(f.fov[0] === GOVERNOR_STEPS[0].foveation, 'session start applies level 0 foveation');
   ok(f.game.settings.fxQuality === 'quest', 'level 0 fx tier is quest');
@@ -54,7 +54,7 @@ function run(g, gov, seconds, dt, frame) {
 // healthy: no change over a minute
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   run(f.game, gov, 60, T, f.frame);
   ok(gov.level === 0 && gov.stats.degrades === 0, 'a healthy 72 fps never changes the level');
@@ -62,7 +62,7 @@ function run(g, gov, seconds, dt, frame) {
 // degrade: sustained misses step down, one level per cooldown, down to the floor, never below
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   const changes = [];
   f.game.bus.on('quality:level', (e) => changes.push(e.level));
   gov.onSessionStart(f.session);
@@ -70,7 +70,7 @@ function run(g, gov, seconds, dt, frame) {
   run(f.game, gov, 12, 1 / 40, f.frame); // 25 ms frames: every frame a miss
   ok(gov.level === GOVERNOR_STEPS.length - 1, `degrades to the last level (got ${gov.level})`);
   ok(changes.join(',') === '1,2,3,4', `one step at a time: ${changes.join(',')}`);
-  ok(f.game.settings.fxQuality === 'low', 'level 3+ forces the low fx tier');
+  ok(f.game.settings.fxQuality === 'quest', 'every level keeps the quest fx tier: the governor trades resolution, never fog or god rays');
   ok(f.fov[f.fov.length - 1] === 1, 'high foveation at the cheap levels');
   gov.sample(T, f.frame);
   ok(f.scales[f.scales.length - 1] === 0.7, 'scale 0.7 at the last level');
@@ -80,7 +80,7 @@ function run(g, gov, seconds, dt, frame) {
 // a couple of dropped frames do not trigger it
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   for (let i = 0; i < 400; i++) gov.sample(i % 90 === 0 ? 2 * T : T, f.frame);
   ok(gov.level === 0, 'isolated drops (1 in 90) are tolerated');
@@ -88,7 +88,7 @@ function run(g, gov, seconds, dt, frame) {
 // hitches (loading, system dialog) and non-playing states are ignored
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   for (let i = 0; i < 300; i++) gov.sample(i % 10 === 0 ? 1.5 : T, f.frame);
   ok(gov.level === 0 && gov.stats.hitches > 0, 'frames over 250 ms are hitches, not load');
@@ -99,7 +99,7 @@ function run(g, gov, seconds, dt, frame) {
 // recovery: calm for RECOVER_AFTER, one level at a time; flapping doubles the wait
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   gov.setLevel(2, 'test');
   ok(gov.level === 2, 'setLevel');
@@ -121,7 +121,7 @@ function run(g, gov, seconds, dt, frame) {
 // reducedEffects: floor level 3, fx tier left to fx.js
 {
   const f = fakeGame({ settings: { reducedEffects: true } });
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   ok(gov.level === REDUCED_FLOOR, 'reducedEffects starts at the floor level');
   ok(f.game.settings.fxQuality === undefined, 'reducedEffects: governor does not write fxQuality');
@@ -146,10 +146,10 @@ function run(g, gov, seconds, dt, frame) {
 // session end clears the override
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   gov.setLevel(3, 'test');
-  ok(f.game.settings.fxQuality === 'low', 'low fx set');
+  ok(f.game.settings.fxQuality === 'quest', 'the fx tier stays quest at level 3');
   gov.onSessionEnd();
   ok(f.game.settings.fxQuality === undefined && !gov.active, 'session end removes the fx override');
 }
@@ -158,13 +158,13 @@ function run(g, gov, seconds, dt, frame) {
   const f = fakeGame();
   const tiers = [];
   f.game.renderer.setQualityTier = (t) => tiers.push(t);
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   const calls = [];
   const off = gov.onStep((tier, fov, scale, level, why) => calls.push([tier, fov, scale, level, why]));
   gov.onSessionStart(f.session);
   for (let i = 0; i < 72 * 14; i++) gov.onFrame(i < 80 ? 13.9 : 25);
   ok(calls.length >= 3 && calls[0][3] === 1 && calls[0][4] === 'degrade', 'onStep fires on every level change');
-  ok(calls.some((c) => c[0] === 'low') && tiers.includes('low') && tiers[0] === 'quest', 'tier names reach onStep and renderer.setQualityTier');
+  ok(calls.every((c) => c[0] === 'quest') && tiers.length >= 3 && tiers.every((t) => t === 'quest'), 'the tier reaching onStep and renderer.setQualityTier is always quest');
   off();
   const n = calls.length;
   gov.setLevel(0, 'test');
@@ -182,12 +182,12 @@ function run(g, gov, seconds, dt, frame) {
   ok(pickFrameRate('90', [120]) === 0 && pickFrameRate('72', undefined) === 0, 'no listed rate of ours: nothing requested');
   // default keeps 72
   let f = fakeGame();
-  let gov = new QualityGovernor(f.game);
+  let gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   ok(f.rates.length === 1 && f.rates[0] === 72 && gov.targetHz === 72, 'default setting requests 72 Hz');
   // 90
   f = fakeGame({ settings: { frameRate: '90' } });
-  gov = new QualityGovernor(f.game);
+  gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   ok(f.rates[0] === 90 && Math.abs(gov.target - 1 / 90) < 1e-9, "'90' requests 90 Hz and the frame-time target follows");
   // a healthy 90 Hz headset is not degraded (the miss rule is relative to 90 Hz, not 72)
@@ -198,7 +198,7 @@ function run(g, gov, seconds, dt, frame) {
   ok(gov.level >= 1, "'90' mode degrades the picture when frames take 16.7 ms");
   // auto: 90 first, then 72 (no picture step) on the first sustained overrun
   f = fakeGame({ settings: { frameRate: 'auto' } });
-  gov = new QualityGovernor(f.game);
+  gov = new QualityGovernor(f.game, { warmup: 0 });
   const events = [];
   f.game.bus.on('quality:rate', (e) => events.push(e.hz));
   gov.onSessionStart(f.session);
@@ -216,7 +216,7 @@ function run(g, gov, seconds, dt, frame) {
   ok(f.rates[f.rates.length - 1] === 90, 'a new session in auto tries 90 Hz again');
   // changing the setting mid-session re-requests
   f = fakeGame();
-  gov = new QualityGovernor(f.game);
+  gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   f.game.settings.frameRate = '90';
   f.game.bus.emit('settings:changed', { settings: f.game.settings });
@@ -226,7 +226,7 @@ function run(g, gov, seconds, dt, frame) {
 // no allocation in sample(): the heap does not grow over 2M calls
 {
   const f = fakeGame();
-  const gov = new QualityGovernor(f.game);
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
   gov.onSessionStart(f.session);
   if (global.gc) global.gc();
   const h0 = process.memoryUsage().heapUsed;
@@ -234,6 +234,53 @@ function run(g, gov, seconds, dt, frame) {
   if (global.gc) global.gc();
   const grown = process.memoryUsage().heapUsed - h0;
   ok(grown < 3_000_000, `sample() does not allocate (heap grew ${grown} bytes)`);
+}
+
+// warm-up: the load spikes of a start do not count (they took the god rays and the fog away a couple of seconds after the start)
+{
+  const f = fakeGame({ state: 'playing' });
+  const gov = new QualityGovernor(f.game); // default warm-up
+  gov.onSessionStart(f.session);
+  run(f.game, gov, 4.5, 1 / 40, f.frame); // 25 ms frames for 4.5 s: all misses, all inside the warm-up
+  ok(gov.level === 0 && gov.stats.degrades === 0 && gov.stats.misses === 0, 'a slow first 4.5 s of a session does not degrade (warm-up)');
+  run(f.game, gov, 3, 1 / 40, f.frame);
+  ok(gov.level >= 1, 'the same frames after the warm-up do degrade (the governor still works)');
+}
+// the menu is never judged: slow frames there change nothing
+{
+  const f = fakeGame({ state: 'menu' });
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
+  gov.onSessionStart(f.session);
+  run(f.game, gov, 20, 1 / 20, f.frame);
+  ok(gov.level === 0 && gov.stats.frames === 0, 'a slow menu does not degrade');
+}
+{
+  const f = fakeGame({ state: 'menu' });
+  const gov = new QualityGovernor(f.game);
+  gov.onSessionStart(f.session);
+  run(f.game, gov, 6, T, f.frame); // healthy, warm-up over
+  f.game.state = 'playing'; // the player presses Start
+  run(f.game, gov, 4.5, 1 / 40, f.frame); // the level starts: load spikes
+  ok(gov.level === 0, 'play starting re-arms the warm-up: a slow first 4.5 s of play does not degrade');
+  run(f.game, gov, 3, 1 / 40, f.frame);
+  ok(gov.level >= 1, 'a start-of-play warm-up ends too');
+  f.game.state = 'paused';
+  gov.sample(T, f.frame);
+  f.game.state = 'playing'; // resume
+  const l = gov.level;
+  run(f.game, gov, 4.5, 1 / 40, f.frame);
+  ok(gov.level === l, 'resuming from a pause re-arms it as well');
+}
+{
+  const f = fakeGame();
+  f.game.renderer.levelView = { dressing: true };
+  const gov = new QualityGovernor(f.game, { warmup: 0 });
+  gov.onSessionStart(f.session);
+  run(f.game, gov, 8, 1 / 40, f.frame);
+  ok(gov.level === 0 && gov.stats.degrades === 0, 'frames while the level is still being dressed do not count');
+  f.game.renderer.levelView.dressing = false;
+  run(f.game, gov, 3, 1 / 40, f.frame);
+  ok(gov.level >= 1, 'once dressed, slow frames degrade');
 }
 
 console.log(`${fail ? 'FAILED' : 'ok'}: ${pass} passed, ${fail} failed`);

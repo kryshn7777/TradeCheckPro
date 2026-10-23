@@ -20,7 +20,7 @@
  */
 import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
-import { HeadFit } from './mason/masonFit.js';
+import { HeadFit, headExtents } from './mason/masonFit.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet } from './creatureDust.js';
@@ -94,7 +94,7 @@ export class MasonRigView {
     this._gv = new Float32Array(3); // the body's velocity (the dust follows the wake)
     this._wet = 0;
     this._camD = 0;
-    this.fit = new HeadFit();
+    this.fit = new HeadFit(headExtents(meta.headBounds));
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
     this.S = new Float32Array(SEG);
@@ -107,7 +107,7 @@ export class MasonRigView {
     this._hug = 3.2 * this.opts.size;
     this._farAcc = 0;
     this._farTick = 0;
-    this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0 };
+    this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0, gain: 0 };
     this._forced = null;
     this._dbg = null;
     this._level = null;
@@ -373,7 +373,7 @@ export class MasonRigView {
       this.motion.reset();
       this.fit.reset();
       const f = this._focus;
-      f.yaw = f.pitch = f.vyaw = f.vpitch = 0;
+      f.yaw = f.pitch = f.vyaw = f.vpitch = f.gain = 0;
       this._speed = 0;
     }
     this._wasVisible = true;
@@ -387,7 +387,7 @@ export class MasonRigView {
     // ---- spine frames, head fit ----
     const F = this.F;
     const S = this.S;
-    computeFrames(B, SEG, F);
+    computeFrames(B, SEG, F, dt, jump);
     // the gait clock: one cycle per stride of distance travelled (the legs and the body's wave share it), frozen while it listens
     const gs = this.graph.out;
     if (!gs.freeze && dt > 0) this.legs.cycle += (this._speed * dt) / this.legs.stride;
@@ -439,7 +439,11 @@ export class MasonRigView {
     this.uniforms.uGlowPierce.value = sighting ? 1 : o.glowPierce;
     if (this.emissive) {
       const glow = clamp(B.glow == null ? 0.3 : B.glow, 0, 1);
-      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow);
+      // a living ember: a slow double beat (lub-dub, ~1.5 s), quicker and harder as it closes in
+      const rate = 0.65 + 0.5 * clamp(glow, 0, 1);
+      const ph = (this._time * rate) % 1;
+      const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
+      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow) * (0.72 + 0.45 * beat);
     }
 
     // ---- bounds ----
@@ -592,6 +596,7 @@ export class MasonRigView {
     const foc = B.focus;
     let ty = 0;
     let tp = 0;
+    let gt = 0; // the wanted focus gain
     const attacking = this.graph.snapshot.phase !== null;
     if (foc && !attacking) {
       const dx = foc.x - F[0];
@@ -600,23 +605,38 @@ export class MasonRigView {
       const lr = dx * F[9] + dy * F[10] + dz * F[11];
       const lu = dx * F[6] + dy * F[7] + dz * F[8];
       const lf = dx * F[3] + dy * F[4] + dz * F[5];
-      const gain = clamp((foc.amount || 0) * 1.5 + (this.graph.snapshot.listening ? 0.5 : 0), 0, 1);
-      if (gain > 0.001 && len3(dx, dy, dz) > 1) {
+      gt = clamp((foc.amount || 0) * 1.5 + (this.graph.snapshot.listening ? 0.5 : 0), 0, 1);
+      if (gt > 0.001 && len3(dx, dy, dz) > 1) {
         const lim = 70 * (Math.PI / 180);
         const limP = 45 * (Math.PI / 180);
-        ty = clamp(-Math.atan2(lr, lf), -lim, lim) * gain;
-        tp = clamp(Math.atan2(lu, Math.sqrt(lr * lr + lf * lf)), -limP, limP) * gain;
+        const a = -Math.atan2(lr, lf);
+        const aa = Math.abs(a);
+        // a target behind the crown must not flip the head from one side to the other (atan2 wraps there): past 100 degrees the aim
+        // fades back to neutral, gone at 150
+        let back = 1;
+        if (aa > 1.745) {
+          const e = (aa - 1.745) / 0.873;
+          back = e >= 1 ? 0 : 1 - e * e * (3 - 2 * e);
+        }
+        ty = clamp(a, -lim, lim) * back;
+        tp = clamp(Math.atan2(lu, Math.sqrt(lr * lr + lf * lf)), -limP, limP) * back;
       }
     }
-    // underdamped spring: ~0.3 s lag, ~12 % overshoot
+    // the state's focus amount is a step (and an attack drops it to nothing): ease it, so the head turns where it looks instead of snapping
+    fc.gain += (gt - fc.gain) * (dt > 0 ? 1 - Math.exp(-5 * dt) : 1);
+    ty *= fc.gain;
+    tp *= fc.gain;
+    // spring: ~0.3 s lag, ~2 % overshoot (damping 0.8), and a cap on how fast the head may swing (290 / 230 deg/s)
     const w0 = 8.5;
-    const z = 0.55;
+    const z = 0.8;
     const n = dt > 0 ? Math.max(1, Math.ceil(dt / 0.016)) : 0;
     const h = n ? dt / n : 0;
     for (let i = 0; i < n; i++) {
       fc.vyaw += (w0 * w0 * (ty - fc.yaw) - 2 * z * w0 * fc.vyaw) * h;
+      fc.vyaw = clamp(fc.vyaw, -5.05, 5.05);
       fc.yaw += fc.vyaw * h;
       fc.vpitch += (w0 * w0 * (tp - fc.pitch) - 2 * z * w0 * fc.vpitch) * h;
+      fc.vpitch = clamp(fc.vpitch, -4, 4);
       fc.pitch += fc.vpitch * h;
     }
   }
@@ -1139,11 +1159,15 @@ export function cloneSkitterScenes(gltf, n) {
   return out;
 }
 
-/** Builds the skitterling views from the clones, AFTER the Mason's view made the additive clips additive (they are shared). */
-export function makeSkitterViews(scene, gltf, clones) {
+/**
+ * Builds the skitterling views from the clones of skitter_rig.glb (the original Mason model, kept for the small hunters). The
+ * clips of that glTF are shared by its clones: the first view makes the additive ones additive, the others reuse them
+ * (`clipsReady` = the caller already did it, e.g. the clips are those of another view).
+ */
+export function makeSkitterViews(scene, gltf, clones, clipsReady = false) {
   const views = [];
   for (let i = 0; i < clones.length; i++) {
-    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: true }, SKITTER_VIEW);
+    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: clipsReady || i > 0 }, SKITTER_VIEW);
     v.root.name = 'SkitterRigView' + i;
     views.push(v);
   }

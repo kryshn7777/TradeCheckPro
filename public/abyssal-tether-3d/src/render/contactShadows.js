@@ -192,7 +192,7 @@ export class ContactShadows {
       return;
     }
     const tier = r3d && r3d.lighting ? r3d.lighting.tier : 'quest';
-    const lowTier = tier === 'low' || (r3d && r3d.governor && r3d.governor.level >= 3) || !!(game.settings && game.settings.reducedEffects);
+    const lowTier = tier === 'low' || !!(game.settings && game.settings.reducedEffects);
     const fog = r3d && r3d.scene ? r3d.scene.fog : null;
     this._uniforms.uFar.value = fog && fog.far ? fog.far : 60;
     const lan = r3d && r3d.lantern;

@@ -1,4 +1,4 @@
-// WP-SKITTER unit checks (Node): the skitterling variant's config (exactly 1.5x speeds, smaller, shorter wind-up), spawn data in the
+// WP-SKITTER unit checks (Node): the skitterling variant's config (exactly 4.5x speeds, 7.5x on Nightmare / Abyss, smaller, shorter wind-up), the one that comes up from below on Nightmare / Abyss, spawn data in the
 // real Chapter I level, determinism, safe spawn distance, tagged events, the damage path and the Mason's own trigger link.
 //   node skitter.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
@@ -13,7 +13,7 @@ const KEYS = ['normal', 'nightmare', 'abyss'];
 const player = (x, y, z) => ({ x, y, z, vx: 0, vy: 0, vz: 0, alive: true, grounded: true });
 const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
 
-// 1. Config: scale, exact 1.5x speeds, wind-up, reach, per mode x difficulty.
+// 1. Config: scale, exact 4.5x speeds (7.5x on Nightmare / Abyss), wind-up, reach, per mode x difficulty.
 {
   let worst = 0;
   let okAll = true;
@@ -27,13 +27,14 @@ const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
       sm.setSection(si, L.sections[si], p);
       for (const f of ['approach', 'pursue', 'burst', 'windupAdv', 'creep']) {
         const r = sm.k[f] / big.k[f];
-        worst = Math.max(worst, Math.abs(r - 1.5));
-        if (Math.abs(r - 1.5) > 1e-9) okAll = false;
+        const want = k === 'normal' ? 4.5 : 7.5;
+        worst = Math.max(worst, Math.abs(r - want));
+        if (Math.abs(r - want) > 1e-9) okAll = false;
       }
       if (Math.abs(sm.k.windup / big.k.windup - 1 / 1.5) > 1e-9 || sm.k.menace !== big.k.menace || sm.k.snap !== big.k.snap) okAll = false;
     }
   }
-  ok(okAll, `variant speeds = exactly 1.5x the Mason's (approach/pursue/burst/windupAdv/creep) on 3 difficulties x S6-S8 (worst error ${worst.toExponential(1)}); wind-up /1.5; menace + snap unchanged`);
+  ok(okAll, `variant speeds = exactly 4.5x the Mason's on Normal and 7.5x on Nightmare / Abyss (approach/pursue/burst/windupAdv/creep) x S6-S8 (worst error ${worst.toExponential(1)}); wind-up /1.5; menace + snap unchanged`);
   const L = lvl('normal');
   const big = new Creature3D(L, DIFFICULTY.normal, null, { seed: 1 });
   const sm = new Creature3D(L, DIFFICULTY.normal, null, { seed: 1, variant: 'skitterling' });
@@ -102,7 +103,7 @@ const sim = (seed, secs) => {
   ok(a.sig === b.sig && a.ev.length === b.ev.length && a.dmg === b.dmg, `deterministic: same seed -> same positions/states/events/damage (${a.ev.length} events)`);
   ok(a.sig !== c.sig, 'different seed -> different run');
   ok(a.ev.length > 0 && a.ev.every((e) => e[1].skit === true) && !a.ev.some((e) => e[0] === 'creature:sighting' || e[0] === 'creature:call'), 'events: all tagged skit:true, no sightings / calls');
-  ok(a.g.aliveCount === 2 && a.g.slots.every((x) => !x.caughtPlayer), 'two alive on Nightmare S7; a skitterling never sets caughtPlayer (no instant kill)');
+  ok(a.g.aliveCount === 3 && a.g.slots.every((x) => !x.caughtPlayer), 'three alive on Nightmare S7 after 90 s (two from the data, one from below); a skitterling never sets caughtPlayer (no instant kill)');
   ok(a.g.hits >= 1 && Math.abs(a.dmg - a.g.hits * skitterDamage('nightmare')) < 1e-9, `damage path: ${a.g.hits} hit(s) on a stationary player in 90 s = ${a.dmg.toFixed(2)} of full health`);
 }
 
@@ -120,5 +121,74 @@ const sim = (seed, secs) => {
   for (let i = 0; i < 120; i++) mason.update(1 / 60, p, i / 60);
   ok(!!mason.sighting || mason.sightingDone || mason.body.visible, 'Mason still answers the sighting trigger with skitterlings present');
 }
+
+// 5. The one from below (Nightmare / Abyss): a random moment 5-16 s after entering a section that has skitterlings, 32-48 m BELOW the player,
+//    hunting upward; nothing on Normal; deterministic per seed; different seeds enter at different moments.
+{
+  const run = (k, seed, secs) => {
+    const L = lvl(k);
+    const g = new SkitterGroup(L, DIFFICULTY[k], new EventBus(), { seed });
+    const cp = L.sections[6].checkpoint;
+    const p = player(cp.x, cp.y, cp.z);
+    g.setSection(6, p);
+    const below = g.slots[SKITTER.dataSlots];
+    let tIn = -1;
+    let enter = null;
+    let minD = Infinity;
+    let dAtEnter = 0;
+    for (let i = 0; i < secs * 60; i++) {
+      g.update(1 / 60, p, i / 60);
+      g.takeDamage();
+      if (tIn < 0 && below.on) {
+        tIn = i / 60;
+        enter = { dy: below.y - p.y, d: Math.hypot(below.x - p.x, below.y - p.y, below.z - p.z) };
+        dAtEnter = enter.d;
+      }
+      if (below.on) minD = Math.min(minD, Math.hypot(below.x - p.x, below.y - p.y, below.z - p.z));
+    }
+    return { g, tIn, enter, minD, dAtEnter, slots: g.slots.length };
+  };
+  ok(SKITTER.maxAlive === 3 && SKITTER.dataSlots === 2 && run('normal', 3, 1).slots === 3, 'three slots: two from the data, one for the one from below');
+  const normal = run('normal', 3, 60);
+  ok(normal.tIn < 0 && normal.g.belowSpawns === undefined, 'Normal: nothing comes from below');
+  const ins = [];
+  let all = true;
+  for (const k of ['nightmare', 'abyss']) {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const r = run(k, seed, 40);
+      ins.push(r.tIn);
+      if (!(r.tIn >= SKITTER.below.delay[0] - 0.05 && r.tIn <= SKITTER.below.delay[1] + 0.05)) all = false;
+      if (!r.enter || !(r.enter.dy <= -(SKITTER.below.offset[0] - 1) + 0 || r.enter.dy < -SKITTER.safeRadius)) all = false;
+      if (r.enter && r.enter.d < SKITTER.safeRadius) all = false;
+    }
+  }
+  ok(all, `Nightmare / Abyss: it enters ${Math.min(...ins).toFixed(1)}-${Math.max(...ins).toFixed(1)} s after the section starts (window ${SKITTER.below.delay.join('-')} s), at least ${SKITTER.safeRadius} m away and below the player`);
+  ok(new Set(ins.map((v) => v.toFixed(2))).size >= 5, `the moment is random: ${new Set(ins.map((v) => v.toFixed(2))).size} different entry times over 6 seeds`);
+  const a = run('nightmare', 5, 60);
+  const b = run('nightmare', 5, 60);
+  ok(a.tIn === b.tIn && a.enter.dy === b.enter.dy && a.minD === b.minD, 'deterministic per seed');
+  // it comes UP at the player: within a minute it gets much closer than it started
+  ok(a.minD < a.dAtEnter * 0.5, `it hunts upward: starts ${a.dAtEnter.toFixed(0)} m away, gets to ${a.minD.toFixed(1)} m`);
+  // a section without skitterlings, or the player leaving it: nothing is pending / it goes
+  {
+    const L = lvl('nightmare');
+    const g = new SkitterGroup(L, DIFFICULTY.nightmare, new EventBus(), { seed: 2 });
+    const cp = L.sections[1].checkpoint;
+    const p = player(cp.x, cp.y, cp.z);
+    g.setSection(1, p);
+    for (let i = 0; i < 30 * 60; i++) g.update(1 / 60, p, i / 60);
+    ok(g.aliveCount === 0 && g._belowT < 0, 'a section without skitterlings: none from below either');
+    const cp6 = L.sections[6].checkpoint;
+    const p6 = player(cp6.x, cp6.y, cp6.z);
+    g.setSection(6, p6);
+    for (let i = 0; i < 25 * 60; i++) g.update(1 / 60, p6, i / 60);
+    const had = g.slots[SKITTER.dataSlots].on;
+    g.setSection(1, player(cp.x, cp.y, cp.z));
+    ok(had && !g.slots[SKITTER.dataSlots].on, 'it was in play in S7 and goes when the player is back in a section without skitterlings');
+    g.onRespawn(p6);
+    ok(!g.slots[SKITTER.dataSlots].on && g._belowT >= 0, 'a respawn takes it out and re-arms its random entry');
+  }
+}
+
 console.log(fails ? `${fails} FAILED` : 'ALL PASS');
 process.exit(fails ? 1 : 0);

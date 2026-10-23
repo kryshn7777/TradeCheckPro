@@ -86,7 +86,8 @@ ok('skinned meshes: LOD0 <= 60 k, LOD1 <= 25 k, <= 6 draw calls, shared skin, at
       assert.ok(rigid > 0, 'rigid vertices exist');
     }
   }
-  assert.ok(tris[0] <= 60000 && tris[0] > 30000, 'LOD0 tris ' + tris[0]);
+  // v2 (the hooded saint-face Mason): LOD0 may grow at most ~15 % over the v1 rig's 56.7 k
+  assert.ok(tris[0] <= 65200 && tris[0] > 30000, 'LOD0 tris ' + tris[0]);
   assert.ok(tris[1] <= 25000 && tris[1] > 8000, 'LOD1 tris ' + tris[1]);
   assert.ok(prims[0] <= 6 && prims[1] <= 6, 'draw calls ' + prims);
   assert.deepEqual(meta.lodTris.map(Math.round), tris.map(Math.round));

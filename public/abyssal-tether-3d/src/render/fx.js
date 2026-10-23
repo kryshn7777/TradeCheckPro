@@ -11,6 +11,8 @@
  *  - ambient dust / ash: a fixed cloud of points wrapped around the head in
  *    the vertex shader (zero CPU per particle); each mote tumbles and drifts on
  *    its own path and shines only where the lantern / lamps / creature light it
+ *  - wind gusts (windGusts.js): wisps of ash riding the draught in patches, swaying across the view; a squall now and then
+ *    (one draw call, motion in the vertex shader; the props' sway in sceneDetail.js follows the same wind.js)
  *  - trickles (debris.js): grit streaming from cracks and down walls (grains +
  *    a faint veil), water drips in the wet deep sections; the fall runs in the
  *    vertex shader (one draw call)
@@ -35,6 +37,7 @@ import { CreatureDust } from './creatureDust.js';
 import { Rubble, Trickles } from './debris.js';
 import { LanternHalo } from './lanternHalo.js';
 import { GodRays } from './godRays.js';
+import { WindGusts } from './windGusts.js';
 
 const DUST_COUNT = 1100;
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
@@ -110,6 +113,7 @@ export class FX {
     this.trickles = new Trickles(scene, this.lighting.uniforms, this._rng);
     this.trickles.burst = (kind, x, y, z, opts) => this.burst(kind, x, y, z, opts);
     this._buildDust();
+    this.windGusts = new WindGusts(scene, this.lighting.uniforms, this._dot); // wisps riding the draught in patches (one draw)
     this._buildBursts();
     this.creatureDust = new CreatureDust(scene, this.lighting.uniforms, this._rng); // ground dust under the moving creatures (one draw)
     this._buildDebris();
@@ -803,6 +807,7 @@ export class FX {
     this._updateRains(dt);
 
     this._updateDust(dt, head);
+    this.windGusts.update(dt, head, tier, this.reduced);
     this._updateBursts(dt);
     this.creatureDust.update(dt, head, tier, this.reduced);
     this.rubble.update(dt, level, head);
@@ -1040,6 +1045,7 @@ export class FX {
       o.geometry.dispose();
       o.material.dispose();
     }
+    this.windGusts.dispose();
     this.creatureDust.dispose();
     this.rubble.dispose();
     this.trickles.dispose();

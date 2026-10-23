@@ -33,7 +33,9 @@ def _setup_scene(bpy):
     bg.inputs["Color"].default_value = (0.05, 0.06, 0.075, 1)
     bg.inputs["Strength"].default_value = 1.0
     lights = []
-    for nm, loc, en, col in (("key", (-6.0, 15.0, 5.0), 30000, (1.0, 0.86, 0.66)), ("rim", (9.0, -2.0, 9.0), 20000, (0.62, 0.78, 1.0)), ("fill", (4.0, 14.0, -3.0), 9000, (0.8, 0.9, 1.0))):
+    # v2: the climber's view - a warm lantern from just below the camera (front, below), a cold rim from behind, a dim fill
+    for nm, loc, en, col in (("key", (-2.5, 13.0, -2.0), 26000, (1.0, 0.78, 0.55)), ("rim", (9.0, -6.0, 9.0), 22000, (0.62, 0.78, 1.0)),
+                             ("fill", (6.0, 12.0, 6.0), 5000, (0.8, 0.9, 1.0))):
         ld = bpy.data.lights.new(nm, "POINT")
         ld.energy = en
         ld.color = col
@@ -107,9 +109,8 @@ def render_sheets(glb, res, outdir, tile=(400, 330), cols=4, rows=2):
         tiles = []
         for k, fi in enumerate(frames_for(clip)):
             pose_clip(clip, fi)
-            # the crown 3/4 view; the camera pulls back for the clips that move the whole crown
-            far = 1.0
-            _aim(cam, (-10.5 * far, 15.0 * far, 4.0), (0.0, -0.5, 0.8))
+            # the climber's view of the face: in front, a little to the left and below (the strike / roar move the whole crown)
+            _aim(cam, (-4.0, 15.5, -1.4), (0.0, 0.0, 0.9))
             p = os.path.join(tmp, "%s_%02d.png" % (clip.name, k))
             sc.render.filepath = p
             bpy.ops.render.render(write_still=True)

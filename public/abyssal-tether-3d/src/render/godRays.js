@@ -585,7 +585,7 @@ export class GodRays {
       if (lanternLevel > 0.001) n = this._writeHalo(n);
       this.halo.mesh.visible = false;
     }
-    if (lanternLevel > 0.001 && this.gov < 2) n = this._writeLantern(n, lanternLevel, camera, dt);
+    if (lanternLevel > 0.001) n = this._writeLantern(n, lanternLevel, camera, dt);
     // window beams in range
     let nw = 0;
     for (const i of this._winIdx) {
@@ -609,8 +609,7 @@ export class GodRays {
   }
 
   _tier() {
-    if (this.reduced || this.tierName === 'low' || this.gov >= 3) return TIERS.off;
-    if (this.gov >= 2) return { segs: 2, oct: 1 };
+    if (this.reduced || this.tierName === 'low') return TIERS.off; // the frame governor does not thin the rays (this.gov is informational)
     return TIERS[this.tierName] || TIERS.quest;
   }
 

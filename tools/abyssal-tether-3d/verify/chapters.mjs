@@ -5,8 +5,22 @@
 // is one entry here: its level factory and its routes module (same shape as
 // routes.mjs). The harness runs every check of §8 that applies to the systems the
 // chapter's data actually uses.
+import fs from 'node:fs';
 import { Level3D, LEVEL_DATA_3D } from './sim.mjs';
 import * as CH1 from './routes.mjs';
+
+/**
+ * AT3D_DECOR=<file>: a JSON list of boxes ([minX, minY, minZ, maxX, maxY, maxZ]) or { boxes } from the browser (the colliding kit dressing,
+ * `game.level.decorSolids`), added to every level so the bots play the routes with the dressing solid, like the game does.
+ */
+function withDecor(level) {
+  const f = typeof process !== 'undefined' && process.env && process.env.AT3D_DECOR;
+  if (f) {
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    level.addDecorColliders(Array.isArray(j) ? j : j.boxes);
+  }
+  return level;
+}
 
 export const VARIANTS = ['normal', 'nightmare', 'abyss'];
 
@@ -16,7 +30,7 @@ export const CHAPTERS = {
     name: 'Chapter I: The Descent',
     data: LEVEL_DATA_3D,
     /** Level3D for a variant. ch1: the default data, exactly as Game3D builds it today. */
-    makeLevel: (variant) => new Level3D(undefined, variant),
+    makeLevel: (variant) => withDecor(new Level3D(undefined, variant)),
     routes: CH1,
   },
 };

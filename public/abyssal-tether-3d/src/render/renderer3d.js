@@ -74,6 +74,7 @@ const THEME_BLEND = 9; // metres either side of a section boundary
 const AMBIENT_SCALE = 3.0; // theme.ambient → hemisphere intensity
 const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
+const FOG_THICKNESS = 2; // the haze is twice as thick: the distance fog closes in at half the range (the volumetric fog doubles in atmosphere.js)
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
@@ -329,6 +330,7 @@ export class Renderer3D {
       w: 0,
     };
     this._themeInit = false;
+    this._dark = 0;
     this._fogInfo = { color: this.scene.fog.color, light: this._theme.light };
     this.stats = { calls: 0, triangles: 0, points: 0, programs: 0, frameMs: 0 };
     this._texCache = new Map(); // manifest URL or object → Promise<sets|null>
@@ -653,7 +655,7 @@ export class Renderer3D {
         f = 1 - e.src.flicker * 0.45 * (0.5 + 0.5 * Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1.3));
         if (Math.sin(t * 0.73) > 0.985) f *= 0.4;
       }
-      e.light.intensity = e.src.candela * e.level * f;
+      e.light.intensity = e.src.candela * e.level * f * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
       if (f < flickMin) flickMin = f;
     }
     this._lampFlick += (flickMin - this._lampFlick) * 0.2;
@@ -680,8 +682,19 @@ export class Renderer3D {
     const threat = THREE.MathUtils.clamp(num(threatSys && (typeof threatSys === 'number' ? threatSys : threatSys.value), 0), 0, 1);
     this.threat += (threat - this.threat) * (1 - Math.exp(-3 * d));
 
+    // The difficulty's darkness (Nightmare / Abyss): eased in, then applied to the theme target below and to the baked light / the lamps.
+    const wantDark = num(game && game.diff && game.diff.darkness, 0);
+    this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
+    const dark = this._dark;
+    this.lighting.setDarkness(dark);
+
     // Section theme (blended in space, eased in time; snaps after teleports).
     const tgt = this.themeAt(head.y, this._themeTarget);
+    if (dark > 0.001) {
+      tgt.ambient *= 1 - 0.95 * dark; // hemisphere + key + everything that reads the theme's ambient
+      tgt.fog.multiplyScalar(1 - 0.85 * dark);
+      tgt.light.multiplyScalar(1 - 0.5 * dark);
+    }
     const th = this._theme;
     const jumped = this._lastHead && this._lastHead.distanceToSquared(head) > 20 * 20;
     const k = this._themeInit && !jumped ? 1 - Math.exp(-2.5 * d) : 1;
@@ -701,10 +714,11 @@ export class Renderer3D {
     const fog = this.scene.fog;
     fog.color.copy(th.fog).multiplyScalar(FOG_GAIN);
     const lum = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
-    if (lum < FOG_LUM_FLOOR) fog.color.multiplyScalar(FOG_LUM_FLOOR / Math.max(lum, 1e-4));
+    const lumFloor = FOG_LUM_FLOOR * (1 - 0.95 * dark); // the haze may go darker than the floor of the other difficulties
+    if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
-    fog.near = Math.max(0.5, th.fogNear * (1 - tk * 0.3));
-    fog.far = Math.max(fog.near + 4, th.fogFar * (1 - tk * 0.18));
+    fog.near = Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
+    fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
     this.scene.background.copy(fog.color);
     if (this.sky) this.sky.position.copy(head);
 
@@ -745,7 +759,7 @@ export class Renderer3D {
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.godRays.materials = this.materials;
-    this.fx.godRays.setQuality(this.lighting.tier, this.governor.level, this.settings && this.settings.reducedEffects);
+    this.fx.godRays.setQuality(this.lighting.tier, 0, this.settings && this.settings.reducedEffects);
     this.fx.update(d, game, head, this.threat);
     this.droppedProps.update(d, game);
     this.contactShadows.update(d, game, head, this);
@@ -813,8 +827,7 @@ export class Renderer3D {
   /** Per frame: the tier / governor levers of the surface shader (parallax, detail normal, crevices) and the section grade. */
   _driveSurfaceLook(th, tk) {
     const P = SURFACE_TIERS[this.lighting.tier] || SURFACE_TIERS.quest;
-    const lvl = this.governor.level;
-    // parallax is the first thing the governor drops: level 2 = the 1-tap only (no steep floor march), level 3 = none
+    const lvl = 0; // the frame governor trades resolution only (platform/governor.js): the surface look follows the tier alone
     const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
     LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);

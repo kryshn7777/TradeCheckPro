@@ -33,6 +33,7 @@
 
 import * as THREE from 'three';
 import { LOOK, patchMaterial } from './materials.js';
+import { windAngle, windGust, windSquall } from './wind.js';
 import { D, P, decalCell, hash32, hashStr, mulberry32 } from './sceneDetailKit.js';
 import { DECAL_STRIDE, ITEM_STRIDE, PUDDLE_STRIDE, getKit, planSteps, selectItems, selectRecords } from './sceneDetailPlan.js';
 
@@ -883,10 +884,10 @@ export class SceneDetail {
       this._dirty = true;
     }
     const head = rend && typeof rend.headPosition === 'function' ? rend.headPosition(this._head) : this._head;
-    // wind: a slow turn and a breathing gust (still when the player asked for reduced effects)
+    // wind: a slow turn, a breathing gust and now and then a squall (wind.js; still when the player asked for reduced effects)
     const t = LOOK.uTime.value;
-    const a = 0.6 + 0.9 * Math.sin(t * 0.037) + 0.4 * Math.sin(t * 0.011 + 1.3);
-    const gust = this._reduced ? 0 : 0.55 + 0.45 * Math.sin(t * 0.21) * Math.sin(t * 0.067 + 1.0) + 0.25 * Math.max(0, Math.sin(t * 0.9 + Math.sin(t * 0.13) * 3));
+    const a = windAngle(t);
+    const gust = this._reduced ? 0 : windGust(t) + 0.6 * windSquall(t);
     this.uniforms.wind.value.set(Math.cos(a), Math.sin(a), gust);
     this.uniforms.far.value = tier.radius;
     if (this._dirty || head.distanceToSquared(this._last) > REPACK_DIST * REPACK_DIST) {
