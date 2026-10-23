@@ -1155,11 +1155,15 @@ export function cloneSkitterScenes(gltf, n) {
   return out;
 }
 
-/** Builds the skitterling views from the clones, AFTER the Mason's view made the additive clips additive (they are shared). */
-export function makeSkitterViews(scene, gltf, clones) {
+/**
+ * Builds the skitterling views from the clones of skitter_rig.glb (the original Mason model, kept for the small hunters). The
+ * clips of that glTF are shared by its clones: the first view makes the additive ones additive, the others reuse them
+ * (`clipsReady` = the caller already did it, e.g. the clips are those of another view).
+ */
+export function makeSkitterViews(scene, gltf, clones, clipsReady = false) {
   const views = [];
   for (let i = 0; i < clones.length; i++) {
-    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: true }, SKITTER_VIEW);
+    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: clipsReady || i > 0 }, SKITTER_VIEW);
     v.root.name = 'SkitterRigView' + i;
     views.push(v);
   }

@@ -75,6 +75,8 @@ const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before b
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
+// the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
+const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
 const CREATURE_LOD = { low: 11, quest: 16, high: 38 }; // creature LOD0 -> LOD1 switch distance (m) per render tier (hysteresis 5 m in the view)
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
@@ -1366,18 +1368,16 @@ export class Game3D {
         (gltf) => {
           if (this.creatureView !== kitView) return;
           try {
-            const clones = this._cloneSkitterScenes(gltf); // BEFORE the Mason takes the meshes out of the glTF scene
             const rig = new M.masonRigView.MasonRigView(this.renderer.scene, gltf);
             rig.bindBus(this.bus);
             const dust = this.renderer && this.renderer.fx && this.renderer.fx.creatureDust;
             rig.bindDust(dust);
-            this.skitterViews = this._buildSkitterViews(gltf, clones);
-            for (const v of this.skitterViews) v.bindDust(dust);
             this._kitView = kitView;
             if (kitView.root && kitView.root.parent) kitView.root.parent.remove(kitView.root); // its textures are never uploaded while it is out of the scene
             this.creatureView = rig;
             this._precompile(); // both LOD programs + atlases, on the menu
             this.bus.emit('assets:rig', { ok: true });
+            this._loadSkitterRig(loader, rig, dust);
           } catch (err) {
             this._fault('masonRigView', err);
           }
@@ -1391,8 +1391,37 @@ export class Game3D {
   }
 
   /**
-   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded glTF (geometry, textures and clips are shared: no second
-   * download or GPU upload; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
+   * The small hunters keep the original Mason model (skitter_rig.glb): loaded in the background once the big one is in. A failure
+   * leaves the sim running without their views (nothing to see, the kill radius still applies).
+   */
+  _loadSkitterRig(loader, rig, dust) {
+    if (skitterOff()) return;
+    try {
+      loader.load(
+        SKITTER_RIG_URL,
+        (gltf) => {
+          if (this.creatureView !== rig) return;
+          try {
+            const clones = this._cloneSkitterScenes(gltf); // before any view takes the meshes out of the glTF scene
+            this.skitterViews = this._buildSkitterViews(gltf, clones);
+            for (const v of this.skitterViews) v.bindDust(dust);
+            this._precompile();
+            this.bus.emit('assets:skitterRig', { ok: true });
+          } catch (err) {
+            this._fault('skitterView', err);
+          }
+        },
+        undefined,
+        (err) => this._fault('skitterAsset', err),
+      );
+    } catch (err) {
+      this._fault('skitterAsset', err);
+    }
+  }
+
+  /**
+   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded skitter_rig.glb (geometry, textures and clips are shared
+   * between the clones; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
    */
   _cloneSkitterScenes(gltf) {
     const M = this.modules;
@@ -1425,8 +1454,6 @@ export class Game3D {
       /* already broken */
     }
     this._kitView = null;
-    for (const v of this.skitterViews) if (v.root.parent) v.root.parent.remove(v.root); // they share the rig's geometry: retire with it
-    this.skitterViews = [];
     if (kit) {
       if (kit.root && !kit.root.parent && this.renderer && this.renderer.scene) this.renderer.scene.add(kit.root);
       this.creatureView = kit;

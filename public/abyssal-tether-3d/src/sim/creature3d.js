@@ -137,6 +137,9 @@ export const CREATURE_TUNING = {
   spawnAboveMax: 80,
   farBelowMin: 85,
   farBelowMax: 135,
+  // Annoyed: a grapple shot whose aim line passes through its body (not the small variants). It is angry for `dur` seconds at
+  // `mul` x its speed, the first `burstDur` seconds at `burstMul` x; it can be provoked again `cooldown` s after the last time.
+  annoy: { dur: 3, mul: 1.5, burstDur: 0.3, burstMul: 6, cooldown: 20, radius: 2.2, pad: 0.35 },
 };
 const T = CREATURE_TUNING;
 
@@ -408,6 +411,9 @@ function linkBus(bus, creature) {
     bus.on('trigger:call', () => {
       if (link.creature) link.creature._onCallTrigger();
     });
+    bus.on('rope:shot', (p) => {
+      if (link.creature) link.creature._onShot(p);
+    });
     busLinks.set(bus, link);
   }
   link.creature = creature;
@@ -557,6 +563,9 @@ export class Creature3D {
     this._upReady = false;
     this._bodyDt = 0;
     this._belowSign = 1; // -1: this one entered from below (skitterling slot 2)
+    this._annoyT = -1; // seconds since it was provoked (-1: calm)
+    this._annoyCd = 0; // seconds until it can be provoked again
+    this.annoyCount = 0;
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
@@ -718,6 +727,8 @@ export class Creature3D {
     this._stallX = NaN;
     this.listening = false;
     this._introT = 0;
+    this._annoyT = -1;
+    this._annoyCd = 0;
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -815,6 +826,11 @@ export class Creature3D {
     if (dt > 0.1) dt = 0.1;
     this._bodyDt = dt;
     this._t += dt;
+    if (this._annoyCd > 0) this._annoyCd -= dt;
+    if (this._annoyT >= 0) {
+      this._annoyT += dt;
+      if (this._annoyT >= T.annoy.dur) this._annoyT = -1;
+    }
     if (typeof time === 'number' && isFinite(time)) this.time = time;
     this.nearMiss = Math.max(0, this.nearMiss - dt * 1.1);
     if (!this.active) {
@@ -1136,6 +1152,65 @@ export class Creature3D {
     const K = this.k;
     const bold = U.smoothstep(T.stallStart, K.stallCommit, this.stallTime);
     return K.menace * (1 - 0.5 * bold);
+  }
+
+  /** Speed multiplier of the annoyed state: burstMul for the first burstDur s, then mul until dur, else 1. */
+  get annoyMul() {
+    const t = this._annoyT;
+    const A = T.annoy;
+    if (t < 0 || t >= A.dur) return 1;
+    return t < A.burstDur ? A.burstMul : A.mul;
+  }
+
+  /** Provoked and still angry (the view / audio can read it). */
+  get annoyed() {
+    return this._annoyT >= 0;
+  }
+
+  /**
+   * A grapple was fired (bus 'rope:shot': the aim ray, normalised, and the hook's range). When the ray passes through the body it
+   * is annoyed: faster for a few seconds, a surge at the start, and it comes for the player. At most once per `cooldown` seconds.
+   */
+  _onShot(p) {
+    if (this.v || !this.active || !this.inPlay || this.victory || this._annoyCd > 0 || !p) return;
+    const A = T.annoy;
+    const sp = this.body.spine;
+    const range = Math.max(1, num(p.range, 30));
+    const ox = num(p.ox, NaN);
+    const oy = num(p.oy, NaN);
+    const oz = num(p.oz, NaN);
+    const dx = num(p.dx, 0);
+    const dy = num(p.dy, 0);
+    const dz = num(p.dz, 0);
+    if (!isFinite(ox + oy + oz) || !(len3(dx, dy, dz) > 0.5)) return;
+    let bestT = -1;
+    for (let i = 0; i < SEG; i++) {
+      const cx = sp[i * 3] - ox;
+      const cy = sp[i * 3 + 1] - oy;
+      const cz = sp[i * 3 + 2] - oz;
+      const t = U.clamp(cx * dx + cy * dy + cz * dz, 0, range);
+      const ex = cx - dx * t;
+      const ey = cy - dy * t;
+      const ez = cz - dz * t;
+      const r = A.radius * this.body.scale[i] * this._scale + A.pad;
+      if (ex * ex + ey * ey + ez * ez <= r * r && (bestT < 0 || t < bestT)) bestT = t;
+    }
+    if (bestT < 0) return;
+    const lv = this.level;
+    // the first thing on the line must be the creature, not a wall in front of it
+    if (lv && typeof lv.segmentBlocked === 'function' && bestT > 1.5) {
+      const t = bestT - 1.0;
+      if (lv.segmentBlocked(ox, oy, oz, ox + dx * t, oy + dy * t, oz + dz * t, 0.05)) return;
+    }
+    this._annoyCd = A.cooldown;
+    this._annoyT = 0;
+    this.annoyCount++;
+    this.listening = false;
+    this.creeping = false;
+    if (this.state === S.OBSERVING || this.state === S.APPROACHING) this._setState(S.PURSUING);
+    const dist = len3(this._px - this.x, this._py - this.y, this._pz - this.z);
+    this._emit('creature:annoyed', { x: this.x, y: this.y, z: this.z, distance: dist, dur: A.dur, burstDur: A.burstDur, count: this.annoyCount });
+    this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: dist, intensity: 1, annoyed: true });
   }
 
   /** It heard the player move: lunge if it has the strength, else give chase. */
@@ -2047,6 +2122,11 @@ export class Creature3D {
    * plane of the wall it clings to (1 = crawls along the wall, 0 = free).
    */
   _moveToward(tx, ty, tz, speed, rate, dt, stick) {
+    const am = this.annoyMul;
+    if (am !== 1) {
+      speed *= am;
+      rate *= Math.min(3, 1 + 0.5 * (am - 1)); // the surge is felt: it also accelerates harder
+    }
     const dx = tx - this.x;
     const dy = ty - this.y;
     const dz = tz - this.z;
