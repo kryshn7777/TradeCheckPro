@@ -3849,6 +3849,74 @@ function staticSolids(level, minX, minY, minZ, maxX, maxY, maxZ, out) {
   return typeof level.querySolidsStatic === 'function' ? level.querySolidsStatic(minX, minY, minZ, maxX, maxY, maxZ, out) : level.querySolids(minX, minY, minZ, maxX, maxY, maxZ, out);
 }
 
+// Faces that can never be seen: a triangle of the dressing whose outward side lies inside a permanent, drawn solid (the back and sides of a
+// corbel, a buttress or a panel pressed into the wall). Dropped before the dressing is merged: about 9 % of its triangles, no visible change.
+const BURIED_KINDS = new Set(['wall', 'stone', 'metal', 'pillar']); // drawn as slabs and never removed (not crumble / bridge)
+const BURIED_OFFSET = 0.04; // m outside the face
+const BURIED_MARGIN = 0.02; // the point must be this far inside the solid's box (its edges may be chamfered)
+const _buriedQ = [];
+// ?cull=0 turns it off (A/B shots, bug hunts)
+const BURIED_ON = !(typeof location !== 'undefined' && /[?&]cull=0\b/.test(location.search || ''));
+
+/** `geo` (non-indexed, position + normal) without the triangles buried in the level's solids; the same geometry when none are. */
+function cullBuried(geo, level) {
+  const p = geo.attributes.position;
+  const n = geo.attributes.normal;
+  if (!p || !n || geo.index || typeof level.querySolidsStatic !== 'function') return { geo, removed: 0 };
+  const tris = (p.count / 3) | 0;
+  const keep = new Uint8Array(tris);
+  let kept = 0;
+  const o = BURIED_OFFSET;
+  const m = BURIED_MARGIN;
+  for (let t = 0; t < tris; t++) {
+    const a = t * 3;
+    const cx = (p.getX(a) + p.getX(a + 1) + p.getX(a + 2)) / 3;
+    const cy = (p.getY(a) + p.getY(a + 1) + p.getY(a + 2)) / 3;
+    const cz = (p.getZ(a) + p.getZ(a + 1) + p.getZ(a + 2)) / 3;
+    let nx = n.getX(a) + n.getX(a + 1) + n.getX(a + 2);
+    let ny = n.getY(a) + n.getY(a + 1) + n.getY(a + 2);
+    let nz = n.getZ(a) + n.getZ(a + 1) + n.getZ(a + 2);
+    const nl = Math.hypot(nx, ny, nz);
+    let buried = false;
+    if (nl > 1e-6) {
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      const x = cx + nx * o;
+      const y = cy + ny * o;
+      const z = cz + nz * o;
+      const res = level.querySolidsStatic(x, y, z, x, y, z, _buriedQ);
+      for (let i = 0; i < res.length; i++) {
+        const s = res[i];
+        if (s.active === false || !BURIED_KINDS.has(s.kind)) continue;
+        if (x > s.minX + m && x < s.maxX - m && y > s.minY + m && y < s.maxY - m && z > s.minZ + m && z < s.maxZ - m) {
+          buried = true;
+          break;
+        }
+      }
+    }
+    if (!buried) {
+      keep[t] = 1;
+      kept++;
+    }
+  }
+  if (kept === tris) return { geo, removed: 0 };
+  const out = new THREE.BufferGeometry();
+  for (const name of Object.keys(geo.attributes)) {
+    const a = geo.attributes[name];
+    const arr = new a.array.constructor(kept * 3 * a.itemSize);
+    let w = 0;
+    for (let t = 0; t < tris; t++) {
+      if (!keep[t]) continue;
+      const from = t * 3 * a.itemSize;
+      for (let i = 0; i < 3 * a.itemSize; i++) arr[w++] = a.array[from + i];
+    }
+    out.setAttribute(name, new THREE.BufferAttribute(arr, a.itemSize, a.normalized));
+  }
+  geo.dispose();
+  return { geo: out, removed: tris - kept };
+}
+
 function parseEnvKit(gltf) {
   const out = new Map();
   const root = gltf && (gltf.scene || (gltf.scenes && gltf.scenes[0]));
@@ -4774,6 +4842,11 @@ export class LevelView {
     this.stats.decorColliders = Object.assign({ boxes: boxes.length }, stats);
   }
 
+  /** The dressing job is still running (the frame-time governor does not judge the picture meanwhile). */
+  get dressing() {
+    return !!this._dressJob;
+  }
+
   /** Runs the dressing job to the end now (tests, tools, a renderer precompile). */
   finishDressing() {
     while (this._dressJob) this._pumpDressing(Infinity);
@@ -4843,6 +4916,20 @@ export class LevelView {
     this.stats.kitMissing = [...missing];
   }
 
+  /** Drops the buried triangles (and the geometries left empty) of a band list, in place. */
+  _cullBuriedList(list) {
+    const level = this.level;
+    if (!BURIED_ON || !level || typeof level.querySolidsStatic !== 'function') return;
+    let w = 0;
+    for (let i = 0; i < list.length; i++) {
+      const r = cullBuried(list[i], level);
+      this.stats.buriedCulled = (this.stats.buriedCulled || 0) + r.removed;
+      if (r.geo.attributes.position.count > 0) list[w++] = r.geo;
+      else r.geo.dispose();
+    }
+    list.length = w;
+  }
+
   /**
    * Merges band lists into one mesh per band per material (the decor chunks,
    * distance-culled in update). append: merge into the existing chunk of the
@@ -4861,6 +4948,8 @@ export class LevelView {
         const bi = fold ? parseInt(String(bi0).slice(1), 10) : bi0;
         const kind = fold ? '' : kind0;
         const detail = kind !== '';
+        if (k === 'stone' || k === 'metal' || k === 'flesh') this._cullBuriedList(list);
+        if (!list.length) continue;
         // large section chunks: one group per vertical slab (by the part's centre height)
         const groups = new Map();
         if (!detail && SLAB_KINDS.has(k)) {

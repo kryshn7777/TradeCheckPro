@@ -33,6 +33,10 @@
  *            (and at least MIN_MISSES of them), at most one step per DEGRADE_COOLDOWN
  *   recover  RECOVER_AFTER seconds with no miss and p95 <= HEADROOM x target, one step at a time; every
  *            recover that is undone by a degrade within FLAPPING seconds doubles RECOVER_AFTER (to MAX_RECOVER_AFTER)
+ *   warm-up  no frame counts for WARMUP seconds after a session start and after play begins or resumes (menu / pause / death -> playing),
+ *            nor while the level is still being dressed: the load spikes of a start (shader programs, texture and lightmap uploads, the
+ *            dressing job) are not the steady cost of the picture, and a step taken for them took the god rays and the fog away
+ *            seconds after the start, for 10+ s of recovery
  *   ignored  frames longer than HITCH_MS (loading, a suspended page, a system dialog) and frames while the game
  *            is not 'playing' / 'menu' / 'dead' (paused, victory)
  * sample() allocates nothing.
@@ -80,6 +84,7 @@ const MAX_RECOVER_AFTER = 160;
 const FLAPPING = 25;
 const HEADROOM = 1.08;
 const HITCH_MS = 250;
+const WARMUP = 5; // seconds: see the header (option `warmup`, 0 turns it off)
 
 export class QualityGovernor {
   /**
@@ -89,8 +94,11 @@ export class QualityGovernor {
    * @param {string} [o.mode='auto']   'auto' | 'off' | 'pin'
    * @param {number} [o.level=0]       starting / pinned level
    */
-  constructor(game, { targetHz = 72, mode = 'auto', level = 0 } = {}) {
+  constructor(game, { targetHz = 72, mode = 'auto', level = 0, warmup = WARMUP } = {}) {
     this.game = game;
+    this.warmup = Math.max(0, +warmup || 0);
+    this._graceUntil = 0; // governor clock time until which frames do not count
+    this._lastState = null;
     this.targetHz = targetHz;
     this.target = 1 / targetHz;
     this.mode = mode;
@@ -186,6 +194,8 @@ export class QualityGovernor {
   onSessionStart(session) {
     this.active = this.mode !== 'off';
     this._reset();
+    this._graceUntil = this._clock + this.warmup;
+    this._lastState = null;
     if (this.level < this.floorLevel) this.level = this.floorLevel;
     this._apply(true);
     this._requestFrameRate(session);
@@ -283,6 +293,18 @@ export class QualityGovernor {
     }
     const st = this.game.state;
     if (st !== 'playing' && st !== 'menu' && st !== 'dead') {
+      this._lastState = st;
+      this._reset();
+      return false;
+    }
+    // warm-up: play begins (or resumes) -> the load spikes of the start do not count; nor does a level that is still being dressed
+    if (st !== this._lastState) {
+      if (st === 'playing' && this._lastState !== null) this._graceUntil = Math.max(this._graceUntil, this._clock + this.warmup);
+      this._lastState = st;
+    }
+    const lv = this.game.renderer && this.game.renderer.levelView;
+    if (this._clock < this._graceUntil || (lv && lv.dressing === true)) {
+      this.stats.warmupFrames = (this.stats.warmupFrames || 0) + 1;
       this._reset();
       return false;
     }

@@ -80,3 +80,22 @@ them where `LevelView` dressed the part (seeded, the same on every device and ki
 that could take an anchor, a grip / edge hold, a walkway's headroom, a hazard's neighbour, the spawn or a checkpoint. They live in `Level3D.decorSolids`
 (not in `solids`: the view draws those as slabs and plans against them); `querySolids` includes them, `querySolidsStatic` does not. The bot routes
 play identically with and without them (`AT3D_DECOR=<json> npm run verify:at3d`: all variants pass, same splits).
+
+## Geometry optimisation + governor warm-up (2026-10-23, later)
+
+Quest stereo triangles S1..S8 (quest tier, mock XR, the richer lean kit above): 224k / 273k / 327k / 318k / 264k / 350k / 315k / 263k before this pass,
+**192k / 231k / 279k / 275k / 224k / 306k / 275k / 224k** after (all below the pre-detail numbers, S6 306k vs 327k), same call counts.
+
+- **Buried faces** (`levelView.js` `cullBuried`, applied to the stone / metal / flesh dressing lists before they are merged): a triangle whose outward
+  side (4 cm) lies inside a permanent drawn solid (wall / stone / metal / pillar, 2 cm in from its box; never crumble or bridge) is dropped: 34k of the
+  level's 409k decor triangles (9 %), about -17k stereo in the heaviest sections. 0.2 s for the whole level on a desktop. `?cull=0` turns it off. With the
+  lantern shadow off (low tier) the frames are identical to within noise; on the quest tier the picture changes only because smaller chunks now qualify as
+  static shadow casters (`lanternShadow.js` DECOR_CHUNK_MAX / DECOR_TRI_BUDGET still cap that pass).
+- **Models** (`tools/abyssal-tether-3d/simplify_glbs.mjs`, meshoptimizer: edge collapses onto existing vertices, so joints, weights, UVs and tangents stay valid;
+  error bound 0.12-0.16 % of each mesh's radius, i.e. sub-millimetre on the hands): Arm 5388 -> 3232, Launcher 8390 -> 5645 (x2 hands), Lantern 1420 -> 1182,
+  Body 9162 -> 6441 (-34 % of 38k, about -25k stereo). Hands and body are visually identical in the game (A/B frames), the posed bounds are unchanged.
+  Re-run: `simplify_glbs.mjs --out <tmp>` then `compress_glbs.mjs --dir <tmp> --out <models>` (meshopt + quantisation as before).
+- **Quest volumetric fog** back to its original cost (`TIER_THICKNESS` quest 1.0; desktop stays 2x). The distance fog is 2x on every tier.
+- **Governor warm-up** (`platform/governor.js`, `warmup` 5 s): frames do not count for 5 s after a session start and after play begins or resumes, nor
+  while the level is being dressed. The load spikes of a start (shader programs, texture / lightmap uploads, the dressing job) were stepping the governor
+  down within a second or two, which switches the god rays off and thins the fog (fx tier 'low' at level 3) for 10+ s of recovery.

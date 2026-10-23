@@ -379,8 +379,8 @@ const TIERS = [
 
 // Section mood (index = section): fog thickness, mist on ledges, abyss smoke.
 /** Thickness of the volumetric fog per fx tier (low / quest / desktop). Denser cards shade more pixels (the early-out below skips only the thin ones), so the headset keeps
- *  most of its budget and leans on the cheap distance fog (renderer3d FOG_THICKNESS) for the rest. */
-const TIER_THICKNESS = [1, 1.25, 2];
+ *  its original cost (fog cards are the fill-rate heavy part of the frame there) and the cheap distance fog (renderer3d FOG_THICKNESS) carries the 2x. */
+const TIER_THICKNESS = [1, 1, 2];
 const SECTION_DENSITY = [0.8, 0.85, 1.0, 0.9, 1.15, 1.0, 0.95, 1.1];
 // S5 / S8: the brown-amber fog hue sat over every floor as a flat orange wash; their sheets are thinner now
 // air hue saturation: the brown-amber S5 / S8 fog read as an orange wash at full saturation

@@ -34,12 +34,14 @@ const ok = async (name, fn) => {
 };
 
 // What the uncompressed originals measured (HEAD before compression): mesh / vertex / bone / clip counts and the posed bbox.
+// player_arms and player_body were then simplified with tools/abyssal-tether-3d/simplify_glbs.mjs (error bounds of 0.12-0.16 % of the mesh
+// radius): their vertex counts are the simplified ones (27293 -> 20275, 9320 -> 7461); the bounds are the originals' (the check below).
 const EXPECT = {
   mason_rig: { meshes: 8, verts: 141967, skinned: 8, bones: 170, anims: 18, min: [-4.4159, -5.1954, -2.3254], max: [9.1476, 6.1066, 28.4993], attrs: ['_mask'], big: true },
-  player_arms: { meshes: 8, verts: 27293, skinned: 6, bones: 48, anims: 8, min: [-0.0965, -0.1119, -0.2115], max: [0.0965, 0.133, 0.3717], attrs: ['tangent'] },
+  player_arms: { meshes: 8, verts: 20275, skinned: 6, bones: 48, anims: 8, min: [-0.0965, -0.1119, -0.2115], max: [0.0965, 0.133, 0.3717], attrs: ['tangent'] },
   mason_hero: { meshes: 172, verts: 149744, skinned: 0, bones: 0, anims: 0, min: [-13.135, 1.702, -1.9012], max: [9.4116, 26.9572, 11.9362], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
   mason_kit: { meshes: 28, verts: 51890, skinned: 0, bones: 0, anims: 0, min: [-2.6011, -5.1954, -2.3254], max: [4.3794, 6.1066, 6.0546], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
-  player_body: { meshes: 1, verts: 9320, skinned: 1, bones: 22, anims: 5, min: [-0.3812, 0.0004, -0.226], max: [0.3812, 1.5, 0.3187], attrs: [] },
+  player_body: { meshes: 1, verts: 7461, skinned: 1, bones: 22, anims: 5, min: [-0.3812, 0.0004, -0.226], max: [0.3812, 1.5, 0.3187], attrs: [] },
 };
 
 const parseGLB = (file, loader) =>
