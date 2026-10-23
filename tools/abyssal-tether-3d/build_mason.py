@@ -2840,7 +2840,9 @@ def _build_crown():
     CROWN["tips"] = np.array(tips) if tips else np.array([C + T * 0.3])
 
     # ------------------------------------------------------------------ organic dressing of the maw
-    # (a) lips: lumpy wet tissue rolled round the inner arris of the portal, the teeth rooted in it
+    # (a) lips: flat, folded tissue rolled over the inner arris of the portal (wide in the plane of the face, thin in depth, with
+    #     creases and a slow swell, so it reads as a lip and not as a hose), the teeth rooted in it
+    rl = random.Random(SEED * 7 + 11)   # the face rebuild draws from its own stream: the rest of the crown keeps its dice
     with tag("Own:crown", Mh):
         for (zz, rad, dsh) in ((FACE[0] + 0.02, 0.1, 0.02), (-0.5, 0.13, 0.03)):
             for (sa, sb, low) in ((0.0, Y_GAP - PORT_YB, True), (Y_GAP - PORT_YB, lanI.L - (Y_GAP - PORT_YB), False),
@@ -2851,47 +2853,98 @@ def _build_crown():
                 if low:
                     Pl = lowT(Pl)
                 tt = np.linspace(0, 1, len(Pl))
-                A["Flesh"].add_tube(Pl, rad * (1 + 0.45 * np.sin(tt * 37 + zz) * 0.5 + 0.2 * NZ.fbm(Pl * 3.0, 2)), sides=9,
-                                    nz_amp=0.2, nz_freq=7.0, seed=rng.random() * 9, m=0.05, cap0=False, cap1=False)
-        # (b) muscle ropes: thick, taut, spiralling cords hauling the jaws, from the intrados back into the throat
+                Ll = arclen(Pl)
+                swell = np.clip(0.95 + 0.35 * NZ.fbm(Pl * 0.9 + zz, 2), 0.7, 1.3)
+                crease = np.ones(len(Pl))
+                for c_ in rl.sample(range(len(Pl)), min(len(Pl), max(2, int(Ll[-1] / 1.1)))):
+                    crease -= 0.3 * np.exp(-((np.arange(len(Pl)) - c_) / 1.3) ** 2)
+                wrinkle = 1 + 0.05 * np.sin(Ll * 23.0 + zz * 5.0)
+                ryv = rad * 1.7 * swell * np.clip(crease, 0.7, 1) * wrinkle
+                rzv = rad * 0.55 * swell * np.clip(crease, 0.8, 1)
+                A["Flesh"].add_tube(Pl, rzv, ry=ryv, up=T, sides=12, nz_amp=0.1, nz_freq=6.0, seed=rl.random() * 9, m=0.05,
+                                    cap0=False, cap1=False)
+                if zz > 0:   # a thin outer fold laid over the lip (two layers of tissue)
+                    Pf_ = Pl + (nx[:, None] * S[None] + ny[:, None] * D[None]) * 0.12 - T[None] * 0.03
+                    A["Flesh"].add_tube(Pf_, rzv * 0.5, ry=ryv * 0.45, up=T, sides=8, nz_amp=0.12, nz_freq=8.0, seed=rl.random() * 9, m=0.12,
+                                        cap0=False, cap1=False)
+        # (b) muscle bundles: a fan of tapering fibres from an insertion pad on the intrados back into the throat (each fibre
+        #     thick at the root, a thread at the far end, so they read as hauling muscle, not as hoses)
         for q in range(0 if 'ropes' in OMIT else 3):
-            sfr = rng.uniform(0.15, 0.85)
+            sfr = rl.uniform(0.15, 0.85)
             s0 = lanI.Lj + sfr * 2 * lanI.La
             x, y, nx, ny = lanI.eval(s0)
-            a_ = P3(x[0] - nx[0] * 0.06, y[0] - ny[0] * 0.06, rng.uniform(-0.2, 0.3))
-            b_ = P3(x[0] * 0.2 + rng.uniform(-0.3, 0.3), y[0] * 0.1 - rng.uniform(0.0, 0.9), rng.uniform(-2.6, -1.4))
-            Pm = bezier([a_, (a_ + b_) / 2 + D3(-nx[0], -ny[0], 0) * rng.uniform(0.1, 0.4), b_], 18)
-            tt = np.linspace(0, 1, 18)
-            A["Flesh"].add_tube(Pm, (0.07 + 0.09 * np.sin(math.pi * tt) ** 0.8) * rng.uniform(0.8, 1.3), sides=9,
-                                nz_amp=0.15, nz_freq=6.0, seed=rng.random() * 20, m=0.15)
-            A["Tendon"].add_tube(Pm + D3(rng.uniform(-1, 1), rng.uniform(-1, 1), 0) * 0.05, 0.025 * rng.uniform(0.8, 1.3),
-                                 sides=6, cap0=False, cap1=False)
-        # (d) the tongue: a heavy, ridged, glistening slab out of the throat over the dropped lip, dripping
+            a_ = P3(x[0] - nx[0] * 0.06, y[0] - ny[0] * 0.06, rl.uniform(-0.2, 0.3))
+            b_ = P3(x[0] * 0.2 + rl.uniform(-0.3, 0.3), y[0] * 0.1 - rl.uniform(0.0, 0.9), rl.uniform(-2.6, -1.4))
+            V, F = blob(a_, basis_axes(D3(nx[0], ny[0], 0), T, D3(-ny[0], nx[0], 0), 0.09, 0.2, 0.22), sub=2, amp=0.2,
+                        seed=rl.random() * 30)
+            A["Flesh"].add(V, F, m=0.15)
+            for f_ in range(4):
+                ja = D3(rl.uniform(-1, 1), rl.uniform(-1, 1), rl.uniform(-1, 1)) * 0.07
+                jb = D3(rl.uniform(-1, 1), rl.uniform(-1, 1), rl.uniform(-0.4, 0.4)) * 0.3
+                pa, pb = a_ + ja, b_ + jb
+                mid = (pa + pb) / 2 + D3(-nx[0], -ny[0], 0) * rl.uniform(0.1, 0.4) + D3(rl.uniform(-1, 1), rl.uniform(-1, 1), 0) * 0.08
+                Pm = bezier([pa, mid, pb], 18)
+                tt = np.linspace(0, 1, 18)
+                r0 = rl.uniform(0.05, 0.1)
+                A["Flesh"].add_tube(Pm, r0 * (1 - 0.7 * tt ** 0.9) * (1 + 0.12 * np.sin(tt * 17 + f_)), sides=7, nz_amp=0.12,
+                                    nz_freq=6.0, seed=rl.random() * 20, m=0.15, cap0=True, cap1=True)
+            A["Tendon"].add_tube(bezier([a_, (a_ + b_) / 2 + D3(-nx[0], -ny[0], 0) * 0.2, b_], 14), 0.02, sides=6, cap0=False, cap1=False)
+        # (d) the tongue: a broad, flat-topped slab (median groove, raised rim, wrinkled back, papillae) out of the throat over the
+        #     dropped lip, tapering to a rounded tip, dripping. The wide axis lies across the mouth, thin axis vertical.
         if 'tongue' not in OMIT:
-            tp_ = [(0.0, -0.55, -3.2), (0.0, -0.62, -2.2), (0.02, -0.95, -1.1), (0.05, PORT_YB + 0.52, -0.1),
-                   (0.08, PORT_YB + 0.45, 0.55), (0.12, PORT_YB + 0.15, 1.05), (0.18, PORT_YB - 0.6, 1.2), (0.2, PORT_YB - 1.5, 1.15)]
+            tp_ = [(0.0, -0.55, -3.2), (-0.1, -0.62, -2.2), (0.0, -0.95, -1.1), (0.13, PORT_YB + 0.52, -0.1),
+                   (0.1, PORT_YB + 0.45, 0.55), (0.0, PORT_YB + 0.15, 1.05), (-0.1, PORT_YB - 0.6, 1.2), (-0.12, PORT_YB - 1.5, 1.15)]
             kp = []
             for i_, (x_, y_, z_) in enumerate(tp_):
                 kp.append(P3(x_, y_, z_) if i_ < 3 else lowT(P3(x_, y_, z_))[0])
             Pt = catmull(np.array(kp), 10)
             Pt = resample(Pt, step=0.06)
             tt = np.linspace(0, 1, len(Pt))
-            wid = (0.5 + 0.36 * np.clip(tt * 3, 0, 1)) * (1 - 0.5 * smoothstep(0.85, 1.0, tt))
-            thk = (0.13 + 0.05 * np.clip(tt * 2, 0, 1)) * (1 - 0.6 * smoothstep(0.9, 1.0, tt))
-            ridges = 1 + 0.035 * np.sin(arclen(Pt) * 22.0)
-            T_t, N_t, B_t = frames(Pt, up=D)
+            Lt = arclen(Pt)
+            wid = (0.36 + 0.12 * smoothstep(0.0, 0.35, tt)) * (1 - 0.72 * smoothstep(0.62, 1.0, tt))
+            thk = (0.13 + 0.06 * smoothstep(0.0, 0.4, tt)) * (1 - 0.5 * smoothstep(0.7, 1.0, tt))
+            rnd = np.sqrt(np.clip(1 - ((tt - 0.9) / 0.1) ** 2, 0.03, 1.0)) * (tt > 0.9) + (tt <= 0.9)
+            wid, thk = wid * rnd, thk * np.sqrt(rnd)
+            # frames: tangent, thin axis N (dorsal side up, parallel transported), wide axis B (across the mouth)
+            T_t = frames(Pt)[0]
+            N_t = np.zeros_like(Pt)
+            N_t[0] = nrm(D - D.dot(T_t[0]) * T_t[0])
+            for i_ in range(1, len(Pt)):
+                v_ = N_t[i_ - 1] - N_t[i_ - 1].dot(T_t[i_]) * T_t[i_]
+                N_t[i_] = nrm(v_) if np.linalg.norm(v_) > 1e-9 else N_t[i_ - 1]
+            B_t = np.cross(T_t, N_t)
+            K_ = 28
+            a_ = np.linspace(0, 2 * math.pi, K_, endpoint=False)
+            ca, sa_ = np.cos(a_), np.sin(a_)
+            ex_ = 2.0 / 2.7
+            wdu = np.sign(ca) * np.abs(ca) ** ex_                         # across (unit)
+            tu = np.sign(sa_) * np.abs(sa_) ** ex_                        # thin axis (unit), +1 = dorsal
             prof = []
             for j in range(len(Pt)):
-                a_ = np.linspace(0, 2 * math.pi, 24, endpoint=False)
-                cx = np.cos(a_) * wid[j] * ridges[j]
-                cy = np.sin(a_) * thk[j] * ridges[j] - 0.05 * np.exp(-(np.cos(a_) / 0.28) ** 2) * (np.sin(a_) > 0) * thk[j]
-                prof.append(np.stack([cx, cy], -1))
-            V, F, uv, al = loft(Pt, np.array(prof), fr=(T_t, N_t, B_t), cap0=True, cap1=True, nz_amp=0.1, nz_freq=5.0,
-                                nz_seed=2.2)
+                w_, t_ = wid[j], thk[j]
+                py = wdu * w_
+                px = tu * t_
+                top = sa_ > 0
+                groove = 0.5 * (1 - smoothstep(0.0, 0.85, tt[j])) * np.exp(-(py / (0.2 * w_ + 1e-6)) ** 2)
+                rim = 0.16 * np.exp(-((np.abs(py) - 0.8 * w_) / (0.1 * w_ + 1e-6)) ** 2)
+                px = np.where(top, px * (1 - groove) + t_ * rim, px)
+                px = np.where(top, px * (1 + 0.05 * np.sin(Lt[j] * 21.0)), px)
+                prof.append(np.stack([px, py], -1))
+            V, F, uv, al = loft(Pt, np.array(prof), fr=(T_t, N_t, B_t), cap0=True, cap1=True, nz_amp=0.07, nz_freq=5.0, nz_seed=2.2)
             A["Flesh"].add(V, F, uv, m=0.18 + 0.2 * np.clip(al - 0.6, 0, 1))
+            # papillae: rows of small domes on the back of the tongue, coarser at the root
+            rows = [i_ for i_ in range(int(len(Pt) * 0.1), int(len(Pt) * 0.82), 3)]
+            for i_ in rows:
+                for k_ in range(5):
+                    lat = rl.uniform(-0.8, 0.8) * wid[i_]
+                    surf = thk[i_] * max(0.0, 1 - abs(lat / wid[i_]) ** 2.7) ** (1 / 2.7)
+                    sz_p = rl.uniform(0.025, 0.045) * (1.25 - 0.55 * tt[i_])
+                    cen = Pt[i_] + B_t[i_] * lat + N_t[i_] * (surf - 0.4 * sz_p)
+                    V, F = blob(cen, basis_axes(B_t[i_], N_t[i_], T_t[i_], sz_p, sz_p * 0.75, sz_p), sub=1, amp=0.1, seed=rl.random() * 40)
+                    A["Flesh"].add(V, F, m=0.3)
             for q in range(5):
-                i_ = rng.randint(len(Pt) // 2, len(Pt) - 2)
-                hang_strand(Pt[i_] + (rng.uniform(-1, 1)) * S * wid[i_] * 0.6, rng.uniform(0.4, 1.6), rng.uniform(0.014, 0.03), A["Mucus"])
+                i_ = rl.randint(len(Pt) // 2, len(Pt) - 2)
+                hang_strand(Pt[i_] + (rl.uniform(-1, 1)) * B_t[i_] * wid[i_] * 0.6, rl.uniform(0.4, 1.6), rl.uniform(0.014, 0.03), A["Mucus"])
 
 
     # ------------------------------------------------------------------ the ring of raised, empty stone arms
