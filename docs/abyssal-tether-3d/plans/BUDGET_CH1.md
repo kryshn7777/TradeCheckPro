@@ -173,3 +173,11 @@ The stereo budget harness was not re-run (rise < 15 %). Not measured on a Quest 
 - **Dread stare:** the first time it comes into pursuit range (14-40 m) it may stop dead and stare for 1.5-2.6 s (55 %, at most once per 28 s, Mason only): a low call, the crown locked on you, then a pressure surge at you (`creature:stare`, burst reason `stare`). `tests/creature/dread.mjs`.
 - **Lead:** while hunting it aims where you will be (0.5 s of your velocity, at most 5 m), so a swing across the shaft does not shake it off. Knobs: `CREATURE_TUNING.stare`, `.lead`, `.leadMax`, `.bodyReach / bodyRate / bodyMaxFix / bodyClear`.
 - Not done: the rig view does not react to the stare yet (it only holds and sways), and nothing was playtested in VR.
+
+## Creature: the body axes are locked (it no longer whips about while it chases a player who stays close)
+When the player stood close and moved to and fro, the head dithered round them: the facing flipped between "where I am going" and "where you are" (a switch at 1.2 m/s), the trail breadcrumbs were eaten and laid again, and the blocks behind the head swung (block tangents up to 6000 deg/s in single frames).
+- `Creature3D._lockBody`: each link keeps the length the trail gave it but may turn at most `bodyTurn` 3.4 rad/s (head end) .. `bodyTurnTail` 2.0 (tail end) from its direction last frame; `_lockUps`: each block's up at most `bodyUpTurn` 3 rad/s. The head's facing is a blend of its travel direction and the look at you (no switch), and it turns slower (and with a lower cap) inside 16 m.
+- The wall fit (`_conformBody`) is eased as vectors (a normal that flips no longer jumps a block), and only shallow overlaps are pushed out.
+- `tests/creature/twist.mjs` (sections 5-6, 8 seeds, a player swinging +-3 m close by, 45 s): facing >150 deg/s 3.4 % -> 2.2 % of frames, block tangents >150 deg/s 2.1 % -> 1.2 %, tangent spikes 6650 -> ~1500 deg/s, block ups capped at 172 deg/s (873-2400 before).
+- Trade-off: the lock makes the body lag the trail when the head turns hard, so it clips the walls a little more than the free body with the wall fit (blocks inside masonry 0.14 % -> 0.6 %; 2.3 % before the wall fit at all).
+- Not done / unverified: nothing was looked at in VR; some tangent spikes remain (relocations within 9 m, ledge crossings).

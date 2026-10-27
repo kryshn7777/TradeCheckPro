@@ -94,8 +94,14 @@ export const CREATURE_TUNING = {
   arch: 0.65, // the body arches off the wall mid-length (m)
   bodyReach: 4.5, // m: how far a block looks for the wall it lies on
   bodyRate: 9, // 1/s: how fast a block's height settles to the wall
-  bodyMaxFix: 1.6, // m: the most a block is moved by the wall fit
+  bodyMaxFix: 0.7, // m: the most a block is moved by the wall fit
   bodyClear: 0.55, // m x scale: the radius of a block that no solid may enter
+  bodyPushRate: 11, // 1/s: how fast the push out of a solid is applied (eased)
+  // The body's axes are locked: each link may turn at most bodyTurn rad/s (head end) .. bodyTurnTail (tail end) against the last frame, and each
+  // block's up at bodyUpTurn, so a head that dithers round a player standing close never whips the body about.
+  bodyTurn: 3.4,
+  bodyTurnTail: 2.0,
+  bodyUpTurn: 3.0,
   trailCap: 360, // breadcrumbs kept (≈ 108 m ≥ 4× the body)
   speed: { recover: 6.5, observe: 1.1 },
   steerRate: 3.2, // 1/s — velocity eases toward the desired velocity (no instant turns)
@@ -540,7 +546,12 @@ export class Creature3D {
     this._bodySolids = []; // scratch of the per-block wall fit
     this._bs = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._ba = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
-    this._bodyLift = new Float32Array(SEG); // eased height correction of each block (m)
+    this._bodyLift = new Float32Array(SEG * 3); // eased wall-fit offset of each block (m, a vector: a normal that flips must not jump the block)
+    this._bdir = new Float32Array(SEG * 3); // each link's direction last frame (the locked body axes)
+    this._bup = new Float32Array(SEG * 3); // each block's up last frame
+    this._bReady = false;
+    this._bsrc = new Float32Array(SEG * 3); // the spine as the trail laid it (the lock reads the links from here)
+    this._bpush = new Float32Array(SEG * 3); // eased push-out of each block (m)
     this._surfTmp = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._hit = { t: 0, az: 0 };
 
@@ -2572,18 +2583,17 @@ export class Creature3D {
     let tx;
     let ty;
     let tz;
-    if (this.speed > 1.2) {
-      tx = this.vx / this.speed;
-      ty = this.vy / this.speed;
-      tz = this.vz / this.speed;
-    } else {
+    {
+      // Its way of travel at speed, its look at you when it is slow: a blend, not a switch at 1.2 m/s (a head that dithers round a player
+      // standing close crossed that line back and forth and turned to the velocity and to you in turn).
       const dx = this._px - this.x;
       const dy = this._py - this.y;
       const dz = this._pz - this.z;
       const d = len3(dx, dy, dz) || 1;
-      tx = dx / d;
-      ty = dy / d;
-      tz = dz / d;
+      const wv = this.speed > 0.05 ? U.smoothstep(0.6, 3.0, this.speed) : 0;
+      tx = U.lerp(dx / d, this.speed > 0.05 ? this.vx / this.speed : 0, wv);
+      ty = U.lerp(dy / d, this.speed > 0.05 ? this.vy / this.speed : 0, wv);
+      tz = U.lerp(dz / d, this.speed > 0.05 ? this.vz / this.speed : 0, wv);
     }
     // While it watches (sighting pause / observing) the crown turns to the player.
     if (this.state === S.OBSERVING && this.sighting) {
@@ -2597,7 +2607,9 @@ export class Creature3D {
     }
     // Turn toward the target along the arc, never through the chord: the eased angle is capped (HEAD_TURN_MAX deg/s) and a target
     // behind the crown (the chord would collapse to zero) turns about the dorsal up instead of snapping.
-    const k = 1 - Math.exp(-4 * dt);
+    // close to the player the crown turns more slowly and more evenly: it dithers round someone standing near, and a fast crown whips the body
+    const nearK = this.inPlay ? 1 - U.smoothstep(8, 16, this.distance) : 0;
+    const k = 1 - Math.exp(-(4 - 1.6 * nearK) * dt);
     let tl = len3(tx, ty, tz);
     if (tl < 1e-6) {
       tx = this.hx;
@@ -2611,7 +2623,7 @@ export class Creature3D {
     const cosA = U.clamp(this.hx * tx + this.hy * ty + this.hz * tz, -1, 1);
     const ang = Math.acos(cosA);
     if (ang > 1e-4 && dt > 0) {
-      const step = Math.min(ang * k, HEAD_TURN_MAX * dt);
+      const step = Math.min(ang * k, HEAD_TURN_MAX * (1 - 0.4 * nearK) * dt);
       // the turn axis: h x t, or the dorsal up when they are (nearly) opposite
       let ax = this.hy * tz - this.hz * ty;
       let ay = this.hz * tx - this.hx * tz;
@@ -2814,6 +2826,7 @@ export class Creature3D {
   /** Lays the trail out straight behind the head (forward = fx,fy,fz). */
   _layBody(fx, fy, fz) {
     this._upReady = false; // a teleport / a re-lay: the dorsal up starts again from the surface
+    this._bReady = false; // ... and so do the body's locked axes
     const l = len3(fx, fy, fz) || 1;
     const ux = fx / l;
     const uy = fy / l;
@@ -2953,7 +2966,9 @@ export class Creature3D {
         }
       }
     }
+    this._lockBody(this._bodyDt || 1 / 60);
     this._conformBody(this._bodyDt || 1 / 60);
+    this._lockUps(this._bodyDt || 1 / 60);
     // The column arches off the wall mid-length and slowly heaves (breathing masonry).
     const heave = 1 + 0.18 * Math.sin(this._t * 0.9 + this.seed);
     for (let i = 1; i < SEG; i++) {
@@ -2961,6 +2976,135 @@ export class Creature3D {
       sp[i * 3] += up[i * 3] * a;
       sp[i * 3 + 1] += up[i * 3 + 1] * a;
       sp[i * 3 + 2] += up[i * 3 + 2] * a;
+    }
+  }
+
+  /**
+   * Locks the body's axes: link i (block i-1 -> block i) keeps its length but may only turn `bodyTurn` rad/s (less toward the tail)
+   * from where it pointed last frame. The trail replays every dither of the head (it backs along its own path, the crumbs are eaten and
+   * laid again), and a link used to flip by 100s of degrees in a frame when the player stood close and the head swung to and fro.
+   */
+  _lockBody(dt) {
+    const sp = this.body.spine;
+    const d = this._bdir;
+    if (!this._bReady || !(dt > 0)) {
+      for (let i = 1; i < SEG; i++) {
+        const vx = sp[i * 3] - sp[i * 3 - 3];
+        const vy = sp[i * 3 + 1] - sp[i * 3 - 2];
+        const vz = sp[i * 3 + 2] - sp[i * 3 - 1];
+        const l = len3(vx, vy, vz) || 1;
+        d[i * 3] = vx / l;
+        d[i * 3 + 1] = vy / l;
+        d[i * 3 + 2] = vz / l;
+      }
+      this._bReady = true;
+      return;
+    }
+    const src = this._bsrc;
+    src.set(sp);
+    for (let i = 1; i < SEG; i++) {
+      // the link the trail asked for (from the untouched spine: the blocks before this one have already been moved)
+      const vx = src[i * 3] - src[i * 3 - 3];
+      const vy = src[i * 3 + 1] - src[i * 3 - 2];
+      const vz = src[i * 3 + 2] - src[i * 3 - 1];
+      const l = len3(vx, vy, vz);
+      if (l < 1e-6) {
+        sp[i * 3] = sp[i * 3 - 3];
+        sp[i * 3 + 1] = sp[i * 3 - 2];
+        sp[i * 3 + 2] = sp[i * 3 - 1];
+        continue;
+      }
+      const tx = vx / l;
+      const ty = vy / l;
+      const tz = vz / l;
+      const px = d[i * 3];
+      const py = d[i * 3 + 1];
+      const pz = d[i * 3 + 2];
+      const cosA = U.clamp(px * tx + py * ty + pz * tz, -1, 1);
+      const ang = Math.acos(cosA);
+      const lim = U.lerp(T.bodyTurn, T.bodyTurnTail, (i - 1) / (SEG - 2)) * dt;
+      let nx = tx;
+      let ny = ty;
+      let nz = tz;
+      if (ang > lim) {
+        // rotate the last direction toward the wanted one by `lim` (about their common perpendicular, the body's up when they oppose)
+        let ax = py * tz - pz * ty;
+        let ay = pz * tx - px * tz;
+        let az = px * ty - py * tx;
+        let al = len3(ax, ay, az);
+        if (al < 1e-3) {
+          ax = this.body.up[i * 3];
+          ay = this.body.up[i * 3 + 1];
+          az = this.body.up[i * 3 + 2];
+          const dd = ax * px + ay * py + az * pz;
+          ax -= px * dd;
+          ay -= py * dd;
+          az -= pz * dd;
+          al = len3(ax, ay, az) || 1;
+        }
+        ax /= al;
+        ay /= al;
+        az /= al;
+        const c = Math.cos(lim);
+        const s = Math.sin(lim);
+        const dot = ax * px + ay * py + az * pz;
+        nx = px * c + (ay * pz - az * py) * s + ax * dot * (1 - c);
+        ny = py * c + (az * px - ax * pz) * s + ay * dot * (1 - c);
+        nz = pz * c + (ax * py - ay * px) * s + az * dot * (1 - c);
+        const nl = len3(nx, ny, nz) || 1;
+        nx /= nl;
+        ny /= nl;
+        nz /= nl;
+      }
+      d[i * 3] = nx;
+      d[i * 3 + 1] = ny;
+      d[i * 3 + 2] = nz;
+      sp[i * 3] = sp[i * 3 - 3] + nx * l;
+      sp[i * 3 + 1] = sp[i * 3 - 2] + ny * l;
+      sp[i * 3 + 2] = sp[i * 3 - 1] + nz * l;
+    }
+  }
+
+  /** Each block's up may turn only `bodyUpTurn` rad/s: the roll of the body is locked against the trail's normals flipping. */
+  _lockUps(dt) {
+    const up = this.body.up;
+    const u0 = this._bup;
+    if (!this._bReady || !(dt > 0)) {
+      u0.set(up);
+      return;
+    }
+    const lim = T.bodyUpTurn * dt;
+    for (let i = 1; i < SEG; i++) {
+      const px = u0[i * 3];
+      const py = u0[i * 3 + 1];
+      const pz = u0[i * 3 + 2];
+      let tx = up[i * 3];
+      let ty = up[i * 3 + 1];
+      let tz = up[i * 3 + 2];
+      const ang = Math.acos(U.clamp(px * tx + py * ty + pz * tz, -1, 1));
+      if (ang > lim) {
+        // a chord step toward the target, renormalised (the angles are small after the first frame)
+        const f = lim / ang;
+        tx = px + (tx - px) * f;
+        ty = py + (ty - py) * f;
+        tz = pz + (tz - pz) * f;
+        const l = len3(tx, ty, tz);
+        if (l > 1e-6) {
+          tx /= l;
+          ty /= l;
+          tz /= l;
+        } else {
+          tx = px;
+          ty = py;
+          tz = pz;
+        }
+      }
+      up[i * 3] = tx;
+      up[i * 3 + 1] = ty;
+      up[i * 3 + 2] = tz;
+      u0[i * 3] = tx;
+      u0[i * 3 + 1] = ty;
+      u0[i * 3 + 2] = tz;
     }
   }
 
@@ -2979,6 +3123,7 @@ export class Creature3D {
     const near = T.bodyReach;
     const ke = 1 - Math.exp(-T.bodyRate * dt);
     const ku = 1 - Math.exp(-6 * dt);
+    const kp = 1 - Math.exp(-T.bodyPushRate * dt);
     const s = this._bs;
     const a = this._ba;
     const lift = this._bodyLift;
@@ -3013,10 +3158,12 @@ export class Creature3D {
         let err = want - dS;
         // far from the wall (past an edge, across a void) do not drag the block back: only what the trail got wrong is fixed
         err = U.clamp(err, -T.bodyMaxFix, T.bodyMaxFix);
-        lift[i] += (err - lift[i]) * ke;
-        x += s.nx * lift[i];
-        y += s.ny * lift[i];
-        z += s.nz * lift[i];
+        lift[i * 3] += (s.nx * err - lift[i * 3]) * ke;
+        lift[i * 3 + 1] += (s.ny * err - lift[i * 3 + 1]) * ke;
+        lift[i * 3 + 2] += (s.nz * err - lift[i * 3 + 2]) * ke;
+        x += lift[i * 3];
+        y += lift[i * 3 + 1];
+        z += lift[i * 3 + 2];
         const w = 1 - U.smoothstep(want + 1.2, want + 3.5, dS); // near the wall: its normal; far from it: the trail's
         up[i * 3] += (s.nx - up[i * 3]) * ku * w;
         up[i * 3 + 1] += (s.ny - up[i * 3 + 1]) * ku * w;
@@ -3025,18 +3172,33 @@ export class Creature3D {
         up[i * 3] /= ul;
         up[i * 3 + 1] /= ul;
         up[i * 3 + 2] /= ul;
-      } else lift[i] *= 1 - ke;
+      } else {
+        lift[i * 3] *= 1 - ke;
+        lift[i * 3 + 1] *= 1 - ke;
+        lift[i * 3 + 2] *= 1 - ke;
+      }
+      // the body radius: nothing of it inside a solid (decor boxes, pillars, ledges); the push is eased (never a jump of a metre in a frame)
+      let tpx = 0;
+      let tpy = 0;
+      let tpz = 0;
       if (dA < Infinity) {
-        // the body radius: nothing of it inside a solid (decor boxes, pillars, ledges)
         const r = T.bodyClear * B.scale[i];
-        const dNow = dA + (dS < Infinity ? lift[i] * (s.nx * a.nx + s.ny * a.ny + s.nz * a.nz) : 0);
-        if (dNow < r) {
+        const dNow = dA + lift[i * 3] * a.nx + lift[i * 3 + 1] * a.ny + lift[i * 3 + 2] * a.nz;
+        if (dNow < r && dNow > -2 * r) {
+          // only a shallow overlap is pushed out (a block deep inside a thick solid is the trail's doing: the head crawls over ledges)
           const push = Math.min(T.bodyMaxFix, r - dNow);
-          x += a.nx * push;
-          y += a.ny * push;
-          z += a.nz * push;
+          tpx = a.nx * push;
+          tpy = a.ny * push;
+          tpz = a.nz * push;
         }
       }
+      const bp = this._bpush;
+      bp[i * 3] += (tpx - bp[i * 3]) * kp;
+      bp[i * 3 + 1] += (tpy - bp[i * 3 + 1]) * kp;
+      bp[i * 3 + 2] += (tpz - bp[i * 3 + 2]) * kp;
+      x += bp[i * 3];
+      y += bp[i * 3 + 1];
+      z += bp[i * 3 + 2];
       sp[i * 3] = x;
       sp[i * 3 + 1] = y;
       sp[i * 3 + 2] = z;
