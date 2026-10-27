@@ -92,6 +92,10 @@ export const CREATURE_TUNING = {
   weave: 0.32, // sideways weave while crawling (fraction of speed) → a sinuous trail
   weaveLength: 22, // weave wavelength along the path (m)
   arch: 0.65, // the body arches off the wall mid-length (m)
+  bodyReach: 4.5, // m: how far a block looks for the wall it lies on
+  bodyRate: 9, // 1/s: how fast a block's height settles to the wall
+  bodyMaxFix: 1.6, // m: the most a block is moved by the wall fit
+  bodyClear: 0.55, // m x scale: the radius of a block that no solid may enter
   trailCap: 360, // breadcrumbs kept (≈ 108 m ≥ 4× the body)
   speed: { recover: 6.5, observe: 1.1 },
   steerRate: 3.2, // 1/s — velocity eases toward the desired velocity (no instant turns)
@@ -139,6 +143,12 @@ export const CREATURE_TUNING = {
   farBelowMax: 135,
   // Annoyed: a grapple shot whose aim line passes through its body (not the small variants). It is angry for `dur` seconds at
   // `mul` x its speed, the first `burstDur` seconds at `burstMul` x; it can be provoked again `cooldown` s after the last time.
+  // Dread: the first time it comes into pursuit range it may stop and stare (a low call, the crown locked on you) for `dur` s, then surge at
+  // you. `chance` per sighting window, at most once per `cooldown` s, from `min`..`max` m away. Lead: it aims where you WILL be (seconds ahead of
+  // your velocity, at most `leadMax` m), so a swing does not shake it off.
+  stare: { chance: 0.55, cooldown: 28, min: 14, max: 40, durMin: 1.5, durMax: 2.6 },
+  lead: 0.5,
+  leadMax: 5,
   annoy: { dur: 3, mul: 1.5, burstDur: 0.3, burstMul: 6, cooldown: 20, radius: 2.2, pad: 0.35 },
 };
 const T = CREATURE_TUNING;
@@ -287,7 +297,7 @@ function midDim(s) {
   return Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
 }
 /** Masonry it can cling to and crawl over: walls, pillars, any large block (not ledges, bridges, beams). */
-function isStructural(s) {
+export function isStructural(s) {
   if (s.active === false || s.kind === 'crumble' || s.kind === 'grate' || s.kind === 'bridge') return false;
   return s.kind === 'wall' || s.kind === 'pillar' || midDim(s) >= T.structuralSize;
 }
@@ -320,7 +330,7 @@ function segmentBox(x0, y0, z0, x1, y1, z1, b) {
  * Closest point on the SURFACE of box b to p (also when p is inside) and the
  * outward normal there. Returns the signed distance (negative inside).
  */
-function boxSurface(b, px, py, pz, o) {
+export function boxSurface(b, px, py, pz, o) {
   const cx = px < b.minX ? b.minX : px > b.maxX ? b.maxX : px;
   const cy = py < b.minY ? b.minY : py > b.maxY ? b.maxY : py;
   const cz = pz < b.minZ ? b.minZ : pz > b.maxZ ? b.maxZ : pz;
@@ -527,6 +537,10 @@ export class Creature3D {
     this._grip = [];
     this._surf = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._surf2 = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
+    this._bodySolids = []; // scratch of the per-block wall fit
+    this._bs = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
+    this._ba = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
+    this._bodyLift = new Float32Array(SEG); // eased height correction of each block (m)
     this._surfTmp = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._hit = { t: 0, az: 0 };
 
@@ -563,6 +577,8 @@ export class Creature3D {
     this._upReady = false;
     this._bodyDt = 0;
     this._belowSign = 1; // -1: this one entered from below (skitterling slot 2)
+    this.staring = false; // the dread stare (see _tryStare)
+    this._stareCd = 0;
     this._annoyT = -1; // seconds since it was provoked (-1: calm)
     this._annoyCd = 0; // seconds until it can be provoked again
     this.annoyCount = 0;
@@ -652,7 +668,7 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0 };
     this._applyScaling(SECTION_DEFAULTS);
     this._tHead = -1;
     this._tCount = 0;
@@ -827,6 +843,7 @@ export class Creature3D {
     this._bodyDt = dt;
     this._t += dt;
     if (this._annoyCd > 0) this._annoyCd -= dt;
+    if (this._stareCd > 0) this._stareCd -= dt;
     if (this._annoyT >= 0) {
       this._annoyT += dt;
       if (this._annoyT >= T.annoy.dur) this._annoyT = -1;
@@ -962,8 +979,9 @@ export class Creature3D {
             if (st !== S.APPROACHING) this._setState(S.APPROACHING);
           } else if (this.burstTimer <= 0 && !still && this.stamina > 0.3) this._tryBurst(dist);
           else {
-            if (st === S.APPROACHING && dist < T.pursueRange) this._setState(S.PURSUING);
-            else if (st === S.PURSUING && dist > T.loseRange) this._setState(S.APPROACHING);
+            if (st === S.APPROACHING && dist < T.pursueRange) {
+              if (!this._tryStare(dist)) this._setState(S.PURSUING);
+            } else if (st === S.PURSUING && dist > T.loseRange) this._setState(S.APPROACHING);
             if (this.routeTimer <= 0) this._maybeChangeRoute(player, below);
             if (this.callTimer <= 0) this._ambientCall(dist);
           }
@@ -999,6 +1017,12 @@ export class Creature3D {
               this.listening = false;
               this.creeping = true;
               this._setState(S.APPROACHING);
+            } else if (this.staring) {
+              // The stare is over: it comes for you in a surge.
+              this.staring = false;
+              this.stats.stares++;
+              if (this.stamina > 0.3 && dist < T.burstMax) this._startBurst(false, 'stare');
+              else this._setState(dist < T.pursueRange ? S.PURSUING : S.APPROACHING);
             } else {
               this.listening = false;
               this._setState(dist < T.pursueRange ? S.PURSUING : S.APPROACHING);
@@ -1213,6 +1237,24 @@ export class Creature3D {
     this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: dist, intensity: 1, annoyed: true });
   }
 
+  /**
+   * First sight of you inside pursuit range: sometimes it stops dead and stares (a low call, the crown locked on you), then surges.
+   * Mason only, lethal hunts only, rarely (cooldown), never when you are close. Returns true when it started to stare.
+   */
+  _tryStare(dist) {
+    const S_ = T.stare;
+    if (this.v || !this.lethal || this._stareCd > 0 || dist < S_.min || dist > S_.max || this.stamina < 0.5) return false;
+    this._stareCd = S_.cooldown;
+    if (this._rand() >= S_.chance) return false;
+    this.listening = false;
+    this.creeping = false;
+    this._enterObserve(S_.durMin + this._rand() * (S_.durMax - S_.durMin), false);
+    this.staring = true;
+    this._emit('creature:stare', { x: this.x, y: this.y, z: this.z, distance: dist });
+    this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: dist, intensity: 0.8, stare: true });
+    return true;
+  }
+
   /** It heard the player move: lunge if it has the strength, else give chase. */
   _heard(dist) {
     if (this.stamina > 0.3 && dist < T.burstMax && this._rand() < this.k.heardCommit) this._startBurst(true, 'heard');
@@ -1357,6 +1399,26 @@ export class Creature3D {
       }
       default:
         speed = 0;
+    }
+    if (!this.v && this.lethal && !this.creeping) {
+      // It aims where you will be: a swing across the shaft does not shake it off.
+      const w = this.state === S.BURST ? Math.max(swing, this.burstCommit ? 0.85 : 0.55) : this.state === S.PURSUING || this.state === S.APPROACHING ? swing : 0;
+      if (w > 0.05) {
+        const lead = U.clamp(dist / Math.max(8, this.speed + 6), 0, 1) * T.lead;
+        let lx = this._pvx * lead;
+        let ly = this._pvy * lead;
+        let lz = this._pvz * lead;
+        const ll = len3(lx, ly, lz);
+        if (ll > T.leadMax) {
+          const f = T.leadMax / ll;
+          lx *= f;
+          ly *= f;
+          lz *= f;
+        }
+        tx += lx * w;
+        ty += ly * w;
+        tz += lz * w;
+      }
     }
     if (speed > 0.5 && this._detour(tx, ty, tz)) {
       tx = this._dtx;
@@ -1921,6 +1983,7 @@ export class Creature3D {
   _setState(to) {
     if (this.state === to) return;
     const from = this.state;
+    if (to !== S.OBSERVING) this.staring = false;
     this.state = to;
     this.stateTime = 0;
     this.audio.state = to;
@@ -2890,6 +2953,7 @@ export class Creature3D {
         }
       }
     }
+    this._conformBody(this._bodyDt || 1 / 60);
     // The column arches off the wall mid-length and slowly heaves (breathing masonry).
     const heave = 1 + 0.18 * Math.sin(this._t * 0.9 + this.seed);
     for (let i = 1; i < SEG; i++) {
@@ -2897,6 +2961,85 @@ export class Creature3D {
       sp[i * 3] += up[i * 3] * a;
       sp[i * 3 + 1] += up[i * 3 + 1] * a;
       sp[i * 3 + 2] += up[i * 3 + 2] * a;
+    }
+  }
+
+  /**
+   * Lays every block on the wall it is over. The blocks follow the head's trail, which cuts corners: round an outside edge the body
+   * ran through the masonry, in an inside corner it hung in the air. Per block: the nearest structural surface sets its height
+   * (hug x its scale, eased so nothing pops) and its up vector (blended toward the surface normal), and any solid, the dressing's boxes
+   * included, pushes it out to a body radius. The head is untouched (the sim's pursuit, strikes and kills read it only).
+   */
+  _conformBody(dt) {
+    const lv = this.level;
+    if (!lv || typeof lv.querySolids !== 'function') return;
+    const B = this.body;
+    const sp = B.spine;
+    const up = B.up;
+    const near = T.bodyReach;
+    const ke = 1 - Math.exp(-T.bodyRate * dt);
+    const ku = 1 - Math.exp(-6 * dt);
+    const s = this._bs;
+    const a = this._ba;
+    const lift = this._bodyLift;
+    for (let i = 1; i < SEG; i++) {
+      let x = sp[i * 3];
+      let y = sp[i * 3 + 1];
+      let z = sp[i * 3 + 2];
+      const list = lv.querySolids(x - near, y - near, z - near, x + near, y + near, z + near, this._bodySolids);
+      let dS = Infinity; // nearest structural surface (signed: negative inside)
+      let dA = Infinity; // nearest solid of any kind
+      for (let q = 0; q < list.length; q++) {
+        const b = list[q];
+        if (b.active === false || b.kind === 'grate') continue;
+        const d = boxSurface(b, x, y, z, this._surf2);
+        if (d < dA) {
+          dA = d;
+          a.nx = this._surf2.nx;
+          a.ny = this._surf2.ny;
+          a.nz = this._surf2.nz;
+        }
+        if (d < dS && isStructural(b)) {
+          dS = d;
+          s.nx = this._surf2.nx;
+          s.ny = this._surf2.ny;
+          s.nz = this._surf2.nz;
+        }
+      }
+      let want = 0;
+      if (dS < Infinity) {
+        // height above the surface it should keep: the hug of its scale; the trail's own height is already close, this fixes the corners
+        want = this._hug * B.scale[i];
+        let err = want - dS;
+        // far from the wall (past an edge, across a void) do not drag the block back: only what the trail got wrong is fixed
+        err = U.clamp(err, -T.bodyMaxFix, T.bodyMaxFix);
+        lift[i] += (err - lift[i]) * ke;
+        x += s.nx * lift[i];
+        y += s.ny * lift[i];
+        z += s.nz * lift[i];
+        const w = 1 - U.smoothstep(want + 1.2, want + 3.5, dS); // near the wall: its normal; far from it: the trail's
+        up[i * 3] += (s.nx - up[i * 3]) * ku * w;
+        up[i * 3 + 1] += (s.ny - up[i * 3 + 1]) * ku * w;
+        up[i * 3 + 2] += (s.nz - up[i * 3 + 2]) * ku * w;
+        const ul = len3(up[i * 3], up[i * 3 + 1], up[i * 3 + 2]) || 1;
+        up[i * 3] /= ul;
+        up[i * 3 + 1] /= ul;
+        up[i * 3 + 2] /= ul;
+      } else lift[i] *= 1 - ke;
+      if (dA < Infinity) {
+        // the body radius: nothing of it inside a solid (decor boxes, pillars, ledges)
+        const r = T.bodyClear * B.scale[i];
+        const dNow = dA + (dS < Infinity ? lift[i] * (s.nx * a.nx + s.ny * a.ny + s.nz * a.nz) : 0);
+        if (dNow < r) {
+          const push = Math.min(T.bodyMaxFix, r - dNow);
+          x += a.nx * push;
+          y += a.ny * push;
+          z += a.nz * push;
+        }
+      }
+      sp[i * 3] = x;
+      sp[i * 3 + 1] = y;
+      sp[i * 3 + 2] = z;
     }
   }
 

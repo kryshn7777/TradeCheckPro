@@ -167,3 +167,9 @@ The skitterlings keep the v1 model (`skitter_rig.glb`, 56.7 k / 20.7 k, unchange
 
 The stereo budget harness was not re-run (rise < 15 %). Not measured on a Quest GPU.
 
+
+## Creature: the body lies on the walls, and it got scarier (sim only, no asset changes)
+- **Walls:** the 19 blocks behind the head used to replay the head's trail, which cuts corners (round an outside edge the body ran through the masonry, in an inside corner it hung in the air). `Creature3D._conformBody` now lays every block on the structural surface under it (height = hug x its scale, eased; up vector blended to the surface normal) and pushes it out of any solid, the dressing's boxes included. `tests/creature/walls.mjs` (sections 4-7, 3 seeds, still and moving player, 40 s): block-frames inside masonry 2.3 % -> 0.14 %, mean deviation from the wall height 0.99 m -> 0.28 m (measured with the new height formula), deep penetrations (> 0.6 m) 0.04 %. The head, the pursuit, the strike and the kill logic are untouched.
+- **Dread stare:** the first time it comes into pursuit range (14-40 m) it may stop dead and stare for 1.5-2.6 s (55 %, at most once per 28 s, Mason only): a low call, the crown locked on you, then a pressure surge at you (`creature:stare`, burst reason `stare`). `tests/creature/dread.mjs`.
+- **Lead:** while hunting it aims where you will be (0.5 s of your velocity, at most 5 m), so a swing across the shaft does not shake it off. Knobs: `CREATURE_TUNING.stare`, `.lead`, `.leadMax`, `.bodyReach / bodyRate / bodyMaxFix / bodyClear`.
+- Not done: the rig view does not react to the stare yet (it only holds and sways), and nothing was playtested in VR.
