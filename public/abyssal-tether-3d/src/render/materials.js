@@ -117,6 +117,9 @@ export const LOOK = {
   // (0 at y = 0 m .. full at y = -300 m), w unused; uGradeTint multiplies the linear colour (per-section warmth).
   uGradeK: { value: new THREE.Vector4(1.1, 1.0, 0.2, 0) },
   uGradeTint: { value: new THREE.Color(1, 1, 1) },
+  // The horror look (renderer3d.js LOOK_PRESETS): x film grain, y vignette (from the view axis, so both eyes agree), z split toning
+  // (cold crushed shadows, sickly warm lights), w time (s, wrapped) for the grain. All zero = the classic grade.
+  uHorrorK: { value: new THREE.Vector4(0, 0, 0, 0) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
@@ -1339,7 +1342,7 @@ const SPEC_AA = `  {
   }
 `;
 
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\n';
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\n';
 /**
  * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
  * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
@@ -1352,6 +1355,19 @@ const GRADE_FRAG = `  {
     atC = mix( vec3( atL ), atC, atSat );
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
     atC = atC * uGradeTint + uBlack;
+    if ( uHorrorK.z > 0.001 ) {
+      // the horror look: shadows go cold and green-grey and crush toward a soft toe, the lit parts stay a sickly warm, a vignette
+      // from the view axis and a luminance-weighted grain that dies in the blacks (no raised noise floor in a dark headset)
+      float atHl = dot( atC, vec3( 0.2126, 0.7152, 0.0722 ) );
+      float atSh = 1.0 - smoothstep( 0.0, 0.3, atHl );
+      atC *= mix( vec3( 1.0 ), vec3( 0.74, 0.97, 1.03 ), atSh * uHorrorK.z );
+      atC *= mix( vec3( 1.0 ), vec3( 1.07, 0.99, 0.84 ), ( 1.0 - atSh ) * 0.7 * uHorrorK.z );
+      atC *= mix( 1.0, smoothstep( 0.0, 0.05, atHl ), 0.5 * uHorrorK.z );
+      float atAx = normalize( vViewPosition ).z;
+      atC *= 1.0 - uHorrorK.y * ( 1.0 - smoothstep( 0.55, 0.92, atAx ) );
+      float atGn = fract( sin( dot( gl_FragCoord.xy + uHorrorK.w * vec2( 37.0, 17.0 ), vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5;
+      atC *= 1.0 + atGn * uHorrorK.x * smoothstep( 0.003, 0.08, atHl );
+    }
     float atHi = max( atC.r, max( atC.g, atC.b ) );
     if ( atHi > 3.0 ) atC *= ( 3.0 + 2.0 * ( 1.0 - exp( 0.5 * ( 3.0 - atHi ) ) ) ) / atHi;
     gl_FragColor.rgb = atC;

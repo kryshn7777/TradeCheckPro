@@ -185,7 +185,7 @@ export const CONFIG = {
 export const DIFFICULTY = {
   normal: {
     key: 'normal',
-    darkness: 0, // 0..1: how much darker the world is (render/renderer3d.js: ambient, fog, key, baked light, lamps; the lantern is untouched)
+    darkness: 0.3, // 0..1: how much darker the world is (render/renderer3d.js: ambient, fog, key, baked light, lamps; the lantern is untouched)
     label: 'Normal',
     blurb: 'The intended descent. Generous aim assist, recovery anchors, a patient predator.',
     levelVariant: 'normal',
