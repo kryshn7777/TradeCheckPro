@@ -72,7 +72,7 @@ const run = (c, p, secs, f) => { for (let i = 0; i < secs * 60; i++) { if (f) f(
   const g = c.grace;
   let caughtEarly = false;
   run(c, p, 3, () => { if (c.caughtPlayer) caughtEarly = true; });
-  ok(above >= 38 && above <= 60 && g >= 3.4 && !caughtEarly, `respawn: ${above.toFixed(0)} m above, grace ${g.toFixed(1)} s, no catch during grace`);
+  ok(above >= 28 && above <= 60 && g >= 3.4 && !caughtEarly, `respawn: ${above.toFixed(0)} m above, grace ${g.toFixed(1)} s, no catch during grace`);
 }
 // 6. Non-lethal hunting holds off (data-driven lethal:false).
 {

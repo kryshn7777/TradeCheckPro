@@ -201,6 +201,16 @@ export class Level3D {
       load: 0,
       life: num(o.life, 1),
     }));
+    // Abyss: the backup lines cannot be trusted. Half of the shortcut / recovery rings (not the escape ones: S8 is a flight, and the bot route through it needs them) (a seeded, id-derived choice, the same on
+    // every device) are fragile (fragileTime 0.8 s): the lines you fall back on can fail. The route anchors are never touched.
+    if (this.variant === 'abyss') {
+      for (const a of this.anchors) {
+        if (a.kind !== 'ring' || (a.tag !== 'shortcut' && a.tag !== 'recovery')) continue;
+        let h = 2166136261;
+        for (let i = 0; i < a.id.length; i++) h = Math.imul(h ^ a.id.charCodeAt(i), 16777619) >>> 0;
+        if (h % 100 < 50) a.kind = 'fragile';
+      }
+    }
     // Grip zones (WP-CLIMB, sim/climb3d.js): thin boxes just off a climbable surface. `n` is the unit surface normal (the way the
     // climber faces away from the wall; axis aligned, or none for a chain), `face` the surface's coordinate along that axis.
     this.climb = this._build(d.climb, 'clm', (o, id) => {

@@ -83,6 +83,8 @@ export class Climb3D {
     this.bus = bus || null;
     const dm = this.diff.climb && this.diff.climb.drainMul;
     this.drainMul = dm > 0 ? dm : 1;
+    const rd = this.diff.climb && this.diff.climb.reelDrain;
+    this.reelDrain = rd > 0 ? rd : 0; // grip lost per second while reeling in a loaded rope in the air (Nightmare and up)
     this.hands = { left: makeHand(), right: makeHand() };
     this._list = [];
     this._elist = [];
@@ -753,6 +755,14 @@ export class Climb3D {
     this.sv.x = this.sv.y = this.sv.z = 0;
   }
 
+  /** A bite (skitterling): takes `amount` (0..1) of the grip stamina at once; at zero the hands slip like any exhaustion. */
+  bite(amount) {
+    if (!(amount > 0)) return;
+    this.stamina = Math.max(0, this.stamina - amount);
+    this.warn = Math.max(this.warn, 0.6);
+    this._emit('climb:strain', { level: this.warn, stamina: this.stamina });
+  }
+
   /** Lets go of everything from outside (death, respawn, a debug warp). */
   release(p, reason) {
     if (this.holding) this._endAll(p, reason || 'reset', false);
@@ -774,6 +784,8 @@ export class Climb3D {
       st -= d * this.drainMul * dt;
     } else if (gripping) {
       st += K.regenGrip * dt;
+    } else if (this.reelDrain > 0 && !p.grounded && p._reeling) {
+      st -= this.reelDrain * dt; // reeling in under load tires the hands: no breath while you do it
     } else {
       st += (p.grounded ? K.regenGround : K.regenAir) * dt;
     }

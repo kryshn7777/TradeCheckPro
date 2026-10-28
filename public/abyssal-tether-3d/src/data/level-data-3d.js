@@ -955,7 +955,8 @@ const sections = [
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
-    creature: creature('sighting', false, 220),
+    // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
+    creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } } }),
     hints: [],
     triggers: [
       // Fires as the player stands on the catwalk over the Vault: the predator
@@ -973,7 +974,7 @@ const sections = [
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
     theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
-    creature: creature('stalk', true, 130),
+    creature: creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), // Abyss: a skitterling already here
     hints: [
       {
         y: -151, duration: 5,

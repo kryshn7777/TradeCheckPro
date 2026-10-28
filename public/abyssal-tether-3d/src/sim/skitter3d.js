@@ -22,7 +22,9 @@ export const SKITTER = {
   // The extra one (Nightmare and Abyss, in the sections that have skitterlings at all): it enters play at a random moment, on a random wall,
   // a random distance BELOW the player, and hunts upward. delay: seconds after the player enters the section (or respawns); offset: metres
   // below the player (>= safeRadius), the hunt's own rubber band keeps it from falling hopelessly behind.
-  below: { difficulties: { nightmare: true, abyss: true }, delay: [5, 16], offset: [32, 48] },
+  below: { difficulties: { nightmare: true, abyss: true }, delay: [5, 16], delayBy: { abyss: [3, 9] }, offset: [32, 48] },
+  // A bite also costs grip (the fraction of grip stamina it takes, climb3d.bite): hanging, a bite is a fall risk, not only lost health.
+  gripBite: { normal: 0.2, nightmare: 0.3, abyss: 0.4 },
 };
 
 function hashSeed(seed, slot) {
@@ -62,6 +64,7 @@ export class SkitterGroup {
     this.slots = [];
     this.sectionIndex = -1;
     this.pendingDamage = 0;
+    this.pendingGrip = 0;
     this._hurt = 0;
     this.hits = 0;
     this.spawned = 0;
@@ -96,6 +99,7 @@ export class SkitterGroup {
     this.sectionIndex = -1;
     this._belowT = -1;
     this.pendingDamage = 0;
+    this.pendingGrip = 0;
     for (const c of this.slots) this._off(c);
   }
 
@@ -166,7 +170,10 @@ export class SkitterGroup {
     const below = this.slots.length > SKITTER.dataSlots ? this.slots[SKITTER.dataSlots] : null;
     if (below) {
       if (want > 0 && this._belowOn()) {
-        if (!below.on && this._belowT < 0) this._belowT = SKITTER.below.delay[0] + this._belowRand() * (SKITTER.below.delay[1] - SKITTER.below.delay[0]);
+        if (!below.on && this._belowT < 0) {
+          const dl = SKITTER.below.delayBy[this._tuneKey] || SKITTER.below.delay;
+          this._belowT = dl[0] + this._belowRand() * (dl[1] - dl[0]);
+        }
       } else {
         this._belowT = -1;
         if (below.on) this._off(below);
@@ -227,9 +234,17 @@ export class SkitterGroup {
         if (this._hurt > 0) continue;
         this._hurt = SKITTER.hurtCooldown;
         this.pendingDamage += skitterDamage(this._tuneKey);
+        this.pendingGrip += SKITTER.gripBite[this._tuneKey] || 0;
         this.hits++;
       }
     }
+  }
+
+  /** Grip stamina fraction (0..1) the bites took since the last call. */
+  takeGripDamage() {
+    const g = this.pendingGrip;
+    this.pendingGrip = 0;
+    return g;
   }
 
   /** Health fraction (0..1) the skitterlings took off the player since the last call. */

@@ -47,11 +47,11 @@ const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
 {
   const L = lvl('normal');
   let early = 0;
-  for (let i = 0; i < 5; i++) for (const k of KEYS) early += skitterCount(L.sections[i], k);
+  for (let i = 0; i < 4; i++) for (const k of KEYS) early += skitterCount(L.sections[i], k);
   const c = (i) => KEYS.map((k) => skitterCount(L.sections[i], k));
   const mono = [5, 6, 7].every((i) => c(i)[0] <= c(i)[1] && c(i)[1] <= c(i)[2]);
-  ok(early === 0 && c(5).every((n) => n === 1) && c(6)[0] >= 1 && c(7)[0] >= 1 && [5, 6, 7].every((i) => c(i).every((n) => n <= SKITTER.maxAlive)) && mono,
-    `spawn data: none in S1-S5; S6 [${c(5)}], S7 [${c(6)}], S8 [${c(7)}] (normal, nightmare, abyss)`);
+  ok(early === 0 && c(4).join() === '0,0,1' && c(5).every((n) => n === 1) && c(6)[0] >= 1 && c(7)[0] >= 1 && [5, 6, 7].every((i) => c(i).every((n) => n <= SKITTER.maxAlive)) && mono,
+    `spawn data: none in S1-S4; S5 [${c(4)}] (Abyss only); S6 [${c(5)}], S7 [${c(6)}], S8 [${c(7)}] (normal, nightmare, abyss)`);
   ok(skitterDamage('normal') < skitterDamage('nightmare') && skitterDamage('nightmare') < skitterDamage('abyss') && skitterDamage('abyss') < 0.6, `hit costs ${KEYS.map((k) => skitterDamage(k)).join(' / ')} of full health`);
   const sb = new SkitterGroup(lvl('sandbox'), DIFFICULTY.sandbox, new EventBus(), { seed: 1 });
   ok(!sb.enabled && sb.aliveCount === 0, 'sandbox: group disabled');
@@ -157,12 +157,13 @@ const sim = (seed, secs) => {
     for (const seed of [1, 2, 3, 4, 5, 6]) {
       const r = run(k, seed, 40);
       ins.push(r.tIn);
-      if (!(r.tIn >= SKITTER.below.delay[0] - 0.05 && r.tIn <= SKITTER.below.delay[1] + 0.05)) all = false;
+      const win = SKITTER.below.delayBy[k] || SKITTER.below.delay;
+      if (!(r.tIn >= win[0] - 0.05 && r.tIn <= win[1] + 0.05)) all = false;
       if (!r.enter || !(r.enter.dy <= -(SKITTER.below.offset[0] - 1) + 0 || r.enter.dy < -SKITTER.safeRadius)) all = false;
       if (r.enter && r.enter.d < SKITTER.safeRadius) all = false;
     }
   }
-  ok(all, `Nightmare / Abyss: it enters ${Math.min(...ins).toFixed(1)}-${Math.max(...ins).toFixed(1)} s after the section starts (window ${SKITTER.below.delay.join('-')} s), at least ${SKITTER.safeRadius} m away and below the player`);
+  ok(all, `Nightmare / Abyss: it enters ${Math.min(...ins).toFixed(1)}-${Math.max(...ins).toFixed(1)} s after the section starts (window ${SKITTER.below.delay.join('-')} s, Abyss ${SKITTER.below.delayBy.abyss.join('-')} s), at least ${SKITTER.safeRadius} m away and below the player`);
   ok(new Set(ins.map((v) => v.toFixed(2))).size >= 5, `the moment is random: ${new Set(ins.map((v) => v.toFixed(2))).size} different entry times over 6 seeds`);
   const a = run('nightmare', 5, 60);
   const b = run('nightmare', 5, 60);

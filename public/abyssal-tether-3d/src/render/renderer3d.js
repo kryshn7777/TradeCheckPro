@@ -145,6 +145,25 @@ const XR_FOVEATION_CAP = { low: 1, quest: 0.66, high: 0.5 };
 const CAMERA_NEAR = 0.08;
 // Cap of the lit surfaces' black-point lift (linear, before the tone mapper; the ACES curve has a slope of ~0.45 there).
 const BLACK_LIFT_MAX = 0.004;
+/**
+ * The look of the whole game, one preset (`?look=classic` or settings.look = 'classic' brings the previous picture back):
+ * horror = a lower exposure, a steeper contrast curve, drained colour, cold crushed shadows with sickly warm lights, a vignette
+ * and fine film grain (all in the lit materials' grade, no post pass), and a lower black lift (the pits go darker).
+ */
+const LOOK_PRESETS = {
+  horror: { exposure: 1.0, contrast: 0.16, sat: -0.14, lift: 0.5, grain: 0.04, vignette: 0.4, tone: 1.0 },
+  classic: { exposure: 1.25, contrast: 0, sat: 0, lift: 1, grain: 0, vignette: 0, tone: 0 },
+};
+function lookPreset(settings) {
+  let n = settings && typeof settings.look === 'string' ? settings.look : 'horror';
+  try {
+    const m = /[?&]look=([a-z]+)/i.exec((typeof location !== 'undefined' && location.search) || '');
+    if (m) n = m[1].toLowerCase();
+  } catch {
+    /* no location */
+  }
+  return LOOK_PRESETS[n] || LOOK_PRESETS.horror;
+}
 
 const _tmpC = new THREE.Color();
 
@@ -176,7 +195,8 @@ export class Renderer3D {
     r.setPixelRatio(maxPixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.25;
+    this.look = lookPreset(this.settings);
+    r.toneMappingExposure = this.look.exposure;
     r.shadowMap.enabled = false; // three.js' own shadow maps stay off: the lantern shadow is custom (lanternShadow.js)
     r.info.autoReset = false; // render() resets it once per frame so the shadow passes and the main pass add up in stats
     r.xr.enabled = true;
@@ -254,6 +274,7 @@ export class Renderer3D {
     this.lanternFlare.scale.set(0.42, 0.42, 1);
     this.lanternFlare.renderOrder = 70;
     this.lanternFlare.material.userData.noLook = true;
+    this.lanternFlare.visible = false; // the fake bloom is OFF (owner's call); the sprite stays so the API and the dispose path are unchanged
     this.lanternGroup.add(this.lanternFlare);
     this.lanternBase = LANTERN_CANDELA;
     this.setLanternParent(this.camera);
@@ -840,12 +861,15 @@ export class Renderer3D {
     const a = th.accent;
     const m = Math.max(a.r, a.g, a.b, 1e-3);
     LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
-    LOOK.uGradeK.value.set(1.1 + 0.06 * tk, 0.94 - 0.1 * tk, 0.22, 0);
+    const lk = this.look;
+    LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, 0.22, 0);
+    const lowFx = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
+    LOOK.uHorrorK.value.set(lowFx ? 0 : lk.grain, lk.vignette, lk.tone, (this.time || 0) % 100);
     // LCD black point: a Quest 3 panel never reaches OLED black, so crushed pits read as a hole in the picture, not as depth. The
     // darkest lit surfaces keep a trace (a third of the haze colour, so it follows the section's mood), never more than ~sRGB 8/255.
     const fc = this.scene.fog.color;
     const fl = Math.max(fc.r * 0.2126 + fc.g * 0.7152 + fc.b * 0.0722, 1e-4);
-    const lift = Math.min(0.3, BLACK_LIFT_MAX / fl);
+    const lift = Math.min(0.3, (BLACK_LIFT_MAX * this.look.lift) / fl);
     LOOK.uBlack.value.setRGB(fc.r * lift, fc.g * lift, fc.b * lift);
   }
 

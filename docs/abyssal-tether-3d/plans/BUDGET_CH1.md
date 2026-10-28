@@ -167,3 +167,28 @@ The skitterlings keep the v1 model (`skitter_rig.glb`, 56.7 k / 20.7 k, unchange
 
 The stereo budget harness was not re-run (rise < 15 %). Not measured on a Quest GPU.
 
+
+## Creature: the body lies on the walls, and it got scarier (sim only, no asset changes)
+- **Walls:** the 19 blocks behind the head used to replay the head's trail, which cuts corners (round an outside edge the body ran through the masonry, in an inside corner it hung in the air). `Creature3D._conformBody` now lays every block on the structural surface under it (height = hug x its scale, eased; up vector blended to the surface normal) and pushes it out of any solid, the dressing's boxes included. `tests/creature/walls.mjs` (sections 4-7, 3 seeds, still and moving player, 40 s): block-frames inside masonry 2.3 % -> 0.14 %, mean deviation from the wall height 0.99 m -> 0.28 m (measured with the new height formula), deep penetrations (> 0.6 m) 0.04 %. The head, the pursuit, the strike and the kill logic are untouched.
+- **Dread stare:** the first time it comes into pursuit range (14-40 m) it may stop dead and stare for 1.5-2.6 s (55 %, at most once per 28 s, Mason only): a low call, the crown locked on you, then a pressure surge at you (`creature:stare`, burst reason `stare`). `tests/creature/dread.mjs`.
+- **Lead:** while hunting it aims where you will be (0.5 s of your velocity, at most 5 m), so a swing across the shaft does not shake it off. Knobs: `CREATURE_TUNING.stare`, `.lead`, `.leadMax`, `.bodyReach / bodyRate / bodyMaxFix / bodyClear`.
+- Not done: the rig view does not react to the stare yet (it only holds and sways), and nothing was playtested in VR.
+
+## Creature: the body axes are locked (it no longer whips about while it chases a player who stays close)
+When the player stood close and moved to and fro, the head dithered round them: the facing flipped between "where I am going" and "where you are" (a switch at 1.2 m/s), the trail breadcrumbs were eaten and laid again, and the blocks behind the head swung (block tangents up to 6000 deg/s in single frames).
+- `Creature3D._lockBody`: each link keeps the length the trail gave it but may turn at most `bodyTurn` 3.4 rad/s (head end) .. `bodyTurnTail` 2.0 (tail end) from its direction last frame; `_lockUps`: each block's up at most `bodyUpTurn` 3 rad/s. The head's facing is a blend of its travel direction and the look at you (no switch), and it turns slower (and with a lower cap) inside 16 m.
+- The wall fit (`_conformBody`) is eased as vectors (a normal that flips no longer jumps a block), and only shallow overlaps are pushed out.
+- `tests/creature/twist.mjs` (sections 5-6, 8 seeds, a player swinging +-3 m close by, 45 s): facing >150 deg/s 3.4 % -> 2.2 % of frames, block tangents >150 deg/s 2.1 % -> 1.2 %, tangent spikes 6650 -> ~1500 deg/s, block ups capped at 172 deg/s (873-2400 before).
+- Trade-off: the lock makes the body lag the trail when the head turns hard, so it clips the walls a little more than the free body with the wall fit (blocks inside masonry 0.14 % -> 0.6 %; 2.3 % before the wall fit at all).
+- Not done / unverified: nothing was looked at in VR; some tangent spikes remain (relocations within 9 m, ledge crossings).
+
+## Harder (eight small knobs, all sim / data, no assets)
+1. **Loud rope:** `rope:jolt` / `rope:slip` / `player:wallhit` above `DIFF_TUNE.noiseJolt / noiseSlip / noiseWall` (Normal 15 / 0.85 / 9, Nightmare 12 / 0.6 / 7, Abyss 9 / 0.4 / 5) are noise for 0.7 s: while the Mason listens it hears you as if you ran (`Creature3D._onNoise`).
+2. **Death memory:** each death in a section (since the last checkpoint) starts the next retry 10 m closer, two steps at most, never closer than `spawnAboveMin` 28 m (`T.deathStep / deathMax`).
+3. **Per-difficulty section modes:** a section's `creature.by[difficulty]` overrides mode / lethal / spawn / speed. S4 is a lethal `stalk` on Nightmare and Abyss (no staged sighting there).
+4. **Hunger:** every missed strike makes the Mason 5 % faster for the rest of the section, up to +25 % (`T.hunger`); a respawn keeps it, a new section forgets it.
+5. **Skitterlings sooner:** S5 has one on Abyss (`skit(0, 0, 1)`), and the one from below comes in 3-9 s there instead of 5-16 s (`SKITTER.below.delayBy`).
+6. **Bites cost grip:** a skitterling bite also takes 0.2 / 0.3 / 0.4 of the grip stamina (`SKITTER.gripBite`, `Climb3D.bite`).
+7. **Reeling costs grip:** on Nightmare / Abyss, reeling a loaded rope in the air drains the grip stamina (0.03 / 0.05 per s, `DIFFICULTY.climb.reelDrain`) instead of letting it recover.
+8. **Unreliable backups:** on Abyss half of the shortcut / recovery rings become fragile (seeded by anchor id). The route and escape anchors are never touched (the S8 bot route needs them).
+Tests: `tests/creature/challenge.mjs`; `skitter.mjs` / `unit.mjs` updated for the S5 data, the Abyss delay and the closer first retry. Not playtested: these are first values, every one is a number in `CREATURE_TUNING`, `DIFF_TUNE`, `SKITTER`, `DIFFICULTY.climb` or the level data.
