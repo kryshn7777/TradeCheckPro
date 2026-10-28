@@ -887,7 +887,10 @@ export class SceneDetail {
     // wind: a slow turn, a breathing gust and now and then a squall (wind.js; still when the player asked for reduced effects)
     const t = LOOK.uTime.value;
     const a = windAngle(t);
-    const gust = this._reduced ? 0 : windGust(t) + 0.6 * windSquall(t);
+    // + a gameplay squall (LEVEL_FUN_PLAN P6, sim/objectives3d.js squallNow): the props sway hard while it blows
+    const sqn = game && game.objectives ? game.objectives.squallNow : null;
+    const sq = sqn ? Math.max(sqn.k || 0, 0.5 * (sqn.rise || 0)) : 0;
+    const gust = this._reduced ? 0 : windGust(t) + 0.6 * windSquall(t) + 0.9 * sq;
     this.uniforms.wind.value.set(Math.cos(a), Math.sin(a), gust);
     this.uniforms.far.value = tier.radius;
     if (this._dirty || head.distanceToSquared(this._last) > REPACK_DIST * REPACK_DIST) {

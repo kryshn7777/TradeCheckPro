@@ -56,7 +56,28 @@
 > list) and opens all four quadrants at the last stage, each stage withdrawing a bolt (a quadrant per stage would let you
 > drop through after 11 s); skitterlings also keep out of a rest's block; a seal also opens under a body hung on a sound rope
 > (not only once off it); S7 adds +29.8 s to the Nightmare / Abyss bot split (over the +25 s cap: the 60 s timers);
-> nothing browser-run or playtested. P6 open.
+> nothing browser-run or playtested.
+> **P6 done** (2026-10-28): wind squalls (`squalls` data, `sim/wind3d.js` (the draught moved out of `render/wind.js`, which
+> re-exports it), `Objectives3D.windPush` called by `Physics3D.step` after gravity while not grounded; `squall-s6` down
+> the S6 throat only, every 26 / 20 / 15 s, 4 s sin², 1.2 / 1.5 / 1.8 m/s² along +z, 2 s telegraph: the wind bed swells,
+> "[Wind rising from below]", the wisps gather and turn to its way; Settings › Comfort › Wind squalls, on by default,
+> stills them entirely; the bots play with them on, deterministic, plus `squallProbe`: both S6 lines from 6 clock phases
+> per difficulty all pass); the medals UI (`src/ui/medals.js`, a Records screen per difficulty on the DOM and the VR
+> panel, the split line on the next title card / a toast, the victory splits; no new mesh or draw call); the S2
+> collapsing span (`s2-span` a crumble, life 2.5 on Normal; a groan + caption + shake from the first touch) with the
+> GI re-bake (its hash moved) and a full lightmap re-bake (hash unchanged, pages refreshed for P2-P5's rings and decor);
+> length read-out (no change needed) and the Quest budget with all phases (S1-S8 within 150 calls / 350k; the creature
+> in view at LOD0 still 351-381k, as before P1); `tests/objectives/polish.mjs`, `tests/ux/medals.mjs`, e2e checks for
+> the victory splits and the Records screens. Differs from the plan: the squall is a schedule like a lane's, not
+> `volumes` + `windSquall(t)` (that one cannot be telegraphed `lead` s ahead), switched by its own setting, not by
+> reduced effects; the safe stair is sheltered (only the throat line); the S2 span is a crumble on Normal only
+> (Nightmare's was one already, Abyss has none); no real niche geometry for the rests (each niche would split a wall:
+> re-rolled dressing and decor colliders, new climb edges, the S5 lure geometry its 200-seed test rests on, lines of
+> sight from the S4 catwalk / S6 shelf: not cheap; the rests stay rule-based volumes); no length tuning (nothing over its
+> band; S7's +29.8 s on Nightmare / Abyss is the owner's 60 s timers); the medal is called brass (open question 7).
+> e2e (one launch each): this branch 43 / 48 (descent to victory, victory splits, Records screens, XR budgets S1 / S4 / S7
+> pass; failing: the 4 known checks, pre-existing on 24f0a4b (38 / 45 there), plus one start-fade timing cascade).
+> **Status: all phases done (P1-P6).**
 > Approved scope (12 items). Date 2026-10-28.
 > Paths: `src/` = `public/abyssal-tether-3d/src/`, `tools/` = `tools/abyssal-tether-3d/`. Every code claim below names the
 > file and function or data field it was read from. Where an approved contract already exists in

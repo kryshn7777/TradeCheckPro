@@ -698,6 +698,8 @@ export class Physics3D {
     this.health = new Health3D(diff, bus);
     // Grip climbing (climb zones in the level data, grip stamina): see sim/climb3d.js.
     this.climb = new Climb3D(level, diff, bus);
+    /** The wind squalls (LEVEL_FUN_PLAN P6): an object with windPush(player, dt) (the run's Objectives3D), or null. */
+    this.wind = null;
   }
 
   /** The climb model with the current bus (Sim swaps physics.bus for look-ahead frames). */
@@ -765,6 +767,9 @@ export class Physics3D {
 
     // ---- 2. forces -------------------------------------------------------------
     player.vy -= P.gravity * dt;
+    // LEVEL_FUN_PLAN P6: a wind squall pushes a body in the air (falling, swinging, hanging), never one on the ground
+    // (`wind` = the run's Objectives3D: a pure function of its clock and the body; null = still air).
+    if (this.wind && !player.grounded) this.wind.windPush(player, dt);
 
     let anyTaut = false;
     let attached = false;
@@ -1012,6 +1017,8 @@ export class Physics3D {
     // Crumbling ledges give way after being stood on.
     const gs = player.groundSolid;
     if (gs && gs.kind === 'crumble' && gs.active !== false) {
+      // the first touch is the telegraph (LEVEL_FUN_PLAN P6: the S2 span): a groan underfoot, the view shakes it from here on
+      if (!(gs.load > 0)) this.bus.emit('platform:strain', { solid: gs, x: player.x, y: gs.maxY, z: player.z, time: this.diff.crumbleTime * (gs.life || 1) });
       gs.load = (gs.load || 0) + dt;
       if (gs.load >= this.diff.crumbleTime * (gs.life || 1)) {
         gs.active = false;

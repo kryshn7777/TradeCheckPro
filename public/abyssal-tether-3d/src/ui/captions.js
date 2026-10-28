@@ -6,7 +6,7 @@
  * Sources (all already on the bus; payload fields used are listed in captionForEvent):
  *   creature:clip {name,event,x,y,z}       the rig's clip events: wind-up, strike, roar, knocks, breathing, snaps ...
  *   creature:call / attack / burst / strike / sighting / retreat / step   the sim events (fallback when no rig clip)
- *   platform:crumble, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
+ *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
  * a direction (8 sectors around the head plus above / below) and a severity 0..2 for emphasis. Lines of the same `group`
@@ -58,6 +58,10 @@ export const RULES = Object.freeze({
   lampCatch: R('[A lamp catches]', 'world', 0, 'lamp', 1),
   // LEVEL_FUN_PLAN P4: the rockfall lane's telegraph (the stones themselves are the existing `debris` caption)
   laneWarn: R('[Rocks rattle above]', 'world', 1, 'rockfall', 3),
+  // LEVEL_FUN_PLAN P6: the S6 wind squall's telegraph and its gust; a crumbling span's first groan underfoot
+  squallWarn: R('[Wind rising from below]', 'world', 1, 'squall', 6),
+  squall: R('[A gust pushes you]', 'world', 0, 'squall', 6),
+  strain: R('[Stone groaning underfoot]', 'world', 2, 'crumble', 2),
   // LEVEL_FUN_PLAN P5: the Mason as the key (the S5 keystone), the Masons' rests, the S7 survive floor
   stoneCrack: R('[Stone cracks]', 'world', 2, 'breach', 1.2),
   keystone: R('[The keystone gives way]', 'world', 2, 'breach', 2),
@@ -186,6 +190,12 @@ export function captionForEvent(type, p) {
       return RULES.boltsHold;
     case 'lane:warn':
       return RULES.laneWarn;
+    case 'squall:warn':
+      return RULES.squallWarn;
+    case 'squall:on':
+      return RULES.squall;
+    case 'platform:strain':
+      return RULES.strain;
     case 'lane:on':
       return RULES.debris;
     default:
@@ -240,6 +250,9 @@ export const CAPTION_EVENTS = Object.freeze([
   'objective:progress',
   'lane:warn',
   'lane:on',
+  'squall:warn',
+  'squall:on',
+  'platform:strain',
   'breach:hit',
   'breach:break',
   'nook:warn',

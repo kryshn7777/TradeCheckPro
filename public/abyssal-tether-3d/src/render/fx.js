@@ -835,7 +835,7 @@ export class FX {
     this._updateRains(dt);
 
     this._updateDust(dt, head);
-    this.windGusts.update(dt, head, tier, this.reduced);
+    this.windGusts.update(dt, head, tier, this.reduced, game && game.objectives ? game.objectives.squallNow : null);
     this._updateBursts(dt);
     // creature dust is not emitted past the haze (fully fogged puffs are invisible but still blended and use the pool)
     const fog = this.scene.fog;

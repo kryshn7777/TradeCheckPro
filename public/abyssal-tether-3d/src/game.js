@@ -2197,6 +2197,7 @@ export class Game3D {
     Storage.saveSettings(s);
     this._try('audio', () => this.audio.setVolume(s.volume));
     this._try('input', () => this.input.applySettings && this.input.applySettings(s));
+    if (this.objectives) this.objectives.setSqualls(s.windSqualls !== false); // LEVEL_FUN_PLAN P6: the wind squalls switch
     this.bus.emit('settings:changed', { settings: s });
     return s;
   }
@@ -2264,6 +2265,9 @@ export class Game3D {
       this.objectives = new Objectives3D(lvl, diff, this._runBus);
       this.objectives.lantern = this.bag; // a lamp relight burns lantern charge (LEVEL_FUN_PLAN P3)
       this.objectives.physics = this.physics; // a rockfall lane hurts through the run's health (LEVEL_FUN_PLAN P4)
+      // the wind squalls (LEVEL_FUN_PLAN P6): Physics3D asks the objectives' clock for the push; Settings › Comfort stills them
+      this.objectives.setSqualls(!this.settings || this.settings.windSqualls !== false);
+      this.physics.wind = this.objectives;
       if (attract) this.objectives.openAll();
     } catch (err) {
       this._fault('objectives', err);

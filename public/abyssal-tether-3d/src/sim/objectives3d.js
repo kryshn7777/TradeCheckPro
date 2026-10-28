@@ -52,6 +52,13 @@
  *           body inside the box takes `damage` (once per drop, through Physics3D's health: cause 'rockfall'; never more
  *           than that, and only lethal when the hp left is lower). Not hazards of the level (no climb edge, dressing or
  *           supply rule moves for them). Events only within `hear` m.
+ * P6 "polish" (item 9): the wind squalls (level data `squalls`: a box, a horizontal `dir`, `accel` m/s² (≤ 2), a schedule
+ * { period, on, lead, phase } like a lane's, per difficulty in `by`), also closed-form functions of the clock (sim/wind3d.js):
+ *   `lead` s before each gust `squall:warn` (the wind rising: sound, caption, the wisps gathering), then for `on` s it blows,
+ *   sin²-shaped. Physics3D.step asks windPush(player, dt) every fixed step while the body is not grounded (falling, swinging,
+ *   hanging; a grip on the wall overrides the velocity anyway): inside the box the body gains accel × k × dt along `dir`.
+ *   No camera motion, no rotation, never on the ground. setSqualls(false) (the player's Settings › Comfort › Wind squalls,
+ *   the bots with AT3D_SQUALLS=0) stills them entirely: no push, no events.
  * A seal never opens under your feet (P4): an objective done while the player stands on (or hops just above) its own
  * closed grating opens it as soon as they are off it (a rope, a ledge), so the S3 winch hooked from the grating itself is
  * a safe fallback.
@@ -67,6 +74,8 @@
  *   lane:warn          { id, x, y, z, lead }             a rockfall lane will drop in `lead` s (x, z: its centre; y: its top)
  *   lane:on / lane:off { id, x, y, z, dur } / { id }     the stones fall for `dur` s / stop
  *   lane:hit           { id, x, y, z, amount }           a falling stone struck the player
+ *   squall:warn        { id, x, y, z, lead, dx, dz }     a squall will blow in `lead` s (x, y, z: the player; dx, dz: its way)
+ *   squall:on / squall:off { id, dur, dx, dz } / { id }   it blows for `dur` s / it has passed
  *   breach:hit / breach:break  { id, x, y, z, hp, by }      a blow on the keystone (by 'mason' | 'haul') / it breaks
  *   nook:enter / nook:exit     { id, left, lure }          into / out of a Masons' rest (left: its budget, s)
  *   nook:warn / nook:spent     { id, left }                its budget is nearly / fully spent while inside
@@ -81,6 +90,7 @@
 // Only the import-free movers module: game.js loads this with its core sim modules, while the level (level3d.js + the data)
 // is loaded later.
 import { Movers3D } from './movers3d.js';
+import { squallCycle, squallK, squallRise, squallU } from './wind3d.js';
 /** Same rule as level3d.js inVariant (`omitIn` / `onlyIn` lists). */
 function inVariant(o, variant) {
   if (Array.isArray(o.onlyIn) && o.onlyIn.length > 0 && o.onlyIn.indexOf(variant) < 0) return false;
@@ -116,6 +126,9 @@ const SEAL_FOOT_CLEAR = 1.6;
 const SEAL_SAFE_DROP = 3;
 /** Lane events are emitted only for a player this close (m) to the lane's box. */
 const LANE_HEAR = 30;
+/** Squalls (P6): the strongest push allowed (m/s², LEVEL_FUN_PLAN R8), and their events reach a player this close (m). */
+export const SQUALL_MAX_ACCEL = 2;
+const SQUALL_HEAR = 12;
 
 function num(v, fallback) {
   return typeof v === 'number' && isFinite(v) ? v : fallback;
@@ -344,6 +357,38 @@ export class Objectives3D {
         hear: Math.max(1, num(o.hear, LANE_HEAR)),
       });
     }
+
+    // ---- P6: wind squalls -------------------------------------------------------------------------------------------
+    /** @type {{id:string, index:number, section:number, minX:number, minY:number, minZ:number, maxX:number, maxY:number, maxZ:number, dx:number, dz:number, accel:number, period:number, on:number, lead:number, phase:number, hear:number}[]} */
+    this.squalls = [];
+    for (const raw of live(d.squalls)) {
+      const o = tuned(raw);
+      const b = readBox(o.box || o);
+      if (!b) continue;
+      const dir = Array.isArray(o.dir) ? { x: o.dir[0], z: o.dir[1] } : o.dir || { x: 1, z: 0 };
+      const dl = Math.hypot(num(dir.x, 0), num(dir.z, 0)) || 1;
+      const period = Math.max(2, num(o.period, 26));
+      const on = Math.max(0.5, Math.min(period - 1, num(o.on, 4)));
+      this.squalls.push(
+        Object.assign(b, {
+          id: o.id,
+          index: this.squalls.length,
+          section: secIndex(o.section) >= 0 ? secIndex(o.section) : level ? level.sectionIndexAt(b.maxY) : 0,
+          dx: num(dir.x, 0) / dl,
+          dz: num(dir.z, 0) / dl,
+          accel: Math.max(0, Math.min(SQUALL_MAX_ACCEL, num(o.accel, 1.2))),
+          period,
+          on,
+          lead: Math.max(0, Math.min(period - on, num(o.lead, 2))),
+          phase: num(o.phase, 0),
+          hear: Math.max(1, num(o.hear, SQUALL_HEAR)),
+        }),
+      );
+    }
+    /** Squalls blow (the player's setting; the bots: AT3D_SQUALLS). Off: no push and no squall events at all. */
+    this.squallsOn = true;
+    /** The squall the player feels / sees now (after the last step): k 0..1 blowing, rise 0..1 gathering, its way. */
+    this.squallNow = { k: 0, rise: 0, dx: 0, dz: 0, id: null };
 
     // ---- state (typed arrays) ----------------------------------------------------------------------------------
     const nO = this.objectives.length;
@@ -596,6 +641,7 @@ export class Objectives3D {
     this.clock = t0 + dt;
     if (this.movers) this.movers.pose(this.clock);
     if (this.lanes.length) this._stepLanes(t0, this.clock, player, tethers);
+    if (this.squalls.length) this._stepSqualls(t0, this.clock, player);
     const F = this.fixtures;
     if (F.length) {
       const hands = tethers && tethers.hands;
@@ -796,6 +842,81 @@ export class Objectives3D {
       if (!ph || !(L.damage > 0)) continue;
       const health = typeof ph._health === 'function' ? ph._health() : ph.health;
       if (health && health.damage(L.damage, 'rockfall', 0) && typeof ph.kill === 'function') ph.kill(p, tethers, 'rockfall');
+    }
+  }
+
+  /** The squalls blow (true) or are stilled entirely (false: no push, no events): Settings › Comfort › Wind squalls. */
+  setSqualls(on) {
+    this.squallsOn = on !== false;
+    if (!this.squallsOn) {
+      const n = this.squallNow;
+      n.k = 0;
+      n.rise = 0;
+      n.id = null;
+    }
+  }
+
+  /** 0..1 strength of squall i at the clock (0 while stilled). */
+  squallAt(i) {
+    const q = this.squalls[i];
+    return q && this.squallsOn ? squallK(q, squallU(q, this.clock)) : 0;
+  }
+
+  /** Index of squall `id` (-1: none in this variant). */
+  squallIndex(id) {
+    for (let i = 0; i < this.squalls.length; i++) if (this.squalls[i].id === id) return i;
+    return -1;
+  }
+
+  /**
+   * Physics3D.step, every fixed step while the body is not grounded (right after gravity): a squall blowing at the clock
+   * pushes a body inside its box along its way, accel × k (sin²) m/s². Pure in (clock, body): the look-ahead agrees.
+   */
+  windPush(p, dt) {
+    if (!this.squallsOn) return;
+    for (let i = 0; i < this.squalls.length; i++) {
+      const q = this.squalls[i];
+      if (!inBox(q, p.x, p.y, p.z)) continue;
+      const k = squallK(q, squallU(q, this.clock));
+      if (k <= 0) continue;
+      const a = q.accel * k * dt;
+      p.vx += q.dx * a;
+      p.vz += q.dz * a;
+    }
+  }
+
+  /**
+   * The squalls over (t0, t1]: the telegraph `lead` s before a gust, its start and end (events only within `hear` m of its
+   * box), and what the player feels / sees now (squallNow, for the view and the audio).
+   */
+  _stepSqualls(t0, t1, p) {
+    const n = this.squallNow;
+    n.k = 0;
+    n.rise = 0;
+    n.id = null;
+    if (!this.squallsOn || !p) return;
+    for (let i = 0; i < this.squalls.length; i++) {
+      const q = this.squalls[i];
+      const d = this._laneDist(q, p);
+      if (d > q.hear) continue;
+      const u0 = squallU(q, t0);
+      const u1 = squallU(q, t1);
+      const c0 = squallCycle(q, t0);
+      const c1 = squallCycle(q, t1);
+      const k = squallK(q, u1);
+      const rise = squallRise(q, u1);
+      if (k > n.k || (n.k === 0 && rise > n.rise)) {
+        n.k = k;
+        n.rise = rise;
+        n.dx = q.dx;
+        n.dz = q.dz;
+        n.id = q.id;
+      }
+      if (!this.bus) continue;
+      const warnAt = q.period - q.lead;
+      if (q.lead > 0 && c1 === c0 && u0 < warnAt && u1 >= warnAt) this.bus.emit('squall:warn', { id: q.id, x: p.x, y: p.y, z: p.z, lead: q.lead, dx: q.dx, dz: q.dz });
+      if (c1 !== c0) this.bus.emit('squall:on', { id: q.id, x: p.x, y: p.y, z: p.z, dur: q.on, dx: q.dx, dz: q.dz });
+      else if (u0 < q.on && u1 >= q.on) this.bus.emit('squall:off', { id: q.id });
     }
   }
 

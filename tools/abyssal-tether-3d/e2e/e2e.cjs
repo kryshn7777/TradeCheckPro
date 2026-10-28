@@ -474,6 +474,7 @@ async function partVictory(P, base, descent) {
         vDeaths: q('.v-deaths'),
         stored: localStorage.getItem('abyssalTether3d.v1.best.normal'),
         info: g.lastVictory,
+        splits: Array.from(document.querySelectorAll('.v-splits li')).map((li) => li.textContent),
       };
     });
     const fmt = (t) => {
@@ -484,6 +485,8 @@ async function partVictory(P, base, descent) {
     check('victory panel shown with the run time', v.state === 'victory' && v.ui === 'victory' && v.shown && v.vTime === fmt(v.time), v);
     check('victory panel deaths match the run', v.vDeaths === String(descent.sm.deathsGame), [v.vDeaths, descent.sm.deathsGame]);
     check('best time stored (Normal)', v.stored !== null && Math.abs(+v.stored - v.time) < 1e-6, [v.stored, v.time]);
+    // LEVEL_FUN_PLAN P6: the run's section splits on the victory panel (one continuous run: all 8 whole)
+    check('victory panel lists the 8 section splits (with medals)', v.splits.length === 8, v.splits);
     await shot(page, '08-victory');
     await page.reload();
     await page.waitForFunction(() => window.AT3D && window.AT3D.game && window.AT3D.game.booted, null, { timeout: 180000 });
@@ -494,6 +497,18 @@ async function partVictory(P, base, descent) {
       startSub: document.querySelector('.menu-start-sub').textContent,
     }));
     check('best time persisted across a reload (storage + menu)', after.stored === v.stored && after.strip[0] === fmt(+v.stored) && after.startSub.includes(fmt(+v.stored)), after);
+    // LEVEL_FUN_PLAN P6: the Records screen (menu, real click) shows the descent's splits from the saved profile (schema 3)
+    await page.click('.menu-actions [data-action="records"]');
+    await page.waitForTimeout(400);
+    const rec = await page.evaluate(() => ({
+      shown: !document.querySelector('.screen[data-screen="records"]').hidden,
+      rows: Array.from(document.querySelectorAll('.rec-table tbody tr')).map((tr) => Array.from(tr.children).map((td) => td.textContent)),
+      tally: document.querySelector('.rec-tally').textContent,
+    }));
+    check('Records screen (menu click): 8 sections, each with the descent\'s best split from the save', rec.shown && rec.rows.length === 8 && rec.rows.every((r) => /^\d+:\d\d\.\d$/.test(r[2])), rec);
+    await shot(page, '08b-records');
+    await page.click('.screen[data-screen="records"] [data-action="back"]');
+    await page.waitForTimeout(300);
   } else {
     check('victory panel shown with the run time', false, 'descent did not reach victory');
   }
@@ -648,6 +663,20 @@ async function partXR(browser, base) {
     return out;
   });
   check('VR difficulty card names fit their cards (≤ 268 px of 312)', Object.values(fit).every((o) => o.w <= 268 || o.px <= 26), fit);
+  // LEVEL_FUN_PLAN P6: the VR Records page (the same panel canvas: no new mesh) and the Records button on the VR menu.
+  const recVR = await page.evaluate(() => {
+    const ui = window.AT3D.game.ui;
+    ui.show('menu');
+    ui._vrDirty = true;
+    ui._paintPanel();
+    const menu = ui._regions.map((r) => r.act);
+    ui.show('records');
+    ui._vrDirty = true;
+    ui._paintPanel();
+    return { menu, acts: ui._regions.map((r) => r.act), img: ui._vr.panelC.canvas.toDataURL('image/png') };
+  });
+  fs.writeFileSync(path.join(SHOTS, '10f-vr-records-canvas.png'), Buffer.from(recVR.img.split(',')[1], 'base64'));
+  check('VR menu has Records; the VR Records page paints its 3 difficulty tabs and Back', recVR.menu.includes('records') && recVR.acts.filter((a) => a === 'rec-tab').length === 3 && recVR.acts.includes('back'), { menu: recVR.menu, acts: recVR.acts });
   // Player height in the VR settings panel: page 2 paints, the Calibrate press counts down then reads the headset.
   await page.evaluate(() => {
     const ui = window.AT3D.game.ui;

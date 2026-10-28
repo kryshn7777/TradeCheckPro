@@ -297,7 +297,11 @@ A('s2-f1', -27, -38.25, 2.4, 'fragile', 'risk');
 H('s2-spikes-ab', -34, -31.5, -44, -43.5, -11, 11, 'spikes', { onlyIn: AB, normal: { x: 0, y: 1, z: 0 } }); // Abyss: the far end bristles
 under('s2-b1', s2FloorA, -12, 0, 'ring', 'route');
 under('s2-b2', s2FloorA, -2, -6, 'ring', 'shortcut');
-S('s2-span', -18, -6, -57, -56, -3, 3, 'bridge', { omitIn: NM });
+// LEVEL_FUN_PLAN P6 (item 9), the collapsing span: the safety span under the lower hall's swing gives way under a body that
+// stays on it (Normal crumbleTime 0.9 x life 2.5 = 2.25 s; Nightmare's own crumbles in 0.65 s; Abyss has none). It groans
+// and sheds grit from the first touch (platform:strain, the view shakes it): a short release caught here has its moment to
+// fire at s2-b1 again. Not a route ledge (no bot line stands on it); a crumble is out of the bake and both hashes.
+S('s2-span', -18, -6, -57, -56, -3, 3, 'crumble', { omitIn: NM, life: 2.5 });
 S('s2-span-nm', -18, -6, -57, -56, -3, 3, 'crumble', { onlyIn: NMO });
 slabHole('s2-pier', 0, 11, -11, 11, -54, -51, [4, 9, -3, 3], 'stone');
 under('s2-x', s2FloorA, 6.5, 0, 'ring', 'route'); // lowers you through the pier's well
@@ -907,6 +911,19 @@ const lanes = [
 ];
 
 // =============================================================================
+// SQUALLS (LEVEL_FUN_PLAN item 9, P6 "polish"): the nave breathes up the S6 throat. A squall is a box, a horizontal way
+// `dir` [x, z], `accel` (m/s², at most 2: comfort) and a schedule like a lane's: it blows for `on` s every `period` s,
+// sin²-shaped (it rises and falls, never a jolt), `lead` s after its telegraph (the wind rising: a swelling howl, the
+// caption "[Wind rising from below]", the ash wisps gathering and streaming along its way). It pushes a body in the air
+// inside the box (falling, swinging, hanging), never one standing; no camera motion. Per difficulty: more often and a
+// little harder. Settings › Comfort › Wind squalls (on by default) stills them entirely. The safe stair is sheltered
+// (the dividing wall): the squall is part of the throat's price.
+// =============================================================================
+const squalls = [
+  { id: 'squall-s6', section: 's6', box: { minX: -11, maxX: 10, minY: -284, maxY: -211, minZ: -11, maxZ: 11 }, dir: [0, 1], accel: 1.2, period: 26, on: 4, lead: 2, phase: 0.35, by: { nightmare: { period: 20, accel: 1.5 }, abyss: { period: 15, accel: 1.8 } } },
+];
+
+// =============================================================================
 // FORKS (LEVEL_FUN_PLAN item 8): S2-S8 each offer two ways down (S1 teaches; it has one). A `fast` line takes fewer stops:
 // frayed rings that snap, a dive or a chain over the void, no recovery ring, no supplies, nothing to stand on. A `safe`
 // line lowers ledge to ledge on sound rings; the supplies favour it (tier 'slow') and a plaque in a lit corner tells a
@@ -1350,4 +1367,5 @@ export const LEVEL_DATA_3D = {
   movers, // moving anchors and rockfall lanes (see MOVERS AND LANES above)
   lanes,
   nooks, // the Masons' rests (see NOOKS above)
+  squalls, // the wind squalls (see SQUALLS above)
 };

@@ -309,6 +309,14 @@ export class Sim {
     this.objectives = Objectives3D && opts.objectives !== false ? new Objectives3D(level, this.diff, this.bus) : null;
     // P4: a rockfall lane hurts (and kills) through the run's physics, as in Game3D
     if (this.objectives) this.objectives.physics = this.physics;
+    // P6: the wind squalls push through Physics3D (a pure function of the objectives' clock: the look-ahead, a re-run and a
+    // replay agree). The bots play with them ON (the game's default setting); opts.squalls === false, settings.windSqualls
+    // false or AT3D_SQUALLS=0 stills them.
+    if (this.objectives) {
+      const env = typeof process !== 'undefined' && process.env ? process.env.AT3D_SQUALLS : undefined;
+      this.objectives.setSqualls(opts.squalls !== false && this.settings.windSqualls !== false && env !== '0');
+      this.physics.wind = this.objectives;
+    }
     this.laneHits = []; // [t, lane id] of the real run (LEVEL_FUN_PLAN P4: a bot route is never struck)
     this._quietBus = new EventBus();
     this.objEvents = []; // [t, type, id] of the real run

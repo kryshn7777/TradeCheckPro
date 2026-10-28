@@ -25,7 +25,7 @@ import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
 import { sealIntegrity, sealGaps, climbOut, skipProbe, verbProbe, nookIntegrity } from './seals.mjs';
 import { forkIntegrity } from './forks.mjs';
-import { machineIntegrity, laneProbe } from './machines.mjs';
+import { machineIntegrity, laneProbe, squallProbe } from './machines.mjs';
 import { writePar, PAR_FILE } from './par.mjs';
 // WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
 const { pickSupplies, checkFairness } = await import(srcUrl('sim/pickups3d.js')).catch(() => ({}));
@@ -443,9 +443,9 @@ function edgeChecks(L, P) {
 }
 
 /** Lists of the chapter data whose objects are referenced by id (ENGINE_EXTENSIONS §5). */
-const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'squalls', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 /** Lists whose references must resolve (V1: no dangling ids). */
-const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'squalls', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 
 /**
  * V1: ids unique among the variant's live objects; every `…Id` / `ids` reference in
@@ -829,7 +829,7 @@ async function verifyChapter(ch) {
     console.log(`  ${v}: ${row.join('  ·  ')}`);
   }
 
-  console.log('== Machines (LEVEL_FUN_PLAN P4: movers and rockfall lanes; the lane probe plays its route without the wait from 6 start phases)');
+  console.log('== Machines (LEVEL_FUN_PLAN P4: movers and rockfall lanes; the lane probe plays its route without the wait from 6 start phases; P6: the squall probe plays its section\'s lines from 6 phases, squalls on)');
   report.machines = {};
   for (const v of VARIANTS) {
     const mi = report.integrity[v] && report.integrity[v].machines;
@@ -838,6 +838,10 @@ async function verifyChapter(ch) {
     if (!mi) continue;
     const lanes = lp ? Object.entries(lp).map(([id, o]) => `${id} on ${o.route}: blind struck in ${o.blindHits}/${o.blindRuns} phases, with the wait ${o.waitHits} hits`) : [];
     console.log(`  ${v}: ${mi.movers} movers carrying ${mi.carried} rings (fastest ${mi.maxSpeed} m/s), ${mi.lanes} lane(s)${lanes.length ? ' | ' + lanes.join(' | ') : ''}`);
+    // P6: the wind squalls: every line of the squall's section played from 6 start phases of the clock with the squalls on
+    const sp = await squallProbe(ch.makeLevel, v, R, (m) => fail(`[${ch.id}/${v}] ${m}`));
+    report.machines[v].squalls = sp;
+    if (sp && Object.keys(sp).length) console.log(`  ${v} squalls: ${Object.entries(sp).map(([id, o]) => `${id} ${o.accel} m/s² every ${o.period} s | ${Object.entries(o.lines).map(([k, l]) => `${k} ${l.ok}/${l.runs} ok, pushed in ${l.pushed}/${l.runs} (max ${l.maxPush} s), ${l.min}-${l.max} s`).join(' | ')}`).join(' · ')}`);
   }
 
   console.log('== Counts');

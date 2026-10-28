@@ -1529,13 +1529,17 @@ export class AudioManager3D {
     const speedK = body ? U.smoothstep(200 * SPEED_K, 1400 * SPEED_K, speed) : 0;
     const gustL = 0.55 + 0.45 * U.noise1(c * 0.17, 3);
     const gustR = 0.55 + 0.45 * U.noise1(c * 0.15 + 40, 5);
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath);
+    // LEVEL_FUN_PLAN P6: a wind squall swells the shaft wind and its masonry whistle (the telegraph while it gathers, then the
+    // gust itself): the existing bed, no new voice. Objectives3D.squallNow is 0 when the squalls are switched off.
+    const sqn = game && game.objectives ? game.objectives.squallNow : null;
+    const sq = sqn && playing ? Math.min(1, Math.max(num(sqn.k, 0), 0.6 * num(sqn.rise, 0))) : 0;
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
-    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK), now, 0.4);
-    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK), now, 0.4);
+    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq), now, 0.4);
+    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq), now, 0.4);
     const wh = U.noise1(c * 0.06, 11);
-    this.kWhG.set(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, now, 0.5);
+    this.kWhG.set(Math.max(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, sec.whistle * 2.6 * sq), now, 0.5);
     this.kWhF.set(sec.wFreq * (1 + 0.12 * U.noise1(c * 0.05, 17)), now, 0.6);
     this.kWhPan.set(U.noise1(c * 0.03, 23) * 0.75, now, 0.5);
     const rum = sec.rumble * (0.75 + 0.25 * U.noise1(c * 0.11, 29));
@@ -2251,6 +2255,7 @@ export class AudioManager3D {
       'bell:ring': this._onBellRing,
       'objective:progress': this._onObjectiveProgress,
       'lane:warn': this._onLaneWarn,
+      'platform:strain': this._onPlatformStrain,
       'lane:on': this._onLaneOn,
       'breach:hit': this._onBreachHit,
       'breach:break': this._onBreachBreak,
@@ -2655,6 +2660,14 @@ export class AudioManager3D {
 
   _onNookWarn(p) {
     this._sfxBreak(p, 0.3);
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P6, a crumbling ledge's first touch (the S2 span): stone groans and grit cracks off under the feet, the
+   * telegraph before it gives way (the existing break voice, light).
+   */
+  _onPlatformStrain(p) {
+    this._sfxBreak(p, 0.35);
   }
 
   /** LEVEL_FUN_PLAN P4, the rockfall lane's telegraph: the structure groans (the level rumble) and grit trickles at its top. */

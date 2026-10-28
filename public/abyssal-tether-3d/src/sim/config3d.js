@@ -298,6 +298,7 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
@@ -370,6 +371,7 @@ export function sanitizeUxSettings(s) {
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
   s.reducedEffects = s.reducedEffects === true;
+  s.windSqualls = s.windSqualls !== false;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   sanitizeTouchSettings(s);
   return s;

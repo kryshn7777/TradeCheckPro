@@ -7,7 +7,7 @@
    "abyss"
   ],
   "note": "V14 baseline: npm run verify:at3d -- --chapter ch1 --write-baseline",
-  "date": "2026-10-28T17:17:01.273Z"
+  "date": "2026-10-28T18:34:04.868Z"
  },
  "integrity": {
   "normal": {
@@ -82,9 +82,9 @@
     "maxHeight": 12.8,
     "maxCost": 0.9228571428571457,
     "edges": {
-     "count": 626,
-     "lips": 223,
-     "vertical": 174,
+     "count": 614,
+     "lips": 219,
+     "vertical": 170,
      "maxRun": 223,
      "maxRunAt": "y -283.0..-60.0 (9 edges)",
      "staminaRun": 9.3,
@@ -108,7 +108,7 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 296,
+    "ids": 297,
     "refs": 118
    },
    "seals": {
@@ -142,7 +142,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.067,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "ok": true
   },
@@ -241,7 +242,7 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 296,
+    "ids": 297,
     "refs": 118
    },
    "seals": {
@@ -275,7 +276,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.185,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "ok": true
   },
@@ -372,7 +374,7 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 296,
+    "ids": 297,
     "refs": 118
    },
    "seals": {
@@ -406,7 +408,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.333,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "ok": true
   }
@@ -554,10 +557,10 @@
   },
   "abyss/fast": {
    "ok": true,
-   "time": 179.6,
+   "time": 179.7,
    "deaths": 0,
    "maxLand": 0.64,
-   "maxLandAtY": -225,
+   "maxLandAtY": -44,
    "inGoal": true,
    "fail": null,
    "splits": {
@@ -568,13 +571,13 @@
     "s5": 19.5,
     "s6": 10.5,
     "s7": 67.2,
-    "s8": 19.5
+    "s8": 19.6
    },
    "attaches": 38,
    "damage": {
     "hits": 6,
-    "total": 96.1,
-    "minHp": 44.1,
+    "total": 92.5,
+    "minHp": 47.7,
     "endHp": 100
    },
    "objectives": [
@@ -2205,7 +2208,7 @@
     "fromStand": 55
    },
    "s6-ra1": {
-    "fromTrace": 221,
+    "fromTrace": 222,
     "fromStand": 73
    },
    "s6-ra2": {
@@ -2237,7 +2240,7 @@
     "fromStand": 0
    },
    "s7-n1": {
-    "fromTrace": 158,
+    "fromTrace": 159,
     "fromStand": 18
    },
    "s7-n2": {
@@ -2245,7 +2248,7 @@
     "fromStand": 0
    },
    "s7-n3": {
-    "fromTrace": 269,
+    "fromTrace": 270,
     "fromStand": 0
    },
    "s7-n4": {
@@ -2293,7 +2296,7 @@
     "fromStand": 0
    },
    "s7-f3": {
-    "fromTrace": 174,
+    "fromTrace": 172,
     "fromStand": 0
    },
    "s7-f4": {
@@ -2309,15 +2312,15 @@
     "fromStand": 0
    },
    "s7-f7": {
-    "fromTrace": 1602,
+    "fromTrace": 1603,
     "fromStand": 0
    },
    "s8-e1": {
-    "fromTrace": 316,
+    "fromTrace": 315,
     "fromStand": 29
    },
    "s8-e2": {
-    "fromTrace": 334,
+    "fromTrace": 333,
     "fromStand": 0
    },
    "s8-e3": {
@@ -2325,19 +2328,19 @@
     "fromStand": 0
    },
    "s8-e4": {
-    "fromTrace": 350,
+    "fromTrace": 349,
     "fromStand": 0
    },
    "s8-e5": {
-    "fromTrace": 375,
+    "fromTrace": 377,
     "fromStand": 0
    },
    "s8-e6": {
-    "fromTrace": 347,
+    "fromTrace": 349,
     "fromStand": 0
    },
    "s8-w1": {
-    "fromTrace": 332,
+    "fromTrace": 335,
     "fromStand": 7
    },
    "key-s5-ring": {
@@ -2354,8 +2357,8 @@
     "wall": 95,
     "stone": 32,
     "metal": 26,
-    "bridge": 4,
-    "crumble": 1,
+    "crumble": 2,
+    "bridge": 3,
     "pillar": 2
    },
    "hazards": 1,
@@ -2754,9 +2757,9 @@
   },
   "nightmare": {
    "frames": 10841,
-   "run": "2f428f6e",
-   "rerun": "2f428f6e",
-   "replay": "2f428f6e",
+   "run": "01d30d2f",
+   "rerun": "01d30d2f",
+   "replay": "01d30d2f",
    "replayFrames": 10841,
    "replayInGoal": true,
    "objectives": [
@@ -2767,11 +2770,11 @@
    "ok": true
   },
   "abyss": {
-   "frames": 10773,
-   "run": "af6b5bed",
-   "rerun": "af6b5bed",
-   "replay": "af6b5bed",
-   "replayFrames": 10773,
+   "frames": 10780,
+   "run": "e91cd354",
+   "rerun": "e91cd354",
+   "replay": "e91cd354",
+   "replayFrames": 10780,
    "replayInGoal": true,
    "objectives": [
     "53212871",
@@ -3707,9 +3710,9 @@
    },
    "s6": {
     "reach": 25,
-    "longest": 15.9,
+    "longest": 16,
     "at": "s6-ra5",
-    "line": "s6"
+    "line": "full/fast"
    },
    "s7": {
     "reach": 24,
@@ -4336,7 +4339,7 @@
      "holes": 0,
      "firstHoles": [],
      "from": 9414,
-     "pairs": 1675,
+     "pairs": 1676,
      "leaks": []
     },
     "seal-s7": {
@@ -4854,7 +4857,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.067,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "lanes": {
     "rock-s3": {
@@ -4864,6 +4868,30 @@
      "blindRuns": 6,
      "waitHits": 0
     }
+   },
+   "squalls": {
+    "squall-s6": {
+     "accel": 1.2,
+     "period": 26,
+     "lines": {
+      "s6": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 3,
+       "maxPush": 3.3,
+       "min": 10.7,
+       "max": 10.8
+      },
+      "s6safe": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 0,
+       "maxPush": 0,
+       "min": 22.4,
+       "max": 22.4
+      }
+     }
+    }
    }
   },
   "nightmare": {
@@ -4871,7 +4899,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.185,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "lanes": {
     "rock-s3": {
@@ -4881,6 +4910,30 @@
      "blindRuns": 6,
      "waitHits": 0
     }
+   },
+   "squalls": {
+    "squall-s6": {
+     "accel": 1.5,
+     "period": 20,
+     "lines": {
+      "s6": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 4,
+       "maxPush": 3.4,
+       "min": 10.6,
+       "max": 10.7
+      },
+      "s6safe": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 0,
+       "maxPush": 0,
+       "min": 22.4,
+       "max": 22.4
+      }
+     }
+    }
    }
   },
   "abyss": {
@@ -4888,7 +4941,8 @@
     "movers": 2,
     "carried": 2,
     "maxSpeed": 1.333,
-    "lanes": 1
+    "lanes": 1,
+    "squalls": 1
    },
    "lanes": {
     "rock-s3": {
@@ -4897,6 +4951,30 @@
      "blindHits": 2,
      "blindRuns": 6,
      "waitHits": 0
+    }
+   },
+   "squalls": {
+    "squall-s6": {
+     "accel": 1.8,
+     "period": 15,
+     "lines": {
+      "s6": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 4,
+       "maxPush": 4,
+       "min": 10.5,
+       "max": 10.5
+      },
+      "s6safe": {
+       "runs": 6,
+       "ok": 6,
+       "pushed": 0,
+       "maxPush": 0,
+       "min": 22.4,
+       "max": 22.4
+      }
+     }
     }
    }
   }

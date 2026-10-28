@@ -7,6 +7,11 @@
 //                              (64 poses a cycle); every lane: a sane schedule (on + lead < period), inside its section's
 //                              shaft, and no checkpoint, supply spot, anchor or ledge top inside it (the stones never fall
 //                              where you stand or hook: only through the air you swing across).
+//                              P6 squalls: a sane schedule (on + lead < period), at most SQUALL_MAX_ACCEL m/s² with any
+//                              difficulty's knobs, a horizontal unit way, inside its section's shaft, no checkpoint in it.
+//   squallProbe(makeLevel, v, R, P)  P6 (fairness): every bot line of the squall's section (main + fork lines), played from
+//                              6 start phases of the run clock with the squalls ON, passes (no death, every landing under
+//                              0.85 lethal); the probe reports how long the squall pushed each line (it must push one).
 //   laneProbe(makeLevel, v, R, P)  V6: the section route that crosses a lane, played WITHOUT its `wait: { lane }` step from
 //                              several start phases of the run clock, is struck at least once (the lane is real); played as
 //                              written it never is (verify.mjs also fails any bot route that is struck).
@@ -15,7 +20,7 @@ import { Bot } from './bot.mjs';
 import { srcUrl } from './root.mjs';
 
 const mv = await import(srcUrl('sim/movers3d.js')).catch(() => null);
-const { Objectives3D } = await import(srcUrl('sim/objectives3d.js')).catch(() => ({ Objectives3D: null }));
+const { Objectives3D, SQUALL_MAX_ACCEL } = await import(srcUrl('sim/objectives3d.js')).catch(() => ({ Objectives3D: null, SQUALL_MAX_ACCEL: 2 }));
 
 export const MAX_MOVERS = 8; // LEVEL_FUN_PLAN item 7 / V12
 const RING_CLEAR = 0.1; // m
@@ -73,6 +78,87 @@ export function machineIntegrity(L, v, P) {
       if (s.seal) continue;
       if (s.maxY >= lane.minY - 2 && s.maxY <= lane.maxY && s.minX < lane.maxX && s.maxX > lane.minX && s.minZ < lane.maxZ && s.maxZ > lane.minZ) P(`${name}: ledge ${s.id} stands in it`);
     }
+  }
+  // P6: the wind squalls (with the knobs of every difficulty that plays this variant)
+  out.squalls = O.squalls.length;
+  for (const key of KEYS_OF[v] || [v]) {
+    if (!DIFFICULTY[key]) continue;
+    for (const q of new Objectives3D(L, DIFFICULTY[key], null).squalls) {
+      const name = `squall ${q.id} (${key})`;
+      const raw = (L.data.squalls || []).find((o) => o.id === q.id) || {};
+      const want = Object.assign({}, raw, raw.by && raw.by[key]);
+      if (!(want.accel <= SQUALL_MAX_ACCEL)) P(`${name}: accel ${want.accel} m/s² (at most ${SQUALL_MAX_ACCEL})`);
+      if (!(q.on + q.lead < q.period)) P(`${name}: on ${q.on} + lead ${q.lead} >= period ${q.period} (no calm)`);
+      if (!(q.lead >= 1)) P(`${name}: telegraph lead ${q.lead} s (at least 1 s)`);
+      if (Math.abs(Math.hypot(q.dx, q.dz) - 1) > 1e-6) P(`${name}: its way is not a horizontal unit vector`);
+      const sec = L.sections[q.section];
+      const sh = sec && sec.shaft;
+      if (!sh || q.minX < sh.minX || q.maxX > sh.maxX || q.minZ < sh.minZ || q.maxZ > sh.maxZ || q.maxY > sec.yTop || q.minY < sec.yBottom) P(`${name}: not inside the shaft of its section`);
+      for (const s of L.sections) {
+        const c = s.checkpoint;
+        if (c.x > q.minX && c.x < q.maxX && c.y > q.minY && c.y < q.maxY && c.z > q.minZ && c.z < q.maxZ) P(`${name}: checkpoint ${s.id} is inside it`);
+      }
+    }
+  }
+  return out;
+}
+
+/** P6: the bot lines that start in section `si` (the main line and its fork lines). */
+function linesOf(R, si) {
+  return Object.keys(R.ROUTES).filter((k) => R.ROUTE_START[k] === si);
+}
+
+export async function squallProbe(makeLevel, v, R, P) {
+  if (!Objectives3D) return null;
+  const L0 = makeLevel(v);
+  const O0 = new Objectives3D(L0, DIFFICULTY[v], null);
+  const out = {};
+  const PHASES = 6;
+  for (const q of O0.squalls) {
+    const sec = L0.sections[q.section];
+    const keys = linesOf(R, q.section);
+    if (!keys.length) {
+      P(`squall ${q.id}: no bot line starts in its section`);
+      continue;
+    }
+    const row = { accel: q.accel, period: q.period, lines: {} };
+    let anyPush = false;
+    for (const key of keys) {
+      const l = { runs: 0, ok: 0, pushed: 0, maxPush: 0, min: Infinity, max: 0 };
+      for (let k = 0; k < PHASES; k++) {
+        const L = makeLevel(v);
+        const sim = new Sim(L, v, { squalls: true });
+        const cp = sec.checkpoint;
+        sim.spawn(cp.x, cp.y, cp.z);
+        sim.objectives.clock = (q.period * k) / PHASES; // the gust meets the line at another moment
+        sim.objectives.reapply();
+        const O = sim.objectives;
+        const qi = O.squallIndex(q.id);
+        let pushed = 0;
+        const frame = sim.frame.bind(sim);
+        sim.frame = (it) => {
+          if (!sim.ghost) {
+            const p = sim.player;
+            const sq = O.squalls[qi];
+            if (O.squallAt(qi) > 0 && !p.grounded && p.x >= sq.minX && p.x <= sq.maxX && p.y >= sq.minY && p.y <= sq.maxY && p.z >= sq.minZ && p.z <= sq.maxZ) pushed += 1 / 60;
+          }
+          return frame(it);
+        };
+        const r = new Bot(sim, R.ROUTES[key], {}).runRoute();
+        l.runs++;
+        const good = r.ok && r.deaths === 0 && r.maxLand < 0.85;
+        if (good) l.ok++;
+        else P(`squall ${q.id}: line ${key} fails from phase ${k}/${PHASES} with the squalls on (${r.fail || 'landing ' + r.maxLand.toFixed(2)})`);
+        if (pushed > 0) l.pushed++;
+        l.maxPush = Math.max(l.maxPush, +pushed.toFixed(1));
+        l.min = Math.min(l.min, +r.time.toFixed(1));
+        l.max = Math.max(l.max, +r.time.toFixed(1));
+      }
+      if (l.pushed) anyPush = true;
+      row.lines[key] = l;
+    }
+    if (!anyPush) P(`squall ${q.id}: never pushed any bot line of ${sec.id} in ${PHASES} phases (it blows where nobody goes)`);
+    out[q.id] = row;
   }
   return out;
 }

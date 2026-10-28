@@ -87,6 +87,8 @@ class GameSim {
     if (!this._ghostPhys || this._ghostPhys.level !== g.level || this._ghostPhys.diff !== g.diff) {
       this._ghostPhys = new Physics3D(g.level, g.diff, this.ghostBus);
       this._ghostPhys.health.god = true; // the look-ahead judges landing speeds only; it takes no damage (as in verify/bot.mjs)
+      // LEVEL_FUN_PLAN P6: the wind squalls push the look-ahead body too (a function of the objectives' clock, advanced below)
+      this._ghostPhys.wind = g.physics ? g.physics.wind : null;
     }
     return this._ghostPhys;
   }
