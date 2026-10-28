@@ -3142,6 +3142,8 @@ export class Game3D {
     try {
       g.update(dt, this.player, this._runClock);
       const dmg = g.takeDamage();
+      const grip = g.takeGripDamage();
+      if (grip > 0 && this.climb && typeof this.climb.bite === 'function') this.climb.bite(grip); // a bite costs grip too
       if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health) {
         const h = this.physics.health;
         if (h.damage(dmg, 'skitter', 0)) this.physics.kill(this.player, this.tethers, 'creature');

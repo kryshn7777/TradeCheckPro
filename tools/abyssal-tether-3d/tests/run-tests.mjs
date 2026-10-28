@@ -21,6 +21,7 @@ const suites = [
   ['input: WP-TOUCH (joystick vector / dead zone / curve, floating base, look + gyro scaling, hold / latch buttons, handedness mirror, 56 px layout floor, mode decision, settings sanitising, device profile, InputManager integration: stick/look/ropes/reel/jump/grip/bag/pause)', 'input/test-touch.mjs'],
   ['creature: behaviour units', 'creature/unit.mjs'],
   ['creature: head turning (the crown facing / dorsal up turn continuously on the real level: capped rates, no roll flips at corners; spine frames hold and rate-limit the roll)', 'creature/headturn.mjs'],
+  ['creature: harder (loud rope, death memory, S4 modes, hunger, Abyss skitterlings, bites cost grip, reeling cost, fragile backups)', 'creature/challenge.mjs'],
   ['creature: dread (the stare on first sight and the lead: Mason only, cooldown, ends in a surge)', 'creature/dread.mjs'],
   ['creature: twist (the body axes are locked: facing, block tangents and ups while it chases a player who stays close and moves to and fro)', 'creature/twist.mjs'],
   ['creature: walls (the body lies on the walls: blocks inside masonry, height above the surface, deep penetrations)', 'creature/walls.mjs'],

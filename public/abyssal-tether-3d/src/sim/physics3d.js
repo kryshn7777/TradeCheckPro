@@ -719,12 +719,14 @@ export class Physics3D {
 
     let anyTaut = false;
     let attached = false;
+    player._reeling = false;
     for (const h of HANDS) {
       const rope = tethers.hands[h].rope;
       if (!rope.attached) continue;
       attached = true;
       const taut = rope.measure(player);
       anyTaut = anyTaut || taut;
+      if (taut && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
       // Grip on a tethered hand yanks that rope in hard; otherwise the shared reel axis.
       const yank = intent.hands && intent.hands[h] ? intent.hands[h].yank || 0 : 0;
       if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);

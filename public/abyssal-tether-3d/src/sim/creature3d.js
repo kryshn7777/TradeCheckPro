@@ -155,6 +155,15 @@ export const CREATURE_TUNING = {
   stare: { chance: 0.55, cooldown: 28, min: 14, max: 40, durMin: 1.5, durMax: 2.6 },
   lead: 0.5,
   leadMax: 5,
+  // Loud rope: a hard catch, a slipping rope or a wall hit is NOISE for `noiseDur` s: while it listens it hears you as if you ran. The
+  // thresholds (jolt speed m/s, slip intensity 0..1, wall impact m/s) fall with the difficulty (DIFF_TUNE.noise*).
+  noiseDur: 0.7,
+  // Death memory: every death in a section brings its next spawn `deathStep` m closer (at most `deathMax` steps, never closer than
+  // spawnAboveMin); a checkpoint or another section forgets it.
+  deathStep: 10,
+  deathMax: 2,
+  // Hunger: every strike that misses makes it `hunger.step` faster for the rest of the section, up to `hunger.max`.
+  hunger: { step: 0.05, max: 0.25 },
   annoy: { dur: 3, mul: 1.5, burstDur: 0.3, burstMul: 6, cooldown: 20, radius: 2.2, pad: 0.35 },
 };
 const T = CREATURE_TUNING;
@@ -179,16 +188,19 @@ export const DIFF_TUNE = {
     approach: 7.5, pursue: 5.2, burst: 14, menace: 15, holdBack: 0.5,
     listenDelay: 1.6, listenDur: 2.0, creep: 0.72, windup: 0.75, windupAdv: 4.2, snap: 0.45,
     burstRate: 1.6, commit: 0.45, heardCommit: 0.4, drain: 0.045, regen: 0.15, recoverMin: 3.0, maxGap: 75, stallCommit: 13.5,
+    noiseJolt: 15, noiseSlip: 0.85, noiseWall: 9,
   },
   nightmare: {
     approach: 8.4, pursue: 6.4, burst: 16, menace: 13, holdBack: 0.6,
     listenDelay: 1.3, listenDur: 1.6, creep: 0.8, windup: 0.65, windupAdv: 5.2, snap: 0.3,
     burstRate: 2.1, commit: 0.55, heardCommit: 0.65, drain: 0.045, regen: 0.18, recoverMin: 2.5, maxGap: 72, stallCommit: 9,
+    noiseJolt: 12, noiseSlip: 0.6, noiseWall: 7,
   },
   abyss: {
     approach: 9.8, pursue: 8.2, burst: 18.5, menace: 11, holdBack: 0.7,
     listenDelay: 0.8, listenDur: 1.1, creep: 1.15, windup: 0.5, windupAdv: 7, snap: 0.15,
     burstRate: 2.6, commit: 0.65, heardCommit: 1, drain: 0.04, regen: 0.2, recoverMin: 2.0, maxGap: 68, stallCommit: 5,
+    noiseJolt: 9, noiseSlip: 0.4, noiseWall: 5,
   },
 };
 /** The config3d.js values each DIFF_TUNE row was tuned with (config edits scale relative to these). */
@@ -430,6 +442,18 @@ function linkBus(bus, creature) {
     bus.on('rope:shot', (p) => {
       if (link.creature) link.creature._onShot(p);
     });
+    bus.on('rope:jolt', (p) => {
+      if (link.creature) link.creature._onNoise('jolt', p && p.speed);
+    });
+    bus.on('rope:slip', (p) => {
+      if (link.creature) link.creature._onNoise('slip', p && p.intensity);
+    });
+    bus.on('player:wallhit', (p) => {
+      if (link.creature) link.creature._onNoise('wall', p && p.impact);
+    });
+    bus.on('checkpoint', () => {
+      if (link.creature) link.creature._deathN = 0; // a checkpoint forgets where you died
+    });
     busLinks.set(bus, link);
   }
   link.creature = creature;
@@ -588,6 +612,10 @@ export class Creature3D {
     this._upReady = false;
     this._bodyDt = 0;
     this._belowSign = 1; // -1: this one entered from below (skitterling slot 2)
+    this._noiseT = 0; // seconds the rope's noise still counts as you moving
+    this._deathN = 0; // deaths in this section since the last checkpoint (death memory)
+    this._deathSec = -1;
+    this._hunger = 0; // +speed fraction from missed strikes (this section)
     this.staring = false; // the dread stare (see _tryStare)
     this._stareCd = 0;
     this._annoyT = -1; // seconds since it was provoked (-1: calm)
@@ -679,7 +707,7 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0 };
     this._applyScaling(SECTION_DEFAULTS);
     this._tHead = -1;
     this._tCount = 0;
@@ -700,12 +728,21 @@ export class Creature3D {
    * not already hunting; non-lethal modes keep it far away. Re-applying the
    * current section is harmless.
    */
+  /** A section's creature config on this difficulty: its `by[difficulty]` overrides (mode, lethal, spawnOffsetY, speedMul ...) laid over the defaults. */
+  _cfgOf(sec) {
+    const c = Object.assign({}, SECTION_DEFAULTS, sec && sec.creature);
+    const by = c.by && c.by[this.tuneKey];
+    if (by) Object.assign(c, by);
+    return c;
+  }
+
   setSection(index, section, player) {
     const lv = this.level;
     const sec = section || (lv && lv.sections && lv.sections[index]) || null;
-    const c = Object.assign({}, SECTION_DEFAULTS, sec && sec.creature);
+    const c = this._cfgOf(sec);
     const mode = MODES[c.mode] ? c.mode : 'dormant';
     const prevIndex = this.sectionIndex;
+    if (index !== this.sectionIndex) this._hunger = 0;
     this.sectionIndex = index;
     if (!this.active) {
       this.mode = mode;
@@ -760,12 +797,22 @@ export class Creature3D {
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
     const sec = lv.sections[i];
-    const mode = sec && sec.creature && MODES[sec.creature.mode] ? sec.creature.mode : 'dormant';
+    const cfg = this._cfgOf(sec);
+    const mode = MODES[cfg.mode] ? cfg.mode : 'dormant';
+    const hunger = this._hunger; // a respawn keeps what it learned in this section
+    const hungerSec = this.sectionIndex;
     this.sectionIndex = -1;
     if (LETHAL_MODES[mode]) {
       this.inPlay = true;
       this.setSection(i, sec, player);
-      this._enterPlay(player, 40 + this._rand() * 15, T.graceRespawn);
+      this._hunger = hungerSec === i ? hunger : 0;
+      // death memory: each death in this section (since the last checkpoint) starts the next retry a step closer
+      if (!this.v) {
+        this._deathN = i === this._deathSec ? Math.min(T.deathMax, this._deathN + 1) : 1;
+        this._deathSec = i;
+      }
+      const step = this.v ? 0 : T.deathStep * this._deathN;
+      this._enterPlay(player, Math.max(T.spawnAboveMin, 40 + this._rand() * 15 - step), T.graceRespawn);
       this.stamina = 0.9;
     } else {
       this.inPlay = false;
@@ -855,6 +902,7 @@ export class Creature3D {
     this._t += dt;
     if (this._annoyCd > 0) this._annoyCd -= dt;
     if (this._stareCd > 0) this._stareCd -= dt;
+    if (this._noiseT > 0) this._noiseT -= dt;
     if (this._annoyT >= 0) {
       this._annoyT += dt;
       if (this._annoyT >= T.annoy.dur) this._annoyT = -1;
@@ -959,7 +1007,7 @@ export class Creature3D {
     const engage = this.cfg.killRadius * T.engageMul;
     const canAttack = this.lethal && alive && this.grace <= 0;
     const still = alive && this.stillTime > T.stillDebounce;
-    const moving = alive && this.playerSpeed > T.moveSpeed;
+    const moving = alive && (this.playerSpeed > T.moveSpeed || this._noiseT > 0);
     const stalled = canAttack && this.stallTime >= K.stallCommit;
     const st = this.state;
     if (st !== S.APPROACHING) this.creeping = false;
@@ -1200,6 +1248,16 @@ export class Creature3D {
   /** Provoked and still angry (the view / audio can read it). */
   get annoyed() {
     return this._annoyT >= 0;
+  }
+
+  /** The rope or the wall made a noise (bus rope:jolt / rope:slip / player:wallhit): while it listens it counts as you moving. */
+  _onNoise(kind, v) {
+    if (this.v || !this.active || !this.inPlay || this.victory || !isFinite(v)) return;
+    const D = DIFF_TUNE[this.tuneKey] || DIFF_TUNE.normal;
+    const lim = kind === 'jolt' ? D.noiseJolt : kind === 'slip' ? D.noiseSlip : D.noiseWall;
+    if (v < lim) return;
+    this._noiseT = T.noiseDur;
+    this.stats.noises++;
   }
 
   /**
@@ -1732,6 +1790,7 @@ export class Creature3D {
       a.lz = this.z + (dz / d) * ext;
       this.nearMiss = d < reach * 2.2 ? 1 : 0.6;
       this.stats.nearMisses++;
+      if (!this.v) this._hunger = Math.min(T.hunger.max, this._hunger + T.hunger.step); // a miss makes it hungrier, for the rest of the section
     }
     a.hit = hit;
     a.phase = 'strike';
@@ -2196,7 +2255,7 @@ export class Creature3D {
    * plane of the wall it clings to (1 = crawls along the wall, 0 = free).
    */
   _moveToward(tx, ty, tz, speed, rate, dt, stick) {
-    const am = this.annoyMul;
+    const am = this.annoyMul * (this.v ? 1 : 1 + this._hunger);
     if (am !== 1) {
       speed *= am;
       rate *= Math.min(3, 1 + 0.5 * (am - 1)); // the surge is felt: it also accelerates harder

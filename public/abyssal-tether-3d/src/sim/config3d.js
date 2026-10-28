@@ -200,7 +200,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
     health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
-    climb: { drainMul: 1 },
+    climb: { drainMul: 1, reelDrain: 0 },
   },
   nightmare: {
     key: 'nightmare',
@@ -219,7 +219,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
     health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
-    climb: { drainMul: 1.1 },
+    climb: { drainMul: 1.1, reelDrain: 0.03 },
   },
   abyss: {
     key: 'abyss',
@@ -238,7 +238,7 @@ export const DIFFICULTY = {
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
     health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
-    climb: { drainMul: 1.25 },
+    climb: { drainMul: 1.25, reelDrain: 0.05 },
   },
   sandbox: {
     key: 'sandbox',
