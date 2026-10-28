@@ -74,14 +74,16 @@ export function sealGaps(L, v, traces, P) {
   const T = new TetherSystem(L, diff, new EventBus(), {});
   const p = new Player3D(0, 0, 0);
   const res = {};
-  const range = diff.aimRange;
+  const range = diff.aimRange; // the widest reach (the anchor query); each test uses the section's (LEVEL_FUN_PLAN item 5)
   const near = [];
+  const at = { y: 0 };
   const targetable = (q, a) => {
     const dx = a.x - q[0];
     const dy = a.y - q[1];
     const dz = a.z - q[2];
     const l = Math.hypot(dx, dy, dz);
-    if (l > range || l < 0.5) return false;
+    at.y = q[1];
+    if (l > T.aimRangeAt(at) || l < 0.5) return false;
     p.x = q[0];
     p.y = q[1];
     p.z = q[2];
@@ -162,7 +164,7 @@ export function climbOut(L, v, P) {
               const dy = a.y - y;
               const dz = a.z - z;
               const l = Math.hypot(dx, dy, dz);
-              if (l > diff.aimRange) continue;
+              if (l > T.aimRangeAt(L.sectionIndexAt(y))) continue; // the section's reach where it stands
               p.x = x;
               p.y = y;
               p.z = z;
@@ -203,7 +205,7 @@ export function probeSection(L, v, si) {
   for (const f of O.fixtures) if (!O.done[f.obj]) forbidden.add(f.anchor);
   const T = sim.tethers;
   const p = sim.player;
-  const range = sim.diff.aimRange;
+  const range = sim.diff.aimRange; // the anchor query; targetable() applies the section's reach (LEVEL_FUN_PLAN item 5)
   const maxRope = T.maxRopeLength();
   const used = new Set();
   const near = [];
@@ -225,7 +227,7 @@ export function probeSection(L, v, si) {
     const dy = a.y - p.y;
     const dz = a.z - p.z;
     const l = Math.hypot(dx, dy, dz);
-    if (l > range || l < 0.5 || a.broken) return false;
+    if (l > T.aimRangeAt(p) || l < 0.5 || a.broken) return false;
     const f = T.findTarget(p, { ox: p.x, oy: p.y, oz: p.z, dx: dx / l, dy: dy / l, dz: dz / l }, hand);
     return !!f && f.anchor === a;
   };

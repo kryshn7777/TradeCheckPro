@@ -325,6 +325,8 @@ export class TetherSystem {
     this.settings = settings || {};
     this._scratch = [];
     this._found = { anchor: null, score: 0 }; // reused result (callers read it immediately)
+    // aimRangeAt cache: the per-section ranges of (level, diff), and the y band of the last section asked about
+    this._reach = { level: null, diff: null, ranges: null, lo: 0, hi: -1, range: 0 };
     this.hands = {};
     for (const h of HANDS) this.hands[h] = this._makeHand(h);
   }
@@ -370,8 +372,37 @@ export class TetherSystem {
     return this.hands[hand].rope.anchor;
   }
 
+  /** The rope's maximum length: diff-wide (aimRange + 4), NOT the section reach (a lowering keeps its rope everywhere). */
   maxRopeLength() {
     return this.diff.aimRange + C.rope.maxLengthBonus;
+  }
+
+  /**
+   * The hook's targeting range (m) where the player is (LEVEL_FUN_PLAN item 5): `where` = a section index, or anything
+   * with a `y` (the player; the section of that height). Level3D.reachOf: the section's `reach` for this difficulty,
+   * never above diff.aimRange. Cached per (level, diff) and per section band: no allocation per call.
+   */
+  aimRangeAt(where) {
+    const L = this.level;
+    const c = this._reach;
+    if (!L || typeof L.reachOf !== 'function' || !L.sections || !L.sections.length) return this.diff.aimRange;
+    if (c.level !== L || c.diff !== this.diff || !c.ranges) {
+      c.level = L;
+      c.diff = this.diff;
+      c.ranges = new Float64Array(L.sections.length);
+      for (let i = 0; i < L.sections.length; i++) c.ranges[i] = L.reachOf(i, this.diff);
+      c.lo = 0;
+      c.hi = -1;
+    }
+    if (typeof where === 'number') return c.ranges[U.clamp(where | 0, 0, c.ranges.length - 1)];
+    const y = where && typeof where.y === 'number' ? where.y : NaN;
+    if (y >= c.lo && y < c.hi) return c.range;
+    const S = L.sections;
+    const i = L.sectionIndexAt(y);
+    c.lo = i === S.length - 1 ? -Infinity : S[i].yBottom;
+    c.hi = i === 0 ? Infinity : S[i - 1].yBottom;
+    c.range = c.ranges[i];
+    return c.range;
   }
 
   assist() {
@@ -388,7 +419,7 @@ export class TetherSystem {
    */
   findTarget(player, aim, hand) {
     if (!aim) return null;
-    const range = this.diff.aimRange;
+    const range = this.aimRangeAt(player); // the section's reach (LEVEL_FUN_PLAN item 5)
     const cone = this.diff.aimCone * this.assist();
     const assistR = this.diff.rayAssist * this.assist();
     const dl = len3(aim.dx, aim.dy, aim.dz);
@@ -479,7 +510,7 @@ export class TetherSystem {
     if (a0) {
       // the aim ray itself (the creature gets annoyed when a shot passes through it, whether or not the hook finds an anchor)
       const l0 = len3(a0.dx, a0.dy, a0.dz) || 1;
-      this.bus.emit('rope:shot', { hand, ox: a0.ox, oy: a0.oy, oz: a0.oz, dx: a0.dx / l0, dy: a0.dy / l0, dz: a0.dz / l0, range: this.diff.aimRange });
+      this.bus.emit('rope:shot', { hand, ox: a0.ox, oy: a0.oy, oz: a0.oz, dx: a0.dx / l0, dy: a0.dy / l0, dz: a0.dz / l0, range: this.aimRangeAt(player) });
     }
     const found = this.findTarget(player, aim, hand);
     if (found) {
@@ -490,7 +521,7 @@ export class TetherSystem {
     const a = aim || st.lastAim;
     if (a) {
       const l = len3(a.dx, a.dy, a.dz) || 1;
-      st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.diff.aimRange * 0.85, t: 0 };
+      st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.aimRangeAt(player) * 0.85, t: 0 };
     }
     st.buffer = C.rope.grappleBuffer;
     this.bus.emit('rope:fire', { hand, x: player.x, y: player.y, z: player.z, target: null, dur: C.rope.missTime, buffered: false });

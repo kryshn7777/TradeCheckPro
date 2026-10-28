@@ -5781,7 +5781,9 @@ export class LevelView {
     const tgtR = hands && hands.right ? hands.right.target : null;
     const pl = game && game.player;
     const alive = !pl || pl.alive !== false;
-    const range = (game && game.diff && game.diff.aimRange) || 32;
+    const baseRange = (game && game.diff && game.diff.aimRange) || 32;
+    // the hook's reach where the player is (LEVEL_FUN_PLAN item 5: shorter in the deep sections); in reach = bright
+    const range = tethers && tethers.aimRangeAt && pl ? tethers.aimRangeAt(pl) : baseRange;
     const px = pl ? num(pl.rx, num(pl.x, head.x)) : head.x;
     const py = pl ? num(pl.ry, num(pl.y, head.y)) : head.y;
     const pz = pl ? num(pl.rz, num(pl.z, head.z)) : head.z;
@@ -5830,7 +5832,12 @@ export class LevelView {
         slot.mesh.setMatrixAt(j, _m4.compose(_v1, base.q, _s));
         slot.attr.setXYZW(j, shape, stress, a.broken ? 0 : level + pulse * 0.8, base.chain);
         if (a.kind === 'fragile') slot.mesh.setColorAt(j, _c.setRGB(0.95, 0.66, 0.56));
-        else slot.mesh.setColorAt(j, _c.setRGB(0.78, 0.74, 0.7));
+        else {
+          // Rust (the diegetic reason the deep rings must be hooked from closer): the shorter the reach of the ring's own
+          // section against the difficulty's full range, the redder the mount (per-instance colour: no new material or call).
+          const rust = tethers && tethers.aimRangeAt ? THREE.MathUtils.clamp((baseRange - tethers.aimRangeAt(a.section)) / 6, 0, 1) * 0.85 : 0;
+          slot.mesh.setColorAt(j, _c.setRGB(0.78 - rust * 0.16, 0.74 - rust * 0.34, 0.7 - rust * 0.43));
+        }
       }
       // Glyph billboard (far readability; fades out up close where the mount reads).
       if (a.broken || dh < 0.4) continue;

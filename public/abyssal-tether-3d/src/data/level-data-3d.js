@@ -282,6 +282,10 @@ S('s2-floor-b', -34, -22, -38, -35, -11, 3, 'wall', { tag: 'floor' });
 const s2Arm = S('s2-arm', -34, -27, -17.5, -16.5, 6.4, 7.6, 'metal');
 under('s2-lower', s2Arm, -28, 7, 'ring', 'route');
 S('s2-low', -34, -24, -47, -44, -11, 11);
+// FAST LINE (LEVEL_FUN_PLAN item 8): a frayed ring bolted under the hall floor's lip at the opening. Step off the far pier
+// into the opening and catch it as you fall past: it kills the fall, then snaps, and you drop onto the lower ledge (no
+// lowering on the arm ring).
+A('s2-f1', -27, -38.25, 2.4, 'fragile', 'risk');
 H('s2-spikes-ab', -34, -31.5, -44, -43.5, -11, 11, 'spikes', { onlyIn: AB, normal: { x: 0, y: 1, z: 0 } }); // Abyss: the far end bristles
 under('s2-b1', s2FloorA, -12, 0, 'ring', 'route');
 under('s2-b2', s2FloorA, -2, -6, 'ring', 'shortcut');
@@ -358,6 +362,11 @@ under('s3-lower', s3Arm, -29, -8, 'ring', 'route');
 S('s3-shelf', -34, -26, -99, -96, -11, 1);
 const g5 = S('s3-g5', -21, -19.5, -91, -90, -11, 11, 'metal');
 under('s3-b1', g5, -20.25, -6, 'ring', 'route');
+// FAST LINE (LEVEL_FUN_PLAN item 8): off the first span instead of along the other two. Step off its south side, catch the
+// frayed ring as you fall past (it opens the seal, then snaps), then the sound hook below, and lower yourself onto the Vault
+// hall's landing. No shelf, no supplies, nothing under you but the grating.
+chainRing('s3-f1', -6, -80, 6, 30, 'fragile', 'risk');
+chainRing('s3-f2', -4, -88.5, 5, 40, 'hook', 'risk');
 
 dec('ribs', -33.7, -86, 6, 0.6, 22, 10, -PI / 2);
 dec('bones', 10, -62, 9, 3, 2, 3, 0.4);
@@ -475,6 +484,11 @@ under('s5-h6', a56, -15.5, 0, 'hook');
 S('s5-step6', -21, -16, -203, -200, -3, 9);
 const a57 = S('s5-arm7', -12.6, -11.4, -197, -196, 3, 9, 'metal');
 under('s5-h7', a57, -12, 3.5, 'hook');
+// FAST LINE (LEVEL_FUN_PLAN item 8): the dive. Off the landing's west lip and straight down the middle of the throat, past
+// every ledge, on frayed rings hung from the dark above (they snap), to one sound hook that lowers you onto the fork.
+chainRing('s5-f1', -12, -166, 0, 20, 'fragile', 'risk');
+chainRing('s5-f2', -12, -180, 0, 34, 'fragile', 'risk');
+chainRing('s5-f3', -12, -193, 0, 47, 'hook', 'risk');
 // Recovery: a ring bolted to the south wall near the bottom (Normal only).
 A('s5-catch', -12, -194, 8.75, 'ring', 'recovery', { omitIn: NM, normal: { x: 0, y: 0, z: -1 } });
 // Nightmare+: rebar where a wide swing brushes the walls.
@@ -621,6 +635,14 @@ chainRing('s7-n8', -22, -368, -24, 82);
 chainRing('s7-n9', -4, -379, -30, 93);
 chainRing('s7-n10', 10, -390, -16, 104);
 chainRing('s7-n11', 6, -404, -15, 118);
+// FAST LINE (LEVEL_FUN_PLAN item 8): the plumb line. Off the landing's north lip and straight down, on frayed rings hung from
+// the roof in a slanting column toward the throat: each one kills the fall and snaps; the last ring of the spiral catches you.
+chainRing('s7-f1', -11, -297, -14.5, 12, 'fragile', 'risk');
+chainRing('s7-f2', -8, -314, -15, 30, 'fragile', 'risk');
+chainRing('s7-f3', -5, -331, -15, 46, 'fragile', 'risk');
+chainRing('s7-f4', -2, -348, -15.5, 64, 'fragile', 'risk');
+chainRing('s7-f5', 1, -365, -15.5, 80, 'fragile', 'risk');
+chainRing('s7-f6', 3, -382, -15, 98, 'fragile', 'risk');
 
 dec('ribs', -51, -350, 0, 2, 120, 70, -PI / 2);
 dec('ribs', 27, -350, 0, 2, 120, 70, PI / 2);
@@ -669,7 +691,7 @@ chainRing('s8-e1', -8, -434, -6, 140, 'ring', 'escape');
 chainRing('s8-e2', -10, -446, 10, 152, 'ring', 'escape');
 chainRing('s8-e3', 4, -460, 4, 166, 'ring', 'escape');
 chainRing('s8-e4', -4, -480, -6, 186, 'ring', 'escape');
-chainRing('s8-e5', 0, -500, 2, 206, 'ring', 'escape');
+chainRing('s8-e5', 0, -505, 2, 211, 'ring', 'escape');
 chainRing('s8-e6', -4, -526, -2, 232, 'ring', 'escape');
 A('s8-w1', -11.75, -532, 4, 'ring', 'escape', { normal: { x: 1, y: 0, z: 0 } }); // on the throat's west wall: a second way down
 H('s8-blades-ab', 7.4, 8, -540, -530, -10, 10, 'blades', { onlyIn: AB, normal: { x: -1, y: 0, z: 0 } });
@@ -749,22 +771,51 @@ const fixtures = [
   { id: 'fx-s1', kind: 'hook', anchorId: 't1', hold: 0 },
   { id: 'fx-s2', kind: 'hook', anchorId: 's2-hook', hold: 0 },
   { id: 'fx-s3', kind: 'hook', anchorId: 's3-a2', hold: 0 },
+  { id: 'fx-s3-fast', kind: 'hook', anchorId: 's3-f1', hold: 0 },
   { id: 'fx-s4', kind: 'hook', anchorId: 's4-a2', hold: 0 },
   { id: 'fx-s5', kind: 'hook', anchorId: 's5-h4', hold: 0 },
+  { id: 'fx-s5-fast', kind: 'hook', anchorId: 's5-f1', hold: 0 },
   { id: 'fx-s6-safe', kind: 'hook', anchorId: 's6-sa3', hold: 0 },
   { id: 'fx-s6-risk', kind: 'hook', anchorId: 's6-ra3', hold: 0 },
   { id: 'fx-s7-spiral', kind: 'hook', anchorId: 's7-n6', hold: 0 },
   { id: 'fx-s7-spire', kind: 'hook', anchorId: 's7-sp1', hold: 0 },
+  { id: 'fx-s7-fast', kind: 'hook', anchorId: 's7-f3', hold: 0 },
 ];
 /** One objective per sealed section: `need` of its fixtures `ids` done opens `sealId` (`by[difficulty]` overrides, as section.creature). */
 const objectives = [
   { id: 'obj-s1', section: 's1', verb: 'hook', sealId: 'seal-s1', ids: ['fx-s1'], need: 1 },
   { id: 'obj-s2', section: 's2', verb: 'hook', sealId: 'seal-s2', ids: ['fx-s2'], need: 1 },
-  { id: 'obj-s3', section: 's3', verb: 'hook', sealId: 'seal-s3', ids: ['fx-s3'], need: 1 },
+  { id: 'obj-s3', section: 's3', verb: 'hook', sealId: 'seal-s3', ids: ['fx-s3', 'fx-s3-fast'], need: 1 },
   { id: 'obj-s4', section: 's4', verb: 'hook', sealId: 'seal-s4', ids: ['fx-s4'], need: 1 },
-  { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5'], need: 1 },
+  { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5', 'fx-s5-fast'], need: 1 },
   { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
-  { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire'], need: 1 },
+  { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire', 'fx-s7-fast'], need: 1 },
+];
+
+// =============================================================================
+// FORKS (LEVEL_FUN_PLAN item 8): S2-S8 each offer two ways down (S1 teaches; it has one). A `fast` line takes fewer stops:
+// frayed rings that snap, a dive or a chain over the void, no recovery ring, no supplies, nothing to stand on. A `safe`
+// line lowers ledge to ledge on sound rings; the supplies favour it (tier 'slow') and a plaque in a lit corner tells a
+// little of the Lanternwrights. Both reach the section's objective (a ring on each line, or a ring both share).
+// `ids` = the anchors of the line in the order they are hooked (V1 resolves them in every variant), `stops` = the ledges it
+// stands on (those that exist in every variant; a crumbling one counts as a fast-line stop). The bots play exactly these
+// lines (tools/abyssal-tether-3d/verify/routes.mjs FORKS) and the fast one must be the faster.
+// =============================================================================
+const routes = [
+  { id: 'r-s2-fast', fork: 'fork-s2', section: 's2', line: 'fast', ids: ['s2-hook', 's2-f1', 's2-b1', 's2-x'], stops: ['s2-far', 's2-pier-w'] },
+  { id: 'r-s2-safe', fork: 'fork-s2', section: 's2', line: 'safe', ids: ['s2-hook', 's2-lower', 's2-b1', 's2-x'], stops: ['s2-floor-a', 's2-low', 's2-pier-w'] },
+  { id: 'r-s3-fast', fork: 'fork-s3', section: 's3', line: 'fast', ids: ['s3-a1', 's3-f1', 's3-f2'], stops: [] },
+  { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
+  { id: 'r-s4-fast', fork: 'fork-s4', section: 's4', line: 'fast', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk'] },
+  { id: 'r-s4-safe', fork: 'fork-s4', section: 's4', line: 'safe', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk', 's4-shelf', 's4-plinth'] },
+  { id: 'r-s5-fast', fork: 'fork-s5', section: 's5', line: 'fast', ids: ['s5-f1', 's5-f2', 's5-f3'], stops: [] },
+  { id: 'r-s5-safe', fork: 'fork-s5', section: 's5', line: 'safe', ids: ['s5-h1', 's5-h2', 's5-h3', 's5-h4', 's5-h5', 's5-h6', 's5-h7'], stops: ['s5-step1', 's5-step3', 's5-step4', 's5-step5', 's5-step6'] },
+  { id: 'r-s6-fast', fork: 'fork-s6', section: 's6', line: 'fast', ids: ['s6-ra1', 's6-ra2', 's6-ra3', 's6-ra4', 's6-ra5'], stops: ['s6-ledge'] },
+  { id: 'r-s6-safe', fork: 'fork-s6', section: 's6', line: 'safe', ids: ['s6-sa1', 's6-sa2', 's6-sa3', 's6-sa4', 's6-sa5', 's6-sa6'], stops: ['s6-safe1', 's6-safe2', 's6-safe3', 's6-safe4', 's6-safe5'] },
+  { id: 'r-s7-fast', fork: 'fork-s7', section: 's7', line: 'fast', ids: ['s7-f1', 's7-f2', 's7-f3', 's7-f4', 's7-f5', 's7-f6', 's7-n11'], stops: [] },
+  { id: 'r-s7-safe', fork: 'fork-s7', section: 's7', line: 'safe', ids: ['s7-n1', 's7-n2', 's7-n3', 's7-n4', 's7-n5', 's7-n6', 's7-n7', 's7-n8', 's7-n9', 's7-n10', 's7-n11'], stops: [] },
+  { id: 'r-s8-fast', fork: 'fork-s8', section: 's8', line: 'fast', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: [] },
+  { id: 'r-s8-safe', fork: 'fork-s8', section: 's8', line: 'safe', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: ['s8-step1-s', 's8-step2-e'] },
 ];
 
 // =============================================================================
@@ -1022,6 +1073,7 @@ const sections = [
     id: 's4', name: 'The Listening Vault', subtitle: 'Something answered',
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
+    reach: { normal: 30, nightmare: 28, abyss: 26 }, // the rings start to rust (REACH below)
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
@@ -1041,6 +1093,7 @@ const sections = [
     id: 's5', name: 'The Gullet Stair', subtitle: 'It has your scent',
     yTop: -150, yBottom: -204,
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
+    reach: { normal: 29, nightmare: 27, abyss: 25 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
     theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
     creature: creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), // Abyss: a skitterling already here
@@ -1073,6 +1126,7 @@ const sections = [
     id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and thin',
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
+    reach: { normal: 28, nightmare: 27, abyss: 25 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
     creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
@@ -1086,6 +1140,7 @@ const sections = [
     id: 's7', name: 'The Hollow Nave', subtitle: 'Nothing to stand on',
     yTop: -284, yBottom: -420,
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
+    reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
     theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
     creature: creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)),
@@ -1106,6 +1161,7 @@ const sections = [
     id: 's8', name: 'The Last Throat', subtitle: 'Down. Now.',
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
+    reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
     theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
     creature: creature('escape', true, 100, 1, 0, skit(1, 1, 2)),
@@ -1143,4 +1199,5 @@ export const LEVEL_DATA_3D = {
   seals, // section seals, fixtures and objectives (see SEALS AND OBJECTIVES above)
   fixtures,
   objectives,
+  routes, // the fast / safe line of every fork (see FORKS above)
 };

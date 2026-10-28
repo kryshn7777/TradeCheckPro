@@ -32,6 +32,10 @@ const FLIGHT_FRAMES = Math.ceil(CONFIG.rope.flightMax * 60) + 1;
 // what it costs. The verify gate on a route's real maximum stays 0.85 (LAND_OK). AT3D_LAND_LIMIT overrides the planning
 // limit for experiments.
 const LAND_LIMIT = (typeof process !== 'undefined' && process.env && Number(process.env.AT3D_LAND_LIMIT)) || 0.68; // (the browser e2e runs this file too)
+// Reach floors (LEVEL_FUN_PLAN item 5): the bot plays every line with the section's reach shortened by this much, so a line
+// that passes leaves a player 1.5 m of targeting range to spare (verify.mjs REACH_MARGIN checks the shots it fired).
+const REACH_MARGIN_ENV = typeof process !== 'undefined' && process.env ? Number(process.env.AT3D_REACH_MARGIN) : NaN;
+export const BOT_REACH_MARGIN = isFinite(REACH_MARGIN_ENV) ? REACH_MARGIN_ENV : 1.5;
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
@@ -56,6 +60,7 @@ export class Bot {
     this.log = [];
     this.maxFrames = opts.maxFrames || 60 * 400;
     this.verbose = !!opts.verbose;
+    this.reachMargin = opts.reachMargin !== undefined ? opts.reachMargin : BOT_REACH_MARGIN;
     this.lookaheads = 0;
     this.misTarget = [];
   }
@@ -111,7 +116,7 @@ export class Bot {
     const dy = an.y - p.y;
     const dz = an.z - p.z;
     const l = Math.hypot(dx, dy, dz);
-    if (l > this.sim.diff.aimRange || an.broken) return false;
+    if (l > this.sim.tethers.aimRangeAt(p) - this.reachMargin || an.broken) return false; // the section's reach minus the bot's margin
     const aim = { ox: p.x, oy: p.y, oz: p.z, dx: dx / l, dy: dy / l, dz: dz / l };
     const r = this.sim.tethers.findTarget(p, aim, hand);
     if (r && r.anchor !== an) {

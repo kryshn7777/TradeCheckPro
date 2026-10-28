@@ -17,7 +17,7 @@
  * Sections are ordered top → bottom (yTop > yBottom).
  */
 
-import { U } from './config3d.js';
+import { U, DIFFICULTY } from './config3d.js';
 import { LEVEL_DATA_3D } from '../data/level-data-3d.js';
 import { buildEdges, edgeQuery } from './climbEdges.js';
 
@@ -26,6 +26,26 @@ const BUCKET = 8;
 /** Boxes are shrunk by this much for line-of-sight tests so grazing an edge never blocks. */
 const LOS_INSET = 0.05;
 const VARIANTS = ['normal', 'nightmare', 'abyss'];
+
+/**
+ * sections[i].reach (LEVEL_FUN_PLAN item 5, the hook's targeting range in that section): a number = the Normal value (the
+ * other difficulties scale it by their own aimRange / Normal's), or { normal, nightmare, abyss, sandbox? } (a missing key
+ * falls back to the scaled Normal value). Returns a clean { normal?, nightmare?, abyss?, sandbox? } or null (no field:
+ * the difficulty's aimRange everywhere).
+ */
+function readReach(r) {
+  if (typeof r === 'number') return isFinite(r) && r > 0 ? { normal: r } : null;
+  if (!r || typeof r !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const k of ['normal', 'nightmare', 'abyss', 'sandbox']) {
+    if (typeof r[k] === 'number' && isFinite(r[k]) && r[k] > 0) {
+      out[k] = r[k];
+      any = true;
+    }
+  }
+  return any ? out : null;
+}
 
 /** Is a raw data object present in this variant (`omitIn` / `onlyIn` lists)? */
 export function inVariant(o, variant) {
@@ -344,6 +364,7 @@ export class Level3D {
       theme: Object.assign({ fog: '#20262b', light: '#6fa3b5', accent: '#e0a050', fogNear: 6, fogFar: 70, ambient: 0.3 }, th),
       creature: Object.assign({ mode: 'dormant', lethal: false, speedMul: 1, burstRate: 0, spawnOffsetY: 120 }, s.creature),
       shaft: s.shaft ? Object.assign({}, s.shaft) : null,
+      reach: readReach(s.reach), // targeting range per difficulty (reachOf); null = diff.aimRange
       hints: (Array.isArray(s.hints) ? s.hints.filter((h) => inVariant(h, v)) : [])
         .map((h) => {
           const o = Object.assign({}, h);
@@ -582,6 +603,22 @@ export class Level3D {
   /** Inner faces of the shaft around height y: {minX,maxX,minZ,maxZ} (null if the section has none). */
   shaftAt(y) {
     return this.sectionAt(y).shaft;
+  }
+
+  /**
+   * The hook's targeting range (m) in section `i` on difficulty `diff` (LEVEL_FUN_PLAN item 5): the section's `reach` for
+   * diff.key (Sandbox: its level variant's value), a bare Normal value scaled by diff.aimRange / Normal's aimRange, never
+   * above diff.aimRange; no `reach` = diff.aimRange. Only targeting uses it: the rope's maximum length stays diff-wide.
+   */
+  reachOf(i, diff) {
+    const base = diff && diff.aimRange > 0 ? diff.aimRange : DIFFICULTY.normal.aimRange;
+    const s = this.sections[U.clamp(i | 0, 0, this.sections.length - 1)];
+    const r = s && s.reach;
+    if (!r) return base;
+    let v = r[diff && diff.key];
+    if (v === undefined && diff && diff.levelVariant) v = r[diff.levelVariant];
+    if (v === undefined && r.normal !== undefined) v = Math.round(((r.normal * base) / DIFFICULTY.normal.aimRange) * 2) / 2;
+    return v !== undefined && v < base ? v : base;
   }
 
   /**

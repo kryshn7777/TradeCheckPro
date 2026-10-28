@@ -335,6 +335,13 @@ export class Sim {
       this.attaches.push(e.anchor.id);
       this.events.push(['attach', e.hand, e.anchor.id, +this.t.toFixed(2), +e.distance.toFixed(1)]);
     });
+    // Every hook shot at an anchor of the real run: [section of the body, anchor id, distance body -> anchor at the trigger]
+    // (verify.mjs reach floors, LEVEL_FUN_PLAN item 5: the targeting distance a line needs, against the section's reach).
+    this.shots = [];
+    this.bus.on('rope:fire', (e) => {
+      if (this.ghost || !e.target) return;
+      this.shots.push([this.level.sectionIndexAt(e.y), e.target.id, Math.hypot(e.x - e.target.x, e.y - e.target.y, e.z - e.target.z)]);
+    });
     this.bus.on('grapple:release', (e) => {
       if (this.ghost) return;
       this.events.push(['release', e.hand, e.anchor.id, +this.t.toFixed(2), e.reason]);
@@ -408,6 +415,7 @@ export class Sim {
     this.deaths = 0;
     this.attaches = [];
     this.events = [];
+    this.shots = [];
     this.damageLog = [];
     this.physics.health.reset();
     this._secIdx = this.level.sectionIndexAt(y);

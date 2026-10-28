@@ -41,6 +41,10 @@ const BASELINE_DIR = fileURLToPath(new URL('./baselines/', import.meta.url));
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const LAND_OK = 0.85; // a landing at ≥ 85 % of the lethal impact fails a route
+/** Reach floors (LEVEL_FUN_PLAN item 5): every hook shot of every bot line is fired from at most the section's reach − this. */
+const REACH_MARGIN = 1.5;
+/** Per variant, per section index: the longest shot of any bot line { d, id, line } (filled by runRoute). */
+let reachLog = {};
 let failures = 0;
 let chapterFailures = [];
 const fail = (msg) => {
@@ -473,6 +477,12 @@ function runRoute(ch, v, start, route, opts = {}) {
   const r = bot.runRoute();
   r.sim = sim;
   r.bot = bot;
+  // reach floors: the longest shot per section of this line
+  const log = reachLog[v] || (reachLog[v] = {});
+  for (const [si, id, d] of sim.shots) {
+    const cur = log[si];
+    if (!cur || d > cur.d) log[si] = { d, id, line: opts.label || '?' };
+  }
   r.inGoal = L.inGoal(sim.player.x, sim.player.y, sim.player.z);
   return r;
 }
@@ -488,7 +498,7 @@ function fullRun(ch, v, line, simOpts) {
     for (const st of R.ROUTES[key]) route.push(st);
     marks.push([k, route.length - 1]);
   }
-  const r = runRoute(ch, v, L.spawn, route, { level: L, sim: simOpts });
+  const r = runRoute(ch, v, L.spawn, route, { level: L, sim: simOpts, label: `full/${line || 'main'}` });
   const splits = {};
   let prev = 0;
   for (const [k, idx] of marks) {
@@ -541,7 +551,7 @@ function coverage(ch, v, traces) {
       const dy = a.y - q[1];
       const dz = a.z - q[2];
       const l = Math.hypot(dx, dy, dz);
-      if (l > DIFFICULTY[v].aimRange || l < 0.5) return false;
+      if (l > T.aimRangeAt(L.sectionIndexAt(q[1])) || l < 0.5) return false; // the section's reach (LEVEL_FUN_PLAN item 5)
       p.x = q[0];
       p.y = q[1];
       p.z = q[2];
@@ -624,6 +634,7 @@ async function verifyChapter(ch) {
   const R = ch.routes;
   const t0 = Date.now();
   chapterFailures = [];
+  reachLog = {};
   const report = {
     meta: { chapter: ch.id, name: ch.name, variants: VARIANTS, gameRoot: GAME_ROOT, node: process.version, date: new Date().toISOString() },
     integrity: {},
@@ -671,7 +682,7 @@ async function verifyChapter(ch) {
     const L = ch.makeLevel(v);
     report[`sections_${v}`] = {};
     for (const key of Object.keys(R.ROUTES)) {
-      const r = runRoute(ch, v, L.sections[R.ROUTE_START[key]].checkpoint, R.ROUTES[key], { level: L });
+      const r = runRoute(ch, v, L.sections[R.ROUTE_START[key]].checkpoint, R.ROUTES[key], { level: L, label: key });
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
       if (!ok) fail(`[${ch.id}/${v}] section ${key}: ${r.fail}`);
@@ -687,7 +698,7 @@ async function verifyChapter(ch) {
       const L = ch.makeLevel(v);
       const res = [];
       for (const [k, route] of Object.entries(R.ALT_ROUTES)) {
-        const r = runRoute(ch, v, L.sections[R.ALT_START[k]].checkpoint, route, { level: L });
+        const r = runRoute(ch, v, L.sections[R.ALT_START[k]].checkpoint, route, { level: L, label: `alt/${k}` });
         traces[v].push(r.sim.trace);
         const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
         if (!ok) fail(`[${ch.id}/${v}] alt ${k}: ${r.fail}`);
@@ -717,7 +728,7 @@ async function verifyChapter(ch) {
       if (!VARIANTS.includes(v)) continue;
       const L = ch.makeLevel(v);
       const route = typeof sc.route === 'function' ? sc.route(v) : sc.route;
-      const r = runRoute(ch, v, sc.start(L), route, { level: L, doneThrough: sc.doneThrough });
+      const r = runRoute(ch, v, sc.start(L), route, { level: L, doneThrough: sc.doneThrough, label: `scenario/${name}` });
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
       report.scenarios[`${name}/${v}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), damage: dmgOf(r.damage), fail: r.fail, events: r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 12) };
@@ -725,6 +736,23 @@ async function verifyChapter(ch) {
       console.log(`  ${(name + '/' + v).padEnd(24)} ${ok ? 'PASS' : 'FAIL'} ${r.time.toFixed(1)}s maxLand=${r.maxLand.toFixed(2)} dmg=${r.damage.total}hp minHp=${r.damage.minHp} ${r.fail || ''}`);
       console.log(`     ${JSON.stringify(r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 9))}`);
     }
+  }
+
+  console.log(`== Reach (LEVEL_FUN_PLAN item 5: per-section targeting range; every shot of every line <= reach - ${REACH_MARGIN} m)`);
+  report.reach = {};
+  for (const v of VARIANTS) {
+    const L = ch.makeLevel(v);
+    const T = new TetherSystem(L, DIFFICULTY[v], new EventBus(), {});
+    const log = reachLog[v] || {};
+    const rows = {};
+    for (const sec of L.sections) {
+      const reach = T.aimRangeAt(sec.index);
+      const m = log[sec.index];
+      rows[sec.id] = { reach, longest: m ? +m.d.toFixed(1) : null, at: m ? m.id : null, line: m ? m.line : null };
+      if (m && m.d > reach - REACH_MARGIN) fail(`[${ch.id}/${v}] reach ${sec.id}: line ${m.line} fires at ${m.id} from ${m.d.toFixed(1)} m (reach ${reach}, margin ${REACH_MARGIN})`);
+    }
+    report.reach[v] = rows;
+    console.log(`  ${v}: ${Object.entries(rows).map(([id, o]) => `${id} ${o.reach} m (longest ${o.longest} ${o.at})`).join(' | ')}`);
   }
 
   console.log('== Anchor coverage (targetable from route points / standing spots)');
