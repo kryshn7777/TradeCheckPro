@@ -6,7 +6,8 @@
 //                           uses are tagged risk / shortcut (never recovery); the section's objective can be done from each
 //                           line (LEVEL_FUN_PLAN P3: its rings on the line's anchors, its lamps within the lantern's reach
 //                           of the line's ledges, `need` of them) and each bot line does it (a `haul` / `light` step for
-//                           every verb that is not a plain hook; P4: a `winch` step for the winch); the bot lines hook exactly
+//                           every verb that is not a plain hook; P4: a `winch` step for the winch; P5: a `haul` step for the
+//                           keystone, a `waitObj` step for the survive floor); the bot lines hook exactly
 //                           the data's anchors (in order)
 //                           and stand on its stops; no supply
 //                           spot lies within FAST_CLEAR m of a risk / shortcut ring; every 'slow' supply spot stands on a
@@ -28,8 +29,8 @@ export function lampFromLedge(s, fx) {
  * `haul` steps.
  */
 export function routeVerbs(route) {
-  const out = { light: [], ring: [], haul: [], winch: [] };
-  for (const st of route || []) for (const k of ['light', 'ring', 'haul', 'winch']) if (typeof st[k] === 'string') out[k].push(st[k]);
+  const out = { light: [], ring: [], haul: [], winch: [], waitObj: [] };
+  for (const st of route || []) for (const k of ['light', 'ring', 'haul', 'winch', 'waitObj']) if (typeof st[k] === 'string') out[k].push(st[k]);
   return out;
 }
 
@@ -107,7 +108,8 @@ export function forkIntegrity(L, R, P) {
       for (const line of [f.fast, f.safe]) {
         const byRing = fxs.filter((fx) => fx.anchorId && line.ids.includes(fx.anchorId)).length;
         const byLamp = fxs.filter((fx) => fx.kind === 'lamp' && (line.stops || []).some((sid) => lampFromLedge(L.byId[sid], fx))).length;
-        if (byRing + byLamp < need) P(`fork ${fid}: the ${line.line} line can do ${byRing + byLamp} of the ${need} needed of objective ${obj.id} (${fxs.map((fx) => fx.anchorId || fx.id).join(', ')})`);
+        const byTime = fxs.filter((fx) => fx.kind === 'survive').length; // P5: the survive floor is the same clock on every line
+        if (byRing + byLamp + byTime < need) P(`fork ${fid}: the ${line.line} line can do ${byRing + byLamp + byTime} of the ${need} needed of objective ${obj.id} (${fxs.map((fx) => fx.anchorId || fx.id).join(', ')})`);
       }
     }
   }
@@ -135,8 +137,10 @@ export function forkIntegrity(L, R, P) {
         const vb = routeVerbs(route);
         const lit = new Set(vb.light.filter((id) => (obj.ids || []).includes(id)));
         const ok =
-          obj.verb === 'haul'
+          obj.verb === 'haul' || obj.verb === 'breach' // P5: the keystone's haul fallback (the bots never use the Mason)
             ? vb.haul.includes(obj.id)
+            : obj.verb === 'survive' // P5: the line hangs on until the survive clock has opened its seal
+              ? vb.waitObj.includes(obj.id)
             : obj.verb === 'lamp'
               ? lit.size >= (obj.need || 1)
               : obj.verb === 'winch'

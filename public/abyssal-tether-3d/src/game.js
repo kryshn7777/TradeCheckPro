@@ -839,6 +839,7 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
+    this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
@@ -1698,11 +1699,30 @@ export class Game3D {
     });
     bus.on('objective:progress', (e) => {
       if (!this._inRun() || !e) return;
-      if (e.verb === 'haul' || e.verb === 'winch') this._hapticTethered(0.55, 70); // a ratchet notch through the line (P4: the gear's too)
+      if (e.verb === 'haul' || e.verb === 'winch' || e.verb === 'breach') this._hapticTethered(0.55, 70); // a ratchet notch through the line (P4: the gear's too; P5: the keystone's haul)
       else if (e.verb === 'lamp') {
         this._haptic('left', 0.35, 90); // the lantern hand
         if (e.k < e.of) this._toast(`Lamp ${e.k} of ${e.of}`, 1.6);
-      }
+      } else if (e.verb === 'survive' && e.k < e.of) this._toast(`Bolt ${e.k} of ${e.of}`, 1.6); // P5: an iris bolt withdrawn
+    });
+    // LEVEL_FUN_PLAN P5, the Mason: an objective's creature override (S7: escape once the iris opens); the keystone breaks;
+    // the Masons' rests (a double pulse on the way in, the hands feel the stone scrape when the budget runs short)
+    bus.on('objective:done', () => this._applyCreatureOverride());
+    bus.on('breach:break', () => {
+      if (!this._inRun()) return;
+      this._hapticBoth(0.8, 180);
+      this._toast('Keystone broken', 2);
+    });
+    bus.on('breach:hit', () => {
+      if (this._inRun()) this._hapticBoth(0.6, 120);
+    });
+    bus.on('nook:enter', (e) => {
+      if (!this._inRun() || !e || !(e.left > 0 || e.lure)) return;
+      this._hapticBoth(0.3, 40);
+      this._nookPulseT = 0.12; // the second pulse of the double pulse (_updateCreature)
+    });
+    bus.on('nook:warn', () => {
+      if (this._inRun()) this._hapticBoth(0.45, 140);
     });
     bus.on('xr:recenter', () => this.recenter());
   }
@@ -2048,6 +2068,7 @@ export class Game3D {
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.flash = 0;
@@ -2137,6 +2158,7 @@ export class Game3D {
     this._enterSection(idx, 'warp');
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
@@ -2888,6 +2910,20 @@ export class Game3D {
     const sec = this.level.sections[idx];
     this._try('creature', () => this.creature.setSection(idx, sec, this.player));
     this._try('skitter', () => this.skitters && this.skitters.setSection(idx, this.player));
+    this._applyCreatureOverride();
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5: an objective done in the creature's section lays its `after` over the section's creature config (S7:
+   * escape once the iris has opened): on objective:done, a section change, a respawn and a warp.
+   */
+  _applyCreatureOverride() {
+    const c = this.creature;
+    const O = this.objectives;
+    if (!c || typeof c.setOverride !== 'function') return;
+    const si = this._creatureSection >= 0 ? this._creatureSection : this.level && this.player ? this.level.sectionIndexAt(this.player.y) : -1;
+    const o = O && si >= 0 ? O.creatureOverrideFor(si) : null;
+    this._try('creature', () => c.setOverride(o, si));
   }
 
   _queueHint(hint) {
@@ -3255,7 +3291,17 @@ export class Game3D {
   _updateCreature(dt) {
     const c = this.creature;
     try {
+      // LEVEL_FUN_PLAN P5: the player's refuge (a Masons' rest / the S5 lure niche), from the last fixed step
+      const O = this.objectives;
+      const rk = O && this.state === 'playing' ? O.refugeKind : 0;
+      const rb = rk ? O.refugeBlock : null;
+      if (typeof c.setRefuge === 'function') c.setRefuge(rk, rb);
+      if (this.skitters && typeof this.skitters.setRefuge === 'function') this.skitters.setRefuge(rk, rb);
       c.update(dt, this.player, this._runClock);
+      if (this._nookPulseT > 0) {
+        this._nookPulseT -= dt;
+        if (this._nookPulseT <= 0 && this._inRun()) this._hapticBoth(0.3, 40);
+      }
       if (c.caughtPlayer) {
         c.caughtPlayer = false;
         if (this.player.alive && this.state === 'playing') this.physics.kill(this.player, this.tethers, 'creature');
@@ -3946,7 +3992,13 @@ export class Game3D {
       bag: this.bag ? this.debugBag() : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
-      objectives: this.objectives ? { done: this.objectives.serialize(), open: this.objectives.seals.filter((s) => this.objectives.sealOpen[s.index]).map((s) => s.id) } : null,
+      objectives: this.objectives
+        ? {
+            done: this.objectives.serialize(),
+            open: this.objectives.seals.filter((s) => this.objectives.sealOpen[s.index]).map((s) => s.id),
+            refuge: this.objectives.refugeIndex >= 0 ? this.objectives.nooks[this.objectives.refugeIndex].id : null, // P5: the Masons' rest the player hides in
+          }
+        : null,
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
       victoryT: r(this.victoryT),

@@ -119,6 +119,7 @@ const BUS_LEVEL = { ambient: 0.85, player: 1, creature: 1, psych: 1, ui: 0.5, st
 const REDUCED = { voices: 14, hrtf: 5, ambientHrtf: 2 }; // reducedEffects tier caps
 const LOG_LEN = 24; // debug: last events kept
 const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus (other gameplay buses → 0)
+const REST_DUCK = 0.5; // LEVEL_FUN_PLAN P5: the ambience inside a Masons' rest
 
 // Inharmonic partials for struck iron (ratios, amplitudes, decay time-constants).
 const PARTIALS = [1, 2.32, 3.86, 5.41];
@@ -352,6 +353,7 @@ export class AudioManager3D {
     this._dead = false;
     this._victory = false;
     this._hushUntil = 0;
+    this._rest = 0; // 1 while the player hides in a Masons' rest (LEVEL_FUN_PLAN P5)
     this._autoSuspended = false;
     this._warned = Object.create(null);
     this._silentBuf = null;
@@ -1456,7 +1458,8 @@ export class AudioManager3D {
     const dead = this._dead || state === 'dead';
     const tc = 0.15;
     const fx = this._sfxMul();
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
+    // (LEVEL_FUN_PLAN P5: in a Masons' rest the ambience ducks to REST_DUCK)
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1), now, this._thin < 0.9 ? 0.12 : tc);
     this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
     this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
     this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
@@ -2249,6 +2252,12 @@ export class AudioManager3D {
       'objective:progress': this._onObjectiveProgress,
       'lane:warn': this._onLaneWarn,
       'lane:on': this._onLaneOn,
+      'breach:hit': this._onBreachHit,
+      'breach:break': this._onBreachBreak,
+      'nook:enter': this._onNookEnter,
+      'nook:exit': this._onNookExit,
+      'nook:spent': this._onNookExit,
+      'nook:warn': this._onNookWarn,
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
@@ -2334,6 +2343,7 @@ export class AudioManager3D {
     if (this._cs) this._cs.reset();
     if (this._music) this._music.reseed(this._runs * 7919);
     this._state = 'playing';
+    this._rest = 0;
     this._mixBuses(now, 'playing');
   }
 
@@ -2555,6 +2565,7 @@ export class AudioManager3D {
   }
 
   _onDeath(p) {
+    this._rest = 0;
     const now = this.ctx.currentTime;
     this._dead = true;
     this.kMuffle.force(480, now, 0.12);
@@ -2611,8 +2622,39 @@ export class AudioManager3D {
    * notch (the same ratchet, at the turning ring).
    */
   _onObjectiveProgress(p) {
-    if (p.verb === 'haul' || p.verb === 'winch') this._sfxRatchet(p);
+    if (p.verb === 'haul' || p.verb === 'winch' || (p.verb === 'breach' && p.k < p.of)) this._sfxRatchet(p);
     else if (p.verb === 'lamp') this._sfxLampCatch(p);
+    else if (p.verb === 'survive') {
+      // LEVEL_FUN_PLAN P5: an iris bolt slides back (a heavy clank at the iris, and the structure groans)
+      this._sfxRatchet(p);
+      this._sfxBreak(p, 0.4);
+    }
+  }
+
+  /** LEVEL_FUN_PLAN P5: a Mason lunge on the S5 keystone (a crack of stone), its break (the crack, then the level groans). */
+  _onBreachHit(p) {
+    this._sfxBreak(p, 0.8);
+  }
+
+  _onBreachBreak(p) {
+    this._sfxBreak(p, 1.4);
+    this._sfxRumble();
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5, the Masons' rests: inside one the ambience ducks (the hush of a safe corner); the budget running short
+   * is a scrape of stone at the opening.
+   */
+  _onNookEnter(p) {
+    if (p && (p.left > 0 || p.lure)) this._rest = 1;
+  }
+
+  _onNookExit() {
+    this._rest = 0;
+  }
+
+  _onNookWarn(p) {
+    this._sfxBreak(p, 0.3);
   }
 
   /** LEVEL_FUN_PLAN P4, the rockfall lane's telegraph: the structure groans (the level rumble) and grit trickles at its top. */

@@ -34,6 +34,11 @@
 //                                                   let go of it (keep: hang on: the next step chains from it)
 //   { wait: { lane: 'laneId', clear: s }, toward?: [x, z] }  stand (or hang) until the next drop of a rockfall lane is at
 //                                                   least s away (right after one has fallen)
+// The Mason (LEVEL_FUN_PLAN P5; the bots never use the creature):
+//   { haul: 'obj-s5' }                              the S5 keystone's haul fallback (the same haul step: its ring)
+//   { waitObj: 'objectiveId', t: s }                hold the current line (hanging still; reeled up off a floor) until the
+//                                                   objective is done (the S7 survive clock); the time spent here is the
+//                                                   run's `waited` (forks compare the time spent moving)
 import { makeIntent, FRAME, HANDS, CONFIG } from './sim.mjs';
 
 const G = CONFIG.player.gravity;
@@ -81,6 +86,7 @@ export class Bot {
     this.reachMargin = opts.reachMargin !== undefined ? opts.reachMargin : BOT_REACH_MARGIN;
     this.lookaheads = 0;
     this.misTarget = [];
+    this.waited = 0; // s spent in `waitObj` steps (the S7 survive floor)
   }
 
   get p() {
@@ -515,6 +521,7 @@ export class Bot {
       const done = this.dispatch(it, step);
       sim.frame(it);
       this.stepT += FRAME;
+      if (step.waitObj) this.waited += FRAME;
       if (done) {
         if (this.verbose) console.log(`  step ${this.i} done t=${sim.t.toFixed(2)}`, JSON.stringify(step), this.p.x.toFixed(1), this.p.y.toFixed(1), this.p.z.toFixed(1));
         this.log.push([this.i, +sim.t.toFixed(2)]);
@@ -537,6 +544,7 @@ export class Bot {
       attaches: sim.attaches.slice(),
       lookaheads: this.lookaheads,
       misTarget: this.misTarget,
+      waited: +this.waited.toFixed(2),
       damage: sim.damageReport ? sim.damageReport() : null,
     };
   }
@@ -556,6 +564,24 @@ export class Bot {
     if (step.haul) return this.stepHaul(it, step);
     if (step.light) return this.stepLight(it, step);
     if (step.winch) return this.stepWinch(it, step);
+    if (step.waitObj) return this.stepWaitObj(it, step);
+    return false;
+  }
+
+  /**
+   * P5, the S7 survive floor: hang still on the current line until the objective is done (the clock runs while the body is
+   * in the nave and off the landing); grounded with a line (on the closed iris), reel up off it so the iris can open.
+   */
+  stepWaitObj(it, step) {
+    const O = this.sim.objectives;
+    const o = O ? O.objective(step.waitObj) : null;
+    // done, and its seal open (a seal never opens under the feet: standing on the iris, reel up off it first)
+    if (!o || (O.done[o.index] && O.sealOpen[o.seal])) return true;
+    const p = this.p;
+    if (this.attachedHands().length) {
+      if (p.grounded) it.reel = 0.6;
+      else this.hover(it, p.x, p.z);
+    } else it.brake = true;
     return false;
   }
 

@@ -71,5 +71,9 @@ The browser side of the release work (PWA install / offline / update, immersive 
 | `perf.mjs` | `Creature3D.update` cost per call (p50 / p99 / max µs). |
 | `allocprof.mjs` | Heap allocation per `Creature3D.update` (V8 sampling profiler, minor-GC objects included; boxed doubles count, so read it as a relative number). |
 | `stubShaft.mjs` | The stub 560 m shaft used by the creature tools. |
+| `nooks.mjs` | LEVEL_FUN_PLAN P5, the Masons' rests on the real level (seeded, 60 Hz): hidden in a rest no attack starts and nothing hits while its budget lasts (25 / 15 / 8 s), the stall clock is frozen, the head stays out of the rest's block, it listens; after the budget a still player is caught as today; skitterlings never bite there; the threat eases; determinism. `node nooks.mjs [seeds]`. Pass / fail. |
+| `lure.mjs` | LEVEL_FUN_PLAN P5, the Mason as the key: 200 seeds x 3 difficulties with the player in the S5 niche (the keystone broken within 40 s in >= 95 %, never a hit), the annoyed path (shot from the niche), a strike never hitting through a solid, the attack line of sight skipping the keystone, what counts as a blow (`Objectives3D.onStrike`), Sandbox. `node lure.mjs [seeds]`. Pass / fail. |
+
+The objectives / seals suites (LEVEL_FUN_PLAN P1-P5) are in `objectives/`: `unit.mjs` (seals), `verbs.mjs` (P3), `routes.mjs` (P2 reach and forks), `machines.mjs` (P4), `mason.mjs` (P5: the S5 keystone and its haul fallback, the S7 survive floor, the escape override, the rests' budgets).
 
 The level's own checks (routes, budgets, determinism) are in `../verify/`.

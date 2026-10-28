@@ -1,6 +1,7 @@
 // Section seals and objectives (LEVEL_FUN_PLAN P1, sim/objectives3d.js) on the real level (Node):
-// the seal plates in Level3D, the objective state machine (closed at a new run, open on hooking the route ring (S5-S7;
-// the P3 verbs of S1 / S2 / S4 are in verbs.mjs, the P4 winch of S3 in machines.mjs), sticky
+// the seal plates in Level3D, the objective state machine (closed at a new run, open on hooking the route ring (S6;
+// the P3 verbs of S1 / S2 / S4 are in verbs.mjs, the P4 winch of S3 in machines.mjs, the P5 keystone of S5 and survive floor
+// of S7 in mason.mjs), sticky
 // across a checkpoint, a death / respawn and the Nightmare alternate respawn, closed again by a new run), the Sandbox warp
 // (every seal above the warp target opens, silently), a closed seal as floor and sight block, the seal:land cue,
 // snapshot / restore and serialize / load round trips, determinism of a bot run, the save's run.objectives, the
@@ -72,25 +73,28 @@ for (const v of VARIANTS) {
   ok(O.seals.length === 7 && O.objectives.length === 7 && O.seals.every((s) => sealClosed(O, s.id)) && O.doneCount === 0, `${v}: 7 seals, 7 objectives, all closed at a new run`);
   const rings = O.fixtures.filter((f) => f.anchor);
   const keys = rings.filter((f) => f.anchor.sealKey === 1).map((f) => f.anchor.id);
-  ok(keys.length === rings.length && keys.includes('s2-cw') && keys.includes('s6-ra3') && keys.includes('s7-sp1') && !keys.includes('t1'), `${v}: the rings that open them (hook and haul) carry the cue (${keys.join(' ')})`);
+  ok(keys.length === rings.length && keys.includes('s2-cw') && keys.includes('s6-ra3') && keys.includes('key-s5-ring') && !keys.includes('t1'), `${v}: the rings that open them (hook, haul, the keystone's) carry the cue (${keys.join(' ')})`);
 }
 
-// 3. Open on hook: hooking s5-h4 opens the S5 seal (only), with the events; hooking any other ring does nothing (t1, the S1
-//    ring of P1, is no key any more: the bell is; nor s3-a2, the S3 ring of P1-P3: the winch is).
+// 3. Open on hook: hooking s6-sa3 opens the S6 seal (only), with the events; hooking any other ring does nothing (t1, the S1
+//    ring of P1, is no key any more: the bell is; nor s3-a2 (the winch is), s5-h4 (the keystone is) or s7-n6 (the survive
+//    floor is)).
 {
   const { L, ev, O, T, p } = rig();
-  p.reset(-6, -151.6, 0);
-  T.attach(p, 'right', L.byId['s5-h1']);
+  p.reset(-12, -207.6, 0);
+  T.attach(p, 'right', L.byId['s6-sa1']);
   T.attach(p, 'left', L.byId.t1);
   O.step(DT, p, T, 1);
-  T.attach(p, 'left', L.byId['s3-a2']);
-  O.step(DT, p, T, 1);
-  ok(O.doneCount === 0 && sealClosed(O, 'seal-s5') && sealClosed(O, 'seal-s1') && sealClosed(O, 'seal-s3'), 'hooking a ring that is no key opens nothing (t1 and s3-a2 included)');
-  T.attach(p, 'left', L.byId['s5-h4']);
+  for (const id of ['s3-a2', 's5-h4', 's7-n6']) {
+    T.attach(p, 'left', L.byId[id]);
+    O.step(DT, p, T, 1);
+  }
+  ok(O.doneCount === 0 && sealClosed(O, 'seal-s6') && sealClosed(O, 'seal-s5') && sealClosed(O, 'seal-s1') && sealClosed(O, 'seal-s3') && sealClosed(O, 'seal-s7'), 'hooking a ring that is no key opens nothing (t1, s3-a2, s5-h4 and s7-n6 included)');
+  T.attach(p, 'left', L.byId['s6-sa3']);
   O.step(DT, p, T, 2);
-  ok(O.isDone('obj-s5') && O.isOpen('seal-s5') && sealOpenAll(O, 'seal-s5') && openIds(O) === 'seal-s5', 'hooking s5-h4 opens seal-s5 and nothing else');
-  ok(ev.map((e) => e.join(':')).join(' ') === 'objective:progress:obj-s5 objective:done:obj-s5 seal:open:seal-s5', `events: ${ev.map((e) => e.join(':')).join(' ')}`);
-  ok(L.byId['s5-h4'].sealKey === 0 && L.byId['s5-f1'].sealKey === 0 && L.byId['s6-sa3'].sealKey === 1, 'the cue leaves the rings of the done objective, stays on the next');
+  ok(O.isDone('obj-s6') && O.isOpen('seal-s6') && sealOpenAll(O, 'seal-s6') && openIds(O) === 'seal-s6', 'hooking s6-sa3 opens seal-s6 and nothing else');
+  ok(ev.map((e) => e.join(':')).join(' ') === 'objective:progress:obj-s6 objective:done:obj-s6 seal:open:seal-s6', `events: ${ev.map((e) => e.join(':')).join(' ')}`);
+  ok(L.byId['s6-sa3'].sealKey === 0 && L.byId['s6-ra3'].sealKey === 0 && L.byId['key-s5-ring'].sealKey === 1, 'the cue leaves the rings of the done objective, stays on the others');
   O.step(DT, p, T, 3);
   ok(ev.length === 3, 'no repeat while still hooked');
 }
@@ -102,41 +106,35 @@ for (const v of VARIANTS) {
   T.attach(p, 'right', L.byId['s6-ra3']);
   O.step(DT, p, T, 0);
   ok(O.isOpen('seal-s6') && O.progressOf('obj-s6') === 1, 'S6: the throat line ring (s6-ra3) opens it');
-  const b = rig();
-  b.p.reset(0, -340, 0);
-  b.T.attach(b.p, 'right', b.L.byId['s7-sp1']);
-  b.O.step(DT, b.p, b.T, 0);
-  ok(b.O.isOpen('seal-s7'), 'S7: the spire face ring (alternate line) opens it');
   const c = rig();
-  c.O.fixtures[c.O.fixtureIndex('fx-s5')].hold = 0.5;
-  c.p.reset(-6, -151.6, 0);
-  c.T.attach(c.p, 'right', c.L.byId['s5-h4']);
+  c.O.fixtures[c.O.fixtureIndex('fx-s6-safe')].hold = 0.5;
+  c.p.reset(-12, -207.6, 0);
+  c.T.attach(c.p, 'right', c.L.byId['s6-sa3']);
   for (let i = 0; i < Math.round(0.4 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  const early = c.O.isOpen('seal-s5');
+  const early = c.O.isOpen('seal-s6');
   c.T.release(c.p, 'right', 'input');
   c.O.step(DT, c.p, c.T, 0);
-  c.T.attach(c.p, 'right', c.L.byId['s5-h4']);
+  c.T.attach(c.p, 'right', c.L.byId['s6-sa3']);
   for (let i = 0; i < Math.round(0.4 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  const reset = c.O.isOpen('seal-s5');
+  const reset = c.O.isOpen('seal-s6');
   for (let i = 0; i < Math.round(0.15 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  ok(!early && !reset && c.O.isOpen('seal-s5'), 'hold 0.5 s: 0.4 s is not enough, letting go restarts it, 0.55 s held opens');
+  ok(!early && !reset && c.O.isOpen('seal-s6'), 'hold 0.5 s: 0.4 s is not enough, letting go restarts it, 0.55 s held opens');
 }
 
 // 5. Sticky: a checkpoint, a death + respawn (level.reset + reapply) and the Nightmare alternate respawn keep seals open;
 //    a new run (reset) closes them all.
 {
   const { L, O, T, p } = rig('nightmare');
-  for (const id of ['s5-h4', 's6-sa3']) {
-    T.attach(p, 'right', L.byId[id]);
-    O.step(DT, p, T, 0);
-  }
+  O.onStrike({ x: -19.3, y: -197, z: -1.4, hit: false, stop: 'key-s5-stone' }); // S5: the Mason breaks the keystone (mason.mjs)
+  T.attach(p, 'right', L.byId['s6-sa3']);
+  O.step(DT, p, T, 0);
   const before = openIds(O);
   L.reset(); // game.respawn()
   O.reapply();
   O.markDoneThrough(4); // the alternate checkpoint is S5 (index 4): an earlier section
   ok(before === 'seal-s5,seal-s6' && before.split(',').every((id) => O.isOpen(id)) && sealOpenAll(O, 'seal-s5') && sealOpenAll(O, 'seal-s6'), 'death, respawn and an earlier (alternate) checkpoint keep every opened seal open');
   O.reset();
-  ok(O.doneCount === 0 && O.seals.every((s) => sealClosed(O, s.id)) && L.byId['s5-h4'].sealKey === 1, 'a new run closes every seal again');
+  ok(O.doneCount === 0 && O.seals.every((s) => sealClosed(O, s.id)) && L.byId['s6-sa3'].sealKey === 1 && L.byId['key-s5-stone'].active === true, 'a new run closes every seal again (and the keystone stands again)');
 }
 
 // 6. Sandbox warp: markDoneThrough(i) opens the seals of the sections above i, silently; deeper ones stay closed.
@@ -189,18 +187,17 @@ for (const v of VARIANTS) {
 // 8. Snapshot / restore and serialize / load round trips.
 {
   const { L, O, T, p, ev } = rig();
-  T.attach(p, 'right', L.byId['s5-h4']);
+  T.attach(p, 'right', L.byId['s6-sa3']);
   O.step(DT, p, T, 0);
   const snap = O.snapshot();
-  T.attach(p, 'left', L.byId['s6-sa3']);
-  O.step(DT, p, T, 0);
+  O.onStrike({ x: -19.3, y: -197, z: -1.4, hit: false, stop: 'key-s5-stone' });
   const n = ev.length;
   O.restore(snap);
-  ok(openIds(O) === 'seal-s5' && sealClosed(O, 'seal-s6') && L.byId['s6-sa3'].sealKey === 1 && ev.length === n, 'restore() rewinds a look-ahead (the S6 seal it opened is closed again, cue back)');
+  ok(openIds(O) === 'seal-s6' && sealClosed(O, 'seal-s5') && L.byId['key-s5-stone'].active === true && L.byId['key-s5-ring'].hidden === false && L.byId['key-s5-ring'].sealKey === 1 && ev.length === n, 'restore() rewinds a look-ahead (the keystone it broke stands again, the S5 seal is closed again, cue back)');
   const saved = O.serialize();
   const b = rig();
   const k = b.O.load(saved.concat(['obj-unknown', 7]));
-  ok(JSON.stringify(saved) === '["obj-s5"]' && k === 1 && openIds(b.O) === 'seal-s5', 'serialize() / load(): the done ids, unknown entries ignored');
+  ok(JSON.stringify(saved) === '["obj-s6"]' && k === 1 && openIds(b.O) === 'seal-s6', 'serialize() / load(): the done ids, unknown entries ignored');
 }
 
 // 9. Determinism: the S1 + S2 routes from the spawn, twice: the same objective events on the same frames and the same path.

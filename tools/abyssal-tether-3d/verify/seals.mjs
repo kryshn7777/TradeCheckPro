@@ -15,9 +15,13 @@
 //                  seal inside the shaft. It reports where it ended (on the grate / stuck / out of time) and whether a
 //                  ring above is in sight from there.
 //   verbProbe      LEVEL_FUN_PLAN P3, the fallback probe: every objective whose verb is not a plain hook (the S1 bell,
-//                  the S2 haul, the S4 lamps), on its section's main line from the checkpoint: done by the bot without the
-//                  creature (Sandbox, a Mason far away), done with the creature live (the verbs never wait for it; the
-//                  haul and the bell are loud), and a lamp still lights with an empty lantern (twice as slow).
+//                  the S2 haul, the S4 lamps; P5: the S5 keystone's haul fallback, the S7 survive clock), on its
+//                  section's main line from the checkpoint: done by the bot without the creature (Sandbox, a Mason far
+//                  away), done with the creature live (the verbs never wait for it; the haul and the bell are loud), and a
+//                  lamp still lights with an empty lantern (twice as slow).
+//   nookIntegrity  LEVEL_FUN_PLAN P5 V1: every Masons' rest lies in its section (and the level), its block holds its box, its budget
+//                  is per difficulty, it stands on a ledge (a body fits), no fast-line-only ring is near it, a lure names
+//                  a keystone right at its mouth.
 import { Sim, Player3D, TetherSystem, EventBus, DIFFICULTY, HANDS, makeIntent, FRAME, Objectives3D, loadCreatureModules } from './sim.mjs';
 import { Bot } from './bot.mjs';
 
@@ -86,6 +90,24 @@ function verbChecks(L, f, o, P) {
     return null;
   };
   if (f.kind === 'haul' && f.anchor.haul !== true) P(`objective ${o.id}: haul ring ${f.anchor.id} does not carry the haul flag`);
+  // LEVEL_FUN_PLAN P5: the keystone is a fixture solid (out of level.solids: no bake), its ring a haul ring on its face, its
+  // lure rest right behind it; the survive box lies in its section and its pause solid is a ledge in it
+  if (f.kind === 'breach') {
+    if (!f.solid || L.solids.indexOf(f.solid) >= 0 || (L.fixtureSolids || []).indexOf(f.solid) < 0) P(`objective ${o.id}: keystone ${f.id} is not a fixture solid (kept out of level.solids)`);
+    if (!f.anchor) P(`objective ${o.id}: keystone ${f.id} has no ring (no haul fallback)`);
+    else {
+      if (f.anchor.haul !== true) P(`objective ${o.id}: keystone ring ${f.anchor.id} does not carry the haul flag`);
+      const s = f.solid;
+      const d = Math.hypot(Math.max(s.minX - f.anchor.x, 0, f.anchor.x - s.maxX), Math.max(s.minY - f.anchor.y, 0, f.anchor.y - s.maxY), Math.max(s.minZ - f.anchor.z, 0, f.anchor.z - s.maxZ));
+      if (d > 0.5) P(`objective ${o.id}: keystone ring ${f.anchor.id} is ${d.toFixed(2)} m off the stone`);
+    }
+  }
+  if (f.kind === 'survive') {
+    const b = f.box;
+    const si = L.sectionIndexAt((b.minY + b.maxY) / 2);
+    if (si !== o.section || L.sectionIndexAt(b.maxY) !== o.section) P(`objective ${o.id}: survive box ${f.id} reaches out of its section`);
+    if (f.pause && !(f.pause.maxY > b.maxY)) P(`objective ${o.id}: pause ledge ${f.pause.id} lies inside the survive box (standing there would count)`);
+  }
   if (f.kind === 'bell') {
     const hit = clearOf(f.x, f.y, f.z, f.r + 0.38 + 0.3);
     if (hit) P(`objective ${o.id}: bell ${f.id} is within a body's width of solid ${hit} (a strike must bounce into the open)`);
@@ -105,6 +127,54 @@ function verbChecks(L, f, o, P) {
     }
     if (!ledge) P(`objective ${o.id}: lamp ${f.id} is out of the lantern's reach from every ledge`);
   }
+}
+
+// -----------------------------------------------------------------------------
+// V1: the Masons' rests (LEVEL_FUN_PLAN P5)
+// -----------------------------------------------------------------------------
+export function nookIntegrity(L, v, P) {
+  const O = closeSeals(L, v);
+  if (!O) return null;
+  const out = { nooks: O.nooks.length, perSection: {} };
+  const routes = Array.isArray(L.data.routes) ? L.data.routes : [];
+  const fastOnly = new Set();
+  const byFork = new Map();
+  for (const r of routes) (byFork.get(r.fork) || byFork.set(r.fork, {}).get(r.fork))[r.line] = r;
+  for (const f of byFork.values()) if (f.fast && f.safe) for (const id of f.fast.ids) if (!f.safe.ids.includes(id)) fastOnly.add(id);
+  const scratch = [];
+  for (const n of O.nooks) {
+    out.perSection[n.section] = (out.perSection[n.section] || 0) + 1;
+    const sec = L.sections[n.section];
+    if (!sec) P(`nook ${n.id}: no section`);
+    if (L.sectionIndexAt(n.minY) !== n.section || L.sectionIndexAt(n.maxY) !== n.section) P(`nook ${n.id}: its box reaches out of ${sec ? sec.id : '?'}`);
+    const b = n.block;
+    if (!(b.minX <= n.minX && b.maxX >= n.maxX && b.minY <= n.minY && b.maxY >= n.maxY && b.minZ <= n.minZ && b.maxZ >= n.maxZ)) P(`nook ${n.id}: its block does not hold its box`);
+    if (!(n.budget > 0) || n.budget > 60) P(`nook ${n.id}: budget ${n.budget} s (want 0 < budget <= 60)`);
+    if (sec && sec.index === L.sections.length - 1) P(`nook ${n.id}: a rest in the last section (the flight has none)`);
+    const B = L.bounds;
+    if (B && (n.minX < B.minX || n.maxX > B.maxX || n.minZ < B.minZ || n.maxZ > B.maxZ)) P(`nook ${n.id}: outside the level`);
+    // a ledge under it a body can stand on, and room for the body
+    let floor = null;
+    for (const q of L.querySolids(n.minX, n.minY - 0.6, n.minZ, n.maxX, n.minY + 0.05, n.maxZ, scratch)) if (q.active !== false && !q.seal && q.maxY <= n.minY + 0.05 && q.maxY >= n.minY - 0.6) floor = q.id;
+    if (!floor) P(`nook ${n.id}: no ledge under its box`);
+    if (n.maxX - n.minX < 0.8 || n.maxZ - n.minZ < 0.8 || n.maxY - n.minY < 1.8) P(`nook ${n.id}: box too small for a body (${(n.maxX - n.minX).toFixed(1)} x ${(n.maxZ - n.minZ).toFixed(1)} x ${(n.maxY - n.minY).toFixed(1)} m)`);
+    for (const a of L.anchors) {
+      if (!fastOnly.has(a.id)) continue;
+      const d = Math.hypot(Math.max(n.minX - a.x, 0, a.x - n.maxX), Math.max(n.minY - a.y, 0, a.y - n.maxY), Math.max(n.minZ - a.z, 0, a.z - n.maxZ));
+      if (d < 6) P(`nook ${n.id}: fast-line ring ${a.id} ${d.toFixed(1)} m away (rests are for the safe lines)`);
+    }
+    if (n.lure) {
+      const f = n.fixture >= 0 ? O.fixtures[n.fixture] : null;
+      if (!f || f.kind !== 'breach' || !f.solid) P(`nook ${n.id}: a lure without a keystone`);
+      else {
+        const s = f.solid;
+        const gap = Math.hypot(Math.max(s.minX - n.maxX, 0, n.minX - s.maxX), Math.max(s.minY - n.maxY, 0, n.minY - s.maxY), Math.max(s.minZ - n.maxZ, 0, n.minZ - s.maxZ));
+        if (gap > 0.5) P(`nook ${n.id}: its keystone ${s.id} stands ${gap.toFixed(2)} m from its mouth`);
+      }
+    }
+  }
+  for (const [si, k] of Object.entries(out.perSection)) if (k > 24) P(`section ${si}: ${k} rests (E18 budget 24)`);
+  return out;
 }
 
 // -----------------------------------------------------------------------------
@@ -447,6 +517,7 @@ export function probeSection(L, v, si) {
     t: r1(sim.t),
     hooks: hooks.slice(0, 16),
     objectiveDone: !!O.done[O.objectiveOfSeal(seal.index).index],
+    verb: O.objectiveOfSeal(seal.index).verb,
   };
 }
 
@@ -460,7 +531,9 @@ export function skipProbe(L, v, P) {
     if (!r) continue;
     res[r.section] = r;
     if (r.passed) P(`skip probe ${r.section}: got below ${r.seal} with its objective undone at (${r.passed.x}, ${r.passed.y}, ${r.passed.z}) t ${r.passed.t}s`);
-    if (r.objectiveDone) P(`skip probe ${r.section}: completed the objective it must not touch`);
+    // (a survive objective is done by time alone: surviving is the objective, so the probe may complete it; it must still
+    // never pass the seal before)
+    if (r.objectiveDone && r.verb !== 'survive') P(`skip probe ${r.section}: completed the objective it must not touch`);
     if (r.onSeal && r.wayUp === false) P(`skip probe ${r.section}: ended on ${r.on} at ${r.at.join(', ')} with no ring above in sight (no way back up)`);
   }
   return res;

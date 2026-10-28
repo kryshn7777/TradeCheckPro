@@ -66,10 +66,10 @@ const run = (O, p, T, it, s, t0 = 0) => {
     const verbs = O.objectives.map((o) => `${o.id.slice(4)}:${o.verb}/${o.need}`).join(' ');
     const got = [fx(O, 'bell-s1').minSpeed, fx(O, 'cw-s2').time, fx(O, 'lamp-s4a').charge];
     rows.push(`${k} ${got.join('/')}`);
-    if (verbs !== 's1:bell/1 s2:haul/1 s3:winch/1 s4:lamp/3 s5:hook/1 s6:hook/1 s7:hook/1' || got.join() !== want[k].join()) good = false;
+    if (verbs !== 's1:bell/1 s2:haul/1 s3:winch/1 s4:lamp/3 s5:breach/1 s6:hook/1 s7:survive/1' || got.join() !== want[k].join()) good = false;
     if (fx(O, 'cw-s2').notches !== 4 || fx(O, 'cw-s2').anchor.haul !== true || fx(O, 'lamp-s4c').time !== 1.5) good = false;
   }
-  ok(good, `objectives S1 bell, S2 haul, S3 winch (P4), S4 lamps (need 3), the rest hook; minSpeed / haul time / lamp charge ${rows.join(' | ')}`);
+  ok(good, `objectives S1 bell, S2 haul, S3 winch (P4), S4 lamps (need 3), S5 keystone + S7 survive (P5), S6 hook; minSpeed / haul time / lamp charge ${rows.join(' | ')}`);
 }
 
 // 2. The bell: solid (a slow touch bounces, no toll), a strike at minSpeed tolls once (cooldown), completes S1 alone, keeps
@@ -268,7 +268,7 @@ function openIdsOf(O) {
     const problems = [];
     const res = await verbProbe((x) => new Level3D(undefined, x), v, R, (m) => problems.push(m));
     const row = Object.entries(res).map(([id, o]) => `${id} ${o.plain.at}/${o.creature.at}${o.emptyLantern ? '/' + o.emptyLantern.at : ''}s`);
-    ok(problems.length === 0 && Object.keys(res).join() === 'obj-s1,obj-s2,obj-s3,obj-s4' && res['obj-s4'].emptyLantern.at > res['obj-s4'].plain.at, `${v}: the verbs done by the bot with no creature, with it live, an empty lantern (${row.join(' | ')}) ${problems.join('; ')}`);
+    ok(problems.length === 0 && Object.keys(res).join() === 'obj-s1,obj-s2,obj-s3,obj-s4,obj-s5,obj-s7' && res['obj-s4'].emptyLantern.at > res['obj-s4'].plain.at, `${v}: the verbs done by the bot with no creature, with it live, an empty lantern (${row.join(' | ')}) ${problems.join('; ')}`);
   }
 }
 
@@ -309,7 +309,7 @@ function openIdsOf(O) {
   const cw = parts.find((f) => f.kind === 'haul');
   const low = counterweightBoxes(cw, 0)[0][1];
   const high = counterweightBoxes(cw, 4)[0][1];
-  ok(parts.map((f) => f.kind).join() === 'bell,haul,lamp,lamp,lamp' && Math.abs(high - low - 4 * FIX.notchRise) < 1e-9 && high + 0.55 < cw.pulleyY, `view parts: bell, counterweight (rises ${(high - low).toFixed(1)} m over 4 notches, under its pulley at y ${cw.pulleyY.toFixed(1)}), 3 lamps`);
+  ok(parts.map((f) => f.kind).join() === 'bell,haul,lamp,lamp,lamp,breach,survive' && Math.abs(high - low - 4 * FIX.notchRise) < 1e-9 && high + 0.55 < cw.pulleyY, `view parts: bell, counterweight (rises ${(high - low).toFixed(1)} m over 4 notches, under its pulley at y ${cw.pulleyY.toFixed(1)}), 3 lamps (P5: + the keystone, the iris bolts: mason.mjs)`);
   const root = new THREE.Group();
   const view = new SealView(L, new THREE.MeshStandardMaterial(), new THREE.BoxGeometry(1, 1, 1), root, new THREE.MeshBasicMaterial({ vertexColors: true }));
   const r = rig();

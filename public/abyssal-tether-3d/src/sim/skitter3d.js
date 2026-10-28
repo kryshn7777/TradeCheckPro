@@ -201,6 +201,14 @@ export class SkitterGroup {
     }
   }
 
+  /**
+   * LEVEL_FUN_PLAN P5: the player's refuge this frame, for every slot (Creature3D.setRefuge: a rest = no bite starts, the lure
+   * niche = no bite lands; they keep out of a rest's mouth like the Mason).
+   */
+  setRefuge(kind, block) {
+    for (let i = 0; i < this.slots.length; i++) this.slots[i].setRefuge(kind, block);
+  }
+
   /** Debug / QA: put `n` real skitterlings in play above the player whatever the section data says (hunt mode). */
   force(n, player) {
     if (!this.enabled || !player) return 0;

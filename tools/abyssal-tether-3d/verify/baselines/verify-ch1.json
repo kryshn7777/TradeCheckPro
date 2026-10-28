@@ -7,7 +7,7 @@
    "abyss"
   ],
   "note": "V14 baseline: npm run verify:at3d -- --chapter ch1 --write-baseline",
-  "date": "2026-10-28T16:14:01.188Z"
+  "date": "2026-10-28T17:17:01.273Z"
  },
  "integrity": {
   "normal": {
@@ -108,13 +108,21 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 294,
-    "refs": 120
+    "ids": 296,
+    "refs": 118
    },
    "seals": {
     "seals": 7,
     "objectives": 7,
     "plates": 10
+   },
+   "nooks": {
+    "nooks": 3,
+    "perSection": {
+     "3": 1,
+     "4": 1,
+     "5": 1
+    }
    },
    "forks": {
     "forks": 7,
@@ -233,13 +241,21 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 294,
-    "refs": 120
+    "ids": 296,
+    "refs": 118
    },
    "seals": {
     "seals": 7,
     "objectives": 7,
     "plates": 10
+   },
+   "nooks": {
+    "nooks": 3,
+    "perSection": {
+     "3": 1,
+     "4": 1,
+     "5": 1
+    }
    },
    "forks": {
     "forks": 7,
@@ -356,13 +372,21 @@
     "s7-up:ring"
    ],
    "ids": {
-    "ids": 294,
-    "refs": 120
+    "ids": 296,
+    "refs": 118
    },
    "seals": {
     "seals": 7,
     "objectives": 7,
     "plates": 10
+   },
+   "nooks": {
+    "nooks": 3,
+    "perSection": {
+     "3": 1,
+     "4": 1,
+     "5": 1
+    }
    },
    "forks": {
     "forks": 7,
@@ -390,9 +414,9 @@
  "full": {
   "normal/fast": {
    "ok": true,
-   "time": 113.4,
+   "time": 157.6,
    "deaths": 0,
-   "maxLand": 0.67,
+   "maxLand": 0.65,
    "maxLandAtY": -225,
    "inGoal": true,
    "fail": null,
@@ -401,15 +425,15 @@
     "s2": 15.2,
     "s3": 7.3,
     "s4": 23.7,
-    "s5": 5.9,
-    "s6": 10.8,
-    "s7": 17,
+    "s5": 15.1,
+    "s6": 10.6,
+    "s7": 52.1,
     "s8": 19.6
    },
-   "attaches": 37,
+   "attaches": 38,
    "damage": {
     "hits": 5,
-    "total": 52.2,
+    "total": 50,
     "minHp": 72.8,
     "endHp": 100
    },
@@ -418,14 +442,14 @@
     "obj-s2@19.72",
     "obj-s3@35.03",
     "obj-s4@47.97",
-    "obj-s5@62.32",
-    "obj-s6@71.93",
-    "obj-s7@83.08"
+    "obj-s5@72.82",
+    "obj-s6@81.07",
+    "obj-s7@133.48"
    ]
   },
   "normal/safe": {
    "ok": true,
-   "time": 192.9,
+   "time": 217.9,
    "deaths": 0,
    "maxLand": 0.68,
    "maxLandAtY": -208,
@@ -436,15 +460,15 @@
     "s2": 19.3,
     "s3": 18.7,
     "s4": 28.6,
-    "s5": 18,
+    "s5": 26.1,
     "s6": 22.5,
-    "s7": 37.3,
-    "s8": 34.5
+    "s7": 52.2,
+    "s8": 36.5
    },
-   "attaches": 48,
+   "attaches": 49,
    "damage": {
-    "hits": 7,
-    "total": 46.3,
+    "hits": 6,
+    "total": 47.6,
     "minHp": 74.9,
     "endHp": 100
    },
@@ -453,14 +477,14 @@
     "obj-s2@23.28",
     "obj-s3@47.92",
     "obj-s4@62.48",
-    "obj-s5@88.72",
-    "obj-s6@106.5",
-    "obj-s7@139.77"
+    "obj-s5@104.58",
+    "obj-s6@114.62",
+    "obj-s7@180.05"
    ]
   },
   "nightmare/fast": {
    "ok": true,
-   "time": 123.2,
+   "time": 180.7,
    "deaths": 0,
    "maxLand": 0.67,
    "maxLandAtY": -56,
@@ -471,15 +495,15 @@
     "s2": 15.5,
     "s3": 13.9,
     "s4": 23.7,
-    "s5": 5.8,
+    "s5": 16.3,
     "s6": 10.6,
-    "s7": 17.1,
-    "s8": 22.8
+    "s7": 67.1,
+    "s8": 19.6
    },
-   "attaches": 37,
+   "attaches": 38,
    "damage": {
     "hits": 7,
-    "total": 75,
+    "total": 74.8,
     "minHp": 52.6,
     "endHp": 100
    },
@@ -488,14 +512,14 @@
     "obj-s2@20",
     "obj-s3@42.27",
     "obj-s4@54.85",
-    "obj-s5@69.63",
-    "obj-s6@78.53",
-    "obj-s7@89.65"
+    "obj-s5@81.32",
+    "obj-s6@89.1",
+    "obj-s7@156.58"
    ]
   },
   "nightmare/safe": {
    "ok": true,
-   "time": 197.6,
+   "time": 237.8,
    "deaths": 0,
    "maxLand": 0.67,
    "maxLandAtY": -208,
@@ -506,15 +530,15 @@
     "s2": 19.6,
     "s3": 22.6,
     "s4": 28.6,
-    "s5": 18.3,
+    "s5": 28.4,
     "s6": 22.9,
-    "s7": 37.3,
-    "s8": 34.3
+    "s7": 67.2,
+    "s8": 34.5
    },
-   "attaches": 48,
+   "attaches": 49,
    "damage": {
-    "hits": 7,
-    "total": 73.9,
+    "hits": 8,
+    "total": 76.1,
     "minHp": 65.1,
     "endHp": 100
    },
@@ -523,17 +547,17 @@
     "obj-s2@23.57",
     "obj-s3@53.03",
     "obj-s4@66.72",
-    "obj-s5@92.95",
-    "obj-s6@111.5",
-    "obj-s7@144.77"
+    "obj-s5@110.82",
+    "obj-s6@121.62",
+    "obj-s7@202.05"
    ]
   },
   "abyss/fast": {
    "ok": true,
-   "time": 117.5,
+   "time": 179.6,
    "deaths": 0,
    "maxLand": 0.64,
-   "maxLandAtY": -44,
+   "maxLandAtY": -225,
    "inGoal": true,
    "fail": null,
    "splits": {
@@ -541,16 +565,16 @@
     "s2": 15.5,
     "s3": 9.7,
     "s4": 23.7,
-    "s5": 7.3,
+    "s5": 19.5,
     "s6": 10.5,
-    "s7": 17.1,
-    "s8": 19.8
+    "s7": 67.2,
+    "s8": 19.5
    },
-   "attaches": 37,
+   "attaches": 38,
    "damage": {
     "hits": 6,
-    "total": 92.4,
-    "minHp": 47.8,
+    "total": 96.1,
+    "minHp": 44.1,
     "endHp": 100
    },
    "objectives": [
@@ -558,14 +582,14 @@
     "obj-s2@20.4",
     "obj-s3@38.03",
     "obj-s4@50.68",
-    "obj-s5@65.03",
-    "obj-s6@75.8",
-    "obj-s7@87.02"
+    "obj-s5@79.95",
+    "obj-s6@87.95",
+    "obj-s7@155.55"
    ]
   },
   "abyss/safe": {
    "ok": true,
-   "time": 194.4,
+   "time": 236.6,
    "deaths": 0,
    "maxLand": 0.67,
    "maxLandAtY": -105,
@@ -576,26 +600,26 @@
     "s2": 20,
     "s3": 16.8,
     "s4": 29,
-    "s5": 20.6,
+    "s5": 32.7,
     "s6": 22.3,
-    "s7": 37.3,
-    "s8": 34.4
+    "s7": 67.2,
+    "s8": 34.6
    },
-   "attaches": 48,
+   "attaches": 49,
    "damage": {
-    "hits": 10,
-    "total": 117.7,
+    "hits": 11,
+    "total": 110.3,
     "minHp": 48.3,
-    "endHp": 82.1
+    "endHp": 91.8
    },
    "objectives": [
     "obj-s1@5.65",
     "obj-s2@23.97",
     "obj-s3@47.6",
     "obj-s4@61.28",
-    "obj-s5@87.82",
-    "obj-s6@108.12",
-    "obj-s7@141.38"
+    "obj-s5@107.68",
+    "obj-s6@120.23",
+    "obj-s7@200.67"
    ]
   }
  },
@@ -984,7 +1008,7 @@
   },
   "s7miss/normal": {
    "ok": true,
-   "time": 33.8,
+   "time": 49.7,
    "maxLand": 0.21,
    "damage": {
     "hits": 0,
@@ -1058,6 +1082,11 @@
      9.2
     ],
     [
+     "progress:survive",
+     "arena-s7:1",
+     14.65
+    ],
+    [
      "attach",
      "left",
      "s7-n6",
@@ -1065,20 +1094,17 @@
      14.5
     ],
     [
-     "progress:hook",
-     "fx-s7-spiral:1",
-     15.2
-    ],
-    [
-     "objective",
-     "obj-s7",
-     15.2
+     "release",
+     "right",
+     "s7-n5",
+     15.22,
+     "input"
     ]
    ]
   },
   "s7miss/nightmare": {
    "ok": true,
-   "time": 33.8,
+   "time": 64.7,
    "maxLand": 0.23,
    "damage": {
     "hits": 0,
@@ -1159,14 +1185,16 @@
      14.5
     ],
     [
-     "progress:hook",
-     "fx-s7-spiral:1",
-     15.2
+     "release",
+     "right",
+     "s7-n5",
+     15.22,
+     "input"
     ],
     [
-     "objective",
-     "obj-s7",
-     15.2
+     "progress:survive",
+     "arena-s7:1",
+     18.4
     ]
    ]
   }
@@ -1261,29 +1289,29 @@
   },
   "s5": {
    "normal": {
-    "fast": 6,
-    "safe": 18.1,
-    "fasterBy": "67%",
+    "fast": 15.1,
+    "safe": 26.2,
+    "fasterBy": "42%",
     "fastMinHp": 100,
-    "safeMinHp": 74.8,
+    "safeMinHp": 74.9,
     "fastBreaks": 0,
     "fastCrumbles": 0
    },
    "nightmare": {
-    "fast": 4.9,
-    "safe": 18.4,
-    "fasterBy": "73%",
+    "fast": 16.4,
+    "safe": 28.5,
+    "fasterBy": "42%",
     "fastMinHp": 100,
-    "safeMinHp": 75.1,
+    "safeMinHp": 74.2,
     "fastBreaks": 0,
     "fastCrumbles": 0
    },
    "abyss": {
-    "fast": 5.8,
-    "safe": 20.7,
-    "fasterBy": "72%",
+    "fast": 18.4,
+    "safe": 32.7,
+    "fasterBy": "44%",
     "fastMinHp": 100,
-    "safeMinHp": 80.8,
+    "safeMinHp": 80.9,
     "fastBreaks": 0,
     "fastCrumbles": 0
    }
@@ -1319,31 +1347,37 @@
   },
   "s7": {
    "normal": {
-    "fast": 18.6,
-    "safe": 34.9,
-    "fasterBy": "47%",
+    "fast": 53.7,
+    "safe": 49.7,
+    "fasterBy": "42%",
     "fastMinHp": 100,
     "safeMinHp": 100,
     "fastBreaks": 0,
-    "fastCrumbles": 0
+    "fastCrumbles": 0,
+    "fastMoving": 18.6,
+    "safeMoving": 32.2
    },
    "nightmare": {
-    "fast": 18.6,
-    "safe": 34.9,
-    "fasterBy": "47%",
+    "fast": 68.7,
+    "safe": 64.7,
+    "fasterBy": "42%",
     "fastMinHp": 100,
     "safeMinHp": 100,
     "fastBreaks": 0,
-    "fastCrumbles": 0
+    "fastCrumbles": 0,
+    "fastMoving": 18.6,
+    "safeMoving": 32.2
    },
    "abyss": {
-    "fast": 18.6,
-    "safe": 34.9,
-    "fasterBy": "47%",
+    "fast": 68.7,
+    "safe": 64.7,
+    "fasterBy": "42%",
     "fastMinHp": 100,
-    "safeMinHp": 100,
+    "safeMinHp": 99.6,
     "fastBreaks": 0,
-    "fastCrumbles": 0
+    "fastCrumbles": 0,
+    "fastMoving": 18.6,
+    "safeMoving": 32.2
    }
   },
   "s8": {
@@ -1495,19 +1529,19 @@
     "fromStand": 72
    },
    "s5-h4": {
-    "fromTrace": 257,
+    "fromTrace": 602,
     "fromStand": 70
    },
    "s5-h5": {
-    "fromTrace": 322,
+    "fromTrace": 667,
     "fromStand": 91
    },
    "s5-h6": {
-    "fromTrace": 261,
+    "fromTrace": 606,
     "fromStand": 77
    },
    "s5-h7": {
-    "fromTrace": 213,
+    "fromTrace": 558,
     "fromStand": 63
    },
    "s5-f1": {
@@ -1515,35 +1549,35 @@
     "fromStand": 74
    },
    "s5-f2": {
-    "fromTrace": 349,
+    "fromTrace": 514,
     "fromStand": 73
    },
    "s5-f3": {
-    "fromTrace": 344,
+    "fromTrace": 689,
     "fromStand": 71
    },
    "s5-catch": {
-    "fromTrace": 233,
+    "fromTrace": 400,
     "fromStand": 48
    },
    "s6-sa1": {
-    "fromTrace": 265,
+    "fromTrace": 270,
     "fromStand": 144
    },
    "s6-sa2": {
-    "fromTrace": 166,
+    "fromTrace": 165,
     "fromStand": 111
    },
    "s6-sa3": {
-    "fromTrace": 153,
+    "fromTrace": 154,
     "fromStand": 110
    },
    "s6-sa4": {
-    "fromTrace": 153,
+    "fromTrace": 152,
     "fromStand": 110
    },
    "s6-sa5": {
-    "fromTrace": 149,
+    "fromTrace": 150,
     "fromStand": 110
    },
    "s6-sa6": {
@@ -1551,7 +1585,7 @@
     "fromStand": 55
    },
    "s6-ra1": {
-    "fromTrace": 205,
+    "fromTrace": 206,
     "fromStand": 73
    },
    "s6-ra2": {
@@ -1559,7 +1593,7 @@
     "fromStand": 25
    },
    "s6-ra3": {
-    "fromTrace": 105,
+    "fromTrace": 104,
     "fromStand": 0
    },
    "s6-ra4": {
@@ -1567,11 +1601,11 @@
     "fromStand": 0
    },
    "s6-ra5": {
-    "fromTrace": 93,
+    "fromTrace": 91,
     "fromStand": 0
    },
    "s6-up": {
-    "fromTrace": 116,
+    "fromTrace": 117,
     "fromStand": 91
    },
    "s7-sp1": {
@@ -1579,15 +1613,15 @@
     "fromStand": 11
    },
    "s7-sp2": {
-    "fromTrace": 229,
+    "fromTrace": 228,
     "fromStand": 0
    },
    "s7-n1": {
-    "fromTrace": 204,
+    "fromTrace": 203,
     "fromStand": 19
    },
    "s7-n2": {
-    "fromTrace": 344,
+    "fromTrace": 345,
     "fromStand": 0
    },
    "s7-n3": {
@@ -1595,7 +1629,7 @@
     "fromStand": 0
    },
    "s7-n4": {
-    "fromTrace": 316,
+    "fromTrace": 315,
     "fromStand": 0
    },
    "s7-n5": {
@@ -1607,11 +1641,11 @@
     "fromStand": 0
    },
    "s7-r2": {
-    "fromTrace": 320,
+    "fromTrace": 321,
     "fromStand": 0
    },
    "s7-up": {
-    "fromTrace": 395,
+    "fromTrace": 1699,
     "fromStand": 78
    },
    "s7-n6": {
@@ -1627,15 +1661,15 @@
     "fromStand": 0
    },
    "s7-n9": {
-    "fromTrace": 288,
+    "fromTrace": 287,
     "fromStand": 0
    },
    "s7-n10": {
-    "fromTrace": 356,
+    "fromTrace": 1222,
     "fromStand": 0
    },
    "s7-n11": {
-    "fromTrace": 555,
+    "fromTrace": 1883,
     "fromStand": 142
    },
    "s7-f1": {
@@ -1643,31 +1677,31 @@
     "fromStand": 0
    },
    "s7-f2": {
-    "fromTrace": 415,
+    "fromTrace": 416,
     "fromStand": 0
    },
    "s7-f3": {
-    "fromTrace": 225,
+    "fromTrace": 223,
     "fromStand": 0
    },
    "s7-f4": {
-    "fromTrace": 176,
+    "fromTrace": 175,
     "fromStand": 0
    },
    "s7-f5": {
-    "fromTrace": 168,
+    "fromTrace": 170,
     "fromStand": 0
    },
    "s7-f6": {
-    "fromTrace": 348,
+    "fromTrace": 342,
     "fromStand": 0
    },
    "s7-f7": {
-    "fromTrace": 404,
+    "fromTrace": 1729,
     "fromStand": 3
    },
    "s8-e1": {
-    "fromTrace": 316,
+    "fromTrace": 398,
     "fromStand": 30
    },
    "s8-e2": {
@@ -1679,20 +1713,24 @@
     "fromStand": 0
    },
    "s8-e4": {
-    "fromTrace": 371,
+    "fromTrace": 373,
     "fromStand": 0
    },
    "s8-e5": {
-    "fromTrace": 414,
+    "fromTrace": 431,
     "fromStand": 0
    },
    "s8-e6": {
-    "fromTrace": 371,
+    "fromTrace": 396,
     "fromStand": 0
    },
    "s8-w1": {
-    "fromTrace": 471,
+    "fromTrace": 484,
     "fromStand": 41
+   },
+   "key-s5-ring": {
+    "fromTrace": 501,
+    "fromStand": 18
    }
   },
   "nightmare": {
@@ -1801,43 +1839,43 @@
     "fromStand": 78
    },
    "s5-h2": {
-    "fromTrace": 223,
+    "fromTrace": 219,
     "fromStand": 58
    },
    "s5-h3": {
-    "fromTrace": 220,
+    "fromTrace": 212,
     "fromStand": 61
    },
    "s5-h4": {
-    "fromTrace": 220,
+    "fromTrace": 360,
     "fromStand": 59
    },
    "s5-h5": {
-    "fromTrace": 282,
+    "fromTrace": 705,
     "fromStand": 74
    },
    "s5-h6": {
-    "fromTrace": 270,
+    "fromTrace": 698,
     "fromStand": 77
    },
    "s5-h7": {
-    "fromTrace": 221,
+    "fromTrace": 653,
     "fromStand": 63
    },
    "s5-f1": {
-    "fromTrace": 317,
+    "fromTrace": 308,
     "fromStand": 66
    },
    "s5-f2": {
-    "fromTrace": 307,
+    "fromTrace": 556,
     "fromStand": 56
    },
    "s5-f3": {
-    "fromTrace": 341,
+    "fromTrace": 763,
     "fromStand": 69
    },
    "s6-sa1": {
-    "fromTrace": 276,
+    "fromTrace": 278,
     "fromStand": 135
    },
    "s6-sa2": {
@@ -1861,15 +1899,15 @@
     "fromStand": 55
    },
    "s6-ra1": {
-    "fromTrace": 212,
+    "fromTrace": 217,
     "fromStand": 73
    },
    "s6-ra2": {
-    "fromTrace": 70,
+    "fromTrace": 73,
     "fromStand": 25
    },
    "s6-ra3": {
-    "fromTrace": 101,
+    "fromTrace": 103,
     "fromStand": 0
    },
    "s6-ra4": {
@@ -1877,7 +1915,7 @@
     "fromStand": 0
    },
    "s6-ra5": {
-    "fromTrace": 86,
+    "fromTrace": 85,
     "fromStand": 0
    },
    "s6-up": {
@@ -1885,11 +1923,11 @@
     "fromStand": 75
    },
    "s7-sp1": {
-    "fromTrace": 254,
+    "fromTrace": 253,
     "fromStand": 9
    },
    "s7-sp2": {
-    "fromTrace": 194,
+    "fromTrace": 193,
     "fromStand": 0
    },
    "s7-n1": {
@@ -1901,7 +1939,7 @@
     "fromStand": 0
    },
    "s7-n3": {
-    "fromTrace": 363,
+    "fromTrace": 362,
     "fromStand": 0
    },
    "s7-n4": {
@@ -1913,15 +1951,15 @@
     "fromStand": 9
    },
    "s7-r2": {
-    "fromTrace": 307,
+    "fromTrace": 308,
     "fromStand": 0
    },
    "s7-up": {
-    "fromTrace": 378,
+    "fromTrace": 2566,
     "fromStand": 59
    },
    "s7-n6": {
-    "fromTrace": 253,
+    "fromTrace": 252,
     "fromStand": 16
    },
    "s7-n7": {
@@ -1937,11 +1975,11 @@
     "fromStand": 0
    },
    "s7-n10": {
-    "fromTrace": 345,
+    "fromTrace": 1660,
     "fromStand": 0
    },
    "s7-n11": {
-    "fromTrace": 534,
+    "fromTrace": 2759,
     "fromStand": 108
    },
    "s7-f1": {
@@ -1949,11 +1987,11 @@
     "fromStand": 0
    },
    "s7-f2": {
-    "fromTrace": 402,
+    "fromTrace": 404,
     "fromStand": 0
    },
    "s7-f3": {
-    "fromTrace": 217,
+    "fromTrace": 216,
     "fromStand": 0
    },
    "s7-f4": {
@@ -1961,19 +1999,19 @@
     "fromStand": 0
    },
    "s7-f5": {
-    "fromTrace": 160,
+    "fromTrace": 161,
     "fromStand": 0
    },
    "s7-f6": {
-    "fromTrace": 299,
+    "fromTrace": 294,
     "fromStand": 0
    },
    "s7-f7": {
-    "fromTrace": 390,
+    "fromTrace": 2586,
     "fromStand": 0
    },
    "s8-e1": {
-    "fromTrace": 299,
+    "fromTrace": 386,
     "fromStand": 30
    },
    "s8-e2": {
@@ -1981,24 +2019,28 @@
     "fromStand": 0
    },
    "s8-e3": {
-    "fromTrace": 480,
+    "fromTrace": 482,
     "fromStand": 0
    },
    "s8-e4": {
-    "fromTrace": 356,
+    "fromTrace": 357,
     "fromStand": 0
    },
    "s8-e5": {
-    "fromTrace": 424,
+    "fromTrace": 393,
     "fromStand": 0
    },
    "s8-e6": {
-    "fromTrace": 388,
+    "fromTrace": 353,
     "fromStand": 0
    },
    "s8-w1": {
-    "fromTrace": 402,
+    "fromTrace": 368,
     "fromStand": 24
+   },
+   "key-s5-ring": {
+    "fromTrace": 569,
+    "fromStand": 18
    }
   },
   "abyss": {
@@ -2103,43 +2145,43 @@
     "fromStand": 69
    },
    "s5-h2": {
-    "fromTrace": 216,
+    "fromTrace": 213,
     "fromStand": 58
    },
    "s5-h3": {
-    "fromTrace": 221,
+    "fromTrace": 212,
     "fromStand": 61
    },
    "s5-h4": {
-    "fromTrace": 225,
+    "fromTrace": 339,
     "fromStand": 59
    },
    "s5-h5": {
-    "fromTrace": 267,
+    "fromTrace": 757,
     "fromStand": 59
    },
    "s5-h6": {
-    "fromTrace": 319,
+    "fromTrace": 814,
     "fromStand": 77
    },
    "s5-h7": {
-    "fromTrace": 267,
+    "fromTrace": 766,
     "fromStand": 63
    },
    "s5-f1": {
-    "fromTrace": 292,
+    "fromTrace": 284,
     "fromStand": 58
    },
    "s5-f2": {
-    "fromTrace": 325,
+    "fromTrace": 644,
     "fromStand": 56
    },
    "s5-f3": {
-    "fromTrace": 375,
+    "fromTrace": 865,
     "fromStand": 67
    },
    "s6-sa1": {
-    "fromTrace": 288,
+    "fromTrace": 292,
     "fromStand": 111
    },
    "s6-sa2": {
@@ -2151,11 +2193,11 @@
     "fromStand": 110
    },
    "s6-sa4": {
-    "fromTrace": 141,
+    "fromTrace": 140,
     "fromStand": 110
    },
    "s6-sa5": {
-    "fromTrace": 140,
+    "fromTrace": 141,
     "fromStand": 110
    },
    "s6-sa6": {
@@ -2163,7 +2205,7 @@
     "fromStand": 55
    },
    "s6-ra1": {
-    "fromTrace": 223,
+    "fromTrace": 221,
     "fromStand": 73
    },
    "s6-ra2": {
@@ -2175,11 +2217,11 @@
     "fromStand": 0
    },
    "s6-ra4": {
-    "fromTrace": 85,
+    "fromTrace": 84,
     "fromStand": 0
    },
    "s6-ra5": {
-    "fromTrace": 81,
+    "fromTrace": 82,
     "fromStand": 0
    },
    "s6-up": {
@@ -2187,27 +2229,27 @@
     "fromStand": 58
    },
    "s7-sp1": {
-    "fromTrace": 162,
+    "fromTrace": 163,
     "fromStand": 7
    },
    "s7-sp2": {
-    "fromTrace": 132,
+    "fromTrace": 130,
     "fromStand": 0
    },
    "s7-n1": {
-    "fromTrace": 159,
+    "fromTrace": 158,
     "fromStand": 18
    },
    "s7-n2": {
-    "fromTrace": 254,
+    "fromTrace": 255,
     "fromStand": 0
    },
    "s7-n3": {
-    "fromTrace": 270,
+    "fromTrace": 269,
     "fromStand": 0
    },
    "s7-n4": {
-    "fromTrace": 241,
+    "fromTrace": 240,
     "fromStand": 0
    },
    "s7-n5": {
@@ -2215,15 +2257,15 @@
     "fromStand": 7
    },
    "s7-up": {
-    "fromTrace": 307,
+    "fromTrace": 2192,
     "fromStand": 37
    },
    "s7-n6": {
-    "fromTrace": 144,
+    "fromTrace": 143,
     "fromStand": 16
    },
    "s7-n7": {
-    "fromTrace": 155,
+    "fromTrace": 154,
     "fromStand": 0
    },
    "s7-n8": {
@@ -2231,23 +2273,23 @@
     "fromStand": 0
    },
    "s7-n9": {
-    "fromTrace": 246,
+    "fromTrace": 247,
     "fromStand": 0
    },
    "s7-n10": {
-    "fromTrace": 281,
+    "fromTrace": 1594,
     "fromStand": 0
    },
    "s7-n11": {
-    "fromTrace": 417,
+    "fromTrace": 2331,
     "fromStand": 64
    },
    "s7-f1": {
-    "fromTrace": 215,
+    "fromTrace": 214,
     "fromStand": 0
    },
    "s7-f2": {
-    "fromTrace": 318,
+    "fromTrace": 316,
     "fromStand": 0
    },
    "s7-f3": {
@@ -2255,23 +2297,23 @@
     "fromStand": 0
    },
    "s7-f4": {
-    "fromTrace": 140,
+    "fromTrace": 141,
     "fromStand": 0
    },
    "s7-f5": {
-    "fromTrace": 124,
+    "fromTrace": 123,
     "fromStand": 0
    },
    "s7-f6": {
-    "fromTrace": 240,
+    "fromTrace": 238,
     "fromStand": 0
    },
    "s7-f7": {
-    "fromTrace": 309,
+    "fromTrace": 1602,
     "fromStand": 0
    },
    "s8-e1": {
-    "fromTrace": 265,
+    "fromTrace": 316,
     "fromStand": 29
    },
    "s8-e2": {
@@ -2279,24 +2321,28 @@
     "fromStand": 0
    },
    "s8-e3": {
-    "fromTrace": 465,
+    "fromTrace": 464,
     "fromStand": 0
    },
    "s8-e4": {
-    "fromTrace": 349,
+    "fromTrace": 350,
     "fromStand": 0
    },
    "s8-e5": {
-    "fromTrace": 377,
+    "fromTrace": 375,
     "fromStand": 0
    },
    "s8-e6": {
-    "fromTrace": 352,
+    "fromTrace": 347,
     "fromStand": 0
    },
    "s8-w1": {
-    "fromTrace": 335,
+    "fromTrace": 332,
     "fromStand": 7
+   },
+   "key-s5-ring": {
+    "fromTrace": 671,
+    "fromStand": 18
    }
   }
  },
@@ -2316,9 +2362,9 @@
    "hazardKinds": {
     "rebar": 1
    },
-   "anchors": 79,
+   "anchors": 80,
    "anchorKinds": {
-    "ring": 53,
+    "ring": 54,
     "hook": 12,
     "fragile": 14
    },
@@ -2326,20 +2372,20 @@
     "tutorial": 2,
     "route": 38,
     "recovery": 9,
-    "objective": 2,
+    "objective": 3,
     "risk": 18,
     "shortcut": 3,
     "escape": 7
    },
-   "decor": 173,
+   "decor": 178,
    "decorTypes": {
     "chain": 59,
     "arch": 6,
     "statue": 8,
-    "plaque": 15,
+    "plaque": 17,
     "lamp": 28,
     "girder": 2,
-    "glyphs": 8,
+    "glyphs": 10,
     "far-structure": 7,
     "shaft-light": 14,
     "cables": 2,
@@ -2349,7 +2395,8 @@
     "bones": 2,
     "cage": 3,
     "still-lamp": 1,
-    "grate": 1
+    "grate": 1,
+    "tablet": 1
    },
    "lights": 48,
    "standable": 76,
@@ -2397,7 +2444,7 @@
       -150,
       -204
      ],
-     "anchors": 11,
+     "anchors": 12,
      "solids": 31
     },
     {
@@ -2444,9 +2491,9 @@
    "hazardKinds": {
     "rebar": 4
    },
-   "anchors": 76,
+   "anchors": 77,
    "anchorKinds": {
-    "ring": 49,
+    "ring": 50,
     "hook": 12,
     "fragile": 15
    },
@@ -2454,20 +2501,20 @@
     "tutorial": 2,
     "route": 38,
     "recovery": 6,
-    "objective": 2,
+    "objective": 3,
     "risk": 18,
     "shortcut": 3,
     "escape": 7
    },
-   "decor": 173,
+   "decor": 178,
    "decorTypes": {
     "chain": 59,
     "arch": 6,
     "statue": 8,
-    "plaque": 15,
+    "plaque": 17,
     "lamp": 28,
     "girder": 2,
-    "glyphs": 8,
+    "glyphs": 10,
     "far-structure": 7,
     "shaft-light": 14,
     "cables": 2,
@@ -2477,7 +2524,8 @@
     "bones": 2,
     "cage": 3,
     "still-lamp": 1,
-    "grate": 1
+    "grate": 1,
+    "tablet": 1
    },
    "lights": 48,
    "standable": 76,
@@ -2525,7 +2573,7 @@
       -150,
       -204
      ],
-     "anchors": 10,
+     "anchors": 11,
      "solids": 31
     },
     {
@@ -2574,30 +2622,30 @@
     "rebar": 4,
     "blades": 1
    },
-   "anchors": 74,
+   "anchors": 75,
    "anchorKinds": {
-    "ring": 43,
+    "ring": 44,
     "hook": 12,
     "fragile": 19
    },
    "anchorTags": {
     "tutorial": 2,
     "route": 38,
-    "objective": 2,
+    "objective": 3,
     "risk": 18,
     "shortcut": 3,
     "recovery": 4,
     "escape": 7
    },
-   "decor": 173,
+   "decor": 178,
    "decorTypes": {
     "chain": 59,
     "arch": 6,
     "statue": 8,
-    "plaque": 15,
+    "plaque": 17,
     "lamp": 28,
     "girder": 2,
-    "glyphs": 8,
+    "glyphs": 10,
     "far-structure": 7,
     "shaft-light": 14,
     "cables": 2,
@@ -2607,7 +2655,8 @@
     "bones": 2,
     "cage": 3,
     "still-lamp": 1,
-    "grate": 1
+    "grate": 1,
+    "tablet": 1
    },
    "lights": 48,
    "standable": 75,
@@ -2655,7 +2704,7 @@
       -150,
       -204
      ],
-     "anchors": 10,
+     "anchors": 11,
      "solids": 31
     },
     {
@@ -2690,44 +2739,44 @@
  },
  "determinism": {
   "normal": {
-   "frames": 6803,
-   "run": "e6e99265",
-   "rerun": "e6e99265",
-   "replay": "e6e99265",
-   "replayFrames": 6803,
+   "frames": 9455,
+   "run": "ef2dca1d",
+   "rerun": "ef2dca1d",
+   "replay": "ef2dca1d",
+   "replayFrames": 9455,
    "replayInGoal": true,
    "objectives": [
-    "b60eda87",
-    "b60eda87",
-    "b60eda87"
+    "2060cd01",
+    "2060cd01",
+    "2060cd01"
    ],
    "ok": true
   },
   "nightmare": {
-   "frames": 7393,
-   "run": "4a06a5a9",
-   "rerun": "4a06a5a9",
-   "replay": "4a06a5a9",
-   "replayFrames": 7393,
+   "frames": 10841,
+   "run": "2f428f6e",
+   "rerun": "2f428f6e",
+   "replay": "2f428f6e",
+   "replayFrames": 10841,
    "replayInGoal": true,
    "objectives": [
-    "677b6346",
-    "677b6346",
-    "677b6346"
+    "b2144cab",
+    "b2144cab",
+    "b2144cab"
    ],
    "ok": true
   },
   "abyss": {
-   "frames": 7053,
-   "run": "2fef77f3",
-   "rerun": "2fef77f3",
-   "replay": "2fef77f3",
-   "replayFrames": 7053,
+   "frames": 10773,
+   "run": "af6b5bed",
+   "rerun": "af6b5bed",
+   "replay": "af6b5bed",
+   "replayFrames": 10773,
    "replayInGoal": true,
    "objectives": [
-    "a464165c",
-    "a464165c",
-    "a464165c"
+    "53212871",
+    "53212871",
+    "53212871"
    ],
    "ok": true
   }
@@ -2736,6 +2785,7 @@
   "s1": {
    "ok": true,
    "time": 14,
+   "waited": 0,
    "maxLand": 0.42,
    "deaths": 0,
    "damage": {
@@ -2750,6 +2800,7 @@
   "s2": {
    "ok": true,
    "time": 18.1,
+   "waited": 0,
    "maxLand": 0.4,
    "deaths": 0,
    "damage": {
@@ -2764,6 +2815,7 @@
   "s2fast": {
    "ok": true,
    "time": 15.7,
+   "waited": 0,
    "maxLand": 0.61,
    "deaths": 0,
    "damage": {
@@ -2778,6 +2830,7 @@
   "s2safe": {
    "ok": true,
    "time": 19.5,
+   "waited": 0,
    "maxLand": 0.21,
    "deaths": 0,
    "damage": {
@@ -2792,6 +2845,7 @@
   "s3": {
    "ok": true,
    "time": 17,
+   "waited": 0,
    "maxLand": 0.49,
    "deaths": 0,
    "damage": {
@@ -2806,6 +2860,7 @@
   "s3fast": {
    "ok": true,
    "time": 11.8,
+   "waited": 0,
    "maxLand": 0.48,
    "deaths": 0,
    "damage": {
@@ -2820,6 +2875,7 @@
   "s4": {
    "ok": true,
    "time": 29.9,
+   "waited": 0,
    "maxLand": 0.49,
    "deaths": 0,
    "damage": {
@@ -2834,6 +2890,7 @@
   "s4fast": {
    "ok": true,
    "time": 24,
+   "waited": 0,
    "maxLand": 0.49,
    "deaths": 0,
    "damage": {
@@ -2847,21 +2904,23 @@
   },
   "s5": {
    "ok": true,
-   "time": 18.1,
+   "time": 26.2,
+   "waited": 0,
    "maxLand": 0.68,
    "deaths": 0,
    "damage": {
     "hits": 1,
-    "total": 25.2,
-    "minHp": 74.8,
-    "endHp": 74.8
+    "total": 25.1,
+    "minHp": 74.9,
+    "endHp": 74.9
    },
    "breaks": 0,
    "crumbles": 0
   },
   "s5fast": {
    "ok": true,
-   "time": 6,
+   "time": 15.1,
+   "waited": 0,
    "maxLand": 0.2,
    "deaths": 0,
    "damage": {
@@ -2876,6 +2935,7 @@
   "s6": {
    "ok": true,
    "time": 10.7,
+   "waited": 0,
    "maxLand": 0.66,
    "deaths": 0,
    "damage": {
@@ -2890,6 +2950,7 @@
   "s6safe": {
    "ok": true,
    "time": 22.4,
+   "waited": 0,
    "maxLand": 0.2,
    "deaths": 0,
    "damage": {
@@ -2903,8 +2964,9 @@
   },
   "s7": {
    "ok": true,
-   "time": 34.9,
-   "maxLand": 0.21,
+   "time": 49.7,
+   "waited": 17.5,
+   "maxLand": 0.29,
    "deaths": 0,
    "damage": {
     "hits": 0,
@@ -2917,7 +2979,8 @@
   },
   "s7fast": {
    "ok": true,
-   "time": 18.6,
+   "time": 53.7,
+   "waited": 35.15,
    "maxLand": 0.2,
    "deaths": 0,
    "damage": {
@@ -2932,6 +2995,7 @@
   "s8": {
    "ok": true,
    "time": 23.4,
+   "waited": 0,
    "maxLand": 0.2,
    "deaths": 0,
    "damage": {
@@ -2946,6 +3010,7 @@
   "s8safe": {
    "ok": true,
    "time": 36.8,
+   "waited": 0,
    "maxLand": 0.33,
    "deaths": 0,
    "damage": {
@@ -2962,6 +3027,7 @@
   "s1": {
    "ok": true,
    "time": 14,
+   "waited": 0,
    "maxLand": 0.45,
    "deaths": 0,
    "damage": {
@@ -2976,6 +3042,7 @@
   "s2": {
    "ok": true,
    "time": 18.4,
+   "waited": 0,
    "maxLand": 0.44,
    "deaths": 0,
    "damage": {
@@ -2990,6 +3057,7 @@
   "s2fast": {
    "ok": true,
    "time": 16,
+   "waited": 0,
    "maxLand": 0.67,
    "deaths": 0,
    "damage": {
@@ -3004,6 +3072,7 @@
   "s2safe": {
    "ok": true,
    "time": 19.8,
+   "waited": 0,
    "maxLand": 0.23,
    "deaths": 0,
    "damage": {
@@ -3018,6 +3087,7 @@
   "s3": {
    "ok": true,
    "time": 23.8,
+   "waited": 0,
    "maxLand": 0.6,
    "deaths": 0,
    "damage": {
@@ -3032,6 +3102,7 @@
   "s3fast": {
    "ok": true,
    "time": 11,
+   "waited": 0,
    "maxLand": 0.53,
    "deaths": 0,
    "damage": {
@@ -3046,6 +3117,7 @@
   "s4": {
    "ok": true,
    "time": 29.9,
+   "waited": 0,
    "maxLand": 0.54,
    "deaths": 0,
    "damage": {
@@ -3060,6 +3132,7 @@
   "s4fast": {
    "ok": true,
    "time": 24,
+   "waited": 0,
    "maxLand": 0.54,
    "deaths": 0,
    "damage": {
@@ -3073,22 +3146,24 @@
   },
   "s5": {
    "ok": true,
-   "time": 18.4,
-   "maxLand": 0.66,
+   "time": 28.5,
+   "waited": 0,
+   "maxLand": 0.67,
    "deaths": 0,
    "damage": {
     "hits": 1,
-    "total": 24.9,
-    "minHp": 75.1,
-    "endHp": 75.1
+    "total": 25.8,
+    "minHp": 74.2,
+    "endHp": 74.2
    },
    "breaks": 0,
    "crumbles": 0
   },
   "s5fast": {
    "ok": true,
-   "time": 4.9,
-   "maxLand": 0.28,
+   "time": 16.4,
+   "waited": 0,
+   "maxLand": 0.22,
    "deaths": 0,
    "damage": {
     "hits": 0,
@@ -3102,6 +3177,7 @@
   "s6": {
    "ok": true,
    "time": 10.6,
+   "waited": 0,
    "maxLand": 0.66,
    "deaths": 0,
    "damage": {
@@ -3116,6 +3192,7 @@
   "s6safe": {
    "ok": true,
    "time": 22.4,
+   "waited": 0,
    "maxLand": 0.22,
    "deaths": 0,
    "damage": {
@@ -3129,8 +3206,9 @@
   },
   "s7": {
    "ok": true,
-   "time": 34.9,
-   "maxLand": 0.23,
+   "time": 64.7,
+   "waited": 32.5,
+   "maxLand": 0.32,
    "deaths": 0,
    "damage": {
     "hits": 0,
@@ -3143,7 +3221,8 @@
   },
   "s7fast": {
    "ok": true,
-   "time": 18.6,
+   "time": 68.7,
+   "waited": 50.15,
    "maxLand": 0.22,
    "deaths": 0,
    "damage": {
@@ -3158,6 +3237,7 @@
   "s8": {
    "ok": true,
    "time": 23.4,
+   "waited": 0,
    "maxLand": 0.22,
    "deaths": 0,
    "damage": {
@@ -3172,6 +3252,7 @@
   "s8safe": {
    "ok": true,
    "time": 36.9,
+   "waited": 0,
    "maxLand": 0.33,
    "deaths": 0,
    "damage": {
@@ -3188,6 +3269,7 @@
   "s1": {
    "ok": true,
    "time": 14,
+   "waited": 0,
    "maxLand": 0.48,
    "deaths": 0,
    "damage": {
@@ -3202,6 +3284,7 @@
   "s2": {
    "ok": true,
    "time": 18.8,
+   "waited": 0,
    "maxLand": 0.47,
    "deaths": 0,
    "damage": {
@@ -3216,6 +3299,7 @@
   "s2fast": {
    "ok": true,
    "time": 15.8,
+   "waited": 0,
    "maxLand": 0.64,
    "deaths": 0,
    "damage": {
@@ -3230,6 +3314,7 @@
   "s2safe": {
    "ok": true,
    "time": 20.2,
+   "waited": 0,
    "maxLand": 0.24,
    "deaths": 0,
    "damage": {
@@ -3244,6 +3329,7 @@
   "s3": {
    "ok": true,
    "time": 22,
+   "waited": 0,
    "maxLand": 0.64,
    "deaths": 0,
    "damage": {
@@ -3258,6 +3344,7 @@
   "s3fast": {
    "ok": true,
    "time": 9.8,
+   "waited": 0,
    "maxLand": 0.57,
    "deaths": 0,
    "damage": {
@@ -3272,6 +3359,7 @@
   "s4": {
    "ok": true,
    "time": 30.3,
+   "waited": 0,
    "maxLand": 0.57,
    "deaths": 0,
    "damage": {
@@ -3286,6 +3374,7 @@
   "s4fast": {
    "ok": true,
    "time": 24,
+   "waited": 0,
    "maxLand": 0.57,
    "deaths": 0,
    "damage": {
@@ -3299,21 +3388,23 @@
   },
   "s5": {
    "ok": true,
-   "time": 20.7,
-   "maxLand": 0.61,
+   "time": 32.7,
+   "waited": 0,
+   "maxLand": 0.6,
    "deaths": 0,
    "damage": {
     "hits": 2,
-    "total": 19.2,
-    "minHp": 80.8,
-    "endHp": 80.8
+    "total": 19.1,
+    "minHp": 80.9,
+    "endHp": 80.9
    },
    "breaks": 0,
    "crumbles": 1
   },
   "s5fast": {
    "ok": true,
-   "time": 5.8,
+   "time": 18.4,
+   "waited": 0,
    "maxLand": 0.23,
    "deaths": 0,
    "damage": {
@@ -3328,6 +3419,7 @@
   "s6": {
    "ok": true,
    "time": 10.5,
+   "waited": 0,
    "maxLand": 0.64,
    "deaths": 0,
    "damage": {
@@ -3342,6 +3434,7 @@
   "s6safe": {
    "ok": true,
    "time": 22.4,
+   "waited": 0,
    "maxLand": 0.24,
    "deaths": 0,
    "damage": {
@@ -3355,13 +3448,14 @@
   },
   "s7": {
    "ok": true,
-   "time": 34.9,
-   "maxLand": 0.25,
+   "time": 64.7,
+   "waited": 32.5,
+   "maxLand": 0.34,
    "deaths": 0,
    "damage": {
-    "hits": 0,
-    "total": 0,
-    "minHp": 100,
+    "hits": 1,
+    "total": 0.4,
+    "minHp": 99.6,
     "endHp": 100
    },
    "breaks": 0,
@@ -3369,7 +3463,8 @@
   },
   "s7fast": {
    "ok": true,
-   "time": 18.6,
+   "time": 68.7,
+   "waited": 50.15,
    "maxLand": 0.24,
    "deaths": 0,
    "damage": {
@@ -3384,6 +3479,7 @@
   "s8": {
    "ok": true,
    "time": 23.4,
+   "waited": 0,
    "maxLand": 0.23,
    "deaths": 0,
    "damage": {
@@ -3398,6 +3494,7 @@
   "s8safe": {
    "ok": true,
    "time": 37.1,
+   "waited": 0,
    "maxLand": 0.3,
    "deaths": 0,
    "damage": {
@@ -3412,7 +3509,7 @@
  },
  "alt_normal_s7spire": {
   "ok": true,
-  "time": 35.2,
+  "time": 52,
   "maxLand": 0.2,
   "damage": {
    "hits": 0,
@@ -3434,7 +3531,7 @@
  },
  "alt_nightmare_s7spire": {
   "ok": true,
-  "time": 35.2,
+  "time": 67,
   "maxLand": 0.22,
   "damage": {
    "hits": 0,
@@ -3456,7 +3553,7 @@
  },
  "alt_abyss_s7spire": {
   "ok": true,
-  "time": 35.5,
+  "time": 66.8,
   "maxLand": 0.24,
   "damage": {
    "hits": 0,
@@ -3504,9 +3601,9 @@
    },
    "s5": {
     "reach": 29,
-    "longest": 14.1,
+    "longest": 10.2,
     "at": "s5-f2",
-    "line": "full/fast"
+    "line": "s5fast"
    },
    "s6": {
     "reach": 28,
@@ -3522,9 +3619,9 @@
    },
    "s8": {
     "reach": 26,
-    "longest": 24.5,
+    "longest": 24.4,
     "at": "s8-e5",
-    "line": "full/safe"
+    "line": "s8safe"
    }
   },
   "nightmare": {
@@ -3554,15 +3651,15 @@
    },
    "s5": {
     "reach": 27,
-    "longest": 22.7,
+    "longest": 18.9,
     "at": "s5-f1",
     "line": "s5fast"
    },
    "s6": {
     "reach": 27,
-    "longest": 25,
-    "at": "s5-f2",
-    "line": "s5fast"
+    "longest": 17.1,
+    "at": "s6-ra5",
+    "line": "s6"
    },
    "s7": {
     "reach": 25,
@@ -3604,8 +3701,8 @@
    },
    "s5": {
     "reach": 25,
-    "longest": 16.3,
-    "at": "s5-f2",
+    "longest": 18.9,
+    "at": "s5-f1",
     "line": "s5fast"
    },
    "s6": {
@@ -3624,7 +3721,7 @@
     "reach": 24,
     "longest": 22.5,
     "at": "s8-e5",
-    "line": "s8safe"
+    "line": "full/safe"
    }
   }
  },
@@ -3667,24 +3764,24 @@
      "probes": 324,
      "holes": 0,
      "firstHoles": [],
-     "from": 970,
-     "pairs": 1035,
+     "from": 1312,
+     "pairs": 2745,
      "leaks": []
     },
     "seal-s6": {
      "probes": 968,
      "holes": 0,
      "firstHoles": [],
-     "from": 8864,
-     "pairs": 2336,
+     "from": 9208,
+     "pairs": 2338,
      "leaks": []
     },
     "seal-s7": {
      "probes": 6400,
      "holes": 0,
      "firstHoles": [],
-     "from": 11323,
-     "pairs": 1499,
+     "from": 12644,
+     "pairs": 3270,
      "leaks": []
     }
    },
@@ -3746,7 +3843,8 @@
       "t2",
       "t1"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "bell"
     },
     "s2": {
      "section": "s2",
@@ -3769,7 +3867,8 @@
       "s2-lower",
       "s2-hook"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "haul"
     },
     "s3": {
      "section": "s3",
@@ -3795,7 +3894,8 @@
       "s3-f2",
       "s3-cage"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "winch"
     },
     "s4": {
      "section": "s4",
@@ -3820,7 +3920,8 @@
       "s4-up",
       "s4-a5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "lamp"
     },
     "s5": {
      "section": "s5",
@@ -3832,12 +3933,12 @@
      "onSeal": true,
      "wayUp": true,
      "at": [
-      -12,
+      -8.1,
       -201.6,
-      0.2
+      0
      ],
      "minY": -201.6,
-     "t": 13.8,
+     "t": 14.9,
      "hooks": [
       "s5-h1",
       "s5-catch",
@@ -3845,9 +3946,11 @@
       "s5-h7",
       "s5-h6",
       "s5-h5",
-      "s5-f2"
+      "s5-f2",
+      "s5-h4"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "breach"
     },
     "s6": {
      "section": "s6",
@@ -3874,7 +3977,8 @@
       "s6-up",
       "s6-ra5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "hook"
     },
     "s7": {
      "section": "s7",
@@ -3900,7 +4004,8 @@
       "s7-up",
       "s7-f7"
      ],
-     "objectiveDone": false
+     "objectiveDone": true,
+     "verb": "survive"
     }
    }
   },
@@ -3942,15 +4047,15 @@
      "probes": 324,
      "holes": 0,
      "firstHoles": [],
-     "from": 960,
-     "pairs": 852,
+     "from": 1378,
+     "pairs": 2962,
      "leaks": []
     },
     "seal-s6": {
      "probes": 968,
      "holes": 0,
      "firstHoles": [],
-     "from": 8861,
+     "from": 9283,
      "pairs": 1897,
      "leaks": []
     },
@@ -3958,8 +4063,8 @@
      "probes": 6400,
      "holes": 0,
      "firstHoles": [],
-     "from": 11324,
-     "pairs": 1181,
+     "from": 13547,
+     "pairs": 3280,
      "leaks": []
     }
    },
@@ -4021,7 +4126,8 @@
       "t2",
       "t1"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "bell"
     },
     "s2": {
      "section": "s2",
@@ -4044,7 +4150,8 @@
       "s2-hook",
       "s2-lower"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "haul"
     },
     "s3": {
      "section": "s3",
@@ -4070,7 +4177,8 @@
       "s3-f2",
       "s3-cage"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "winch"
     },
     "s4": {
      "section": "s4",
@@ -4094,7 +4202,8 @@
       "s4-a5",
       "s4-up"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "lamp"
     },
     "s5": {
      "section": "s5",
@@ -4120,7 +4229,8 @@
       "s5-h6",
       "s5-h5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "breach"
     },
     "s6": {
      "section": "s6",
@@ -4147,7 +4257,8 @@
       "s6-up",
       "s6-ra5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "hook"
     },
     "s7": {
      "section": "s7",
@@ -4173,7 +4284,8 @@
       "s7-up",
       "s7-n11"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "survive"
     }
    }
   },
@@ -4215,15 +4327,15 @@
      "probes": 324,
      "holes": 0,
      "firstHoles": [],
-     "from": 1015,
-     "pairs": 971,
+     "from": 1503,
+     "pairs": 3313,
      "leaks": []
     },
     "seal-s6": {
      "probes": 968,
      "holes": 0,
      "firstHoles": [],
-     "from": 8923,
+     "from": 9414,
      "pairs": 1675,
      "leaks": []
     },
@@ -4231,8 +4343,8 @@
      "probes": 6400,
      "holes": 0,
      "firstHoles": [],
-     "from": 10996,
-     "pairs": 923,
+     "from": 12908,
+     "pairs": 2411,
      "leaks": []
     }
    },
@@ -4294,7 +4406,8 @@
       "t2",
       "t1"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "bell"
     },
     "s2": {
      "section": "s2",
@@ -4316,7 +4429,8 @@
       "s2-hook",
       "s2-lower"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "haul"
     },
     "s3": {
      "section": "s3",
@@ -4342,7 +4456,8 @@
       "s3-f2",
       "s3-cage"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "winch"
     },
     "s4": {
      "section": "s4",
@@ -4366,7 +4481,8 @@
       "s3-b1",
       "s4-up"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "lamp"
     },
     "s5": {
      "section": "s5",
@@ -4392,7 +4508,8 @@
       "s5-h6",
       "s5-h5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "breach"
     },
     "s6": {
      "section": "s6",
@@ -4423,7 +4540,8 @@
       "s6-up",
       "s6-ra5"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "hook"
     },
     "s7": {
      "section": "s7",
@@ -4435,21 +4553,22 @@
      "onSeal": true,
      "wayUp": true,
      "at": [
-      -1.4,
+      -0.7,
       -423.6,
-      -14.2
+      -0.6
      ],
      "minY": -423.6,
      "t": 60,
      "hooks": [
       "s7-f1",
       "s7-f2",
-      "s7-f4",
-      "s7-f6",
-      "s7-up",
-      "s7-n11"
+      "s7-f3",
+      "s7-f5",
+      "s7-n11",
+      "s7-up"
      ],
-     "objectiveDone": false
+     "objectiveDone": false,
+     "verb": "survive"
     }
    }
   }
@@ -4516,6 +4635,34 @@
      "at": 16.33,
      "time": 34.4
     }
+   },
+   "obj-s5": {
+    "verb": "breach",
+    "section": "s5",
+    "plain": {
+     "ok": true,
+     "at": 24.1,
+     "time": 26.2
+    },
+    "creature": {
+     "ok": true,
+     "at": 24.1,
+     "time": 26.2
+    }
+   },
+   "obj-s7": {
+    "verb": "survive",
+    "section": "s7",
+    "plain": {
+     "ok": true,
+     "at": 48.4,
+     "time": 49.7
+    },
+    "creature": {
+     "ok": true,
+     "at": 48.4,
+     "time": 49.7
+    }
    }
   },
   "nightmare": {
@@ -4579,6 +4726,34 @@
      "at": 16.33,
      "time": 34.4
     }
+   },
+   "obj-s5": {
+    "verb": "breach",
+    "section": "s5",
+    "plain": {
+     "ok": true,
+     "at": 26.1,
+     "time": 28.5
+    },
+    "creature": {
+     "ok": true,
+     "at": 26.1,
+     "time": 28.5
+    }
+   },
+   "obj-s7": {
+    "verb": "survive",
+    "section": "s7",
+    "plain": {
+     "ok": true,
+     "at": 63.4,
+     "time": 64.7
+    },
+    "creature": {
+     "ok": true,
+     "at": 63.4,
+     "time": 64.7
+    }
    }
   },
   "abyss": {
@@ -4641,6 +4816,34 @@
      "ok": true,
      "at": 16.33,
      "time": 34.9
+    }
+   },
+   "obj-s5": {
+    "verb": "breach",
+    "section": "s5",
+    "plain": {
+     "ok": true,
+     "at": 28.05,
+     "time": 32.7
+    },
+    "creature": {
+     "ok": true,
+     "at": 28.05,
+     "time": 32.7
+    }
+   },
+   "obj-s7": {
+    "verb": "survive",
+    "section": "s7",
+    "plain": {
+     "ok": true,
+     "at": 63.4,
+     "time": 64.7
+    },
+    "creature": {
+     "ok": true,
+     "at": 63.4,
+     "time": 64.7
     }
    }
   }

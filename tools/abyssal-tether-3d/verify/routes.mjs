@@ -5,9 +5,9 @@
 // Each route starts standing on the section's checkpoint and ends standing on the
 // next section's checkpoint platform (S8: inside the goal). Step grammar: bot.mjs.
 // Seals (LEVEL_FUN_PLAN P1): a route starts with the seals of the sections above it open and its own closed; it opens it by
-// hooking the ring the level data names for it (s3 s3-a2, s5 s5-h4, s6 s6-sa3 / s6-ra3, s7 s7-n6 / s7-sp1), which every
-// route below already does: no extra steps. The fast lines of P2 hook their own ring (s3-f1, s5-f1, s7-f3) where they leave
-// the main line before its ring. P3 verbs (steps in bot.mjs): S1 swings into the bell (`ring`), every S2 line hooks the
+// hooking the ring the level data names for it (s6 s6-sa3 / s6-ra3), which every S6 route already does: no extra steps.
+// P5 (the Mason; the bots never use the creature): every S5 line hooks the keystone's ring and hauls it (`haul`: the slow
+// fallback), every S7 line hangs on its last ring until the survive clock has opened the iris (`waitObj`). P3 verbs (steps in bot.mjs): S1 swings into the bell (`ring`), every S2 line hooks the
 // counterweight and hauls it (`haul`), every S4 line relights the catwalk's three lamps (`light`). P4 machines: S3 opens on
 // the winch (a ring riding a turning gear: `{ a: 's3-winch', exposed }` fires only while it stays out of the wall long enough,
 // `winch` holds the line until the gear has wound it), the safe line waits for the rockfall lane's gap (`wait: { lane }`)
@@ -135,15 +135,20 @@ export const ROUTES = {
     { p: 's5-step5', mode: 'lower', at: [-15, -6.5] },
     { a: 's5-h6' },
     { p: 's5-step6', mode: 'lower', at: [-18.5, 3] },
+    // P5: the keystone's haul fallback from the last step (the bots never use the Mason): its ring, then haul it
+    { a: 'key-s5-ring' },
+    { haul: 'obj-s5', t: 30 },
     { a: 's5-h7' },
     { p: 's6-fork', at: [-12, 0] },
   ],
-  // S5 fast line: the dive. Off the landing's west lip, straight down the middle of the throat on two frayed rings (the first
-  // opens the seal) to the sound hook, and lower onto the fork.
+  // S5 fast line: the dive. Off the landing's west lip, straight down the middle of the throat on two frayed rings to the
+  // sound hook; hanging from it, hook the keystone's ring with the free hand and haul it (P5), then lower onto the fork.
   s5fast: [
     { a: 's5-f1', mode: 'below', walk: [-10, 0], below: 0.6 },
     { a: 's5-f2', mode: 'below' },
     { a: 's5-f3', mode: 'below' },
+    { a: 'key-s5-ring', hold: true },
+    { haul: 'obj-s5', t: 30 },
     { p: 's6-fork', mode: 'lower', at: [-12, 0] },
   ],
   s6: [
@@ -181,10 +186,11 @@ export const ROUTES = {
     { a: 's7-n9' },
     { a: 's7-n10' },
     { a: 's7-n11' },
+    { waitObj: 'obj-s7', t: 75 }, // P5: the survive floor: hang on until the iris opens
     { p: 's8-landing', mode: 'lower', at: [6, -15] },
   ],
-  // S7 fast line: the plumb line. Off the landing's north lip, straight down the column of frayed rings (the third
-  // opens the iris) to the sound hook at its foot, and lower onto the throat's landing.
+  // S7 fast line: the plumb line. Off the landing's north lip, straight down the column of frayed rings to the sound hook at
+  // its foot; hang there until the iris opens (P5: the survive floor), and lower onto the throat's landing.
   s7fast: [
     { a: 's7-f1', mode: 'below', walk: [4.5, -12.5], below: 0.6 },
     { a: 's7-f2', mode: 'below' },
@@ -193,6 +199,7 @@ export const ROUTES = {
     { a: 's7-f5', mode: 'below' },
     { a: 's7-f6', mode: 'below' },
     { a: 's7-f7', mode: 'below' },
+    { waitObj: 'obj-s7', t: 75 },
     { p: 's8-landing', mode: 'lower', at: [4.5, -12.5] },
   ],
   s8: [
@@ -238,6 +245,7 @@ export const ALT_ROUTES = {
     { a: 's7-n9' },
     { a: 's7-n10' },
     { a: 's7-n11' },
+    { waitObj: 'obj-s7', t: 75 },
     { p: 's8-landing', mode: 'lower', at: [6, -15] },
   ],
   // S8: the wall ring instead of the last chain ring.
@@ -317,6 +325,7 @@ export const SCENARIOS = {
       { a: 's7-n9' },
       { a: 's7-n10' },
       { a: 's7-n11' },
+      { waitObj: 'obj-s7', t: 75 },
       { p: 's8-landing', mode: 'lower', at: [6, -15] },
     ],
   },
@@ -330,7 +339,9 @@ export const FORK = { key: 's6', risky: 's6', safe: 's6safe', fasterBy: 0.25 };
 /**
  * Every fork (LEVEL_FUN_PLAN item 8): `fast` / `safe` name ROUTES keys (the main line is one of them, or neither: S2), `data`
  * the level data's `fork` id. verify.mjs plays two full runs (every fork's fast line, every fork's safe line) and compares
- * the lines from the fork's checkpoint: fast must beat safe by `fasterBy` on every variant (S6 keeps CHAPTERS' 25 %).
+ * the lines from the fork's checkpoint: fast must beat safe by `fasterBy` on every variant (S6 keeps CHAPTERS' 25 %). The
+ * time compared is the time spent moving: a `waitObj` wait (P5: S7's survive floor ends both lines on the same clock) is
+ * left out.
  */
 export const FORKS = [
   { key: 's2', data: 'fork-s2', fast: 's2fast', safe: 's2safe', fasterBy: 0.15 },

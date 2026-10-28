@@ -525,6 +525,18 @@ export class FX {
       const x = num(e && e.x, NaN);
       if (isFinite(x)) this._startRain(x, num(e.y, 0), num(e.z, 0), 30, Math.max(0.3, num(e.dur, 1.6)));
     });
+    // LEVEL_FUN_PLAN P5, the S5 keystone: a blow sheds grit and chips (the pooled rain and rubble), its break a short rain
+    on('breach:hit', (e) => {
+      const x = num(e && e.x, NaN);
+      if (!isFinite(x)) return;
+      this._startRain(x, num(e.y, 0) + 1.4, num(e.z, 0), 8, 0.6);
+      this._pebbles(x, num(e.y, 0) + 1, num(e.z, 0), 4, 0.03, 0.08);
+      this.trickles.agitate(0.6);
+    });
+    on('breach:break', (e) => {
+      const x = num(e && e.x, NaN);
+      if (isFinite(x)) this._startRain(x, num(e.y, 0) + 1.4, num(e.z, 0), 18, 1.2);
+    });
     on('trigger:rumble', (e) => {
       this._rain(THREE.MathUtils.clamp(num(e.data && e.data.count, 9), 1, 40));
       this.trickles.agitate(0.4 + num(e.data && e.data.intensity, 0.5));

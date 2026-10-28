@@ -23,7 +23,7 @@ import { CHAPTERS, chapterIds, variantKeys } from './chapters.mjs';
 import { measureBudget, formatBudget } from './budget.mjs';
 import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
-import { sealIntegrity, sealGaps, climbOut, skipProbe, verbProbe } from './seals.mjs';
+import { sealIntegrity, sealGaps, climbOut, skipProbe, verbProbe, nookIntegrity } from './seals.mjs';
 import { forkIntegrity } from './forks.mjs';
 import { machineIntegrity, laneProbe } from './machines.mjs';
 import { writePar, PAR_FILE } from './par.mjs';
@@ -154,8 +154,12 @@ function integrity(ch, v) {
   for (const key of Object.keys(R.ROUTES)) {
     const r = R.ROUTES[key];
     for (let i = 1; i < r.length; i++) {
-      if (r[i].mode !== 'lower' || !r[i - 1].a) continue;
-      const aid = r[i - 1].a;
+      if (r[i].mode !== 'lower') continue;
+      // the line it lowers on: the last anchor step before it (past a haul / waitObj step and a second `hold` line: P5)
+      let k = i - 1;
+      while (k > 0 && (!r[k].a || r[k].hold) && (r[k].haul || r[k].waitObj || r[k].hold || r[k].winch)) k--;
+      if (!r[k].a) continue;
+      const aid = r[k].a;
       const an = L.byId[Array.isArray(aid) ? aid.find((k) => L.byId[k]) : aid];
       const pid = Array.isArray(r[i].p) ? r[i].p.find((k) => L.byId[k]) : r[i].p;
       const pl = L.byId[pid];
@@ -168,6 +172,8 @@ function integrity(ch, v) {
   out.ids = idChecks(L, P);
   // Seals (LEVEL_FUN_PLAN P1): one objective each, rings above, plates inside the walls, the next checkpoint below.
   out.seals = sealIntegrity(L, v, P);
+  // The Masons' rests (LEVEL_FUN_PLAN P5): in their section, a block that holds the box, budgets, never on a fast line.
+  out.nooks = nookIntegrity(L, v, P);
   // Forks (LEVEL_FUN_PLAN P2): a fast and a safe line in every section but the first, played by the bots as the data says.
   out.forks = forkIntegrity(L, R, P);
   // Machines (LEVEL_FUN_PLAN P4): movers within 1.5 m/s and clear of the masonry, lanes only through open air.
@@ -437,9 +443,9 @@ function edgeChecks(L, P) {
 }
 
 /** Lists of the chapter data whose objects are referenced by id (ENGINE_EXTENSIONS §5). */
-const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 /** Lists whose references must resolve (V1: no dangling ids). */
-const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 
 /**
  * V1: ids unique among the variant's live objects; every `…Id` / `ids` reference in
@@ -447,7 +453,7 @@ const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lane
  */
 function idChecks(L, P) {
   const seen = new Map();
-  const live = { solids: L.solids.concat(L.sealSolids || []), hazards: L.hazards, anchors: L.anchors };
+  const live = { solids: L.solids.concat(L.sealSolids || [], L.fixtureSolids || []), hazards: L.hazards, anchors: L.anchors };
   let n = 0;
   for (const k of ID_LISTS) {
     const list = live[k] || (Array.isArray(L.data[k]) ? L.data[k] : []);
@@ -672,6 +678,8 @@ async function verifyChapter(ch) {
   for (const v of VARIANTS) {
     report.integrity[v] = integrity(ch, v);
     console.log(`  ${v}: ${report.integrity[v].ok ? 'OK' : 'PROBLEMS'}  recovery anchors: ${report.integrity[v].recovery.join(', ')}`);
+    const nk = report.integrity[v].nooks;
+    if (nk) console.log(`     Masons' rests (LEVEL_FUN_PLAN P5): ${nk.nooks} (per section ${JSON.stringify(nk.perSection)})`);
     const eg = report.integrity[v].climb ? report.integrity[v].climb.edges : null;
     if (eg) {
       console.log(`     edge holds: ${eg.count} (${eg.lips} lips, ${eg.vertical} vertical); max continuous edge-climb run ${eg.maxRun} m ${eg.maxRunAt || ''}; ${eg.runsOver} run(s) >= ${EDGE_WARN_RUN} m; a full grip pays for ~${eg.staminaRun} m of edge-only climbing (Abyss)`);
@@ -708,7 +716,7 @@ async function verifyChapter(ch) {
       if (!ok) fail(`[${ch.id}/${v}] section ${key}: ${r.fail}`);
       const breaks = r.sim.events.filter((e) => e[0] === 'break').length;
       const crumbles = r.sim.events.filter((e) => e[0] === 'crumble').length;
-      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), deaths: r.deaths, damage: dmgOf(r.damage), breaks, crumbles };
+      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), waited: r.waited || 0, maxLand: +r.maxLand.toFixed(2), deaths: r.deaths, damage: dmgOf(r.damage), breaks, crumbles };
     }
     console.log(`  ${v}: ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.ok ? 'ok' : 'FAIL'} ${o.time}s/${o.maxLand}`).join(' | ')}`);
     console.log(`  ${v} damage (hp taken / lowest hp): ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.damage.total}/${o.damage.minHp}`).join(' | ')}`);
@@ -739,11 +747,15 @@ async function verifyChapter(ch) {
       for (const F of forkList) {
         const a = report[`sections_${v}`][F.fast];
         const b = report[`sections_${v}`][F.safe];
-        const faster = 1 - a.time / b.time;
+        // the time spent moving: a survive floor's wait (P5, S7) ends both lines on the same clock and is left out
+        const ma = +(a.time - (a.waited || 0)).toFixed(1);
+        const mb = +(b.time - (b.waited || 0)).toFixed(1);
+        const faster = 1 - ma / mb;
         const o = { fast: a.time, safe: b.time, fasterBy: +(faster * 100).toFixed(0) + '%', fastMinHp: a.damage.minHp, safeMinHp: b.damage.minHp, fastBreaks: a.breaks, fastCrumbles: a.crumbles };
+        if (a.waited || b.waited) Object.assign(o, { fastMoving: ma, safeMoving: mb });
         (report.forks[F.key] || (report.forks[F.key] = {}))[v] = o;
-        if (!(a.ok && b.ok && faster >= F.fasterBy)) fail(`[${ch.id}/${v}] fork ${F.key}: fast line ${F.fast} not >=${F.fasterBy * 100}% faster than ${F.safe} (${a.time} vs ${b.time})`);
-        row.push(`${F.key} ${a.time}/${b.time}s ${o.fasterBy} (hp ${o.fastMinHp}/${o.safeMinHp}, snaps ${o.fastBreaks})`);
+        if (!(a.ok && b.ok && faster >= F.fasterBy)) fail(`[${ch.id}/${v}] fork ${F.key}: fast line ${F.fast} not >=${F.fasterBy * 100}% faster than ${F.safe} (${ma} vs ${mb} s moving)`);
+        row.push(`${F.key} ${a.time}/${b.time}s${a.waited || b.waited ? ` (moving ${ma}/${mb})` : ''} ${o.fasterBy} (hp ${o.fastMinHp}/${o.safeMinHp}, snaps ${o.fastBreaks})`);
       }
       console.log(`  ${v}: ${row.join(' | ')}`);
     }

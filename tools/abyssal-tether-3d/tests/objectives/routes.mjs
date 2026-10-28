@@ -114,7 +114,8 @@ const LAND_OK = 0.85;
         const r = new Bot(sim, R.ROUTES[key], {}).runRoute();
         const T = sim.tethers;
         const over = sim.shots.filter(([si, , d]) => d > T.aimRangeAt(si) - 1.5);
-        res[line] = { ok: r.ok && r.deaths === 0 && r.maxLand < LAND_OK && over.length === 0, t: r.time, fail: r.fail || (over.length ? `shot ${over[0][1]} at ${over[0][2].toFixed(1)} m` : '') };
+        // the time spent moving (LEVEL_FUN_PLAN P5: S7's survive floor ends both lines on the same clock: its wait is left out)
+        res[line] = { ok: r.ok && r.deaths === 0 && r.maxLand < LAND_OK && over.length === 0, t: r.time - (r.waited || 0), fail: r.fail || (over.length ? `shot ${over[0][1]} at ${over[0][2].toFixed(1)} m` : '') };
       }
       const faster = 1 - res.fast.t / res.safe.t;
       table.push(`${v}/${F.key} ${res.fast.t.toFixed(1)}/${res.safe.t.toFixed(1)}s ${(faster * 100).toFixed(0)}%`);

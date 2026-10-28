@@ -43,7 +43,7 @@ export function levelGiHash(level) {
   const solids = (level && level.solids) || [];
   for (const s of solids) {
     // variant-specific pieces (the Abyss variant drops a solid) do not invalidate the shared bake: only the stable core
-    if (s.kind === 'crumble' || s.seal) continue; // seal plates (LEVEL_FUN_PLAN P1) open and close: never baked
+    if (s.kind === 'crumble' || s.seal || s.fixture) continue; // seal plates (LEVEL_FUN_PLAN P1) / the S5 keystone (P5) come and go: never baked
     mix(s.minX);
     mix(s.minY);
     mix(s.minZ);

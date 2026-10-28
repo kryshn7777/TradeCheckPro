@@ -39,7 +39,24 @@
 > meet (in reach of the shelf and of `s3-f2`), not the west wall; amplitudes keep every ring ≤ 1.5 m/s (the plan's ±0.3 rad
 > at 7.5 s would be 3.5 m/s); lanes are their own list (`lanes`), not `level.hazards` (no climb edge, dressing or supply rule
 > moves); new rule: a seal whose objective is done while the player stands on it over a drop deeper than 3 m opens once they
-> are off it; the S2 collapsing span is not built (it changes the lightmap hash: with the P6 re-bake). P5-P6 open.
+> are off it; the S2 collapsing span is not built (it changes the lightmap hash: with the P6 re-bake).
+> **P5 done** (2026-10-28): the Masons' rests (`nooks`: S4 catwalk end, S5 lure niche, S6 shelf 3; budget 25 / 15 / 8 s per
+> visit, warn 5 s before, refill after 20 s outside; `Creature3D.setRefuge`: hidden = no attack starts, stall clock frozen,
+> it holds and listens, no hit; a creature-only block box its head and lunges keep out of), the S5 keystone (`key-s5`,
+> verb `breach`: a fixture solid in `level.fixtureSolids`, out of `level.solids` and both hashes; a Mason lunge stopped at it,
+> at the lure's mouth, or within 2.5 m breaks it; haul fallback at once 8 / 10 / 12 s in 4 loud notches; 200 / 200 seeds per
+> difficulty within 40 s, 0 hits), a strike never hits through an active solid (all strikes), the keystone skipped by the
+> attack line of sight, shot from the lure it lunges at once; the S7 survive floor (`arena-s7`, verb `survive`, 45 / 60 / 60
+> s in 4 stages kept through a death, paused on the landing; done: `{ mode: 'escape' }` via `Creature3D.setOverride`); bot
+> steps `haul` (S5) / `waitObj` (S7), forks compare moving time; `tests/creature/nooks.mjs`, `lure.mjs`,
+> `tests/objectives/mason.mjs`; par and baseline rewritten. Differs from the plan: no wall niche or alcove geometry (both
+> would change the lightmap hash): the rests are rule-based volumes by existing lamps (+ 2 glyph bands, the S4 plaque) and
+> the lure niche is the corner of the last step behind a free-standing keystone, its blows mostly stopped at the niche's
+> mouth (they come from above, over the 2.5 m stone) and counted as blows; the arena is a fixture of `obj-s7` (no `arenas`
+> list) and opens all four quadrants at the last stage, each stage withdrawing a bolt (a quadrant per stage would let you
+> drop through after 11 s); skitterlings also keep out of a rest's block; a seal also opens under a body hung on a sound rope
+> (not only once off it); S7 adds +29.8 s to the Nightmare / Abyss bot split (over the +25 s cap: the 60 s timers);
+> nothing browser-run or playtested. P6 open.
 > Approved scope (12 items). Date 2026-10-28.
 > Paths: `src/` = `public/abyssal-tether-3d/src/`, `tools/` = `tools/abyssal-tether-3d/`. Every code claim below names the
 > file and function or data field it was read from. Where an approved contract already exists in

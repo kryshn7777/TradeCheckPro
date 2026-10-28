@@ -11,6 +11,9 @@
  * material (+1 call only while a relit lamp is in view; no light: the baked lamp pools follow the objective's progress in
  * render/lighting.js).
  *
+ * P5 ("the Mason"): the S5 keystone (a stone-tinted block in iron bands, its ring's plate; broken, its slabs lie on the
+ * ledge) and the S7 iris's four bolts (a survive stage slides one back into the rim) are more boxes of the same mesh.
+ *
  * P4 ("machines"): the movers' parts (the S3 cage and its chain swinging, the winch gear turning: moverParts) are more
  * instances of the same mesh, posed every frame from the run clock while in view (no new draw call; the level view leaves the
  * cage's static decor out of its chunks). A gear's half in the wall is hidden by the wall itself.
@@ -151,6 +154,9 @@ export const FIX = Object.freeze({
   notchRise: 0.9, // m the counterweight rises per notch
   flame: 0.075, // m, the octahedral flame core of a relit lamp
   flameColor: [1.9, 1.15, 0.45],
+  stone: [0.52, 0.49, 0.45], // P5: the keystone (instance colour times the metal material)
+  boltSlide: 1.6, // m a withdrawn iris bolt slides back into the rim
+  boltRate: 2.5, // 1/s: how fast it slides
 });
 
 /**
@@ -188,6 +194,61 @@ export function fixtureParts(level) {
       out.push({ id: f.id, kind: 'haul', x: bx, y: a.y, z: a.z, ring: [a.x, a.y, a.z], pulleyY, notches: Math.max(1, Math.round(f.notches || 1)), minX: a.x - 1, maxX: bx + 1, minY: a.y - 1, maxY: top, minZ: a.z - 1, maxZ: a.z + 1, boxes: [] });
     } else if (f.kind === 'lamp') {
       out.push({ id: f.id, kind: 'lamp', x: f.x, y: f.y, z: f.z, minX: f.x - 0.5, maxX: f.x + 0.5, minY: f.y - 0.5, maxY: f.y + 0.5, minZ: f.z - 0.5, maxZ: f.z + 0.5, boxes: [] });
+    } else if (f.kind === 'breach') {
+      // P5, the S5 keystone: its block with iron bands and the ring's plate; broken: three slabs of it lying on the ledge
+      const s = level.byId && level.byId[f.solidId];
+      if (!s || s.minX === undefined) continue;
+      const cx = (s.minX + s.maxX) / 2;
+      const cy = (s.minY + s.maxY) / 2;
+      const cz = (s.minZ + s.maxZ) / 2;
+      const sx = s.maxX - s.minX;
+      const sy = s.maxY - s.minY;
+      const sz = s.maxZ - s.minZ;
+      const K = FIX.stone;
+      const I = FIX.iron;
+      const boxes = [
+        [0, 0, 0, sx, sy, sz, 0, K[0], K[1], K[2]],
+        [0, sy * 0.3, 0, sx + 0.08, 0.14, sz + 0.08, 0, I[0], I[1], I[2]],
+        [0, -sy * 0.3, 0, sx + 0.08, 0.14, sz + 0.08, 0, I[0], I[1], I[2]],
+      ];
+      const a = level.byId && level.byId[f.anchorId];
+      if (a && a.x !== undefined) boxes.push([a.x - cx - 0.12 * Math.sign(a.x - cx || 1), a.y - cy, a.z - cz, 0.08, 0.5, 0.5, 0, I[0], I[1], I[2]]); // the ring's plate
+      const lie = sy * 0.3;
+      const rubble = [
+        [0.1, -sy / 2 + 0.25, -sz * 0.25, sx * 1.1, 0.5, sz * 0.45, 0.3, K[0], K[1], K[2]],
+        [0.6, -sy / 2 + 0.2, sz * 0.2, lie, 0.4, sz * 0.4, -0.5, K[0], K[1], K[2]],
+        [-0.2, -sy / 2 + 0.6, 0, sx * 0.9, 0.35, sz * 0.3, 1.1, I[0], I[1], I[2]],
+      ];
+      out.push({ id: f.id, kind: 'breach', x: cx, y: cy, z: cz, minX: s.minX - 1, maxX: s.maxX + 1, minY: s.minY, maxY: s.maxY + 1, minZ: s.minZ - 1, maxZ: s.maxZ + 1, boxes, rubble });
+    } else if (f.kind === 'survive') {
+      // P5, the S7 iris: one bolt per quadrant across the seam to the floor around it; a stage slides one back into the rim
+      // (the one over the S8 landing last); the plates themselves open at the end with the seal
+      const ids = Array.isArray(f.boltOrder) ? f.boltOrder : [];
+      const plates = ids.map((id) => level.byId && level.byId[id]).filter((p) => p && p.minX !== undefined);
+      if (!plates.length) continue;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (const p of plates) {
+        minX = Math.min(minX, p.minX);
+        maxX = Math.max(maxX, p.maxX);
+        minZ = Math.min(minZ, p.minZ);
+        maxZ = Math.max(maxZ, p.maxZ);
+      }
+      const mx = (minX + maxX) / 2;
+      const I = FIX.iron;
+      const N = FIX.band;
+      const bolts = plates.map((p) => {
+        const west = (p.minX + p.maxX) / 2 < mx;
+        const ex = west ? p.minX : p.maxX; // the plate's outer edge along x: the seam with the floor
+        const dir = west ? -1 : 1;
+        const z = (p.minZ + p.maxZ) / 2;
+        const y = p.maxY + 0.16;
+        return { dir, boxes: [[ex, y, z, 2.2, 0.3, 0.42, 0, I[0], I[1], I[2]], [ex + dir * 1.6, y + 0.02, z, 0.3, 0.38, 0.62, 0, N[0], N[1], N[2]]] };
+      });
+      const top = plates[0].maxY;
+      out.push({ id: f.id, kind: 'survive', x: mx, y: top, z: (minZ + maxZ) / 2, minX: minX - 3, maxX: maxX + 3, minY: top - 1, maxY: top + 1, minZ: minZ - 1, maxZ: maxZ + 1, boxes: [], bolts, stages: Math.max(1, Math.round(f.stages || bolts.length)) });
     }
   }
   return out;
@@ -304,7 +365,10 @@ export class SealView {
     this.level = level;
     this.total = this.seals.reduce((n, s) => n + s.n, 0);
     // the bell and the counterweight join the bars' mesh: room for their boxes
-    const fixBoxes = this.fixtures.reduce((n, f) => n + (f.kind === 'bell' ? f.boxes.length : f.kind === 'haul' ? 4 : 0), 0);
+    const fixBoxes = this.fixtures.reduce(
+      (n, f) => n + (f.kind === 'bell' ? f.boxes.length : f.kind === 'haul' ? 4 : f.kind === 'breach' ? Math.max(f.boxes.length, f.rubble.length) : f.kind === 'survive' ? f.bolts.length * 2 : 0),
+      0,
+    );
     const moverBoxes = this.movers.reduce((n, mp) => n + mp.boxes.length, 0);
     // each mover's frame (local axes → world: along / up / across for a cage, u / v / axis for a gear)
     this._mvBasis = this.movers.map((mp) => {
@@ -484,12 +548,18 @@ export class SealView {
     return n;
   }
 
-  /** Notches the counterweight shows (done: all of them). */
+  /**
+   * Notches the counterweight shows (done: all of them); P5: the keystone 1 = broken; the iris bolts withdrawn (its stages
+   * done; all once the survive objective is).
+   */
   _notchTarget(j) {
     const O = this._objectives;
     const fs = this._fxState[j];
     const f = this.fixtures[j];
-    if (!O || fs.fi < 0 || f.kind !== 'haul') return 0;
+    if (!O || fs.fi < 0) return 0;
+    if (f.kind === 'breach') return O.fixtureDone(fs.fi) ? 1 : 0;
+    if (f.kind === 'survive') return O.fixtureDone(fs.fi) ? f.bolts.length : Math.min(f.bolts.length, O.fxN ? O.fxN[fs.fi] : 0);
+    if (f.kind !== 'haul') return 0;
     return O.fixtureDone(fs.fi) ? f.notches : O.fxN ? O.fxN[fs.fi] : 0;
   }
 
@@ -522,6 +592,18 @@ export class SealView {
         const target = this._notchTarget(j);
         if (Math.abs(target - fs.k) > 0.002) {
           fs.k += (target - fs.k) * Math.min(1, dt * 5);
+          anim = true;
+        } else fs.k = target;
+      } else if (f.kind === 'breach') {
+        const target = this._notchTarget(j);
+        if (target !== fs.k) {
+          fs.k = target; // the keystone falls at once (the dust and rubble are the fx)
+          mask |= 1 << 30; // a re-pack this frame
+        }
+      } else if (f.kind === 'survive') {
+        const target = this._notchTarget(j);
+        if (Math.abs(target - fs.k) > 0.002) {
+          fs.k = target > fs.k ? Math.min(target, fs.k + dt * FIX.boltRate) : target; // a bolt slides back (a new run: at once)
           anim = true;
         } else fs.k = target;
       }
@@ -583,6 +665,30 @@ export class SealView {
           mesh.setMatrixAt(n, _m.compose(_p, _q, _s));
           _c.setRGB(b[7], b[8], b[9]);
           mesh.setColorAt(n++, _c);
+        }
+      } else if (f.kind === 'breach') {
+        // standing (relative to its centre), or broken: the slabs lying on the ledge
+        for (const b of fs.k ? f.rubble : f.boxes) {
+          _p.set(f.x + b[0], f.y + b[1], f.z + b[2]);
+          _q.setFromAxisAngle(_up, b[6]);
+          _s.set(b[3], b[4], b[5]);
+          mesh.setMatrixAt(n, _m.compose(_p, _q, _s));
+          _c.setRGB(b[7], b[8], b[9]);
+          mesh.setColorAt(n++, _c);
+        }
+      } else if (f.kind === 'survive') {
+        _q.identity();
+        for (let i = 0; i < f.bolts.length; i++) {
+          const bolt = f.bolts[i];
+          const k = ease(Math.min(1, Math.max(0, fs.k - i))); // stage i+1 withdraws bolt i
+          for (let m = 0; m < bolt.boxes.length; m++) {
+            const b = bolt.boxes[m];
+            _p.set(b[0] + (m === 0 ? bolt.dir * FIX.boltSlide * k : 0), b[1], b[2]);
+            _s.set(b[3], b[4], b[5]);
+            mesh.setMatrixAt(n, _m.compose(_p, _q, _s));
+            _c.setRGB(b[7], b[8], b[9]);
+            mesh.setColorAt(n++, _c);
+          }
         }
       }
     }

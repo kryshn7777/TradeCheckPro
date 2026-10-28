@@ -58,6 +58,13 @@ export const RULES = Object.freeze({
   lampCatch: R('[A lamp catches]', 'world', 0, 'lamp', 1),
   // LEVEL_FUN_PLAN P4: the rockfall lane's telegraph (the stones themselves are the existing `debris` caption)
   laneWarn: R('[Rocks rattle above]', 'world', 1, 'rockfall', 3),
+  // LEVEL_FUN_PLAN P5: the Mason as the key (the S5 keystone), the Masons' rests, the S7 survive floor
+  stoneCrack: R('[Stone cracks]', 'world', 2, 'breach', 1.2),
+  keystone: R('[The keystone gives way]', 'world', 2, 'breach', 2),
+  nookScrape: R('[Stone scraping at the opening]', 'creature', 2, 'nook', 4),
+  nookSpent: R('[It forces the opening]', 'creature', 2, 'nook', 4),
+  bolt: R('[An iron bolt slides back below]', 'world', 1, 'bolt', 2),
+  boltsHold: R('[The bolts below go still]', 'world', 0, 'bolt', 4),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
@@ -165,7 +172,18 @@ export function captionForEvent(type, p) {
     case 'bell:ring':
       return RULES.bell;
     case 'objective:progress':
-      return e.verb === 'haul' || e.verb === 'winch' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : null;
+      if (e.verb === 'breach') return e.k < e.of ? RULES.ratchet : null; // the last one is the break (breach:break)
+      return e.verb === 'haul' || e.verb === 'winch' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : e.verb === 'survive' ? RULES.bolt : null;
+    case 'breach:hit':
+      return RULES.stoneCrack;
+    case 'breach:break':
+      return RULES.keystone;
+    case 'nook:warn':
+      return RULES.nookScrape;
+    case 'nook:spent':
+      return RULES.nookSpent;
+    case 'arena:pause':
+      return RULES.boltsHold;
     case 'lane:warn':
       return RULES.laneWarn;
     case 'lane:on':
@@ -222,6 +240,11 @@ export const CAPTION_EVENTS = Object.freeze([
   'objective:progress',
   'lane:warn',
   'lane:on',
+  'breach:hit',
+  'breach:break',
+  'nook:warn',
+  'nook:spent',
+  'arena:pause',
   'health:damage',
   'pickup:collect',
 ]);

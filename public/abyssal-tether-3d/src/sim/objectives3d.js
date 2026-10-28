@@ -24,6 +24,23 @@
  *         either hand bites it, the gear hauls the winch: `time` s of it in `notches` ratchet steps (a line let go, or pulled
  *         off as the ring turns into the gear's housing, keeps the notches done). The ring can only be hooked on the
  *         half-turn it is out of the wall; it comes round every period, so a missed timing is a wait, never a lock (S3).
+ * P5 "the Mason" (LEVEL_FUN_PLAN items 3, 10, 11):
+ *   breach  `solidId, anchorId, hp, r, haulTime, notches, nookId` (S5): a keystone (a fixture solid: Level3D.fixtureSolids,
+ *         out of the bake and the hashes) that holds the seal plug up. The Mason breaks it: a creature:strike of the Mason
+ *         (never a skitterling's, never one that hit the player) that stopped at the keystone, at the mouth of its lure rest
+ *         (`nookId`), or ended within `r` of it, costs it one `hp` (onStrike, subscribed on the bus). The fallback, available
+ *         at once: hook its ring and haul it like a counterweight for `haulTime` s in `notches` loud notches (a Mason noise
+ *         each: it usually comes first). Broken (either way): the solid goes inactive, the ring is gone (`hidden`).
+ *   survive `box, time, stages, pauseOnId` (S7): the arena clock runs while the player is alive inside `box` (the nave below
+ *         the landing) and not standing on `pauseOnId` (camping at the top pauses it: arena:pause, once per stop); it moves
+ *         in `stages` ratchet notches (time / stages s each: a stage is kept through a death, the clock restarts at the last
+ *         stage boundary; Abyss restarts the run anyway). Done, the objective's `after` ({ mode: 'escape' }) is what the game
+ *         lays over the section's creature (creatureOverrideFor).
+ *   nooks   (level data `nooks`: `box` = the safe volume, `block` = the path-blocking box the creature keeps out of, `budget`
+ *         per difficulty, `lure`): a Masons' rest. While the player is inside one with budget left it is their refuge
+ *         (refugeIndex; game.js hands refugeKind / refugeBlock to the creatures every frame: 1 hidden, 2 lure). The budget
+ *         runs down while inside (nook:warn `warn` s before it ends, nook:spent at 0: it stops protecting) and refills after
+ *         `refill` s outside; a lure rest spends nothing while its keystone stands. nook:enter / nook:exit on the way in / out.
  * Every verb is a ratchet: fixtures done (lamps lit, the bell struck) and haul / winch notches survive a death, a respawn
  * and a Continue (serialize / load), so a retry never repeats more than one notch.
  *
@@ -50,6 +67,11 @@
  *   lane:warn          { id, x, y, z, lead }             a rockfall lane will drop in `lead` s (x, z: its centre; y: its top)
  *   lane:on / lane:off { id, x, y, z, dur } / { id }     the stones fall for `dur` s / stop
  *   lane:hit           { id, x, y, z, amount }           a falling stone struck the player
+ *   breach:hit / breach:break  { id, x, y, z, hp, by }      a blow on the keystone (by 'mason' | 'haul') / it breaks
+ *   nook:enter / nook:exit     { id, left, lure }          into / out of a Masons' rest (left: its budget, s)
+ *   nook:warn / nook:spent     { id, left }                its budget is nearly / fully spent while inside
+ *   arena:pause                { id }                      the survive clock stops (the player stands on `pauseOnId`)
+ *   (a survive stage is an objective:progress { verb: 'survive', k, of })
  *
  * Rules (§2.4): reset() = a new run, every seal closed; markDoneThrough(i) = Continue / warp / Sandbox: the objectives of
  * the sections above section i are done, silently; reapply() after every level.reset() (seal solids are not touched by
@@ -72,7 +94,22 @@ export const BELL_GAP = 0.45;
 /** A bell strike / a haul notch is this loud for the Mason (Creature3D._onNoise 'wall': over every difficulty's noiseWall). */
 export const VERB_NOISE = 12;
 const HAUL_IN = 0.5; // yank or reel-in above this hauls
-const KIND = { hook: 0, bell: 1, haul: 2, lamp: 3, winch: 4 };
+const KIND = { hook: 0, bell: 1, haul: 2, lamp: 3, winch: 4, breach: 5, survive: 6 };
+/** Verbs that move in ratchet notches (fxN), kept through a death and in the save as `<fixture id>#<notches>`. */
+const ratchet = (k) => k === KIND.haul || k === KIND.winch || k === KIND.breach || k === KIND.survive;
+/** Masons' rests (LEVEL_FUN_PLAN item 10): the warning before a budget ends, and the time outside that refills it (s). */
+const NOOK_WARN = 5;
+const NOOK_REFILL = 20;
+
+/** {minX..maxZ} of an authored box ({ minX.. } or the `box` field), or null. */
+function readBox(o) {
+  const b = o && (o.box || o);
+  if (!b) return null;
+  const v = [b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ];
+  if (!v.every((x) => typeof x === 'number' && isFinite(x))) return null;
+  return { minX: Math.min(v[0], v[3]), minY: Math.min(v[1], v[4]), minZ: Math.min(v[2], v[5]), maxX: Math.max(v[0], v[3]), maxY: Math.max(v[1], v[4]), maxZ: Math.max(v[2], v[5]) };
+}
+const inBox = (b, x, y, z) => x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY && z >= b.minZ && z <= b.maxZ;
 /** A seal waits while the body stands on it or hangs this close (m) above its top (P4: never open under the feet) ... */
 const SEAL_FOOT_CLEAR = 1.6;
 /** ... unless a floor lies at most this far (m) under the plate there (a short, harmless drop: it opens at once). */
@@ -152,14 +189,47 @@ export class Objectives3D {
       this.seals.push(seal);
     }
 
+    // ---- P5: the Masons' rests (nooks) -------------------------------------------------------------------------
+    /** @type {{id:string, index:number, section:number, minX:number, minY:number, minZ:number, maxX:number, maxY:number, maxZ:number, block:object, budget:number, warn:number, refill:number, lure:boolean, fixture:number}[]} */
+    this.nooks = [];
+    for (const raw of live(d.nooks)) {
+      const o = tuned(raw);
+      const b = readBox(o.box);
+      if (!b) continue;
+      const blk = readBox(o.block) || { minX: b.minX - 0.5, minY: b.minY, minZ: b.minZ - 0.5, maxX: b.maxX + 0.5, maxY: b.maxY + 0.5, maxZ: b.maxZ + 0.5 };
+      const bud = o.budget && typeof o.budget === 'object' ? num(o.budget[key], num(o.budget[v], num(o.budget.normal, 25))) : num(o.budget, 25);
+      const si = secIndex(o.section);
+      this.nooks.push(
+        Object.assign(b, {
+          id: o.id,
+          index: this.nooks.length,
+          section: si >= 0 ? si : level ? level.sectionIndexAt(b.maxY) : 0,
+          block: blk,
+          budget: Math.max(0, bud),
+          warn: Math.max(0, num(o.warn, NOOK_WARN)),
+          refill: Math.max(0, num(o.refill, NOOK_REFILL)),
+          lure: o.lure === true,
+          fixture: -1, // the breach fixture whose lure this is (set below)
+          cx: (b.minX + b.maxX) / 2, // the centre (event positions)
+          cy: (b.minY + b.maxY) / 2,
+          cz: (b.minZ + b.maxZ) / 2,
+        }),
+      );
+    }
+    const nookOf = (id) => {
+      for (const n of this.nooks) if (n.id === id) return n.index;
+      return -1;
+    };
+
     // ---- objectives and their fixtures -------------------------------------------------------------------------
     const fixtures = Object.create(null);
     for (const f of live(d.fixtures)) fixtures[f.id] = tuned(f);
-    /** @type {{id:string, index:number, verb:string, section:number, seal:number, need:number, fx:number[]}[]} */
+    /** @type {{id:string, index:number, verb:string, section:number, seal:number, need:number, fx:number[], after:object|null}[]} */
     this.objectives = [];
     /**
-     * Flat fixture list: { id, obj, kind, k (KIND), anchor (hook / haul), x, y, z, hold, r, minSpeed, time, notches, charge }.
-     * Bell / lamp positions come from the data, hook / haul ones from their ring.
+     * Flat fixture list: { id, obj, kind, k (KIND), anchor (hook / haul / winch / breach ring), x, y, z, hold, r, minSpeed,
+     * time, notches, charge, hp, solid (breach), nook (breach: its lure rest), box / pause (survive) }. Bell / lamp positions
+     * come from the data, hook / haul / winch ones from their ring, a breach's from its solid, a survive's from its box.
      */
     this.fixtures = [];
     for (const raw of live(d.objectives)) {
@@ -172,11 +242,33 @@ export class Objectives3D {
         const f = fixtures[fid];
         if (!f || !(f.kind in KIND)) continue;
         let anchor = null;
+        let solid = null;
+        let box = null;
+        let px = f.x;
+        let py = f.y;
+        let pz = f.z;
         if (f.kind === 'hook' || f.kind === 'haul' || f.kind === 'winch') {
           anchor = byId[f.anchorId];
           if (!anchor || anchor.x === undefined || anchor.minX !== undefined) continue;
+        } else if (f.kind === 'breach') {
+          solid = byId[f.solidId];
+          if (!solid || solid.minX === undefined || solid.fixture !== f.id) continue;
+          const a = byId[f.anchorId];
+          anchor = a && a.x !== undefined && a.minX === undefined ? a : null; // the haul fallback's ring (optional)
+          px = (solid.minX + solid.maxX) / 2;
+          py = (solid.minY + solid.maxY) / 2;
+          pz = (solid.minZ + solid.maxZ) / 2;
+        } else if (f.kind === 'survive') {
+          box = readBox(f.box);
+          if (!box) continue;
+          px = (box.minX + box.maxX) / 2;
+          py = (box.minY + box.maxY) / 2;
+          pz = (box.minZ + box.maxZ) / 2;
         } else if (!isFinite(f.x) || !isFinite(f.y) || !isFinite(f.z)) continue;
-        if (f.kind === 'haul') anchor.haul = true; // Physics3D.step: no reel toward a haul ring
+        if (anchor && (f.kind === 'haul' || f.kind === 'breach')) anchor.haul = true; // Physics3D.step: no reel toward a haul ring
+        const pause = f.kind === 'survive' && byId[f.pauseOnId] && byId[f.pauseOnId].minX !== undefined ? byId[f.pauseOnId] : null;
+        const nook = f.kind === 'breach' ? nookOf(f.nookId) : -1;
+        if (nook >= 0) this.nooks[nook].fixture = this.fixtures.length;
         fx.push(this.fixtures.length);
         this.fixtures.push({
           id: f.id,
@@ -184,15 +276,20 @@ export class Objectives3D {
           kind: f.kind,
           k: KIND[f.kind],
           anchor,
-          x: anchor ? anchor.x : f.x,
-          y: anchor ? anchor.y : f.y,
-          z: anchor ? anchor.z : f.z,
+          solid,
+          box,
+          pause,
+          nook,
+          x: anchor && f.kind !== 'breach' ? anchor.x : px,
+          y: anchor && f.kind !== 'breach' ? anchor.y : py,
+          z: anchor && f.kind !== 'breach' ? anchor.z : pz,
           hold: Math.max(0, num(f.hold, 0)),
-          r: Math.max(0.1, num(f.r, f.kind === 'bell' ? 0.75 : 0.9)),
+          r: Math.max(0.1, num(f.r, f.kind === 'bell' ? 0.75 : f.kind === 'breach' ? 2.5 : 0.9)),
           minSpeed: Math.max(0, num(f.minSpeed, 2.5)),
-          time: Math.max(0.05, num(f.time, 1.5)),
-          notches: Math.max(1, Math.min(16, Math.round(num(f.notches, 1)))),
+          time: Math.max(0.05, num(f.kind === 'breach' ? num(f.haulTime, f.time) : f.time, f.kind === 'breach' ? 8 : f.kind === 'survive' ? 45 : 1.5)),
+          notches: Math.max(1, Math.min(16, Math.round(num(f.kind === 'survive' ? f.stages : f.notches, f.kind === 'breach' || f.kind === 'survive' ? 4 : 1)))),
           charge: Math.max(0, num(f.charge, 0)),
+          hp: Math.max(1, Math.min(255, Math.round(num(f.hp, 1)))),
         });
       }
       if (!fx.length) continue;
@@ -205,9 +302,13 @@ export class Objectives3D {
         seal: seal.index,
         need: Math.max(1, Math.min(fx.length, Math.round(num(o.need, 1)))),
         fx,
+        after: o.after && typeof o.after === 'object' ? Object.assign({}, o.after) : null,
       });
     }
     this._hasProbeVerb = this.fixtures.some((f) => f.k === KIND.lamp);
+    // a Mason's lunge reaches a keystone through the bus (the creature's own event: Objectives3D needs no creature)
+    this._hasBreach = this.fixtures.some((f) => f.k === KIND.breach);
+    if (this._hasBreach && bus && typeof bus.on === 'function') bus.on('creature:strike', (e) => this.onStrike(e));
 
     // ---- P4: movers (the run's knobs) and rockfall lanes ---------------------------------------------------------
     /** Movers3D (sim/movers3d.js) of the level's movers with this difficulty's knobs, or null. */
@@ -257,6 +358,7 @@ export class Objectives3D {
     /** Per seal: its objective is done but the player stands on it (it opens once they are off it, P4). */
     this.sealWait = new Uint8Array(nS);
     this._player = null;
+    this._tethers = null;
     this._ray = { t: 0, solid: null, x: 0, y: 0, z: 0 }; // raycast result (reused)
     this.done = new Uint8Array(nO);
     this.count = new Uint8Array(nO);
@@ -273,12 +375,24 @@ export class Objectives3D {
     /** 1 = the seal was opened by its objective in play (the view animates it); 0 = opened silently (warp, Continue, menu). */
     this.sealLoud = new Uint8Array(nS);
     this._landSeal = -1;
+    /** P5: per fixture, a breach's blows left (hp) and a survive clock's pause flag (arena:pause sent for this stop). */
+    this.fxHp = new Uint8Array(nF);
+    this.fxPause = new Uint8Array(nF);
+    /** P5: per nook, the budget left (s), the time outside since the last visit (s), inside now, warned this visit. */
+    const nN = this.nooks.length;
+    this.nookLeft = new Float32Array(nN);
+    this.nookOut = new Float32Array(nN);
+    this.nookIn = new Uint8Array(nN);
+    this.nookWarn = new Uint8Array(nN);
+    /** The nook that is the player's refuge after the last step (-1: none): game.js hands it to the creatures. */
+    this.refugeIndex = -1;
+    this._t = 0; // the game time of the last step (events from onStrike)
     // the lantern probe (setProbe, once per frame)
     this._probeOn = false;
     this._px = 0;
     this._py = 0;
     this._pz = 0;
-    this._snapLen = nO * 2 + nF * 6 + nS * 2 + nL + 2;
+    this._snapLen = nO * 2 + nF * 8 + nS * 2 + nL + nN * 4 + 3;
     this.reset();
   }
 
@@ -309,17 +423,36 @@ export class Objectives3D {
     this._landSeal = -1;
     this._probeOn = false;
     this.clock = 0;
+    for (let i = 0; i < this.fixtures.length; i++) this.fxHp[i] = this.fixtures[i].hp;
+    this.fxPause.fill(0);
+    this._refillNooks();
     this._pose();
     this._sync();
   }
 
-  /** After every level.reset(): the solids of open seals inactive, the closed ones active (and the ring cues). */
+  /**
+   * After every level.reset() (a respawn): the solids of open seals inactive, the closed ones active (and the ring cues). A
+   * haul / winch / breach pull between two notches slips back to the last one, an unfinished relight goes out, a survive
+   * clock restarts at its last stage boundary (the ratchet keeps the rest); every rest's budget is full again.
+   */
   reapply() {
-    // a pull between two notches slips back to the last one, an unfinished relight goes out (the ratchet keeps the rest)
-    for (let i = 0; i < this.fixtures.length; i++) this._slip(i);
+    for (let i = 0; i < this.fixtures.length; i++) {
+      this._slip(i);
+      if (this.fixtures[i].k === KIND.survive) this.fxT[i] = (this.fxN[i] * this.fixtures[i].time) / this.fixtures[i].notches;
+    }
+    this.fxPause.fill(0);
+    this._refillNooks();
     this._probeOn = false;
     this._pose();
     this._sync();
+  }
+
+  _refillNooks() {
+    for (let i = 0; i < this.nooks.length; i++) this.nookLeft[i] = this.nooks[i].budget;
+    this.nookOut.fill(0);
+    this.nookIn.fill(0);
+    this.nookWarn.fill(0);
+    this.refugeIndex = -1;
   }
 
   /** Continue / warp / Sandbox: every objective of a section above section `i` is done (silently, no events). */
@@ -413,7 +546,7 @@ export class Objectives3D {
       let part = 0;
       for (const fi of o.fx) {
         const f = this.fixtures[fi];
-        if ((f.k === KIND.haul || f.k === KIND.winch) && !this.fxDone[fi]) part = Math.max(part, this.fxN[fi] / f.notches);
+        if (ratchet(f.k) && !this.fxDone[fi]) part = Math.max(part, this.fxN[fi] / f.notches);
       }
       return Math.min(1, (this.count[o.index] + part) / o.need);
     }
@@ -457,6 +590,8 @@ export class Objectives3D {
       intent = null;
     }
     this._player = player || null;
+    this._tethers = tethers || null;
+    this._t = num(t, this._t);
     const t0 = this.clock;
     this.clock = t0 + dt;
     if (this.movers) this.movers.pose(this.clock);
@@ -483,10 +618,13 @@ export class Objectives3D {
             this.fxT[i] += dt;
             if (this.fxT[i] >= f.hold) this._fixtureDone(i, t);
           } else this.fxT[i] = 0;
-        } else if (f.k === KIND.haul) {
-          const on = (f.anchor === L && (yankL || reelIn)) || (f.anchor === R && (yankR || reelIn));
+        } else if (f.k === KIND.haul || f.k === KIND.breach) {
+          // (a breach without its ring has no haul fallback: only the Mason breaks it)
+          const on = !!f.anchor && ((f.anchor === L && (yankL || reelIn)) || (f.anchor === R && (yankR || reelIn)));
           if (on) this._haul(i, f, dt, t);
           else this._slip(i);
+        } else if (f.k === KIND.survive) {
+          this._survive(i, f, player, dt, t);
         } else if (f.k === KIND.winch) {
           // the turning gear hauls while a line bites its ring (no input: the machine does the work)
           if (f.anchor === L || f.anchor === R) this._haul(i, f, dt, t);
@@ -504,6 +642,123 @@ export class Objectives3D {
       for (let s = 0; s < this.sealWait.length; s++) if (this.sealWait[s] && !this._underFoot(this.seals[s], player)) this._openWaiting(s);
       this._land(player);
     }
+    if (this.nooks.length) this._stepNooks(dt, player);
+  }
+
+  /**
+   * The survive clock (P5, S7): runs while the player is alive inside the box and not standing on the pause solid, in
+   * ratchet stages (objective:progress per stage, done at the last); the first step it stands still after starting sends
+   * arena:pause.
+   */
+  _survive(i, f, p, dt, t) {
+    if (!p || !p.alive) return;
+    const paused = !!f.pause && p.grounded && p.groundSolid === f.pause;
+    if (!paused && inBox(f.box, p.x, p.y, p.z)) {
+      this.fxPause[i] = 0;
+      this._haul(i, f, dt, t);
+    } else if (paused && this.fxT[i] > 0 && !this.fxPause[i]) {
+      this.fxPause[i] = 1;
+      if (this.bus) this.bus.emit('arena:pause', { id: f.id, k: this.fxN[i], of: f.notches });
+    }
+  }
+
+  /** The Masons' rests (P5): occupancy, budget, warnings and the player's refuge for the creatures. */
+  _stepNooks(dt, p) {
+    this.refugeIndex = -1;
+    const alive = !!p && p.alive !== false;
+    for (let i = 0; i < this.nooks.length; i++) {
+      const n = this.nooks[i];
+      const inside = alive && inBox(n, p.x, p.y, p.z);
+      if (inside) {
+        if (!this.nookIn[i]) {
+          this.nookIn[i] = 1;
+          this.nookOut[i] = 0;
+          this.nookWarn[i] = 0;
+          if (this.bus) this.bus.emit('nook:enter', { id: n.id, left: this.nookLeft[i], lure: this._lureOn(n), x: n.cx, y: n.cy, z: n.cz });
+        }
+        // the lure rest spends nothing while its keystone stands (the Mason is meant to come)
+        if (!this._lureOn(n) && this.nookLeft[i] > 0) {
+          const before = this.nookLeft[i];
+          const left = Math.max(0, before - dt);
+          this.nookLeft[i] = left;
+          if (!this.nookWarn[i] && before > n.warn && left <= n.warn && left > 0) {
+            this.nookWarn[i] = 1;
+            if (this.bus) this.bus.emit('nook:warn', { id: n.id, left, x: n.cx, y: n.cy, z: n.cz });
+          }
+          if (left <= 0 && this.bus) this.bus.emit('nook:spent', { id: n.id, left: 0, x: n.cx, y: n.cy, z: n.cz });
+        }
+        if ((this._lureOn(n) || this.nookLeft[i] > 0) && this.refugeIndex < 0) this.refugeIndex = i;
+      } else {
+        if (this.nookIn[i]) {
+          this.nookIn[i] = 0;
+          if (this.bus) this.bus.emit('nook:exit', { id: n.id, left: this.nookLeft[i], x: n.cx, y: n.cy, z: n.cz });
+        }
+        if (this.nookLeft[i] < n.budget) {
+          this.nookOut[i] += dt;
+          if (this.nookOut[i] >= n.refill) {
+            this.nookLeft[i] = n.budget; // a while outside and the rest protects again
+            this.nookOut[i] = 0;
+          }
+        }
+      }
+    }
+  }
+
+  /** A lure rest whose keystone still stands (it attacks there; the stone takes it). */
+  _lureOn(n) {
+    return n.lure && n.fixture >= 0 && !this.fixtureDone(n.fixture);
+  }
+
+  /** The player's refuge for the creatures (Creature3D.setRefuge): 0 none, 1 hidden in a rest, 2 the lure (keystone standing). */
+  get refugeKind() {
+    const i = this.refugeIndex;
+    if (i < 0) return 0;
+    return this._lureOn(this.nooks[i]) ? 2 : 1;
+  }
+
+  /** The path-blocking box of the player's refuge (the creatures keep out of it), or null. */
+  get refugeBlock() {
+    const i = this.refugeIndex;
+    return i < 0 ? null : this.nooks[i].block;
+  }
+
+  /** Index of nook `id` (-1: none in this variant). */
+  nookIndex(id) {
+    for (let i = 0; i < this.nooks.length; i++) if (this.nooks[i].id === id) return i;
+    return -1;
+  }
+
+  /**
+   * The creature config an objective lays over section `si` once it is done (its `after`: S7's { mode: 'escape' }), or null.
+   * game.js hands it to Creature3D.setOverride on objective:done, on a respawn, a warp and a section change.
+   */
+  creatureOverrideFor(si) {
+    for (const o of this.objectives) if (o.section === si && o.after && this.done[o.index]) return o.after;
+    return null;
+  }
+
+  /**
+   * A creature's lunge (bus 'creature:strike', LEVEL_FUN_PLAN item 3): a Mason strike that missed the player and stopped at a
+   * keystone, at the mouth of its lure rest, or ended within `r` of it, is a blow on it (one hp); at 0 it breaks (the
+   * objective's fixture is done: the seal plug drops). Skitterlings' bites never count. Returns true when it was a blow.
+   */
+  onStrike(e) {
+    if (!e || e.hit || e.skit || !this._hasBreach) return false;
+    const F = this.fixtures;
+    let hitAny = false;
+    for (let i = 0; i < F.length; i++) {
+      const f = F[i];
+      if (f.k !== KIND.breach || this.fxDone[i] || this.done[f.obj]) continue;
+      const atStone = !!f.solid && e.stop === f.solid.id;
+      const atRest = e.stop === 'rest' && f.nook >= 0 && this.refugeIndex === f.nook;
+      const near = Math.hypot(num(e.x, 1e9) - f.x, num(e.y, 1e9) - f.y, num(e.z, 1e9) - f.z) <= f.r;
+      if (!atStone && !atRest && !near) continue;
+      hitAny = true;
+      this.fxHp[i] = Math.max(0, this.fxHp[i] - 1);
+      if (this.bus) this.bus.emit('breach:hit', { id: f.id, x: f.x, y: f.y, z: f.z, hp: this.fxHp[i], by: 'mason' });
+      if (this.fxHp[i] <= 0) this._fixtureDone(i, this._t, VERB_NOISE, 'mason');
+    }
+    return hitAny;
   }
 
   /**
@@ -563,11 +818,28 @@ export class Objectives3D {
     } else {
       if (p.x < s.minX - 0.4 || p.x > s.maxX + 0.4 || p.z < s.minZ - 0.4 || p.z > s.maxZ + 0.4) return false;
       if (!(p.y > s.bottom && p.y < s.top + SEAL_FOOT_CLEAR)) return false;
+      if (this._held()) return false; // hanging on a sound line (P5: the S7 iris opens under a body that hangs on)
     }
     const L = this.level;
     if (!L || typeof L.raycast !== 'function') return true;
     // the plates themselves are skipped: the ray starts under the seal's bottom face
     return !L.raycast(p.x, s.bottom - 0.02, p.z, 0, -1, 0, SEAL_SAFE_DROP, this._ray);
+  }
+
+  /**
+   * Does a rope hold the body up (a hand on an anchor that is not a haul ring, a winch-like housing or broken)? A haul ring
+   * (the counterweight, the keystone's) never carries you, and the keystone's goes with the stone.
+   */
+  _held() {
+    const T = this._tethers;
+    const hands = T && T.hands;
+    if (!hands) return false;
+    for (const h of ['left', 'right']) {
+      const st = hands[h];
+      const a = st && st.rope && st.rope.attached ? st.rope.anchor : null;
+      if (a && !a.haul && !a.hidden && !a.broken) return true;
+    }
+    return false;
   }
 
   /** A seal that waited for the player to get off it opens (loud: it slides away in view). */
@@ -616,27 +888,38 @@ export class Objectives3D {
     if (!this.fxDone[i] && !this.done[f.obj]) this._fixtureDone(i, t);
   }
 
-  /** Hauling fixture i for dt (a haul or a winch): a notch per time / notches (loud), done at the last. */
+  /**
+   * Running fixture i's ratchet for dt (a haul, a winch, a breach's haul fallback, a survive clock): a notch per
+   * time / notches, done at the last. Every notch is loud (a Mason noise) except a survive stage.
+   */
   _haul(i, f, dt, t) {
     this.fxT[i] += dt;
     const per = f.time / f.notches;
     const n = Math.min(f.notches, Math.floor(this.fxT[i] / per + 1e-6));
     if (n <= this.fxN[i]) return;
     this.fxN[i] = n;
+    const noise = f.k === KIND.survive ? 0 : VERB_NOISE;
     if (n >= f.notches) {
-      this._fixtureDone(i, t, VERB_NOISE);
+      this._fixtureDone(i, t, noise, 'haul');
       return;
     }
     const o = this.objectives[f.obj];
-    // (the ring's position now: a winch ring moves)
-    const a = f.anchor;
-    if (this.bus) this.bus.emit('objective:progress', { id: o.id, fixture: f.id, verb: f.kind, k: n, of: f.notches, x: a ? a.x : f.x, y: a ? a.y : f.y, z: a ? a.z : f.z, noise: VERB_NOISE });
+    // where it sounds: the ring now (a winch ring moves), the keystone, the iris (a survive stage withdraws one of its bolts)
+    const q = this._where(f, o);
+    if (this.bus) this.bus.emit('objective:progress', { id: o.id, fixture: f.id, verb: f.kind, k: n, of: f.notches, x: q.x, y: q.y, z: q.z, noise });
   }
 
-  /** Not hauling / not lighting: a haul or a winch slips back to its last notch, a relight goes out. */
+  /** The position an event of fixture f sounds at: its ring (hook / haul / winch), the keystone, or its seal (survive). */
+  _where(f, o) {
+    if (f.k === KIND.survive) return this.seals[o.seal];
+    if (f.k === KIND.breach || !f.anchor) return f;
+    return f.anchor;
+  }
+
+  /** Not hauling / not lighting: a haul, a winch or a breach's haul slips back to its last notch, a relight goes out. */
   _slip(i) {
     const f = this.fixtures[i];
-    if (f.k === KIND.haul || f.k === KIND.winch) this.fxT[i] = (this.fxN[i] * f.time) / f.notches;
+    if (f.k === KIND.haul || f.k === KIND.winch || f.k === KIND.breach) this.fxT[i] = (this.fxN[i] * f.time) / f.notches;
     else if (f.k === KIND.lamp || f.k === KIND.hook) this.fxT[i] = 0;
   }
 
@@ -655,31 +938,33 @@ export class Objectives3D {
     if (this.bus) this.bus.emit('seal:land', { id: this.seals[si].id, x: p.x, y: p.y, z: p.z });
   }
 
-  _fixtureDone(i, t, noise) {
+  _fixtureDone(i, t, noise, by) {
     const f = this.fixtures[i];
     const o = this.objectives[f.obj];
     this.fxDone[i] = 1;
-    const haul = f.k === KIND.haul || f.k === KIND.winch;
+    const haul = ratchet(f.k);
     if (haul) this.fxN[i] = f.notches;
+    if (f.k === KIND.breach) this.fxHp[i] = 0;
     this.count[o.index]++;
     if (this.bus) {
-      const a = f.anchor;
+      if (f.k === KIND.breach) this.bus.emit('breach:break', { id: f.id, x: f.x, y: f.y, z: f.z, hp: 0, by: by || 'haul' });
+      const q = this._where(f, o);
       this.bus.emit('objective:progress', {
         id: o.id,
         fixture: f.id,
         verb: f.kind,
         k: haul ? f.notches : this.count[o.index],
         of: haul ? f.notches : o.need,
-        x: a ? a.x : f.x,
-        y: a ? a.y : f.y,
-        z: a ? a.z : f.z,
+        x: q.x,
+        y: q.y,
+        z: q.z,
         noise: noise || 0,
       });
     }
     if (this.count[o.index] >= o.need) {
       this._complete(o, true, t);
       this._sync();
-    } else if (f.anchor) this._sync();
+    } else if (f.anchor || f.solid) this._sync();
   }
 
   /**
@@ -707,7 +992,10 @@ export class Objectives3D {
     }
   }
 
-  /** Seal solids follow the open flags; the rings of undone hook / haul / winch fixtures carry `sealKey` (the view's cue). */
+  /**
+   * Seal solids follow the open flags; the rings of undone hook / haul / winch / breach fixtures carry `sealKey` (the view's
+   * cue); a keystone stands (its solid active, its ring there) until it is broken, then both are gone.
+   */
   _sync() {
     for (const s of this.seals) {
       const active = !this.sealOpen[s.index];
@@ -715,7 +1003,12 @@ export class Objectives3D {
     }
     for (let i = 0; i < this.fixtures.length; i++) {
       const f = this.fixtures[i];
-      if (f.anchor) f.anchor.sealKey = this.done[f.obj] || this.fxDone[i] ? 0 : 1;
+      const done = this.done[f.obj] || this.fxDone[i];
+      if (f.anchor) f.anchor.sealKey = done ? 0 : 1;
+      if (f.k === KIND.breach) {
+        if (f.solid) f.solid.active = !done;
+        if (f.anchor) f.anchor.hidden = !!done; // the ring falls with the stone: not targetable, a line on it lets go
+      }
     }
   }
 
@@ -732,13 +1025,22 @@ export class Objectives3D {
       s[j++] = this.fxHitT[i];
       s[j++] = this.fxHitX[i];
       s[j++] = this.fxHitZ[i];
+      s[j++] = this.fxHp[i];
+      s[j++] = this.fxPause[i];
     }
     for (let i = 0; i < this.sealOpen.length; i++) {
       s[j++] = this.sealOpen[i];
       s[j++] = this.sealWait[i];
     }
     for (let i = 0; i < this.laneHit.length; i++) s[j++] = this.laneHit[i];
+    for (let i = 0; i < this.nooks.length; i++) {
+      s[j++] = this.nookLeft[i];
+      s[j++] = this.nookOut[i];
+      s[j++] = this.nookIn[i];
+      s[j++] = this.nookWarn[i];
+    }
     s[j++] = this.clock;
+    s[j++] = this.refugeIndex;
     s[j] = this._landSeal;
     return s;
   }
@@ -755,13 +1057,22 @@ export class Objectives3D {
       this.fxHitT[i] = s[j++];
       this.fxHitX[i] = s[j++];
       this.fxHitZ[i] = s[j++];
+      this.fxHp[i] = s[j++];
+      this.fxPause[i] = s[j++];
     }
     for (let i = 0; i < this.sealOpen.length; i++) {
       this.sealOpen[i] = s[j++];
       this.sealWait[i] = s[j++];
     }
     for (let i = 0; i < this.laneHit.length; i++) this.laneHit[i] = s[j++];
+    for (let i = 0; i < this.nooks.length; i++) {
+      this.nookLeft[i] = s[j++];
+      this.nookOut[i] = s[j++];
+      this.nookIn[i] = s[j++];
+      this.nookWarn[i] = s[j++];
+    }
     this.clock = s[j++];
+    this.refugeIndex = s[j++];
     this._landSeal = s[j];
     this._pose(); // the movers and lanes are functions of the clock: the look-ahead rewinds them with it
     this._sync();
@@ -771,7 +1082,8 @@ export class Objectives3D {
   // ---- save (meta/save.js run.objectives) ---------------------------------------------------------------------------
   /**
    * The ratchet as strings: the ids of the objectives done, then for those not done yet the ids of their fixtures done
-   * (lamps lit, a bell struck) and `<haul / winch fixture id>#<notches>` for a haul or a winch part-way.
+   * (lamps lit, a bell struck) and `<fixture id>#<notches>` for a haul, a winch, a keystone's haul or a survive clock
+   * part-way (P5: `arena-s7#2` = two stages of the nave survived).
    */
   serialize() {
     const out = [];
@@ -780,7 +1092,7 @@ export class Objectives3D {
       const f = this.fixtures[i];
       if (this.done[f.obj]) continue;
       if (this.fxDone[i]) out.push(f.id);
-      else if ((f.k === KIND.haul || f.k === KIND.winch) && this.fxN[i] > 0) out.push(`${f.id}#${this.fxN[i]}`);
+      else if (ratchet(f.k) && this.fxN[i] > 0) out.push(`${f.id}#${this.fxN[i]}`);
     }
     return out;
   }
@@ -803,7 +1115,7 @@ export class Objectives3D {
       if (this.done[f.obj] || this.fxDone[i]) continue;
       if (h > 0) {
         const k = Math.round(Number(e.slice(h + 1)));
-        if ((f.k !== KIND.haul && f.k !== KIND.winch) || !(k > 0)) continue;
+        if (!ratchet(f.k) || !(k > 0)) continue;
         if (k >= f.notches) this._markFixture(i);
         else {
           this.fxN[i] = Math.max(this.fxN[i], k);
@@ -824,7 +1136,8 @@ export class Objectives3D {
     const f = this.fixtures[i];
     const o = this.objectives[f.obj];
     this.fxDone[i] = 1;
-    if (f.k === KIND.haul || f.k === KIND.winch) this.fxN[i] = f.notches;
+    if (ratchet(f.k)) this.fxN[i] = f.notches;
+    if (f.k === KIND.breach) this.fxHp[i] = 0;
     this.count[o.index]++;
     if (this.count[o.index] >= o.need) this._complete(o, false);
   }

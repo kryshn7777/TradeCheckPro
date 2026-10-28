@@ -186,12 +186,22 @@ export class Level3D {
     // climb edges, lightmap / GI bakes and hashes), but in every collision / sight query (querySolids). They are built OPEN
     // (inactive): a level without an Objectives3D plays exactly as before; Objectives3D.reset() closes them.
     const sealSolids = [];
+    // Fixture solids (data field `fixture` = the fixture id, LEVEL_FUN_PLAN P5: the S5 keystone) follow the same rule: out of
+    // `solids` (no bake, no hash, no dressing, no climb edge), in every collision / sight query, built inactive (a level without
+    // an Objectives3D has no keystone); Objectives3D owns their `active` flag.
+    const fixtureSolids = [];
     this.solids = this._build(d.solids, 'sol', (o, id) => {
       const b = readBox(o);
       if (!b) return null;
       if (typeof o.seal === 'string' && o.seal) {
         sealSolids.push(
           Object.assign(b, { id, kind: 'grate', seal: o.seal, section: this.sectionIndexAt((b.minY + b.maxY) / 2), active: false, load: 0, life: 1, fallen: false, tag: o.tag || 'seal' }),
+        );
+        return null;
+      }
+      if (typeof o.fixture === 'string' && o.fixture) {
+        fixtureSolids.push(
+          Object.assign(b, { id, kind: o.kind || 'breach', fixture: o.fixture, section: this.sectionIndexAt((b.minY + b.maxY) / 2), active: false, load: 0, life: 1, fallen: false, tag: o.tag || 'fixture' }),
         );
         return null;
       }
@@ -363,9 +373,11 @@ export class Level3D {
     // Seals join the queries only now: the climb edges above are built from the level without them.
     this.sealSolids = sealSolids;
     this._sealIndex = sealSolids.length ? new YIndex(sealSolids, (s) => s.minY, (s) => s.maxY) : null;
+    this.fixtureSolids = fixtureSolids;
+    this._fixtureIndex = fixtureSolids.length ? new YIndex(fixtureSolids, (s) => s.minY, (s) => s.maxY) : null;
 
     this.byId = Object.create(null);
-    for (const list of [this.solids, this.sealSolids, this.hazards, this.anchors, this.decor, this.climb]) {
+    for (const list of [this.solids, this.sealSolids, this.fixtureSolids, this.hazards, this.anchors, this.decor, this.climb]) {
       for (const o of list) this.byId[o.id] = o;
     }
   }
@@ -434,6 +446,7 @@ export class Level3D {
   querySolids(minX, minY, minZ, maxX, maxY, maxZ, out) {
     this._queryBoxes(this._solidIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
     if (this._sealIndex) this._queryBoxes(this._sealIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
+    if (this._fixtureIndex) this._queryBoxes(this._fixtureIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
     if (this.decorSolids.length) {
       if (!this._decorIndex) this._decorIndex = new YIndex(this.decorSolids, (s) => s.minY, (s) => s.maxY);
       this._queryBoxes(this._decorIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
@@ -547,9 +560,10 @@ export class Level3D {
    * Line of sight: does any ACTIVE solid block the segment p0 → p1? The last
    * `endClearance` metres before p1 are ignored (an anchor bolted into a
    * ceiling is still reachable) and boxes are inset by 5 cm so grazing an
-   * edge does not count.
+   * edge does not count. `skipKind` (optional): solids of that kind do not block (the creature's sense of you ignores the
+   * S5 keystone, kind 'breach': LEVEL_FUN_PLAN P5).
    */
-  segmentBlocked(x0, y0, z0, x1, y1, z1, endClearance) {
+  segmentBlocked(x0, y0, z0, x1, y1, z1, endClearance, skipKind) {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dz = z1 - z0;
@@ -567,7 +581,7 @@ export class Level3D {
     );
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
-      if (s.active === false) continue;
+      if (s.active === false || (skipKind && s.kind === skipKind)) continue;
       if (U.segmentBox(x0, y0, z0, ex, ey, ez, s, LOS_INSET) >= 0) return true;
     }
     return false;

@@ -793,6 +793,14 @@ SEAL('seal-s7-ne', 'seal-s7', -2, 18, -424.6, -424, -20, 0);
 SEAL('seal-s7-sw', 'seal-s7', -22, -2, -424.6, -424, 0, 20);
 SEAL('seal-s7-se', 'seal-s7', -2, 18, -424.6, -424, 0, 20);
 
+// THE KEYSTONE (LEVEL_FUN_PLAN P5, item 3: S5's objective `key-s5`): an iron-banded keystone prop on the last step of the
+// Gullet stair, 1.4 m out from the west wall: the niche behind it is the lure (NOOKS below). Wait in there and let the Mason
+// knock: its lunge stops at the stone and breaks it, and the plug under the stair drops. Or hook the ring on its face and
+// haul it (loud: it usually comes first). A fixture solid (`fixture`): Level3D keeps it out of `level.solids` like the
+// seal plates (no bake, no hash, no dressing), Objectives3D owns its `active` flag. Declared after every chainRing.
+S('key-s5-stone', -19.6, -19, -200, -197.5, -2.6, -0.2, 'breach', { fixture: 'key-s5' });
+A('key-s5-ring', -18.75, -198.6, -1.4, 'ring', 'objective', { normal: { x: 1, y: 0, z: 0 } });
+
 /** The seals: `ids` = their solids; `open` = how the view opens them ('slide': the two leaves part toward the walls). */
 const seals = [
   { id: 'seal-s1', section: 's1', ids: ['seal-s1-floor'], open: 'slide' },
@@ -814,6 +822,12 @@ const seals = [
  * P4 verb:
  *   winch S3: a rope biting `anchorId` (the ring on the turning gear, MOVERS) for `time` s, in `notches` ratchet steps (the
  *         gear hauls: no input; a line pulled off as the ring turns into the wall keeps its notches)
+ * P5 verbs (the Mason):
+ *   breach  S5: the keystone `solidId` breaks under `hp` Mason lunges (stopped at it, at the mouth of its lure rest `nookId`,
+ *           or ending within `r` m of it); fallback at once: haul its ring `anchorId` for `haulTime` s in `notches` notches
+ *   survive S7: hang on in the nave (`box`, not standing on `pauseOnId`) for `time` s in `stages` stages (a stage is kept
+ *           through a death); `boltOrder` = the order the view withdraws the iris's four bolts (the one over the S8 landing
+ *           last); the seal opens at the last stage
  */
 const fixtures = [
   { id: 'bell-s1', kind: 'bell', x: -1.5, y: -4.2, z: -1, r: 0.75, minSpeed: 2.5, by: { nightmare: { minSpeed: 3 }, abyss: { minSpeed: 3.5 } } },
@@ -822,13 +836,11 @@ const fixtures = [
   { id: 'lamp-s4a', kind: 'lamp', x: -16, y: -104.5, z: -23.4, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // catwalk end
   { id: 'lamp-s4b', kind: 'lamp', x: -12.15, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // east rail
   { id: 'lamp-s4c', kind: 'lamp', x: -19.85, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // west rail
-  { id: 'fx-s5', kind: 'hook', anchorId: 's5-h4', hold: 0 },
-  { id: 'fx-s5-fast', kind: 'hook', anchorId: 's5-f1', hold: 0 },
+  { id: 'key-s5', kind: 'breach', solidId: 'key-s5-stone', anchorId: 'key-s5-ring', nookId: 'nook-s5', hp: 1, r: 2.5, haulTime: 8, notches: 4, by: { nightmare: { haulTime: 10 }, abyss: { haulTime: 12 } } },
   { id: 'fx-s6-safe', kind: 'hook', anchorId: 's6-sa3', hold: 0 },
   { id: 'fx-s6-risk', kind: 'hook', anchorId: 's6-ra3', hold: 0 },
-  { id: 'fx-s7-spiral', kind: 'hook', anchorId: 's7-n6', hold: 0 },
-  { id: 'fx-s7-spire', kind: 'hook', anchorId: 's7-sp1', hold: 0 },
-  { id: 'fx-s7-fast', kind: 'hook', anchorId: 's7-f3', hold: 0 },
+  // the nave below the landing (the landing pauses the clock: camping at the top does not count)
+  { id: 'arena-s7', kind: 'survive', box: { minX: -52, maxX: 28, minY: -424, maxY: -292, minZ: -40, maxZ: 40 }, pauseOnId: 's7-landing', time: 45, stages: 4, boltOrder: ['seal-s7-sw', 'seal-s7-se', 'seal-s7-nw', 'seal-s7-ne'], by: { nightmare: { time: 60 }, abyss: { time: 60 } } },
 ];
 /** One objective per sealed section: `need` of its fixtures `ids` done opens `sealId` (`by[difficulty]` overrides, as section.creature). */
 const objectives = [
@@ -836,10 +848,37 @@ const objectives = [
   { id: 'obj-s2', section: 's2', verb: 'haul', sealId: 'seal-s2', ids: ['cw-s2'], need: 1 },
   { id: 'obj-s3', section: 's3', verb: 'winch', sealId: 'seal-s3', ids: ['winch-s3'], need: 1 },
   { id: 'obj-s4', section: 's4', verb: 'lamp', sealId: 'seal-s4', ids: ['lamp-s4a', 'lamp-s4b', 'lamp-s4c'], need: 3 },
-  { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5', 'fx-s5-fast'], need: 1 },
+  { id: 'obj-s5', section: 's5', verb: 'breach', sealId: 'seal-s5', ids: ['key-s5'], need: 1 },
   { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
-  { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire', 'fx-s7-fast'], need: 1 },
+  // done: the Mason turns from frenzy to escape (it pushes you down through the open floor; S8 is escape anyway)
+  { id: 'obj-s7', section: 's7', verb: 'survive', sealId: 'seal-s7', ids: ['arena-s7'], need: 1, after: { mode: 'escape' } },
 ];
+
+// =============================================================================
+// NOOKS (LEVEL_FUN_PLAN P5, item 10): the Masons' rests. A lamp-lit corner marked with a carved glyph (S4: a plaque says it)
+// the Mason cannot follow into: `box` = the safe volume (the body's centre inside it), `block` = the path-blocking box its head
+// and its lunges keep out of (creature-only: not a level solid, nothing baked). Inside, with budget left, no attack starts,
+// its stall clock is frozen (hiding does not refresh it) and it holds at its stalking distance and listens; `budget` s per
+// visit (refilled after 20 s outside; 5 s before the end "[Stone scraping at the opening]"; spent, the rest stops protecting:
+// no soft-lock). `lure`: the S5 keystone niche: there it attacks as ever, no strike ever hits and the stone takes the blow
+// (no budget spent while the keystone stands; after the break it is a plain rest). No rest on a fast line, none in S8.
+// =============================================================================
+const nooks = [
+  // S4: the catwalk's far end, by its end lamp (the one you relight), out over the Vault
+  { id: 'nook-s4', section: 's4', box: { minX: -19.7, maxX: -12.3, minY: -105, maxY: -102, minZ: -24, maxZ: -20.5 }, block: { minX: -21, maxX: -11, minY: -106.5, maxY: -100.5, minZ: -25.5, maxZ: -19.5 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+  // S5: the lure, the niche behind the keystone on the last step (west wall)
+  { id: 'nook-s5', section: 's5', lure: true, box: { minX: -21, maxX: -19.6, minY: -200, maxY: -197.4, minZ: -2.9, maxZ: -0.1 }, block: { minX: -21, maxX: -18.6, minY: -200.5, maxY: -196, minZ: -3.4, maxZ: 0.6 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+  // S6: the long stair's third shelf, its north-west corner under the wall lamp (safe line only)
+  { id: 'nook-s6', section: 's6', box: { minX: -34, maxX: -30.5, minY: -242, maxY: -239, minZ: -11, maxZ: -3 }, block: { minX: -34, maxX: -29.6, minY: -243, maxY: -237.5, minZ: -11, maxZ: -2.2 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+];
+// how each rest is told: the plaque (S4, the plan's one), the lure's plaque (S5), a carved glyph band at each (no light: the
+// rests sit by lamps that are already there; plaques and glyphs are not in the lightmap / GI hashes)
+dec('plaque', -18.2, -103.75, -23.88, 2.6, 0.55, 0.15, PI, { text: "THE MASONS' REST. IT CANNOT FOLLOW." });
+dec('plaque', -20.92, -198.4, 1.6, 0.15, 0.6, 1.6, -PI / 2, { text: 'LET IT KNOCK.' });
+dec('glyphs', -20.95, -197.6, -1.4, 0.1, 0.6, 1.8, -PI / 2);
+dec('glyphs', -33.95, -240.9, -8.6, 0.1, 0.7, 1.8, -PI / 2);
+// S7 (item 11): the teach line on a tablet at the landing's north lip, facing the checkpoint
+dec('tablet', -12, -287.3, -10.6, 2.6, 1.4, 0.2, PI, { text: 'THE NAVE OPENS FOR THOSE WHO HANG.' });
 
 // =============================================================================
 // MOVERS AND LANES (LEVEL_FUN_PLAN P4 "machines", items 7 and 9)
@@ -883,8 +922,9 @@ const routes = [
   { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-winch', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
   { id: 'r-s4-fast', fork: 'fork-s4', section: 's4', line: 'fast', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk'] },
   { id: 'r-s4-safe', fork: 'fork-s4', section: 's4', line: 'safe', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk', 's4-shelf', 's4-plinth'] },
-  { id: 'r-s5-fast', fork: 'fork-s5', section: 's5', line: 'fast', ids: ['s5-f1', 's5-f2', 's5-f3'], stops: [] },
-  { id: 'r-s5-safe', fork: 'fork-s5', section: 's5', line: 'safe', ids: ['s5-h1', 's5-h2', 's5-h3', 's5-h4', 's5-h5', 's5-h6', 's5-h7'], stops: ['s5-step1', 's5-step3', 's5-step4', 's5-step5', 's5-step6'] },
+  // P5: both lines meet the keystone's ring (the safe line from the last step, the fast line from its sound hook)
+  { id: 'r-s5-fast', fork: 'fork-s5', section: 's5', line: 'fast', ids: ['s5-f1', 's5-f2', 's5-f3', 'key-s5-ring'], stops: [] },
+  { id: 'r-s5-safe', fork: 'fork-s5', section: 's5', line: 'safe', ids: ['s5-h1', 's5-h2', 's5-h3', 's5-h4', 's5-h5', 's5-h6', 'key-s5-ring', 's5-h7'], stops: ['s5-step1', 's5-step3', 's5-step4', 's5-step5', 's5-step6'] },
   { id: 'r-s6-fast', fork: 'fork-s6', section: 's6', line: 'fast', ids: ['s6-ra1', 's6-ra2', 's6-ra3', 's6-ra4', 's6-ra5'], stops: ['s6-ledge'] },
   { id: 'r-s6-safe', fork: 'fork-s6', section: 's6', line: 'safe', ids: ['s6-sa1', 's6-sa2', 's6-sa3', 's6-sa4', 's6-sa5', 's6-sa6'], stops: ['s6-safe1', 's6-safe2', 's6-safe3', 's6-safe4', 's6-safe5'] },
   { id: 'r-s7-fast', fork: 'fork-s7', section: 's7', line: 'fast', ids: ['s7-f1', 's7-f2', 's7-f3', 's7-f4', 's7-f5', 's7-f6', 's7-f7'], stops: [] },
@@ -1208,6 +1248,8 @@ const sections = [
         text: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
         desktop: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
       },
+      // LEVEL_FUN_PLAN P5: the S5 verb (the keystone on the last step)
+      { y: -193, duration: 8, text: 'Hide behind the keystone and let it knock. Or haul its ring.', desktop: 'Hide behind the keystone and let it knock. Or haul its ring.' },
     ],
     triggers: [
       { y: -152.5, name: 'rumble', data: { intensity: 0.6 } },
@@ -1253,6 +1295,8 @@ const sections = [
         text: 'Chain the rings: fire your other hand at the next ring before you let go of this one.',
         desktop: 'Chain the rings: fire the other mouse button at the next ring before you let go of this one.',
       },
+      // LEVEL_FUN_PLAN P5: the S7 verb (survive: the floor unbolts while you hang on in the nave)
+      { y: -296, duration: 7, text: 'Hang on in the nave. The floor unbolts while you hold.', desktop: 'Hang on in the nave. The floor unbolts while you hold.' },
     ],
     triggers: [
       { y: -290, name: 'rumble', data: { intensity: 0.8 } },
@@ -1305,4 +1349,5 @@ export const LEVEL_DATA_3D = {
   routes, // the fast / safe line of every fork (see FORKS above)
   movers, // moving anchors and rockfall lanes (see MOVERS AND LANES above)
   lanes,
+  nooks, // the Masons' rests (see NOOKS above)
 };
