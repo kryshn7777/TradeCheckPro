@@ -192,6 +192,7 @@ export const DIFFICULTY = {
     aimRange: 32,
     aimConeDeg: 12,
     rayAssist: 2.4, // metres from the aim ray that still count as "aimed at"
+    moverAssist: 0.6, // + metres of ray assist on a moving ring (LEVEL_FUN_PLAN item 7, sim/movers3d.js)
     lethalImpact: 17,
     impactsLethal: true,
     fragileTime: 1.5,
@@ -211,6 +212,7 @@ export const DIFFICULTY = {
     aimRange: 29,
     aimConeDeg: 8,
     rayAssist: 1.8,
+    moverAssist: 0.4,
     lethalImpact: 15.5,
     impactsLethal: true,
     fragileTime: 1.05,
@@ -230,6 +232,7 @@ export const DIFFICULTY = {
     aimRange: 27,
     aimConeDeg: 6,
     rayAssist: 1.3,
+    moverAssist: 0.2,
     lethalImpact: 14.5,
     impactsLethal: true,
     fragileTime: 0.8,
@@ -249,6 +252,7 @@ export const DIFFICULTY = {
     aimRange: 32,
     aimConeDeg: 12,
     rayAssist: 2.4,
+    moverAssist: 0.6,
     lethalImpact: 17,
     impactsLethal: false,
     fragileTime: 1.5,
@@ -294,6 +298,7 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
@@ -366,6 +371,7 @@ export function sanitizeUxSettings(s) {
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
   s.reducedEffects = s.reducedEffects === true;
+  s.windSqualls = s.windSqualls !== false;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   sanitizeTouchSettings(s);
   return s;

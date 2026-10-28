@@ -220,10 +220,16 @@ export class Rope3D {
   pull(p, dt) {
     const R = C.rope;
     this.catchSpeed = 0;
+    // A moving anchor (LEVEL_FUN_PLAN item 7, sim/movers3d.js; E15): the stretch rate is the body's speed RELATIVE to the
+    // anchor along the line (a static anchor has vx = vy = vz = 0: the same numbers as before, bit for bit).
+    const an = this.anchor;
+    const rvx = p.vx - (an.vx || 0); // (|| 0: anchors made by hand in tools / tests carry no velocity)
+    const rvy = p.vy - (an.vy || 0);
+    const rvz = p.vz - (an.vz || 0);
     let grip = 1;
     if (this.rampT < R.attachRamp) {
       // The faster the body is running out on the line, the faster the brake takes hold (a fall arrest must not wait).
-      const vOut = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+      const vOut = rvx * this.nx + rvy * this.ny + rvz * this.nz;
       this.rampT += dt * (1 + (vOut > 0 ? vOut : 0) / R.attachRampSpeed);
       const u = this.rampT >= R.attachRamp ? 1 : this.rampT / R.attachRamp;
       grip = u * u * (3 - 2 * u);
@@ -239,7 +245,7 @@ export class Rope3D {
     const tmax = R.maxTensionG * gAcc;
     const sCap = R.strainAtMax * this.length;
     const k = tmax / sCap;
-    const vr = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+    const vr = rvx * this.nx + rvy * this.ny + rvz * this.nz;
     const sdot = vr - this.dl / dt;
     const as = sdot < 0 ? -sdot : sdot;
     // Damping rises with the stretch rate and with the stretch itself (q^3: ~0 in a swing, 1 at the
@@ -325,6 +331,8 @@ export class TetherSystem {
     this.settings = settings || {};
     this._scratch = [];
     this._found = { anchor: null, score: 0 }; // reused result (callers read it immediately)
+    // aimRangeAt cache: the per-section ranges of (level, diff), and the y band of the last section asked about
+    this._reach = { level: null, diff: null, ranges: null, lo: 0, hi: -1, range: 0 };
     this.hands = {};
     for (const h of HANDS) this.hands[h] = this._makeHand(h);
   }
@@ -370,8 +378,37 @@ export class TetherSystem {
     return this.hands[hand].rope.anchor;
   }
 
+  /** The rope's maximum length: diff-wide (aimRange + 4), NOT the section reach (a lowering keeps its rope everywhere). */
   maxRopeLength() {
     return this.diff.aimRange + C.rope.maxLengthBonus;
+  }
+
+  /**
+   * The hook's targeting range (m) where the player is (LEVEL_FUN_PLAN item 5): `where` = a section index, or anything
+   * with a `y` (the player; the section of that height). Level3D.reachOf: the section's `reach` for this difficulty,
+   * never above diff.aimRange. Cached per (level, diff) and per section band: no allocation per call.
+   */
+  aimRangeAt(where) {
+    const L = this.level;
+    const c = this._reach;
+    if (!L || typeof L.reachOf !== 'function' || !L.sections || !L.sections.length) return this.diff.aimRange;
+    if (c.level !== L || c.diff !== this.diff || !c.ranges) {
+      c.level = L;
+      c.diff = this.diff;
+      c.ranges = new Float64Array(L.sections.length);
+      for (let i = 0; i < L.sections.length; i++) c.ranges[i] = L.reachOf(i, this.diff);
+      c.lo = 0;
+      c.hi = -1;
+    }
+    if (typeof where === 'number') return c.ranges[U.clamp(where | 0, 0, c.ranges.length - 1)];
+    const y = where && typeof where.y === 'number' ? where.y : NaN;
+    if (y >= c.lo && y < c.hi) return c.range;
+    const S = L.sections;
+    const i = L.sectionIndexAt(y);
+    c.lo = i === S.length - 1 ? -Infinity : S[i].yBottom;
+    c.hi = i === 0 ? Infinity : S[i - 1].yBottom;
+    c.range = c.ranges[i];
+    return c.range;
   }
 
   assist() {
@@ -388,7 +425,7 @@ export class TetherSystem {
    */
   findTarget(player, aim, hand) {
     if (!aim) return null;
-    const range = this.diff.aimRange;
+    const range = this.aimRangeAt(player); // the section's reach (LEVEL_FUN_PLAN item 5)
     const cone = this.diff.aimCone * this.assist();
     const assistR = this.diff.rayAssist * this.assist();
     const dl = len3(aim.dx, aim.dy, aim.dz);
@@ -405,9 +442,11 @@ export class TetherSystem {
     }
     let best = null;
     let bestScore = Infinity;
+    // A moving ring (LEVEL_FUN_PLAN item 7, E15) is a little easier to catch with the aim ray: + diff.moverAssist m.
+    const moverR = assistR + (this.diff.moverAssist || 0) * this.assist();
     for (let i = 0; i < list.length; i++) {
       const an = list[i];
-      if (an.broken || an === other) continue;
+      if (an.broken || an.hidden || an === other) continue; // hidden: a winch ring inside its gear's housing
       const pd = len3(an.x - player.x, an.y - player.y, an.z - player.z);
       if (pd > range || pd < 0.3) continue;
       const ox = an.x - aim.ox;
@@ -420,8 +459,9 @@ export class TetherSystem {
       const pz = oz - dz * t;
       const perp = len3(px, py, pz);
       const ang = Math.atan2(perp, t);
-      if (ang > cone && perp > assistR) continue;
-      let score = (ang / cone) * 0.6 + (Math.min(perp, assistR * 3) / assistR) * 0.8 + (pd / range) * 0.2;
+      const aR = an.dynamic ? moverR : assistR;
+      if (ang > cone && perp > aR) continue;
+      let score = (ang / cone) * 0.6 + (Math.min(perp, aR * 3) / aR) * 0.8 + (pd / range) * 0.2;
       if (an === current) score -= C.targeting.stickiness;
       if (score >= bestScore) continue;
       if (this.level.segmentBlocked(player.x, player.y, player.z, an.x, an.y, an.z, C.targeting.losEndClearance)) continue;
@@ -479,7 +519,7 @@ export class TetherSystem {
     if (a0) {
       // the aim ray itself (the creature gets annoyed when a shot passes through it, whether or not the hook finds an anchor)
       const l0 = len3(a0.dx, a0.dy, a0.dz) || 1;
-      this.bus.emit('rope:shot', { hand, ox: a0.ox, oy: a0.oy, oz: a0.oz, dx: a0.dx / l0, dy: a0.dy / l0, dz: a0.dz / l0, range: this.diff.aimRange });
+      this.bus.emit('rope:shot', { hand, ox: a0.ox, oy: a0.oy, oz: a0.oz, dx: a0.dx / l0, dy: a0.dy / l0, dz: a0.dz / l0, range: this.aimRangeAt(player) });
     }
     const found = this.findTarget(player, aim, hand);
     if (found) {
@@ -490,7 +530,7 @@ export class TetherSystem {
     const a = aim || st.lastAim;
     if (a) {
       const l = len3(a.dx, a.dy, a.dz) || 1;
-      st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.diff.aimRange * 0.85, t: 0 };
+      st.miss = { x: a.ox, y: a.oy, z: a.oz, dx: a.dx / l, dy: a.dy / l, dz: a.dz / l, len: this.aimRangeAt(player) * 0.85, t: 0 };
     }
     st.buffer = C.rope.grappleBuffer;
     this.bus.emit('rope:fire', { hand, x: player.x, y: player.y, z: player.z, target: null, dur: C.rope.missTime, buffered: false });
@@ -542,13 +582,17 @@ export class TetherSystem {
     this.bus.emit('rope:cancel', { hand, reason: reason || 'input' });
   }
 
-  /** The hook reached its target: bite if it is still sound and in reach, else it falls off. */
+  /**
+   * The hook reached its target: bite if it is still sound and in reach, else it falls off. A moving anchor (LEVEL_FUN_PLAN
+   * item 7) is met where it is NOW (the hook homes on it: the flight time was fixed at launch, the drift is at most
+   * maxSpeed x flightMax = 0.7 m); one that slid into its housing meanwhile is missed.
+   */
   _arrive(player, hand) {
     const st = this.hands[hand];
     const an = st.flightObj.target;
     this._endFlight(st);
     const d = len3(player.x - an.x, player.y - an.y, player.z - an.z);
-    if (an.broken || d > this.maxRopeLength()) {
+    if (an.broken || an.hidden || d > this.maxRopeLength()) {
       // Crumbled while the hook was in the air, or the body moved out of reach: the hook falls off.
       const l = d || 1;
       st.miss = { x: player.x, y: player.y, z: player.z, dx: (an.x - player.x) / l, dy: (an.y - player.y) / l, dz: (an.z - player.z) / l, len: d, t: C.rope.missTime * 0.45 };
@@ -616,6 +660,11 @@ export class TetherSystem {
       if (!rope.attached) continue;
       st.attachTime += dt;
       const an = rope.anchor;
+      if (an.hidden) {
+        // a winch ring turning into its gear's housing (LEVEL_FUN_PLAN item 7): the hook is pulled off it
+        this.release(player, h, 'housing');
+        continue;
+      }
       if (an.kind === 'fragile') {
         an.load = (an.load || 0) + dt;
         if (an.load >= this.diff.fragileTime * (an.life || 1)) {
@@ -649,6 +698,8 @@ export class Physics3D {
     this.health = new Health3D(diff, bus);
     // Grip climbing (climb zones in the level data, grip stamina): see sim/climb3d.js.
     this.climb = new Climb3D(level, diff, bus);
+    /** The wind squalls (LEVEL_FUN_PLAN P6): an object with windPush(player, dt) (the run's Objectives3D), or null. */
+    this.wind = null;
   }
 
   /** The climb model with the current bus (Sim swaps physics.bus for look-ahead frames). */
@@ -716,6 +767,9 @@ export class Physics3D {
 
     // ---- 2. forces -------------------------------------------------------------
     player.vy -= P.gravity * dt;
+    // LEVEL_FUN_PLAN P6: a wind squall pushes a body in the air (falling, swinging, hanging), never one on the ground
+    // (`wind` = the run's Objectives3D: a pure function of its clock and the body; null = still air).
+    if (this.wind && !player.grounded) this.wind.windPush(player, dt);
 
     let anyTaut = false;
     let attached = false;
@@ -726,11 +780,14 @@ export class Physics3D {
       attached = true;
       const taut = rope.measure(player);
       anyTaut = anyTaut || taut;
-      if (taut && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
+      // A haul ring (LEVEL_FUN_PLAN P3, sim/objectives3d.js: `anchor.haul`): the yank and the reel-in haul the counterweight
+      // instead of reeling the player toward it (comfort: hauling never moves you); letting rope out still works.
+      const haul = rope.anchor.haul === true;
+      if (taut && !haul && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
       // Grip on a tethered hand yanks that rope in hard; otherwise the shared reel axis.
       const yank = intent.hands && intent.hands[h] ? intent.hands[h].yank || 0 : 0;
-      if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
-      else rope.reel(player, intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
+      if (yank > 0.15 && !haul) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
+      else rope.reel(player, haul ? Math.min(0, intent.reel || 0) : intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
       if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel * sm, dt);
       // The line's own pull (elastic catch + slip clutch); both hands act on the same state.
       rope.pull(player, dt);
@@ -960,6 +1017,8 @@ export class Physics3D {
     // Crumbling ledges give way after being stood on.
     const gs = player.groundSolid;
     if (gs && gs.kind === 'crumble' && gs.active !== false) {
+      // the first touch is the telegraph (LEVEL_FUN_PLAN P6: the S2 span): a groan underfoot, the view shakes it from here on
+      if (!(gs.load > 0)) this.bus.emit('platform:strain', { solid: gs, x: player.x, y: gs.maxY, z: player.z, time: this.diff.crumbleTime * (gs.life || 1) });
       gs.load = (gs.load || 0) + dt;
       if (gs.load >= this.diff.crumbleTime * (gs.life || 1)) {
         gs.active = false;

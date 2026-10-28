@@ -4,9 +4,22 @@
 // Pure data, no imports: the browser e2e loads this file as-is (/__e2e/routes.mjs).
 // Each route starts standing on the section's checkpoint and ends standing on the
 // next section's checkpoint platform (S8: inside the goal). Step grammar: bot.mjs.
+// Seals (LEVEL_FUN_PLAN P1): a route starts with the seals of the sections above it open and its own closed; it opens it by
+// hooking the ring the level data names for it (s6 s6-sa3 / s6-ra3), which every S6 route already does: no extra steps.
+// P5 (the Mason; the bots never use the creature): every S5 line hooks the keystone's ring and hauls it (`haul`: the slow
+// fallback), every S7 line hangs on its last ring until the survive clock has opened the iris (`waitObj`). P3 verbs (steps in bot.mjs): S1 swings into the bell (`ring`), every S2 line hooks the
+// counterweight and hauls it (`haul`), every S4 line relights the catwalk's three lamps (`light`). P4 machines: S3 opens on
+// the winch (a ring riding a turning gear: `{ a: 's3-winch', exposed }` fires only while it stays out of the wall long enough,
+// `winch` holds the line until the gear has wound it), the safe line waits for the rockfall lane's gap (`wait: { lane }`)
+// before the s3-a3 swing, and the fast line catches the swinging cage's ring as it falls past (`hold`: the winch is hooked
+// with the free hand while the other hangs on).
+// Forks (LEVEL_FUN_PLAN P2, item 8): ROUTES[key] is the MAIN line of each section (it passes on every variant); the fast and
+// safe lines of every fork are routes too (`<key>fast` / `<key>safe` where they differ from the main line, see FORKS) and
+// play exactly the level data's `routes` lines (ids = the anchors hooked, stops = the ledges stood on).
 export const ROUTES = {
   s1: [
     { a: 't1' },
+    { ring: 'bell-s1' }, // P3: swing into the bell (it opens the grating under the chimney)
     { p: 's1-sill' },
     { a: 't2' },
     { p: 's2-landing', mode: 'lower', at: [7, -6] },
@@ -14,7 +27,37 @@ export const ROUTES = {
   s2: [
     { a: 's2-hook', walk: [3.6, -4] },
     { p: 's2-far', at: [-28, -5] },
+    { a: 's2-cw' }, // P3: hook the counterweight and haul it (the grating in the floor opening slides away)
+    { haul: 'obj-s2' },
     { a: 's2-lower', walk: [-28, 0] },
+    { p: 's2-low', mode: 'lower', at: [-28, 7] },
+    { a: 's2-b1' },
+    { p: 's2-pier-w', ok: ['s2-pier-n', 's2-pier-s', 's2-pier-e'], at: [2, 0] },
+    { a: 's2-x' },
+    { p: 's3-landing', mode: 'lower', at: [6.5, 0] },
+  ],
+  // S2 fast line: the long swing, then off the far pier's edge into the floor opening: the frayed ring under the floor's lip
+  // kills the fall, and before it snaps you chain the lower hall's ring (no lowering on the arm ring, no lower ledge).
+  s2fast: [
+    { a: 's2-hook', walk: [3.6, -4] },
+    { p: 's2-far', at: [-28, -5] },
+    { a: 's2-cw' },
+    { haul: 'obj-s2', walk: [-25.5, 0.2] }, // hauling while it walks to the lip over the opening
+    { a: 's2-f1', mode: 'below', walk: [-28, 6], below: 0.6 },
+    { a: 's2-b1' },
+    { p: 's2-pier-w', ok: ['s2-pier-n', 's2-pier-s', 's2-pier-e'], at: [2, 0] },
+    { a: 's2-x' },
+    { p: 's3-landing', mode: 'lower', at: [6.5, 0] },
+  ],
+  // S2 safe line: no long swing. Lower on the hook onto the hall floor, walk it to the opening (the
+  // supplies lie on the floor), lower through it on the arm ring, then the lower hall as the main line.
+  s2safe: [
+    { a: 's2-hook' },
+    { p: 's2-floor-a', mode: 'lower', at: [-3, -2] },
+    { w: [-23.5, 1.5] },
+    { a: 's2-cw' }, // the counterweight from the hall floor
+    { haul: 'obj-s2' },
+    { a: 's2-lower' },
     { p: 's2-low', mode: 'lower', at: [-28, 7] },
     { a: 's2-b1' },
     { p: 's2-pier-w', ok: ['s2-pier-n', 's2-pier-s', 's2-pier-e'], at: [2, 0] },
@@ -26,22 +69,54 @@ export const ROUTES = {
     { p: ['s3-span1', 's3-span1-ab'], at: [-7, 0] },
     { a: 's3-a2' },
     { p: 's3-span2', at: [-20, 0] },
+    { wait: { lane: 'rock-s3', clear: 3.4 } }, // P4: the stones fall through the gap ahead: go right after a drop
     { a: 's3-a3' },
     { p: 's3-span3', at: [-32.5, 0] },
     { a: 's3-lower' },
     { p: 's3-shelf', mode: 'lower', at: [-29, -8] },
+    { a: 's3-winch', exposed: 2.0, walk: [-27, -8] }, // P4: the winch ring on the north wall, from the shelf, while it stays out
+    { winch: 'winch-s3' },
     { a: 's3-b1' },
     { p: 's4-landing', at: [-2, 5] },
+  ],
+  // S3 fast line: off the first span's south side: catch the swinging cage's frayed ring as you fall past (it kills the fall,
+  // then snaps), then the sound hook below; from it, hook the winch ring with the free hand while it is out (P4), and once the
+  // grating has opened lower onto the Vault hall's landing. No more spans, no shelf.
+  s3fast: [
+    { a: 's3-a1' },
+    { p: ['s3-span1', 's3-span1-ab'], at: [-7, 0] },
+    { a: 's3-cage', mode: 'below', walk: [-8, 7], below: 0.6 },
+    { a: 's3-f2', mode: 'below', below: 0.6 },
+    { a: 's3-winch', exposed: 2.0, hold: true },
+    { winch: 'winch-s3' },
+    { p: 's4-landing', mode: 'lower', at: [-4, 5] },
   ],
   s4: [
     { a: 's4-a1' },
     { p: 's4-catwalk', at: [-16, -14] },
-    { a: 's4-a2' },
+    // P3: relight the catwalk's three cold lamps (both lines stand here)
+    { light: 'lamp-s4b' },
+    { light: 'lamp-s4a' },
+    { light: 'lamp-s4c' },
+    { a: 's4-a2', from: [-14.3, -13.4] },
     { p: ['s4-cradle', 's4-cradle-ab'], mode: 'lower', at: [-28, -5] },
     { a: 's4-a3' },
     { p: 's4-shelf', at: [5, -7] },
     { a: 's4-a4' },
     { p: 's4-plinth', at: [-16, 6] },
+    { a: 's4-a5' },
+    { p: 's5-landing', mode: 'lower', at: [-6, -1] },
+  ],
+  // S4 fast line: no cradle, no shelf, no plinth: ring to ring over the Vault's void, then lower into the Gullet.
+  s4fast: [
+    { a: 's4-a1' },
+    { p: 's4-catwalk', at: [-16, -14] },
+    { light: 'lamp-s4b' },
+    { light: 'lamp-s4a' },
+    { light: 'lamp-s4c' },
+    { a: 's4-a2', from: [-14.3, -13.4] },
+    { a: 's4-a3' },
+    { a: 's4-a4' },
     { a: 's4-a5' },
     { p: 's5-landing', mode: 'lower', at: [-6, -1] },
   ],
@@ -60,8 +135,21 @@ export const ROUTES = {
     { p: 's5-step5', mode: 'lower', at: [-15, -6.5] },
     { a: 's5-h6' },
     { p: 's5-step6', mode: 'lower', at: [-18.5, 3] },
+    // P5: the keystone's haul fallback from the last step (the bots never use the Mason): its ring, then haul it
+    { a: 'key-s5-ring' },
+    { haul: 'obj-s5', t: 30 },
     { a: 's5-h7' },
     { p: 's6-fork', at: [-12, 0] },
+  ],
+  // S5 fast line: the dive. Off the landing's west lip, straight down the middle of the throat on two frayed rings to the
+  // sound hook; hanging from it, hook the keystone's ring with the free hand and haul it (P5), then lower onto the fork.
+  s5fast: [
+    { a: 's5-f1', mode: 'below', walk: [-10, 0], below: 0.6 },
+    { a: 's5-f2', mode: 'below' },
+    { a: 's5-f3', mode: 'below' },
+    { a: 'key-s5-ring', hold: true },
+    { haul: 'obj-s5', t: 30 },
+    { p: 's6-fork', mode: 'lower', at: [-12, 0] },
   ],
   s6: [
     { a: 's6-ra1', from: [-4.6, -4] },
@@ -98,7 +186,21 @@ export const ROUTES = {
     { a: 's7-n9' },
     { a: 's7-n10' },
     { a: 's7-n11' },
+    { waitObj: 'obj-s7', t: 75 }, // P5: the survive floor: hang on until the iris opens
     { p: 's8-landing', mode: 'lower', at: [6, -15] },
+  ],
+  // S7 fast line: the plumb line. Off the landing's north lip, straight down the column of frayed rings to the sound hook at
+  // its foot; hang there until the iris opens (P5: the survive floor), and lower onto the throat's landing.
+  s7fast: [
+    { a: 's7-f1', mode: 'below', walk: [4.5, -12.5], below: 0.6 },
+    { a: 's7-f2', mode: 'below' },
+    { a: 's7-f3', mode: 'below' },
+    { a: 's7-f4', mode: 'below' },
+    { a: 's7-f5', mode: 'below' },
+    { a: 's7-f6', mode: 'below' },
+    { a: 's7-f7', mode: 'below' },
+    { waitObj: 'obj-s7', t: 75 },
+    { p: 's8-landing', mode: 'lower', at: [4.5, -12.5] },
   ],
   s8: [
     { a: 's8-e1' },
@@ -106,6 +208,20 @@ export const ROUTES = {
     { a: 's8-e3' },
     { a: 's8-e4' },
     { a: 's8-e5' },
+    { a: 's8-e6' },
+    { p: 's8-floor', mode: 'lower', at: [-2, 0] },
+    { goal: true, at: [-3, 20] },
+  ],
+  // S8 safe line: rest on the wall steps (the south step of the first narrowing, the east step of the second) instead of
+  // chaining the whole throat.
+  s8safe: [
+    { a: 's8-e1' },
+    { a: 's8-e2' },
+    { p: 's8-step1-s', mode: 'lower', at: [-8, 17.5] },
+    { a: 's8-e3' },
+    { a: 's8-e4' },
+    { a: 's8-e5' },
+    { p: 's8-step2-e', at: [10.5, 0] },
     { a: 's8-e6' },
     { p: 's8-floor', mode: 'lower', at: [-2, 0] },
     { goal: true, at: [-3, 20] },
@@ -126,9 +242,10 @@ export const ALT_ROUTES = {
     { a: 's7-sp1' },
     { a: 's7-n7' },
     { a: 's7-n8' },
-    { a: 's7-sp2' },
+    { a: 's7-n9' },
     { a: 's7-n10' },
     { a: 's7-n11' },
+    { waitObj: 'obj-s7', t: 75 },
     { p: 's8-landing', mode: 'lower', at: [6, -15] },
   ],
   // S8: the wall ring instead of the last chain ring.
@@ -145,14 +262,15 @@ export const ALT_ROUTES = {
 };
 
 /** Section index each route starts from (its checkpoint). */
-export const ROUTE_START = { s1: 0, s2: 1, s3: 2, s4: 3, s5: 4, s6: 5, s6safe: 5, s7: 6, s8: 7 };
+export const ROUTE_START = { s1: 0, s2: 1, s2fast: 1, s2safe: 1, s3: 2, s3fast: 2, s4: 3, s4fast: 3, s5: 4, s5fast: 4, s6: 5, s6safe: 5, s7: 6, s7fast: 6, s8: 7, s8safe: 7 };
 export const ALT_START = { s7spire: 6, s8wall: 7 };
 
 const ALL_VARIANTS = ['normal', 'nightmare', 'abyss'];
 
 /**
  * Recovery scenarios: a deliberate mistake the level must forgive. `start(level)`
- * gives the spawn point, `variants` where the recovery anchors exist.
+ * gives the spawn point, `variants` where the recovery anchors exist. `doneThrough` (optional): the seals of the sections
+ * above this index are open at the start (default: the start's own section, LEVEL_FUN_PLAN P1).
  */
 export const SCENARIOS = {
   // S2: a short release from the long swing, caught by the recovery ring, then
@@ -166,6 +284,8 @@ export const SCENARIOS = {
       { a: 's2-catch', mode: 'asap' },
       { p: 's2-floor-a', mode: 'lower', at: [-19.25, -3] },
       { w: [-23.5, 1.5] },
+      { a: 's2-cw' }, // the counterweight first: the opening is sealed (LEVEL_FUN_PLAN P3)
+      { haul: 'obj-s2' },
       { a: 's2-lower' },
       { p: 's2-low', mode: 'lower', at: [-28, 7] },
     ],
@@ -175,7 +295,10 @@ export const SCENARIOS = {
   s3designTest: {
     variants: ALL_VARIANTS,
     start: () => ({ x: -18.5, y: -73.62, z: 0 }),
+    doneThrough: 3, // it starts on span 2 with the S3 seal open (the winch done: the test is the catch, not the verb)
+
     route: [
+      { wait: { lane: 'rock-s3', clear: 3.4 } }, // P4: not into the rockfall
       { a: 's3-a3' },
       { wait: 0.75, toward: [-32.5, 0], release: true },
       { a: ['s3-save', 's3-save-nm'], mode: 'below', below: 0.8 },
@@ -202,13 +325,43 @@ export const SCENARIOS = {
       { a: 's7-n9' },
       { a: 's7-n10' },
       { a: 's7-n11' },
+      { waitObj: 'obj-s7', t: 75 },
       { p: 's8-landing', mode: 'lower', at: [6, -15] },
     ],
   },
 };
 
 /**
- * The route fork: the full run is played once per line, and the risky line (from the
- * fork's checkpoint) must beat the safe one by `fasterBy` (CHAPTERS S6: ~50 % faster).
+ * The S6 fork (P1 and older tools: budget.mjs, headclear.mjs): risky = the main line. FORKS below supersedes it in verify.
  */
 export const FORK = { key: 's6', risky: 's6', safe: 's6safe', fasterBy: 0.25 };
+
+/**
+ * Every fork (LEVEL_FUN_PLAN item 8): `fast` / `safe` name ROUTES keys (the main line is one of them, or neither: S2), `data`
+ * the level data's `fork` id. verify.mjs plays two full runs (every fork's fast line, every fork's safe line) and compares
+ * the lines from the fork's checkpoint: fast must beat safe by `fasterBy` on every variant (S6 keeps CHAPTERS' 25 %). The
+ * time compared is the time spent moving: a `waitObj` wait (P5: S7's survive floor ends both lines on the same clock) is
+ * left out.
+ */
+export const FORKS = [
+  { key: 's2', data: 'fork-s2', fast: 's2fast', safe: 's2safe', fasterBy: 0.15 },
+  { key: 's3', data: 'fork-s3', fast: 's3fast', safe: 's3', fasterBy: 0.15 },
+  { key: 's4', data: 'fork-s4', fast: 's4fast', safe: 's4', fasterBy: 0.15 },
+  { key: 's5', data: 'fork-s5', fast: 's5fast', safe: 's5', fasterBy: 0.15 },
+  { key: 's6', data: 'fork-s6', fast: 's6', safe: 's6safe', fasterBy: 0.25 },
+  { key: 's7', data: 'fork-s7', fast: 's7fast', safe: 's7', fasterBy: 0.15 },
+  { key: 's8', data: 'fork-s8', fast: 's8', safe: 's8safe', fasterBy: 0.15 },
+];
+
+/** The route of one whole line through the chapter: 'fast' / 'safe' at every fork, 'main' = ROUTES[section] everywhere. */
+export function lineRoute(line) {
+  const out = [];
+  const marks = [];
+  for (const k of SECTION_ROUTE) {
+    const f = FORKS.find((o) => o.key === k);
+    const key = f && (line === 'fast' || line === 'safe') ? f[line] : k;
+    for (const st of ROUTES[key]) out.push(st);
+    marks.push([k, out.length - 1]);
+  }
+  return { route: out, marks };
+}

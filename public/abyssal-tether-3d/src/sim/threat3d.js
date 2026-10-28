@@ -122,6 +122,13 @@ export class ThreatSystem3D {
 
     // ---- near miss -----------------------------------------------------------------
     c.nearMiss = creatureOn && typeof creature.nearMiss === 'number' ? U.clamp(creature.nearMiss, 0, 1) : 0;
+    // LEVEL_FUN_PLAN P5: hidden in a Masons' rest no attack can start: no burst / near-miss spikes, the threat eases
+    const hidden = creatureOn && creature.refuge === 1;
+    if (hidden) {
+      c.burst = 0;
+      c.nearMiss = 0;
+      c.creature *= 0.6;
+    }
 
     // ---- falling (descent is -Y) --------------------------------------------------------
     let fall = 0;
@@ -139,7 +146,7 @@ export class ThreatSystem3D {
     else this.stillTime = 0;
     const lethalNow = creatureOn && creature.lethal === true && creature.inPlay !== false;
     const stall = creatureOn && typeof creature.stallTime === 'number' ? creature.stallTime * 0.8 : 0;
-    c.stillness = lethalNow ? U.smoothstep(TUNE.stillStart, TUNE.stillFull, Math.max(this.stillTime, stall)) * TUNE.stillMax : 0;
+    c.stillness = lethalNow && !hidden ? U.smoothstep(TUNE.stillStart, TUNE.stillFull, Math.max(this.stillTime, stall)) * TUNE.stillMax : 0;
 
     // ---- combine (probabilistic OR) ------------------------------------------------------
     let keep = 1;

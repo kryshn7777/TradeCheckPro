@@ -27,10 +27,18 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
+import { Objectives3D } from './sim/objectives3d.js';
+import { SplitClock, medalFor } from './sim/splits3d.js';
+import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
+// LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
+// nearest a cold lamp (Objectives3D checks the lamp's radius).
+const PROBE_RAY = 2.5;
+const _probeV = new THREE.Vector3();
+const _probeD = new THREE.Vector3();
 
 // -----------------------------------------------------------------------------
 // Tuning (seconds / metres unless noted)
@@ -77,9 +85,13 @@ const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
 // the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
 const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
-// The Mason always draws its full LOD0 mesh (owner's call, every tier): the LOD0 -> LOD1 switch distance is infinite. The small hunters keep
-// their own short LOD (SKITTER_VIEW in masonRigView.js). Set a finite value per tier here to bring the switch back.
-const CREATURE_LOD = { low: Infinity, quest: Infinity, high: Infinity };
+// The Mason's LOD0 -> LOD1 switch (nearest spine point -> camera, m; MasonRigView keeps LOD0 until it is 5 m closer again). Owner's
+// rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
+// LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
+// 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
+// distance. A tighter Quest value (e.g. 12) saves another ~80 k stereo triangles while it is 12-25 m away. The small hunters keep their
+// own short LOD (SKITTER_VIEW in masonRigView.js).
+const CREATURE_LOD = { low: 16, quest: 25, high: Infinity };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -471,8 +483,14 @@ export class FallbackRenderer3D {
     const an = level.anchors;
     dirty = false;
     for (let i = 0; i < an.length && i < this._anchorState.length; i++) {
-      const on = an[i].broken ? 0 : 1;
-      if (on !== this._anchorState[i]) {
+      const on = an[i].broken || an[i].hidden ? 0 : 1;
+      if (on && an[i].dynamic) {
+        // a moving ring (LEVEL_FUN_PLAN P4): where it is now, every frame
+        this._m.makeTranslation(an[i].x, an[i].y, an[i].z);
+        this._anchors.setMatrixAt(i, this._m);
+        this._anchorState[i] = on;
+        dirty = true;
+      } else if (on !== this._anchorState[i]) {
         this._anchorState[i] = on;
         this._m.makeTranslation(an[i].x, on ? an[i].y : -1e5, an[i].z);
         this._anchors.setMatrixAt(i, this._m);
@@ -820,6 +838,9 @@ export class Game3D {
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
+    this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
+    this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
+    this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
@@ -1665,6 +1686,44 @@ export class Game3D {
       if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
       if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
     });
+    // Seals (LEVEL_FUN_PLAN P1): the grating grinds open below when its ring is hooked; standing on a closed one says so
+    // through the caption (ui/captions.js) only.
+    bus.on('seal:open', () => {
+      if (!this._inRun()) return;
+      this._hapticBoth(0.3, 220);
+      this._toast('Grating opens below', 2.2);
+    });
+    // The verbs (LEVEL_FUN_PLAN P3): the world answers (bell, ratchet, lamp: audio3d / captions); hands feel it.
+    bus.on('bell:ring', (e) => {
+      if (this._inRun()) this._hapticBoth(U.clamp(0.25 + finiteOr(e.speed, 3) * 0.05, 0.25, 0.8), 160);
+    });
+    bus.on('objective:progress', (e) => {
+      if (!this._inRun() || !e) return;
+      if (e.verb === 'haul' || e.verb === 'winch' || e.verb === 'breach') this._hapticTethered(0.55, 70); // a ratchet notch through the line (P4: the gear's too; P5: the keystone's haul)
+      else if (e.verb === 'lamp') {
+        this._haptic('left', 0.35, 90); // the lantern hand
+        if (e.k < e.of) this._toast(`Lamp ${e.k} of ${e.of}`, 1.6);
+      } else if (e.verb === 'survive' && e.k < e.of) this._toast(`Bolt ${e.k} of ${e.of}`, 1.6); // P5: an iris bolt withdrawn
+    });
+    // LEVEL_FUN_PLAN P5, the Mason: an objective's creature override (S7: escape once the iris opens); the keystone breaks;
+    // the Masons' rests (a double pulse on the way in, the hands feel the stone scrape when the budget runs short)
+    bus.on('objective:done', () => this._applyCreatureOverride());
+    bus.on('breach:break', () => {
+      if (!this._inRun()) return;
+      this._hapticBoth(0.8, 180);
+      this._toast('Keystone broken', 2);
+    });
+    bus.on('breach:hit', () => {
+      if (this._inRun()) this._hapticBoth(0.6, 120);
+    });
+    bus.on('nook:enter', (e) => {
+      if (!this._inRun() || !e || !(e.left > 0 || e.lure)) return;
+      this._hapticBoth(0.3, 40);
+      this._nookPulseT = 0.12; // the second pulse of the double pulse (_updateCreature)
+    });
+    bus.on('nook:warn', () => {
+      if (this._inRun()) this._hapticBoth(0.45, 140);
+    });
     bus.on('xr:recenter', () => this.recenter());
   }
 
@@ -1972,6 +2031,9 @@ export class Game3D {
     const cp = info.checkpoint;
     const idx = cp.index > 0 ? Math.min(cp.index, lvl.sections.length - 1) : 0;
     if (idx > 0 && !this._warp(idx)) return false;
+    // the objectives the saved run had done (also those of the checkpoint's own section, done after reaching it)
+    if (this.objectives && Array.isArray(info.objectives)) this.objectives.load(info.objectives);
+    if (this.splits) this.splits.partial(); // the section resumed in was not played whole in this sitting: no split for it
     this.time = Math.max(0, finiteOr(info.time, 0));
     this.deaths = Math.max(0, finiteOr(info.deaths, 0) | 0);
     const deepest = -finiteOr(info.depthMeters, 0);
@@ -1991,6 +2053,7 @@ export class Game3D {
     const cp = this.checkpoint;
     const p = this.player;
     this.level.reset();
+    if (this.objectives) this.objectives.reapply(); // seals stay as they were: an objective done stays done after a death
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset(); // a respawn restores full health
     if (this.physics && this.physics.climb) this.physics.climb.reset(); // ... and a fresh grip
@@ -2005,6 +2068,7 @@ export class Game3D {
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.flash = 0;
@@ -2076,6 +2140,8 @@ export class Game3D {
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
     const cp = lvl.checkpointFor(idx, 'all');
     const p = this.player;
+    // Sandbox warp / Continue: every seal above the section warped to is open (objectives below stay as they are).
+    if (this.objectives) this.objectives.markDoneThrough(idx);
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset();
     if (this.physics && this.physics.climb) this.physics.climb.reset();
@@ -2092,6 +2158,7 @@ export class Game3D {
     this._enterSection(idx, 'warp');
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
@@ -2130,6 +2197,7 @@ export class Game3D {
     Storage.saveSettings(s);
     this._try('audio', () => this.audio.setVolume(s.volume));
     this._try('input', () => this.input.applySettings && this.input.applySettings(s));
+    if (this.objectives) this.objectives.setSqualls(s.windSqualls !== false); // LEVEL_FUN_PLAN P6: the wind squalls switch
     this.bus.emit('settings:changed', { settings: s });
     return s;
   }
@@ -2190,6 +2258,23 @@ export class Game3D {
     // The bag and the supplies of this run (empty / unseeded until start() resets them).
     this.bag = new Inventory3D(this._runBus);
     this.pickups = new Pickups3D(lvl, this._runBus);
+    // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
+    // down the shaft through all of them open.
+    this.objectives = null;
+    try {
+      this.objectives = new Objectives3D(lvl, diff, this._runBus);
+      this.objectives.lantern = this.bag; // a lamp relight burns lantern charge (LEVEL_FUN_PLAN P3)
+      this.objectives.physics = this.physics; // a rockfall lane hurts through the run's health (LEVEL_FUN_PLAN P4)
+      // the wind squalls (LEVEL_FUN_PLAN P6): Physics3D asks the objectives' clock for the push; Settings › Comfort stills them
+      this.objectives.setSqualls(!this.settings || this.settings.windSqualls !== false);
+      this.physics.wind = this.objectives;
+      if (attract) this.objectives.openAll();
+    } catch (err) {
+      this._fault('objectives', err);
+      if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
+    }
+    // Section splits (LEVEL_FUN_PLAN item 12): started by _enterSection, taken at each new section and at the goal.
+    this.splits = new SplitClock(lvl.sections.map((s) => s.id));
     this._ensureLevelView();
   }
 
@@ -2647,6 +2732,7 @@ export class Game3D {
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
     this._prepareClimb(intent, si);
+    if (this.objectives) this._lanternProbe();
     this._acc += dt;
     let steps = 0;
     while (this._acc >= PDT - 1e-9) {
@@ -2657,6 +2743,7 @@ export class Game3D {
       si.jumpPressed = this._pendingJump;
       this._pendingJump = false;
       this.physics.step(p, this.tethers, si, PDT);
+      if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
       this._acc -= PDT;
       steps++;
       if (!p.alive || this.state !== 'playing') {
@@ -2666,6 +2753,61 @@ export class Game3D {
     }
     if (this._acc < 0) this._acc = 0;
     this.alpha = p.alive ? U.clamp(this._acc / PDT, 0, 1) : 0;
+  }
+
+  /**
+   * The lantern probe for the S4 lamps (LEVEL_FUN_PLAN P3, Objectives3D.setProbe), once per frame and only while a lamp is
+   * cold: in XR the lantern itself (the left hand); on a screen the lantern rides the view, so the probe is the point of
+   * the view ray (at most PROBE_RAY m out) nearest a cold lamp: walk up and look at it.
+   */
+  _lanternProbe() {
+    const O = this.objectives;
+    if (!O.wantsProbe || this.state !== 'playing') {
+      O.setProbe(0, 0, 0, false);
+      return;
+    }
+    const dbg = this._debugProbe;
+    if (dbg) {
+      O.setProbe(dbg.x, dbg.y, dbg.z, dbg.on);
+      return;
+    }
+    if (this.xrActive) {
+      const hv = this.handsView;
+      const input = this.input;
+      const sock = (hv && hv.lanternSocket) || (input && typeof input.handSocket === 'function' ? input.handSocket('left') : null);
+      if (sock && typeof sock.getWorldPosition === 'function') {
+        sock.getWorldPosition(_probeV);
+        O.setProbe(_probeV.x, _probeV.y, _probeV.z, true);
+        return;
+      }
+    }
+    const cam = this.renderer && this.renderer.camera;
+    if (!cam || typeof cam.getWorldPosition !== 'function') {
+      O.setProbe(0, 0, 0, false);
+      return;
+    }
+    cam.getWorldPosition(_probeV);
+    cam.getWorldDirection(_probeD);
+    let best = Infinity;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    for (let i = 0; i < O.fixtures.length; i++) {
+      const f = O.fixtures[i];
+      if (f.kind !== 'lamp' || O.fixtureDone(i)) continue;
+      const t = U.clamp((f.x - _probeV.x) * _probeD.x + (f.y - _probeV.y) * _probeD.y + (f.z - _probeV.z) * _probeD.z, 0, PROBE_RAY);
+      const qx = _probeV.x + _probeD.x * t;
+      const qy = _probeV.y + _probeD.y * t;
+      const qz = _probeV.z + _probeD.z * t;
+      const d = Math.hypot(f.x - qx, f.y - qy, f.z - qz);
+      if (d < best) {
+        best = d;
+        bx = qx;
+        by = qy;
+        bz = qz;
+      }
+    }
+    O.setProbe(bx, by, bz, best < Infinity);
   }
 
   /**
@@ -2750,6 +2892,7 @@ export class Game3D {
     this.sectionIndex = idx;
     const first = !this._seen[idx];
     this._seen[idx] = true;
+    if (this.splits) this._split(this.splits.enter(idx, mode, this.time));
     this.bus.emit('section:enter', { index: idx, section: sec, first, mode });
     // The creature follows the deepest section reached; respawns / warps
     // re-apply the section the player is actually in.
@@ -2771,6 +2914,20 @@ export class Game3D {
     const sec = this.level.sections[idx];
     this._try('creature', () => this.creature.setSection(idx, sec, this.player));
     this._try('skitter', () => this.skitters && this.skitters.setSection(idx, this.player));
+    this._applyCreatureOverride();
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5: an objective done in the creature's section lays its `after` over the section's creature config (S7:
+   * escape once the iris has opened): on objective:done, a section change, a respawn and a warp.
+   */
+  _applyCreatureOverride() {
+    const c = this.creature;
+    const O = this.objectives;
+    if (!c || typeof c.setOverride !== 'function') return;
+    const si = this._creatureSection >= 0 ? this._creatureSection : this.level && this.player ? this.level.sectionIndexAt(this.player.y) : -1;
+    const o = O && si >= 0 ? O.creatureOverrideFor(si) : null;
+    this._try('creature', () => c.setOverride(o, si));
   }
 
   _queueHint(hint) {
@@ -2822,7 +2979,20 @@ export class Game3D {
     if (t.name) this.bus.emit('trigger:' + t.name, payload);
   }
 
+  /**
+   * A section played whole in this run (sim/splits3d.js): 'split' { index, section, time, par, medal, recorded, difficulty }.
+   * Recorded (meta/save.js keeps the best per section) only on a difficulty that records times, never in god mode.
+   */
+  _split(sp) {
+    if (!sp) return;
+    const key = this.difficultyKey;
+    const par = PAR_3D && PAR_3D[key] ? PAR_3D[key][sp.id] || null : null;
+    const recorded = !!(this.diff && this.diff.recordTimes) && !this._godMode;
+    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key });
+  }
+
   _beginVictory() {
+    if (this.splits) this._split(this.splits.goal(this.time)); // the last section's split ends at the goal
     this.victoryT = 0; // timer stops; deaths are vetoed from here on
     this.gateClosed = true;
     this._hintQueue.length = 0;
@@ -2862,6 +3032,7 @@ export class Game3D {
       deepestMeters,
       difficultyKey: key,
       label: this.diff.label,
+      seals: this.objectives ? this.objectives.doneCount : 0, // seals opened this run (LEVEL_FUN_PLAN P1)
     };
     this.lastVictory = info;
     this._try('ui', () => this.ui.show('victory', info));
@@ -3124,7 +3295,17 @@ export class Game3D {
   _updateCreature(dt) {
     const c = this.creature;
     try {
+      // LEVEL_FUN_PLAN P5: the player's refuge (a Masons' rest / the S5 lure niche), from the last fixed step
+      const O = this.objectives;
+      const rk = O && this.state === 'playing' ? O.refugeKind : 0;
+      const rb = rk ? O.refugeBlock : null;
+      if (typeof c.setRefuge === 'function') c.setRefuge(rk, rb);
+      if (this.skitters && typeof this.skitters.setRefuge === 'function') this.skitters.setRefuge(rk, rb);
       c.update(dt, this.player, this._runClock);
+      if (this._nookPulseT > 0) {
+        this._nookPulseT -= dt;
+        if (this._nookPulseT <= 0 && this._inRun()) this._hapticBoth(0.3, 40);
+      }
       if (c.caughtPlayer) {
         c.caughtPlayer = false;
         if (this.player.alive && this.state === 'playing') this.physics.kill(this.player, this.tethers, 'creature');
@@ -3342,7 +3523,7 @@ export class Game3D {
     const cv = this.creatureView;
     if (cv) {
       try {
-        // LOD0 (60 k triangles, x2 eyes) only close up on Quest / low: LOD1 (25 k) beyond (BUDGET_CH1); high keeps the long range
+        // LOD0 (63 k triangles, x2 eyes) only within CREATURE_LOD on Quest / low: LOD1 (~23 k) beyond; high keeps LOD0 at every range
         if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
@@ -3735,6 +3916,9 @@ export class Game3D {
     const p = this.player;
     if (!p || !isFinite(x) || !isFinite(y) || !isFinite(z)) return false;
     if (this.tethers) this.tethers.releaseAll(p, 'reset');
+    // A teleport plays the level as if every objective down to the target's own section were done (its seal open too).
+    if (this.objectives && this.level) this.objectives.markDoneThrough(this.level.sectionIndexAt(+y) + 1);
+    if (this.splits) this.splits.partial(); // and the section left was not played whole: no split for it
     p.x = p.prevX = p.rx = +x;
     p.y = p.prevY = p.ry = +y;
     p.z = p.prevZ = p.rz = +z;
@@ -3812,6 +3996,13 @@ export class Game3D {
       bag: this.bag ? this.debugBag() : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
+      objectives: this.objectives
+        ? {
+            done: this.objectives.serialize(),
+            open: this.objectives.seals.filter((s) => this.objectives.sealOpen[s.index]).map((s) => s.id),
+            refuge: this.objectives.refugeIndex >= 0 ? this.objectives.nooks[this.objectives.refugeIndex].id : null, // P5: the Masons' rest the player hides in
+          }
+        : null,
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
       victoryT: r(this.victoryT),
@@ -3936,6 +4127,11 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // The lantern probe (LEVEL_FUN_PLAN P3, the e2e bots): { x, y, z } replaces the hand / view probe until probe(null).
+      probe: (q) => {
+        this._debugProbe = q && isFinite(q.x) && isFinite(q.y) && isFinite(q.z) ? { x: +q.x, y: +q.y, z: +q.z, on: q.on !== false } : null;
+        return this._debugProbe;
+      },
       // Health (tests, QA, screenshots): hp 0..1 sets the health directly (no events); damage(amount) hurts as a hit would.
       health: (hp) => {
         const h = this.health;

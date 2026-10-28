@@ -9,7 +9,9 @@
  *   - lit like the dust (the shared FxLighting uniforms: lantern, env lights, creature glow, a whisper of ambient): a wisp in the
  *     dark is invisible, in the lantern's reach a pale streak;
  *   - tier-scaled draw range; reducedEffects draws nothing (the sway of the props stills with it).
- * Owned by FX (fx.windGusts); update(dt, head, tier, reduced) once per frame.
+ *   - LEVEL_FUN_PLAN P6, the gameplay squalls (sim/objectives3d.js squallNow): while one gathers (its telegraph) and blows,
+ *     the wisps thicken (up to twice the tier's share), stream faster and turn to its way: the visible gust, same draw call.
+ * Owned by FX (fx.windGusts); update(dt, head, tier, reduced, squall) once per frame.
  */
 import * as THREE from 'three';
 import { FX_LIGHT_GLSL } from './atmosphere.js';
@@ -162,17 +164,25 @@ vec3 atWispAt( vec3 s0, vec3 h, float s ) {
    * @param {number} tier         fx tier (0 low / reduced, 1 quest, 2 desktop)
    * @param {boolean} reduced     settings.reducedEffects
    */
-  update(dt, head, tier, reduced) {
+  update(dt, head, tier, reduced, squall) {
     const t = LOOK.uTime.value;
     const U = this.uniforms;
     if (head) U.uCenter.value.copy(head);
     U.uWTime.value = t;
-    const a = windAngle(t);
+    // a gameplay squall (P6): 0..1 while it gathers (its telegraph) and blows; the wisps turn to its way
+    const sq = squall ? Math.min(1, Math.max(squall.k || 0, 0.6 * (squall.rise || 0))) : 0;
+    let a = windAngle(t);
+    if (sq > 0) {
+      const sa = Math.atan2(squall.dz || 0, squall.dx || 0);
+      let d = sa - a;
+      d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+      a += d * Math.min(1, sq * 1.6);
+    }
     U.uWDir.value.set(Math.cos(a), Math.sin(a));
     // 0..1: the breathing gust plus the squall's push
-    const push = Math.min(1, windGust(t) * 0.55 + windSquall(t) * 0.55);
+    const push = Math.min(1, Math.max(windGust(t) * 0.55 + windSquall(t) * 0.55, sq));
     U.uWPush.value = push;
-    const frac = reduced ? 0 : FRACTION[Math.max(0, Math.min(2, tier | 0))];
+    const frac = reduced ? 0 : Math.min(1, FRACTION[Math.max(0, Math.min(2, tier | 0))] * (1 + sq));
     const count = Math.floor(WISPS * frac) * TRAIL;
     this.points.geometry.setDrawRange(0, count);
     this.stats.drawn = count / TRAIL;

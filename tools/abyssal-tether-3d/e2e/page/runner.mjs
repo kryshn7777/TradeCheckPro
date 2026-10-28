@@ -10,8 +10,9 @@ import { EventBus } from '/src/sim/config3d.js';
 
 const FRAME = 1 / 60;
 const SUB = 4;
-const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim'];
-const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension'];
+// as verify/sim.mjs: the hook is a projectile (`flying` + flightObj), so the look-ahead must rewind the flight too
+const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim', 'flying'];
+const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT', 'grip'];
 const NOSTATE = { render: false, state: false };
 
 /** The level bot's Sim interface on top of the running Game3D. */
@@ -62,6 +63,10 @@ class GameSim {
   get diff() {
     return this.game.diff;
   }
+  /** The live game's objectives (LEVEL_FUN_PLAN P3: the bot's ring / haul / light steps read them). */
+  get objectives() {
+    return this.game.objectives;
+  }
   get ghost() {
     return this._ghost;
   }
@@ -82,6 +87,8 @@ class GameSim {
     if (!this._ghostPhys || this._ghostPhys.level !== g.level || this._ghostPhys.diff !== g.diff) {
       this._ghostPhys = new Physics3D(g.level, g.diff, this.ghostBus);
       this._ghostPhys.health.god = true; // the look-ahead judges landing speeds only; it takes no damage (as in verify/bot.mjs)
+      // LEVEL_FUN_PLAN P6: the wind squalls push the look-ahead body too (a function of the objectives' clock, advanced below)
+      this._ghostPhys.wind = g.physics ? g.physics.wind : null;
     }
     return this._ghostPhys;
   }
@@ -90,12 +97,18 @@ class GameSim {
     if (this._ghost) {
       const T = this.tethers;
       const ph = this._phys();
+      const O = this.objectives;
       T.updateTargets(p, intent);
       T.handleInput(p, intent, FRAME);
       const jump = intent.jumpPressed;
       for (let i = 0; i < SUB; i++) {
         intent.jumpPressed = jump && i === 0;
         ph.step(p, T, intent, FRAME / SUB);
+        // LEVEL_FUN_PLAN P4: the movers (and lanes) follow the objectives' run clock; the look-ahead advances it silently
+        if (O && typeof O.reapply === 'function' && typeof O.clock === 'number') {
+          O.clock += FRAME / SUB;
+          if (O.movers) O.movers.pose(O.clock);
+        }
         if (!p.alive) break;
       }
       intent.jumpPressed = false;
@@ -117,6 +130,9 @@ class GameSim {
       d.yank = s.yank || 0;
     }
     this.api.setInput(o);
+    // the lantern probe of a `light` step (the game's own probe is the view ray / the lantern hand)
+    const pr = intent.probe;
+    if (this.api.probe) this.api.probe(pr && pr.on ? pr : null);
     this.api.step(FRAME, NOSTATE);
     intent.jumpPressed = false;
     this.t += FRAME;
@@ -132,11 +148,18 @@ class GameSim {
       const o = {};
       for (const k of HAND_KEYS) o[k] = st[k];
       o.miss = st.miss ? Object.assign({}, st.miss) : null;
+      if (st.flightObj) {
+        o.flT = st.flightObj.t;
+        o.flDur = st.flightObj.dur;
+        o.flTarget = st.flightObj.target;
+      }
       for (const k of ROPE_KEYS) o['r_' + k] = st.rope[k];
       s.hands[h] = o;
     }
     for (const o of this.level.solids) if (o.kind === 'crumble') s.dyn.push(o.active, o.load, o.fallen);
     for (const o of this.level.anchors) if (o.kind === 'fragile') s.dyn.push(o.broken, o.load);
+    const O = this.objectives;
+    s.clock = O && typeof O.clock === 'number' ? O.clock : null; // P4: the movers' clock
     return s;
   }
   restore(s) {
@@ -149,6 +172,11 @@ class GameSim {
       const o = s.hands[h];
       for (const k of HAND_KEYS) st[k] = o[k];
       st.miss = o.miss ? Object.assign({}, o.miss) : null;
+      if (st.flightObj) {
+        st.flightObj.t = o.flT;
+        st.flightObj.dur = o.flDur;
+        st.flightObj.target = o.flTarget;
+      }
       for (const k of ROPE_KEYS) st.rope[k] = o['r_' + k];
     }
     let j = 0;
@@ -162,6 +190,11 @@ class GameSim {
       if (o.kind !== 'fragile') continue;
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
+    }
+    const O = this.objectives;
+    if (O && s.clock !== null && s.clock !== undefined) {
+      O.clock = s.clock;
+      if (O.movers) O.movers.pose(O.clock);
     }
   }
   attachedHands() {
@@ -189,7 +222,16 @@ class StepBot extends Bot {
     this.prepIntent(it, this.holding);
     for (const h of this.pendingRelease) this.releaseHand(it, h);
     this.pendingRelease.length = 0;
-    for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached) this.releaseHand(it, h);
+    // as Bot.runRoute: a chain lets go of the old line once the new hook has bitten; a hook still flying is not a lost rope
+    const cr = this.chainRelease;
+    if (cr) {
+      const cst = sim.tethers.hands[cr.hand];
+      if (cst.rope.attached) {
+        for (const h of cr.others) this.releaseHand(it, h);
+        this.chainRelease = null;
+      } else if (!cst.flying) this.chainRelease = null;
+    }
+    for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached && !sim.tethers.hands[h].flying) this.releaseHand(it, h);
     const step = this.route[this.i];
     const limit = step.t || 25;
     const p = this.p;
@@ -197,14 +239,7 @@ class StepBot extends Bot {
       this.fail = `timeout at step ${this.i} ${JSON.stringify(step)} pos ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} grounded ${p.grounded} att ${this.attachedHands()}`;
       return 'fail';
     }
-    let done = false;
-    if (step.a) done = this.stepAnchor(it, step);
-    else if (step.p) done = this.stepPlatform(it, step);
-    else if (step.w) done = this.stepWalk(it, step);
-    else if (step.release) {
-      this.releaseAll(it);
-      done = true;
-    } else if (step.goal) done = this.stepGoal(it, step);
+    const done = this.dispatch(it, step); // the level bot's step grammar (P4 adds wait / winch / exposed / hold)
     sim.frame(it);
     this.stepT += FRAME;
     if (done) {

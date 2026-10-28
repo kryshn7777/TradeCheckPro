@@ -17,7 +17,9 @@ import { FX_LIGHT_GLSL } from './atmosphere.js';
 import { DITHER_GLSL } from './vrShade.js';
 
 const MAX = 520;
-const CAPS = [160, 330, 520]; // live particles per fx tier (0 low / reduced, 1 quest, 2 desktop)
+// live particles per fx tier (0 low / reduced, 1 quest, 2 desktop). Quest 330 -> 240 (perf pass): the puffs are large blended sprites
+// (up to ~300 px each per eye up close), so a dense cloud near the Mason was several full screens of overdraw on a tiled GPU.
+const CAPS = [160, 240, 520];
 const SECTION_WET = [0, 0.1, 0.25, 0.45, 0.85, 0.6, 0.75, 1]; // mirrors fx.js
 
 /** Wetness 0..1 of a level section (the mist). */
@@ -42,6 +44,7 @@ export class CreatureDust {
     this.n = 0;
     this.cap = CAPS[2];
     this.rate = 1; // spawn scale (tier / reduced)
+    this.far = Infinity; // m: no emission beyond this (FX sets the fog's far distance: a puff there is pure fog colour)
     this._head = null;
     const P = (k = 1) => new Float32Array(MAX * k);
     this.px = P();
@@ -166,6 +169,7 @@ export class CreatureDust {
     const dx = x - h.x;
     const dy = y - h.y;
     const dz = z - h.z;
+    if (lim > this.far) lim = this.far;
     return dx * dx + dy * dy + dz * dz < lim * lim;
   }
 

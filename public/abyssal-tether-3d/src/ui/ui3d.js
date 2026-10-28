@@ -26,6 +26,11 @@
  * enterVR) defensively and listens on the bus. Per-frame work is allocation
  * free; canvases are redrawn only when their content changes.
  *
+ * Section records (LEVEL_FUN_PLAN item 12, P6): a Records screen (best split, medal and the next medal's time per section
+ * and difficulty, from the schema-3 save and data/par-3d.js; ui/medals.js), the split line "I · 1:12.4 · SILVER" on the
+ * next section's title card (a toast when no card shows; at the goal a toast), and the run's splits on the victory panel.
+ * In VR all of it is drawn on the existing panel / title / toast canvases: no new mesh, no new draw call.
+ *
  * Public API: new UI3D(game); init(); show(name|null, info); update(dt);
  * current; vrMode; showHint(textOrHint, seconds); hideHint();
  * showSectionTitle(name, subtitle, index); showToast(text, seconds);
@@ -41,12 +46,14 @@ import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
 import { ComfortOverlay, applyDisplay } from './comfort.js';
 import { Tutorial } from './tutorial.js';
 import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
+import { MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, tallyLine, targetText } from './medals.js';
+import { PAR_3D } from '../data/par-3d.js';
 
 // =============================================================================
 // Constants
 // =============================================================================
-const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'about', 'calibrate', 'pause', 'death', 'victory'];
-const SUB_SCREENS = { difficulty: true, controls: true, settings: true, about: true, calibrate: true };
+const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'about', 'calibrate', 'records', 'pause', 'death', 'victory'];
+const SUB_SCREENS = { difficulty: true, controls: true, settings: true, about: true, calibrate: true, records: true };
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const HANDS = ['left', 'right'];
 
@@ -149,6 +156,7 @@ const SETTINGS_SCHEMA = [
     desc: 'Standing: your real height, 1:1. Seated: lifts your eyes to a standing eye height.',
     options: [['standing', 'Standing'], ['seated', 'Seated']],
   },
+  { key: 'windSqualls', tab: 'comfort', type: 'toggle', label: 'Wind squalls', desc: 'Gusts in the deep shaft push you gently while you swing or hang. Off: still air.' },
   { key: 'heightOffset', tab: 'comfort', type: 'range', label: 'Fine height', desc: 'Raise or lower your eyes a little.', page: 'height', min: -VIEW.offsetMax, max: VIEW.offsetMax, step: VIEW.offsetStep, fmt: cm },
   { type: 'height', tab: 'comfort', page: 'height' },
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
@@ -462,7 +470,7 @@ const MARKUP = `
 <div class="bag-apply" aria-hidden="true"><span class="bag-apply-label"></span><b><i></i></b></div>
 <div class="capture" role="status">Click to look around <span>·</span> <kbd>Esc</kbd> pauses</div>
 <button class="btn-pause" type="button" data-action="pause" aria-label="Pause"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button>
-<div class="section-card" aria-live="polite"><div class="section-num"></div><div class="section-name"></div><div class="section-rule" aria-hidden="true"></div><div class="section-sub"></div></div>
+<div class="section-card" aria-live="polite"><div class="section-num"></div><div class="section-name"></div><div class="section-rule" aria-hidden="true"></div><div class="section-sub"></div><div class="section-split"></div></div>
 <div class="captions" aria-live="off" hidden></div>
 <div class="hint" role="status" aria-live="polite"></div>
 <div class="toast" role="status" aria-live="polite"><span class="toast-glyph" aria-hidden="true"></span><span class="toast-text"></span></div>
@@ -484,6 +492,7 @@ const MARKUP = `
       <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
       <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
       <button class="btn menu-about" type="button" data-action="about"><span class="btn-label">About</span><span class="btn-sub menu-about-sub" hidden>Update ready</span></button>
+      <button class="btn menu-records" type="button" data-action="records"><span class="btn-label">Records</span><span class="btn-sub menu-records-sub" hidden></span></button>
     </nav>
     <div class="menu-foot">
       <button class="menu-update" type="button" data-action="apply-update" hidden><span aria-hidden="true">◆</span> Update ready — restart to apply</button>
@@ -541,6 +550,18 @@ const MARKUP = `
   </div>
 </section>
 
+<section class="screen" data-screen="records" hidden aria-labelledby="at3d-rec-title">
+  <div class="panel panel-wide">
+    <div class="panel-head">${backBtn()}<h2 id="at3d-rec-title">Section records</h2></div>
+    <div class="panel-body">
+      <div class="rec-tabs" role="group" aria-label="Difficulty"></div>
+      <table class="rec-table"><thead><tr><th scope="col"><span class="sr">Section number</span></th><th scope="col">Section</th><th scope="col">Best</th><th scope="col">Medal</th><th scope="col">Next</th></tr></thead><tbody></tbody></table>
+      <p class="panel-note rec-tally"></p>
+      <p class="panel-note">Medals per section: gold within the par (the time of the verified route), silver within 1.4 × par, brass within 2 ×. Whole sections only, from entering one to entering the next; falls count.</p>
+    </div>
+  </div>
+</section>
+
 <section class="screen screen-pause" data-screen="pause" hidden aria-labelledby="at3d-pause-title">
   <div class="panel panel-pause">
     <div class="panel-head panel-head-center"><h2 id="at3d-pause-title">Paused</h2><p class="run-line pause-stats"></p></div>
@@ -591,6 +612,7 @@ const MARKUP = `
         <div><dt>Difficulty</dt><dd class="v-diff">Normal</dd></div>
       </dl>
       <p class="panel-note victory-note v-note"></p>
+      <div class="v-splits-wrap" hidden><h3 class="group-title">Sections</h3><ol class="v-splits"></ol></div>
       <div class="teaser">
         <p class="teaser-kicker">Chapters II–V · coming soon</p>
         <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
@@ -818,7 +840,26 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .section-name{font:700 clamp(1.6em,6vmin,3em)/1.1 var(--fd);letter-spacing:.12em;text-transform:uppercase;color:#d8cfbd;text-shadow:0 -1px 0 rgba(0,0,0,.9),0 1px 0 rgba(255,236,200,.12),0 8px 30px rgba(0,0,0,.95)}
 .at3d-ui .section-rule{width:5.5em;height:1px;margin:.25em 0;background:linear-gradient(90deg,transparent,rgba(224,160,80,.8),transparent)}
 .at3d-ui .section-sub{font:italic 400 1em/1.3 var(--fd);color:var(--ink-2);text-shadow:0 2px 12px rgba(0,0,0,.95)}
-.at3d-ui .section-sub:empty,.at3d-ui .section-num:empty{display:none}
+.at3d-ui .section-sub:empty,.at3d-ui .section-num:empty,.at3d-ui .section-split:empty{display:none}
+.at3d-ui .section-split{margin-top:.2em;font:650 .82em var(--fu);letter-spacing:.16em;font-variant-numeric:tabular-nums;color:var(--amber);text-shadow:0 2px 12px rgba(0,0,0,.95)}
+.at3d-ui .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.at3d-ui .rec-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5em;margin-bottom:.8em}
+.at3d-ui .rec-tabs .btn{align-items:center;text-align:center;min-height:max(var(--tap),2.4em)}
+.at3d-ui .rec-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;table-layout:fixed}
+.at3d-ui .rec-table th{padding:.3em .4em;font:650 .66em var(--fu);letter-spacing:.14em;text-transform:uppercase;text-align:left;color:var(--ink-3);border-bottom:1px solid var(--line-2)}
+.at3d-ui .rec-table th:first-child{width:2.6em}
+.at3d-ui .rec-table td{padding:.45em .4em;border-bottom:1px solid var(--line);font-size:.9em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.at3d-ui .rec-table td:first-child{font:700 1em var(--fd);color:var(--amber)}
+.at3d-ui .rec-table td.is-empty{color:var(--ink-4)}
+.at3d-ui .medal{display:inline-flex;align-items:center;gap:.4em;font-weight:650}
+.at3d-ui .medal i{flex:none;width:.7em;height:.7em;border-radius:50%;background:var(--mc,#666);box-shadow:0 0 0 2px rgba(0,0,0,.4) inset}
+.at3d-ui .v-splits-wrap{width:100%;margin-top:.9em;text-align:left}
+.at3d-ui .v-splits{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.25em 1.2em;margin:0;padding:0;list-style:none;font-variant-numeric:tabular-nums;font-size:.86em}
+.at3d-ui .v-splits li{display:flex;align-items:baseline;gap:.6em;min-width:0}
+.at3d-ui .v-splits b{font:700 1em var(--fd);color:var(--amber);min-width:2.2em}
+.at3d-ui .v-splits span{flex:1;min-width:0;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.at3d-ui .v-splits em{font-style:normal;color:var(--ink)}
+@media (max-width:760px){.at3d-ui .rec-table th:nth-child(5),.at3d-ui .rec-table td:nth-child(5){display:none}.at3d-ui .v-splits{grid-template-columns:1fr}}
 .at3d-ui .hint{position:absolute;z-index:15;left:50%;bottom:calc(10px + 2.4em);max-width:min(34em,calc(100% - 3em));padding:.55em 1em;font-size:.95em;line-height:1.4;text-align:center;color:var(--ink);background:rgba(8,9,10,.8);border:1px solid var(--line-2);border-left:3px solid var(--verdigris-2);border-radius:3px;pointer-events:none;opacity:0;visibility:hidden;transform:translate(-50%,8px);transition:opacity .3s,transform .3s var(--ease),visibility 0s linear .3s}
 .at3d-ui .hint.is-on{opacity:1;visibility:visible;transform:translate(-50%,0);transition:opacity .3s,transform .3s var(--ease)}
 .at3d-ui .toast{position:absolute;z-index:15;top:calc(10px + .3em);left:50%;display:flex;align-items:center;gap:.55em;max-width:calc(100% - 9em);padding:.4em .9em;font:650 .76em var(--fu);letter-spacing:.16em;text-transform:uppercase;color:var(--phosphor);background:rgba(8,9,10,.74);border:1px solid rgba(224,160,80,.45);border-radius:2px;pointer-events:none;opacity:0;visibility:hidden;transform:translate(-50%,-6px);transition:opacity .3s,transform .3s var(--ease),visibility 0s linear .3s}
@@ -897,12 +938,16 @@ export class UI3D {
     this._busOff = [];
     this._lastTitle = { text: '', t: -10 };
     this._lastToast = { text: '', t: -10 };
+    // Section records (P6): the difficulty shown on the Records screen, this run's splits, a split waiting for its title card.
+    this._recDiff = null;
+    this._runSplits = [];
+    this._pendingSplit = null;
 
     // HUD caches (compared before every DOM write).
     this._hud = { acc: HUD_INTERVAL, inRun: null, time: '', depthM: -1, gauge: -1, section: -1, sectionT: 0, diffKey: '', level: null, tl: '', tr: '', cls: -1, ecg: -1, bag: -1, apply: -1, applyKind: -1 };
     // Notes (hint / section title / toast), shared by DOM and VR.
     this._hint = { text: '', src: null, vr: false, t: 0, on: false, dirty: false, tutorial: false };
-    this._title = { name: '', sub: '', num: '', t: 0, dirty: false };
+    this._title = { name: '', sub: '', num: '', split: '', t: 0, dirty: false };
     this._toast = { text: '', t: 0, dirty: false };
 
     // VR state (built lazily).
@@ -1029,6 +1074,13 @@ export class UI3D {
       vDeaths: q('.v-deaths'),
       vDiff: q('.v-diff'),
       vNote: q('.v-note'),
+      vSplitsWrap: q('.v-splits-wrap'),
+      vSplits: q('.v-splits'),
+      sectionSplit: q('.section-split'),
+      recTabs: q('.rec-tabs'),
+      recBody: q('.rec-table tbody'),
+      recTally: q('.rec-tally'),
+      recordsSub: q('.menu-records-sub'),
     };
     this._buildBestStrip();
     this._buildDifficultyCards();
@@ -1098,12 +1150,16 @@ export class UI3D {
     };
     on('settings:changed', () => this.syncSettings());
     on('game:start', () => {
+      this._runSplits.length = 0;
+      this._pendingSplit = null;
       this._resetHud();
       this.hideHint();
       this._deathTimer = -1;
       if (this.current !== null) this.show(null);
     });
     on('game:restart', () => {
+      this._runSplits.length = 0;
+      this._pendingSplit = null;
       this._resetHud();
       this.hideHint();
       this._deathTimer = -1;
@@ -1133,9 +1189,13 @@ export class UI3D {
       this._deathTimer = -1;
       if (this.current !== 'victory') this.showVictory(this._victoryFrom(p));
     });
+    // A section played whole (game.js 'split', sim/splits3d.js): its line goes on the next section's title card, or a toast.
+    on('split', (p) => this._onSplit(p));
     on('section:enter', (p) => {
-      if (!p.first || !p.section) return;
-      this.showSectionTitle(p.section.name, p.section.subtitle, num(p.index, -1));
+      const sp = this._pendingSplit;
+      this._pendingSplit = null;
+      if (p.first && p.section) this.showSectionTitle(p.section.name, p.section.subtitle, num(p.index, -1), sp && sp.index === num(p.index, -1) - 1 ? sp.line : '');
+      else if (sp) this.showToast(sp.line, 3.2);
     });
     on('creature:sighting', () => {
       // The first sight of the creature must not sit behind a title card ('IV The
@@ -1272,6 +1332,7 @@ export class UI3D {
     if (name === 'death') this._fillDeath(info);
     else if (name === 'victory') this._fillVictory(info);
     else if (name === 'about') this._fillAbout();
+    else if (name === 'records') this._fillRecords();
 
     const prev = this.current;
     const game = this.game || {};
@@ -1429,6 +1490,11 @@ export class UI3D {
         dd.textContent = b != null ? fmtTime(b) : '—';
         dd.classList.toggle('is-empty', b == null);
       }
+    }
+    if (d.recordsSub) {
+      const line = tallyLine(medalTally(this._recordRowsFor(key)));
+      d.recordsSub.textContent = line ? `${diff.label} · ${line.split(' · ').slice(0, 2).join(' · ')}` : '';
+      d.recordsSub.hidden = !line;
     }
     this._refreshDifficulty();
     this._vrDirty = true;
@@ -2223,6 +2289,111 @@ export class UI3D {
       d.vBest.textContent = fmtTime(i.best != null ? i.best : i.time);
       d.vNote.textContent = '';
     }
+    this._fillVictorySplits();
+  }
+
+  // ------------------------------------------------------------------ section records (LEVEL_FUN_PLAN item 12, P6)
+  /**
+   * game.js 'split' { index, section, time, par, medal, recorded, difficulty }: kept for the victory panel; its line waits
+   * for the next section's title card (section:enter follows in the same call), or shows as a toast at the goal.
+   */
+  _onSplit(p) {
+    const index = num(p.index, -1);
+    if (index < 0 || !(p.time > 0)) return;
+    const prev = p.recorded ? this._records(p.difficulty)[p.section] : null;
+    const isNew = !!p.recorded && (!prev || !(prev.best > 0) || p.time < prev.best - 1e-6);
+    const medal = p.recorded ? p.medal || null : null;
+    const line = splitLine(index, p.time, medal, isNew && !!prev);
+    const sp = { index, id: p.section, time: p.time, medal, par: num(p.par, 0) || null, isNew, line };
+    this._runSplits[index] = sp;
+    const secs = this._sections();
+    if (secs && index >= secs.length - 1) this.showToast(line, 3.6); // the last section: no title card follows
+    else this._pendingSplit = sp;
+  }
+
+  /** save.sectionRecords(diff) (schema 3), or {}. */
+  _records(diff) {
+    const g = this.game || {};
+    try {
+      const r = g.save && typeof g.save.sectionRecords === 'function' ? g.save.sectionRecords(diff) : null;
+      return r && typeof r === 'object' ? r : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /** The Records screen's difficulty: the one chosen there, else the last played. */
+  _recordsDiff() {
+    const k = this._recDiff || this._defaultDifficulty();
+    return DIFFICULTY_ORDER.indexOf(k) >= 0 ? k : 'normal';
+  }
+
+  /** Rows of the Records screen for difficulty `diff` (ui/medals.js recordRows). */
+  _recordRowsFor(diff) {
+    const secs = this._sections() || Object.keys(PAR_3D.normal || {}).map((id) => ({ id }));
+    return recordRows(secs, this._records(diff), PAR_3D[diff] || null);
+  }
+
+  /** DOM: the Records screen (difficulty buttons, one row per section, the medal tally). */
+  _fillRecords() {
+    const d = this.dom;
+    if (!d || !d.recBody) return;
+    const diff = this._recordsDiff();
+    if (!d.recTabs.childElementCount) {
+      for (const k of DIFFICULTY_ORDER) {
+        const b = make('button', 'btn rec-tab');
+        b.type = 'button';
+        b.dataset.action = 'rec-tab';
+        b.dataset.diff = k;
+        b.append(make('span', 'btn-label', DIFFICULTY[k].label));
+        d.recTabs.appendChild(b);
+      }
+    }
+    for (const b of d.recTabs.children) {
+      const on = b.dataset.diff === diff;
+      b.classList.toggle('btn-primary', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    const rows = this._recordRowsFor(diff);
+    d.recBody.textContent = '';
+    for (const r of rows) {
+      const tr = make('tr');
+      const best = make('td', r.best == null ? 'is-empty' : null, r.best == null ? '—' : fmtSplit(r.best));
+      const medal = make('td', r.medal ? null : 'is-empty');
+      if (r.medal) {
+        const m = make('span', 'medal');
+        const dot = make('i');
+        dot.style.setProperty('--mc', MEDAL_COLOR[r.medal]);
+        m.append(dot, make('span', null, MEDAL_LABEL[r.medal]));
+        medal.appendChild(m);
+      } else medal.textContent = '—';
+      tr.append(make('td', null, r.numeral), make('td', null, r.name), best, medal, make('td', null, targetText(r)));
+      d.recBody.appendChild(tr);
+    }
+    d.recTally.textContent = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet.`;
+  }
+
+  /** DOM: this run's splits on the victory panel (hidden when none was whole). */
+  _fillVictorySplits() {
+    const d = this.dom;
+    if (!d || !d.vSplits) return;
+    const list = this._runSplits.filter(Boolean);
+    d.vSplitsWrap.hidden = list.length === 0;
+    d.vSplits.textContent = '';
+    const secs = this._sections() || [];
+    for (const sp of list) {
+      const li = make('li');
+      const name = (secs[sp.index] && secs[sp.index].name) || `Section ${sp.index + 1}`;
+      li.append(make('b', null, ROMAN[sp.index] || String(sp.index + 1)), make('span', null, name), make('em', null, fmtSplit(sp.time)));
+      if (sp.medal) {
+        const m = make('span', 'medal');
+        const dot = make('i');
+        dot.style.setProperty('--mc', MEDAL_COLOR[sp.medal]);
+        m.append(dot, make('span', null, MEDAL_LABEL[sp.medal]));
+        li.appendChild(m);
+      }
+      d.vSplits.appendChild(li);
+    }
   }
 
   /** Shows the victory screen (2D-compatible entry point). */
@@ -2277,8 +2448,8 @@ export class UI3D {
     if (this.dom) this.dom.hint.classList.remove('is-on');
   }
 
-  /** Large carved section title card (index from the level when omitted). */
-  showSectionTitle(name, subtitle, index) {
+  /** Large carved section title card (index from the level when omitted); `split` = the last section's split line (P6). */
+  showSectionTitle(name, subtitle, index, split) {
     if (!name) return;
     if (this._lastTitle.text === name && this._clock - this._lastTitle.t < DEDUPE) return;
     this._lastTitle.text = name;
@@ -2290,6 +2461,7 @@ export class UI3D {
     t.name = String(name);
     t.sub = subtitle ? String(subtitle) : '';
     t.num = idx >= 0 ? `— ${ROMAN[idx] || idx + 1} —` : '';
+    t.split = split ? String(split) : '';
     t.t = TITLE_TIME;
     t.dirty = true;
     if (this.dom) {
@@ -2297,6 +2469,7 @@ export class UI3D {
       d.sectionNum.textContent = t.num;
       d.sectionName.textContent = t.name;
       d.sectionSub.textContent = t.sub;
+      if (d.sectionSplit) d.sectionSplit.textContent = t.split;
       d.sectionCard.classList.remove('is-cut');
       restartAnimation(d.sectionCard, 'is-on');
     }
@@ -2361,7 +2534,15 @@ export class UI3D {
       case 'controls':
       case 'settings':
       case 'about':
+      case 'records':
         this.show(action);
+        break;
+      case 'rec-tab':
+        if (DIFFICULTY_ORDER.indexOf(d.diff) >= 0) {
+          this._recDiff = d.diff;
+          this._fillRecords();
+          this._vrDirty = true;
+        }
         break;
       case 'calibrate':
         if (this.vrMode) this.show('calibrate');
@@ -3487,6 +3668,7 @@ export class UI3D {
       else if (s === 'settings') this._paintSettings(ctx);
       else if (s === 'about') this._paintAbout(ctx);
       else if (s === 'calibrate') this._paintCalibrate(ctx);
+      else if (s === 'records') this._paintRecords(ctx);
       else if (s === 'pause') this._paintPause(ctx);
       else if (s === 'death') this._paintDeath(ctx);
       else if (s === 'victory') this._paintVictory(ctx);
@@ -3650,29 +3832,15 @@ export class UI3D {
       diamond(ctx, x0 + (th + 12) * 2 + th - 18, 546 + 18, 9);
       ctx.fill();
     }
-    // Best times strip.
-    const items = DIFFICULTY_ORDER.map((k) => {
+    // Records (LEVEL_FUN_PLAN P6): the best times ride on the button that opens the section records.
+    const bests = DIFFICULTY_ORDER.map((k) => {
       const b = Storage.getBest(k);
-      return [DIFFICULTY[k].label.toUpperCase(), b != null ? fmtTime(b) : '—', b != null];
+      return `${DIFFICULTY[k].label} ${b != null ? fmtTime(b) : '—'}`;
     });
-    const lf = `600 28px ${F_UI}`;
-    const vf = `650 30px ${F_UI}`;
-    let total = 0;
-    const widths = items.map(([l, v]) => {
-      const wv = measure(ctx, l, lf, 0.12) + 12 + measure(ctx, v, vf, 0);
-      total += wv;
-      return wv;
-    });
-    total += 48 * (items.length - 1);
-    let x = cx - total / 2;
-    items.forEach(([l, v, has], i) => {
-      txt(ctx, l, x, 680, lf, COL.ink3, 'left', 0.12);
-      txt(ctx, v, x + measure(ctx, l, lf, 0.12) + 12, 680, vf, has ? COL.ink : COL.ink4, 'left', 0);
-      x += widths[i] + 48;
-    });
-    if (this._updateReady) txt(ctx, 'Update ready: it installs next time you start the game', cx, 734, `500 28px ${F_UI}`, COL.amber, 'center', 0.02);
-    else if (!this._settings().brightnessChecked) txt(ctx, 'A dark game: check Settings › Display › Brightness', cx, 734, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02);
-    else txt(ctx, 'Point and pull the trigger', cx, 734, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
+    this._btn(ctx, this._region(x0, 634, w, 88, 'records'), 'Records', bests.join('  ·  '), { size: 30 });
+    if (this._updateReady) txt(ctx, 'Update ready: it installs next time you start the game', cx, 752, `500 28px ${F_UI}`, COL.amber, 'center', 0.02);
+    else if (!this._settings().brightnessChecked) txt(ctx, 'A dark game: check Settings › Display › Brightness', cx, 752, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02);
+    else txt(ctx, 'Point and pull the trigger', cx, 752, `500 28px ${F_UI}`, COL.ink4, 'center', 0.02);
     if (this._xr) this._btn(ctx, this._region(CW - 168, 18, 148, 60, 'exit-vr'), 'Exit VR', null, { ghost: true, size: 28 });
   }
 
@@ -3790,7 +3958,8 @@ export class UI3D {
     });
     const tab = VR_TABS[this._vrTab] || VR_TABS[0];
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
-    const rowH = 88;
+    // six rows (Comfort since P6's Wind squalls) still fit above the panel's foot: 80 px a row instead of 88
+    const rowH = rows.filter((d) => d.key).length > 5 ? 80 : 88;
     let y = 190;
     for (const def of rows) {
       if (def.type === 'link') {
@@ -3804,17 +3973,20 @@ export class UI3D {
     if (tab.id === 'access') this._btn(ctx, this._region(CW / 2 - 200, y + 14, 400, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
   }
 
-  /** One settings row at y: label + value, then a − slider + for ranges or option buttons. */
+  /** One settings row at y: label + value, then a − slider + for ranges or option buttons (rows of 80 px are squeezed). */
   _paintSettingRow(ctx, def, y, rowH, s) {
     const v = def.key in s ? s[def.key] : SETTINGS_DEFAULTS[def.key];
-    txt(ctx, def.label, 44, y + 42, `600 30px ${F_UI}`, COL.ink, 'left', 0);
+    const tight = rowH < 88;
+    const bt = tight ? 8 : 14; // button top within the row
+    const bh = tight ? 64 : 68;
+    txt(ctx, def.label, 44, y + (tight ? 38 : 42), `600 30px ${F_UI}`, COL.ink, 'left', 0);
     if (def.type === 'range') {
       const val = U.clamp(num(v, def.min), def.min, def.max);
-      txt(ctx, def.fmt(val), 44, y + 78, `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
-      this._btn(ctx, this._region(500, y + 14, 68, 68, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
+      txt(ctx, def.fmt(val), 44, y + (tight ? 72 : 78), `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
+      this._btn(ctx, this._region(500, y + bt, 68, bh, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
       const tx = 588;
       const tw = 280;
-      const r = this._region(tx, y + 14, tw, 68, 'slide', { key: def.key });
+      const r = this._region(tx, y + bt, tw, bh, 'slide', { key: def.key });
       const f = (val - def.min) / (def.max - def.min);
       rr(ctx, tx, r.y + 28, tw, 12, 6);
       ctx.fillStyle = '#30363a';
@@ -3829,7 +4001,7 @@ export class UI3D {
       ctx.lineWidth = 4;
       ctx.strokeStyle = '#1a1d1f';
       ctx.stroke();
-      this._btn(ctx, this._region(888, y + 14, 68, 68, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
+      this._btn(ctx, this._region(888, y + bt, 68, bh, 'nudge', { key: def.key, value: 1 }), '+', null, { size: 36 });
     } else {
       const opts = def.type === 'toggle' ? [[true, 'On'], [false, 'Off']] : def.options;
       const many = opts.length > 2;
@@ -3837,7 +4009,7 @@ export class UI3D {
       opts.forEach(([value, label], j) => {
         const on = value === v;
         const bx = many ? 500 + j * (bw + 8) : 588 + j * 188;
-        this._btn(ctx, this._region(bx, y + 14, bw, 68, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
+        this._btn(ctx, this._region(bx, y + bt, bw, bh, 'set', { key: def.key, value }), label, null, { primary: on, size: 28 });
       });
     }
     ctx.fillStyle = COL.line;
@@ -3915,6 +4087,50 @@ export class UI3D {
     const s = this._settings();
     const defs = SETTINGS_SCHEMA.filter((d) => d.key && d.page === 'calibrate');
     defs.forEach((def, i) => this._paintSettingRow(ctx, def, 504 + i * 94, 94, s));
+  }
+
+  /** VR: the section records of one difficulty (P6): difficulty tabs, then one row per section: numeral, name, best, medal, next. */
+  _paintRecords(ctx) {
+    this._frame(ctx);
+    this._header(ctx, 'Section records');
+    const diff = this._recordsDiff();
+    const gap = 12;
+    const tw = (CW - 88 - gap * 2) / 3;
+    DIFFICULTY_ORDER.forEach((k, i) => {
+      this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 62, 'rec-tab', { diff: k }), DIFFICULTY[k].label, null, { primary: k === diff, size: 28 });
+    });
+    const rows = this._recordRowsFor(diff);
+    const y0 = 200;
+    const rh = Math.min(62, Math.floor(470 / Math.max(1, rows.length)));
+    const hf = `650 28px ${F_UI}`;
+    txt(ctx, 'BEST', 520, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'MEDAL', 652, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'NEXT', 812, y0, hf, COL.ink3, 'left', 0.12);
+    const vf = `650 30px ${F_UI}`;
+    const nf = `500 28px ${F_UI}`;
+    rows.forEach((r, i) => {
+      const y = y0 + 16 + i * rh;
+      const by = y + rh / 2 + 10;
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,240,210,0.03)';
+        ctx.fillRect(36, y, CW - 72, rh);
+      }
+      txt(ctx, r.numeral, 50, by, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
+      txt(ctx, ellipsize(ctx, r.name, 380, nf), 128, by, nf, COL.ink2, 'left', 0);
+      txt(ctx, r.best == null ? '—' : fmtSplit(r.best), 520, by, vf, r.best == null ? COL.ink4 : COL.ink, 'left', 0);
+      if (r.medal) {
+        ctx.beginPath();
+        ctx.arc(664, by - 10, 11, 0, Math.PI * 2);
+        ctx.fillStyle = MEDAL_COLOR[r.medal];
+        ctx.fill();
+        txt(ctx, MEDAL_LABEL[r.medal], 684, by, `650 28px ${F_UI}`, COL.ink, 'left', 0);
+      } else txt(ctx, '—', 652, by, vf, COL.ink4, 'left', 0);
+      const t = targetText(r);
+      txt(ctx, ellipsize(ctx, t, CW - 44 - 812, `500 28px ${F_UI}`), 812, by, `500 28px ${F_UI}`, r.next ? COL.ink3 : COL.ink4, 'left', 0);
+    });
+    const tally = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet`;
+    txt(ctx, ellipsize(ctx, tally, CW - 88, `500 28px ${F_UI}`), CW / 2, 710, `500 28px ${F_UI}`, COL.ink2, 'center', 0.02);
+    txt(ctx, 'Gold ≤ par · silver ≤ 1.4 × · brass ≤ 2 ×   (par: the verified route)', CW / 2, 748, `500 28px ${F_UI}`, COL.ink4, 'center', 0, CW - 60);
   }
 
   _paintPause(ctx) {
@@ -4037,6 +4253,15 @@ export class UI3D {
       const vf = `650 ${fitSize(ctx, dd, cw - 16, 44, 28, (px) => `650 ${px}px ${F_UI}`, 0)}px ${F_UI}`;
       txt(ctx, dd, x + cw / 2, y + 90, vf, COL.ink, 'center', 0);
     });
+    // This run's section splits (P6): a 4 x 2 grid, the teaser squeezed under it.
+    const splits = this._runSplits.filter(Boolean);
+    if (splits.length) {
+      this._paintVictorySplits(ctx, splits, 478);
+      txt(ctx, 'CHAPTERS II–V · COMING SOON', cx, 640, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+      this._btn(ctx, this._region((CW - 680) / 2, 676, 400, 76, 'restart'), 'Descend again', null, { primary: true, size: 32 });
+      this._btn(ctx, this._region((CW - 680) / 2 + 416, 676, 264, 76, 'menu'), 'Menu', null, {});
+      return;
+    }
     // The hook.
     const ty = 484;
     rr(ctx, 24, ty, CW - 48, 168, 8);
@@ -4057,6 +4282,34 @@ export class UI3D {
     const bx = (CW - bw) / 2;
     this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });
     this._btn(ctx, this._region(bx + 416, 670, bw - 416, 82, 'menu'), 'Menu', null, {});
+  }
+
+  /** VR victory: up to 8 section splits in two rows of four cells (numeral, time, medal dot + word). */
+  _paintVictorySplits(ctx, splits, y0) {
+    const gap = 10;
+    const cw = (CW - 48 - gap * 3) / 4;
+    const ch = 64;
+    for (const sp of splits) {
+      const col = sp.index % 4;
+      const row = (sp.index / 4) | 0;
+      if (row > 1) continue;
+      const x = 24 + col * (cw + gap);
+      const y = y0 + row * (ch + gap);
+      rr(ctx, x, y, cw, ch, 5);
+      ctx.fillStyle = 'rgba(255,240,210,0.04)';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = sp.medal ? 'rgba(224,160,80,0.4)' : COL.line2;
+      ctx.stroke();
+      txt(ctx, ROMAN[sp.index] || String(sp.index + 1), x + 14, y + 42, `700 28px ${F_DISPLAY}`, COL.amber, 'left', 0);
+      txt(ctx, fmtSplit(sp.time), x + 74, y + 42, `650 28px ${F_UI}`, COL.ink, 'left', 0);
+      if (sp.medal) {
+        ctx.beginPath();
+        ctx.arc(x + cw - 22, y + 32, 11, 0, Math.PI * 2);
+        ctx.fillStyle = MEDAL_COLOR[sp.medal];
+        ctx.fill();
+      }
+    }
   }
 
   // ---- notes ---------------------------------------------------------------------------------
@@ -4318,8 +4571,16 @@ export class UI3D {
       ctx.shadowColor = 'rgba(0,0,0,0.95)';
       ctx.shadowBlur = 14;
       wrapLines(ctx, t.sub, c.cw - 80, sf)
-        .slice(0, 2)
+        .slice(0, t.split ? 1 : 2)
         .forEach((ln, i) => txt(ctx, ln, cx, 200 + i * 40, sf, COL.ink2, 'center', 0));
+      ctx.restore();
+    }
+    if (t.split) {
+      // the section just left (P6): "I · 1:12.4 · SILVER" under the subtitle (the same canvas: no new mesh)
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.95)';
+      ctx.shadowBlur = 12;
+      txt(ctx, t.split, cx, 262, `650 30px ${F_UI}`, COL.amber, 'center', 0.14, c.cw - 60);
       ctx.restore();
     }
     c.tex.needsUpdate = true;

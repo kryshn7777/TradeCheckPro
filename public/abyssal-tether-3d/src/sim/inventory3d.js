@@ -263,6 +263,27 @@ export class Inventory3D {
     this._emit('bag:change', { kind, count: this.counts[kind] });
   }
 
+  /**
+   * Burns `amount` of lantern charge at once (LEVEL_FUN_PLAN P3: relighting a lamp, sim/objectives3d.js). Never below 0: the
+   * lantern still never goes dark (lanternLevel keeps its floor). Returns the charge actually spent.
+   */
+  spend(amount) {
+    const a = typeof amount === 'number' && amount > 0 ? amount : 0;
+    const before = this.lanternCharge;
+    if (!(a > 0) || !(before > 0)) return 0;
+    this.lanternCharge = Math.max(0, before - a);
+    this._lantern();
+    if (before > B.lanternLow && this.lanternCharge <= B.lanternLow) {
+      this.lanternLow = true;
+      this._emit('lantern:low', { charge: this.lanternCharge });
+    }
+    if (this.lanternCharge <= 0 && !this.lanternEmpty) {
+      this.lanternEmpty = true;
+      this._emit('lantern:empty', {});
+    }
+    return before - this.lanternCharge;
+  }
+
   // ---- checkpoints ---------------------------------------------------------------------------
 
   /** Remembers the bag (counts, selection, lantern charge) for a respawn. */

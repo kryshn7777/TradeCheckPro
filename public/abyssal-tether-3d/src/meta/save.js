@@ -11,19 +11,26 @@
  *   today's v1 keys ('abyssalTether3d.v1.*', written by config3d.js Storage) are READ for migration and then kept
  *   in sync as the UI still reads them (see "legacy mirror"); they are never deleted.
  *
- * ---- Schema (schema: 2) --------------------------------------------------------------------------------------
+ * ---- Schema (schema: 3) --------------------------------------------------------------------------------------
  *   { schema, createdAt, updatedAt, id,                      // id: random profile id (diagnostics only)
  *     settings: { ...Storage.loadSettings() keys... } | null,
  *     run: null | { chapter:'ch1', difficulty, checkpoint:{ x,y,z,yaw,index }, section, time, deaths, deepest,
- *                   savedAt, kind:'checkpoint'|'start' },   // the run to Continue
+ *                   savedAt, kind:'checkpoint'|'start', objectives?: [objective ids done] },   // the run to Continue
+ *                   (objectives: LEVEL_FUN_PLAN P1, optional; absent = none done; P3: also fixtures done / haul notches)
  *     chapters: { ch1: { reached, completed, completions, firstCompletedAt, lastCompletedAt,
- *                        byDiff: { <diff>: { runs, completions, best, fewestDeaths, deepest, lastTime, lastDeaths } } } },
+ *                        byDiff: { <diff>: { runs, completions, best, fewestDeaths, deepest, lastTime, lastDeaths,
+ *                                            sections: { <section id>: { best, medal } } } } } },
  *     totals: { runs, deaths, deathsByCause:{...}, playTime, completions } }
+ *   sections (schema 3, LEVEL_FUN_PLAN item 12): the best whole-section split (s) per section and difficulty and the best
+ *   medal it earned ('gold' | 'silver' | 'brass' | null; sim/splits3d.js against data/par-3d.js). Only a section played
+ *   whole in one run is recorded (never after a Continue into it, never in Sandbox).
  *
  * ---- Migration ----------------------------------------------------------------------------------------------
  *   migrateProfile(raw, legacy) accepts: null / garbage -> a fresh profile (legacy v1 records imported);
- *   schema 1 shapes; a schema-2 profile with missing / wrong-typed fields (each readable record is kept);
+ *   schema 1 shapes; schema 2 (P1: run.objectives kept, every difficulty gets an empty `sections`); a schema-2/3 profile
+ *   with missing / wrong-typed fields (each readable record is kept);
  *   a profile from a NEWER schema is kept as-is for reading (never downgraded or overwritten with less).
+ *   The storage keys (IndexedDB version 2, 'abyssalTether3d.v2.profile') did not change with schema 3.
  *   importLegacy(kv) builds chapters.ch1.byDiff from today's keys: best.<d>, fewestDeaths.<d>, deepest.<d>,
  *   runs.<d>, completions.<d>, settings.
  *
@@ -39,12 +46,13 @@
  *   game.save.continueInfo()  -> null | { difficulty, label, section, sectionName, checkpoint, time, deaths, depthMeters, savedAt }
  *   game.save.records(diff)   -> { best, fewestDeaths, deepest, runs, completions }
  *   game.save.chapter('ch1')  -> { reached, completed, completions, byDiff }
+ *   game.save.sectionRecords(diff) -> { <section id>: { best, medal } }   (bus 'split' events from game.js fill it)
  *   game.canContinue() / game.continueRun()   (game.js)
  */
 
 import { DIFFICULTY } from '../sim/config3d.js';
 
-export const SAVE_SCHEMA = 2;
+export const SAVE_SCHEMA = 3;
 export const DB_NAME = 'abyssalTether3d';
 export const DB_VERSION = 2;
 export const DB_STORE = 'profile';
@@ -53,6 +61,9 @@ export const LS_PROFILE_KEY = 'abyssalTether3d.v2.profile';
 export const V1_PREFIX = 'abyssalTether3d.v1.';
 export const DIFFICULTIES = ['normal', 'nightmare', 'abyss', 'sandbox'];
 export const DEATH_CAUSES = ['impact', 'fall', 'hazard', 'creature', 'crush', 'drown', 'kept', 'still'];
+/** Section-split medals, best first (sim/splits3d.js SPLIT_MEDALS: gold <= 1.0 x par, silver 1.4 x, brass 2.0 x). */
+export const MEDALS = ['gold', 'silver', 'brass'];
+const SECTION_ID = /^[a-z][a-z0-9_-]{0,15}$/;
 const DEBOUNCE_MS = 1000;
 
 const isNum = (v) => typeof v === 'number' && isFinite(v);
@@ -64,7 +75,41 @@ const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 // Profile shape
 // ------------------------------------------------------------------------------------------------------------
 export function emptyDiffRecord() {
-  return { runs: 0, completions: 0, best: null, fewestDeaths: null, deepest: 0, lastTime: null, lastDeaths: null };
+  return { runs: 0, completions: 0, best: null, fewestDeaths: null, deepest: 0, lastTime: null, lastDeaths: null, sections: {} };
+}
+
+const medalRank = (m) => (MEDALS.indexOf(m) >= 0 ? MEDALS.length - MEDALS.indexOf(m) : 0);
+
+/** sections (schema 3): { <id>: { best, medal } } with only readable entries (unknown medals become null). */
+function cleanSections(sec) {
+  const out = {};
+  if (!isObj(sec)) return out;
+  for (const id of Object.keys(sec)) {
+    const r = sec[id];
+    if (!SECTION_ID.test(id) || !isObj(r)) continue;
+    const best = posNum(r.best);
+    const medal = MEDALS.indexOf(r.medal) >= 0 ? r.medal : null;
+    if (best || medal) out[id] = { best, medal };
+  }
+  return out;
+}
+
+/** Keeps the faster split and the better medal of two section records. */
+function mergeSections(a, b) {
+  const out = cleanSections(a);
+  const y = cleanSections(b);
+  for (const id of Object.keys(y)) {
+    const x = out[id];
+    if (!x) {
+      out[id] = y[id];
+      continue;
+    }
+    out[id] = {
+      best: x.best && y[id].best ? Math.min(x.best, y[id].best) : x.best || y[id].best,
+      medal: medalRank(y[id].medal) > medalRank(x.medal) ? y[id].medal : x.medal,
+    };
+  }
+  return out;
 }
 
 export function emptyChapter() {
@@ -133,6 +178,7 @@ function cleanDiffRecord(r) {
   out.deepest = nonNeg(r.deepest);
   out.lastTime = posNum(r.lastTime);
   out.lastDeaths = isNum(r.lastDeaths) && r.lastDeaths >= 0 ? Math.floor(r.lastDeaths) : null;
+  out.sections = cleanSections(r.sections);
   return out;
 }
 
@@ -150,7 +196,20 @@ function cleanRun(r) {
     deepest: isNum(r.deepest) ? r.deepest : c.y,
     savedAt: isNum(r.savedAt) ? r.savedAt : 0,
     kind: r.kind === 'start' ? 'start' : 'checkpoint',
+    ...cleanObjectives(r.objectives),
   };
+}
+
+/**
+ * run.objectives (LEVEL_FUN_PLAN P1): the ids of the objectives done in the saved run; absent when there are none. P3 adds
+ * the ratchet of the ones not done yet in the same list of strings: fixture ids done ('lamp-s4a') and haul notches
+ * ('cw-s2#2') (Objectives3D.serialize / load).
+ */
+function cleanObjectives(list) {
+  if (!Array.isArray(list)) return {};
+  const ids = [];
+  for (const id of list) if (typeof id === 'string' && id.length > 0 && id.length <= 40 && ids.length < 64 && ids.indexOf(id) < 0) ids.push(id);
+  return ids.length ? { objectives: ids } : {};
 }
 
 /** Merges two per-difficulty records, keeping the better of each value (never loses a record). */
@@ -165,6 +224,7 @@ export function mergeDiffRecords(a, b) {
     deepest: Math.max(x.deepest, y.deepest),
     lastTime: x.lastTime || y.lastTime,
     lastDeaths: x.lastDeaths != null ? x.lastDeaths : y.lastDeaths,
+    sections: mergeSections(x.sections, y.sections),
   };
 }
 
@@ -193,7 +253,7 @@ export function migrateProfile(raw, legacy = null, now = Date.now()) {
       p.run = cleanRun(raw.run);
       if (!p.run) repaired = true;
     }
-    // chapters (schema 2) or a flat schema-1 shape { byDiff } / { records }
+    // chapters (schema 2 / 3; a schema-2 record gains an empty `sections` per difficulty) or a flat schema-1 shape
     const chaptersIn = isObj(raw.chapters) ? raw.chapters : isObj(raw.byDiff) ? { ch1: { byDiff: raw.byDiff } } : isObj(raw.records) ? { ch1: { byDiff: raw.records } } : null;
     if (chaptersIn) {
       for (const id of Object.keys(chaptersIn)) {
@@ -569,7 +629,7 @@ export class SaveStore {
   records(diff, chapter = 'ch1') {
     const ch = this.chapter(chapter);
     const r = ch && ch.byDiff[diff];
-    return r ? Object.assign({}, r) : emptyDiffRecord();
+    return r ? Object.assign({}, r, { sections: cleanSections(r.sections) }) : emptyDiffRecord();
   }
   _diff(diff, chapter = 'ch1') {
     const ch = this.profile.chapters[chapter] || (this.profile.chapters[chapter] = emptyChapter());
@@ -605,9 +665,9 @@ export class SaveStore {
   }
 
   /** A checkpoint was reached (or progress worth keeping): the Continue point. */
-  checkpointReached({ difficulty, checkpoint, section, time, deaths, deepest }) {
+  checkpointReached({ difficulty, checkpoint, section, time, deaths, deepest, objectives }) {
     return this.update((p) => {
-      const run = cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time, deaths, deepest, savedAt: this.now(), kind: 'checkpoint' });
+      const run = cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time, deaths, deepest, objectives, savedAt: this.now(), kind: 'checkpoint' });
       if (!run) return false;
       p.run = run;
       return true;
@@ -624,6 +684,47 @@ export class SaveStore {
       p.run.savedAt = this.now();
       return true;
     }, 'progress');
+  }
+
+  /** An objective was done (a seal opened): the Continue slot keeps the run's list (LEVEL_FUN_PLAN P1). */
+  runObjectives(objectives) {
+    return this.update((p) => {
+      if (!p.run) return false;
+      const o = cleanObjectives(objectives);
+      if (o.objectives) p.run.objectives = o.objectives;
+      else delete p.run.objectives;
+      p.run.savedAt = this.now();
+      return true;
+    }, 'progress');
+  }
+
+  /**
+   * A section was played whole in one run (bus 'split', sim/splits3d.js): keeps the faster split and the better medal.
+   * Returns { best, previous, isNew } (isNew: this split is the new best).
+   */
+  sectionSplit({ difficulty, section, time, medal = null }) {
+    const res = { best: null, previous: null, isNew: false };
+    if (!difficulty || typeof section !== 'string' || !SECTION_ID.test(section) || !posNum(time)) return res;
+    this.update(() => {
+      const rec = this._diff(difficulty);
+      if (!isObj(rec.sections)) rec.sections = {};
+      const cur = rec.sections[section] || { best: null, medal: null };
+      res.previous = cur.best;
+      const m = MEDALS.indexOf(medal) >= 0 ? medal : null;
+      const best = cur.best && cur.best <= time ? cur.best : time;
+      res.isNew = best === time && cur.best !== time;
+      res.best = best;
+      rec.sections[section] = { best, medal: medalRank(m) > medalRank(cur.medal) ? m : cur.medal };
+      return true;
+    }, 'split');
+    return res;
+  }
+
+  /** The best splits and medals of one difficulty: { <section id>: { best, medal } } (a copy). */
+  sectionRecords(diff, chapter = 'ch1') {
+    const ch = this.chapter(chapter);
+    const r = ch && ch.byDiff[diff];
+    return r && isObj(r.sections) ? cleanSections(r.sections) : {};
   }
 
   deathRecorded({ cause, difficulty, deepestMeters }) {
@@ -800,6 +901,9 @@ export class SaveService {
   records(diff) {
     return this.store.records(diff);
   }
+  sectionRecords(diff) {
+    return this.store.sectionRecords(diff);
+  }
   chapter(id = 'ch1') {
     return this.store.chapter(id);
   }
@@ -827,6 +931,7 @@ export class SaveService {
       deaths: run.deaths,
       depthMeters: Math.max(0, Math.round(-run.deepest)),
       savedAt: run.savedAt,
+      objectives: Array.isArray(run.objectives) ? run.objectives.slice() : [],
     };
   }
 
@@ -865,7 +970,18 @@ export class SaveService {
     on('checkpoint', () => {
       this._countTime();
       if (!saves()) return;
-      this.store.checkpointReached({ difficulty: g.difficultyKey, checkpoint: g.checkpoint, section: g.sectionIndex, time: g.time, deaths: g.deaths, deepest: g.deepest });
+      this.store.checkpointReached({ difficulty: g.difficultyKey, checkpoint: g.checkpoint, section: g.sectionIndex, time: g.time, deaths: g.deaths, deepest: g.deepest, objectives: g.objectives ? g.objectives.serialize() : null });
+    });
+    on('objective:done', () => {
+      if (saves() && g.objectives) this.store.runObjectives(g.objectives.serialize());
+    });
+    // LEVEL_FUN_PLAN P3: the ratchet survives a Continue too (lamps lit, haul notches: sim/objectives3d.js serialize)
+    on('objective:progress', () => {
+      if (saves() && g.objectives) this.store.runObjectives(g.objectives.serialize());
+    });
+    // a section played whole in this run (game.js / sim/splits3d.js): best split and medal per section (schema 3)
+    on('split', (e) => {
+      if (e.recorded) this.store.sectionSplit({ difficulty: e.difficulty || g.difficultyKey, section: e.section, time: e.time, medal: e.medal });
     });
     on('game:continue', (e) => {
       // a continued run is the same run: keep its slot, count nothing new
@@ -951,6 +1067,7 @@ export function nullSave() {
     profile: null,
     continueInfo: () => null,
     records: () => emptyDiffRecord(),
+    sectionRecords: () => ({}),
     chapter: () => null,
     savedSettings: () => null,
     flush: () => Promise.resolve(false),

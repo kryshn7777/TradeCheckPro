@@ -102,7 +102,7 @@ export function vignetteShape(intensity, out) {
 // Display
 // ---------------------------------------------------------------------------------------------------------------------
 /** XR framebuffer scale per tier (mirrors render/renderer3d.js XR_RENDER_SCALE). */
-export const XR_BASE_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
+export const XR_BASE_SCALE = { low: 1.0, quest: 1.0, high: 1.2 };
 
 /** The framebuffer scale a session should start with for a tier ('auto' keeps the renderer's own pick `fallbackTier`). */
 export function xrScaleFor(tier, mult, fallbackTier) {

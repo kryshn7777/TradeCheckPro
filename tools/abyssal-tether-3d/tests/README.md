@@ -71,5 +71,16 @@ The browser side of the release work (PWA install / offline / update, immersive 
 | `perf.mjs` | `Creature3D.update` cost per call (p50 / p99 / max µs). |
 | `allocprof.mjs` | Heap allocation per `Creature3D.update` (V8 sampling profiler, minor-GC objects included; boxed doubles count, so read it as a relative number). |
 | `stubShaft.mjs` | The stub 560 m shaft used by the creature tools. |
+| `nooks.mjs` | LEVEL_FUN_PLAN P5, the Masons' rests on the real level (seeded, 60 Hz): hidden in a rest no attack starts and nothing hits while its budget lasts (25 / 15 / 8 s), the stall clock is frozen, the head stays out of the rest's block, it listens; after the budget a still player is caught as today; skitterlings never bite there; the threat eases; determinism. `node nooks.mjs [seeds]`. Pass / fail. |
+| `lure.mjs` | LEVEL_FUN_PLAN P5, the Mason as the key: 200 seeds x 3 difficulties with the player in the S5 niche (the keystone broken within 40 s in >= 95 %, never a hit), the annoyed path (shot from the niche), a strike never hitting through a solid, the attack line of sight skipping the keystone, what counts as a blow (`Objectives3D.onStrike`), Sandbox. `node lure.mjs [seeds]`. Pass / fail. |
+
+The objectives / seals suites (LEVEL_FUN_PLAN P1-P6) are in `objectives/`: `unit.mjs` (seals), `verbs.mjs` (P3), `routes.mjs` (P2 reach and forks), `machines.mjs` (P4), `mason.mjs` (P5: the S5 keystone and its haul fallback, the S7 survive floor, the escape override, the rests' budgets), `polish.mjs` (P6: the S6 wind squalls: knobs per difficulty, the telegraph, the sin² gust, a push only on a body in the air inside the box, a hanging body swung aside, the 2 m/s² comfort cap, the Wind squalls setting that stills them, determinism, captions and the squall probe of every S6 line; the S2 collapsing span: its groan and 2.25 s / 0.65 s, out of both bake hashes, the re-baked GI matching).
+
+## ux/
+
+| File | |
+|---|---|
+| `unit.mjs` | WP-UX: settings persistence and sanitising, snap turn, comfort vignette rules, display helpers, the caption mapping and tracker, the first-run tutorial. |
+| `medals.mjs` | LEVEL_FUN_PLAN P6, the medals UI (`src/ui/medals.js` + `UI3D` headless with a recording 2D context for the VR canvases): the medal times per section and difficulty from `data/par-3d.js` (printed as a table), the next medal to chase, the rows / tally / section-end line from the schema-3 save; a split on the next title card (a toast when no card shows, at the goal a toast), the VR Records page (3 difficulty tabs, 8 rows), the menu's Records button, the victory splits, the six-row Comfort page, all inside the 1024 x 768 panel at >= 28 logical px. Pass / fail. |
 
 The level's own checks (routes, budgets, determinism) are in `../verify/`.

@@ -17,15 +17,36 @@
  * Sections are ordered top → bottom (yTop > yBottom).
  */
 
-import { U } from './config3d.js';
+import { U, DIFFICULTY } from './config3d.js';
 import { LEVEL_DATA_3D } from '../data/level-data-3d.js';
 import { buildEdges, edgeQuery } from './climbEdges.js';
+import { buildMovers, poseAll } from './movers3d.js';
 
 /** Vertical bucket size (m). */
 const BUCKET = 8;
 /** Boxes are shrunk by this much for line-of-sight tests so grazing an edge never blocks. */
 const LOS_INSET = 0.05;
 const VARIANTS = ['normal', 'nightmare', 'abyss'];
+
+/**
+ * sections[i].reach (LEVEL_FUN_PLAN item 5, the hook's targeting range in that section): a number = the Normal value (the
+ * other difficulties scale it by their own aimRange / Normal's), or { normal, nightmare, abyss, sandbox? } (a missing key
+ * falls back to the scaled Normal value). Returns a clean { normal?, nightmare?, abyss?, sandbox? } or null (no field:
+ * the difficulty's aimRange everywhere).
+ */
+function readReach(r) {
+  if (typeof r === 'number') return isFinite(r) && r > 0 ? { normal: r } : null;
+  if (!r || typeof r !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const k of ['normal', 'nightmare', 'abyss', 'sandbox']) {
+    if (typeof r[k] === 'number' && isFinite(r[k]) && r[k] > 0) {
+      out[k] = r[k];
+      any = true;
+    }
+  }
+  return any ? out : null;
+}
 
 /** Is a raw data object present in this variant (`omitIn` / `onlyIn` lists)? */
 export function inVariant(o, variant) {
@@ -161,9 +182,29 @@ export class Level3D {
     }
 
     // ---- objects (ids derive from the raw index so they are stable across variants)
+    // Seal solids (data field `seal`, LEVEL_FUN_PLAN P1) are collected apart: never in `solids` (view slabs, scene dressing,
+    // climb edges, lightmap / GI bakes and hashes), but in every collision / sight query (querySolids). They are built OPEN
+    // (inactive): a level without an Objectives3D plays exactly as before; Objectives3D.reset() closes them.
+    const sealSolids = [];
+    // Fixture solids (data field `fixture` = the fixture id, LEVEL_FUN_PLAN P5: the S5 keystone) follow the same rule: out of
+    // `solids` (no bake, no hash, no dressing, no climb edge), in every collision / sight query, built inactive (a level without
+    // an Objectives3D has no keystone); Objectives3D owns their `active` flag.
+    const fixtureSolids = [];
     this.solids = this._build(d.solids, 'sol', (o, id) => {
       const b = readBox(o);
       if (!b) return null;
+      if (typeof o.seal === 'string' && o.seal) {
+        sealSolids.push(
+          Object.assign(b, { id, kind: 'grate', seal: o.seal, section: this.sectionIndexAt((b.minY + b.maxY) / 2), active: false, load: 0, life: 1, fallen: false, tag: o.tag || 'seal' }),
+        );
+        return null;
+      }
+      if (typeof o.fixture === 'string' && o.fixture) {
+        fixtureSolids.push(
+          Object.assign(b, { id, kind: o.kind || 'breach', fixture: o.fixture, section: this.sectionIndexAt((b.minY + b.maxY) / 2), active: false, load: 0, life: 1, fallen: false, tag: o.tag || 'fixture' }),
+        );
+        return null;
+      }
       return Object.assign(b, {
         id,
         kind: o.kind || 'stone',
@@ -194,12 +235,20 @@ export class Level3D {
       z: num(o.z, 0),
       kind: o.kind === 'hook' || o.kind === 'fragile' ? o.kind : 'ring',
       normal: normalOf(o.normal),
-      mount: o.mount === 'chain' ? 'chain' : 'solid', // 'chain' = hangs from a giant chain (decor)
+      mount: o.mount === 'chain' || o.mount === 'mover' ? o.mount : 'solid', // 'chain' = hangs from a giant chain (decor); 'mover' = carried by a mover (LEVEL_FUN_PLAN item 7)
       section: this.sectionIndexAt(num(o.y, 0)),
       tag: o.tag || 'route',
       broken: false,
       load: 0,
       life: num(o.life, 1),
+      // LEVEL_FUN_PLAN item 7 (sim/movers3d.js): a ring carried by a mover is `dynamic`, moves with velocity (vx, vy, vz) and may
+      // be `hidden` (in its gear's housing); every other anchor keeps 0 / false (one object shape for the 240 Hz paths).
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      dynamic: false,
+      hidden: false,
+      mover: -1,
     }));
     // Abyss: the backup lines cannot be trusted. Half of the shortcut / recovery rings (not the escape ones: S8 is a flight, and the bot route through it needs them) (a seeded, id-derived choice, the same on
     // every device) are fragile (fragileTime 0.8 s): the lines you fall back on can fail. The route anchors are never touched.
@@ -293,6 +342,15 @@ export class Level3D {
       maxZ,
     };
 
+    // ---- movers (LEVEL_FUN_PLAN item 7, sim/movers3d.js) ----------------------------
+    // The anchors they carry are `dynamic`: posed at t = 0 here (Objectives3D poses them with the run clock), kept out of the
+    // Y index (they move) and appended by anchorsNear() after a box test.
+    const anchorById = Object.create(null);
+    for (const a of this.anchors) anchorById[a.id] = a;
+    this.movers = buildMovers(d.movers, v, anchorById);
+    poseAll(this.movers, 0, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, hidden: false });
+    this.dynAnchors = this.anchors.filter((a) => a.dynamic);
+
     // ---- spatial indices --------------------------------------------------------
     this._solidIndex = new YIndex(this.solids, (s) => s.minY, (s) => s.maxY);
     // Kit dressing that collides (sim/decorColliders.js): a list of its own, never part of `solids` (the view draws those as slabs, the
@@ -300,7 +358,11 @@ export class Level3D {
     this.decorSolids = [];
     this._decorIndex = null;
     this._hazardIndex = new YIndex(this.hazards, (s) => s.minY, (s) => s.maxY);
-    this._anchorIndex = new YIndex(this.anchors, (a) => a.y, (a) => a.y);
+    this._anchorIndex = new YIndex(
+      this.anchors.filter((a) => !a.dynamic),
+      (a) => a.y,
+      (a) => a.y,
+    );
     this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
     this._losScratch = [];
     this._rayScratch = [];
@@ -308,9 +370,14 @@ export class Level3D {
     const eb = buildEdges(this);
     this.edges = eb.edges;
     this._edgeGrid = eb.grid;
+    // Seals join the queries only now: the climb edges above are built from the level without them.
+    this.sealSolids = sealSolids;
+    this._sealIndex = sealSolids.length ? new YIndex(sealSolids, (s) => s.minY, (s) => s.maxY) : null;
+    this.fixtureSolids = fixtureSolids;
+    this._fixtureIndex = fixtureSolids.length ? new YIndex(fixtureSolids, (s) => s.minY, (s) => s.maxY) : null;
 
     this.byId = Object.create(null);
-    for (const list of [this.solids, this.hazards, this.anchors, this.decor, this.climb]) {
+    for (const list of [this.solids, this.sealSolids, this.fixtureSolids, this.hazards, this.anchors, this.decor, this.climb]) {
       for (const o of list) this.byId[o.id] = o;
     }
   }
@@ -331,6 +398,7 @@ export class Level3D {
       theme: Object.assign({ fog: '#20262b', light: '#6fa3b5', accent: '#e0a050', fogNear: 6, fogFar: 70, ambient: 0.3 }, th),
       creature: Object.assign({ mode: 'dormant', lethal: false, speedMul: 1, burstRate: 0, spawnOffsetY: 120 }, s.creature),
       shaft: s.shaft ? Object.assign({}, s.shaft) : null,
+      reach: readReach(s.reach), // targeting range per difficulty (reachOf); null = diff.aimRange
       hints: (Array.isArray(s.hints) ? s.hints.filter((h) => inVariant(h, v)) : [])
         .map((h) => {
           const o = Object.assign({}, h);
@@ -377,6 +445,8 @@ export class Level3D {
    */
   querySolids(minX, minY, minZ, maxX, maxY, maxZ, out) {
     this._queryBoxes(this._solidIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
+    if (this._sealIndex) this._queryBoxes(this._sealIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
+    if (this._fixtureIndex) this._queryBoxes(this._fixtureIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
     if (this.decorSolids.length) {
       if (!this._decorIndex) this._decorIndex = new YIndex(this.decorSolids, (s) => s.minY, (s) => s.maxY);
       this._queryBoxes(this._decorIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
@@ -448,7 +518,10 @@ export class Level3D {
     return out;
   }
 
-  /** Anchors inside the bounding box of the sphere (x, y, z, r) — a superset; callers do the exact distance. */
+  /**
+   * Anchors inside the bounding box of the sphere (x, y, z, r) — a superset; callers do the exact distance. The moving ones
+   * (dynAnchors, LEVEL_FUN_PLAN item 7) are appended after the same box test at their current pose.
+   */
   anchorsNear(x, y, z, r, out) {
     let n = 0; // indexed writes: see _queryBoxes
     const index = this._anchorIndex;
@@ -462,6 +535,12 @@ export class Level3D {
         if (a.x < x - r || a.x > x + r || a.y < y - r || a.y > y + r || a.z < z - r || a.z > z + r) continue;
         out[n++] = a;
       }
+    }
+    const dyn = this.dynAnchors;
+    for (let i = 0; i < dyn.length; i++) {
+      const a = dyn[i];
+      if (a.x < x - r || a.x > x + r || a.y < y - r || a.y > y + r || a.z < z - r || a.z > z + r) continue;
+      out[n++] = a;
     }
     out.length = n;
     return out;
@@ -481,9 +560,10 @@ export class Level3D {
    * Line of sight: does any ACTIVE solid block the segment p0 → p1? The last
    * `endClearance` metres before p1 are ignored (an anchor bolted into a
    * ceiling is still reachable) and boxes are inset by 5 cm so grazing an
-   * edge does not count.
+   * edge does not count. `skipKind` (optional): solids of that kind do not block (the creature's sense of you ignores the
+   * S5 keystone, kind 'breach': LEVEL_FUN_PLAN P5).
    */
-  segmentBlocked(x0, y0, z0, x1, y1, z1, endClearance) {
+  segmentBlocked(x0, y0, z0, x1, y1, z1, endClearance, skipKind) {
     const dx = x1 - x0;
     const dy = y1 - y0;
     const dz = z1 - z0;
@@ -501,7 +581,7 @@ export class Level3D {
     );
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
-      if (s.active === false) continue;
+      if (s.active === false || (skipKind && s.kind === skipKind)) continue;
       if (U.segmentBox(x0, y0, z0, ex, ey, ez, s, LOS_INSET) >= 0) return true;
     }
     return false;
@@ -571,6 +651,22 @@ export class Level3D {
   }
 
   /**
+   * The hook's targeting range (m) in section `i` on difficulty `diff` (LEVEL_FUN_PLAN item 5): the section's `reach` for
+   * diff.key (Sandbox: its level variant's value), a bare Normal value scaled by diff.aimRange / Normal's aimRange, never
+   * above diff.aimRange; no `reach` = diff.aimRange. Only targeting uses it: the rope's maximum length stays diff-wide.
+   */
+  reachOf(i, diff) {
+    const base = diff && diff.aimRange > 0 ? diff.aimRange : DIFFICULTY.normal.aimRange;
+    const s = this.sections[U.clamp(i | 0, 0, this.sections.length - 1)];
+    const r = s && s.reach;
+    if (!r) return base;
+    let v = r[diff && diff.key];
+    if (v === undefined && diff && diff.levelVariant) v = r[diff.levelVariant];
+    if (v === undefined && r.normal !== undefined) v = Math.round(((r.normal * base) / DIFFICULTY.normal.aimRange) * 2) / 2;
+    return v !== undefined && v < base ? v : base;
+  }
+
+  /**
    * Respawn point for a death in section `sectionIndex` under a checkpoint mode:
    * 'all' → that section's checkpoint; 'alternate' → the latest section with an
    * even index ≤ sectionIndex; 'none' → spawn (index 0).
@@ -592,7 +688,27 @@ export class Level3D {
     return !!g && x >= g.minX && x <= g.maxX && y >= g.minY && y <= g.maxY && z >= g.minZ && z <= g.maxZ;
   }
 
-  /** Restores crumbled ledges and broken fragile anchors for a fresh attempt. */
+  /**
+   * Top face of the highest CLOSED seal plate below y whose footprint holds (x, z) (pass NaN for x / z to take any plate),
+   * or -Infinity: the floor a spawn below the player must stay above (skitter3d.js).
+   */
+  closedSealBelow(x, y, z) {
+    let best = -Infinity;
+    const list = this.sealSolids;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (s.active === false || s.maxY > y || s.maxY <= best) continue;
+      if (x === x && (x < s.minX || x > s.maxX)) continue;
+      if (z === z && (z < s.minZ || z > s.maxZ)) continue;
+      best = s.maxY;
+    }
+    return best;
+  }
+
+  /**
+   * Restores crumbled ledges and broken fragile anchors for a fresh attempt. Seal plates are left as they are: their state
+   * belongs to Objectives3D (game.respawn calls objectives.reapply() after this).
+   */
   reset() {
     for (let i = 0; i < this.solids.length; i++) {
       const s = this.solids[i];

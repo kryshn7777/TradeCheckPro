@@ -271,7 +271,26 @@ const hurt = (health, hp) => {
   }
   const mean = total / N;
   ok(mean > sup.length * 0.28 && mean < sup.length * 0.42, `about a third of the spots hold an item: ${mean.toFixed(1)} of ${sup.length}`);
-  ok(unfair === 0, `fairness: a battery in every group of three sections and a healing item in each half, in all ${N} seeds`);
+  ok(unfair === 0, `fairness: a battery in every group of three sections, a healing item in each half and an item on every fork's safe line (slow spots), in all ${N} seeds`);
+  // LEVEL_FUN_PLAN item 6: the slow spots (safe lines) are favoured and stocked with first aid and batteries
+  {
+    const slowSpots = spots.filter((o) => o.tier === 'slow').length;
+    let onSlow = 0;
+    let all = 0;
+    const slowKinds = [0, 0, 0, 0];
+    for (let seed = 1; seed <= N; seed++) {
+      for (const e of pickSupplies(spots, seed * 7919, { sections: 8 })) {
+        all++;
+        if (spots[e.spot].tier === 'slow') {
+          onSlow++;
+          slowKinds[e.kind]++;
+        }
+      }
+    }
+    const share = onSlow / all;
+    ok(slowSpots >= 6 && share > (slowSpots / spots.length) * 1.1, `safe-line spots are favoured: ${slowSpots} of ${spots.length} spots hold ${(share * 100).toFixed(0)} % of the items`);
+    ok(slowKinds[ITEM.BATTERY] + slowKinds[ITEM.FIRST_AID] > slowKinds[ITEM.BANDAGE] + slowKinds[ITEM.ADRENALINE], `safe-line items lean to batteries and first aid (battery ${slowKinds[3]}, first aid ${slowKinds[0]}, bandage ${slowKinds[1]}, adrenaline ${slowKinds[2]})`);
+  }
   ok(kinds[ITEM.BANDAGE] > kinds[ITEM.ADRENALINE] && kinds[ITEM.BATTERY] > kinds[ITEM.ADRENALINE] && kinds[ITEM.ADRENALINE] > kinds[ITEM.FIRST_AID], `rarity: bandage ${kinds[1]}, battery ${kinds[3]} > adrenaline ${kinds[2]} > first aid ${kinds[0]}`);
   ok(maxFA <= B.maxFirstAid && faPerSecMax <= 1 && adrPerSecMax <= 1, `at most ${B.maxFirstAid} first aid kits a run and one first aid / one adrenaline per section (max ${maxFA})`);
   ok(minPerSec >= 1 && maxPerSec <= 5, `${minPerSec}-${maxPerSec} items per section`);

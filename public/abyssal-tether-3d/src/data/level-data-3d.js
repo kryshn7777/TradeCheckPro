@@ -141,8 +141,8 @@ function light(x, y, z, color, intensity, range, flicker = 0, extra) {
   lights.push(Object.assign({ x, y, z, color, intensity, range, flicker }, extra));
 }
 /** A lit work lamp and its warm pool in one call (art pass): the fixture at (x, y, z) facing yaw, the baked light 0.4 m in front of it. */
-function lampPool(x, y, z, yaw, intensity = 1, range = 12, flicker = 0.35, color = '#e8a458') {
-  dec('lamp', x, y, z, 0.4, 0.8, 0.4, yaw, { lit: true, flicker });
+function lampPool(x, y, z, yaw, intensity = 1, range = 12, flicker = 0.35, color = '#e8a458', props) {
+  dec('lamp', x, y, z, 0.4, 0.8, 0.4, yaw, Object.assign({ lit: true, flicker }, props));
   light(x - Math.sin(yaw) * 0.45, y, z - Math.cos(yaw) * 0.45, color, intensity, range, flicker);
 }
 
@@ -225,6 +225,10 @@ const s1Girder = S('s1-girder', -11, 11, 7, 7.8, -1.4, -0.6, 'metal');
 const s1WellBeam = S('s1-wellbeam', 6.6, 7.4, 3, 3.8, -11, 11, 'metal');
 under('t1', s1Girder, -4, -1, 'ring', 'tutorial');
 under('t2', s1WellBeam, 7, -6, 'ring', 'tutorial');
+// THE BELL (LEVEL_FUN_PLAN P3, S1's objective `bell-s1` in FIXTURES below): it hangs on a chain from the girder 2.5 m east of
+// the low point of the first swing (fired from the Threshold). Steer the swing into it: one strike tolls it and the grating
+// under the chimney opens. Not a solid of the level (no bake, no hash): Objectives3D bounces the body off it.
+dec('chain', -1.5, 1.775, -1, 0.5, 10.45, 0.5, 0, { link: 0.9 });
 
 dec('arch', -4, 5, 10.5, 12, 10, 1.2, 0); // the Threshold arch on the south wall, over the spawn
 dec('statue', -9.5, 3.2, 9.5, 2.2, 6.4, 2.2, -PI / 4); // Lanternwrights flanking the Threshold, facing the chimney
@@ -277,15 +281,27 @@ S('s2-far', -34, -22, -28, -25, -11, 1);
 // Recovery: a ring on a chain mid-hall beside the swing line, 14 m above the
 // floor — high enough that a short release caught here swings clear of it.
 chainRing('s2-catch', -14, -21, -1, 20, 'ring', 'recovery', { omitIn: AB });
+// THE COUNTERWEIGHT (LEVEL_FUN_PLAN P3, S2's objective `cw-s2`): its ring hangs on a chain off the far pier's north lip, over
+// the strip of floor before the opening, in sight from the pier and from the hall floor. Hook it and haul (grip / reel in):
+// four ratchet notches raise the counterweight and the grating in the opening slides away. A haul ring never reels you in.
+chainRing('s2-cw', -24.5, -19, 2.5, 12, 'ring', 'objective');
 const s2FloorA = S('s2-floor-a', -22, 11, -38, -35, -11, 11, 'wall', { tag: 'floor' });
 S('s2-floor-b', -34, -22, -38, -35, -11, 3, 'wall', { tag: 'floor' });
 const s2Arm = S('s2-arm', -34, -27, -17.5, -16.5, 6.4, 7.6, 'metal');
 under('s2-lower', s2Arm, -28, 7, 'ring', 'route');
 S('s2-low', -34, -24, -47, -44, -11, 11);
+// FAST LINE (LEVEL_FUN_PLAN item 8): a frayed ring bolted under the hall floor's lip at the opening. Step off the far pier
+// into the opening and catch it as you fall past: it kills the fall, then snaps, and you drop onto the lower ledge (no
+// lowering on the arm ring).
+A('s2-f1', -27, -38.25, 2.4, 'fragile', 'risk');
 H('s2-spikes-ab', -34, -31.5, -44, -43.5, -11, 11, 'spikes', { onlyIn: AB, normal: { x: 0, y: 1, z: 0 } }); // Abyss: the far end bristles
 under('s2-b1', s2FloorA, -12, 0, 'ring', 'route');
 under('s2-b2', s2FloorA, -2, -6, 'ring', 'shortcut');
-S('s2-span', -18, -6, -57, -56, -3, 3, 'bridge', { omitIn: NM });
+// LEVEL_FUN_PLAN P6 (item 9), the collapsing span: the safety span under the lower hall's swing gives way under a body that
+// stays on it (Normal crumbleTime 0.9 x life 2.5 = 2.25 s; Nightmare's own crumbles in 0.65 s; Abyss has none). It groans
+// and sheds grit from the first touch (platform:strain, the view shakes it): a short release caught here has its moment to
+// fire at s2-b1 again. Not a route ledge (no bot line stands on it); a crumble is out of the bake and both hashes.
+S('s2-span', -18, -6, -57, -56, -3, 3, 'crumble', { omitIn: NM, life: 2.5 });
 S('s2-span-nm', -18, -6, -57, -56, -3, 3, 'crumble', { onlyIn: NMO });
 slabHole('s2-pier', 0, 11, -11, 11, -54, -51, [4, 9, -3, 3], 'stone');
 under('s2-x', s2FloorA, 6.5, 0, 'ring', 'route'); // lowers you through the pier's well
@@ -295,6 +311,8 @@ dec('far-structure', -70, -60, -40, 16, 90, 16, 0, { variant: 'tower' });
 dec('statue', -28, -15.5, -9.5, 3.5, 19, 3.5, -PI / 2); // a colossal Lanternwright on the far pier
 dec('cables', 10, -12, -10, 1, 1, 1, 0, { x2: -33, y2: -20, z2: -10 });
 dec('plaque', -33.9, -24, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT.' });
+// LORE (LEVEL_FUN_PLAN item 6): one plaque on each safe line, by its supplies, under a lamp that is already there.
+dec('plaque', -16, -33.4, 10.85, 3.6, 0.9, 0.15, 0, { text: 'WE LOWERED THE FIRST LAMP BY HAND. IT TOOK A YEAR.', lore: true });
 dec('arch', -11.5, -20, -10.6, 16, 18, 1.2, PI);
 dec('arch', -11.5, -20, 10.6, 16, 18, 1.2, 0);
 dec('chain', -15, -22, 6, 0.6, 26, 0.6, 0, { link: 1 });
@@ -358,12 +376,26 @@ under('s3-lower', s3Arm, -29, -8, 'ring', 'route');
 S('s3-shelf', -34, -26, -99, -96, -11, 1);
 const g5 = S('s3-g5', -21, -19.5, -91, -90, -11, 11, 'metal');
 under('s3-b1', g5, -20.25, -6, 'ring', 'route');
+// MACHINES (LEVEL_FUN_PLAN P4, items 7-9; MOVERS and LANES below): two moving rings carried by closed-form movers (sim/
+// movers3d.js; the view moves the cage and its chain and draws the gear: render/objectivesView.js) and a rockfall lane.
+//  FAST LINE (item 8): off the first span's south side: the old iron cage south of it now swings (the chain and cage decor
+//  below, `cage-s3`), and the rusted ring under it (fragile: it kills the fall, then snaps) catches you as you fall past; then
+//  the sound hook below, the winch from that hook, and lower yourself onto the Vault hall's landing. No more spans, no shelf.
+A('s3-cage', -8, -78.75, 7, 'fragile', 'risk', { mount: 'mover' });
+chainRing('s3-f2', -4, -88.5, 5, 40, 'hook', 'risk');
+//  THE WINCH (S3's objective `winch-s3`, item 2's S3 verb): a gear half sunk in the north wall turns once every 12 s; a ring
+//  rides its rim, out of the wall for less than half a turn. Hook it while it is out and let the gear wind: three notches and
+//  the grating below opens. It sits where the two lines meet (in reach of the shelf and of the fast line's hook, item 8), and
+//  a missed timing only means waiting for the next turn (it is in sight from most of the grating too).
+A('s3-winch', -12, -90, -9.4, 'ring', 'objective', { mount: 'mover' });
 
 dec('ribs', -33.7, -86, 6, 0.6, 22, 10, -PI / 2);
 dec('bones', 10, -62, 9, 3, 2, 3, 0.4);
 dec('plaque', 10.85, -64.5, -6, 0.15, 0.9, 3.6, PI / 2, { text: 'NINTH GALLERY — CLOSED. THE STONE HAS BEEN LISTENING.' });
-dec('cage', -8, -77, 7, 2, 3, 2, 0);
-dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7 });
+dec('plaque', -33.85, -94.4, -1.5, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE GALLERY FELL TWICE. THE MASONS BUILT IT A THIRD TIME.', lore: true }); // the shelf (safe line)
+// the cage and its chain swing with the cage ring (MOVERS: `mov-s3-cage` carries them; same box as ever, so the bakes keep it)
+dec('cage', -8, -77, 7, 2, 3, 2, 0, { id: 'cage-s3' });
+dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7, id: 'cage-s3-chain' });
 dec('glyphs', -33.9, -88, -6, 0.1, 2, 10, -PI / 2);
 dec('pipe', 10.6, -80, -10.4, 0.8, 40, 0.8, 0);
 dec('arch', -12, -75, 10.6, 20, 14, 1.2, 0);
@@ -412,6 +444,9 @@ chainRing('s4-a4', -6, -113, 4, 52);
 chainRing('s4-catch', -4, -128, -4, 67, 'ring', 'recovery', { omitIn: NM });
 S('s4-plinth', -20, -12, -129, -126, 2, 10);
 chainRing('s4-a5', -8, -124, -1, 63);
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): with the shorter deep reach (REACH below) the Gullet's closed mouth saw no ring above
+// from its west half; one recovery ring over it, in every variant (Abyss may fray it, level3d.js).
+chainRing('s4-up', -12, -135, -2, 74, 'ring', 'recovery');
 
 // The Vault's far side: colossal structures in the fog.
 dec('far-structure', -60, -170, -150, 30, 220, 18, 0, { variant: 'spire' });
@@ -420,6 +455,7 @@ dec('far-structure', -10, -230, -120, 120, 14, 10, 0, { variant: 'bridge' });
 dec('shaft-light', -30, -180, -110, 10, 240, 10, 0, { color: '#b8f0e0' });
 dec('shaft-light', 50, -170, -80, 8, 220, 8, 0, { color: '#b8f0e0' });
 dec('plaque', -16, -103.6, -5.5, 3.6, 0.9, 0.15, PI, { text: 'DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL.' });
+dec('plaque', 9, -117.4, -10.85, 3.6, 0.9, 0.15, PI, { text: 'THE VAULT WAS NOT DUG. WE FOUND IT, AND IT LISTENED.', lore: true }); // the shelf (safe line)
 dec('ribs', -40, -150, -15, 30, 50, 2, 0);
 dec('machinery', 9, -108, -9, 3, 6, 3, 0);
 dec('glyphs', 10.9, -112, 4, 0.1, 1.5, 12, PI / 2);
@@ -427,7 +463,12 @@ dec('lamp', 10.6, -98.4, 6, 0.4, 0.8, 0.4, PI / 2, { lit: true, flicker: 0.7 });
 light(10.4, -98.4, 6, '#e0a050', 0.8, 10, 0.7);
 light(-30, -150, -120, '#b8f0e0', 3.6, 140, 0, { far: true });
 // ART PASS S4: lit waypoints (catwalk end, shelf, plinth), mid-distance cold columns inside the Vault.
-lampPool(-16, -104.5, -23.4, 0, 1.3, 16, 0.4);
+// THE LAMPS (LEVEL_FUN_PLAN P3, S4's objective: lamp-s4a/b/c in FIXTURES): the catwalk's three lamps have gone cold. Both
+// lines stand on the catwalk; hold the lantern to each (the Vault's baked lamp light follows how many are lit: render/
+// lighting.js). The end lamp keeps its baked pool; the two rail lamps are housings only (no light: their flame is emissive).
+lampPool(-16, -104.5, -23.4, 0, 1.3, 16, 0.4, '#e8a458', { lit: false, fixture: 'lamp-s4a' });
+dec('lamp', -12.15, -103.6, -15, 0.4, 0.8, 0.4, PI / 2, { lit: false, flicker: 0.4, fixture: 'lamp-s4b' }); // east rail
+dec('lamp', -19.85, -103.6, -15, 0.4, 0.8, 0.4, -PI / 2, { lit: false, flicker: 0.4, fixture: 'lamp-s4c' }); // west rail
 lampPool(10.6, -117.6, -8, PI / 2, 1.0, 12, 0.4);
 lampPool(-16, -124.6, 10.4, 0, 1.0, 12, 0.4);
 dec('shaft-light', -50, -170, -60, 14, 220, 14, 0, { color: '#9fe0d0' });
@@ -475,6 +516,11 @@ under('s5-h6', a56, -15.5, 0, 'hook');
 S('s5-step6', -21, -16, -203, -200, -3, 9);
 const a57 = S('s5-arm7', -12.6, -11.4, -197, -196, 3, 9, 'metal');
 under('s5-h7', a57, -12, 3.5, 'hook');
+// FAST LINE (LEVEL_FUN_PLAN item 8): the dive. Off the landing's west lip and straight down the middle of the throat, past
+// every ledge, on frayed rings hung from the dark above (they snap), to one sound hook that lowers you onto the fork.
+chainRing('s5-f1', -12, -166, 0, 20, 'fragile', 'risk');
+chainRing('s5-f2', -12, -180, 0, 34, 'fragile', 'risk');
+chainRing('s5-f3', -12, -193, 0, 47, 'hook', 'risk');
 // Recovery: a ring bolted to the south wall near the bottom (Normal only).
 A('s5-catch', -12, -194, 8.75, 'ring', 'recovery', { omitIn: NM, normal: { x: 0, y: 0, z: -1 } });
 // Nightmare+: rebar where a wide swing brushes the walls.
@@ -486,6 +532,7 @@ dec('ribs', -20.75, -182, -1, 0.5, 12, 8, -PI / 2);
 dec('pipe', -20.4, -178, -8.4, 0.8, 50, 0.8, 0);
 dec('pipe', -3.6, -192, 8.4, 0.8, 22, 0.8, 0);
 dec('plaque', -3.15, -150.4, 6, 0.15, 0.9, 3.6, PI / 2, { text: 'THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF.' });
+dec('plaque', -3.15, -183.3, -7.1, 0.15, 0.9, 3.2, PI / 2, { text: 'A MASON CUT EACH LEDGE, THEN WENT DOWN TO CUT THE NEXT.', lore: true }); // step 4 (safe line)
 dec('glyphs', -12, -165, -8.9, 10, 1.2, 0.1, 0);
 dec('cage', -7, -190, 6, 2, 3, 2, 0);
 dec('shaft-light', -12, -180, 0, 4, 50, 4, 0, { color: '#7a3b22' });
@@ -546,10 +593,13 @@ chainRing('s6-ra3', -2.6, -234, -4, 30, 'fragile', 'risk');
 chainRing('s6-ra4', 2, -247, 2, 43, 'fragile', 'risk');
 chainRing('s6-ra5', -2, -261, -2, 57, 'hook', 'risk'); // sound: lowers you onto the nave landing
 H('s6-rebar-e', 9.7, 10, -254, -236, -11, 11, 'rebar', { normal: { x: -1, y: 0, z: 0 } });
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): the grating under the throat's south side saw no ring above at the Abyss reach.
+chainRing('s6-up', 2, -266, 6, 61, 'ring', 'recovery');
 H('s6-rebar-nm', 5.5, 8.5, -227, -226.5, -8.5, 0.5, 'rebar', { onlyIn: NM }); // under the ledge's far end
 
 dec('plaque', -16, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE LONG STAIR — FOR THE PATIENT' });
 dec('plaque', -8, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE THROAT — FOR THE LATE' });
+dec('plaque', -33.85, -265.2, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE PATIENT REACH THE BOTTOM. THE LATE ARE CARRIED THERE.', lore: true }); // shelf 5 (safe line)
 dec('lamp', -19.6, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.25 });
 dec('lamp', -4.4, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.6 });
 dec('glyphs', -13.05, -240, 0, 0.1, 26, 16, PI / 2); // carved down the dividing wall, both faces
@@ -613,6 +663,9 @@ S('s7-perch', -24, -16, -350, -349, 22, 30, 'metal');
 // Recovery rings under the spiral (Normal: both; Nightmare: one; Abyss: none).
 chainRing('s7-r1', -9, -353, 18, 70, 'ring', 'recovery', { omitIn: NM });
 chainRing('s7-r2', -13, -386, -27, 100, 'ring', 'recovery', { omitIn: AB });
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): over the iris, in every variant: with the deep reach (REACH below) its east half saw
+// no ring above. It hangs from the landing, far above, beside the spire's tip.
+chainRing('s7-up', 2, -410, 2, 125, 'ring', 'recovery');
 dec('chain', -23.5, -318, 26, 0.4, 62, 0.4, 0, { link: 0.8 });
 dec('chain', -16.5, -318, 26, 0.4, 62, 0.4, 0, { link: 0.8 });
 chainRing('s7-n6', -18, -346, 12, 60);
@@ -621,6 +674,16 @@ chainRing('s7-n8', -22, -368, -24, 82);
 chainRing('s7-n9', -4, -379, -30, 93);
 chainRing('s7-n10', 10, -390, -16, 104);
 chainRing('s7-n11', 6, -404, -15, 118);
+// FAST LINE (LEVEL_FUN_PLAN item 8): the plumb line. Off the landing's north lip and straight down a column of frayed rings
+// hung 1 m out from it, right over the throat's landing: each one kills the fall and snaps; a sound hook at the foot lowers
+// you through the iris onto the landing.
+chainRing('s7-f1', 4.5, -297, -12.5, 14, 'fragile', 'risk'); // from the Two Descents' north wall, which hangs free above
+chainRing('s7-f2', 4.5, -314, -12.5, 31, 'fragile', 'risk');
+chainRing('s7-f3', 4.5, -331, -12.5, 48, 'fragile', 'risk');
+chainRing('s7-f4', 4.5, -348, -12.5, 65, 'fragile', 'risk');
+chainRing('s7-f5', 4.5, -365, -12.5, 82, 'fragile', 'risk');
+chainRing('s7-f6', 4.5, -382, -12.5, 99, 'fragile', 'risk');
+chainRing('s7-f7', 4.5, -399, -12.5, 116, 'hook', 'risk');
 
 dec('ribs', -51, -350, 0, 2, 120, 70, -PI / 2);
 dec('ribs', 27, -350, 0, 2, 120, 70, PI / 2);
@@ -669,7 +732,7 @@ chainRing('s8-e1', -8, -434, -6, 140, 'ring', 'escape');
 chainRing('s8-e2', -10, -446, 10, 152, 'ring', 'escape');
 chainRing('s8-e3', 4, -460, 4, 166, 'ring', 'escape');
 chainRing('s8-e4', -4, -480, -6, 186, 'ring', 'escape');
-chainRing('s8-e5', 0, -500, 2, 206, 'ring', 'escape');
+chainRing('s8-e5', 0, -505, 2, 211, 'ring', 'escape');
 chainRing('s8-e6', -4, -526, -2, 232, 'ring', 'escape');
 A('s8-w1', -11.75, -532, 4, 'ring', 'escape', { normal: { x: 1, y: 0, z: 0 } }); // on the throat's west wall: a second way down
 H('s8-blades-ab', 7.4, 8, -540, -530, -10, 10, 'blades', { onlyIn: AB, normal: { x: -1, y: 0, z: 0 } });
@@ -685,6 +748,7 @@ dec('ribs', -21.25, -450, 0, 1.5, 30, 30, -PI / 2);
 dec('glyphs', -2, -540, -9.9, 14, 2, 0.1, PI);
 dec('machinery', 6, -553, -7, 3, 5, 3, 0);
 dec('plaque', -2, -546.8, 9.85, 3.8, 0.9, 0.15, 0, { text: 'BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE.' });
+dec('plaque', -10, -468.4, 19.85, 3.6, 0.9, 0.15, 0, { text: 'THE LAST LANTERNWRIGHTS RESTED HERE. NONE OF THEM CLIMBED BACK.', lore: true }); // the first step (safe line)
 dec('statue', -7, -552, 22, 2.2, 8, 2.2, PI);
 dec('statue', 1, -552, 22, 2.2, 8, 2.2, PI);
 dec('still-lamp', -3, -552.5, 26.5, 1.2, 2.4, 1.2, 0);
@@ -699,6 +763,194 @@ light(-2, -540, 0, '#f0b868', 2.2, 44, 0.1);
 light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 
 // =============================================================================
+// SEALS AND OBJECTIVES (docs/abyssal-tether-3d/plans/LEVEL_FUN_PLAN.md, phase P1 "seal the shaft")
+//  Every section S1-S7 is left through one seal: iron grating across the section's choke plane (LEVEL_FUN_PLAN §0). Closed,
+//  it is a floor you stand on and a wall your hook cannot see through; its objective opens it (the solids go inactive and
+//  the bars slide away, render/objectivesView.js). P1 objective = the hook verb on a ring that is already on the route:
+//  hooking it opens the seal below. P3 ("first verbs"): S1 opens on the bell, S2 on the counterweight haul, S4 on the
+//  catwalk's three lamps (both lines of a fork reach them); the others keep their route ring. P4 ("machines"): S3 opens on
+//  the winch (a ring riding a turning gear, MOVERS below). S8 stays unsealed (the flight).
+//  Seal solids are ordinary solid boxes (kind 'grate', field `seal` = the seal id), declared after every chainRing above so
+//  no chain stops at one. Level3D keeps them OUT of `level.solids` (level.sealSolids): the view's slab buckets, the scene
+//  dressing, the climb edges, the lightmap / GI bakes and their hashes never see them; collision, line of sight and
+//  raycasts do (Level3D.querySolids). Objectives3D (sim/objectives3d.js) owns their `active` flag.
+//  Each plate stays inside its section's walls (the S6 floor runs under the wall footprints, so no line slips through a
+//  corner), lies below the section's last route anchor and above the next checkpoint (verify.mjs V1 seal checks).
+// =============================================================================
+const SEAL = (id, sealId, x0, x1, y0, y1, z0, z1) => S(id, x0, x1, y0, y1, z0, z1, 'grate', { seal: sealId });
+// S1 -> S2: the chimney's whole footprint, half a metre under the sill and the pocket: the well (east), the void under the
+// Threshold, and the 0.5 m slit under the sill (too low for a body, not for a sight line into the hall).
+SEAL('seal-s1-floor', 'seal-s1', -11, 11, -9, -8.5, -11, 11);
+// S2 upper hall -> lower hall: the floor opening beside the far pier, flush with the floor.
+SEAL('seal-s2-gap', 'seal-s2', -34, -22, -36, -35, 3, 11);
+// S3 -> S4: the gallery and the Vault hall are one shaft: a full grate floor 1.6 m above the S4 landing.
+SEAL('seal-s3-floor', 'seal-s3', -34, 11, -98.4, -98, -11, 11);
+// S4 -> S5: a plug in the Gullet's mouth.
+SEAL('seal-s4-mouth', 'seal-s4', -21, -3, -150.6, -150, -9, 9);
+// S5 -> S6: a plug in the Two Descents' roof, under the last step.
+SEAL('seal-s5-roof', 'seal-s5', -21, -3, -202.6, -202, -9, 9);
+// S6 -> S7: a full grate floor under the stair and the throat, out to the outer faces of the S6 walls.
+SEAL('seal-s6-floor', 'seal-s6', -37, 13, -284.6, -284, -14, 14);
+// S7 -> S8: the iris, four quadrant plugs in the nave floor's hole.
+SEAL('seal-s7-nw', 'seal-s7', -22, -2, -424.6, -424, -20, 0);
+SEAL('seal-s7-ne', 'seal-s7', -2, 18, -424.6, -424, -20, 0);
+SEAL('seal-s7-sw', 'seal-s7', -22, -2, -424.6, -424, 0, 20);
+SEAL('seal-s7-se', 'seal-s7', -2, 18, -424.6, -424, 0, 20);
+
+// THE KEYSTONE (LEVEL_FUN_PLAN P5, item 3: S5's objective `key-s5`): an iron-banded keystone prop on the last step of the
+// Gullet stair, 1.4 m out from the west wall: the niche behind it is the lure (NOOKS below). Wait in there and let the Mason
+// knock: its lunge stops at the stone and breaks it, and the plug under the stair drops. Or hook the ring on its face and
+// haul it (loud: it usually comes first). A fixture solid (`fixture`): Level3D keeps it out of `level.solids` like the
+// seal plates (no bake, no hash, no dressing), Objectives3D owns its `active` flag. Declared after every chainRing.
+S('key-s5-stone', -19.6, -19, -200, -197.5, -2.6, -0.2, 'breach', { fixture: 'key-s5' });
+A('key-s5-ring', -18.75, -198.6, -1.4, 'ring', 'objective', { normal: { x: 1, y: 0, z: 0 } });
+
+/** The seals: `ids` = their solids; `open` = how the view opens them ('slide': the two leaves part toward the walls). */
+const seals = [
+  { id: 'seal-s1', section: 's1', ids: ['seal-s1-floor'], open: 'slide' },
+  { id: 'seal-s2', section: 's2', ids: ['seal-s2-gap'], open: 'slide' },
+  { id: 'seal-s3', section: 's3', ids: ['seal-s3-floor'], open: 'slide' },
+  { id: 'seal-s4', section: 's4', ids: ['seal-s4-mouth'], open: 'slide' },
+  { id: 'seal-s5', section: 's5', ids: ['seal-s5-roof'], open: 'slide' },
+  { id: 'seal-s6', section: 's6', ids: ['seal-s6-floor'], open: 'slide' },
+  { id: 'seal-s7', section: 's7', ids: ['seal-s7-nw', 'seal-s7-ne', 'seal-s7-sw', 'seal-s7-se'], open: 'iris' },
+];
+/**
+ * What a verb acts on (sim/objectives3d.js). `hook`: a ring of the route (hooking it and holding `hold` s counts; S3, S5-S7:
+ * the S6 seal opens from either line of the fork, the S7 seal from the spiral, the spire's face or the plumb line).
+ * P3 verbs (LEVEL_FUN_PLAN item 2, knobs per difficulty in `by`):
+ *   bell  S1: strike it with the body at `minSpeed` m/s or more (the swing on t1); r = the bell's radius
+ *   haul  S2: hook `anchorId` and haul (grip / reel in) for `time` s in `notches` ratchet steps; no reel toward the ring
+ *   lamp  S4: the lantern within `r` of the wick for `time` s; costs `charge` of the lantern (never blocks: twice as long
+ *         and it empties the lantern when less is left)
+ * P4 verb:
+ *   winch S3: a rope biting `anchorId` (the ring on the turning gear, MOVERS) for `time` s, in `notches` ratchet steps (the
+ *         gear hauls: no input; a line pulled off as the ring turns into the wall keeps its notches)
+ * P5 verbs (the Mason):
+ *   breach  S5: the keystone `solidId` breaks under `hp` Mason lunges (stopped at it, at the mouth of its lure rest `nookId`,
+ *           or ending within `r` m of it); fallback at once: haul its ring `anchorId` for `haulTime` s in `notches` notches
+ *   survive S7: hang on in the nave (`box`, not standing on `pauseOnId`) for `time` s in `stages` stages (a stage is kept
+ *           through a death); `boltOrder` = the order the view withdraws the iris's four bolts (the one over the S8 landing
+ *           last); the seal opens at the last stage
+ */
+const fixtures = [
+  { id: 'bell-s1', kind: 'bell', x: -1.5, y: -4.2, z: -1, r: 0.75, minSpeed: 2.5, by: { nightmare: { minSpeed: 3 }, abyss: { minSpeed: 3.5 } } },
+  { id: 'cw-s2', kind: 'haul', anchorId: 's2-cw', time: 1.5, notches: 4, by: { nightmare: { time: 1.8 }, abyss: { time: 2.2 } } },
+  { id: 'winch-s3', kind: 'winch', anchorId: 's3-winch', time: 0.9, notches: 3, by: { nightmare: { time: 1.2 }, abyss: { time: 1.5 } } },
+  { id: 'lamp-s4a', kind: 'lamp', x: -16, y: -104.5, z: -23.4, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // catwalk end
+  { id: 'lamp-s4b', kind: 'lamp', x: -12.15, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // east rail
+  { id: 'lamp-s4c', kind: 'lamp', x: -19.85, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // west rail
+  { id: 'key-s5', kind: 'breach', solidId: 'key-s5-stone', anchorId: 'key-s5-ring', nookId: 'nook-s5', hp: 1, r: 2.5, haulTime: 8, notches: 4, by: { nightmare: { haulTime: 10 }, abyss: { haulTime: 12 } } },
+  { id: 'fx-s6-safe', kind: 'hook', anchorId: 's6-sa3', hold: 0 },
+  { id: 'fx-s6-risk', kind: 'hook', anchorId: 's6-ra3', hold: 0 },
+  // the nave below the landing (the landing pauses the clock: camping at the top does not count)
+  { id: 'arena-s7', kind: 'survive', box: { minX: -52, maxX: 28, minY: -424, maxY: -292, minZ: -40, maxZ: 40 }, pauseOnId: 's7-landing', time: 45, stages: 4, boltOrder: ['seal-s7-sw', 'seal-s7-se', 'seal-s7-nw', 'seal-s7-ne'], by: { nightmare: { time: 60 }, abyss: { time: 60 } } },
+];
+/** One objective per sealed section: `need` of its fixtures `ids` done opens `sealId` (`by[difficulty]` overrides, as section.creature). */
+const objectives = [
+  { id: 'obj-s1', section: 's1', verb: 'bell', sealId: 'seal-s1', ids: ['bell-s1'], need: 1 },
+  { id: 'obj-s2', section: 's2', verb: 'haul', sealId: 'seal-s2', ids: ['cw-s2'], need: 1 },
+  { id: 'obj-s3', section: 's3', verb: 'winch', sealId: 'seal-s3', ids: ['winch-s3'], need: 1 },
+  { id: 'obj-s4', section: 's4', verb: 'lamp', sealId: 'seal-s4', ids: ['lamp-s4a', 'lamp-s4b', 'lamp-s4c'], need: 3 },
+  { id: 'obj-s5', section: 's5', verb: 'breach', sealId: 'seal-s5', ids: ['key-s5'], need: 1 },
+  { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
+  // done: the Mason turns from frenzy to escape (it pushes you down through the open floor; S8 is escape anyway)
+  { id: 'obj-s7', section: 's7', verb: 'survive', sealId: 'seal-s7', ids: ['arena-s7'], need: 1, after: { mode: 'escape' } },
+];
+
+// =============================================================================
+// NOOKS (LEVEL_FUN_PLAN P5, item 10): the Masons' rests. A lamp-lit corner marked with a carved glyph (S4: a plaque says it)
+// the Mason cannot follow into: `box` = the safe volume (the body's centre inside it), `block` = the path-blocking box its head
+// and its lunges keep out of (creature-only: not a level solid, nothing baked). Inside, with budget left, no attack starts,
+// its stall clock is frozen (hiding does not refresh it) and it holds at its stalking distance and listens; `budget` s per
+// visit (refilled after 20 s outside; 5 s before the end "[Stone scraping at the opening]"; spent, the rest stops protecting:
+// no soft-lock). `lure`: the S5 keystone niche: there it attacks as ever, no strike ever hits and the stone takes the blow
+// (no budget spent while the keystone stands; after the break it is a plain rest). No rest on a fast line, none in S8.
+// =============================================================================
+const nooks = [
+  // S4: the catwalk's far end, by its end lamp (the one you relight), out over the Vault
+  { id: 'nook-s4', section: 's4', box: { minX: -19.7, maxX: -12.3, minY: -105, maxY: -102, minZ: -24, maxZ: -20.5 }, block: { minX: -21, maxX: -11, minY: -106.5, maxY: -100.5, minZ: -25.5, maxZ: -19.5 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+  // S5: the lure, the niche behind the keystone on the last step (west wall)
+  { id: 'nook-s5', section: 's5', lure: true, box: { minX: -21, maxX: -19.6, minY: -200, maxY: -197.4, minZ: -2.9, maxZ: -0.1 }, block: { minX: -21, maxX: -18.6, minY: -200.5, maxY: -196, minZ: -3.4, maxZ: 0.6 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+  // S6: the long stair's third shelf, its north-west corner under the wall lamp (safe line only)
+  { id: 'nook-s6', section: 's6', box: { minX: -34, maxX: -30.5, minY: -242, maxY: -239, minZ: -11, maxZ: -3 }, block: { minX: -34, maxX: -29.6, minY: -243, maxY: -237.5, minZ: -11, maxZ: -2.2 }, budget: { normal: 25, nightmare: 15, abyss: 8 } },
+];
+// how each rest is told: the plaque (S4, the plan's one), the lure's plaque (S5), a carved glyph band at each (no light: the
+// rests sit by lamps that are already there; plaques and glyphs are not in the lightmap / GI hashes)
+dec('plaque', -18.2, -103.75, -23.88, 2.6, 0.55, 0.15, PI, { text: "THE MASONS' REST. IT CANNOT FOLLOW." });
+dec('plaque', -20.92, -198.4, 1.6, 0.15, 0.6, 1.6, -PI / 2, { text: 'LET IT KNOCK.' });
+dec('glyphs', -20.95, -197.6, -1.4, 0.1, 0.6, 1.8, -PI / 2);
+dec('glyphs', -33.95, -240.9, -8.6, 0.1, 0.7, 1.8, -PI / 2);
+// S7 (item 11): the teach line on a tablet at the landing's north lip, facing the checkpoint
+dec('tablet', -12, -287.3, -10.6, 2.6, 1.4, 0.2, PI, { text: 'THE NAVE OPENS FOR THOSE WHO HANG.' });
+
+// =============================================================================
+// MOVERS AND LANES (LEVEL_FUN_PLAN P4 "machines", items 7 and 9)
+//  movers: closed-form moving anchors (sim/movers3d.js): pose = f(run clock), so the bots' look-ahead and a replay agree.
+//   pendulum: pivot (x, y, z), horizontal swing `dir`, amp (rad), period (s), phase (of a period); the carried ring keeps its
+//   rest offset (authored where it hangs at rest). orbit: centre, `u` / `v` (the rim at 0° / 90°: the gear's axis is u × v),
+//   radius, period, phase, spin; `housing` h: the ring is in the wall (not hookable, a line on it is pulled off) while
+//   cos(angle) < h. Knobs per difficulty (`by`): period × 1 / 0.9 / 0.8; no carried ring ever faster than 1.5 m/s (verify V1).
+//   `parts` = what the view draws for it (render/objectivesView.js: 'cage' = the chain and the cage, 'gear' = the gear wheel),
+//   instances of the seals' one bar mesh: no new draw call, no light, nothing baked.
+//  lanes: rockfall lanes (sim/objectives3d.js): a box the stones fall through for `on` s every `period` s, cued `lead` s before
+//   (dust and a rumble: lane:warn); a body inside it while they fall takes `damage` of its health once per drop (cause
+//   'rockfall'). Their own list, not level hazards: the climb edges, the dressing and the supply rules do not move for them.
+// =============================================================================
+const movers = [
+  // S3: the old cage south of the first span on its 15 m chain (pivot at the chain's top), swinging along the gallery; the
+  // fast line's ring under it moves 1.07 / 1.19 / 1.33 m/s at most
+  { id: 'mov-s3-cage', kind: 'pendulum', section: 's3', x: -8, y: -60.5, z: 7, dir: { x: 1, z: 0 }, length: 18.25, amp: 0.08, period: 8.6, phase: 0.25, parts: 'cage', carry: { anchors: ['s3-cage'], decor: ['cage-s3', 'cage-s3-chain'] }, by: { nightmare: { period: 7.74 }, abyss: { period: 6.88 } } },
+  // S3: the winch gear half in the north wall; the ring comes out at the top and goes back in at the bottom (0.84 / 0.93 /
+  // 1.05 m/s), out of the wall for 44 % of a turn
+  { id: 'mov-s3-gear', kind: 'orbit', section: 's3', x: -12, y: -90, z: -11, u: { x: 0, y: 0, z: 1 }, v: { x: 0, y: 1, z: 0 }, radius: 1.6, period: 12, phase: 0, spin: -1, housing: 0.2, parts: 'gear', carry: { anchors: ['s3-winch'] }, by: { nightmare: { period: 10.8 }, abyss: { period: 9.6 } } },
+];
+const lanes = [
+  // S3: stones from the broken vault fall through the span2 → span3 gap, right where the a3 swing bottoms out
+  { id: 'rock-s3', section: 's3', minX: -27.5, maxX: -25, minY: -80, maxY: -63, minZ: -1.5, maxZ: 1.5, period: 7, on: 1.6, lead: 1.5, phase: 0.5, damage: 0.3, by: { nightmare: { period: 6.25, damage: 0.4 }, abyss: { period: 5.5, damage: 0.5 } } },
+];
+
+// =============================================================================
+// SQUALLS (LEVEL_FUN_PLAN item 9, P6 "polish"): the nave breathes up the S6 throat. A squall is a box, a horizontal way
+// `dir` [x, z], `accel` (m/s², at most 2: comfort) and a schedule like a lane's: it blows for `on` s every `period` s,
+// sin²-shaped (it rises and falls, never a jolt), `lead` s after its telegraph (the wind rising: a swelling howl, the
+// caption "[Wind rising from below]", the ash wisps gathering and streaming along its way). It pushes a body in the air
+// inside the box (falling, swinging, hanging), never one standing; no camera motion. Per difficulty: more often and a
+// little harder. Settings › Comfort › Wind squalls (on by default) stills them entirely. The safe stair is sheltered
+// (the dividing wall): the squall is part of the throat's price.
+// =============================================================================
+const squalls = [
+  { id: 'squall-s6', section: 's6', box: { minX: -11, maxX: 10, minY: -284, maxY: -211, minZ: -11, maxZ: 11 }, dir: [0, 1], accel: 1.2, period: 26, on: 4, lead: 2, phase: 0.35, by: { nightmare: { period: 20, accel: 1.5 }, abyss: { period: 15, accel: 1.8 } } },
+];
+
+// =============================================================================
+// FORKS (LEVEL_FUN_PLAN item 8): S2-S8 each offer two ways down (S1 teaches; it has one). A `fast` line takes fewer stops:
+// frayed rings that snap, a dive or a chain over the void, no recovery ring, no supplies, nothing to stand on. A `safe`
+// line lowers ledge to ledge on sound rings; the supplies favour it (tier 'slow') and a plaque in a lit corner tells a
+// little of the Lanternwrights. Both reach the section's objective (a ring on each line, or a ring both share).
+// `ids` = the anchors of the line in the order they are hooked (V1 resolves them in every variant), `stops` = the ledges it
+// stands on (those that exist in every variant; a crumbling one counts as a fast-line stop). The bots play exactly these
+// lines (tools/abyssal-tether-3d/verify/routes.mjs FORKS) and the fast one must be the faster.
+// =============================================================================
+const routes = [
+  { id: 'r-s2-fast', fork: 'fork-s2', section: 's2', line: 'fast', ids: ['s2-hook', 's2-cw', 's2-f1', 's2-b1', 's2-x'], stops: ['s2-far', 's2-pier-w'] },
+  { id: 'r-s2-safe', fork: 'fork-s2', section: 's2', line: 'safe', ids: ['s2-hook', 's2-cw', 's2-lower', 's2-b1', 's2-x'], stops: ['s2-floor-a', 's2-low', 's2-pier-w'] },
+  { id: 'r-s3-fast', fork: 'fork-s3', section: 's3', line: 'fast', ids: ['s3-a1', 's3-cage', 's3-f2', 's3-winch'], stops: [] },
+  { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-winch', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
+  { id: 'r-s4-fast', fork: 'fork-s4', section: 's4', line: 'fast', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk'] },
+  { id: 'r-s4-safe', fork: 'fork-s4', section: 's4', line: 'safe', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk', 's4-shelf', 's4-plinth'] },
+  // P5: both lines meet the keystone's ring (the safe line from the last step, the fast line from its sound hook)
+  { id: 'r-s5-fast', fork: 'fork-s5', section: 's5', line: 'fast', ids: ['s5-f1', 's5-f2', 's5-f3', 'key-s5-ring'], stops: [] },
+  { id: 'r-s5-safe', fork: 'fork-s5', section: 's5', line: 'safe', ids: ['s5-h1', 's5-h2', 's5-h3', 's5-h4', 's5-h5', 's5-h6', 'key-s5-ring', 's5-h7'], stops: ['s5-step1', 's5-step3', 's5-step4', 's5-step5', 's5-step6'] },
+  { id: 'r-s6-fast', fork: 'fork-s6', section: 's6', line: 'fast', ids: ['s6-ra1', 's6-ra2', 's6-ra3', 's6-ra4', 's6-ra5'], stops: ['s6-ledge'] },
+  { id: 'r-s6-safe', fork: 'fork-s6', section: 's6', line: 'safe', ids: ['s6-sa1', 's6-sa2', 's6-sa3', 's6-sa4', 's6-sa5', 's6-sa6'], stops: ['s6-safe1', 's6-safe2', 's6-safe3', 's6-safe4', 's6-safe5'] },
+  { id: 'r-s7-fast', fork: 'fork-s7', section: 's7', line: 'fast', ids: ['s7-f1', 's7-f2', 's7-f3', 's7-f4', 's7-f5', 's7-f6', 's7-f7'], stops: [] },
+  { id: 'r-s7-safe', fork: 'fork-s7', section: 's7', line: 'safe', ids: ['s7-n1', 's7-n2', 's7-n3', 's7-n4', 's7-n5', 's7-n6', 's7-n7', 's7-n8', 's7-n9', 's7-n10', 's7-n11'], stops: [] },
+  { id: 'r-s8-fast', fork: 'fork-s8', section: 's8', line: 'fast', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: [] },
+  { id: 'r-s8-safe', fork: 'fork-s8', section: 's8', line: 'safe', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: ['s8-step1-s', 's8-step2-e'] },
+];
+
+// =============================================================================
 // SUPPLIES — candidate spots for the bag's consumables (sim/pickups3d.js)
 //  A seeded per-run picker fills about a third of these (2-4 per section) by rarity, so every descent lies
 //  differently. 6-10 candidates per section: LEDGES (the open floor of a landing), ALCOVES (corners against
@@ -706,8 +958,11 @@ light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 //  rare kinds). Each rests 0.45 m above the top face of the solid it names, never in a solid, never within
 //  1.5 m of an anchor, and clear of the checkpoint -> anchor sight lines (tools/.../verify.mjs checks all of it).
 //  w = relative weight per item kind [first aid, bandage, adrenaline, battery].
+//  SLOW spots (LEVEL_FUN_PLAN item 6, "the long way pays"): only on the ledges of a fork's safe line (see FORKS), favoured by
+//  the picker and stocked with first aid and lantern batteries; every run puts at least one item on the safe line of each
+//  fork that has them (sim/pickups3d.js). No spot lies within 3 m of a fast line's frayed ring (verify/forks.mjs).
 // =============================================================================
-const SUP_W = { ledge: [0.8, 5, 2, 4.5], alcove: [0.6, 5, 1.5, 5], risk: [3.5, 2, 5, 2] };
+const SUP_W = { ledge: [0.8, 5, 2, 4.5], alcove: [0.6, 5, 1.5, 5], risk: [3.5, 2, 5, 2], slow: [2.5, 4, 1, 6] };
 const supplies = [];
 /** Candidate on top of the solid `on` at (x, z). */
 function sup(id, on, x, z, tier = 'ledge') {
@@ -729,8 +984,8 @@ sup('sup-s2-02', 's2-landing', 5, -3.5);
 sup('sup-s2-03', 's2-far', -24.5, -9);
 sup('sup-s2-04', 's2-floor-a', 9.6, 9.6, 'alcove');
 sup('sup-s2-05', 's2-floor-a', -8, -9.6);
-sup('sup-s2-06', 's2-floor-a', -20.4, 9.6, 'alcove');
-sup('sup-s2-07', 's2-low', -29, 9);
+sup('sup-s2-06', 's2-floor-a', -20.4, 9.6, 'slow'); // the safe line's floor walk
+sup('sup-s2-07', 's2-low', -29, 9, 'slow');
 sup('sup-s2-08', 's2-arm', -30.5, 7, 'risk');
 sup('sup-s2-09', 's2-pier-w', 2, 9);
 sup('sup-s2-10', 's2-pier-e', 10, -8, 'alcove');
@@ -738,8 +993,8 @@ sup('sup-s2-10', 's2-pier-e', 10, -8, 'alcove');
 sup('sup-s3-01', 's3-landing', 9.7, 9.7, 'alcove');
 sup('sup-s3-02', 's3-landing', 9.7, -9.7, 'alcove');
 sup('sup-s3-03', 's3-landing', 6, 4);
-sup('sup-s3-04', 's3-shelf', -33, -9.7, 'alcove');
-sup('sup-s3-05', 's3-shelf', -29, -3.5);
+sup('sup-s3-04', 's3-shelf', -33, -9.7, 'slow');
+sup('sup-s3-05', 's3-shelf', -29, -3.5, 'slow');
 sup('sup-s3-06', 's3-g2', -14.25, 8, 'risk');
 sup('sup-s3-07', 's3-g3', -26.25, -8, 'risk');
 sup('sup-s3-08', 's3-g5', -20.25, 8, 'risk');
@@ -750,30 +1005,30 @@ sup('sup-s4-02', 's4-landing', -6.5, 9.7, 'alcove');
 sup('sup-s4-03', 's4-landing', 9.5, 3);
 sup('sup-s4-04', 's4-catwalk', -16, -10);
 sup('sup-s4-05', 's4-catwalk', -16, -22.5, 'risk');
-sup('sup-s4-06', 's4-shelf', 9.7, -9.7, 'alcove');
+sup('sup-s4-06', 's4-shelf', 9.7, -9.7, 'slow');
 sup('sup-s4-07', 's4-shelf', 4, -6);
-sup('sup-s4-08', 's4-plinth', -16, 6);
+sup('sup-s4-08', 's4-plinth', -16, 6, 'slow');
 // S5 · The Gullet Stair
 sup('sup-s5-01', 's5-landing', -4.2, 7.8, 'alcove');
 sup('sup-s5-02', 's5-landing', -4.2, -7.8, 'alcove');
 sup('sup-s5-03', 's5-step1', -19.5, -8, 'alcove');
 sup('sup-s5-04', 's5-step1', -13, -6.5);
-sup('sup-s5-05', 's5-step5', -14, -6.5);
+sup('sup-s5-05', 's5-step5', -14, -6.5, 'slow');
 sup('sup-s5-06', 's5-step6', -19, 7.8, 'alcove');
 sup('sup-s5-07', 's5-step3', -5, 7.8, 'alcove');
-sup('sup-s5-08', 's5-step4', -4.2, -7.8, 'alcove');
+sup('sup-s5-08', 's5-step4', -4.2, -7.8, 'slow');
 sup('sup-s5-09', 's5-arm2', -19, 0, 'risk');
 sup('sup-s5-10', 's5-arm4', -6, 0, 'risk');
 // S6 · The Two Descents
 sup('sup-s6-01', 's6-fork', -18.5, 4.8, 'alcove');
 sup('sup-s6-02', 's6-safe1', -32.5, -9.6, 'alcove');
 sup('sup-s6-03', 's6-safe1', -22, -5);
-sup('sup-s6-04', 's6-safe2', -32.5, 9.6, 'alcove');
+sup('sup-s6-04', 's6-safe2', -32.5, 9.6, 'slow');
 sup('sup-s6-05', 's6-safe2', -21, 6.5);
 sup('sup-s6-06', 's6-safe3', -24, -9.5);
 sup('sup-s6-07', 's6-safe4', -28, 9.5);
 sup('sup-s6-08', 's6-arm-b', -32, -5, 'risk');
-sup('sup-s6-09', 's6-safe5', -32.5, -9.6, 'alcove');
+sup('sup-s6-09', 's6-safe5', -32.5, -9.6, 'slow');
 // S7 · The Hollow Nave
 sup('sup-s7-01', 's7-landing', 8.7, 9.7, 'alcove');
 sup('sup-s7-02', 's7-landing', -32.5, -9.7, 'alcove');
@@ -789,8 +1044,9 @@ sup('sup-s8-04', 's8-step1-w', -20.5, -17, 'alcove');
 sup('sup-s8-05', 's8-step1-e', 15.8, 17, 'alcove');
 sup('sup-s8-06', 's8-step1-n', -5, -19);
 sup('sup-s8-07', 's8-step2-w', -14.5, 12, 'alcove');
-sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'alcove');
+sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'slow');
 sup('sup-s8-09', 's8-step2-s', -2, 14);
+sup('sup-s8-10', 's8-step1-s', -13.5, 18.2, 'slow'); // the safe line's first rest
 
 // =============================================================================
 // CLIMB ZONES (WP-CLIMB, sim/climb3d.js) — the surfaces the player can grab and climb
@@ -872,6 +1128,11 @@ const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitt
 const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
 const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
+// REACH (LEVEL_FUN_PLAN item 5): sections[i].reach = the hook's targeting range there, per difficulty (Level3D.reachOf;
+// none = the difficulty's aimRange 32 / 29 / 27). The deep rings are rusted: S4 30/28/26, S5 29/27/25, S6 28/27/25, S7-S8
+// 26/25/24. Only targeting shrinks: the rope's maximum length stays aimRange + 4 everywhere, so every lowering keeps its rope.
+// The bots play every line with 1.5 m less (tools/.../verify.mjs reach floors); the view dims the rings out of reach and
+// reddens the deep mounts (render/levelView.js), the laser dot goes hollow beyond it (render/handsView.js), S6 says why once.
 const sections = [
   {
     id: 's1', name: 'The Threshold', subtitle: 'Where the line is learned',
@@ -891,6 +1152,8 @@ const sections = [
         text: 'Push the LEFT STICK the way you want to swing. Let go near the top of the arc to fly.',
         desktop: 'W A S D pumps the swing. Release near the top of the arc to fly.',
       },
+      // LEVEL_FUN_PLAN P3: the S1 verb (the bell opens the grating under the chimney)
+      { y: -1, duration: 7, text: 'Swing into the bell. Its toll opens the way down.', desktop: 'Swing into the bell. Its toll opens the way down.' },
       {
         y: -7.5, duration: 9,
         text: 'Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.',
@@ -922,6 +1185,12 @@ const sections = [
         text: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
         desktop: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
       },
+      // LEVEL_FUN_PLAN P3: the S2 verb (moved up from the lower hall's yank hint: the grip that yanks also hauls)
+      {
+        y: -24.5, duration: 8,
+        text: 'Hook the counterweight. Squeeze GRIP to haul it.',
+        desktop: 'Hook the counterweight. Hold F to haul it.',
+      },
       {
         y: -44.5, duration: 7,
         text: 'Squeeze the GRIP on a tethered hand for a hard yank toward its anchor.',
@@ -943,6 +1212,9 @@ const sections = [
         text: 'Missed a landing? Don\'t wait — fire at a lower ring.',
         desktop: 'Missed a landing? Don\'t wait — fire at a lower ring.',
       },
+      // LEVEL_FUN_PLAN P4: the rockfall lane (dust and a rumble come first) and the S3 verb (the winch on the west wall)
+      { y: -73, duration: 6, text: 'Dust falls before the stones. Wait for the gap.', desktop: 'Dust falls before the stones. Wait for the gap.' },
+      { y: -76.5, duration: 7, text: 'Hook the ring on the turning gear and hold on.', desktop: 'Hook the ring on the turning gear and hold on.' },
     ],
     triggers: [
       { y: -68, name: 'debris', data: { x: -14, y: -59, z: 0, intensity: 0.35 } },
@@ -953,11 +1225,13 @@ const sections = [
     id: 's4', name: 'The Listening Vault', subtitle: 'Something answered',
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
+    reach: { normal: 30, nightmare: 28, abyss: 26 }, // the rings start to rust (REACH below)
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
     creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } } }),
-    hints: [],
+    // LEVEL_FUN_PLAN P3: the S4 verb (the catwalk's cold lamps)
+    hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps.', desktop: 'Walk up to each cold lamp and look at it.' }],
     triggers: [
       // Fires as the player stands on the catwalk over the Vault: the predator
       // crosses the Vault's far wall (inner face z = −160) and is gone. Path:
@@ -972,6 +1246,7 @@ const sections = [
     id: 's5', name: 'The Gullet Stair', subtitle: 'It has your scent',
     yTop: -150, yBottom: -204,
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
+    reach: { normal: 29, nightmare: 27, abyss: 25 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
     theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
     creature: creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), // Abyss: a skitterling already here
@@ -990,6 +1265,8 @@ const sections = [
         text: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
         desktop: 'Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.',
       },
+      // LEVEL_FUN_PLAN P5: the S5 verb (the keystone on the last step)
+      { y: -193, duration: 8, text: 'Hide behind the keystone and let it knock. Or haul its ring.', desktop: 'Hide behind the keystone and let it knock. Or haul its ring.' },
     ],
     triggers: [
       { y: -152.5, name: 'rumble', data: { intensity: 0.6 } },
@@ -1004,10 +1281,18 @@ const sections = [
     id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and thin',
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
+    reach: { normal: 28, nightmare: 27, abyss: 25 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
     creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
-    hints: [], // the fork is briefed in S5 (see its second hint)
+    // the fork is briefed in S5 (see its second hint); the reach (REACH) is at its shortest from here down
+    hints: [
+      {
+        y: -208.5, duration: 6,
+        text: 'The deep rings are rusted. Get closer.',
+        desktop: 'The deep rings are rusted. Get closer.',
+      },
+    ],
     triggers: [
       { y: -209, name: 'call', data: { intensity: 0.9 } },
       { y: -240, name: 'debris', data: { x: 0, y: -212, z: 0, intensity: 0.7 } },
@@ -1017,6 +1302,7 @@ const sections = [
     id: 's7', name: 'The Hollow Nave', subtitle: 'Nothing to stand on',
     yTop: -284, yBottom: -420,
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
+    reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
     theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
     creature: creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)),
@@ -1026,6 +1312,8 @@ const sections = [
         text: 'Chain the rings: fire your other hand at the next ring before you let go of this one.',
         desktop: 'Chain the rings: fire the other mouse button at the next ring before you let go of this one.',
       },
+      // LEVEL_FUN_PLAN P5: the S7 verb (survive: the floor unbolts while you hang on in the nave)
+      { y: -296, duration: 7, text: 'Hang on in the nave. The floor unbolts while you hold.', desktop: 'Hang on in the nave. The floor unbolts while you hold.' },
     ],
     triggers: [
       { y: -290, name: 'rumble', data: { intensity: 0.8 } },
@@ -1037,6 +1325,7 @@ const sections = [
     id: 's8', name: 'The Last Throat', subtitle: 'Down. Now.',
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
+    reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
     theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
     creature: creature('escape', true, 100, 1, 0, skit(1, 1, 2)),
@@ -1071,4 +1360,12 @@ export const LEVEL_DATA_3D = {
   lights,
   supplies, // candidate spots for the bag's consumables (see SUPPLIES above)
   climb, // grip zones (see CLIMB ZONES above)
+  seals, // section seals, fixtures and objectives (see SEALS AND OBJECTIVES above)
+  fixtures,
+  objectives,
+  routes, // the fast / safe line of every fork (see FORKS above)
+  movers, // moving anchors and rockfall lanes (see MOVERS AND LANES above)
+  lanes,
+  nooks, // the Masons' rests (see NOOKS above)
+  squalls, // the wind squalls (see SQUALLS above)
 };

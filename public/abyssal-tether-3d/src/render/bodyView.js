@@ -39,6 +39,8 @@ const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url)
 const T = {
   upper: 0.3, // rest bone lengths are read from the skeleton; these are only fallbacks
   stub: 0.1,
+  forearmReal: 0.27, // m: elbow -> wrist of the arm model (the forearm swing that follows the solved elbow)
+  forearmMaxBend: 0.75, // rad (43 deg): the most the model's forearm swings away from the controller's back axis
   sleeveInset: 0.04, // the stub tip sits this far inside the arms' sleeve opening (m)
   neckDrop: 0.17, // neck base below the eyes (m)
   neckBack: 0.11, // ... and behind them (m), 0.20 when looking down (the head hangs forward of the neck)
@@ -317,6 +319,7 @@ export class BodyView {
 
   // ---------------------------------------------------------------------------------------------
   update(dt, game) {
+    this._dtLast = dt;
     if (!this.ready) return;
     const show = this._shouldShow(game);
     if (!show) {
@@ -563,6 +566,35 @@ export class BodyView {
     const up = B[`UpperArm_${s}`];
     const fo = B[`Forearm_${s}`];
     const hv = game.handsView;
+    // the lower arm follows the REAL elbow: shoulder -> elbow -> wrist solved here, the arm model's forearm swings about the wrist to
+    // point at that elbow (the hand keeps the controller's orientation); without it the forearm stays rigid with the grip pose
+    if (hv && typeof hv.aimForearm === 'function' && typeof hv.getWristSocket === 'function' && hv.getWristSocket(hand, _M2)) {
+      _W.setFromMatrixPosition(_M2);
+      _S.setFromMatrixPosition(up.matrixWorld);
+      const Lu = this.len.upper * k + T.stub * k * 0.6;
+      const Lf = T.forearmReal;
+      _A.subVectors(_W, _S);
+      const d = _A.length() || 1e-4;
+      _A.multiplyScalar(1 / d);
+      if (d >= Lu + Lf - 0.002) {
+        _v.copy(_A).negate(); // the arm is straight: the forearm lies along the line to the shoulder
+      } else {
+        const dd = Math.max(d, Math.abs(Lu - Lf) + 0.01);
+        const x = (dd * dd + Lu * Lu - Lf * Lf) / (2 * dd);
+        const y = Math.sqrt(Math.max(0, Lu * Lu - x * x));
+        const out = s === 'R' ? 1 : -1;
+        _v2.set(0, -1, 0);
+        _v2.addScaledVector(_A, -_v2.dot(_A));
+        _v4.set(-_bfwd.z, 0, _bfwd.x).multiplyScalar(out);
+        _v4.addScaledVector(_A, -_v4.dot(_A));
+        _v2.addScaledVector(_v4, 0.35);
+        if (_v2.lengthSq() < 1e-6) _v2.set(0, -1, 0);
+        _v2.normalize();
+        _Eb.copy(_S).addScaledVector(_A, x).addScaledVector(_v2, y); // the real elbow
+        _v.subVectors(_Eb, _W).normalize(); // wrist -> elbow
+      }
+      hv.aimForearm(hand, _v, T.forearmMaxBend, this._dtLast || 1 / 72);
+    }
     let ok = false;
     if (hv && typeof hv.getElbowAnchor === 'function') {
       try {

@@ -11,7 +11,9 @@
  *      at most one first aid and one adrenaline per section and CONFIG.bag.maxFirstAid per run;
  *   3. FAIRNESS: at least one battery in every group of three sections and at least one healing item (bandage or
  *      first aid) in each half of the descent. A missing one converts a spot that is not itself the only one of
- *      its kind in its group, or adds one more spot.
+ *      its kind in its group, or adds one more spot. LEVEL_FUN_PLAN item 6 ("the long way pays"): in every section with
+ *      'slow' spots (the ledges of a fork's safe line) at least one item lies on one: a section that drew none moves
+ *      one of its items (kind kept, so rules 2 and 3 still hold) onto a free slow spot, or adds one there.
  *
  * Collecting: the body centre within CONFIG.bag.pickupRadius (0.9 m) collects (walk or swing through); in VR a hand
  * within handRadius (0.35 m) with the grip pressed collects as well. An item the bag has no room for stays where
@@ -25,7 +27,7 @@ import { CONFIG, U } from './config3d.js';
 import { ITEM, ITEM_COUNT } from './inventory3d.js';
 
 const B = CONFIG.bag;
-const TIER_PICK = { ledge: 1, alcove: 1, risk: 0.7 };
+const TIER_PICK = { ledge: 1, alcove: 1, risk: 0.7, slow: 1.3 };
 
 /**
  * Chooses the supplies of one run.
@@ -149,6 +151,21 @@ export function pickSupplies(spots, seed, opts = {}) {
   const groups = Math.ceil(nSec / 3);
   for (let g = 0; g < groups; g++) ensure((c) => inBatteryGroup(c, g), (c) => c.kind === ITEM.BATTERY, ITEM.BATTERY);
   for (let h = 0; h < 2; h++) ensure((c) => inHealHalf(c, h), heals, ITEM.BANDAGE);
+  // The long way pays: an item on a slow spot (a safe line's ledge) in every section that has them.
+  for (let s = 0; s < nSec; s++) {
+    const slow = bySection[s].filter((i) => spots[i].tier === 'slow');
+    if (!slow.length || chosen.some((c) => c.spot >= 0 && spots[c.spot].section === s && spots[c.spot].tier === 'slow')) continue;
+    const free = slow.filter((i) => !taken[i]);
+    if (!free.length) continue;
+    const si = free[Math.floor(rng() * free.length)];
+    taken[si] = 1;
+    let moved = -1;
+    for (let i = 0; i < chosen.length && moved < 0; i++) if (spots[chosen[i].spot].section === s) moved = i;
+    if (moved >= 0) {
+      taken[chosen[moved].spot] = 0;
+      chosen[moved].spot = si; // same kind, same section: the battery / healing guarantees are untouched
+    } else chosen.push({ spot: si, kind: ITEM.BANDAGE }); // a section that drew nothing at all: a plain bandage
+  }
 
   chosen.sort((a, b) => spots[b.spot].y - spots[a.spot].y);
   return chosen;
@@ -164,6 +181,10 @@ export function checkFairness(spots, picks, nSec) {
   const h0 = Math.ceil(nSec / 2);
   if (!picks.some((c) => (c.kind === ITEM.BANDAGE || c.kind === ITEM.FIRST_AID) && spots[c.spot].section < h0)) problems.push('no healing item in the first half');
   if (!picks.some((c) => (c.kind === ITEM.BANDAGE || c.kind === ITEM.FIRST_AID) && spots[c.spot].section >= h0)) problems.push('no healing item in the second half');
+  for (let s = 0; s < nSec; s++) {
+    if (!spots.some((o) => o.section === s && o.tier === 'slow')) continue;
+    if (!picks.some((c) => spots[c.spot].section === s && spots[c.spot].tier === 'slow')) problems.push(`no item on the safe line (slow spots) of section ${s + 1}`);
+  }
   return problems;
 }
 

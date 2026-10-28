@@ -119,6 +119,7 @@ const BUS_LEVEL = { ambient: 0.85, player: 1, creature: 1, psych: 1, ui: 0.5, st
 const REDUCED = { voices: 14, hrtf: 5, ambientHrtf: 2 }; // reducedEffects tier caps
 const LOG_LEN = 24; // debug: last events kept
 const DUCKED = { ambient: 0.45, stinger: 0.5 }; // kept while paused / in menus (other gameplay buses → 0)
+const REST_DUCK = 0.5; // LEVEL_FUN_PLAN P5: the ambience inside a Masons' rest
 
 // Inharmonic partials for struck iron (ratios, amplitudes, decay time-constants).
 const PARTIALS = [1, 2.32, 3.86, 5.41];
@@ -352,6 +353,7 @@ export class AudioManager3D {
     this._dead = false;
     this._victory = false;
     this._hushUntil = 0;
+    this._rest = 0; // 1 while the player hides in a Masons' rest (LEVEL_FUN_PLAN P5)
     this._autoSuspended = false;
     this._warned = Object.create(null);
     this._silentBuf = null;
@@ -1456,7 +1458,8 @@ export class AudioManager3D {
     const dead = this._dead || state === 'dead';
     const tc = 0.15;
     const fx = this._sfxMul();
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin), now, this._thin < 0.9 ? 0.12 : tc);
+    // (LEVEL_FUN_PLAN P5: in a Masons' rest the ambience ducks to REST_DUCK)
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1), now, this._thin < 0.9 ? 0.12 : tc);
     this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
     this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
     this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
@@ -1526,13 +1529,17 @@ export class AudioManager3D {
     const speedK = body ? U.smoothstep(200 * SPEED_K, 1400 * SPEED_K, speed) : 0;
     const gustL = 0.55 + 0.45 * U.noise1(c * 0.17, 3);
     const gustR = 0.55 + 0.45 * U.noise1(c * 0.15 + 40, 5);
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath);
+    // LEVEL_FUN_PLAN P6: a wind squall swells the shaft wind and its masonry whistle (the telegraph while it gathers, then the
+    // gust itself): the existing bed, no new voice. Objectives3D.squallNow is 0 when the squalls are switched off.
+    const sqn = game && game.objectives ? game.objectives.squallNow : null;
+    const sq = sqn && playing ? Math.min(1, Math.max(num(sqn.k, 0), 0.6 * num(sqn.rise, 0))) : 0;
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
-    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK), now, 0.4);
-    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK), now, 0.4);
+    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq), now, 0.4);
+    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq), now, 0.4);
     const wh = U.noise1(c * 0.06, 11);
-    this.kWhG.set(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, now, 0.5);
+    this.kWhG.set(Math.max(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, sec.whistle * 2.6 * sq), now, 0.5);
     this.kWhF.set(sec.wFreq * (1 + 0.12 * U.noise1(c * 0.05, 17)), now, 0.6);
     this.kWhPan.set(U.noise1(c * 0.03, 23) * 0.75, now, 0.5);
     const rum = sec.rumble * (0.75 + 0.25 * U.noise1(c * 0.11, 29));
@@ -2244,6 +2251,18 @@ export class AudioManager3D {
       checkpoint: this._onCheckpoint,
       'trigger:rumble': this._onRumble,
       'trigger:debris': this._onDebris,
+      'seal:open': this._onSealOpen,
+      'bell:ring': this._onBellRing,
+      'objective:progress': this._onObjectiveProgress,
+      'lane:warn': this._onLaneWarn,
+      'platform:strain': this._onPlatformStrain,
+      'lane:on': this._onLaneOn,
+      'breach:hit': this._onBreachHit,
+      'breach:break': this._onBreachBreak,
+      'nook:enter': this._onNookEnter,
+      'nook:exit': this._onNookExit,
+      'nook:spent': this._onNookExit,
+      'nook:warn': this._onNookWarn,
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
@@ -2329,6 +2348,7 @@ export class AudioManager3D {
     if (this._cs) this._cs.reset();
     if (this._music) this._music.reseed(this._runs * 7919);
     this._state = 'playing';
+    this._rest = 0;
     this._mixBuses(now, 'playing');
   }
 
@@ -2550,6 +2570,7 @@ export class AudioManager3D {
   }
 
   _onDeath(p) {
+    this._rest = 0;
     const now = this.ctx.currentTime;
     this._dead = true;
     this.kMuffle.force(480, now, 0.12);
@@ -2561,6 +2582,145 @@ export class AudioManager3D {
 
   _onRumble() {
     this._sfxRumble();
+  }
+
+  /** A section seal opens (LEVEL_FUN_PLAN P1): the deep rumble and a heavy grinding break at the grating, existing voices only. */
+  _onSealOpen(p) {
+    this._sfxRumble();
+    this._sfxBreak(p, 1.6);
+  }
+
+  /** LEVEL_FUN_PLAN P3: the S1 bell (two inharmonic partials of struck bronze, long decay, placed at the bell). */
+  _onBellRing(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const sp = pos ? this._spatial(pos.x, pos.y, pos.z, NaN) : null;
+    const lift = sp ? this._floor('near', sp.d, 0.7) : 1;
+    const k = U.clamp(num(p.speed, 4) / 8, 0.35, 1);
+    const v = this._begin('bell', 2, 0.25, 4.2, this.busPlayer, (0.55 + 0.4 * k) * lift, 0, 0.45, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const base = 196 * rand(0.99, 1.01);
+    const parts = [
+      [1, 0.55, 1.4],
+      [2.76, 0.32, 0.9],
+      [5.4, 0.12, 0.35],
+    ];
+    for (const [m, a, tc] of parts) {
+      const o = this._vOsc(v, 'sine', base * m, t);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t, a * k, 0.003, tc);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    // the strike itself: a dull knock of the body on bronze
+    const tk = this._vOsc(v, 'sine', 140, t);
+    tk.frequency.setTargetAtTime(70, t, 0.03);
+    const tkg = this._vGain(v, 0);
+    this._perc(tkg.gain, t, 0.4 * k, 0.002, 0.06);
+    tk.connect(tkg);
+    tkg.connect(v.out);
+    this._commit(v);
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P3: a haul notch (a heavy ratchet clank at the ring) or a lamp catching (a soft breath of flame); P4: a winch
+   * notch (the same ratchet, at the turning ring).
+   */
+  _onObjectiveProgress(p) {
+    if (p.verb === 'haul' || p.verb === 'winch' || (p.verb === 'breach' && p.k < p.of)) this._sfxRatchet(p);
+    else if (p.verb === 'lamp') this._sfxLampCatch(p);
+    else if (p.verb === 'survive') {
+      // LEVEL_FUN_PLAN P5: an iris bolt slides back (a heavy clank at the iris, and the structure groans)
+      this._sfxRatchet(p);
+      this._sfxBreak(p, 0.4);
+    }
+  }
+
+  /** LEVEL_FUN_PLAN P5: a Mason lunge on the S5 keystone (a crack of stone), its break (the crack, then the level groans). */
+  _onBreachHit(p) {
+    this._sfxBreak(p, 0.8);
+  }
+
+  _onBreachBreak(p) {
+    this._sfxBreak(p, 1.4);
+    this._sfxRumble();
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5, the Masons' rests: inside one the ambience ducks (the hush of a safe corner); the budget running short
+   * is a scrape of stone at the opening.
+   */
+  _onNookEnter(p) {
+    if (p && (p.left > 0 || p.lure)) this._rest = 1;
+  }
+
+  _onNookExit() {
+    this._rest = 0;
+  }
+
+  _onNookWarn(p) {
+    this._sfxBreak(p, 0.3);
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P6, a crumbling ledge's first touch (the S2 span): stone groans and grit cracks off under the feet, the
+   * telegraph before it gives way (the existing break voice, light).
+   */
+  _onPlatformStrain(p) {
+    this._sfxBreak(p, 0.35);
+  }
+
+  /** LEVEL_FUN_PLAN P4, the rockfall lane's telegraph: the structure groans (the level rumble) and grit trickles at its top. */
+  _onLaneWarn(p) {
+    this._sfxRumble();
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (pos) this._sfxBreak(p, 0.3);
+  }
+
+  /** LEVEL_FUN_PLAN P4: the stones of a rockfall lane come down (the level's debris voice, placed at the lane). */
+  _onLaneOn(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (pos) this._sfxDebris(pos);
+  }
+
+  _sfxRatchet(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const v = this._begin('ratchet', 1, 0.08, 0.6, this.busPlayer, 0.8, 0, 0.25, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const base = 260 * rand(0.97, 1.03);
+    for (let i = 0; i < PARTIALS.length; i++) {
+      const o = this._vOsc(v, 'sine', base * PARTIALS[i], t);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t, PARTIAL_AMP[i] * 0.8, 0.0015, PARTIAL_TC[i] * 1.4);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'highpass', 2200, 0);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, 0.35, 0.001, 0.018);
+    n.connect(hp);
+    hp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  _sfxLampCatch(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const v = this._begin('lamp', 1, 0.2, 1.2, this.busPlayer, 0.7, 0, 0.2, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const b = this._vNoise(v, this._brown, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 520, 0.9);
+    bp.frequency.setValueAtTime(520, t);
+    bp.frequency.exponentialRampToValueAtTime(1500, t + 0.35);
+    const bg = this._vGain(v, 0);
+    this._swell(bg.gain, t, 0.5, 0.06, 0.18, 0.4);
+    b.connect(bp);
+    bp.connect(bg);
+    bg.connect(v.out);
+    this._commit(v);
   }
 
   _onDebris(p) {

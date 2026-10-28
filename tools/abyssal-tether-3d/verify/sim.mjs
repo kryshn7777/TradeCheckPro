@@ -16,6 +16,8 @@ const { CONFIG, DIFFICULTY, EventBus, SETTINGS_DEFAULTS } = await import(srcUrl(
 const { Player3D, TetherSystem, Physics3D, HANDS } = await import(srcUrl('sim/physics3d.js'));
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
+// LEVEL_FUN_PLAN P1: the section seals (absent in older checkouts given with --root: the sims then run without them).
+const { Objectives3D } = await import(srcUrl('sim/objectives3d.js')).catch(() => ({ Objectives3D: null }));
 
 // Experiments: AT3D_ROPE='flightSpeed=80,attachRamp=0.15' overrides CONFIG.rope keys for this process.
 if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
@@ -25,7 +27,7 @@ if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
   }
 }
 
-export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT };
+export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT, Objectives3D };
 
 export const FRAME = 1 / 60;
 export const SUB = 4;
@@ -57,6 +59,8 @@ export function makeIntent() {
     confirmPressed: false,
     backPressed: false,
     ui: { ray: null, click: false },
+    // the lantern probe (LEVEL_FUN_PLAN P3, Objectives3D.setProbe): where the bot holds its lantern this frame
+    probe: { on: false, x: 0, y: 0, z: 0 },
   };
 }
 
@@ -70,7 +74,7 @@ const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT'
  * Systems timed per 60 Hz frame. `physics` is Physics3D.step minus its collision
  * pass and the rope step it calls at its end, so the rows add up to `total`.
  */
-export const TIMED_SYSTEMS = ['targets', 'input', 'physics', 'collide', 'rope', 'creature', 'threat'];
+export const TIMED_SYSTEMS = ['targets', 'input', 'physics', 'collide', 'rope', 'objectives', 'creature', 'threat'];
 
 /**
  * Wall-clock time per system per frame (ms), preallocated: one Float64Array row
@@ -155,6 +159,7 @@ function instrument(sim, timers) {
   wrap(T, 'handleInput', I.input);
   wrap(T, 'step', I.rope);
   wrap(ph, 'resolveCollisions', I.collide);
+  if (sim.objectives) wrap(sim.objectives, 'step', I.objectives);
   // physics = step − collide − rope (both are called from inside step)
   const step = ph.step;
   ph.step = function (...args) {
@@ -174,7 +179,8 @@ function instrument(sim, timers) {
 // -----------------------------------------------------------------------------
 const AIM_W = 7; // has, ox, oy, oz, dx, dy, dz
 const HAND_W = 4 + AIM_W; // pressed, held, released, yank, aim
-export const INTENT_W = 5 + 2 * HAND_W; // move.x, move.z, reel, jump, brake, hands
+const PROBE_W = 4; // on, x, y, z (the lantern probe, LEVEL_FUN_PLAN P3)
+export const INTENT_W = 5 + 2 * HAND_W + PROBE_W; // move.x, move.z, reel, jump, brake, hands, probe
 
 function writeIntent(buf, o, it) {
   buf[o] = it.move.x;
@@ -201,6 +207,11 @@ function writeIntent(buf, o, it) {
     }
     k += HAND_W;
   }
+  const pr = it.probe;
+  buf[k] = pr && pr.on ? 1 : 0;
+  buf[k + 1] = pr ? pr.x : 0;
+  buf[k + 2] = pr ? pr.y : 0;
+  buf[k + 3] = pr ? pr.z : 0;
 }
 
 /** Fills `it` (from makeIntent()) with logged frame `f`. */
@@ -229,6 +240,11 @@ export function readIntent(buf, f, it) {
     } else hi.aim = null;
     k += HAND_W;
   }
+  if (!it.probe) it.probe = { on: false, x: 0, y: 0, z: 0 };
+  it.probe.on = buf[k] === 1;
+  it.probe.x = buf[k + 1];
+  it.probe.y = buf[k + 2];
+  it.probe.z = buf[k + 3];
   return it;
 }
 
@@ -287,6 +303,25 @@ export class Sim {
     this._frameNo = 0;
     this.playerKeys = Object.keys(this.player);
     this.dynSolids = level.solids.filter((s) => s.kind === 'crumble');
+    // Seals and objectives (sim/objectives3d.js), stepped after every physics step like Game3D._stepPhysics. Look-ahead frames
+    // emit to a silent bus and snapshot() / restore() carry the state, so a ghost never opens a seal for real.
+    // opts.objectives === false: a sim without them (every seal open, today's level).
+    this.objectives = Objectives3D && opts.objectives !== false ? new Objectives3D(level, this.diff, this.bus) : null;
+    // P4: a rockfall lane hurts (and kills) through the run's physics, as in Game3D
+    if (this.objectives) this.objectives.physics = this.physics;
+    // P6: the wind squalls push through Physics3D (a pure function of the objectives' clock: the look-ahead, a re-run and a
+    // replay agree). The bots play with them ON (the game's default setting); opts.squalls === false, settings.windSqualls
+    // false or AT3D_SQUALLS=0 stills them.
+    if (this.objectives) {
+      const env = typeof process !== 'undefined' && process.env ? process.env.AT3D_SQUALLS : undefined;
+      this.objectives.setSqualls(opts.squalls !== false && this.settings.windSqualls !== false && env !== '0');
+      this.physics.wind = this.objectives;
+    }
+    this.laneHits = []; // [t, lane id] of the real run (LEVEL_FUN_PLAN P4: a bot route is never struck)
+    this._quietBus = new EventBus();
+    this.objEvents = []; // [t, type, id] of the real run
+    this.objHash = 0x811c9dc5; // FNV of the objective event sequence (V13)
+    if (!this.objectives) level.sealSolids && level.sealSolids.forEach((s) => (s.active = false));
     this.dynAnchors = level.anchors.filter((a) => a.kind === 'fragile');
     this.hash = new TrajectoryHash();
     this.timers = null;
@@ -324,6 +359,13 @@ export class Sim {
       this.attaches.push(e.anchor.id);
       this.events.push(['attach', e.hand, e.anchor.id, +this.t.toFixed(2), +e.distance.toFixed(1)]);
     });
+    // Every hook shot at an anchor of the real run: [section of the body, anchor id, distance body -> anchor at the trigger]
+    // (verify.mjs reach floors, LEVEL_FUN_PLAN item 5: the targeting distance a line needs, against the section's reach).
+    this.shots = [];
+    this.bus.on('rope:fire', (e) => {
+      if (this.ghost || !e.target) return;
+      this.shots.push([this.level.sectionIndexAt(e.y), e.target.id, Math.hypot(e.x - e.target.x, e.y - e.target.y, e.z - e.target.z)]);
+    });
     this.bus.on('grapple:release', (e) => {
       if (this.ghost) return;
       this.events.push(['release', e.hand, e.anchor.id, +this.t.toFixed(2), e.reason]);
@@ -331,6 +373,28 @@ export class Sim {
     this.bus.on('grapple:break', (e) => !this.ghost && this.events.push(['break', e.anchor.id, +this.t.toFixed(2)]));
     this.bus.on('platform:crumble', (e) => !this.ghost && this.events.push(['crumble', e.solid.id, +this.t.toFixed(2)]));
     this.bus.on('grapple:miss', (e) => !this.ghost && this.events.push(['miss', e.hand, +this.t.toFixed(2)]));
+    const objEvent = (type) => (e) => {
+      if (this.ghost) return;
+      const id = String(e.id);
+      this.objEvents.push([+this.t.toFixed(2), type, id]);
+      this.events.push([type, id, +this.t.toFixed(2)]);
+      let h = this.objHash;
+      const s = `${type}:${id}@${this._frameNo}`;
+      for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+      this.objHash = h >>> 0;
+    };
+    this.bus.on('objective:done', objEvent('objective'));
+    this.bus.on('seal:land', objEvent('seal:land'));
+    // P3 verbs: every fixture done / haul notch (id = the fixture) and every bell strike, in the V13 hash too
+    this.bus.on('objective:progress', (e) => objEvent(`progress:${e.verb}`)({ id: `${e.fixture || e.id}:${e.k}` }));
+    this.bus.on('bell:ring', objEvent('bell'));
+    // P4: the rockfall lanes (deterministic functions of the run clock) and a stone striking the player
+    this.bus.on('lane:on', objEvent('lane'));
+    this.bus.on('lane:hit', (e) => {
+      if (this.ghost) return;
+      this.laneHits.push([+this.t.toFixed(2), e.id]);
+      objEvent('lane:hit')(e);
+    });
     if (opts.timers) {
       this.timers = opts.timers instanceof SystemTimers ? opts.timers : new SystemTimers();
       instrument(this, this.timers);
@@ -365,9 +429,20 @@ export class Sim {
     });
   }
 
-  /** Respawn-style start: player standing still at (x,y,z), fresh level state. */
-  spawn(x, y, z) {
+  /**
+   * Respawn-style start: player standing still at (x,y,z), fresh level state. Every seal is closed except those of the
+   * sections above `doneThrough` (default: the section of y), as a Continue / warp to that checkpoint would leave them.
+   */
+  spawn(x, y, z, doneThrough) {
     this.level.reset();
+    if (this.objectives) {
+      this.objectives.reset();
+      this.objectives.markDoneThrough(doneThrough !== undefined ? doneThrough : this.level.sectionIndexAt(y));
+      this.objectives.reapply();
+    }
+    this.objEvents = [];
+    this.objHash = 0x811c9dc5;
+    this.laneHits = [];
     this.player.reset(x, y, z);
     this.tethers.reset();
     this.t = 0;
@@ -375,6 +450,7 @@ export class Sim {
     this.deaths = 0;
     this.attaches = [];
     this.events = [];
+    this.shots = [];
     this.damageLog = [];
     this.physics.health.reset();
     this._secIdx = this.level.sectionIndexAt(y);
@@ -401,9 +477,16 @@ export class Sim {
     T.updateTargets(p, intent);
     T.handleInput(p, intent, FRAME);
     const jump = intent.jumpPressed;
+    const O = this.objectives;
+    if (O) {
+      O.bus = real ? this.bus : this._quietBus;
+      const pr = intent.probe;
+      O.setProbe(pr ? pr.x : 0, pr ? pr.y : 0, pr ? pr.z : 0, !!(pr && pr.on)); // as Game3D: once per frame
+    }
     for (let i = 0; i < SUB; i++) {
       intent.jumpPressed = jump && i === 0;
       this.physics.step(p, T, intent, DT);
+      if (O) O.step(DT, p, T, intent, this.t);
       if (!p.alive) break;
     }
     intent.jumpPressed = false;
@@ -481,6 +564,7 @@ export class Sim {
     }
     for (const o of this.dynSolids) s.dyn.push(o.active, o.load, o.fallen);
     for (const o of this.dynAnchors) s.dyn.push(o.broken, o.load);
+    if (this.objectives) s.obj = this.objectives.snapshot();
     return s;
   }
 
@@ -510,6 +594,7 @@ export class Sim {
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
     }
+    if (this.objectives && s.obj) this.objectives.restore(s.obj);
   }
 
   /** Damage taken this run (hp points, 100 = full health): hits, total, lowest hp, the events. */

@@ -45,7 +45,11 @@
  *   stallTime     seconds the player has been stalling (not progressing)
  *   burstReason   'heard' | 'stall' | 'commit' | 'surge' | 'gate' | attack cause
  *   creature:burst  payload also has {z, commit, reason}; creature:attack has {z, windup, distance, cause}
- *   creature:strike {x,y,z, hit, distance, cause, reason} when a lunge lands / misses
+ *   creature:strike {x,y,z, hit, distance, cause, reason, stop, refuge} when a lunge lands / misses (stop: the id of the
+ *                 solid the lunge stopped at, 'rest' for a refuge's mouth, '' in the open)
+ *   LEVEL_FUN_PLAN P5: setRefuge(kind, block) every frame (1 hidden in a Masons' rest: no attack starts, the stall clock
+ *   frozen, it holds at its stalking distance and listens; 2 the S5 lure niche: it attacks, no strike hits); a strike never
+ *   hits through an active solid; setOverride(cfg, section) lays a mode over a section (S7: escape once the iris opens).
  *   All event payloads carry world z as well as x, y.
  * Section data: creature.spawnOffsetY is read as metres ABOVE the player
  * (sign-agnostic), clamped to 28–80 m (beyond ~70 m the out-of-sight rubber
@@ -451,6 +455,13 @@ function linkBus(bus, creature) {
     bus.on('player:wallhit', (p) => {
       if (link.creature) link.creature._onNoise('wall', p && p.impact);
     });
+    // LEVEL_FUN_PLAN P3: a bell strike and every haul notch are loud (sim/objectives3d.js VERB_NOISE, a hard wall hit)
+    bus.on('bell:ring', (p) => {
+      if (link.creature) link.creature._onNoise('wall', p && p.strength);
+    });
+    bus.on('objective:progress', (p) => {
+      if (link.creature && p && p.noise > 0) link.creature._onNoise('wall', p.noise);
+    });
     bus.on('checkpoint', () => {
       if (link.creature) link.creature._deathN = 0; // a checkpoint forgets where you died
     });
@@ -621,6 +632,14 @@ export class Creature3D {
     this._annoyT = -1; // seconds since it was provoked (-1: calm)
     this._annoyCd = 0; // seconds until it can be provoked again
     this.annoyCount = 0;
+    // LEVEL_FUN_PLAN P5: the player's refuge (set by the game every frame from Objectives3D): 0 none, 1 hidden (a Masons'
+    // rest it cannot follow into), 2 lure (the S5 keystone niche: it attacks, the stone takes it); its path-blocking box
+    this.refuge = 0;
+    this._refBlock = null;
+    // a section mode laid over the data after an objective (S7: escape once the iris is open), cleared on a section change
+    this._override = null;
+    this._overrideSec = -1;
+    this._occBy = null; // _occlusion: what stopped the last lunge line
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
@@ -733,11 +752,48 @@ export class Creature3D {
     const c = Object.assign({}, SECTION_DEFAULTS, sec && sec.creature);
     const by = c.by && c.by[this.tuneKey];
     if (by) Object.assign(c, by);
+    // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
+    if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
     return c;
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5: lays `cfg` (e.g. { mode: 'escape' }) over section `index`'s creature config until the creature is
+   * told about another section (setSection with another index clears it); null clears it now. Re-applied at once when the
+   * creature is in that section (its mode, speeds and lethality follow; a hunt in play stays in play).
+   */
+  setOverride(cfg, index) {
+    const o = cfg && typeof cfg === 'object' ? cfg : null;
+    const idx = o ? index | 0 : -1;
+    if (o && this._override && this._overrideSec === idx && this._override.mode === o.mode) return;
+    if (!o && !this._override) return;
+    const was = this._overrideSec;
+    this._override = o ? Object.assign({}, o) : null;
+    this._overrideSec = idx;
+    const si = this.sectionIndex;
+    const lv = this.level;
+    if (si >= 0 && (si === idx || si === was) && lv && lv.sections && lv.sections[si]) {
+      this.setSection(si, lv.sections[si], { x: this._px, y: this._py, z: this._pz, vx: 0, vy: 0, vz: 0, alive: true });
+    }
+  }
+
+  /**
+   * LEVEL_FUN_PLAN P5, the player's refuge this frame (game.js, from Objectives3D.refugeKind / refugeBlock): 1 = hidden in a
+   * Masons' rest (no attack starts, the stall clock is frozen, it holds at its stalking distance and listens), 2 = the lure
+   * (the S5 keystone niche: it attacks as ever, but no strike ever hits; the keystone takes it); `block` = the rest's
+   * path-blocking box (the head is kept out of it like a solid, a lunge stops before it). 0 / null: none.
+   */
+  setRefuge(kind, block) {
+    this.refuge = kind === 1 || kind === 2 ? kind : 0;
+    this._refBlock = this.refuge && block && isFinite(block.minX) ? block : null;
   }
 
   setSection(index, section, player) {
     const lv = this.level;
+    if (this._override && index !== this._overrideSec) {
+      this._override = null; // a section change forgets an objective's override
+      this._overrideSec = -1;
+    }
     const sec = section || (lv && lv.sections && lv.sections[index]) || null;
     const c = this._cfgOf(sec);
     const mode = MODES[c.mode] ? c.mode : 'dormant';
@@ -971,6 +1027,8 @@ export class Creature3D {
       this._stallX = NaN;
       return;
     }
+    // Hidden in a Masons' rest (LEVEL_FUN_PLAN P5): the clock is frozen (neither runs nor resets): hiding does not refresh it.
+    if (this.refuge === 1) return;
     const dx = player.x - this._stallX;
     const dy = player.y - this._stallY;
     const dz = player.z - this._stallZ;
@@ -1005,7 +1063,9 @@ export class Creature3D {
     else if (-below > K.maxGap) this._shift(0, -below - K.maxGap, 0);
 
     const engage = this.cfg.killRadius * T.engageMul;
-    const canAttack = this.lethal && alive && this.grace <= 0;
+    // LEVEL_FUN_PLAN P5: in a Masons' rest no attack starts (the lure niche keeps them on: the keystone takes the blow)
+    const hidden = this.refuge === 1;
+    const canAttack = this.lethal && alive && this.grace <= 0 && !hidden;
     const still = alive && this.stillTime > T.stillDebounce;
     const moving = alive && (this.playerSpeed > T.moveSpeed || this._noiseT > 0);
     const stalled = canAttack && this.stallTime >= K.stallCommit;
@@ -1018,6 +1078,14 @@ export class Creature3D {
       switch (st) {
         case S.APPROACHING:
         case S.PURSUING:
+          if (hidden && alive) {
+            // It cannot follow you into the rest: it holds at its stalking distance and listens at the opening (pits lit).
+            this.creeping = false;
+            if (dist <= this._menace() + 3) {
+              this._enterObserve(K.listenDur, true);
+              break;
+            }
+          }
           if (this.creeping) {
             // Closing on a silent player after listening.
             if (moving) {
@@ -1071,7 +1139,10 @@ export class Creature3D {
             this._stallLunge();
           } else if (this.stateTime >= this.stateDur) {
             if (!alive) this.stateDur += 1;
-            else if (this.listening && still) {
+            else if (hidden && this.listening) {
+              // in a rest it keeps listening at the opening instead of creeping in
+              this._enterObserve(K.listenDur, true);
+            } else if (this.listening && still) {
               // Silence held: it creeps in, slow and certain.
               this.listening = false;
               this.creeping = true;
@@ -1154,14 +1225,17 @@ export class Creature3D {
     }
   }
 
-  /** Solid masonry between the head and the player (level.segmentBlocked, active solids). */
+  /**
+   * Solid masonry between the head and the player (level.segmentBlocked, active solids). The S5 keystone (kind 'breach',
+   * LEVEL_FUN_PLAN P5) does not count: it senses you through it, the attack starts and the stone takes the blow (_strike).
+   */
   _losBlocked(player) {
     const lv = this.level;
     if (!lv || typeof lv.segmentBlocked !== 'function') return false;
     const px = player ? player.x : this._px;
     const py = player ? player.y : this._py;
     const pz = player ? player.z : this._pz;
-    return lv.segmentBlocked(this.x, this.y, this.z, px, py, pz, 1.5);
+    return lv.segmentBlocked(this.x, this.y, this.z, px, py, pz, 1.5, 'breach');
   }
 
 
@@ -1304,6 +1378,8 @@ export class Creature3D {
     const dist = len3(this._px - this.x, this._py - this.y, this._pz - this.z);
     this._emit('creature:annoyed', { x: this.x, y: this.y, z: this.z, distance: dist, dur: A.dur, burstDur: A.burstDur, count: this.annoyCount });
     this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: dist, intensity: 1, annoyed: true });
+    // LEVEL_FUN_PLAN P5, the lure: shot from the keystone niche it comes for you at once (a committed lunge at the stone)
+    if (this.refuge === 2 && this.lethal && this.state !== S.ATTACK && this.stamina > 0.2 && dist < T.burstMax) this._startBurst(true, 'annoyed');
   }
 
   /**
@@ -1437,8 +1513,9 @@ export class Creature3D {
         break;
       }
       case S.OBSERVING: {
-        // Hesitates: holds on the wall, sways, drifts a little toward the sound.
-        speed = T.speed.observe * (0.5 + noise * 0.5);
+        // Hesitates: holds on the wall, sways, drifts a little toward the sound (not past its stalking distance while you
+        // hide in a rest: LEVEL_FUN_PLAN P5).
+        speed = this.refuge === 1 && dist < this._menace() ? 0 : T.speed.observe * (0.5 + noise * 0.5);
         const sw = Math.sin(this._t * 0.7 + this.seed) * 1.6;
         tx = this.x + U.clamp(player.x - this.x, -2.4, 2.4) + this._tanX() * sw;
         ty = this.y + U.clamp(player.y - this.y, -2.4, 2.4);
@@ -1749,6 +1826,39 @@ export class Creature3D {
     }
   }
 
+  /**
+   * Distance (m) along the line from the head toward (dx, dy, dz) / d to the first ACTIVE solid or the refuge's blocking box
+   * within `len` m (Infinity: clear); `_occBy` = that solid, or the string 'rest' for the refuge box (LEVEL_FUN_PLAN P5).
+   */
+  _occlusion(dx, dy, dz, d, len) {
+    this._occBy = null;
+    const ex = this.x + (dx / d) * len;
+    const ey = this.y + (dy / d) * len;
+    const ez = this.z + (dz / d) * len;
+    let tMin = 2;
+    const lv = this.level;
+    if (lv && typeof lv.querySolids === 'function') {
+      const list = lv.querySolids(Math.min(this.x, ex), Math.min(this.y, ey), Math.min(this.z, ez), Math.max(this.x, ex), Math.max(this.y, ey), Math.max(this.z, ez), this._solids);
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].active === false) continue;
+        const t = segmentBox(this.x, this.y, this.z, ex, ey, ez, list[i]);
+        if (t > 0 && t < tMin) {
+          tMin = t;
+          this._occBy = list[i];
+        }
+      }
+    }
+    const B = this._refBlock;
+    if (B) {
+      const t = segmentBox(this.x, this.y, this.z, ex, ey, ez, B);
+      if (t > 0 && t < tMin) {
+        tMin = t;
+        this._occBy = 'rest';
+      }
+    }
+    return tMin <= 1 ? tMin * len : Infinity;
+  }
+
   _strike(player) {
     const a = this.attack;
     const dx = player.x - this.x;
@@ -1757,10 +1867,14 @@ export class Creature3D {
     const d = len3(dx, dy, dz) || 1;
     // A stall lunge has had all the time it needed to study you: it reaches further.
     const reach = this.cfg.killRadius * T.strikeMul * (this.burstReason === 'stall' ? 1.25 : 1);
-    const hit = this.lethal && player.alive !== false && this.grace <= 0 && d <= reach;
+    // LEVEL_FUN_PLAN P5 safety rules: a strike never hits through an active solid on the line head -> player (the last 0.35 m
+    // at the body is its own clearance), nor a player in a refuge (a rest, or the keystone niche: the stone takes it).
+    const occ = this._occlusion(dx, dy, dz, d, d);
+    const hit = this.lethal && player.alive !== false && this.grace <= 0 && d <= reach && occ >= d - 0.35 && this.refuge === 0;
     a.sx = this.x;
     a.sy = this.y;
     a.sz = this.z;
+    let stop = '';
     if (hit) {
       a.lx = player.x;
       a.ly = player.y;
@@ -1770,20 +1884,11 @@ export class Creature3D {
       this.stats.hits++;
     } else {
       let ext = Math.min(d, reach + 1.6);
-      // Never lunge through masonry: stop short of the first solid on the way.
-      const lv = this.level;
-      if (lv && typeof lv.querySolids === 'function') {
-        const ex = this.x + (dx / d) * ext;
-        const ey = this.y + (dy / d) * ext;
-        const ez = this.z + (dz / d) * ext;
-        const list = lv.querySolids(Math.min(this.x, ex), Math.min(this.y, ey), Math.min(this.z, ez), Math.max(this.x, ex), Math.max(this.y, ey), Math.max(this.z, ez), this._solids);
-        let tMin = 1;
-        for (let i = 0; i < list.length; i++) {
-          if (list[i].active === false) continue;
-          const t = segmentBox(this.x, this.y, this.z, ex, ey, ez, list[i]);
-          if (t > 0 && t < tMin) tMin = t;
-        }
-        if (tMin < 1) ext = Math.max(0, tMin * ext - 0.8);
+      // Never lunge through masonry (nor into a rest): stop short of the first solid on the way.
+      if (occ < ext) {
+        ext = Math.max(0, occ - 0.8);
+        const by = this._occBy;
+        stop = by === 'rest' ? 'rest' : by && by.id ? by.id : '';
       }
       a.lx = this.x + (dx / d) * ext;
       a.ly = this.y + (dy / d) * ext;
@@ -1797,7 +1902,8 @@ export class Creature3D {
     a.t = 0;
     this._drain(T.drainLunge);
     const md = len3(player.x - a.lx, player.y - a.ly, player.z - a.lz);
-    this._emit('creature:strike', { x: a.lx, y: a.ly, z: a.lz, hit, distance: md, cause: a.cause, reason: this.burstReason });
+    // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); refuge: 0 / 1 / 2
+    this._emit('creature:strike', { x: a.lx, y: a.ly, z: a.lz, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge });
     this._emitStep(a.lx, a.ly, a.lz, 1, md, true);
   }
 
@@ -2392,6 +2498,24 @@ export class Creature3D {
     const lv = this.level;
     if (!lv || typeof lv.querySolids !== 'function') return;
     const r = this._minClear;
+    const B = this._refBlock;
+    if (B) {
+      // LEVEL_FUN_PLAN P5: a Masons' rest's mouth is too tight for it: its box is a wall to the head (creature-only)
+      const o = this._surf2;
+      const d = boxSurface(B, this.x, this.y, this.z, o);
+      if (d < r) {
+        const push = r - d;
+        this.x += o.nx * push;
+        this.y += o.ny * push;
+        this.z += o.nz * push;
+        const vn = this.vx * o.nx + this.vy * o.ny + this.vz * o.nz;
+        if (vn < 0) {
+          this.vx -= o.nx * vn;
+          this.vy -= o.ny * vn;
+          this.vz -= o.nz * vn;
+        }
+      }
+    }
     const list = lv.querySolids(this.x - r, this.y - r, this.z - r, this.x + r, this.y + r, this.z + r, this._solids);
     const o = this._surf2;
     for (let i = 0; i < list.length; i++) {

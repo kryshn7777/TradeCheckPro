@@ -6,7 +6,7 @@
  * Sources (all already on the bus; payload fields used are listed in captionForEvent):
  *   creature:clip {name,event,x,y,z}       the rig's clip events: wind-up, strike, roar, knocks, breathing, snaps ...
  *   creature:call / attack / burst / strike / sighting / retreat / step   the sim events (fallback when no rig clip)
- *   platform:crumble, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
+ *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
  * a direction (8 sectors around the head plus above / below) and a severity 0..2 for emphasis. Lines of the same `group`
@@ -50,6 +50,25 @@ export const RULES = Object.freeze({
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
+  sealOpen: R('[Iron grating grinds open]', 'world', 1, 'seal', 3),
+  sealLocked: R('[Iron grating, locked]', 'world', 1, 'seal', 6),
+  // LEVEL_FUN_PLAN P3: the verbs
+  bell: R('[A bell tolls]', 'world', 1, 'bell', 2),
+  ratchet: R('[A ratchet clacks]', 'world', 0, 'ratchet', 0.8),
+  lampCatch: R('[A lamp catches]', 'world', 0, 'lamp', 1),
+  // LEVEL_FUN_PLAN P4: the rockfall lane's telegraph (the stones themselves are the existing `debris` caption)
+  laneWarn: R('[Rocks rattle above]', 'world', 1, 'rockfall', 3),
+  // LEVEL_FUN_PLAN P6: the S6 wind squall's telegraph and its gust; a crumbling span's first groan underfoot
+  squallWarn: R('[Wind rising from below]', 'world', 1, 'squall', 6),
+  squall: R('[A gust pushes you]', 'world', 0, 'squall', 6),
+  strain: R('[Stone groaning underfoot]', 'world', 2, 'crumble', 2),
+  // LEVEL_FUN_PLAN P5: the Mason as the key (the S5 keystone), the Masons' rests, the S7 survive floor
+  stoneCrack: R('[Stone cracks]', 'world', 2, 'breach', 1.2),
+  keystone: R('[The keystone gives way]', 'world', 2, 'breach', 2),
+  nookScrape: R('[Stone scraping at the opening]', 'creature', 2, 'nook', 4),
+  nookSpent: R('[It forces the opening]', 'creature', 2, 'nook', 4),
+  bolt: R('[An iron bolt slides back below]', 'world', 1, 'bolt', 2),
+  boltsHold: R('[The bolts below go still]', 'world', 0, 'bolt', 4),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
@@ -150,6 +169,35 @@ export function captionForEvent(type, p) {
       return RULES.rumble;
     case 'trigger:debris':
       return RULES.debris;
+    case 'seal:open':
+      return RULES.sealOpen;
+    case 'seal:land':
+      return RULES.sealLocked;
+    case 'bell:ring':
+      return RULES.bell;
+    case 'objective:progress':
+      if (e.verb === 'breach') return e.k < e.of ? RULES.ratchet : null; // the last one is the break (breach:break)
+      return e.verb === 'haul' || e.verb === 'winch' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : e.verb === 'survive' ? RULES.bolt : null;
+    case 'breach:hit':
+      return RULES.stoneCrack;
+    case 'breach:break':
+      return RULES.keystone;
+    case 'nook:warn':
+      return RULES.nookScrape;
+    case 'nook:spent':
+      return RULES.nookSpent;
+    case 'arena:pause':
+      return RULES.boltsHold;
+    case 'lane:warn':
+      return RULES.laneWarn;
+    case 'squall:warn':
+      return RULES.squallWarn;
+    case 'squall:on':
+      return RULES.squall;
+    case 'platform:strain':
+      return RULES.strain;
+    case 'lane:on':
+      return RULES.debris;
     default:
       return null;
   }
@@ -162,7 +210,7 @@ export function statusForEvent(type, p) {
     case 'health:low':
       return STATUS_RULES.lowHealth;
     case 'health:damage':
-      return e.cause === 'hazard' ? STATUS_RULES.hazard : null;
+      return e.cause === 'hazard' || e.cause === 'rockfall' ? STATUS_RULES.hazard : null;
     case 'climb:strain':
       return finite(e.level) && e.level >= 1 ? STATUS_RULES.gripWeak : null;
     case 'climb:slip':
@@ -196,6 +244,20 @@ export const CAPTION_EVENTS = Object.freeze([
   'lantern:low',
   'trigger:rumble',
   'trigger:debris',
+  'seal:open',
+  'seal:land',
+  'bell:ring',
+  'objective:progress',
+  'lane:warn',
+  'lane:on',
+  'squall:warn',
+  'squall:on',
+  'platform:strain',
+  'breach:hit',
+  'breach:break',
+  'nook:warn',
+  'nook:spent',
+  'arena:pause',
   'health:damage',
   'pickup:collect',
 ]);

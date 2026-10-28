@@ -25,7 +25,7 @@
  *   … each frame, after the rig follows the player, before render:
  *   this.hands.update(dt, this);
  * Reads game.state, game.tethers.hands[h].{target, rope}, game.level.raycast,
- * game.diff.aimRange and game.tethers.anchorStress(h) when present.
+ * game.tethers.aimRangeAt(game.player) (else game.diff.aimRange) and game.tethers.anchorStress(h) when present.
  */
 
 import {
@@ -135,6 +135,15 @@ const SHAPE_HOLLOW = 4;
 // -----------------------------------------------------------------------------
 
 const _c = new Color();
+const _fqW = new Quaternion();
+const _fqH = new Quaternion();
+const _fqF = new Quaternion();
+const _fqP = new Quaternion();
+const _fqS = new Quaternion();
+const _fvA = new Vector3();
+const _fvB = new Vector3();
+const _fvE = new Vector3();
+const _fvD = new Vector3();
 
 function linear(hex) {
   _c.set(hex); // converted to the linear working space by three's colour management
@@ -682,6 +691,65 @@ export class HandsView {
     this._tmp.setFromMatrixPosition(g.wrist.matrixWorld);
     this._tmp.subVectors(outPos, this._tmp).normalize();
     outPos.addScaledVector(this._tmp, 0.028); // the sleeve ends 2.8 cm past the joint
+    return true;
+  }
+
+  /**
+   * Re-aims the arm model's forearm about the wrist (XR). The model's forearm is rigid with the controller's grip pose (its sleeve end
+   * sits 0.34 m behind the palm along the grip's back axis): where a real arm bends at the wrist (aiming up, across the body, a raised
+   * hand) the forearm pointed away from the elbow, so the lower arm looked badly oriented against the wrist. BodyView solves the arm
+   * (shoulder -> real elbow -> wrist) and passes the unit direction wrist -> elbow here: the Forearm bone swings about the wrist so
+   * its sleeve end points there, the hand bone counter-rotates so the hand (and the launcher, the fingers, the wrist HUD) keep the
+   * controller's orientation. `maxBend` (rad) caps the swing away from the rest axis; the direction is smoothed.
+   * @returns {boolean} false when there is no arm model / not in XR (nothing changed)
+   */
+  aimForearm(hand, dirW, maxBend = 1.1, dt = 1 / 72) {
+    const g = this.gear && this.gear[hand];
+    if (!g || !g.forearm || !g.wrist || !this._gearXr || !g.forearm.parent) return false;
+    const fo = g.forearm;
+    const hd = g.wrist;
+    const par = fo.parent;
+    let fa = g._fa;
+    if (!fa) {
+      fa = g._fa = { p: fo.position.clone(), q: fo.quaternion.clone(), h: hd.quaternion.clone(), dir: new Vector3(), ready: false };
+    }
+    // back to the rest pose, so the aim never accumulates
+    fo.position.copy(fa.p);
+    fo.quaternion.copy(fa.q);
+    hd.quaternion.copy(fa.h);
+    par.updateWorldMatrix(true, false);
+    fo.updateWorldMatrix(false, false);
+    hd.updateWorldMatrix(false, false);
+    fo.getWorldQuaternion(_fqF); // the forearm's rest world rotation
+    hd.getWorldQuaternion(_fqH); // the hand's world rotation (kept)
+    _fvE.setFromMatrixPosition(hd.matrixWorld); // the wrist
+    _fvA.set(0, 1, 0).applyQuaternion(_fqF); // rest: elbow -> wrist
+    _fvB.copy(_fvA).negate(); // rest: wrist -> elbow
+    // the wanted direction: capped swing away from the rest axis, smoothed
+    _fvD.copy(dirW).normalize();
+    const ang = _fvB.angleTo(_fvD);
+    if (ang > maxBend) {
+      _fqS.setFromUnitVectors(_fvB, _fvD);
+      _fqW.identity().slerp(_fqS, maxBend / ang);
+      _fvD.copy(_fvB).applyQuaternion(_fqW);
+    }
+    if (!fa.ready) {
+      fa.dir.copy(_fvD);
+      fa.ready = true;
+    } else {
+      fa.dir.lerp(_fvD, 1 - Math.exp(-18 * Math.min(0.1, dt))).normalize();
+    }
+    const L = hd.position.length();
+    _fvB.copy(fa.dir).negate();
+    _fqS.setFromUnitVectors(_fvA, _fvB); // rest elbow -> wrist  ->  new elbow -> wrist
+    _fqF.premultiply(_fqS); // the forearm's new world rotation
+    _fvE.addScaledVector(fa.dir, L); // the elbow end
+    par.worldToLocal(_fvE);
+    fo.position.copy(_fvE);
+    par.getWorldQuaternion(_fqP).invert();
+    fo.quaternion.copy(_fqP).multiply(_fqF);
+    hd.quaternion.copy(_fqF).invert().multiply(_fqH);
+    fo.updateWorldMatrix(false, true);
     return true;
   }
 
@@ -1397,7 +1465,8 @@ export class HandsView {
             const dl = d.length() || 1e-6;
             d.multiplyScalar(1 / dl);
           }
-          const range = game && game.diff && game.diff.aimRange ? game.diff.aimRange : 32;
+          // the section's reach (LEVEL_FUN_PLAN item 5): the dot goes hollow beyond the range the hook has HERE
+          const range = tethers && tethers.aimRangeAt && game.player ? tethers.aimRangeAt(game.player) : game && game.diff && game.diff.aimRange ? game.diff.aimRange : 32;
           f.hollow = hitT > range;
           f.dotX = e.x;
           f.dotY = e.y;
