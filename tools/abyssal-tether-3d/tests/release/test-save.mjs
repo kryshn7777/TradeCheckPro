@@ -5,6 +5,8 @@ import { srcUrl } from '../../verify/root.mjs';
 
 const S = await import(srcUrl('meta/save.js'));
 const { EventBus } = await import(srcUrl('sim/config3d.js'));
+const { SplitClock, medalFor, SPLIT_MEDALS } = await import(srcUrl('sim/splits3d.js'));
+const { PAR_3D } = await import(srcUrl('data/par-3d.js'));
 
 let pass = 0;
 let fail = 0;
@@ -26,7 +28,7 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
 // ---- fresh profile ----------------------------------------------------------------------------------------------
 {
   const p = S.defaultProfile(1000);
-  ok(p.schema === 2 && p.createdAt === 1000 && p.run === null && p.chapters.ch1 && p.totals.deaths === 0, 'default profile shape');
+  ok(p.schema === 3 && S.SAVE_SCHEMA === 3 && p.createdAt === 1000 && p.run === null && p.chapters.ch1 && p.totals.deaths === 0, 'default profile shape (schema 3)');
 }
 
 // ---- migration from today's v1 keys --------------------------------------------------------------------------------
@@ -45,7 +47,7 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   );
   const legacy = S.importLegacy((k) => ls.getItem(k));
   ok(legacy.any, 'legacy keys detected');
-  eq(legacy.byDiff.normal, { runs: 9, completions: 2, best: 312.5, fewestDeaths: 3, deepest: 556, lastTime: null, lastDeaths: null }, 'legacy normal record');
+  eq(legacy.byDiff.normal, { runs: 9, completions: 2, best: 312.5, fewestDeaths: 3, deepest: 556, lastTime: null, lastDeaths: null, sections: {} }, 'legacy normal record');
   eq(legacy.byDiff.nightmare.best, 401.2, 'legacy nightmare best');
   ok(legacy.byDiff.abyss.deepest === 120 && legacy.byDiff.abyss.best === null, 'legacy abyss deepest only');
   const r = S.migrateProfile(null, legacy, 5);
@@ -61,17 +63,72 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
 // ---- migration of other shapes / corrupted records -------------------------------------------------------------------
 {
   const a = S.migrateProfile({ schema: 1, byDiff: { normal: { best: 100, fewestDeaths: 1, completions: 1 } } }, null).profile;
-  ok(a.schema === 2 && a.chapters.ch1.byDiff.normal.best === 100, 'schema 1 flat byDiff migrates');
+  ok(a.schema === 3 && a.chapters.ch1.byDiff.normal.best === 100, 'schema 1 flat byDiff migrates');
   const b = S.migrateProfile({ schema: 2, run: { difficulty: 'normal', checkpoint: { x: 'NaN' } }, chapters: { ch1: { byDiff: { normal: { best: -5, runs: 'x', deepest: 40 } } } }, totals: 'oops' }, null);
   ok(b.repaired && b.profile.run === null, 'bad run dropped, repaired flag');
   ok(b.profile.chapters.ch1.byDiff.normal.best === null && b.profile.chapters.ch1.byDiff.normal.runs === 0 && b.profile.chapters.ch1.byDiff.normal.deepest === 40, 'readable fields kept, bad ones reset');
   const c = S.migrateProfile('not an object', null);
-  ok(c.profile.schema === 2 && c.repaired, 'garbage record -> fresh profile');
+  ok(c.profile.schema === 3 && c.repaired, 'garbage record -> fresh profile');
   const newer = { schema: 99, anything: true };
   const d = S.migrateProfile(newer, null);
   ok(d.newer && d.profile === newer, 'newer schema is handed back untouched');
   const e = S.migrateProfile({ schema: 2, chapters: { ch1: { byDiff: { normal: { best: 90 } } } } }, S.importLegacy((k) => (k === S.V1_PREFIX + 'best.normal' ? '80' : null)));
   ok(e.profile.chapters.ch1.byDiff.normal.best === 80, 'merging keeps the better (lower) best time');
+}
+
+// ---- schema 2 -> 3 (LEVEL_FUN_PLAN P2): per-section splits and medals ------------------------------------------------------
+{
+  const v2 = {
+    schema: 2,
+    id: 'abc',
+    run: { chapter: 'ch1', difficulty: 'normal', checkpoint: { x: 1, y: -100, z: 2, yaw: 0, index: 3 }, section: 3, time: 80, deaths: 1, deepest: -101, savedAt: 9, kind: 'checkpoint', objectives: ['obj-s1', 'obj-s2', 'obj-s3'] },
+    chapters: { ch1: { completed: true, completions: 2, byDiff: { normal: { runs: 4, completions: 2, best: 600, fewestDeaths: 1, deepest: 556 }, abyss: { runs: 1 } } } },
+    totals: { runs: 5, deaths: 7, playTime: 900, completions: 2 },
+  };
+  const m = S.migrateProfile(v2, null);
+  const n = m.profile.chapters.ch1.byDiff.normal;
+  ok(m.migrated && !m.repaired && m.profile.schema === 3, 'a schema-2 profile migrates to 3 (migrated, not repaired)');
+  ok(n.best === 600 && n.runs === 4 && n.fewestDeaths === 1 && JSON.stringify(n.sections) === '{}' && JSON.stringify(m.profile.chapters.ch1.byDiff.abyss.sections) === '{}', 'every record is kept and gains an empty sections table');
+  ok(m.profile.run && m.profile.run.objectives.join() === 'obj-s1,obj-s2,obj-s3' && m.profile.run.checkpoint.index === 3 && m.profile.id === 'abc', 'the Continue slot (objectives included) survives the migration');
+  const again = S.migrateProfile(JSON.parse(JSON.stringify(m.profile)), null);
+  ok(!again.migrated && JSON.stringify(again.profile) === JSON.stringify(m.profile), 'a schema-3 profile reads back unchanged');
+  // bad section entries are dropped, readable ones kept
+  const bad = S.migrateProfile({ schema: 3, chapters: { ch1: { byDiff: { normal: { sections: { s1: { best: 9.5, medal: 'gold' }, s2: { best: -3, medal: 'platinum' }, 'BAD ID': { best: 4 }, s3: 'x' } } } } } }, null).profile;
+  eq(bad.chapters.ch1.byDiff.normal.sections, { s1: { best: 9.5, medal: 'gold' } }, 'unreadable section entries are dropped');
+  // merging keeps the faster split and the better medal
+  const mg = S.mergeDiffRecords({ sections: { s1: { best: 9, medal: 'brass' }, s2: { best: 20, medal: null } } }, { sections: { s1: { best: 11, medal: 'silver' }, s3: { best: 5, medal: 'gold' } } });
+  eq(mg.sections, { s1: { best: 9, medal: 'silver' }, s2: { best: 20, medal: null }, s3: { best: 5, medal: 'gold' } }, 'merge: faster split, better medal, union of sections');
+  // a newer schema is still handed back untouched
+  const future = { schema: 4, chapters: 'whatever' };
+  ok(S.migrateProfile(future, null).profile === future, 'schema 4 (newer) is kept as-is');
+}
+
+// ---- medals and the split clock (sim/splits3d.js) ---------------------------------------------------------------------------
+{
+  ok(SPLIT_MEDALS.map((m) => m.join(':')).join() === 'gold:1,silver:1.4,brass:2', 'medal thresholds 1.0 / 1.4 / 2.0 x par (the owner\'s)');
+  ok(medalFor(10, 10) === 'gold' && medalFor(14, 10) === 'silver' && medalFor(14.01, 10) === 'brass' && medalFor(20, 10) === 'brass' && medalFor(20.1, 10) === null && medalFor(5, null) === null, 'medalFor');
+  const ids = ['s1', 's2', 's3', 's4'];
+  ok(['normal', 'nightmare', 'abyss'].every((d) => PAR_3D[d] && ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'].every((k) => PAR_3D[d][k] > 0)) && !PAR_3D.sandbox, 'par-3d.js: a par for every section of every difficulty, none for Sandbox');
+  const c = new SplitClock(ids);
+  ok(c.enter(0, 'initial', 0) === null, 'a run starts the S1 split');
+  const s1 = c.enter(1, 'progress', 12.5);
+  ok(s1 && s1.id === 's1' && s1.time === 12.5, 'entering S2 from S1 takes the S1 split');
+  ok(c.enter(1, 'respawn', 30) === null && c.enter(0, 'progress', 31) === null, 'a respawn in the section, or climbing back above it, takes nothing (the clock runs on)');
+  const s2 = c.enter(2, 'progress', 40);
+  ok(s2 && s2.id === 's2' && s2.time === 27.5, 'deaths and respawns count in the split (S2 12.5 -> 40 s)');
+  // Continue / warp into a section: that section is partial, the next one is whole again
+  const k = new SplitClock(ids);
+  k.enter(0, 'initial', 0);
+  k.enter(2, 'warp', 0);
+  k.partial(); // game._resumeAt
+  ok(k.enter(3, 'progress', 50) === null, 'Continue never records the split of the section it resumed in');
+  ok(k.goal(70) && k.goal(70) === null, 'the next section is whole again; the goal takes the last split once');
+  const j = new SplitClock(ids);
+  j.enter(0, 'initial', 0);
+  ok(j.enter(2, 'progress', 9) === null && j.enter(3, 'progress', 20) === null && j.goal(31).time === 11, 'a jump past a section records neither it nor the section jumped into; the one after that again');
+  const w = new SplitClock(ids);
+  w.enter(1, 'initial', 0);
+  ok(w.enter(2, 'progress', 5) === null, 'a run starting below S1 (Sandbox warp at start) is partial');
 }
 
 // ---- SaveStore: load picks the newest, writes are debounced, failures never throw ---------------------------------------
@@ -132,10 +189,18 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   ok(store.records('normal').best === 600.5 && store.records('normal').fewestDeaths === 1, 'a slower run keeps the best time, fewer deaths improves');
   store.completed({ difficulty: 'sandbox', time: 99, deaths: 0, deepestMeters: 10, recorded: false });
   ok(store.records('sandbox').best === null && store.records('sandbox').completions === 0, 'sandbox records nothing');
+  // per-section splits (schema 3)
+  const a1 = store.sectionSplit({ difficulty: 'normal', section: 's3', time: 21.5, medal: 'brass' });
+  const a2 = store.sectionSplit({ difficulty: 'normal', section: 's3', time: 25, medal: 'gold' });
+  const a3 = store.sectionSplit({ difficulty: 'normal', section: 's3', time: 18, medal: null });
+  ok(a1.isNew && !a2.isNew && a2.best === 21.5 && a3.isNew && a3.previous === 21.5, 'sectionSplit keeps the fastest split');
+  eq(store.sectionRecords('normal'), { s3: { best: 18, medal: 'gold' } }, 'the best medal is kept even from a slower split');
+  ok(!store.sectionSplit({ difficulty: 'normal', section: 'BAD', time: 3 }).best && !store.sectionSplit({ difficulty: 'normal', section: 's4', time: -1 }).best, 'bad section ids and times are ignored');
   await store.flush();
   const again = new S.SaveStore({ primary: A, secondary: null, legacyGetItem: null });
   await again.load();
   ok(again.records('normal').best === 600.5 && again.chapter().completed, 'round trip through the adapter');
+  ok(again.sectionRecords('normal').s3.best === 18 && again.profile.schema === 3, 'section splits round trip through the adapter');
   again.reset();
   ok(again.records('normal').best === null, 'reset');
 }
@@ -230,6 +295,10 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   bus.emit('game:victory', { difficultyKey: 'normal', time: 640, deaths: 3, deepestMeters: 556, recorded: true });
   ok(store.records('normal').best === 640 && svc.continueInfo() === null && store.chapter().completed, 'victory records the time, completes the chapter, clears the slot');
   ok(store.profile.totals.playTime > 0, 'play time accumulated');
+  // 'split' events from game.js: recorded ones are kept per difficulty, unrecorded ones (Sandbox, god mode) are not
+  bus.emit('split', { index: 1, section: 's2', time: 14.2, par: 16.3, medal: 'gold', recorded: true, difficulty: 'normal' });
+  bus.emit('split', { index: 2, section: 's3', time: 9, par: null, medal: null, recorded: false, difficulty: 'sandbox' });
+  ok(svc.sectionRecords('normal').s2 && svc.sectionRecords('normal').s2.medal === 'gold' && !svc.sectionRecords('sandbox').s3, 'SaveService records whole-section splits (and only recorded ones)');
   bus.emit('settings:changed', { settings: { volume: 0.3, haptics: true, dominantHand: 'left' } });
   ok(store.profile.settings.volume === 0.3, 'settings mirrored into the profile');
   svc.dispose();

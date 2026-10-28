@@ -2,7 +2,7 @@
 //
 //   npm run verify:at3d -- [--chapter ch1|all] [--variant normal|nightmare|abyss|all]
 //                          [--root DIR] [--out DIR] [--skip-budget] [--skip-determinism]
-//                          [--write-baseline]
+//                          [--write-baseline] [--write-par]
 //
 // Per chapter and variant: integrity (V1), full spawn → goal runs on every line of the
 // fork (V2), every section route from its checkpoint, the alternate lines, the fork
@@ -10,7 +10,9 @@
 // coverage (V3), determinism of bot run, re-run and input-log replay (V13), object
 // counts (V12) and the sim budget per system (E29). Chapter I is today's level; every
 // value is compared with baselines/verify-<chapter>.json (V14 read-out: differences are
-// listed, not failed; --write-baseline records the current numbers as the new baseline).
+// listed, not failed; --write-baseline records the current numbers as the new baseline). --write-par writes the section
+// par times (src/data/par-3d.js: the main line of each section from its checkpoint, LEVEL_FUN_PLAN item 12); without it the
+// main-line times are compared with that file (read-out only: a split more than 10 % off its par is listed).
 // Writes out/verify-<chapter>.json and out/traces-<chapter>.json; exit code 1 on any failure.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,6 +24,8 @@ import { measureBudget, formatBudget } from './budget.mjs';
 import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
 import { sealIntegrity, sealGaps, climbOut, skipProbe } from './seals.mjs';
+import { forkIntegrity } from './forks.mjs';
+import { writePar, PAR_FILE } from './par.mjs';
 // WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
 const { pickSupplies, checkFairness } = await import(srcUrl('sim/pickups3d.js')).catch(() => ({}));
 
@@ -37,6 +41,9 @@ const OUT_DIR = path.resolve(argValue(argv, '--out', fileURLToPath(new URL('./ou
 const DO_BUDGET = !hasFlag(argv, '--skip-budget');
 const DO_DETERMINISM = !hasFlag(argv, '--skip-determinism');
 const WRITE_BASELINE = hasFlag(argv, '--write-baseline');
+const WRITE_PAR = hasFlag(argv, '--write-par');
+// the shipped par times (absent in older checkouts): the section runs are compared with them
+const PAR = (await import(srcUrl('data/par-3d.js')).catch(() => ({}))).PAR_3D || null;
 const BASELINE_DIR = fileURLToPath(new URL('./baselines/', import.meta.url));
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -158,6 +165,8 @@ function integrity(ch, v) {
   out.ids = idChecks(L, P);
   // Seals (LEVEL_FUN_PLAN P1): one objective each, rings above, plates inside the walls, the next checkpoint below.
   out.seals = sealIntegrity(L, v, P);
+  // Forks (LEVEL_FUN_PLAN P2): a fast and a safe line in every section but the first, played by the bots as the data says.
+  out.forks = forkIntegrity(L, R, P);
   out.ok = out.problems.length === 0;
   return out;
 }
@@ -423,9 +432,9 @@ function edgeChecks(L, P) {
 }
 
 /** Lists of the chapter data whose objects are referenced by id (ENGINE_EXTENSIONS §5). */
-const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 /** Lists whose references must resolve (V1: no dangling ids). */
-const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 
 /**
  * V1: ids unique among the variant's live objects; every `…Id` / `ids` reference in
@@ -487,16 +496,19 @@ function runRoute(ch, v, start, route, opts = {}) {
   return r;
 }
 
-/** V2: spawn → goal in one continuous run along `line` at the fork. */
+/** V2: spawn → goal in one continuous run along `line`: 'fast' / 'safe' at every fork (R.FORKS), or the old S6 key (R.FORK). */
 function fullRun(ch, v, line, simOpts) {
   const L = ch.makeLevel(v);
   const R = ch.routes;
-  const route = [];
-  const marks = [];
-  for (const k of R.SECTION_ROUTE) {
-    const key = R.FORK && k === R.FORK.key ? line : k;
-    for (const st of R.ROUTES[key]) route.push(st);
-    marks.push([k, route.length - 1]);
+  let route = [];
+  let marks = [];
+  if (R.FORKS && R.lineRoute) ({ route, marks } = R.lineRoute(line));
+  else {
+    for (const k of R.SECTION_ROUTE) {
+      const key = R.FORK && k === R.FORK.key ? line : k;
+      for (const st of R.ROUTES[key]) route.push(st);
+      marks.push([k, route.length - 1]);
+    }
   }
   const r = runRoute(ch, v, L.spawn, route, { level: L, sim: simOpts, label: `full/${line || 'main'}` });
   const splits = {};
@@ -593,7 +605,7 @@ function counts(ch, v) {
 // -----------------------------------------------------------------------------
 function determinism(ch, v, first) {
   const R = ch.routes;
-  const line = R.FORK ? R.FORK.risky : null;
+  const line = R.FORKS ? 'fast' : R.FORK ? R.FORK.risky : null; // the line the first (recorded) full run played
   const a = first.sim;
   const again = fullRun(ch, v, line, {});
   const L = ch.makeLevel(v);
@@ -640,7 +652,7 @@ async function verifyChapter(ch) {
     integrity: {},
     full: {},
     scenarios: {},
-    [R.FORK ? R.FORK.key : 'fork']: {},
+    forks: {},
     coverage: {},
     counts: {},
     determinism: {},
@@ -662,7 +674,7 @@ async function verifyChapter(ch) {
   console.log('== Full runs (spawn → goal, one continuous run)');
   const traces = {};
   for (const v of VARIANTS) traces[v] = [];
-  const lines = R.FORK ? [[R.FORK.risky, 'risky'], [R.FORK.safe, 'safe']] : [[null, 'main']];
+  const lines = R.FORKS ? [['fast', 'fast'], ['safe', 'safe']] : R.FORK ? [[R.FORK.risky, 'risky'], [R.FORK.safe, 'safe']] : [[null, 'main']];
   const firstRun = {};
   for (const v of VARIANTS) {
     for (const [line, label] of lines) {
@@ -686,7 +698,9 @@ async function verifyChapter(ch) {
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
       if (!ok) fail(`[${ch.id}/${v}] section ${key}: ${r.fail}`);
-      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), deaths: r.deaths, damage: dmgOf(r.damage) };
+      const breaks = r.sim.events.filter((e) => e[0] === 'break').length;
+      const crumbles = r.sim.events.filter((e) => e[0] === 'crumble').length;
+      report[`sections_${v}`][key] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), deaths: r.deaths, damage: dmgOf(r.damage), breaks, crumbles };
     }
     console.log(`  ${v}: ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.ok ? 'ok' : 'FAIL'} ${o.time}s/${o.maxLand}`).join(' | ')}`);
     console.log(`  ${v} damage (hp taken / lowest hp): ${Object.entries(report[`sections_${v}`]).map(([k, o]) => `${k} ${o.damage.total}/${o.damage.minHp}`).join(' | ')}`);
@@ -709,16 +723,21 @@ async function verifyChapter(ch) {
     }
   }
 
-  if (R.FORK) {
-    const F = R.FORK;
-    console.log(`== ${F.key.toUpperCase()}: risky vs safe (from the fork)`);
+  const forkList = R.FORKS || (R.FORK ? [{ key: R.FORK.key, fast: R.FORK.risky, safe: R.FORK.safe, fasterBy: R.FORK.fasterBy }] : []);
+  if (forkList.length) {
+    console.log('== Forks (LEVEL_FUN_PLAN item 8: fast vs safe line from the fork\'s checkpoint; the fast line\'s cost: lowest hp, ropes snapped, ledges crumbled)');
     for (const v of VARIANTS) {
-      const a = report[`sections_${v}`][F.risky];
-      const b = report[`sections_${v}`][F.safe];
-      const faster = 1 - a.time / b.time;
-      report[F.key][v] = { risky: a.time, safe: b.time, fasterBy: +(faster * 100).toFixed(0) + '%' };
-      if (!(a.ok && b.ok && faster >= F.fasterBy)) fail(`[${ch.id}/${v}] ${F.key.toUpperCase()} risky not >=${F.fasterBy * 100}% faster (${a.time} vs ${b.time})`);
-      console.log(`  ${v}: risky ${a.time}s vs safe ${b.time}s → ${(faster * 100).toFixed(0)}% faster`);
+      const row = [];
+      for (const F of forkList) {
+        const a = report[`sections_${v}`][F.fast];
+        const b = report[`sections_${v}`][F.safe];
+        const faster = 1 - a.time / b.time;
+        const o = { fast: a.time, safe: b.time, fasterBy: +(faster * 100).toFixed(0) + '%', fastMinHp: a.damage.minHp, safeMinHp: b.damage.minHp, fastBreaks: a.breaks, fastCrumbles: a.crumbles };
+        (report.forks[F.key] || (report.forks[F.key] = {}))[v] = o;
+        if (!(a.ok && b.ok && faster >= F.fasterBy)) fail(`[${ch.id}/${v}] fork ${F.key}: fast line ${F.fast} not >=${F.fasterBy * 100}% faster than ${F.safe} (${a.time} vs ${b.time})`);
+        row.push(`${F.key} ${a.time}/${b.time}s ${o.fasterBy} (hp ${o.fastMinHp}/${o.safeMinHp}, snaps ${o.fastBreaks})`);
+      }
+      console.log(`  ${v}: ${row.join(' | ')}`);
     }
   }
 
@@ -807,11 +826,29 @@ async function verifyChapter(ch) {
     }
   }
 
+  // Par (LEVEL_FUN_PLAN item 12): the main line of every section against src/data/par-3d.js (read-out), or written anew.
+  if (ch.id === 'ch1') {
+    const ids = R.SECTION_ROUTE;
+    if (WRITE_PAR) {
+      if (chapterFailures.length || VARIANTS.length < 3) console.log('== Par: not written (failures, or not every variant)');
+      else console.log(`== Par: ${writePar(report, ids) ? 'written' : 'NOT written (a section run is missing)'} → ${path.relative(process.cwd(), PAR_FILE)}`);
+    } else if (PAR) {
+      const off = [];
+      for (const v of VARIANTS) for (const id of ids) {
+        const a = PAR[v] && PAR[v][id];
+        const b = report[`sections_${v}`] && report[`sections_${v}`][id] ? report[`sections_${v}`][id].time : null;
+        if (a > 0 && b > 0 && Math.abs(b - a) > a * 0.1) off.push(`${v}/${id} ${a}→${b}`);
+      }
+      report.par = { drift: off };
+      console.log(`== Par (src/data/par-3d.js): ${off.length ? off.length + ' main-line split(s) more than 10 % off par: ' + off.join(', ') + ' (re-write with --write-par once reviewed)' : 'every main-line split within 10 % of par'}`);
+    }
+  }
+
   // V14: every number against the chapter's baseline (informational; physics changes move them).
   const baseFile = path.join(BASELINE_DIR, `verify-${ch.id}.json`);
   if (fs.existsSync(baseFile) && !WRITE_BASELINE) {
     const base = onlyVariants(JSON.parse(fs.readFileSync(baseFile, 'utf8')), VARIANTS);
-    const cmp = compareReports(base, report, { ignore: ['meta', 'budget', 'checks', 'regression'].concat(DO_DETERMINISM ? [] : ['determinism']) });
+    const cmp = compareReports(base, report, { ignore: ['meta', 'budget', 'checks', 'regression', 'par'].concat(DO_DETERMINISM ? [] : ['determinism']) });
     report.regression = { baseline: path.relative(path.dirname(BASELINE_DIR), baseFile), compared: cmp.leaves, differences: cmp.diffs.length, first: cmp.diffs.slice(0, 40) };
     console.log(`== Baseline (V14 read-out): ${cmp.diffs.length ? cmp.diffs.length + ' of ' + cmp.leaves + ' values differ' : 'all ' + cmp.leaves + ' values identical'} vs ${report.regression.baseline}`);
     for (const [p, a, b] of cmp.diffs.slice(0, 12)) console.log(`  ${p}: ${JSON.stringify(a)} → ${JSON.stringify(b)}`);
@@ -826,7 +863,7 @@ async function verifyChapter(ch) {
     if (chapterFailures.length) console.log(`  not writing the ${ch.id} baseline: the chapter has failures`);
     else if (VARIANTS.length < 3 || !DO_DETERMINISM) console.log(`  not writing the ${ch.id} baseline: it needs every variant and the determinism phase`);
     else {
-      const base = Object.assign({}, report, { budget: undefined, checks: undefined, regression: undefined });
+      const base = Object.assign({}, report, { budget: undefined, checks: undefined, regression: undefined, par: undefined });
       base.meta = { chapter: ch.id, variants: VARIANTS, note: 'V14 baseline: npm run verify:at3d -- --chapter ' + ch.id + ' --write-baseline', date: report.meta.date };
       fs.mkdirSync(BASELINE_DIR, { recursive: true });
       fs.writeFileSync(baseFile, JSON.stringify(base, null, 1) + '\n');

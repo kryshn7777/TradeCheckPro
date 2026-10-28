@@ -158,17 +158,17 @@ export const ROUTES = {
     { a: 's7-n11' },
     { p: 's8-landing', mode: 'lower', at: [6, -15] },
   ],
-  // S7 fast line: the plumb line. Off the landing's north lip, straight down the slanting column of frayed rings (the third
-  // opens the iris) to the spiral's last ring, and lower onto the throat's landing.
+  // S7 fast line: the plumb line. Off the landing's north lip, straight down the column of frayed rings (the third
+  // opens the iris) to the sound hook at its foot, and lower onto the throat's landing.
   s7fast: [
-    { a: 's7-f1', mode: 'below', walk: [-11, -12.5], below: 0.6 },
+    { a: 's7-f1', mode: 'below', walk: [4.5, -12.5], below: 0.6 },
     { a: 's7-f2', mode: 'below' },
     { a: 's7-f3', mode: 'below' },
     { a: 's7-f4', mode: 'below' },
     { a: 's7-f5', mode: 'below' },
     { a: 's7-f6', mode: 'below' },
-    { a: 's7-n11', mode: 'below' },
-    { p: 's8-landing', mode: 'lower', at: [6, -15] },
+    { a: 's7-f7', mode: 'below' },
+    { p: 's8-landing', mode: 'lower', at: [4.5, -12.5] },
   ],
   s8: [
     { a: 's8-e1' },

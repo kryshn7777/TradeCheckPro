@@ -299,6 +299,8 @@ dec('far-structure', -70, -60, -40, 16, 90, 16, 0, { variant: 'tower' });
 dec('statue', -28, -15.5, -9.5, 3.5, 19, 3.5, -PI / 2); // a colossal Lanternwright on the far pier
 dec('cables', 10, -12, -10, 1, 1, 1, 0, { x2: -33, y2: -20, z2: -10 });
 dec('plaque', -33.9, -24, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT.' });
+// LORE (LEVEL_FUN_PLAN item 6): one plaque on each safe line, by its supplies, under a lamp that is already there.
+dec('plaque', -16, -33.4, 10.85, 3.6, 0.9, 0.15, 0, { text: 'WE LOWERED THE FIRST LAMP BY HAND. IT TOOK A YEAR.', lore: true });
 dec('arch', -11.5, -20, -10.6, 16, 18, 1.2, PI);
 dec('arch', -11.5, -20, 10.6, 16, 18, 1.2, 0);
 dec('chain', -15, -22, 6, 0.6, 26, 0.6, 0, { link: 1 });
@@ -371,6 +373,7 @@ chainRing('s3-f2', -4, -88.5, 5, 40, 'hook', 'risk');
 dec('ribs', -33.7, -86, 6, 0.6, 22, 10, -PI / 2);
 dec('bones', 10, -62, 9, 3, 2, 3, 0.4);
 dec('plaque', 10.85, -64.5, -6, 0.15, 0.9, 3.6, PI / 2, { text: 'NINTH GALLERY — CLOSED. THE STONE HAS BEEN LISTENING.' });
+dec('plaque', -33.85, -94.4, -1.5, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE GALLERY FELL TWICE. THE MASONS BUILT IT A THIRD TIME.', lore: true }); // the shelf (safe line)
 dec('cage', -8, -77, 7, 2, 3, 2, 0);
 dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7 });
 dec('glyphs', -33.9, -88, -6, 0.1, 2, 10, -PI / 2);
@@ -421,6 +424,9 @@ chainRing('s4-a4', -6, -113, 4, 52);
 chainRing('s4-catch', -4, -128, -4, 67, 'ring', 'recovery', { omitIn: NM });
 S('s4-plinth', -20, -12, -129, -126, 2, 10);
 chainRing('s4-a5', -8, -124, -1, 63);
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): with the shorter deep reach (REACH below) the Gullet's closed mouth saw no ring above
+// from its west half; one recovery ring over it, in every variant (Abyss may fray it, level3d.js).
+chainRing('s4-up', -12, -135, -2, 74, 'ring', 'recovery');
 
 // The Vault's far side: colossal structures in the fog.
 dec('far-structure', -60, -170, -150, 30, 220, 18, 0, { variant: 'spire' });
@@ -429,6 +435,7 @@ dec('far-structure', -10, -230, -120, 120, 14, 10, 0, { variant: 'bridge' });
 dec('shaft-light', -30, -180, -110, 10, 240, 10, 0, { color: '#b8f0e0' });
 dec('shaft-light', 50, -170, -80, 8, 220, 8, 0, { color: '#b8f0e0' });
 dec('plaque', -16, -103.6, -5.5, 3.6, 0.9, 0.15, PI, { text: 'DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL.' });
+dec('plaque', 9, -117.4, -10.85, 3.6, 0.9, 0.15, PI, { text: 'THE VAULT WAS NOT DUG. WE FOUND IT, AND IT LISTENED.', lore: true }); // the shelf (safe line)
 dec('ribs', -40, -150, -15, 30, 50, 2, 0);
 dec('machinery', 9, -108, -9, 3, 6, 3, 0);
 dec('glyphs', 10.9, -112, 4, 0.1, 1.5, 12, PI / 2);
@@ -500,6 +507,7 @@ dec('ribs', -20.75, -182, -1, 0.5, 12, 8, -PI / 2);
 dec('pipe', -20.4, -178, -8.4, 0.8, 50, 0.8, 0);
 dec('pipe', -3.6, -192, 8.4, 0.8, 22, 0.8, 0);
 dec('plaque', -3.15, -150.4, 6, 0.15, 0.9, 3.6, PI / 2, { text: 'THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF.' });
+dec('plaque', -3.15, -183.3, -7.1, 0.15, 0.9, 3.2, PI / 2, { text: 'A MASON CUT EACH LEDGE, THEN WENT DOWN TO CUT THE NEXT.', lore: true }); // step 4 (safe line)
 dec('glyphs', -12, -165, -8.9, 10, 1.2, 0.1, 0);
 dec('cage', -7, -190, 6, 2, 3, 2, 0);
 dec('shaft-light', -12, -180, 0, 4, 50, 4, 0, { color: '#7a3b22' });
@@ -560,10 +568,13 @@ chainRing('s6-ra3', -2.6, -234, -4, 30, 'fragile', 'risk');
 chainRing('s6-ra4', 2, -247, 2, 43, 'fragile', 'risk');
 chainRing('s6-ra5', -2, -261, -2, 57, 'hook', 'risk'); // sound: lowers you onto the nave landing
 H('s6-rebar-e', 9.7, 10, -254, -236, -11, 11, 'rebar', { normal: { x: -1, y: 0, z: 0 } });
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): the grating under the throat's south side saw no ring above at the Abyss reach.
+chainRing('s6-up', 2, -266, 6, 61, 'ring', 'recovery');
 H('s6-rebar-nm', 5.5, 8.5, -227, -226.5, -8.5, 0.5, 'rebar', { onlyIn: NM }); // under the ledge's far end
 
 dec('plaque', -16, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE LONG STAIR — FOR THE PATIENT' });
 dec('plaque', -8, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE THROAT — FOR THE LATE' });
+dec('plaque', -33.85, -265.2, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE PATIENT REACH THE BOTTOM. THE LATE ARE CARRIED THERE.', lore: true }); // shelf 5 (safe line)
 dec('lamp', -19.6, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.25 });
 dec('lamp', -4.4, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.6 });
 dec('glyphs', -13.05, -240, 0, 0.1, 26, 16, PI / 2); // carved down the dividing wall, both faces
@@ -627,6 +638,9 @@ S('s7-perch', -24, -16, -350, -349, 22, 30, 'metal');
 // Recovery rings under the spiral (Normal: both; Nightmare: one; Abyss: none).
 chainRing('s7-r1', -9, -353, 18, 70, 'ring', 'recovery', { omitIn: NM });
 chainRing('s7-r2', -13, -386, -27, 100, 'ring', 'recovery', { omitIn: AB });
+// Climb-out (LEVEL_FUN_PLAN item 4, P2): over the iris, in every variant: with the deep reach (REACH below) its east half saw
+// no ring above. It hangs from the landing, far above, beside the spire's tip.
+chainRing('s7-up', 2, -410, 2, 125, 'ring', 'recovery');
 dec('chain', -23.5, -318, 26, 0.4, 62, 0.4, 0, { link: 0.8 });
 dec('chain', -16.5, -318, 26, 0.4, 62, 0.4, 0, { link: 0.8 });
 chainRing('s7-n6', -18, -346, 12, 60);
@@ -635,14 +649,16 @@ chainRing('s7-n8', -22, -368, -24, 82);
 chainRing('s7-n9', -4, -379, -30, 93);
 chainRing('s7-n10', 10, -390, -16, 104);
 chainRing('s7-n11', 6, -404, -15, 118);
-// FAST LINE (LEVEL_FUN_PLAN item 8): the plumb line. Off the landing's north lip and straight down, on frayed rings hung from
-// the roof in a slanting column toward the throat: each one kills the fall and snaps; the last ring of the spiral catches you.
-chainRing('s7-f1', -11, -297, -14.5, 12, 'fragile', 'risk');
-chainRing('s7-f2', -8, -314, -15, 30, 'fragile', 'risk');
-chainRing('s7-f3', -5, -331, -15, 46, 'fragile', 'risk');
-chainRing('s7-f4', -2, -348, -15.5, 64, 'fragile', 'risk');
-chainRing('s7-f5', 1, -365, -15.5, 80, 'fragile', 'risk');
-chainRing('s7-f6', 3, -382, -15, 98, 'fragile', 'risk');
+// FAST LINE (LEVEL_FUN_PLAN item 8): the plumb line. Off the landing's north lip and straight down a column of frayed rings
+// hung 1 m out from it, right over the throat's landing: each one kills the fall and snaps; a sound hook at the foot lowers
+// you through the iris onto the landing.
+chainRing('s7-f1', 4.5, -297, -12.5, 14, 'fragile', 'risk'); // from the Two Descents' north wall, which hangs free above
+chainRing('s7-f2', 4.5, -314, -12.5, 31, 'fragile', 'risk');
+chainRing('s7-f3', 4.5, -331, -12.5, 48, 'fragile', 'risk');
+chainRing('s7-f4', 4.5, -348, -12.5, 65, 'fragile', 'risk');
+chainRing('s7-f5', 4.5, -365, -12.5, 82, 'fragile', 'risk');
+chainRing('s7-f6', 4.5, -382, -12.5, 99, 'fragile', 'risk');
+chainRing('s7-f7', 4.5, -399, -12.5, 116, 'hook', 'risk');
 
 dec('ribs', -51, -350, 0, 2, 120, 70, -PI / 2);
 dec('ribs', 27, -350, 0, 2, 120, 70, PI / 2);
@@ -707,6 +723,7 @@ dec('ribs', -21.25, -450, 0, 1.5, 30, 30, -PI / 2);
 dec('glyphs', -2, -540, -9.9, 14, 2, 0.1, PI);
 dec('machinery', 6, -553, -7, 3, 5, 3, 0);
 dec('plaque', -2, -546.8, 9.85, 3.8, 0.9, 0.15, 0, { text: 'BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE.' });
+dec('plaque', -10, -468.4, 19.85, 3.6, 0.9, 0.15, 0, { text: 'THE LAST LANTERNWRIGHTS RESTED HERE. NONE OF THEM CLIMBED BACK.', lore: true }); // the first step (safe line)
 dec('statue', -7, -552, 22, 2.2, 8, 2.2, PI);
 dec('statue', 1, -552, 22, 2.2, 8, 2.2, PI);
 dec('still-lamp', -3, -552.5, 26.5, 1.2, 2.4, 1.2, 0);
@@ -812,7 +829,7 @@ const routes = [
   { id: 'r-s5-safe', fork: 'fork-s5', section: 's5', line: 'safe', ids: ['s5-h1', 's5-h2', 's5-h3', 's5-h4', 's5-h5', 's5-h6', 's5-h7'], stops: ['s5-step1', 's5-step3', 's5-step4', 's5-step5', 's5-step6'] },
   { id: 'r-s6-fast', fork: 'fork-s6', section: 's6', line: 'fast', ids: ['s6-ra1', 's6-ra2', 's6-ra3', 's6-ra4', 's6-ra5'], stops: ['s6-ledge'] },
   { id: 'r-s6-safe', fork: 'fork-s6', section: 's6', line: 'safe', ids: ['s6-sa1', 's6-sa2', 's6-sa3', 's6-sa4', 's6-sa5', 's6-sa6'], stops: ['s6-safe1', 's6-safe2', 's6-safe3', 's6-safe4', 's6-safe5'] },
-  { id: 'r-s7-fast', fork: 'fork-s7', section: 's7', line: 'fast', ids: ['s7-f1', 's7-f2', 's7-f3', 's7-f4', 's7-f5', 's7-f6', 's7-n11'], stops: [] },
+  { id: 'r-s7-fast', fork: 'fork-s7', section: 's7', line: 'fast', ids: ['s7-f1', 's7-f2', 's7-f3', 's7-f4', 's7-f5', 's7-f6', 's7-f7'], stops: [] },
   { id: 'r-s7-safe', fork: 'fork-s7', section: 's7', line: 'safe', ids: ['s7-n1', 's7-n2', 's7-n3', 's7-n4', 's7-n5', 's7-n6', 's7-n7', 's7-n8', 's7-n9', 's7-n10', 's7-n11'], stops: [] },
   { id: 'r-s8-fast', fork: 'fork-s8', section: 's8', line: 'fast', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: [] },
   { id: 'r-s8-safe', fork: 'fork-s8', section: 's8', line: 'safe', ids: ['s8-e1', 's8-e2', 's8-e3', 's8-e4', 's8-e5', 's8-e6'], stops: ['s8-step1-s', 's8-step2-e'] },
@@ -826,8 +843,11 @@ const routes = [
 //  rare kinds). Each rests 0.45 m above the top face of the solid it names, never in a solid, never within
 //  1.5 m of an anchor, and clear of the checkpoint -> anchor sight lines (tools/.../verify.mjs checks all of it).
 //  w = relative weight per item kind [first aid, bandage, adrenaline, battery].
+//  SLOW spots (LEVEL_FUN_PLAN item 6, "the long way pays"): only on the ledges of a fork's safe line (see FORKS), favoured by
+//  the picker and stocked with first aid and lantern batteries; every run puts at least one item on the safe line of each
+//  fork that has them (sim/pickups3d.js). No spot lies within 3 m of a fast line's frayed ring (verify/forks.mjs).
 // =============================================================================
-const SUP_W = { ledge: [0.8, 5, 2, 4.5], alcove: [0.6, 5, 1.5, 5], risk: [3.5, 2, 5, 2] };
+const SUP_W = { ledge: [0.8, 5, 2, 4.5], alcove: [0.6, 5, 1.5, 5], risk: [3.5, 2, 5, 2], slow: [2.5, 4, 1, 6] };
 const supplies = [];
 /** Candidate on top of the solid `on` at (x, z). */
 function sup(id, on, x, z, tier = 'ledge') {
@@ -849,8 +869,8 @@ sup('sup-s2-02', 's2-landing', 5, -3.5);
 sup('sup-s2-03', 's2-far', -24.5, -9);
 sup('sup-s2-04', 's2-floor-a', 9.6, 9.6, 'alcove');
 sup('sup-s2-05', 's2-floor-a', -8, -9.6);
-sup('sup-s2-06', 's2-floor-a', -20.4, 9.6, 'alcove');
-sup('sup-s2-07', 's2-low', -29, 9);
+sup('sup-s2-06', 's2-floor-a', -20.4, 9.6, 'slow'); // the safe line's floor walk
+sup('sup-s2-07', 's2-low', -29, 9, 'slow');
 sup('sup-s2-08', 's2-arm', -30.5, 7, 'risk');
 sup('sup-s2-09', 's2-pier-w', 2, 9);
 sup('sup-s2-10', 's2-pier-e', 10, -8, 'alcove');
@@ -858,8 +878,8 @@ sup('sup-s2-10', 's2-pier-e', 10, -8, 'alcove');
 sup('sup-s3-01', 's3-landing', 9.7, 9.7, 'alcove');
 sup('sup-s3-02', 's3-landing', 9.7, -9.7, 'alcove');
 sup('sup-s3-03', 's3-landing', 6, 4);
-sup('sup-s3-04', 's3-shelf', -33, -9.7, 'alcove');
-sup('sup-s3-05', 's3-shelf', -29, -3.5);
+sup('sup-s3-04', 's3-shelf', -33, -9.7, 'slow');
+sup('sup-s3-05', 's3-shelf', -29, -3.5, 'slow');
 sup('sup-s3-06', 's3-g2', -14.25, 8, 'risk');
 sup('sup-s3-07', 's3-g3', -26.25, -8, 'risk');
 sup('sup-s3-08', 's3-g5', -20.25, 8, 'risk');
@@ -870,30 +890,30 @@ sup('sup-s4-02', 's4-landing', -6.5, 9.7, 'alcove');
 sup('sup-s4-03', 's4-landing', 9.5, 3);
 sup('sup-s4-04', 's4-catwalk', -16, -10);
 sup('sup-s4-05', 's4-catwalk', -16, -22.5, 'risk');
-sup('sup-s4-06', 's4-shelf', 9.7, -9.7, 'alcove');
+sup('sup-s4-06', 's4-shelf', 9.7, -9.7, 'slow');
 sup('sup-s4-07', 's4-shelf', 4, -6);
-sup('sup-s4-08', 's4-plinth', -16, 6);
+sup('sup-s4-08', 's4-plinth', -16, 6, 'slow');
 // S5 · The Gullet Stair
 sup('sup-s5-01', 's5-landing', -4.2, 7.8, 'alcove');
 sup('sup-s5-02', 's5-landing', -4.2, -7.8, 'alcove');
 sup('sup-s5-03', 's5-step1', -19.5, -8, 'alcove');
 sup('sup-s5-04', 's5-step1', -13, -6.5);
-sup('sup-s5-05', 's5-step5', -14, -6.5);
+sup('sup-s5-05', 's5-step5', -14, -6.5, 'slow');
 sup('sup-s5-06', 's5-step6', -19, 7.8, 'alcove');
 sup('sup-s5-07', 's5-step3', -5, 7.8, 'alcove');
-sup('sup-s5-08', 's5-step4', -4.2, -7.8, 'alcove');
+sup('sup-s5-08', 's5-step4', -4.2, -7.8, 'slow');
 sup('sup-s5-09', 's5-arm2', -19, 0, 'risk');
 sup('sup-s5-10', 's5-arm4', -6, 0, 'risk');
 // S6 · The Two Descents
 sup('sup-s6-01', 's6-fork', -18.5, 4.8, 'alcove');
 sup('sup-s6-02', 's6-safe1', -32.5, -9.6, 'alcove');
 sup('sup-s6-03', 's6-safe1', -22, -5);
-sup('sup-s6-04', 's6-safe2', -32.5, 9.6, 'alcove');
+sup('sup-s6-04', 's6-safe2', -32.5, 9.6, 'slow');
 sup('sup-s6-05', 's6-safe2', -21, 6.5);
 sup('sup-s6-06', 's6-safe3', -24, -9.5);
 sup('sup-s6-07', 's6-safe4', -28, 9.5);
 sup('sup-s6-08', 's6-arm-b', -32, -5, 'risk');
-sup('sup-s6-09', 's6-safe5', -32.5, -9.6, 'alcove');
+sup('sup-s6-09', 's6-safe5', -32.5, -9.6, 'slow');
 // S7 · The Hollow Nave
 sup('sup-s7-01', 's7-landing', 8.7, 9.7, 'alcove');
 sup('sup-s7-02', 's7-landing', -32.5, -9.7, 'alcove');
@@ -909,8 +929,9 @@ sup('sup-s8-04', 's8-step1-w', -20.5, -17, 'alcove');
 sup('sup-s8-05', 's8-step1-e', 15.8, 17, 'alcove');
 sup('sup-s8-06', 's8-step1-n', -5, -19);
 sup('sup-s8-07', 's8-step2-w', -14.5, 12, 'alcove');
-sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'alcove');
+sup('sup-s8-08', 's8-step2-e', 10.5, -12, 'slow');
 sup('sup-s8-09', 's8-step2-s', -2, 14);
+sup('sup-s8-10', 's8-step1-s', -13.5, 18.2, 'slow'); // the safe line's first rest
 
 // =============================================================================
 // CLIMB ZONES (WP-CLIMB, sim/climb3d.js) — the surfaces the player can grab and climb
@@ -992,6 +1013,11 @@ const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitt
 const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
 const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
+// REACH (LEVEL_FUN_PLAN item 5): sections[i].reach = the hook's targeting range there, per difficulty (Level3D.reachOf;
+// none = the difficulty's aimRange 32 / 29 / 27). The deep rings are rusted: S4 30/28/26, S5 29/27/25, S6 28/27/25, S7-S8
+// 26/25/24. Only targeting shrinks: the rope's maximum length stays aimRange + 4 everywhere, so every lowering keeps its rope.
+// The bots play every line with 1.5 m less (tools/.../verify.mjs reach floors); the view dims the rings out of reach and
+// reddens the deep mounts (render/levelView.js), the laser dot goes hollow beyond it (render/handsView.js), S6 says why once.
 const sections = [
   {
     id: 's1', name: 'The Threshold', subtitle: 'Where the line is learned',
@@ -1130,7 +1156,14 @@ const sections = [
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
     creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
-    hints: [], // the fork is briefed in S5 (see its second hint)
+    // the fork is briefed in S5 (see its second hint); the reach (REACH) is at its shortest from here down
+    hints: [
+      {
+        y: -208.5, duration: 6,
+        text: 'The deep rings are rusted. Get closer.',
+        desktop: 'The deep rings are rusted. Get closer.',
+      },
+    ],
     triggers: [
       { y: -209, name: 'call', data: { intensity: 0.9 } },
       { y: -240, name: 'debris', data: { x: 0, y: -212, z: 0, intensity: 0.7 } },

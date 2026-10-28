@@ -28,6 +28,8 @@ import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
 import { Objectives3D } from './sim/objectives3d.js';
+import { SplitClock, medalFor } from './sim/splits3d.js';
+import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
@@ -826,6 +828,7 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
+    this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
@@ -1987,6 +1990,7 @@ export class Game3D {
     if (idx > 0 && !this._warp(idx)) return false;
     // the objectives the saved run had done (also those of the checkpoint's own section, done after reaching it)
     if (this.objectives && Array.isArray(info.objectives)) this.objectives.load(info.objectives);
+    if (this.splits) this.splits.partial(); // the section resumed in was not played whole in this sitting: no split for it
     this.time = Math.max(0, finiteOr(info.time, 0));
     this.deaths = Math.max(0, finiteOr(info.deaths, 0) | 0);
     const deepest = -finiteOr(info.depthMeters, 0);
@@ -2218,6 +2222,8 @@ export class Game3D {
       this._fault('objectives', err);
       if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
     }
+    // Section splits (LEVEL_FUN_PLAN item 12): started by _enterSection, taken at each new section and at the goal.
+    this.splits = new SplitClock(lvl.sections.map((s) => s.id));
     this._ensureLevelView();
   }
 
@@ -2779,6 +2785,7 @@ export class Game3D {
     this.sectionIndex = idx;
     const first = !this._seen[idx];
     this._seen[idx] = true;
+    if (this.splits) this._split(this.splits.enter(idx, mode, this.time));
     this.bus.emit('section:enter', { index: idx, section: sec, first, mode });
     // The creature follows the deepest section reached; respawns / warps
     // re-apply the section the player is actually in.
@@ -2851,7 +2858,20 @@ export class Game3D {
     if (t.name) this.bus.emit('trigger:' + t.name, payload);
   }
 
+  /**
+   * A section played whole in this run (sim/splits3d.js): 'split' { index, section, time, par, medal, recorded, difficulty }.
+   * Recorded (meta/save.js keeps the best per section) only on a difficulty that records times, never in god mode.
+   */
+  _split(sp) {
+    if (!sp) return;
+    const key = this.difficultyKey;
+    const par = PAR_3D && PAR_3D[key] ? PAR_3D[key][sp.id] || null : null;
+    const recorded = !!(this.diff && this.diff.recordTimes) && !this._godMode;
+    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key });
+  }
+
   _beginVictory() {
+    if (this.splits) this._split(this.splits.goal(this.time)); // the last section's split ends at the goal
     this.victoryT = 0; // timer stops; deaths are vetoed from here on
     this.gateClosed = true;
     this._hintQueue.length = 0;
@@ -3767,6 +3787,7 @@ export class Game3D {
     if (this.tethers) this.tethers.releaseAll(p, 'reset');
     // A teleport plays the level as if every objective down to the target's own section were done (its seal open too).
     if (this.objectives && this.level) this.objectives.markDoneThrough(this.level.sectionIndexAt(+y) + 1);
+    if (this.splits) this.splits.partial(); // and the section left was not played whole: no split for it
     p.x = p.prevX = p.rx = +x;
     p.y = p.prevY = p.ry = +y;
     p.z = p.prevZ = p.rz = +z;
