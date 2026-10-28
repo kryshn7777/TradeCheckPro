@@ -43,6 +43,7 @@ import * as THREE from 'three';
 import { decorColliders } from '../sim/decorColliders.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
+import { SealView } from './objectivesView.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -4156,6 +4157,7 @@ export class LevelView {
     this._colossal = null;
     this._colossalParts = [];
     this._lightGlow = null;
+    this._sealView = null;
     this.gate = null;
     this.level = null;
   }
@@ -4322,6 +4324,10 @@ export class LevelView {
     this._crumbleMesh.visible = false;
     this.root.add(this._crumbleMesh);
     this.stats.solids += this._crumbles.length;
+    // The section seals' iron bars (LEVEL_FUN_PLAN P1, render/objectivesView.js): one more instanced mesh with the metal
+    // material for all of them, drawn only while a closed seal is in view.
+    this._sealView = new SealView(level, this.mats.get('metal'), this._unitBox, this.root);
+    this.stats.sealBars = this._sealView.total;
   }
 
   /**
@@ -5686,6 +5692,7 @@ export class LevelView {
     }
     this._updateCogs(head, t, vd);
     this._updateSolidStates(game, head, vd);
+    if (this._sealView) this._sealView.update(dt, game ? game.objectives : null, head, vd);
     this._updateGate(dt, game, head, vd);
     this._updateHazards(dt, head, vd);
     this._updateAnchors(game, head, t);
@@ -5794,7 +5801,11 @@ export class LevelView {
       const dp = hyp(a.x - px, a.y - py, a.z - pz);
       const inRange = alive && dp <= range;
       let level = inRange ? 0.85 : 0.3;
-      if (targeted) level = 1.05;
+      // The ring that opens a closed seal below (sim/objectives3d.js sets sealKey): a slow warm pulse, brighter in reach.
+      const key = a.sealKey === 1 && alive;
+      const keyPulse = key ? 0.5 + 0.5 * Math.sin(t * 2.4 + i) : 0;
+      if (key) level = (inRange ? 1.0 : 0.5) + 0.3 * keyPulse;
+      if (targeted) level = Math.max(level, 1.05);
       if (attached) level = 1.35;
       let pulse = 0;
       const pulseT = this._attachPulse.get(a);
@@ -5825,6 +5836,7 @@ export class LevelView {
       if (a.broken || dh < 0.4) continue;
       const near = THREE.MathUtils.smoothstep(dh, 1.4, 3.6);
       let bright = (inRange ? 0.95 : 0.34) * near;
+      if (key) bright = ((inRange ? 1.05 : 0.6) + 0.25 * keyPulse) * near;
       if (targeted) bright = Math.max(bright, 1.0 * near);
       if (attached) bright = 0.75 * near;
       bright += pulse * 0.6;
@@ -5838,6 +5850,7 @@ export class LevelView {
       this._billboard(_v1, head, scale, _m4);
       glyphs.setMatrixAt(g, _m4);
       if (a.kind === 'fragile') _c.setRGB(1.0 * bright, (0.86 - stress * 0.3) * bright, (0.7 - stress * 0.4) * bright);
+      else if (key) _c.setRGB(1.0 * bright, 0.78 * bright, 0.46 * bright); // lamp-warm: the key ring
       else _c.setRGB(0.91 * bright, 0.86 * bright, 0.75 * bright);
       glyphs.setColorAt(g, _c);
       gS.setXYZW(g, base.shape, stress, 0, 0);

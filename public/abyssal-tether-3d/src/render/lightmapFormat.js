@@ -100,14 +100,15 @@ function fnvMixer() {
 /**
  * Hash of what the bake depends on: the core solids (ids + boxes, cm), the lights and the light-shaft decor, and
  * LM_BAKE_REV. `coreIds` = the solids that were baked (index.rows keys); levels of other variants carry a few other
- * solids that the hash ignores.
+ * solids that the hash ignores. Crumbling ledges and the section seals' plates (LEVEL_FUN_PLAN P1; Level3D keeps those in
+ * `sealSolids`, not `solids`) come and go at run time: never baked, never hashed.
  */
 export function levelLmHash(level, coreIds) {
   const m = fnvMixer();
   m.num(LM_BAKE_REV);
   const solids = (level && level.solids) || [];
   const ids = coreIds ? new Set(coreIds) : null;
-  const list = solids.filter((s) => (ids ? ids.has(s.id) : s.kind !== 'crumble')).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const list = solids.filter((s) => (ids ? ids.has(s.id) : s.kind !== 'crumble' && !s.seal)).slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const s of list) {
     m.str(s.id);
     m.num(s.minX);

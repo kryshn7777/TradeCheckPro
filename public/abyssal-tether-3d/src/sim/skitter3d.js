@@ -22,7 +22,9 @@ export const SKITTER = {
   // The extra one (Nightmare and Abyss, in the sections that have skitterlings at all): it enters play at a random moment, on a random wall,
   // a random distance BELOW the player, and hunts upward. delay: seconds after the player enters the section (or respawns); offset: metres
   // below the player (>= safeRadius), the hunt's own rubber band keeps it from falling hopelessly behind.
-  below: { difficulties: { nightmare: true, abyss: true }, delay: [5, 16], delayBy: { abyss: [3, 9] }, offset: [32, 48] },
+  // minOffset: a closed seal below the player (LEVEL_FUN_PLAN P1) shortens the offset to its grating; with less room than this
+  // (the safe radius) the entry waits (retry every `retry` s).
+  below: { difficulties: { nightmare: true, abyss: true }, delay: [5, 16], delayBy: { abyss: [3, 9] }, offset: [32, 48], minOffset: 26, retry: 3 },
   // A bite also costs grip (the fraction of grip stamina it takes, climb3d.bite): hanging, a bite is a fall risk, not only lost health.
   gripBite: { normal: 0.2, nightmare: 0.3, abyss: 0.4 },
 };
@@ -138,14 +140,22 @@ export class SkitterGroup {
     return !!(SKITTER.below.difficulties[this._tuneKey] && this.slots.length > SKITTER.dataSlots);
   }
 
-  /** The extra skitterling enters play 32-48 m below the player, on a random wall (the creature's own seeded choice), hunting upward. */
+  /**
+   * The extra skitterling enters play 32-48 m below the player, on a random wall (the creature's own seeded choice), hunting
+   * upward; never below a closed seal. Returns false when it did not enter (no room above the grating).
+   */
   _spawnBelow(player, index) {
     const c = this.slots[SKITTER.dataSlots];
     if (!c || c.on || !player) return;
     const lv = this.level;
     const sec = lv && lv.sections ? lv.sections[index] : null;
     const [lo, hi] = SKITTER.below.offset;
-    const off = lo + this._belowRand() * (hi - lo);
+    let off = lo + this._belowRand() * (hi - lo);
+    // A closed seal below (LEVEL_FUN_PLAN P1) is the floor of the player's world: it comes up from above that grating, never
+    // from beyond it (the draw above is made either way, so the stream stays the same).
+    const seal = lv && typeof lv.closedSealBelow === 'function' ? lv.closedSealBelow(NaN, player.y, NaN) : -Infinity;
+    if (seal > -Infinity) off = Math.min(off, player.y - seal - 2);
+    if (off < SKITTER.below.minOffset) return false; // no room between the player and the grating: not now
     c.active = true;
     c.on = true;
     c.reset(null);
@@ -156,6 +166,7 @@ export class SkitterGroup {
     this.minSpawnDistance = Math.min(this.minSpawnDistance, d);
     this.spawned++;
     this.belowSpawns = (this.belowSpawns || 0) + 1;
+    return true;
   }
 
   /** The player's section changed (or a warp / respawn put them somewhere): bring slots in or out per the data. */
@@ -221,7 +232,7 @@ export class SkitterGroup {
       if (this._belowT < 0) {
         if (player && player.alive !== false && this.sectionIndex >= 0) {
           this._belowT = -1;
-          this._spawnBelow(player, this.sectionIndex);
+          if (this._spawnBelow(player, this.sectionIndex) === false) this._belowT = SKITTER.below.retry;
         } else this._belowT = 1; // not now (the player is down): try again in a second
       }
     }

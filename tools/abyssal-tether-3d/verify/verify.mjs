@@ -21,6 +21,7 @@ import { CHAPTERS, chapterIds, variantKeys } from './chapters.mjs';
 import { measureBudget, formatBudget } from './budget.mjs';
 import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
+import { sealIntegrity, sealGaps, climbOut, skipProbe } from './seals.mjs';
 // WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
 const { pickSupplies, checkFairness } = await import(srcUrl('sim/pickups3d.js')).catch(() => ({}));
 
@@ -151,6 +152,8 @@ function integrity(ch, v) {
   // Variant sanity: recovery anchors thin out.
   out.recovery = L.anchors.filter((a) => a.tag === 'recovery').map((a) => `${a.id}:${a.kind}`);
   out.ids = idChecks(L, P);
+  // Seals (LEVEL_FUN_PLAN P1): one objective each, rings above, plates inside the walls, the next checkpoint below.
+  out.seals = sealIntegrity(L, v, P);
   out.ok = out.problems.length === 0;
   return out;
 }
@@ -359,11 +362,12 @@ function edgeChecks(L, P) {
       const d = Math.hypot(Math.max(hz.minX - e.maxX, 0, e.minX - hz.maxX), Math.max(hz.minY - e.maxY, 0, e.minY - hz.maxY), Math.max(hz.minZ - e.maxZ, 0, e.minZ - hz.maxZ));
       if (d < 0.6 - 1e-6) P(`edge hold ${e.id} is within 0.6 m of hazard ${hz.id}`);
     }
-    // the mid point nudged out along the bisector must be open (a hold beside solid rock is a wall, not an edge)
+    // the mid point nudged out along the bisector must be open (a hold beside solid rock is a wall, not an edge; the seal
+    // plates of LEVEL_FUN_PLAN P1 are not part of the static level the holds are derived from)
     const mx = (e.minX + e.maxX) / 2 + e.ux * 0.03;
     const my = (e.minY + e.maxY) / 2 + e.uy * 0.03;
     const mz = (e.minZ + e.maxZ) / 2 + e.uz * 0.03;
-    for (const o of box(mx, my, mz)) if (mx > o.minX && mx < o.maxX && my > o.minY && my < o.maxY && mz > o.minZ && mz < o.maxZ) P(`edge hold ${e.id} is buried in solid ${o.id}`);
+    for (const o of box(mx, my, mz)) if (!o.seal && mx > o.minX && mx < o.maxX && my > o.minY && my < o.maxY && mz > o.minZ && mz < o.maxZ) P(`edge hold ${e.id} is buried in solid ${o.id}`);
   }
   // runs: union-find over the non-lip edges within K.edgeLink of each other
   const idx = new Map();
@@ -415,9 +419,9 @@ function edgeChecks(L, P) {
 }
 
 /** Lists of the chapter data whose objects are referenced by id (ENGINE_EXTENSIONS §5). */
-const ID_LISTS = ['solids', 'hazards', 'anchors', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 /** Lists whose references must resolve (V1: no dangling ids). */
-const REF_LISTS = ['anchors', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 
 /**
  * V1: ids unique among the variant's live objects; every `…Id` / `ids` reference in
@@ -425,7 +429,7 @@ const REF_LISTS = ['anchors', 'lamps', 'movers', 'volumes', 'fronts', 'beats', '
  */
 function idChecks(L, P) {
   const seen = new Map();
-  const live = { solids: L.solids, hazards: L.hazards, anchors: L.anchors };
+  const live = { solids: L.solids.concat(L.sealSolids || []), hazards: L.hazards, anchors: L.anchors };
   let n = 0;
   for (const k of ID_LISTS) {
     const list = live[k] || (Array.isArray(L.data[k]) ? L.data[k] : []);
@@ -464,7 +468,7 @@ const dmgOf = (d) => ({ hits: d.hits, total: d.total, minHp: d.minHp, endHp: d.e
 function runRoute(ch, v, start, route, opts = {}) {
   const L = opts.level || ch.makeLevel(v);
   const sim = new Sim(L, v, opts.sim || {});
-  sim.spawn(start.x, start.y, start.z);
+  sim.spawn(start.x, start.y, start.z, opts.doneThrough); // seals: those above the start's section open (or `doneThrough`)
   const bot = new Bot(sim, route, opts);
   const r = bot.runRoute();
   r.sim = sim;
@@ -505,6 +509,7 @@ function fullRun(ch, v, line, simOpts) {
     splits,
     attaches: r.attaches.length,
     damage: dmgOf(r.damage),
+    objectives: r.sim.objEvents.filter((e) => e[1] === 'objective').map((e) => `${e[2]}@${e[0]}`),
     trace: r.sim.trace,
     events: r.sim.events,
     sim: r.sim,
@@ -556,6 +561,7 @@ function counts(ch, v) {
   const by = (list, f) => list.reduce((m, o) => ((m[f(o)] = (m[f(o)] || 0) + 1), m), {});
   return {
     solids: L.solids.length,
+    seals: (L.sealSolids || []).length,
     solidKinds: by(L.solids, (s) => s.kind),
     hazards: L.hazards.length,
     hazardKinds: by(L.hazards, (s) => s.kind),
@@ -591,8 +597,10 @@ function determinism(ch, v, first) {
     replay: rp.hash.hex,
     replayFrames: rp.hash.frames,
     replayInGoal: L.inGoal(rp.player.x, rp.player.y, rp.player.z),
+    // the objective events (objective:done, seal:land) of the three runs: same ids on the same frames
+    objectives: [a.objHash, again.sim.objHash, rp.objHash].map((h) => h.toString(16).padStart(8, '0')),
   };
-  res.ok = res.run === res.rerun && res.run === res.replay && res.frames === res.replayFrames && again.sim.hash.frames === res.frames;
+  res.ok = res.run === res.rerun && res.run === res.replay && res.frames === res.replayFrames && again.sim.hash.frames === res.frames && res.objectives.every((h) => h === res.objectives[0]);
   if (!res.ok) fail(`[${ch.id}/${v}] determinism: run ${res.run} rerun ${res.rerun} replay ${res.replay} (frames ${res.frames}/${again.sim.hash.frames}/${res.replayFrames})`);
   return res;
 }
@@ -709,7 +717,7 @@ async function verifyChapter(ch) {
       if (!VARIANTS.includes(v)) continue;
       const L = ch.makeLevel(v);
       const route = typeof sc.route === 'function' ? sc.route(v) : sc.route;
-      const r = runRoute(ch, v, sc.start(L), route, { level: L });
+      const r = runRoute(ch, v, sc.start(L), route, { level: L, doneThrough: sc.doneThrough });
       traces[v].push(r.sim.trace);
       const ok = r.ok && r.deaths === 0 && r.maxLand < LAND_OK;
       report.scenarios[`${name}/${v}`] = { ok, time: +r.time.toFixed(1), maxLand: +r.maxLand.toFixed(2), damage: dmgOf(r.damage), fail: r.fail, events: r.sim.events.filter((e) => e[0] !== 'miss').slice(0, 12) };
@@ -724,6 +732,24 @@ async function verifyChapter(ch) {
     report.coverage[v] = coverage(ch, v, traces[v]);
     const weak = Object.entries(report.coverage[v]).filter(([, c]) => c.fromTrace + c.fromStand < 3).map(([id, c]) => `${id}(${c.fromTrace}/${c.fromStand})`);
     console.log(`  ${v}: ${Object.keys(report.coverage[v]).length} anchors; weakly visible: ${weak.join(' ') || 'none'}`);
+  }
+
+  console.log('== Seals (LEVEL_FUN_PLAN P1: seal-gap check, skip probe, climb-out)');
+  report.seals = {};
+  for (const v of VARIANTS) {
+    const P = (m) => fail(`[${ch.id}/${v}] ${m}`);
+    const gaps = sealGaps(ch.makeLevel(v), v, traces[v], P);
+    const up = climbOut(ch.makeLevel(v), v, P);
+    const probe = skipProbe(ch.makeLevel(v), v, P);
+    if (!gaps) {
+      console.log(`  ${v}: no Objectives3D in this checkout (skipped)`);
+      continue;
+    }
+    report.seals[v] = { gaps, climbOut: up, probe };
+    const g = Object.entries(gaps).map(([id, o]) => `${id.replace('seal-', '')} ${o.holes ? o.holes + ' HOLES' : o.probes + ' probes shut'}, ${o.leaks.length ? o.leaks.length + ' LEAKS' : o.pairs + ' lines blocked'}`);
+    console.log(`  ${v} gaps: ${g.join(' | ')}`);
+    console.log(`  ${v} skip probe: ${Object.values(probe).map((o) => `${o.section} ${o.passed ? 'PASSED THE SEAL' : 'held'} (${o.end} on ${o.on}${o.wayUp === false ? ', NO WAY UP' : ''}, ${o.hooks.length} hooks, low ${o.minY})`).join(' | ')}`);
+    console.log(`  ${v} climb-out (standing spots on the closed seal that see a ring above): ${Object.entries(up).map(([id, o]) => `${id.replace('seal-', '')} ${Math.round(o.share * 100)}%`).join(' ')}`);
   }
 
   console.log('== Counts');

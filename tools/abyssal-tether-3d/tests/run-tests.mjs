@@ -28,6 +28,7 @@ const suites = [
   ['creature: annoyed by grapple shots (the aim ray through the body: x1.5 for 3 s, x6 for 0.3 s, once per 20 s; misses, variants, respawn)', 'creature/annoy.mjs'],
   ['creature: WP-SKITTER (variant config: exactly 4.5x speeds, 0.45 scale, wind-up/reach, spawn data S6-S8, safe entry distance, determinism, tagged events, damage path, Mason trigger link)', 'creature/skitter.mjs'],
   ['health: fall damage curve, cooldown, regen, events, difficulty scaling, determinism, Physics3D drops and hazards', 'health/unit.mjs'],
+  ['objectives: LEVEL_FUN_PLAN P1 seals (plates kept out of the static level, closed at a new run, open on hooking the route ring, sticky across checkpoint / death / alternate respawn, Sandbox warp opens the seals above, floor + sight block + seal:land, snapshot / save round trips, determinism, skitter spawn above a closed seal, one-mesh bar view)', 'objectives/unit.mjs'],
   ['bag: apply times, cancel on damage, caps, adrenaline timing + speed multiplier, heal API, deterministic fair spawns, pickups, lantern charge, VR gesture', 'bag/unit.mjs'],
   ['climb: WP-CLIMB (zones, VR hand-delta pull + throw, alternating hands, stretch, collision safety, grip stamina drain / slip / refill / difficulty, desktop cling + hop, rope + grip, determinism)', 'climb/unit.mjs'],
   ['audio: WP-AUDIO (impulse responses, rope/footstep/music/creature-clip modules, voice cap, reduced tier, 10 simulated minutes no growth, NaN-free)', 'audio/unit.mjs'],

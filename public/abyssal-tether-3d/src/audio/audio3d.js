@@ -2244,6 +2244,7 @@ export class AudioManager3D {
       checkpoint: this._onCheckpoint,
       'trigger:rumble': this._onRumble,
       'trigger:debris': this._onDebris,
+      'seal:open': this._onSealOpen,
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
@@ -2561,6 +2562,12 @@ export class AudioManager3D {
 
   _onRumble() {
     this._sfxRumble();
+  }
+
+  /** A section seal opens (LEVEL_FUN_PLAN P1): the deep rumble and a heavy grinding break at the grating, existing voices only. */
+  _onSealOpen(p) {
+    this._sfxRumble();
+    this._sfxBreak(p, 1.6);
   }
 
   _onDebris(p) {

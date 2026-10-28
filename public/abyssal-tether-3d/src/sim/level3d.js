@@ -161,9 +161,19 @@ export class Level3D {
     }
 
     // ---- objects (ids derive from the raw index so they are stable across variants)
+    // Seal solids (data field `seal`, LEVEL_FUN_PLAN P1) are collected apart: never in `solids` (view slabs, scene dressing,
+    // climb edges, lightmap / GI bakes and hashes), but in every collision / sight query (querySolids). They are built OPEN
+    // (inactive): a level without an Objectives3D plays exactly as before; Objectives3D.reset() closes them.
+    const sealSolids = [];
     this.solids = this._build(d.solids, 'sol', (o, id) => {
       const b = readBox(o);
       if (!b) return null;
+      if (typeof o.seal === 'string' && o.seal) {
+        sealSolids.push(
+          Object.assign(b, { id, kind: 'grate', seal: o.seal, section: this.sectionIndexAt((b.minY + b.maxY) / 2), active: false, load: 0, life: 1, fallen: false, tag: o.tag || 'seal' }),
+        );
+        return null;
+      }
       return Object.assign(b, {
         id,
         kind: o.kind || 'stone',
@@ -308,9 +318,12 @@ export class Level3D {
     const eb = buildEdges(this);
     this.edges = eb.edges;
     this._edgeGrid = eb.grid;
+    // Seals join the queries only now: the climb edges above are built from the level without them.
+    this.sealSolids = sealSolids;
+    this._sealIndex = sealSolids.length ? new YIndex(sealSolids, (s) => s.minY, (s) => s.maxY) : null;
 
     this.byId = Object.create(null);
-    for (const list of [this.solids, this.hazards, this.anchors, this.decor, this.climb]) {
+    for (const list of [this.solids, this.sealSolids, this.hazards, this.anchors, this.decor, this.climb]) {
       for (const o of list) this.byId[o.id] = o;
     }
   }
@@ -377,6 +390,7 @@ export class Level3D {
    */
   querySolids(minX, minY, minZ, maxX, maxY, maxZ, out) {
     this._queryBoxes(this._solidIndex, minX, minY, minZ, maxX, maxY, maxZ, out);
+    if (this._sealIndex) this._queryBoxes(this._sealIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
     if (this.decorSolids.length) {
       if (!this._decorIndex) this._decorIndex = new YIndex(this.decorSolids, (s) => s.minY, (s) => s.maxY);
       this._queryBoxes(this._decorIndex, minX, minY, minZ, maxX, maxY, maxZ, out, out.length);
@@ -592,7 +606,27 @@ export class Level3D {
     return !!g && x >= g.minX && x <= g.maxX && y >= g.minY && y <= g.maxY && z >= g.minZ && z <= g.maxZ;
   }
 
-  /** Restores crumbled ledges and broken fragile anchors for a fresh attempt. */
+  /**
+   * Top face of the highest CLOSED seal plate below y whose footprint holds (x, z) (pass NaN for x / z to take any plate),
+   * or -Infinity: the floor a spawn below the player must stay above (skitter3d.js).
+   */
+  closedSealBelow(x, y, z) {
+    let best = -Infinity;
+    const list = this.sealSolids;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (s.active === false || s.maxY > y || s.maxY <= best) continue;
+      if (x === x && (x < s.minX || x > s.maxX)) continue;
+      if (z === z && (z < s.minZ || z > s.maxZ)) continue;
+      best = s.maxY;
+    }
+    return best;
+  }
+
+  /**
+   * Restores crumbled ledges and broken fragile anchors for a fresh attempt. Seal plates are left as they are: their state
+   * belongs to Objectives3D (game.respawn calls objectives.reapply() after this).
+   */
   reset() {
     for (let i = 0; i < this.solids.length; i++) {
       const s = this.solids[i];

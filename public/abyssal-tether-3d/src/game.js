@@ -27,6 +27,7 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Pickups3D } from './sim/pickups3d.js';
+import { Objectives3D } from './sim/objectives3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
@@ -824,6 +825,7 @@ export class Game3D {
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
+    this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
@@ -1669,6 +1671,13 @@ export class Game3D {
       if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
       if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
     });
+    // Seals (LEVEL_FUN_PLAN P1): the grating grinds open below when its ring is hooked; standing on a closed one says so
+    // through the caption (ui/captions.js) only.
+    bus.on('seal:open', () => {
+      if (!this._inRun()) return;
+      this._hapticBoth(0.3, 220);
+      this._toast('Grating opens below', 2.2);
+    });
     bus.on('xr:recenter', () => this.recenter());
   }
 
@@ -1976,6 +1985,8 @@ export class Game3D {
     const cp = info.checkpoint;
     const idx = cp.index > 0 ? Math.min(cp.index, lvl.sections.length - 1) : 0;
     if (idx > 0 && !this._warp(idx)) return false;
+    // the objectives the saved run had done (also those of the checkpoint's own section, done after reaching it)
+    if (this.objectives && Array.isArray(info.objectives)) this.objectives.load(info.objectives);
     this.time = Math.max(0, finiteOr(info.time, 0));
     this.deaths = Math.max(0, finiteOr(info.deaths, 0) | 0);
     const deepest = -finiteOr(info.depthMeters, 0);
@@ -1995,6 +2006,7 @@ export class Game3D {
     const cp = this.checkpoint;
     const p = this.player;
     this.level.reset();
+    if (this.objectives) this.objectives.reapply(); // seals stay as they were: an objective done stays done after a death
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset(); // a respawn restores full health
     if (this.physics && this.physics.climb) this.physics.climb.reset(); // ... and a fresh grip
@@ -2080,6 +2092,8 @@ export class Game3D {
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
     const cp = lvl.checkpointFor(idx, 'all');
     const p = this.player;
+    // Sandbox warp / Continue: every seal above the section warped to is open (objectives below stay as they are).
+    if (this.objectives) this.objectives.markDoneThrough(idx);
     p.reset(cp.x, cp.y, cp.z);
     if (this.health) this.health.reset();
     if (this.physics && this.physics.climb) this.physics.climb.reset();
@@ -2194,6 +2208,16 @@ export class Game3D {
     // The bag and the supplies of this run (empty / unseeded until start() resets them).
     this.bag = new Inventory3D(this._runBus);
     this.pickups = new Pickups3D(lvl, this._runBus);
+    // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
+    // down the shaft through all of them open.
+    this.objectives = null;
+    try {
+      this.objectives = new Objectives3D(lvl, diff, this._runBus);
+      if (attract) this.objectives.openAll();
+    } catch (err) {
+      this._fault('objectives', err);
+      if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
+    }
     this._ensureLevelView();
   }
 
@@ -2661,6 +2685,7 @@ export class Game3D {
       si.jumpPressed = this._pendingJump;
       this._pendingJump = false;
       this.physics.step(p, this.tethers, si, PDT);
+      if (this.objectives) this.objectives.step(PDT, p, this.tethers, this.time);
       this._acc -= PDT;
       steps++;
       if (!p.alive || this.state !== 'playing') {
@@ -2866,6 +2891,7 @@ export class Game3D {
       deepestMeters,
       difficultyKey: key,
       label: this.diff.label,
+      seals: this.objectives ? this.objectives.doneCount : 0, // seals opened this run (LEVEL_FUN_PLAN P1)
     };
     this.lastVictory = info;
     this._try('ui', () => this.ui.show('victory', info));
@@ -3739,6 +3765,8 @@ export class Game3D {
     const p = this.player;
     if (!p || !isFinite(x) || !isFinite(y) || !isFinite(z)) return false;
     if (this.tethers) this.tethers.releaseAll(p, 'reset');
+    // A teleport plays the level as if every objective down to the target's own section were done (its seal open too).
+    if (this.objectives && this.level) this.objectives.markDoneThrough(this.level.sectionIndexAt(+y) + 1);
     p.x = p.prevX = p.rx = +x;
     p.y = p.prevY = p.ry = +y;
     p.z = p.prevZ = p.rz = +z;
@@ -3816,6 +3844,7 @@ export class Game3D {
       bag: this.bag ? this.debugBag() : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
+      objectives: this.objectives ? { done: this.objectives.serialize(), open: this.objectives.seals.filter((s) => this.objectives.sealOpen[s.index]).map((s) => s.id) } : null,
       deepest: r(this.deepest),
       depthMeters: U.depthMeters(this.deepest),
       victoryT: r(this.victoryT),

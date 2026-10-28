@@ -1,6 +1,12 @@
 # Abyssal Tether 3D: Level Fun Plan (objectives, seals and the long way)
 
-> Status: plan only, approved scope (12 items), nothing implemented. Date 2026-10-28.
+> Status: **P1 done** (2026-10-28): seals S1-S7 (hook verb on a route ring), `Objectives3D`, the bar view, run.objectives in the
+> save, skitter spawn clamp, seal-gap check + skip probe + climb-out read-out in verify, `tests/objectives/unit.mjs`. Differs
+> from the plan: plates live in `level.sealSolids` (built open, not in `level.solids`, so no bake / view / dressing filters were
+> needed); S1 is one plate over the whole chimney (two boxes leaked a sight line under the sill); the S6 floor runs under the
+> wall footprints; S7 also opens from `s7-sp1` (the spire line skips `s7-n6`); `hold` 0; the save keeps objective ids and stays
+> schema 2 (schema 3 comes with P2's splits); no recovery rings added (climb-out is reported: S7 iris 39-61 %). P2-P6 open.
+> Approved scope (12 items). Date 2026-10-28.
 > Paths: `src/` = `public/abyssal-tether-3d/src/`, `tools/` = `tools/abyssal-tether-3d/`. Every code claim below names the
 > file and function or data field it was read from. Where an approved contract already exists in
 > [ENGINE_EXTENSIONS.md](../ENGINE_EXTENSIONS.md) (E07 lamps, E09 interactables, E12 records, E13 movers, E14 dynamic sets,

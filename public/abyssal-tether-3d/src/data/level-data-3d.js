@@ -699,6 +699,75 @@ light(-2, -540, 0, '#f0b868', 2.2, 44, 0.1);
 light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 
 // =============================================================================
+// SEALS AND OBJECTIVES (docs/abyssal-tether-3d/plans/LEVEL_FUN_PLAN.md, phase P1 "seal the shaft")
+//  Every section S1-S7 is left through one seal: iron grating across the section's choke plane (LEVEL_FUN_PLAN §0). Closed,
+//  it is a floor you stand on and a wall your hook cannot see through; its objective opens it (the solids go inactive and
+//  the bars slide away, render/objectivesView.js). P1 objective = the hook verb on a ring that is already on the route:
+//  hooking it opens the seal below. S8 stays unsealed (the flight).
+//  Seal solids are ordinary solid boxes (kind 'grate', field `seal` = the seal id), declared after every chainRing above so
+//  no chain stops at one. Level3D keeps them OUT of `level.solids` (level.sealSolids): the view's slab buckets, the scene
+//  dressing, the climb edges, the lightmap / GI bakes and their hashes never see them; collision, line of sight and
+//  raycasts do (Level3D.querySolids). Objectives3D (sim/objectives3d.js) owns their `active` flag.
+//  Each plate stays inside its section's walls (the S6 floor runs under the wall footprints, so no line slips through a
+//  corner), lies below the section's last route anchor and above the next checkpoint (verify.mjs V1 seal checks).
+// =============================================================================
+const SEAL = (id, sealId, x0, x1, y0, y1, z0, z1) => S(id, x0, x1, y0, y1, z0, z1, 'grate', { seal: sealId });
+// S1 -> S2: the chimney's whole footprint, half a metre under the sill and the pocket: the well (east), the void under the
+// Threshold, and the 0.5 m slit under the sill (too low for a body, not for a sight line into the hall).
+SEAL('seal-s1-floor', 'seal-s1', -11, 11, -9, -8.5, -11, 11);
+// S2 upper hall -> lower hall: the floor opening beside the far pier, flush with the floor.
+SEAL('seal-s2-gap', 'seal-s2', -34, -22, -36, -35, 3, 11);
+// S3 -> S4: the gallery and the Vault hall are one shaft: a full grate floor 1.6 m above the S4 landing.
+SEAL('seal-s3-floor', 'seal-s3', -34, 11, -98.4, -98, -11, 11);
+// S4 -> S5: a plug in the Gullet's mouth.
+SEAL('seal-s4-mouth', 'seal-s4', -21, -3, -150.6, -150, -9, 9);
+// S5 -> S6: a plug in the Two Descents' roof, under the last step.
+SEAL('seal-s5-roof', 'seal-s5', -21, -3, -202.6, -202, -9, 9);
+// S6 -> S7: a full grate floor under the stair and the throat, out to the outer faces of the S6 walls.
+SEAL('seal-s6-floor', 'seal-s6', -37, 13, -284.6, -284, -14, 14);
+// S7 -> S8: the iris, four quadrant plugs in the nave floor's hole.
+SEAL('seal-s7-nw', 'seal-s7', -22, -2, -424.6, -424, -20, 0);
+SEAL('seal-s7-ne', 'seal-s7', -2, 18, -424.6, -424, -20, 0);
+SEAL('seal-s7-sw', 'seal-s7', -22, -2, -424.6, -424, 0, 20);
+SEAL('seal-s7-se', 'seal-s7', -2, 18, -424.6, -424, 0, 20);
+
+/** The seals: `ids` = their solids; `open` = how the view opens them ('slide': the two leaves part toward the walls). */
+const seals = [
+  { id: 'seal-s1', section: 's1', ids: ['seal-s1-floor'], open: 'slide' },
+  { id: 'seal-s2', section: 's2', ids: ['seal-s2-gap'], open: 'slide' },
+  { id: 'seal-s3', section: 's3', ids: ['seal-s3-floor'], open: 'slide' },
+  { id: 'seal-s4', section: 's4', ids: ['seal-s4-mouth'], open: 'slide' },
+  { id: 'seal-s5', section: 's5', ids: ['seal-s5-roof'], open: 'slide' },
+  { id: 'seal-s6', section: 's6', ids: ['seal-s6-floor'], open: 'slide' },
+  { id: 'seal-s7', section: 's7', ids: ['seal-s7-nw', 'seal-s7-ne', 'seal-s7-sw', 'seal-s7-se'], open: 'iris' },
+];
+/**
+ * What a verb acts on. P1: only `hook` fixtures (a ring of the route; hooking it and holding `hold` s counts). The S6 seal
+ * opens from either line of the fork, the S7 seal from the spiral or the spire's face (the alternate line).
+ */
+const fixtures = [
+  { id: 'fx-s1', kind: 'hook', anchorId: 't1', hold: 0 },
+  { id: 'fx-s2', kind: 'hook', anchorId: 's2-hook', hold: 0 },
+  { id: 'fx-s3', kind: 'hook', anchorId: 's3-a2', hold: 0 },
+  { id: 'fx-s4', kind: 'hook', anchorId: 's4-a2', hold: 0 },
+  { id: 'fx-s5', kind: 'hook', anchorId: 's5-h4', hold: 0 },
+  { id: 'fx-s6-safe', kind: 'hook', anchorId: 's6-sa3', hold: 0 },
+  { id: 'fx-s6-risk', kind: 'hook', anchorId: 's6-ra3', hold: 0 },
+  { id: 'fx-s7-spiral', kind: 'hook', anchorId: 's7-n6', hold: 0 },
+  { id: 'fx-s7-spire', kind: 'hook', anchorId: 's7-sp1', hold: 0 },
+];
+/** One objective per sealed section: `need` of its fixtures `ids` done opens `sealId` (`by[difficulty]` overrides, as section.creature). */
+const objectives = [
+  { id: 'obj-s1', section: 's1', verb: 'hook', sealId: 'seal-s1', ids: ['fx-s1'], need: 1 },
+  { id: 'obj-s2', section: 's2', verb: 'hook', sealId: 'seal-s2', ids: ['fx-s2'], need: 1 },
+  { id: 'obj-s3', section: 's3', verb: 'hook', sealId: 'seal-s3', ids: ['fx-s3'], need: 1 },
+  { id: 'obj-s4', section: 's4', verb: 'hook', sealId: 'seal-s4', ids: ['fx-s4'], need: 1 },
+  { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5'], need: 1 },
+  { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
+  { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire'], need: 1 },
+];
+
+// =============================================================================
 // SUPPLIES — candidate spots for the bag's consumables (sim/pickups3d.js)
 //  A seeded per-run picker fills about a third of these (2-4 per section) by rarity, so every descent lies
 //  differently. 6-10 candidates per section: LEDGES (the open floor of a landing), ALCOVES (corners against
@@ -1071,4 +1140,7 @@ export const LEVEL_DATA_3D = {
   lights,
   supplies, // candidate spots for the bag's consumables (see SUPPLIES above)
   climb, // grip zones (see CLIMB ZONES above)
+  seals, // section seals, fixtures and objectives (see SEALS AND OBJECTIVES above)
+  fixtures,
+  objectives,
 };

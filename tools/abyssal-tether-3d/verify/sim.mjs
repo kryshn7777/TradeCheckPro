@@ -16,6 +16,8 @@ const { CONFIG, DIFFICULTY, EventBus, SETTINGS_DEFAULTS } = await import(srcUrl(
 const { Player3D, TetherSystem, Physics3D, HANDS } = await import(srcUrl('sim/physics3d.js'));
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
+// LEVEL_FUN_PLAN P1: the section seals (absent in older checkouts given with --root: the sims then run without them).
+const { Objectives3D } = await import(srcUrl('sim/objectives3d.js')).catch(() => ({ Objectives3D: null }));
 
 // Experiments: AT3D_ROPE='flightSpeed=80,attachRamp=0.15' overrides CONFIG.rope keys for this process.
 if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
@@ -25,7 +27,7 @@ if (typeof process !== 'undefined' && process.env && process.env.AT3D_ROPE) {
   }
 }
 
-export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT };
+export { CONFIG, DIFFICULTY, EventBus, Player3D, TetherSystem, Physics3D, HANDS, Level3D, LEVEL_DATA_3D, GAME_ROOT, Objectives3D };
 
 export const FRAME = 1 / 60;
 export const SUB = 4;
@@ -70,7 +72,7 @@ const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT'
  * Systems timed per 60 Hz frame. `physics` is Physics3D.step minus its collision
  * pass and the rope step it calls at its end, so the rows add up to `total`.
  */
-export const TIMED_SYSTEMS = ['targets', 'input', 'physics', 'collide', 'rope', 'creature', 'threat'];
+export const TIMED_SYSTEMS = ['targets', 'input', 'physics', 'collide', 'rope', 'objectives', 'creature', 'threat'];
 
 /**
  * Wall-clock time per system per frame (ms), preallocated: one Float64Array row
@@ -155,6 +157,7 @@ function instrument(sim, timers) {
   wrap(T, 'handleInput', I.input);
   wrap(T, 'step', I.rope);
   wrap(ph, 'resolveCollisions', I.collide);
+  if (sim.objectives) wrap(sim.objectives, 'step', I.objectives);
   // physics = step − collide − rope (both are called from inside step)
   const step = ph.step;
   ph.step = function (...args) {
@@ -287,6 +290,14 @@ export class Sim {
     this._frameNo = 0;
     this.playerKeys = Object.keys(this.player);
     this.dynSolids = level.solids.filter((s) => s.kind === 'crumble');
+    // Seals and objectives (sim/objectives3d.js), stepped after every physics step like Game3D._stepPhysics. Look-ahead frames
+    // emit to a silent bus and snapshot() / restore() carry the state, so a ghost never opens a seal for real.
+    // opts.objectives === false: a sim without them (every seal open, today's level).
+    this.objectives = Objectives3D && opts.objectives !== false ? new Objectives3D(level, this.diff, this.bus) : null;
+    this._quietBus = new EventBus();
+    this.objEvents = []; // [t, type, id] of the real run
+    this.objHash = 0x811c9dc5; // FNV of the objective event sequence (V13)
+    if (!this.objectives) level.sealSolids && level.sealSolids.forEach((s) => (s.active = false));
     this.dynAnchors = level.anchors.filter((a) => a.kind === 'fragile');
     this.hash = new TrajectoryHash();
     this.timers = null;
@@ -331,6 +342,18 @@ export class Sim {
     this.bus.on('grapple:break', (e) => !this.ghost && this.events.push(['break', e.anchor.id, +this.t.toFixed(2)]));
     this.bus.on('platform:crumble', (e) => !this.ghost && this.events.push(['crumble', e.solid.id, +this.t.toFixed(2)]));
     this.bus.on('grapple:miss', (e) => !this.ghost && this.events.push(['miss', e.hand, +this.t.toFixed(2)]));
+    const objEvent = (type) => (e) => {
+      if (this.ghost) return;
+      const id = String(e.id);
+      this.objEvents.push([+this.t.toFixed(2), type, id]);
+      this.events.push([type, id, +this.t.toFixed(2)]);
+      let h = this.objHash;
+      const s = `${type}:${id}@${this._frameNo}`;
+      for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+      this.objHash = h >>> 0;
+    };
+    this.bus.on('objective:done', objEvent('objective'));
+    this.bus.on('seal:land', objEvent('seal:land'));
     if (opts.timers) {
       this.timers = opts.timers instanceof SystemTimers ? opts.timers : new SystemTimers();
       instrument(this, this.timers);
@@ -365,9 +388,19 @@ export class Sim {
     });
   }
 
-  /** Respawn-style start: player standing still at (x,y,z), fresh level state. */
-  spawn(x, y, z) {
+  /**
+   * Respawn-style start: player standing still at (x,y,z), fresh level state. Every seal is closed except those of the
+   * sections above `doneThrough` (default: the section of y), as a Continue / warp to that checkpoint would leave them.
+   */
+  spawn(x, y, z, doneThrough) {
     this.level.reset();
+    if (this.objectives) {
+      this.objectives.reset();
+      this.objectives.markDoneThrough(doneThrough !== undefined ? doneThrough : this.level.sectionIndexAt(y));
+      this.objectives.reapply();
+    }
+    this.objEvents = [];
+    this.objHash = 0x811c9dc5;
     this.player.reset(x, y, z);
     this.tethers.reset();
     this.t = 0;
@@ -401,9 +434,12 @@ export class Sim {
     T.updateTargets(p, intent);
     T.handleInput(p, intent, FRAME);
     const jump = intent.jumpPressed;
+    const O = this.objectives;
+    if (O) O.bus = real ? this.bus : this._quietBus;
     for (let i = 0; i < SUB; i++) {
       intent.jumpPressed = jump && i === 0;
       this.physics.step(p, T, intent, DT);
+      if (O) O.step(DT, p, T, this.t);
       if (!p.alive) break;
     }
     intent.jumpPressed = false;
@@ -481,6 +517,7 @@ export class Sim {
     }
     for (const o of this.dynSolids) s.dyn.push(o.active, o.load, o.fallen);
     for (const o of this.dynAnchors) s.dyn.push(o.broken, o.load);
+    if (this.objectives) s.obj = this.objectives.snapshot();
     return s;
   }
 
@@ -510,6 +547,7 @@ export class Sim {
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
     }
+    if (this.objectives && s.obj) this.objectives.restore(s.obj);
   }
 
   /** Damage taken this run (hp points, 100 = full health): hits, total, lowest hp, the events. */

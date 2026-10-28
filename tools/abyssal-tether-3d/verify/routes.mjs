@@ -4,6 +4,9 @@
 // Pure data, no imports: the browser e2e loads this file as-is (/__e2e/routes.mjs).
 // Each route starts standing on the section's checkpoint and ends standing on the
 // next section's checkpoint platform (S8: inside the goal). Step grammar: bot.mjs.
+// Seals (LEVEL_FUN_PLAN P1): a route starts with the seals of the sections above it open and its own closed; it opens it by
+// hooking the ring the level data names for it (s1 t1, s2 s2-hook, s3 s3-a2, s4 s4-a2, s5 s5-h4, s6 s6-sa3 / s6-ra3,
+// s7 s7-n6 / s7-sp1), which every route below already does: no extra steps.
 export const ROUTES = {
   s1: [
     { a: 't1' },
@@ -152,7 +155,8 @@ const ALL_VARIANTS = ['normal', 'nightmare', 'abyss'];
 
 /**
  * Recovery scenarios: a deliberate mistake the level must forgive. `start(level)`
- * gives the spawn point, `variants` where the recovery anchors exist.
+ * gives the spawn point, `variants` where the recovery anchors exist. `doneThrough` (optional): the seals of the sections
+ * above this index are open at the start (default: the start's own section, LEVEL_FUN_PLAN P1).
  */
 export const SCENARIOS = {
   // S2: a short release from the long swing, caught by the recovery ring, then
@@ -175,6 +179,8 @@ export const SCENARIOS = {
   s3designTest: {
     variants: ALL_VARIANTS,
     start: () => ({ x: -18.5, y: -73.62, z: 0 }),
+    doneThrough: 3, // it starts on span 2, past the S3 seal's ring (s3-a2): the S3 seal is open
+
     route: [
       { a: 's3-a3' },
       { wait: 0.75, toward: [-32.5, 0], release: true },

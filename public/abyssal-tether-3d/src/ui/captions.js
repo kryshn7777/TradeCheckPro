@@ -50,6 +50,8 @@ export const RULES = Object.freeze({
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
+  sealOpen: R('[Iron grating grinds open]', 'world', 1, 'seal', 3),
+  sealLocked: R('[Iron grating, locked]', 'world', 1, 'seal', 6),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
@@ -150,6 +152,10 @@ export function captionForEvent(type, p) {
       return RULES.rumble;
     case 'trigger:debris':
       return RULES.debris;
+    case 'seal:open':
+      return RULES.sealOpen;
+    case 'seal:land':
+      return RULES.sealLocked;
     default:
       return null;
   }
@@ -196,6 +202,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'lantern:low',
   'trigger:rumble',
   'trigger:debris',
+  'seal:open',
+  'seal:land',
   'health:damage',
   'pickup:collect',
 ]);

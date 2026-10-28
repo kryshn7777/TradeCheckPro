@@ -15,7 +15,8 @@
  *   { schema, createdAt, updatedAt, id,                      // id: random profile id (diagnostics only)
  *     settings: { ...Storage.loadSettings() keys... } | null,
  *     run: null | { chapter:'ch1', difficulty, checkpoint:{ x,y,z,yaw,index }, section, time, deaths, deepest,
- *                   savedAt, kind:'checkpoint'|'start' },   // the run to Continue
+ *                   savedAt, kind:'checkpoint'|'start', objectives?: [objective ids done] },   // the run to Continue
+ *                   (objectives: LEVEL_FUN_PLAN P1, optional, so schema 2 still reads it; absent = none done)
  *     chapters: { ch1: { reached, completed, completions, firstCompletedAt, lastCompletedAt,
  *                        byDiff: { <diff>: { runs, completions, best, fewestDeaths, deepest, lastTime, lastDeaths } } } },
  *     totals: { runs, deaths, deathsByCause:{...}, playTime, completions } }
@@ -150,7 +151,16 @@ function cleanRun(r) {
     deepest: isNum(r.deepest) ? r.deepest : c.y,
     savedAt: isNum(r.savedAt) ? r.savedAt : 0,
     kind: r.kind === 'start' ? 'start' : 'checkpoint',
+    ...cleanObjectives(r.objectives),
   };
+}
+
+/** run.objectives (LEVEL_FUN_PLAN P1): the ids of the objectives done in the saved run; absent when there are none. */
+function cleanObjectives(list) {
+  if (!Array.isArray(list)) return {};
+  const ids = [];
+  for (const id of list) if (typeof id === 'string' && id.length > 0 && id.length <= 40 && ids.length < 64 && ids.indexOf(id) < 0) ids.push(id);
+  return ids.length ? { objectives: ids } : {};
 }
 
 /** Merges two per-difficulty records, keeping the better of each value (never loses a record). */
@@ -605,9 +615,9 @@ export class SaveStore {
   }
 
   /** A checkpoint was reached (or progress worth keeping): the Continue point. */
-  checkpointReached({ difficulty, checkpoint, section, time, deaths, deepest }) {
+  checkpointReached({ difficulty, checkpoint, section, time, deaths, deepest, objectives }) {
     return this.update((p) => {
-      const run = cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time, deaths, deepest, savedAt: this.now(), kind: 'checkpoint' });
+      const run = cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time, deaths, deepest, objectives, savedAt: this.now(), kind: 'checkpoint' });
       if (!run) return false;
       p.run = run;
       return true;
@@ -621,6 +631,18 @@ export class SaveStore {
       p.run.time = nonNeg(time, p.run.time);
       p.run.deaths = Math.floor(nonNeg(deaths, p.run.deaths));
       if (isNum(deepest) && deepest < p.run.deepest) p.run.deepest = deepest;
+      p.run.savedAt = this.now();
+      return true;
+    }, 'progress');
+  }
+
+  /** An objective was done (a seal opened): the Continue slot keeps the run's list (LEVEL_FUN_PLAN P1). */
+  runObjectives(objectives) {
+    return this.update((p) => {
+      if (!p.run) return false;
+      const o = cleanObjectives(objectives);
+      if (o.objectives) p.run.objectives = o.objectives;
+      else delete p.run.objectives;
       p.run.savedAt = this.now();
       return true;
     }, 'progress');
@@ -827,6 +849,7 @@ export class SaveService {
       deaths: run.deaths,
       depthMeters: Math.max(0, Math.round(-run.deepest)),
       savedAt: run.savedAt,
+      objectives: Array.isArray(run.objectives) ? run.objectives.slice() : [],
     };
   }
 
@@ -865,7 +888,10 @@ export class SaveService {
     on('checkpoint', () => {
       this._countTime();
       if (!saves()) return;
-      this.store.checkpointReached({ difficulty: g.difficultyKey, checkpoint: g.checkpoint, section: g.sectionIndex, time: g.time, deaths: g.deaths, deepest: g.deepest });
+      this.store.checkpointReached({ difficulty: g.difficultyKey, checkpoint: g.checkpoint, section: g.sectionIndex, time: g.time, deaths: g.deaths, deepest: g.deepest, objectives: g.objectives ? g.objectives.serialize() : null });
+    });
+    on('objective:done', () => {
+      if (saves() && g.objectives) this.store.runObjectives(g.objectives.serialize());
     });
     on('game:continue', (e) => {
       // a continued run is the same run: keep its slot, count nothing new
