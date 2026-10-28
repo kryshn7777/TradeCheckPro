@@ -18,6 +18,13 @@
 //   { w: [x,z], jump?: bool }       walk to a point on the ground (not attached)
 //   { release: true }
 //   { goal: true }                  run/air-steer into the goal box
+// Objective verbs (LEVEL_FUN_PLAN P3, sim/objectives3d.js):
+//   { ring: 'fixtureId', walk?: [x,z], reel?: r }   hanging on the current line, pump toward a bell until it is struck
+//                                                   (standing: run toward walk / the bell to step off)
+//   { haul: 'objectiveId', keep?: bool, walk?: [x,z] }  yank the hand on the objective's haul ring until it is done, then
+//                                                   let go (walk: keep walking there while hauling, the rope slack)
+//   { light: 'fixtureId' }                          walk up to a lamp, hold the lantern probe PROBE_OUT m toward its wick
+//                                                   until it is lit
 import { makeIntent, FRAME, HANDS, CONFIG } from './sim.mjs';
 
 const G = CONFIG.player.gravity;
@@ -26,6 +33,8 @@ const SPIN_LIMIT = 6; // rad/s about the anchor above which the bot stops reelin
 const MIN_BITE_LENGTH = 3.2; // m: a chained hook must bite with at least this much line (see testChain)
 const HP_RESERVE = 0.25; // landings are planned to leave this much health (fraction of full)
 const FLIGHT_FRAMES = Math.ceil(CONFIG.rope.flightMax * 60) + 1;
+/** The bots hold the lantern this far from the body toward a lamp's wick (LEVEL_FUN_PLAN item 2: "probe = body + 0.5 m"). */
+export const PROBE_OUT = 0.5;
 // The bot plans its releases and catches so that no landing comes close to lethal. With fall damage (health3d.js) a
 // landing at 85 % of the lethal speed costs ~60 hp, so the bot now plans at 68 % (at most ~27 hp a landing). The look-ahead
 // takes no damage itself (it only judges the landing speed), so a line is the same on every difficulty; the real run shows
@@ -312,6 +321,7 @@ export class Bot {
       hi.yank = 0;
       hi.held = holding[h];
     }
+    if (it.probe) it.probe.on = false;
   }
 
   /** Is the look-ahead's landing unacceptable (a landing above LAND_LIMIT of the lethal speed)? */
@@ -512,6 +522,9 @@ export class Bot {
         this.releaseAll(it);
         done = true;
       } else if (step.goal) done = this.stepGoal(it, step);
+      else if (step.ring) done = this.stepRing(it, step);
+      else if (step.haul) done = this.stepHaul(it, step);
+      else if (step.light) done = this.stepLight(it, step);
       sim.frame(it);
       this.stepT += FRAME;
       if (done) {
@@ -795,6 +808,101 @@ export class Bot {
     const d = this.run(it, step.w[0], step.w[1]);
     if (step.jump && this.edgeAhead(it)) it.jumpPressed = true;
     return d < (step.tol || 0.5);
+  }
+
+  // -------------------------------------------------------------------------
+  // Objective verbs (LEVEL_FUN_PLAN P3)
+  // -------------------------------------------------------------------------
+  /** The fixture of this level's objectives named `id` (index), or -1 (no objectives / not in this variant). */
+  fixtureIndex(id) {
+    const O = this.sim.objectives;
+    return O ? O.fixtureIndex(id) : -1;
+  }
+
+  /** Bell: pump the current line toward the bell until a strike has done it (standing: run off toward it). */
+  stepRing(it, step) {
+    const O = this.sim.objectives;
+    const i = this.fixtureIndex(step.ring);
+    if (i < 0 || O.fixtureDone(i)) return true;
+    const f = O.fixtures[i];
+    const p = this.p;
+    const A = this.currentAnchor();
+    const w = step.walk || [f.x, f.z];
+    if (p.grounded) {
+      this.run(it, w[0], w[1]);
+      return false;
+    }
+    if (!A) {
+      this.airSteer(it, w[0], w[1], f.y - 30);
+      return false;
+    }
+    this.pump(it, A, f.x, f.z);
+    it.reel = step.reel || 0;
+    this.unstick(it, A, f.x, f.z);
+    return false;
+  }
+
+  /** Haul: yank the hand whose rope is on the objective's haul ring (brake on the ground); done: let go of it. */
+  stepHaul(it, step) {
+    const O = this.sim.objectives;
+    const o = O ? O.objective(step.haul) : null;
+    if (!o) return true;
+    const T = this.sim.tethers;
+    let hand = null;
+    for (const fi of o.fx) {
+      const f = O.fixtures[fi];
+      if (f.anchor) for (const h of HANDS) if (T.hands[h].rope.anchor === f.anchor) hand = h;
+    }
+    if (O.done[o.index]) {
+      if (hand && !step.keep) this.releaseHand(it, hand);
+      return true;
+    }
+    if (!hand) return false; // not on the ring (the step times out)
+    it.hands[hand].yank = 1;
+    const p = this.p;
+    if (!p.grounded) this.hover(it, p.x, p.z);
+    else if (step.walk && this.run(it, step.walk[0], step.walk[1]) > 0.3 && !this.edgeAhead(it)) {
+      // hauling on the move (a haul ring never reels you in): walk on with the line slack
+    } else {
+      it.move.x = 0;
+      it.move.z = 0;
+      it.brake = true;
+    }
+    return false;
+  }
+
+  /** Lamp: walk until the wick is within the probe's reach, then hold the lantern toward it (braking) until it is lit. */
+  stepLight(it, step) {
+    const O = this.sim.objectives;
+    const i = this.fixtureIndex(step.light);
+    if (i < 0 || O.fixtureDone(i)) return true;
+    const f = O.fixtures[i];
+    const p = this.p;
+    const dx = f.x - p.x;
+    const dy = f.y - p.y;
+    const dz = f.z - p.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (!p.grounded) {
+      this.airSteer(it, f.x, f.z, p.y - 2);
+      return false;
+    }
+    if (d > f.r + PROBE_OUT - 0.08) {
+      this.run(it, f.x, f.z);
+      if (this.edgeAhead(it)) {
+        it.move.x = 0;
+        it.move.z = 0;
+        it.brake = true;
+      }
+      return false;
+    }
+    it.brake = true;
+    const k = Math.min(PROBE_OUT, d) / (d || 1);
+    if (!it.probe) it.probe = { on: false, x: 0, y: 0, z: 0 };
+    it.probe.on = true;
+    it.probe.x = p.x + dx * k;
+    it.probe.y = p.y + dy * k;
+    it.probe.z = p.z + dz * k;
+    return false;
   }
 
   stepGoal(it, step) {

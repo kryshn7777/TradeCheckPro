@@ -141,8 +141,8 @@ function light(x, y, z, color, intensity, range, flicker = 0, extra) {
   lights.push(Object.assign({ x, y, z, color, intensity, range, flicker }, extra));
 }
 /** A lit work lamp and its warm pool in one call (art pass): the fixture at (x, y, z) facing yaw, the baked light 0.4 m in front of it. */
-function lampPool(x, y, z, yaw, intensity = 1, range = 12, flicker = 0.35, color = '#e8a458') {
-  dec('lamp', x, y, z, 0.4, 0.8, 0.4, yaw, { lit: true, flicker });
+function lampPool(x, y, z, yaw, intensity = 1, range = 12, flicker = 0.35, color = '#e8a458', props) {
+  dec('lamp', x, y, z, 0.4, 0.8, 0.4, yaw, Object.assign({ lit: true, flicker }, props));
   light(x - Math.sin(yaw) * 0.45, y, z - Math.cos(yaw) * 0.45, color, intensity, range, flicker);
 }
 
@@ -225,6 +225,10 @@ const s1Girder = S('s1-girder', -11, 11, 7, 7.8, -1.4, -0.6, 'metal');
 const s1WellBeam = S('s1-wellbeam', 6.6, 7.4, 3, 3.8, -11, 11, 'metal');
 under('t1', s1Girder, -4, -1, 'ring', 'tutorial');
 under('t2', s1WellBeam, 7, -6, 'ring', 'tutorial');
+// THE BELL (LEVEL_FUN_PLAN P3, S1's objective `bell-s1` in FIXTURES below): it hangs on a chain from the girder 2.5 m east of
+// the low point of the first swing (fired from the Threshold). Steer the swing into it: one strike tolls it and the grating
+// under the chimney opens. Not a solid of the level (no bake, no hash): Objectives3D bounces the body off it.
+dec('chain', -1.5, 1.775, -1, 0.5, 10.45, 0.5, 0, { link: 0.9 });
 
 dec('arch', -4, 5, 10.5, 12, 10, 1.2, 0); // the Threshold arch on the south wall, over the spawn
 dec('statue', -9.5, 3.2, 9.5, 2.2, 6.4, 2.2, -PI / 4); // Lanternwrights flanking the Threshold, facing the chimney
@@ -277,6 +281,10 @@ S('s2-far', -34, -22, -28, -25, -11, 1);
 // Recovery: a ring on a chain mid-hall beside the swing line, 14 m above the
 // floor — high enough that a short release caught here swings clear of it.
 chainRing('s2-catch', -14, -21, -1, 20, 'ring', 'recovery', { omitIn: AB });
+// THE COUNTERWEIGHT (LEVEL_FUN_PLAN P3, S2's objective `cw-s2`): its ring hangs on a chain off the far pier's north lip, over
+// the strip of floor before the opening, in sight from the pier and from the hall floor. Hook it and haul (grip / reel in):
+// four ratchet notches raise the counterweight and the grating in the opening slides away. A haul ring never reels you in.
+chainRing('s2-cw', -24.5, -19, 2.5, 12, 'ring', 'objective');
 const s2FloorA = S('s2-floor-a', -22, 11, -38, -35, -11, 11, 'wall', { tag: 'floor' });
 S('s2-floor-b', -34, -22, -38, -35, -11, 3, 'wall', { tag: 'floor' });
 const s2Arm = S('s2-arm', -34, -27, -17.5, -16.5, 6.4, 7.6, 'metal');
@@ -443,7 +451,12 @@ dec('lamp', 10.6, -98.4, 6, 0.4, 0.8, 0.4, PI / 2, { lit: true, flicker: 0.7 });
 light(10.4, -98.4, 6, '#e0a050', 0.8, 10, 0.7);
 light(-30, -150, -120, '#b8f0e0', 3.6, 140, 0, { far: true });
 // ART PASS S4: lit waypoints (catwalk end, shelf, plinth), mid-distance cold columns inside the Vault.
-lampPool(-16, -104.5, -23.4, 0, 1.3, 16, 0.4);
+// THE LAMPS (LEVEL_FUN_PLAN P3, S4's objective: lamp-s4a/b/c in FIXTURES): the catwalk's three lamps have gone cold. Both
+// lines stand on the catwalk; hold the lantern to each (the Vault's baked lamp light follows how many are lit: render/
+// lighting.js). The end lamp keeps its baked pool; the two rail lamps are housings only (no light: their flame is emissive).
+lampPool(-16, -104.5, -23.4, 0, 1.3, 16, 0.4, '#e8a458', { lit: false, fixture: 'lamp-s4a' });
+dec('lamp', -12.15, -103.6, -15, 0.4, 0.8, 0.4, PI / 2, { lit: false, flicker: 0.4, fixture: 'lamp-s4b' }); // east rail
+dec('lamp', -19.85, -103.6, -15, 0.4, 0.8, 0.4, -PI / 2, { lit: false, flicker: 0.4, fixture: 'lamp-s4c' }); // west rail
 lampPool(10.6, -117.6, -8, PI / 2, 1.0, 12, 0.4);
 lampPool(-16, -124.6, 10.4, 0, 1.0, 12, 0.4);
 dec('shaft-light', -50, -170, -60, 14, 220, 14, 0, { color: '#9fe0d0' });
@@ -742,7 +755,8 @@ light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 //  Every section S1-S7 is left through one seal: iron grating across the section's choke plane (LEVEL_FUN_PLAN §0). Closed,
 //  it is a floor you stand on and a wall your hook cannot see through; its objective opens it (the solids go inactive and
 //  the bars slide away, render/objectivesView.js). P1 objective = the hook verb on a ring that is already on the route:
-//  hooking it opens the seal below. S8 stays unsealed (the flight).
+//  hooking it opens the seal below. P3 ("first verbs"): S1 opens on the bell, S2 on the counterweight haul, S4 on the
+//  catwalk's three lamps (both lines of a fork reach them); the others keep their route ring. S8 stays unsealed (the flight).
 //  Seal solids are ordinary solid boxes (kind 'grate', field `seal` = the seal id), declared after every chainRing above so
 //  no chain stops at one. Level3D keeps them OUT of `level.solids` (level.sealSolids): the view's slab buckets, the scene
 //  dressing, the climb edges, the lightmap / GI bakes and their hashes never see them; collision, line of sight and
@@ -781,15 +795,22 @@ const seals = [
   { id: 'seal-s7', section: 's7', ids: ['seal-s7-nw', 'seal-s7-ne', 'seal-s7-sw', 'seal-s7-se'], open: 'iris' },
 ];
 /**
- * What a verb acts on. P1: only `hook` fixtures (a ring of the route; hooking it and holding `hold` s counts). The S6 seal
- * opens from either line of the fork, the S7 seal from the spiral or the spire's face (the alternate line).
+ * What a verb acts on (sim/objectives3d.js). `hook`: a ring of the route (hooking it and holding `hold` s counts; S3, S5-S7:
+ * the S6 seal opens from either line of the fork, the S7 seal from the spiral, the spire's face or the plumb line).
+ * P3 verbs (LEVEL_FUN_PLAN item 2, knobs per difficulty in `by`):
+ *   bell  S1: strike it with the body at `minSpeed` m/s or more (the swing on t1); r = the bell's radius
+ *   haul  S2: hook `anchorId` and haul (grip / reel in) for `time` s in `notches` ratchet steps; no reel toward the ring
+ *   lamp  S4: the lantern within `r` of the wick for `time` s; costs `charge` of the lantern (never blocks: twice as long
+ *         and it empties the lantern when less is left)
  */
 const fixtures = [
-  { id: 'fx-s1', kind: 'hook', anchorId: 't1', hold: 0 },
-  { id: 'fx-s2', kind: 'hook', anchorId: 's2-hook', hold: 0 },
+  { id: 'bell-s1', kind: 'bell', x: -1.5, y: -4.2, z: -1, r: 0.75, minSpeed: 2.5, by: { nightmare: { minSpeed: 3 }, abyss: { minSpeed: 3.5 } } },
+  { id: 'cw-s2', kind: 'haul', anchorId: 's2-cw', time: 1.5, notches: 4, by: { nightmare: { time: 1.8 }, abyss: { time: 2.2 } } },
   { id: 'fx-s3', kind: 'hook', anchorId: 's3-a2', hold: 0 },
   { id: 'fx-s3-fast', kind: 'hook', anchorId: 's3-f1', hold: 0 },
-  { id: 'fx-s4', kind: 'hook', anchorId: 's4-a2', hold: 0 },
+  { id: 'lamp-s4a', kind: 'lamp', x: -16, y: -104.5, z: -23.4, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // catwalk end
+  { id: 'lamp-s4b', kind: 'lamp', x: -12.15, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // east rail
+  { id: 'lamp-s4c', kind: 'lamp', x: -19.85, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // west rail
   { id: 'fx-s5', kind: 'hook', anchorId: 's5-h4', hold: 0 },
   { id: 'fx-s5-fast', kind: 'hook', anchorId: 's5-f1', hold: 0 },
   { id: 'fx-s6-safe', kind: 'hook', anchorId: 's6-sa3', hold: 0 },
@@ -800,10 +821,10 @@ const fixtures = [
 ];
 /** One objective per sealed section: `need` of its fixtures `ids` done opens `sealId` (`by[difficulty]` overrides, as section.creature). */
 const objectives = [
-  { id: 'obj-s1', section: 's1', verb: 'hook', sealId: 'seal-s1', ids: ['fx-s1'], need: 1 },
-  { id: 'obj-s2', section: 's2', verb: 'hook', sealId: 'seal-s2', ids: ['fx-s2'], need: 1 },
+  { id: 'obj-s1', section: 's1', verb: 'bell', sealId: 'seal-s1', ids: ['bell-s1'], need: 1 },
+  { id: 'obj-s2', section: 's2', verb: 'haul', sealId: 'seal-s2', ids: ['cw-s2'], need: 1 },
   { id: 'obj-s3', section: 's3', verb: 'hook', sealId: 'seal-s3', ids: ['fx-s3', 'fx-s3-fast'], need: 1 },
-  { id: 'obj-s4', section: 's4', verb: 'hook', sealId: 'seal-s4', ids: ['fx-s4'], need: 1 },
+  { id: 'obj-s4', section: 's4', verb: 'lamp', sealId: 'seal-s4', ids: ['lamp-s4a', 'lamp-s4b', 'lamp-s4c'], need: 3 },
   { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5', 'fx-s5-fast'], need: 1 },
   { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
   { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire', 'fx-s7-fast'], need: 1 },
@@ -819,8 +840,8 @@ const objectives = [
 // lines (tools/abyssal-tether-3d/verify/routes.mjs FORKS) and the fast one must be the faster.
 // =============================================================================
 const routes = [
-  { id: 'r-s2-fast', fork: 'fork-s2', section: 's2', line: 'fast', ids: ['s2-hook', 's2-f1', 's2-b1', 's2-x'], stops: ['s2-far', 's2-pier-w'] },
-  { id: 'r-s2-safe', fork: 'fork-s2', section: 's2', line: 'safe', ids: ['s2-hook', 's2-lower', 's2-b1', 's2-x'], stops: ['s2-floor-a', 's2-low', 's2-pier-w'] },
+  { id: 'r-s2-fast', fork: 'fork-s2', section: 's2', line: 'fast', ids: ['s2-hook', 's2-cw', 's2-f1', 's2-b1', 's2-x'], stops: ['s2-far', 's2-pier-w'] },
+  { id: 'r-s2-safe', fork: 'fork-s2', section: 's2', line: 'safe', ids: ['s2-hook', 's2-cw', 's2-lower', 's2-b1', 's2-x'], stops: ['s2-floor-a', 's2-low', 's2-pier-w'] },
   { id: 'r-s3-fast', fork: 'fork-s3', section: 's3', line: 'fast', ids: ['s3-a1', 's3-f1', 's3-f2'], stops: [] },
   { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
   { id: 'r-s4-fast', fork: 'fork-s4', section: 's4', line: 'fast', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk'] },
@@ -1037,6 +1058,8 @@ const sections = [
         text: 'Push the LEFT STICK the way you want to swing. Let go near the top of the arc to fly.',
         desktop: 'W A S D pumps the swing. Release near the top of the arc to fly.',
       },
+      // LEVEL_FUN_PLAN P3: the S1 verb (the bell opens the grating under the chimney)
+      { y: -1, duration: 7, text: 'Swing into the bell. Its toll opens the way down.', desktop: 'Swing into the bell. Its toll opens the way down.' },
       {
         y: -7.5, duration: 9,
         text: 'Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.',
@@ -1067,6 +1090,12 @@ const sections = [
         y: -28.5, duration: 6,
         text: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
         desktop: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
+      },
+      // LEVEL_FUN_PLAN P3: the S2 verb (moved up from the lower hall's yank hint: the grip that yanks also hauls)
+      {
+        y: -24.5, duration: 8,
+        text: 'Hook the counterweight. Squeeze GRIP to haul it.',
+        desktop: 'Hook the counterweight. Hold F to haul it.',
       },
       {
         y: -44.5, duration: 7,
@@ -1104,7 +1133,8 @@ const sections = [
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
     creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } } }),
-    hints: [],
+    // LEVEL_FUN_PLAN P3: the S4 verb (the catwalk's cold lamps)
+    hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps.', desktop: 'Walk up to each cold lamp and look at it.' }],
     triggers: [
       // Fires as the player stands on the catwalk over the Vault: the predator
       // crosses the Vault's far wall (inner face z = −160) and is gone. Path:

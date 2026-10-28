@@ -59,6 +59,8 @@ export function makeIntent() {
     confirmPressed: false,
     backPressed: false,
     ui: { ray: null, click: false },
+    // the lantern probe (LEVEL_FUN_PLAN P3, Objectives3D.setProbe): where the bot holds its lantern this frame
+    probe: { on: false, x: 0, y: 0, z: 0 },
   };
 }
 
@@ -177,7 +179,8 @@ function instrument(sim, timers) {
 // -----------------------------------------------------------------------------
 const AIM_W = 7; // has, ox, oy, oz, dx, dy, dz
 const HAND_W = 4 + AIM_W; // pressed, held, released, yank, aim
-export const INTENT_W = 5 + 2 * HAND_W; // move.x, move.z, reel, jump, brake, hands
+const PROBE_W = 4; // on, x, y, z (the lantern probe, LEVEL_FUN_PLAN P3)
+export const INTENT_W = 5 + 2 * HAND_W + PROBE_W; // move.x, move.z, reel, jump, brake, hands, probe
 
 function writeIntent(buf, o, it) {
   buf[o] = it.move.x;
@@ -204,6 +207,11 @@ function writeIntent(buf, o, it) {
     }
     k += HAND_W;
   }
+  const pr = it.probe;
+  buf[k] = pr && pr.on ? 1 : 0;
+  buf[k + 1] = pr ? pr.x : 0;
+  buf[k + 2] = pr ? pr.y : 0;
+  buf[k + 3] = pr ? pr.z : 0;
 }
 
 /** Fills `it` (from makeIntent()) with logged frame `f`. */
@@ -232,6 +240,11 @@ export function readIntent(buf, f, it) {
     } else hi.aim = null;
     k += HAND_W;
   }
+  if (!it.probe) it.probe = { on: false, x: 0, y: 0, z: 0 };
+  it.probe.on = buf[k] === 1;
+  it.probe.x = buf[k + 1];
+  it.probe.y = buf[k + 2];
+  it.probe.z = buf[k + 3];
   return it;
 }
 
@@ -361,6 +374,9 @@ export class Sim {
     };
     this.bus.on('objective:done', objEvent('objective'));
     this.bus.on('seal:land', objEvent('seal:land'));
+    // P3 verbs: every fixture done / haul notch (id = the fixture) and every bell strike, in the V13 hash too
+    this.bus.on('objective:progress', (e) => objEvent(`progress:${e.verb}`)({ id: `${e.fixture || e.id}:${e.k}` }));
+    this.bus.on('bell:ring', objEvent('bell'));
     if (opts.timers) {
       this.timers = opts.timers instanceof SystemTimers ? opts.timers : new SystemTimers();
       instrument(this, this.timers);
@@ -443,11 +459,15 @@ export class Sim {
     T.handleInput(p, intent, FRAME);
     const jump = intent.jumpPressed;
     const O = this.objectives;
-    if (O) O.bus = real ? this.bus : this._quietBus;
+    if (O) {
+      O.bus = real ? this.bus : this._quietBus;
+      const pr = intent.probe;
+      O.setProbe(pr ? pr.x : 0, pr ? pr.y : 0, pr ? pr.z : 0, !!(pr && pr.on)); // as Game3D: once per frame
+    }
     for (let i = 0; i < SUB; i++) {
       intent.jumpPressed = jump && i === 0;
       this.physics.step(p, T, intent, DT);
-      if (O) O.step(DT, p, T, this.t);
+      if (O) O.step(DT, p, T, intent, this.t);
       if (!p.alive) break;
     }
     intent.jumpPressed = false;

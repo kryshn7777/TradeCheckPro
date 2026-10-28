@@ -2245,6 +2245,8 @@ export class AudioManager3D {
       'trigger:rumble': this._onRumble,
       'trigger:debris': this._onDebris,
       'seal:open': this._onSealOpen,
+      'bell:ring': this._onBellRing,
+      'objective:progress': this._onObjectiveProgress,
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
@@ -2568,6 +2570,84 @@ export class AudioManager3D {
   _onSealOpen(p) {
     this._sfxRumble();
     this._sfxBreak(p, 1.6);
+  }
+
+  /** LEVEL_FUN_PLAN P3: the S1 bell (two inharmonic partials of struck bronze, long decay, placed at the bell). */
+  _onBellRing(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const sp = pos ? this._spatial(pos.x, pos.y, pos.z, NaN) : null;
+    const lift = sp ? this._floor('near', sp.d, 0.7) : 1;
+    const k = U.clamp(num(p.speed, 4) / 8, 0.35, 1);
+    const v = this._begin('bell', 2, 0.25, 4.2, this.busPlayer, (0.55 + 0.4 * k) * lift, 0, 0.45, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const base = 196 * rand(0.99, 1.01);
+    const parts = [
+      [1, 0.55, 1.4],
+      [2.76, 0.32, 0.9],
+      [5.4, 0.12, 0.35],
+    ];
+    for (const [m, a, tc] of parts) {
+      const o = this._vOsc(v, 'sine', base * m, t);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t, a * k, 0.003, tc);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    // the strike itself: a dull knock of the body on bronze
+    const tk = this._vOsc(v, 'sine', 140, t);
+    tk.frequency.setTargetAtTime(70, t, 0.03);
+    const tkg = this._vGain(v, 0);
+    this._perc(tkg.gain, t, 0.4 * k, 0.002, 0.06);
+    tk.connect(tkg);
+    tkg.connect(v.out);
+    this._commit(v);
+  }
+
+  /** LEVEL_FUN_PLAN P3: a haul notch (a heavy ratchet clank at the ring) or a lamp catching (a soft breath of flame). */
+  _onObjectiveProgress(p) {
+    if (p.verb === 'haul') this._sfxRatchet(p);
+    else if (p.verb === 'lamp') this._sfxLampCatch(p);
+  }
+
+  _sfxRatchet(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const v = this._begin('ratchet', 1, 0.08, 0.6, this.busPlayer, 0.8, 0, 0.25, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const base = 260 * rand(0.97, 1.03);
+    for (let i = 0; i < PARTIALS.length; i++) {
+      const o = this._vOsc(v, 'sine', base * PARTIALS[i], t);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, t, PARTIAL_AMP[i] * 0.8, 0.0015, PARTIAL_TC[i] * 1.4);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'highpass', 2200, 0);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, 0.35, 0.001, 0.018);
+    n.connect(hp);
+    hp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  _sfxLampCatch(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    const v = this._begin('lamp', 1, 0.2, 1.2, this.busPlayer, 0.7, 0, 0.2, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    const b = this._vNoise(v, this._brown, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 520, 0.9);
+    bp.frequency.setValueAtTime(520, t);
+    bp.frequency.exponentialRampToValueAtTime(1500, t + 0.35);
+    const bg = this._vGain(v, 0);
+    this._swell(bg.gain, t, 0.5, 0.06, 0.18, 0.4);
+    b.connect(bp);
+    bp.connect(bg);
+    bg.connect(v.out);
+    this._commit(v);
   }
 
   _onDebris(p) {

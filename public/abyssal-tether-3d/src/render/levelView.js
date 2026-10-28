@@ -4325,8 +4325,9 @@ export class LevelView {
     this.root.add(this._crumbleMesh);
     this.stats.solids += this._crumbles.length;
     // The section seals' iron bars (LEVEL_FUN_PLAN P1, render/objectivesView.js): one more instanced mesh with the metal
-    // material for all of them, drawn only while a closed seal is in view.
-    this._sealView = new SealView(level, this.mats.get('metal'), this._unitBox, this.root);
+    // material for all of them, drawn only while a closed seal is in view. P3: the S1 bell and the S2 counterweight ride in
+    // the same mesh; the S4 relit lamps' flames are a small instanced mesh with the decor glow material (only while in view).
+    this._sealView = new SealView(level, this.mats.get('metal'), this._unitBox, this.root, this.mats.get('decorGlow'));
     this.stats.sealBars = this._sealView.total;
   }
 
@@ -5692,7 +5693,7 @@ export class LevelView {
     }
     this._updateCogs(head, t, vd);
     this._updateSolidStates(game, head, vd);
-    if (this._sealView) this._sealView.update(dt, game ? game.objectives : null, head, vd);
+    if (this._sealView) this._sealView.update(dt, game ? game.objectives : null, head, vd, game ? game.time : 0);
     this._updateGate(dt, game, head, vd);
     this._updateHazards(dt, head, vd);
     this._updateAnchors(game, head, t);

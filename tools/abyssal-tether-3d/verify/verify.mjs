@@ -23,7 +23,7 @@ import { CHAPTERS, chapterIds, variantKeys } from './chapters.mjs';
 import { measureBudget, formatBudget } from './budget.mjs';
 import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
-import { sealIntegrity, sealGaps, climbOut, skipProbe } from './seals.mjs';
+import { sealIntegrity, sealGaps, climbOut, skipProbe, verbProbe } from './seals.mjs';
 import { forkIntegrity } from './forks.mjs';
 import { writePar, PAR_FILE } from './par.mjs';
 // WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
@@ -797,6 +797,16 @@ async function verifyChapter(ch) {
     console.log(`  ${v} gaps: ${g.join(' | ')}`);
     console.log(`  ${v} skip probe: ${Object.values(probe).map((o) => `${o.section} ${o.passed ? 'PASSED THE SEAL' : 'held'} (${o.end} on ${o.on}${o.wayUp === false ? ', NO WAY UP' : ''}, ${o.hooks.length} hooks, low ${o.minY})`).join(' | ')}`);
     console.log(`  ${v} climb-out (standing spots on the closed seal that see a ring above): ${Object.entries(up).map(([id, o]) => `${id.replace('seal-', '')} ${Math.round(o.share * 100)}%`).join(' ')}`);
+  }
+
+  console.log('== Verbs (LEVEL_FUN_PLAN P3 fallback probe: each bell / haul / lamp objective on its main line, done at s: no creature | creature live | empty lantern)');
+  report.verbs = {};
+  for (const v of VARIANTS) {
+    const res = await verbProbe(ch.makeLevel, v, R, (m) => fail(`[${ch.id}/${v}] ${m}`));
+    if (!res) continue;
+    report.verbs[v] = res;
+    const row = Object.entries(res).map(([id, o]) => `${id} ${o.verb} ${[o.plain, o.creature, o.emptyLantern].filter(Boolean).map((c) => (c.ok ? c.at : 'FAIL')).join(' | ')}`);
+    console.log(`  ${v}: ${row.join('  ·  ')}`);
   }
 
   console.log('== Counts');

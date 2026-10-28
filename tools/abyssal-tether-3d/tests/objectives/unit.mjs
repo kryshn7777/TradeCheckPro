@@ -1,5 +1,6 @@
 // Section seals and objectives (LEVEL_FUN_PLAN P1, sim/objectives3d.js) on the real level (Node):
-// the seal plates in Level3D, the objective state machine (closed at a new run, open on hooking the route ring, sticky
+// the seal plates in Level3D, the objective state machine (closed at a new run, open on hooking the route ring (S3, S5-S7;
+// the P3 verbs of S1 / S2 / S4 are in verbs.mjs), sticky
 // across a checkpoint, a death / respawn and the Nightmare alternate respawn, closed again by a new run), the Sandbox warp
 // (every seal above the warp target opens, silently), a closed seal as floor and sight block, the seal:land cue,
 // snapshot / restore and serialize / load round trips, determinism of a bot run, the save's run.objectives, the
@@ -69,22 +70,25 @@ const openIds = (O) => O.seals.filter((s) => O.sealOpen[s.index]).map((s) => s.i
 for (const v of VARIANTS) {
   const { O } = rig(v);
   ok(O.seals.length === 7 && O.objectives.length === 7 && O.seals.every((s) => sealClosed(O, s.id)) && O.doneCount === 0, `${v}: 7 seals, 7 objectives, all closed at a new run`);
-  const keys = O.fixtures.filter((f) => f.anchor.sealKey === 1).map((f) => f.anchor.id);
-  ok(keys.length === O.fixtures.length && keys.includes('t1') && keys.includes('s6-ra3') && keys.includes('s7-sp1'), `${v}: the route rings that open them carry the cue (${keys.join(' ')})`);
+  const rings = O.fixtures.filter((f) => f.anchor);
+  const keys = rings.filter((f) => f.anchor.sealKey === 1).map((f) => f.anchor.id);
+  ok(keys.length === rings.length && keys.includes('s2-cw') && keys.includes('s6-ra3') && keys.includes('s7-sp1') && !keys.includes('t1'), `${v}: the rings that open them (hook and haul) carry the cue (${keys.join(' ')})`);
 }
 
-// 3. Open on hook: hooking t1 opens the S1 seal (only), with the events; hooking any other ring does nothing.
+// 3. Open on hook: hooking s3-a2 opens the S3 seal (only), with the events; hooking any other ring does nothing (t1, the S1
+//    ring of P1, is no key any more: the bell is).
 {
   const { L, ev, O, T, p } = rig();
-  p.reset(-4, 0.4, 8.5);
-  T.attach(p, 'right', L.byId.t2);
-  O.step(DT, p, T, 1);
-  ok(O.doneCount === 0 && sealClosed(O, 'seal-s1'), 'hooking a ring that is no key opens nothing');
+  p.reset(7, -65.6, 0);
+  T.attach(p, 'right', L.byId['s3-a1']);
   T.attach(p, 'left', L.byId.t1);
+  O.step(DT, p, T, 1);
+  ok(O.doneCount === 0 && sealClosed(O, 'seal-s3') && sealClosed(O, 'seal-s1'), 'hooking a ring that is no key opens nothing (t1 included)');
+  T.attach(p, 'left', L.byId['s3-a2']);
   O.step(DT, p, T, 2);
-  ok(O.isDone('obj-s1') && O.isOpen('seal-s1') && sealOpenAll(O, 'seal-s1') && openIds(O) === 'seal-s1', 'hooking t1 opens seal-s1 and nothing else');
-  ok(ev.map((e) => e.join(':')).join(' ') === 'objective:progress:obj-s1 objective:done:obj-s1 seal:open:seal-s1', `events: ${ev.map((e) => e.join(':')).join(' ')}`);
-  ok(L.byId.t1.sealKey === 0 && L.byId['s2-hook'].sealKey === 1, 'the cue leaves the used ring, stays on the next');
+  ok(O.isDone('obj-s3') && O.isOpen('seal-s3') && sealOpenAll(O, 'seal-s3') && openIds(O) === 'seal-s3', 'hooking s3-a2 opens seal-s3 and nothing else');
+  ok(ev.map((e) => e.join(':')).join(' ') === 'objective:progress:obj-s3 objective:done:obj-s3 seal:open:seal-s3', `events: ${ev.map((e) => e.join(':')).join(' ')}`);
+  ok(L.byId['s3-a2'].sealKey === 0 && L.byId['s3-f1'].sealKey === 0 && L.byId['s5-h4'].sealKey === 1, 'the cue leaves the rings of the done objective, stays on the next');
   O.step(DT, p, T, 3);
   ok(ev.length === 3, 'no repeat while still hooked');
 }
@@ -102,25 +106,25 @@ for (const v of VARIANTS) {
   b.O.step(DT, b.p, b.T, 0);
   ok(b.O.isOpen('seal-s7'), 'S7: the spire face ring (alternate line) opens it');
   const c = rig();
-  c.O.fixtures[0].hold = 0.5;
-  c.p.reset(-4, 0.4, 8.5);
-  c.T.attach(c.p, 'right', c.L.byId.t1);
+  c.O.fixtures[c.O.fixtureIndex('fx-s3')].hold = 0.5;
+  c.p.reset(7, -65.6, 0);
+  c.T.attach(c.p, 'right', c.L.byId['s3-a2']);
   for (let i = 0; i < Math.round(0.4 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  const early = c.O.isOpen('seal-s1');
+  const early = c.O.isOpen('seal-s3');
   c.T.release(c.p, 'right', 'input');
   c.O.step(DT, c.p, c.T, 0);
-  c.T.attach(c.p, 'right', c.L.byId.t1);
+  c.T.attach(c.p, 'right', c.L.byId['s3-a2']);
   for (let i = 0; i < Math.round(0.4 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  const reset = c.O.isOpen('seal-s1');
+  const reset = c.O.isOpen('seal-s3');
   for (let i = 0; i < Math.round(0.15 / DT); i++) c.O.step(DT, c.p, c.T, 0);
-  ok(!early && !reset && c.O.isOpen('seal-s1'), 'hold 0.5 s: 0.4 s is not enough, letting go restarts it, 0.55 s held opens');
+  ok(!early && !reset && c.O.isOpen('seal-s3'), 'hold 0.5 s: 0.4 s is not enough, letting go restarts it, 0.55 s held opens');
 }
 
 // 5. Sticky: a checkpoint, a death + respawn (level.reset + reapply) and the Nightmare alternate respawn keep seals open;
 //    a new run (reset) closes them all.
 {
   const { L, O, T, p } = rig('nightmare');
-  for (const id of ['t1', 's2-hook', 's3-a2']) {
+  for (const id of ['s3-a2', 's5-h4']) {
     T.attach(p, 'right', L.byId[id]);
     O.step(DT, p, T, 0);
   }
@@ -128,9 +132,9 @@ for (const v of VARIANTS) {
   L.reset(); // game.respawn()
   O.reapply();
   O.markDoneThrough(2); // the alternate checkpoint is S3 (index 2): an earlier section
-  ok(before === 'seal-s1,seal-s2,seal-s3' && openIds(O) === before && sealOpenAll(O, 'seal-s3'), 'death, respawn and an earlier (alternate) checkpoint keep every opened seal open');
+  ok(before === 'seal-s3,seal-s5' && before.split(',').every((id) => O.isOpen(id)) && sealOpenAll(O, 'seal-s3') && sealOpenAll(O, 'seal-s5'), 'death, respawn and an earlier (alternate) checkpoint keep every opened seal open');
   O.reset();
-  ok(O.doneCount === 0 && O.seals.every((s) => sealClosed(O, s.id)) && L.byId.t1.sealKey === 1, 'a new run closes every seal again');
+  ok(O.doneCount === 0 && O.seals.every((s) => sealClosed(O, s.id)) && L.byId['s3-a2'].sealKey === 1, 'a new run closes every seal again');
 }
 
 // 6. Sandbox warp: markDoneThrough(i) opens the seals of the sections above i, silently; deeper ones stay closed.
@@ -183,18 +187,18 @@ for (const v of VARIANTS) {
 // 8. Snapshot / restore and serialize / load round trips.
 {
   const { L, O, T, p, ev } = rig();
-  T.attach(p, 'right', L.byId.t1);
+  T.attach(p, 'right', L.byId['s3-a2']);
   O.step(DT, p, T, 0);
   const snap = O.snapshot();
-  T.attach(p, 'left', L.byId['s2-hook']);
+  T.attach(p, 'left', L.byId['s5-h4']);
   O.step(DT, p, T, 0);
   const n = ev.length;
   O.restore(snap);
-  ok(openIds(O) === 'seal-s1' && sealClosed(O, 'seal-s2') && L.byId['s2-hook'].sealKey === 1 && ev.length === n, 'restore() rewinds a look-ahead (the S2 seal it opened is closed again, cue back)');
+  ok(openIds(O) === 'seal-s3' && sealClosed(O, 'seal-s5') && L.byId['s5-h4'].sealKey === 1 && ev.length === n, 'restore() rewinds a look-ahead (the S5 seal it opened is closed again, cue back)');
   const saved = O.serialize();
   const b = rig();
   const k = b.O.load(saved.concat(['obj-unknown', 7]));
-  ok(JSON.stringify(saved) === '["obj-s1"]' && k === 1 && openIds(b.O) === 'seal-s1', 'serialize() / load(): the done ids, unknown entries ignored');
+  ok(JSON.stringify(saved) === '["obj-s3"]' && k === 1 && openIds(b.O) === 'seal-s3', 'serialize() / load(): the done ids, unknown entries ignored');
 }
 
 // 9. Determinism: the S1 + S2 routes from the spawn, twice: the same objective events on the same frames and the same path.
@@ -208,8 +212,8 @@ for (const v of VARIANTS) {
     runs.push({ ok: r.ok, h: sim.hash.hex, o: sim.objHash, ev: JSON.stringify(sim.objEvents) });
   }
   ok(runs[0].ok && runs[1].ok && runs[0].h === runs[1].h && runs[0].o === runs[1].o && runs[0].ev === runs[1].ev && runs[0].ev.includes('obj-s2'), `bot S1+S2 from the spawn opens seal-s1 then seal-s2, identical twice (${runs[0].ev})`);
-  // From the sill, the rest of the S1 route (t2, lower down the well): without t1 the grating stops it; with it, it lands.
-  const down = R.ROUTES.s1.slice(2);
+  // From the sill, the rest of the S1 route (t2, lower down the well): without the bell the grating stops it; with it, it lands.
+  const down = R.ROUTES.s1.slice(R.ROUTES.s1.findIndex((st) => st.a === 't2'));
   const res = [0, 1].map((done) => {
     const L = new Level3D(undefined, 'normal');
     const sim = new Sim(L, 'normal');
@@ -217,7 +221,7 @@ for (const v of VARIANTS) {
     const r = new Bot(sim, down, { maxFrames: 60 * 30 }).runRoute();
     return { ok: r.ok, y: sim.player.y, open: sim.objectives.isOpen('seal-s1') };
   });
-  ok(!res[0].ok && res[0].y > -8.6 && !res[0].open && res[1].ok && res[1].y < -21, `the rest of the S1 route stops on the grating without t1 (y ${res[0].y.toFixed(1)}), lands in S2 with it (y ${res[1].y.toFixed(1)})`);
+  ok(!res[0].ok && res[0].y > -8.6 && !res[0].open && res[1].ok && res[1].y < -21, `the rest of the S1 route stops on the grating without the bell (y ${res[0].y.toFixed(1)}), lands in S2 with it (y ${res[1].y.toFixed(1)})`);
 }
 
 // 10. The save keeps run.objectives (cleaned: strings, no duplicates).
@@ -281,27 +285,29 @@ for (const v of VARIANTS) {
     const head = new THREE.Vector3(-4, 1.6, 8.5);
     view.update(1 / 72, O, head, 20);
     const s1 = seals.find((s) => s.id === 'seal-s1').n;
+    const bell = view.fixtures.find((f) => f.kind === 'bell').boxes.length; // the S1 bell rides in the same mesh (P3)
     const first = view.stats.drawn;
     const packs = view.stats.packs;
     view.update(1 / 72, O, head, 20);
     const same = view.stats.packs === packs; // nothing changed: no re-pack, no upload
-    // opened in play (hooking its ring) it slides open, then it is gone
+    // opened in play (the bell struck) it slides open, then it is gone; the bell stays
     const T2 = new TetherSystem(L, DIFFICULTY.normal, new EventBus(), {});
-    const p2 = new Player3D(-4, 0.4, 8.5);
-    T2.attach(p2, 'right', L.byId.t1);
-    O.step(DT, p2, T2, 0);
+    const bf = O.fixtures[O.fixtureIndex('bell-s1')];
+    const p2 = new Player3D(bf.x + 1.0, bf.y, bf.z);
+    p2.vx = -4;
+    O.step(DT, p2, T2, null, 0);
     view.update(1 / 72, O, head, 20);
     const anim = view.stats.drawn;
     for (let i = 0; i < 72 * 2; i++) view.update(1 / 72, O, head, 20);
-    const animated = anim === s1 && view.stats.drawn === 0 && !view.mesh.visible;
+    const animated = O.isOpen('seal-s1') && anim === s1 + bell && view.stats.drawn === bell && view.mesh.visible;
     // opened by a warp (a new run, then markDoneThrough) it is simply gone
     O.reset();
     view.update(1 / 72, O, head, 20);
-    const closedAgain = view.stats.drawn === s1;
+    const closedAgain = view.stats.drawn === s1 + bell;
     O.markDoneThrough(1);
     view.update(1 / 72, O, head, 20);
-    const warped = view.stats.drawn === 0;
-    ok(root.children.length === 1 && root.children[0].isInstancedMesh && first === s1 && same && animated && closedAgain && warped, `view: 1 instanced mesh, the S1 grating's ${s1} bars in view, re-packed only on change; hooked open it slides then hides, warped open it is gone at once`);
+    const warped = view.stats.drawn === bell;
+    ok(root.children.length === 1 && root.children[0].isInstancedMesh && first === s1 + bell && same && animated && closedAgain && warped, `view: 1 instanced mesh, the S1 grating's ${s1} bars (+ the bell's ${bell} boxes) in view, re-packed only on change; struck open it slides then hides, warped open it is gone at once`);
   }
 }
 

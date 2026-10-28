@@ -5,15 +5,17 @@
 // Each route starts standing on the section's checkpoint and ends standing on the
 // next section's checkpoint platform (S8: inside the goal). Step grammar: bot.mjs.
 // Seals (LEVEL_FUN_PLAN P1): a route starts with the seals of the sections above it open and its own closed; it opens it by
-// hooking the ring the level data names for it (s1 t1, s2 s2-hook, s3 s3-a2, s4 s4-a2, s5 s5-h4, s6 s6-sa3 / s6-ra3,
-// s7 s7-n6 / s7-sp1), which every route below already does: no extra steps. The fast lines of P2 hook their own ring
-// (s3-f1, s5-f1, s7-f3) where they leave the main line before its ring.
+// hooking the ring the level data names for it (s3 s3-a2, s5 s5-h4, s6 s6-sa3 / s6-ra3, s7 s7-n6 / s7-sp1), which every
+// route below already does: no extra steps. The fast lines of P2 hook their own ring (s3-f1, s5-f1, s7-f3) where they leave
+// the main line before its ring. P3 verbs (steps in bot.mjs): S1 swings into the bell (`ring`), every S2 line hooks the
+// counterweight and hauls it (`haul`), every S4 line relights the catwalk's three lamps (`light`).
 // Forks (LEVEL_FUN_PLAN P2, item 8): ROUTES[key] is the MAIN line of each section (it passes on every variant); the fast and
 // safe lines of every fork are routes too (`<key>fast` / `<key>safe` where they differ from the main line, see FORKS) and
 // play exactly the level data's `routes` lines (ids = the anchors hooked, stops = the ledges stood on).
 export const ROUTES = {
   s1: [
     { a: 't1' },
+    { ring: 'bell-s1' }, // P3: swing into the bell (it opens the grating under the chimney)
     { p: 's1-sill' },
     { a: 't2' },
     { p: 's2-landing', mode: 'lower', at: [7, -6] },
@@ -21,6 +23,8 @@ export const ROUTES = {
   s2: [
     { a: 's2-hook', walk: [3.6, -4] },
     { p: 's2-far', at: [-28, -5] },
+    { a: 's2-cw' }, // P3: hook the counterweight and haul it (the grating in the floor opening slides away)
+    { haul: 'obj-s2' },
     { a: 's2-lower', walk: [-28, 0] },
     { p: 's2-low', mode: 'lower', at: [-28, 7] },
     { a: 's2-b1' },
@@ -33,6 +37,8 @@ export const ROUTES = {
   s2fast: [
     { a: 's2-hook', walk: [3.6, -4] },
     { p: 's2-far', at: [-28, -5] },
+    { a: 's2-cw' },
+    { haul: 'obj-s2', walk: [-25.5, 0.2] }, // hauling while it walks to the lip over the opening
     { a: 's2-f1', mode: 'below', walk: [-28, 6], below: 0.6 },
     { a: 's2-b1' },
     { p: 's2-pier-w', ok: ['s2-pier-n', 's2-pier-s', 's2-pier-e'], at: [2, 0] },
@@ -45,6 +51,8 @@ export const ROUTES = {
     { a: 's2-hook' },
     { p: 's2-floor-a', mode: 'lower', at: [-3, -2] },
     { w: [-23.5, 1.5] },
+    { a: 's2-cw' }, // the counterweight from the hall floor
+    { haul: 'obj-s2' },
     { a: 's2-lower' },
     { p: 's2-low', mode: 'lower', at: [-28, 7] },
     { a: 's2-b1' },
@@ -76,7 +84,11 @@ export const ROUTES = {
   s4: [
     { a: 's4-a1' },
     { p: 's4-catwalk', at: [-16, -14] },
-    { a: 's4-a2' },
+    // P3: relight the catwalk's three cold lamps (both lines stand here)
+    { light: 'lamp-s4b' },
+    { light: 'lamp-s4a' },
+    { light: 'lamp-s4c' },
+    { a: 's4-a2', from: [-14.3, -13.4] },
     { p: ['s4-cradle', 's4-cradle-ab'], mode: 'lower', at: [-28, -5] },
     { a: 's4-a3' },
     { p: 's4-shelf', at: [5, -7] },
@@ -89,7 +101,10 @@ export const ROUTES = {
   s4fast: [
     { a: 's4-a1' },
     { p: 's4-catwalk', at: [-16, -14] },
-    { a: 's4-a2' },
+    { light: 'lamp-s4b' },
+    { light: 'lamp-s4a' },
+    { light: 'lamp-s4c' },
+    { a: 's4-a2', from: [-14.3, -13.4] },
     { a: 's4-a3' },
     { a: 's4-a4' },
     { a: 's4-a5' },
@@ -251,6 +266,8 @@ export const SCENARIOS = {
       { a: 's2-catch', mode: 'asap' },
       { p: 's2-floor-a', mode: 'lower', at: [-19.25, -3] },
       { w: [-23.5, 1.5] },
+      { a: 's2-cw' }, // the counterweight first: the opening is sealed (LEVEL_FUN_PLAN P3)
+      { haul: 'obj-s2' },
       { a: 's2-lower' },
       { p: 's2-low', mode: 'lower', at: [-28, 7] },
     ],

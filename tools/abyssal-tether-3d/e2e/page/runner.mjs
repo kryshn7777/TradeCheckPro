@@ -10,8 +10,9 @@ import { EventBus } from '/src/sim/config3d.js';
 
 const FRAME = 1 / 60;
 const SUB = 4;
-const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim'];
-const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension'];
+// as verify/sim.mjs: the hook is a projectile (`flying` + flightObj), so the look-ahead must rewind the flight too
+const HAND_KEYS = ['target', 'held', 'buffer', 'extend', 'attachTime', 'lastAim', 'flying'];
+const ROPE_KEYS = ['anchor', 'length', 'd', 'nx', 'ny', 'nz', 'tension', 'rampT', 'grip'];
 const NOSTATE = { render: false, state: false };
 
 /** The level bot's Sim interface on top of the running Game3D. */
@@ -61,6 +62,10 @@ class GameSim {
   }
   get diff() {
     return this.game.diff;
+  }
+  /** The live game's objectives (LEVEL_FUN_PLAN P3: the bot's ring / haul / light steps read them). */
+  get objectives() {
+    return this.game.objectives;
   }
   get ghost() {
     return this._ghost;
@@ -117,6 +122,9 @@ class GameSim {
       d.yank = s.yank || 0;
     }
     this.api.setInput(o);
+    // the lantern probe of a `light` step (the game's own probe is the view ray / the lantern hand)
+    const pr = intent.probe;
+    if (this.api.probe) this.api.probe(pr && pr.on ? pr : null);
     this.api.step(FRAME, NOSTATE);
     intent.jumpPressed = false;
     this.t += FRAME;
@@ -132,6 +140,11 @@ class GameSim {
       const o = {};
       for (const k of HAND_KEYS) o[k] = st[k];
       o.miss = st.miss ? Object.assign({}, st.miss) : null;
+      if (st.flightObj) {
+        o.flT = st.flightObj.t;
+        o.flDur = st.flightObj.dur;
+        o.flTarget = st.flightObj.target;
+      }
       for (const k of ROPE_KEYS) o['r_' + k] = st.rope[k];
       s.hands[h] = o;
     }
@@ -149,6 +162,11 @@ class GameSim {
       const o = s.hands[h];
       for (const k of HAND_KEYS) st[k] = o[k];
       st.miss = o.miss ? Object.assign({}, o.miss) : null;
+      if (st.flightObj) {
+        st.flightObj.t = o.flT;
+        st.flightObj.dur = o.flDur;
+        st.flightObj.target = o.flTarget;
+      }
       for (const k of ROPE_KEYS) st.rope[k] = o['r_' + k];
     }
     let j = 0;
@@ -189,7 +207,16 @@ class StepBot extends Bot {
     this.prepIntent(it, this.holding);
     for (const h of this.pendingRelease) this.releaseHand(it, h);
     this.pendingRelease.length = 0;
-    for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached) this.releaseHand(it, h);
+    // as Bot.runRoute: a chain lets go of the old line once the new hook has bitten; a hook still flying is not a lost rope
+    const cr = this.chainRelease;
+    if (cr) {
+      const cst = sim.tethers.hands[cr.hand];
+      if (cst.rope.attached) {
+        for (const h of cr.others) this.releaseHand(it, h);
+        this.chainRelease = null;
+      } else if (!cst.flying) this.chainRelease = null;
+    }
+    for (const h of HANDS) if (this.holding[h] && !sim.tethers.hands[h].rope.attached && !sim.tethers.hands[h].flying) this.releaseHand(it, h);
     const step = this.route[this.i];
     const limit = step.t || 25;
     const p = this.p;
@@ -205,6 +232,9 @@ class StepBot extends Bot {
       this.releaseAll(it);
       done = true;
     } else if (step.goal) done = this.stepGoal(it, step);
+    else if (step.ring) done = this.stepRing(it, step);
+    else if (step.haul) done = this.stepHaul(it, step);
+    else if (step.light) done = this.stepLight(it, step);
     sim.frame(it);
     this.stepT += FRAME;
     if (done) {

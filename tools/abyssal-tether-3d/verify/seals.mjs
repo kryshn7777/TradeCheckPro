@@ -1,7 +1,10 @@
 // LEVEL_FUN_PLAN P1 checks of the section seals (sim/objectives3d.js, level data `seals` / `fixtures` / `objectives`):
 //
-//   sealIntegrity  V1: every seal has one objective whose rings hang above it, its plates stay inside the section's walls
-//                  and touch no hazard, the next checkpoint and every deeper anchor lie below it.
+//   sealIntegrity  V1: every seal has one objective whose rings / fixtures (bell, lamps) hang above it, its plates stay
+//                  inside the section's walls and touch no hazard, the next checkpoint and every deeper anchor lie below
+//                  it. P3 verbs: a haul ring carries `haul`; a bell hangs clear of every solid (a strike bounces into the
+//                  open) and out of reach from the ground (it is struck by swinging); a lamp is in the lantern's reach of
+//                  a ledge and clear of the solids.
 //   sealGaps       the seal-gap (airtight) check, seals closed: (a) a 1 m grid of vertical 6 m probes over the section's
 //                  shaft just above the seal plane hits an active solid everywhere; (b) from every bot trace point and
 //                  standing spot above a seal no anchor below it is targetable (exact TetherSystem.findTarget).
@@ -11,7 +14,12 @@
 //                  fires at the lowest ring while falling (god mode: falls never end it). It must never get below the
 //                  seal inside the shaft. It reports where it ended (on the grate / stuck / out of time) and whether a
 //                  ring above is in sight from there.
-import { Sim, Player3D, TetherSystem, EventBus, DIFFICULTY, HANDS, makeIntent, FRAME, Objectives3D } from './sim.mjs';
+//   verbProbe      LEVEL_FUN_PLAN P3, the fallback probe: every objective whose verb is not a plain hook (the S1 bell,
+//                  the S2 haul, the S4 lamps), on its section's main line from the checkpoint: done by the bot without the
+//                  creature (Sandbox, a Mason far away), done with the creature live (the verbs never wait for it; the
+//                  haul and the bell are loud), and a lamp still lights with an empty lantern (twice as slow).
+import { Sim, Player3D, TetherSystem, EventBus, DIFFICULTY, HANDS, makeIntent, FRAME, Objectives3D, loadCreatureModules } from './sim.mjs';
+import { Bot } from './bot.mjs';
 
 const r1 = (v) => Math.round(v * 10) / 10;
 
@@ -55,13 +63,48 @@ export function sealIntegrity(L, v, P) {
     }
     for (const o of objs) {
       for (const fi of o.fx) {
-        const a = O.fixtures[fi].anchor;
-        if (!(a.y > s.top + 1)) P(`objective ${o.id}: ring ${a.id} does not hang above its seal ${s.id}`);
-        if (L.sectionIndexAt(a.y) > s.section) P(`objective ${o.id}: ring ${a.id} lies below section ${sec.id}`);
+        const f = O.fixtures[fi];
+        const name = f.anchor ? `ring ${f.anchor.id}` : `${f.kind} ${f.id}`;
+        if (!(f.y > s.top + 1)) P(`objective ${o.id}: ${name} does not hang above its seal ${s.id}`);
+        if (L.sectionIndexAt(f.y) > s.section) P(`objective ${o.id}: ${name} lies below section ${sec.id}`);
+        verbChecks(L, f, o, P);
       }
     }
   }
   return out;
+}
+
+/** LEVEL_FUN_PLAN P3: the fixture of a verb is usable as the verb says. */
+function verbChecks(L, f, o, P) {
+  const scratch = [];
+  const clearOf = (x, y, z, r) => {
+    for (const q of L.querySolids(x - r, y - r, z - r, x + r, y + r, z + r, scratch)) {
+      if (q.active === false || q.seal) continue;
+      const d = Math.hypot(Math.max(q.minX - x, 0, x - q.maxX), Math.max(q.minY - y, 0, y - q.maxY), Math.max(q.minZ - z, 0, z - q.maxZ));
+      if (d < r) return q.id;
+    }
+    return null;
+  };
+  if (f.kind === 'haul' && f.anchor.haul !== true) P(`objective ${o.id}: haul ring ${f.anchor.id} does not carry the haul flag`);
+  if (f.kind === 'bell') {
+    const hit = clearOf(f.x, f.y, f.z, f.r + 0.38 + 0.3);
+    if (hit) P(`objective ${o.id}: bell ${f.id} is within a body's width of solid ${hit} (a strike must bounce into the open)`);
+    // no ledge top within reach below it: a body standing there could lean on it instead of swinging into it
+    for (const q of L.querySolids(f.x - 1.2, f.y - 2, f.z - 1.2, f.x + 1.2, f.y, f.z + 1.2, scratch)) {
+      if (q.active === false || q.seal || q.maxY > f.y) continue;
+      if (f.y - (q.maxY + 0.38) < f.r + 0.38 + 0.2) P(`objective ${o.id}: bell ${f.id} can be touched from ${q.id} without a swing`);
+    }
+  }
+  if (f.kind === 'lamp') {
+    let ledge = null;
+    for (const q of L.querySolids(f.x - 2, f.y - 2.5, f.z - 2, f.x + 2, f.y + 0.5, f.z + 2, scratch)) {
+      if (q.active === false || q.seal || q.kind === 'crumble') continue;
+      const x = Math.max(q.minX + 0.38, Math.min(q.maxX - 0.38, f.x));
+      const z = Math.max(q.minZ + 0.38, Math.min(q.maxZ - 0.38, f.z));
+      if (q.maxX - q.minX >= 0.76 && q.maxZ - q.minZ >= 0.76 && Math.hypot(f.x - x, f.y - (q.maxY + 0.38), f.z - z) <= f.r + 0.5) ledge = q.id;
+    }
+    if (!ledge) P(`objective ${o.id}: lamp ${f.id} is out of the lantern's reach from every ledge`);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -421,4 +464,49 @@ export function skipProbe(L, v, P) {
     if (r.onSeal && r.wayUp === false) P(`skip probe ${r.section}: ended on ${r.on} at ${r.at.join(', ')} with no ring above in sight (no way back up)`);
   }
   return res;
+}
+
+// -----------------------------------------------------------------------------
+// The fallback probe (LEVEL_FUN_PLAN P3)
+// -----------------------------------------------------------------------------
+/** An empty lantern for the probe: relights take twice as long, nothing is left to spend. */
+const EMPTY_LANTERN = Object.freeze({ lanternCharge: 0, spend: () => 0 });
+
+/**
+ * Every non-hook objective on its section's main line (R.ROUTES[section id]) from the section's checkpoint, in three ways:
+ * plain (no creature), with the creature live (non-lethal, seeded) and, for lamps, with an empty lantern. Returns
+ * { objId: { verb, section, plain: { ok, at, time }, creature: {...}, emptyLantern?: {...} } }; `at` = the run time the
+ * objective was done. `P` reports failures.
+ */
+export async function verbProbe(makeLevel, v, R, P) {
+  if (!Objectives3D) return null;
+  await loadCreatureModules();
+  const L = makeLevel(v);
+  const O = closeSeals(L, v);
+  const out = {};
+  for (const o of O.objectives) {
+    if (o.verb === 'hook') continue;
+    const sec = L.sections[o.section];
+    const route = R.ROUTES[sec.id];
+    if (!route) continue;
+    const row = { verb: o.verb, section: sec.id };
+    const cases = [
+      ['plain', {}, null],
+      ['creature', { creature: { seed: 0x5eed + o.section } }, null],
+    ];
+    if (o.verb === 'lamp') cases.push(['emptyLantern', {}, EMPTY_LANTERN]);
+    for (const [name, opts, lantern] of cases) {
+      const lvl = makeLevel(v);
+      const sim = new Sim(lvl, v, opts);
+      const cp = lvl.sections[o.section].checkpoint;
+      sim.spawn(cp.x, cp.y, cp.z);
+      if (lantern) sim.objectives.lantern = lantern;
+      const r = new Bot(sim, route, {}).runRoute();
+      const ev = sim.objEvents.find((e) => e[1] === 'objective' && e[2] === o.id);
+      row[name] = { ok: r.ok && !!ev, at: ev ? ev[0] : null, time: +r.time.toFixed(1) };
+      if (!row[name].ok) P(`verb probe ${o.id} (${o.verb}, ${name}): ${ev ? '' : 'never done; '}${r.fail || ''}`);
+    }
+    out[o.id] = row;
+  }
+  return out;
 }

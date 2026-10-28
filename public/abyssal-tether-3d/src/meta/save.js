@@ -16,7 +16,7 @@
  *     settings: { ...Storage.loadSettings() keys... } | null,
  *     run: null | { chapter:'ch1', difficulty, checkpoint:{ x,y,z,yaw,index }, section, time, deaths, deepest,
  *                   savedAt, kind:'checkpoint'|'start', objectives?: [objective ids done] },   // the run to Continue
- *                   (objectives: LEVEL_FUN_PLAN P1, optional; absent = none done)
+ *                   (objectives: LEVEL_FUN_PLAN P1, optional; absent = none done; P3: also fixtures done / haul notches)
  *     chapters: { ch1: { reached, completed, completions, firstCompletedAt, lastCompletedAt,
  *                        byDiff: { <diff>: { runs, completions, best, fewestDeaths, deepest, lastTime, lastDeaths,
  *                                            sections: { <section id>: { best, medal } } } } } },
@@ -200,7 +200,11 @@ function cleanRun(r) {
   };
 }
 
-/** run.objectives (LEVEL_FUN_PLAN P1): the ids of the objectives done in the saved run; absent when there are none. */
+/**
+ * run.objectives (LEVEL_FUN_PLAN P1): the ids of the objectives done in the saved run; absent when there are none. P3 adds
+ * the ratchet of the ones not done yet in the same list of strings: fixture ids done ('lamp-s4a') and haul notches
+ * ('cw-s2#2') (Objectives3D.serialize / load).
+ */
 function cleanObjectives(list) {
   if (!Array.isArray(list)) return {};
   const ids = [];
@@ -969,6 +973,10 @@ export class SaveService {
       this.store.checkpointReached({ difficulty: g.difficultyKey, checkpoint: g.checkpoint, section: g.sectionIndex, time: g.time, deaths: g.deaths, deepest: g.deepest, objectives: g.objectives ? g.objectives.serialize() : null });
     });
     on('objective:done', () => {
+      if (saves() && g.objectives) this.store.runObjectives(g.objectives.serialize());
+    });
+    // LEVEL_FUN_PLAN P3: the ratchet survives a Continue too (lamps lit, haul notches: sim/objectives3d.js serialize)
+    on('objective:progress', () => {
       if (saves() && g.objectives) this.store.runObjectives(g.objectives.serialize());
     });
     // a section played whole in this run (game.js / sim/splits3d.js): best split and medal per section (schema 3)

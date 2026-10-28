@@ -14,7 +14,18 @@
 > rings, dives and chains, no crumble ledges); S5 / S7 fast lines are new ring columns (S7 is not the spire line: it could
 > not be made faster; `s7spire` stays an alternate without `s7-sp2`); S8's main line is the fast one and the safe line rests
 > on the wall steps; `s8-e5` re-spaced 5 m lower; three recovery rings (`s4-up`, `s6-up`, `s7-up`) restore climb-out at the
-> shorter reach; S3 / S5 / S7 fast lines open their seal with their own hook ring; par = each section's main line. P3-P6 open.
+> shorter reach; S3 / S5 / S7 fast lines open their seal with their own hook ring; par = each section's main line.
+> **P3 done** (2026-10-28): the first verbs open S1, S2 and S4 (S3, S5-S7 keep their route ring): the S1 bell (`bell-s1`,
+> struck by the body at 2.5 / 3 / 3.5 m/s on the t1 swing; the body bounces off it; every toll is a Mason noise), the S2
+> counterweight (`s2-cw`, tag `objective`; haul 1.5 / 1.8 / 2.2 s in 4 loud ratchet notches; a haul ring never reels the
+> player), the S4 lamps (3 needed, lantern probe 1.5 s within 0.9 m, charge 0.06 / 0.08 / 0.10, never blocks; the baked
+> lamp light follows the progress via `uLMK.z`). Ratchet through death, Continue (save strings `lamp-s4a`, `cw-s2#2`) and
+> warp; bot steps `ring` / `haul` / `light` on every line and variant; verify fallback probe (no creature / creature live /
+> empty lantern); `tests/objectives/verbs.mjs`; par and baseline rewritten. Differs from the plan: all three S4 lamps are on
+> the catwalk (its end lamp + two rail lamps), because P2's fast line never stands on the shelf or plinth (item 8: the
+> objective sits where the lines converge); the bell is not a level solid (Objectives3D bounces the body: no bake); on a
+> screen the probe is the view ray ≤ 2.5 m with no key (E already fires the right tether); reeling in hauls as well as the
+> grip; the S2 fast bot hauls while it walks to the lip (keeps the fork ≥ 15 %); no new plaques (hints only). P4-P6 open.
 > Approved scope (12 items). Date 2026-10-28.
 > Paths: `src/` = `public/abyssal-tether-3d/src/`, `tools/` = `tools/abyssal-tether-3d/`. Every code claim below names the
 > file and function or data field it was read from. Where an approved contract already exists in

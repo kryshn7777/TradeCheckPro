@@ -52,6 +52,10 @@ export const RULES = Object.freeze({
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
   sealOpen: R('[Iron grating grinds open]', 'world', 1, 'seal', 3),
   sealLocked: R('[Iron grating, locked]', 'world', 1, 'seal', 6),
+  // LEVEL_FUN_PLAN P3: the verbs
+  bell: R('[A bell tolls]', 'world', 1, 'bell', 2),
+  ratchet: R('[A ratchet clacks]', 'world', 0, 'ratchet', 0.8),
+  lampCatch: R('[A lamp catches]', 'world', 0, 'lamp', 1),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
@@ -156,6 +160,10 @@ export function captionForEvent(type, p) {
       return RULES.sealOpen;
     case 'seal:land':
       return RULES.sealLocked;
+    case 'bell:ring':
+      return RULES.bell;
+    case 'objective:progress':
+      return e.verb === 'haul' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : null;
     default:
       return null;
   }
@@ -204,6 +212,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'trigger:debris',
   'seal:open',
   'seal:land',
+  'bell:ring',
+  'objective:progress',
   'health:damage',
   'pickup:collect',
 ]);

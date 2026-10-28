@@ -3,11 +3,31 @@
 //
 //   forkIntegrity(L, R, P)  V1: every section but the first has a fork with one fast and one safe line; each line's ids are
 //                           anchors and its stops solids of this variant; the lines differ; the anchors only the fast line
-//                           uses are tagged risk / shortcut (never recovery); the section's objective has a ring on each
-//                           line; the bot lines hook exactly the data's anchors (in order) and stand on its stops; no supply
+//                           uses are tagged risk / shortcut (never recovery); the section's objective can be done from each
+//                           line (LEVEL_FUN_PLAN P3: its rings on the line's anchors, its lamps within the lantern's reach
+//                           of the line's ledges, `need` of them) and each bot line does it (a `haul` / `light` step for
+//                           every verb that is not a plain hook); the bot lines hook exactly the data's anchors (in order)
+//                           and stand on its stops; no supply
 //                           spot lies within FAST_CLEAR m of a risk / shortcut ring; every 'slow' supply spot stands on a
 //                           stop of a safe line of its section.
 export const FAST_CLEAR = 3; // m: no supply spot this close to a risk / shortcut ring (the plan's "no spots on fast lines")
+/** A lamp is within reach of a ledge when a body standing on it (0.38 m above its top) is this close to the wick (r + 0.5). */
+const LAMP_STAND = 0.5;
+
+/** Can a body standing on solid `s` hold the lantern to lamp fixture `fx` (the bots' probe: 0.5 m out from the body)? */
+export function lampFromLedge(s, fx) {
+  if (!s || s.minX === undefined) return false;
+  const x = Math.max(s.minX + 0.38, Math.min(s.maxX - 0.38, fx.x));
+  const z = Math.max(s.minZ + 0.38, Math.min(s.maxZ - 0.38, fx.z));
+  return Math.hypot(fx.x - x, fx.y - (s.maxY + 0.38), fx.z - z) <= (fx.r || 0.9) + LAMP_STAND;
+}
+
+/** The objective steps of a bot route: the fixture ids of its `light` / `ring` steps, the objective ids of its `haul` steps. */
+export function routeVerbs(route) {
+  const out = { light: [], ring: [], haul: [] };
+  for (const st of route || []) for (const k of ['light', 'ring', 'haul']) if (typeof st[k] === 'string') out[k].push(st[k]);
+  return out;
+}
 
 /** The anchors a bot route hooks, in order (an array step names alternatives: the one present in L). */
 export function routeAnchors(L, route) {
@@ -75,11 +95,16 @@ export function forkIntegrity(L, R, P) {
       const a = L.byId[id];
       if (a && a.tag !== 'risk' && a.tag !== 'shortcut') P(`fork ${fid}: fast-line ring ${id} is tagged '${a.tag}' (want risk | shortcut)`);
     }
-    // the objective: a ring of it on each line (or one both lines hook)
+    // the objective: done from each line: its rings hooked on the line, its lamps in the lantern's reach of the line's ledges
     const obj = objOf(f.fast.section);
     if (obj) {
-      const rings = (obj.ids || []).map((x) => fixtures.find((fx) => fx.id === x)).filter(Boolean).map((fx) => fx.anchorId);
-      for (const line of [f.fast, f.safe]) if (!rings.some((id) => line.ids.includes(id))) P(`fork ${fid}: the ${line.line} line hooks no ring of objective ${obj.id} (${rings.join(', ')})`);
+      const fxs = (obj.ids || []).map((x) => fixtures.find((fx) => fx.id === x)).filter(Boolean);
+      const need = Math.max(1, obj.need || 1);
+      for (const line of [f.fast, f.safe]) {
+        const byRing = fxs.filter((fx) => fx.anchorId && line.ids.includes(fx.anchorId)).length;
+        const byLamp = fxs.filter((fx) => fx.kind === 'lamp' && (line.stops || []).some((sid) => lampFromLedge(L.byId[sid], fx))).length;
+        if (byRing + byLamp < need) P(`fork ${fid}: the ${line.line} line can do ${byRing + byLamp} of the ${need} needed of objective ${obj.id} (${fxs.map((fx) => fx.anchorId || fx.id).join(', ')})`);
+      }
     }
   }
   for (let i = 1; i < L.sections.length; i++) if (!forkedSections.has(L.sections[i].id)) P(`section ${L.sections[i].id} has no fork (fast + safe line)`);
@@ -100,6 +125,14 @@ export function forkIntegrity(L, R, P) {
       if (JSON.stringify(got) !== JSON.stringify(f[line].ids)) P(`fork ${F.key} ${line}: the bot line ${F[line]} hooks ${got.join(' ')}, the data says ${f[line].ids.join(' ')}`);
       const stops = new Set(routeStops(L, route));
       for (const id of f[line].stops || []) if (!stops.has(id)) P(`fork ${F.key} ${line}: the bot line ${F[line]} never stands on ${id}`);
+      // the verbs (LEVEL_FUN_PLAN P3): a haul / lamp / bell objective needs its steps in the bot line
+      const obj = objOf(f[line].section);
+      if (obj && obj.verb && obj.verb !== 'hook') {
+        const vb = routeVerbs(route);
+        const lit = new Set(vb.light.filter((id) => (obj.ids || []).includes(id)));
+        const ok = obj.verb === 'haul' ? vb.haul.includes(obj.id) : obj.verb === 'lamp' ? lit.size >= (obj.need || 1) : vb.ring.some((id) => (obj.ids || []).includes(id));
+        if (!ok) P(`fork ${F.key} ${line}: the bot line ${F[line]} does not ${obj.verb} for ${obj.id}`);
+      }
     }
   }
   // no spots on fast lines: none within FAST_CLEAR of a risk / shortcut ring (plan item 6)

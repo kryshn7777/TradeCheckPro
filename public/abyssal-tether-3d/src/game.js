@@ -34,6 +34,11 @@ import { ropeHaptic } from './audio/dsp3d.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
+// LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
+// nearest a cold lamp (Objectives3D checks the lamp's radius).
+const PROBE_RAY = 2.5;
+const _probeV = new THREE.Vector3();
+const _probeD = new THREE.Vector3();
 
 // -----------------------------------------------------------------------------
 // Tuning (seconds / metres unless noted)
@@ -1681,6 +1686,18 @@ export class Game3D {
       this._hapticBoth(0.3, 220);
       this._toast('Grating opens below', 2.2);
     });
+    // The verbs (LEVEL_FUN_PLAN P3): the world answers (bell, ratchet, lamp: audio3d / captions); hands feel it.
+    bus.on('bell:ring', (e) => {
+      if (this._inRun()) this._hapticBoth(U.clamp(0.25 + finiteOr(e.speed, 3) * 0.05, 0.25, 0.8), 160);
+    });
+    bus.on('objective:progress', (e) => {
+      if (!this._inRun() || !e) return;
+      if (e.verb === 'haul') this._hapticTethered(0.55, 70); // a ratchet notch through the line
+      else if (e.verb === 'lamp') {
+        this._haptic('left', 0.35, 90); // the lantern hand
+        if (e.k < e.of) this._toast(`Lamp ${e.k} of ${e.of}`, 1.6);
+      }
+    });
     bus.on('xr:recenter', () => this.recenter());
   }
 
@@ -2217,6 +2234,7 @@ export class Game3D {
     this.objectives = null;
     try {
       this.objectives = new Objectives3D(lvl, diff, this._runBus);
+      this.objectives.lantern = this.bag; // a lamp relight burns lantern charge (LEVEL_FUN_PLAN P3)
       if (attract) this.objectives.openAll();
     } catch (err) {
       this._fault('objectives', err);
@@ -2681,6 +2699,7 @@ export class Game3D {
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
     this._prepareClimb(intent, si);
+    if (this.objectives) this._lanternProbe();
     this._acc += dt;
     let steps = 0;
     while (this._acc >= PDT - 1e-9) {
@@ -2691,7 +2710,7 @@ export class Game3D {
       si.jumpPressed = this._pendingJump;
       this._pendingJump = false;
       this.physics.step(p, this.tethers, si, PDT);
-      if (this.objectives) this.objectives.step(PDT, p, this.tethers, this.time);
+      if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
       this._acc -= PDT;
       steps++;
       if (!p.alive || this.state !== 'playing') {
@@ -2701,6 +2720,61 @@ export class Game3D {
     }
     if (this._acc < 0) this._acc = 0;
     this.alpha = p.alive ? U.clamp(this._acc / PDT, 0, 1) : 0;
+  }
+
+  /**
+   * The lantern probe for the S4 lamps (LEVEL_FUN_PLAN P3, Objectives3D.setProbe), once per frame and only while a lamp is
+   * cold: in XR the lantern itself (the left hand); on a screen the lantern rides the view, so the probe is the point of
+   * the view ray (at most PROBE_RAY m out) nearest a cold lamp: walk up and look at it.
+   */
+  _lanternProbe() {
+    const O = this.objectives;
+    if (!O.wantsProbe || this.state !== 'playing') {
+      O.setProbe(0, 0, 0, false);
+      return;
+    }
+    const dbg = this._debugProbe;
+    if (dbg) {
+      O.setProbe(dbg.x, dbg.y, dbg.z, dbg.on);
+      return;
+    }
+    if (this.xrActive) {
+      const hv = this.handsView;
+      const input = this.input;
+      const sock = (hv && hv.lanternSocket) || (input && typeof input.handSocket === 'function' ? input.handSocket('left') : null);
+      if (sock && typeof sock.getWorldPosition === 'function') {
+        sock.getWorldPosition(_probeV);
+        O.setProbe(_probeV.x, _probeV.y, _probeV.z, true);
+        return;
+      }
+    }
+    const cam = this.renderer && this.renderer.camera;
+    if (!cam || typeof cam.getWorldPosition !== 'function') {
+      O.setProbe(0, 0, 0, false);
+      return;
+    }
+    cam.getWorldPosition(_probeV);
+    cam.getWorldDirection(_probeD);
+    let best = Infinity;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    for (let i = 0; i < O.fixtures.length; i++) {
+      const f = O.fixtures[i];
+      if (f.kind !== 'lamp' || O.fixtureDone(i)) continue;
+      const t = U.clamp((f.x - _probeV.x) * _probeD.x + (f.y - _probeV.y) * _probeD.y + (f.z - _probeV.z) * _probeD.z, 0, PROBE_RAY);
+      const qx = _probeV.x + _probeD.x * t;
+      const qy = _probeV.y + _probeD.y * t;
+      const qz = _probeV.z + _probeD.z * t;
+      const d = Math.hypot(f.x - qx, f.y - qy, f.z - qz);
+      if (d < best) {
+        best = d;
+        bx = qx;
+        by = qy;
+        bz = qz;
+      }
+    }
+    O.setProbe(bx, by, bz, best < Infinity);
   }
 
   /**
@@ -3990,6 +4064,11 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // The lantern probe (LEVEL_FUN_PLAN P3, the e2e bots): { x, y, z } replaces the hand / view probe until probe(null).
+      probe: (q) => {
+        this._debugProbe = q && isFinite(q.x) && isFinite(q.y) && isFinite(q.z) ? { x: +q.x, y: +q.y, z: +q.z, on: q.on !== false } : null;
+        return this._debugProbe;
+      },
       // Health (tests, QA, screenshots): hp 0..1 sets the health directly (no events); damage(amount) hurts as a hit would.
       health: (hp) => {
         const h = this.health;

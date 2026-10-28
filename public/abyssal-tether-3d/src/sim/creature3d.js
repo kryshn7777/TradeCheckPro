@@ -451,6 +451,13 @@ function linkBus(bus, creature) {
     bus.on('player:wallhit', (p) => {
       if (link.creature) link.creature._onNoise('wall', p && p.impact);
     });
+    // LEVEL_FUN_PLAN P3: a bell strike and every haul notch are loud (sim/objectives3d.js VERB_NOISE, a hard wall hit)
+    bus.on('bell:ring', (p) => {
+      if (link.creature) link.creature._onNoise('wall', p && p.strength);
+    });
+    bus.on('objective:progress', (p) => {
+      if (link.creature && p && p.noise > 0) link.creature._onNoise('wall', p.noise);
+    });
     bus.on('checkpoint', () => {
       if (link.creature) link.creature._deathN = 0; // a checkpoint forgets where you died
     });

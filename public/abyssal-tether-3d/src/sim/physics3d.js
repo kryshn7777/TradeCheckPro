@@ -757,11 +757,14 @@ export class Physics3D {
       attached = true;
       const taut = rope.measure(player);
       anyTaut = anyTaut || taut;
-      if (taut && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
+      // A haul ring (LEVEL_FUN_PLAN P3, sim/objectives3d.js: `anchor.haul`): the yank and the reel-in haul the counterweight
+      // instead of reeling the player toward it (comfort: hauling never moves you); letting rope out still works.
+      const haul = rope.anchor.haul === true;
+      if (taut && !haul && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
       // Grip on a tethered hand yanks that rope in hard; otherwise the shared reel axis.
       const yank = intent.hands && intent.hands[h] ? intent.hands[h].yank || 0 : 0;
-      if (yank > 0.15) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
-      else rope.reel(player, intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
+      if (yank > 0.15 && !haul) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
+      else rope.reel(player, haul ? Math.min(0, intent.reel || 0) : intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
       if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel * sm, dt);
       // The line's own pull (elastic catch + slip clutch); both hands act on the same state.
       rope.pull(player, dt);

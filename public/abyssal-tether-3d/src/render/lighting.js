@@ -437,6 +437,23 @@ export class Lighting {
     return n;
   }
 
+  /**
+   * LEVEL_FUN_PLAN P3: a section whose objective is a lamp verb (S4's cold lamps) has its baked lamp light at
+   * 0.2 + 0.8 x the objective's progress, weighted by how much of the frame's section blend it is (no new light, no draw
+   * call: the one lamp multiplier of the lightmaps). 1 elsewhere, in the menu and without objectives.
+   */
+  _coldLamps(game, blend) {
+    const O = game && game.objectives;
+    if (!O || !blend || !O.objectives || !O.objectives.length) return 1;
+    let k = 1;
+    for (const o of O.objectives) {
+      if (o.verb !== 'lamp') continue;
+      const w = (blend.ia === o.section ? 1 - blend.w : 0) + (blend.ib === o.section ? blend.w : 0);
+      if (w > 0) k -= w * 0.8 * (1 - O.progressOf(o.id));
+    }
+    return Math.max(0.2, k);
+  }
+
   /** The difficulty's darkness 0..1 (renderer3d eases it): the baked irradiance and its ambient floor are dimmed by it. */
   setDarkness(d) {
     const v = Math.max(0, Math.min(1, +d || 0));
@@ -511,7 +528,7 @@ export class Lighting {
 
     // lightmaps: the flame lamps' baked direct light breathes with the pooled lamps' flicker, tinted by the section's lamps
     if (this._lm) {
-      LOOK.uLMK.value.z = Math.min(1.06, lampFlick * 1.06);
+      LOOK.uLMK.value.z = Math.min(1.06, lampFlick * 1.06) * this._coldLamps(game, blend);
       const secs = this._lm.index.sections;
       const a = secs[blend.ia] || secs[0];
       const b = secs[blend.ib] || a;
