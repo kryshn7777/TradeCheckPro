@@ -1764,9 +1764,11 @@ class DressSpace {
       if (s.maxY - s.minY > DR.wallMinH && s.kind !== 'stone') continue;
       this.ko.push({ minX: s.minX - DR.koPad, minY: s.maxY, minZ: s.minZ - DR.koPad, maxX: s.maxX + DR.koPad, maxY: s.maxY + DR.koH, maxZ: s.maxZ + DR.koPad, src: s });
     }
-    this.anchors = (Array.isArray(level.anchors) ? level.anchors : []).filter((a) => a && isFinite(a.x));
+    this.anchors = (Array.isArray(level.anchors) ? level.anchors : []).filter((a) => a && isFinite(a.x) && !a.dynamic);
     this._ab = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, a: null };
     this.decor = [];
+    // the volume a mover sweeps (LEVEL_FUN_PLAN P4: its rings, chain, cage or gear) stays clear of the dressing
+    for (const m of Array.isArray(level.movers) ? level.movers : []) if (m && m.sweep) this.decor.push(Object.assign({}, m.sweep));
     const WALLISH = new Set(['plaque', 'sign', 'inscription', 'tablet', 'glyphs', 'lamp', 'lantern', 'statue', 'arch', 'ribs', 'ribcage', 'machinery', 'pipe', 'cage', 'girder', 'still-lamp', 'grate', 'bones', 'gear', 'gears']);
     for (const d of Array.isArray(level.decor) ? level.decor : []) {
       if (!d || !isFinite(d.x) || !WALLISH.has(String(d.type || '').toLowerCase())) continue;
@@ -4571,7 +4573,8 @@ export class LevelView {
     for (let i = 0; i < anchors.length; i++) {
       const a = anchors[i];
       const shape = ANCHOR_SHAPE[a.kind] != null ? ANCHOR_SHAPE[a.kind] : 0;
-      const chain = a.mount === 'chain';
+      // a ring on a mover (LEVEL_FUN_PLAN P4: the cage, the winch gear) hangs like a chain ring: upright, no wall plate
+      const chain = a.mount === 'chain' || a.dynamic === true;
       let nrm;
       let q;
       if (chain) {
@@ -4649,8 +4652,12 @@ export class LevelView {
     this._farItems = [];
     let haveStill = false;
     let haveGrate = false;
+    // decor a mover carries (LEVEL_FUN_PLAN P4: the S3 cage and its chain) moves with it: render/objectivesView.js draws it
+    const carried = new Set();
+    for (const m of Array.isArray(level.movers) ? level.movers : []) for (const id of (m.raw && m.raw.carry && m.raw.carry.decor) || []) carried.add(id);
     for (const d of decor) {
       if (!d || !isFinite(d.x) || !isFinite(d.y)) continue;
+      if (carried.size && d.id != null && carried.has(d.id)) continue;
       const type = String(d.type || '').toLowerCase();
       curType = type;
       // Level data: sx/sy/sz are the WORLD bounding box; yaw = facing (yaw 0 faces −Z).
@@ -5796,6 +5803,7 @@ export class LevelView {
     for (let i = 0; i < anchors.length; i++) {
       const a = anchors[i];
       const base = this._anchorBase[i];
+      if (a.hidden) continue; // a winch ring inside its gear's housing (LEVEL_FUN_PLAN P4)
       const dh = hyp(a.x - head.x, a.y - head.y, a.z - head.z);
       if (dh > GLYPH_MAX_DIST) continue;
       const stress = this._anchorStress(a, game && game.diff);
@@ -5822,7 +5830,8 @@ export class LevelView {
         const shape = a.broken ? SHAPE_STUB : base.shape;
         const slot = mm[shape];
         const j = slot.n++;
-        _v1.copy(base.pos);
+        if (a.dynamic) _v1.set(a.x, a.y, a.z); // a moving ring: where it is now
+        else _v1.copy(base.pos);
         if (!a.broken && (stress > 0.01 || (a.load || 0) > 0)) {
           const amp = 0.006 + stress * stress * 0.03;
           _v1.x += Math.sin(t * 63 + i) * amp;

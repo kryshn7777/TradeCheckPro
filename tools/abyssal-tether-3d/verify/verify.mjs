@@ -25,6 +25,7 @@ import { compareReports } from './compare.mjs';
 import { argValue, hasFlag, srcUrl } from './root.mjs';
 import { sealIntegrity, sealGaps, climbOut, skipProbe, verbProbe } from './seals.mjs';
 import { forkIntegrity } from './forks.mjs';
+import { machineIntegrity, laneProbe } from './machines.mjs';
 import { writePar, PAR_FILE } from './par.mjs';
 // WP-BAG: the seeded supply picker (absent in older checkouts given with --root: the supply checks are then skipped)
 const { pickSupplies, checkFairness } = await import(srcUrl('sim/pickups3d.js')).catch(() => ({}));
@@ -100,9 +101,11 @@ function integrity(ch, v) {
     if (under && under.kind === 'crumble') P(`checkpoint ${s.id} stands on a crumbling ledge`);
     out[`cp_${s.id}`] = { groundedAfterSteps: groundedAt, drift: +drift.toFixed(3), on: under ? under.id : null };
   }
-  // Anchors: not inside solids, mounted on something.
+  // Anchors: not inside solids, mounted on something. (A ring carried by a mover, LEVEL_FUN_PLAN P4, is checked over its
+  // whole motion by machineIntegrity instead.)
   const scratch = [];
   for (const a of L.anchors) {
+    if (a.dynamic) continue;
     const list = L.querySolids(a.x - 0.3, a.y - 0.3, a.z - 0.3, a.x + 0.3, a.y + 0.3, a.z + 0.3, scratch);
     for (const s of list) {
       const dx = Math.max(s.minX - a.x, 0, a.x - s.maxX);
@@ -167,6 +170,8 @@ function integrity(ch, v) {
   out.seals = sealIntegrity(L, v, P);
   // Forks (LEVEL_FUN_PLAN P2): a fast and a safe line in every section but the first, played by the bots as the data says.
   out.forks = forkIntegrity(L, R, P);
+  // Machines (LEVEL_FUN_PLAN P4): movers within 1.5 m/s and clear of the masonry, lanes only through open air.
+  out.machines = machineIntegrity(L, v, P);
   out.ok = out.problems.length === 0;
   return out;
 }
@@ -432,9 +437,9 @@ function edgeChecks(L, P) {
 }
 
 /** Lists of the chapter data whose objects are referenced by id (ENGINE_EXTENSIONS §5). */
-const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const ID_LISTS = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 /** Lists whose references must resolve (V1: no dangling ids). */
-const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
+const REF_LISTS = ['anchors', 'seals', 'fixtures', 'objectives', 'routes', 'lanes', 'lamps', 'movers', 'volumes', 'fronts', 'beats', 'interactables', 'names', 'knockWalls', 'horns', 'creaturePaths', 'kept', 'stillSources'];
 
 /**
  * V1: ids unique among the variant's live objects; every `…Id` / `ids` reference in
@@ -493,6 +498,9 @@ function runRoute(ch, v, start, route, opts = {}) {
     if (!cur || d > cur.d) log[si] = { d, id, line: opts.label || '?' };
   }
   r.inGoal = L.inGoal(sim.player.x, sim.player.y, sim.player.z);
+  // LEVEL_FUN_PLAN P4: a bot line is never struck by a rockfall lane (it waits for the gap)
+  r.laneHits = sim.laneHits ? sim.laneHits.length : 0;
+  if (r.laneHits) fail(`[${ch.id}/${v}] ${opts.label || 'route'}: struck by a rockfall lane ${r.laneHits} time(s) ${JSON.stringify(sim.laneHits.slice(0, 3))}`);
   return r;
 }
 
@@ -807,6 +815,17 @@ async function verifyChapter(ch) {
     report.verbs[v] = res;
     const row = Object.entries(res).map(([id, o]) => `${id} ${o.verb} ${[o.plain, o.creature, o.emptyLantern].filter(Boolean).map((c) => (c.ok ? c.at : 'FAIL')).join(' | ')}`);
     console.log(`  ${v}: ${row.join('  ·  ')}`);
+  }
+
+  console.log('== Machines (LEVEL_FUN_PLAN P4: movers and rockfall lanes; the lane probe plays its route without the wait from 6 start phases)');
+  report.machines = {};
+  for (const v of VARIANTS) {
+    const mi = report.integrity[v] && report.integrity[v].machines;
+    const lp = await laneProbe(ch.makeLevel, v, R, (m) => fail(`[${ch.id}/${v}] ${m}`));
+    report.machines[v] = { integrity: mi, lanes: lp };
+    if (!mi) continue;
+    const lanes = lp ? Object.entries(lp).map(([id, o]) => `${id} on ${o.route}: blind struck in ${o.blindHits}/${o.blindRuns} phases, with the wait ${o.waitHits} hits`) : [];
+    console.log(`  ${v}: ${mi.movers} movers carrying ${mi.carried} rings (fastest ${mi.maxSpeed} m/s), ${mi.lanes} lane(s)${lanes.length ? ' | ' + lanes.join(' | ') : ''}`);
   }
 
   console.log('== Counts');

@@ -11,6 +11,10 @@
  * material (+1 call only while a relit lamp is in view; no light: the baked lamp pools follow the objective's progress in
  * render/lighting.js).
  *
+ * P4 ("machines"): the movers' parts (the S3 cage and its chain swinging, the winch gear turning: moverParts) are more
+ * instances of the same mesh, posed every frame from the run clock while in view (no new draw call; the level view leaves the
+ * cage's static decor out of its chunks). A gear's half in the wall is hidden by the wall itself.
+ *
  * Closed: parallel bars over each plate's top face (along its long side, every BAR.gap m) on cross straps. Opening ('slide'):
  * the two halves of a plate part toward the walls over BAR.openTime; ('iris') each quarter slides away from the seal's centre
  * into the floor around it. Fully open seals are not drawn. Render-only motion: the sim already let go of the solids.
@@ -19,6 +23,7 @@
  * seals in view or their open state changes, and every frame while one is opening.
  */
 import * as THREE from 'three';
+import { moverAngle } from '../sim/movers3d.js';
 
 export const BAR = Object.freeze({
   gap: 0.5, // m between bar centres
@@ -188,6 +193,74 @@ export function fixtureParts(level) {
   return out;
 }
 
+/**
+ * LEVEL_FUN_PLAN P4: the boxes of the level's movers (sim/movers3d.js) in each mover's own frame, which the view turns by the
+ * mover's angle every frame: 'cage' = the chain from the pivot and the iron cage on it (the size of the decor it carries,
+ * `carry.decor`, which the level view then leaves out of its static chunks), 'gear' = a spoked wheel with teeth on its rim
+ * (half of it in the wall). Pure: [{ id, kind: 'cage' | 'gear', index (in level.movers), sweep, boxes: [[a, b, c, sa, sb, sc,
+ * rot, r, g, b]] }]: cage boxes in (along the swing, up, across) metres from the pivot, rot = a turn about the vertical;
+ * gear boxes in (u, v, axis) metres from the centre, rot = a turn about the axis.
+ */
+export function moverParts(level) {
+  const out = [];
+  const list = (level && level.movers) || [];
+  const I = FIX.iron;
+  const N = FIX.band;
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
+    const m = e && e.m;
+    if (!m || !e.raw) continue;
+    const kind = e.raw.parts === 'cage' || e.raw.parts === 'gear' ? e.raw.parts : null;
+    if (!kind) continue;
+    const boxes = [];
+    const box = (a, b, c, sa, sb, sc, rot, col) => boxes.push([a, b, c, sa, sb, sc, rot || 0, col[0], col[1], col[2]]);
+    if (kind === 'cage') {
+      // the carried decor (a chain over a cage), else a chain to the ring and a 2 x 3 m cage just above it
+      const byId = level.byId || {};
+      const ids = (e.raw.carry && e.raw.carry.decor) || [];
+      const cage = ids.map((id) => byId[id]).find((d) => d && d.type === 'cage');
+      const chain = ids.map((id) => byId[id]).find((d) => d && d.type === 'chain');
+      const ring = e.anchors[0];
+      const ringY = ring ? ring.y - m.y : -m.length;
+      const w = cage ? Math.max(0.6, cage.sx) : 2;
+      const h = cage ? Math.max(0.6, cage.sy) : 3;
+      const cageTop = cage ? cage.y + cage.sy / 2 - m.y : ringY + 0.25 + h;
+      const chainTop = chain ? chain.y + chain.sy / 2 - m.y : 0;
+      const pitch = chain && chain.link > 0.05 ? chain.link : 0.7;
+      const nl = Math.max(1, Math.round((chainTop - cageTop) / pitch));
+      for (let k = 0; k < nl; k++) box(0, chainTop - pitch * (k + 0.5), 0, pitch * 0.5, pitch * 1.05, 0.07, k % 2 ? Math.PI / 2 : 0, I);
+      const r = w * 0.45;
+      const ch = h * 0.62;
+      const cy = cageTop - h + ch / 2 + h * 0.19; // the bars' centre (the decor builder's proportions)
+      box(0, cy + ch / 2 + r * 0.2, 0, r * 1.5, r * 0.4, r * 1.5, Math.PI / 4, I); // the cap
+      box(0, cy + ch / 2, 0, r * 2, 0.08, r * 2, 0, N); // the top ring
+      box(0, cy - ch / 2, 0, r * 2, 0.12, r * 2, Math.PI / 4, I); // the floor
+      box(0, cy + ch * 0.1, 0, r * 1.96, 0.06, r * 1.96, 0, N); // the band
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        box(Math.cos(a) * r * 0.97, cy, Math.sin(a) * r * 0.97, 0.06, ch, 0.06, 0, I);
+      }
+      box(0, cy - ch / 2 - (cy - ch / 2 - ringY) / 2, 0, 0.08, Math.max(0.05, cy - ch / 2 - ringY), 0.08, 0, I); // the shackle to the ring
+    } else {
+      const R = m.radius;
+      box(0, 0, 0, 0.62, 0.62, 0.5, Math.PI / 4, I); // the hub
+      box(0, 0, -0.45, 0.3, 0.3, 0.9, 0, N); // the axle into the wall
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2;
+        box((Math.cos(a) * R) / 2, (Math.sin(a) * R) / 2, 0, R, 0.16, 0.14, a, I); // spokes
+      }
+      const seg = 14;
+      for (let k = 0; k < seg; k++) {
+        const a = ((k + 0.5) / seg) * Math.PI * 2;
+        box(Math.cos(a) * R, Math.sin(a) * R, 0, ((2 * Math.PI * R) / seg) * 1.08, 0.2, 0.24, a + Math.PI / 2, N); // the rim
+        box(Math.cos(a) * (R + 0.17), Math.sin(a) * (R + 0.17), 0, 0.2, 0.22, 0.24, a, I); // a tooth
+      }
+    }
+    out.push({ id: e.id, kind, index: i, sweep: e.sweep, boxes });
+  }
+  return out;
+}
+
 /** The counterweight's boxes for `k` notches raised (0..notches, fractional while it moves). */
 export function counterweightBoxes(fx, k) {
   const I = FIX.iron;
@@ -210,6 +283,7 @@ const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _zAx = new THREE.Vector3(0, 0, 1);
 const _c = new THREE.Color();
 const _b = new THREE.Box3();
 
@@ -226,20 +300,36 @@ export class SealView {
   constructor(level, material, unitBox, root, glowMaterial) {
     this.seals = sealBars(level);
     this.fixtures = fixtureParts(level);
+    this.movers = moverParts(level);
+    this.level = level;
     this.total = this.seals.reduce((n, s) => n + s.n, 0);
     // the bell and the counterweight join the bars' mesh: room for their boxes
     const fixBoxes = this.fixtures.reduce((n, f) => n + (f.kind === 'bell' ? f.boxes.length : f.kind === 'haul' ? 4 : 0), 0);
+    const moverBoxes = this.movers.reduce((n, mp) => n + mp.boxes.length, 0);
+    // each mover's frame (local axes → world: along / up / across for a cage, u / v / axis for a gear)
+    this._mvBasis = this.movers.map((mp) => {
+      const m = level.movers[mp.index].m;
+      const B = new THREE.Matrix4();
+      if (m.k === 0) B.makeBasis(new THREE.Vector3(m.d.x, 0, m.d.z), new THREE.Vector3(0, 1, 0), new THREE.Vector3(m.c.x, 0, m.c.z));
+      else {
+        const u = new THREE.Vector3(m.u.x, m.u.y, m.u.z);
+        const v = new THREE.Vector3(m.v.x, m.v.y, m.v.z);
+        B.makeBasis(u, v, new THREE.Vector3().crossVectors(u, v));
+      }
+      return new THREE.Quaternion().setFromRotationMatrix(B);
+    });
+    this._mvNear = 0;
     this.lamps = this.fixtures.filter((f) => f.kind === 'lamp');
     this.mesh = null;
     this.glow = null;
-    this.stats = { bars: this.total, fixtureBoxes: fixBoxes, drawn: 0, packs: 0, flames: 0 };
+    this.stats = { bars: this.total, fixtureBoxes: fixBoxes, moverBoxes, drawn: 0, packs: 0, flames: 0 };
     this._state = this.seals.map(() => ({ open: 0, t: 0, near: false, oi: -1 }));
     this._fxState = this.fixtures.map(() => ({ fi: -1, near: false, k: 0, lit: false, swing: 0 }));
     this._objectives = null;
     this._mask = -1; // bit i: seal i is drawn (in view and not fully open)
     this._fxMask = -1; // bit j: fixture j is drawn (in view)
     this._glowMask = -1;
-    const cap = this.total + fixBoxes;
+    const cap = this.total + fixBoxes + moverBoxes;
     if (!cap || !material || !unitBox) return;
     const geo = unitBox.clone();
     // the bucket material reads a per-instance lightmap row (iLm, 0 = none: the baked volume lights the bars)
@@ -298,7 +388,17 @@ export class SealView {
       this._fxMask = -1;
       this._glowMask = -1;
     }
-    const fxAnim = this._updateFixtures(dt, objectives, head, vd, t);
+    let fxAnim = this._updateFixtures(dt, objectives, head, vd, t);
+    // movers in view turn every frame (P4)
+    let mvNear = 0;
+    for (let j = 0; j < this.movers.length; j++) {
+      const w = this.movers[j].sweep;
+      _b.min.set(w.minX, w.minY, w.minZ);
+      _b.max.set(w.maxX, w.maxY, w.maxZ);
+      if (_b.distanceToPoint(head) <= vd) mvNear |= 1 << j;
+    }
+    this._mvNear = mvNear;
+    if (mvNear) fxAnim = 2;
     let anim = false;
     let mask = 0;
     for (let i = 0; i < this.seals.length; i++) {
@@ -338,6 +438,7 @@ export class SealView {
       }
     }
     n = this._packFixtures(mesh, n);
+    n = this._packMovers(mesh, n, objectives, t);
     mesh.count = n;
     mesh.visible = n > 0;
     if (n) {
@@ -346,6 +447,41 @@ export class SealView {
     }
     this.stats.drawn = n;
     this.stats.packs++;
+  }
+
+  /**
+   * Writes the movers' boxes (those in view) after the fixtures, posed at the run clock (objectives.clock; the view's `t`
+   * without a run); returns the new instance count.
+   */
+  _packMovers(mesh, n, O, t) {
+    if (!this._mvNear) return n;
+    const clock = O && typeof O.clock === 'number' ? O.clock : t;
+    const tuned = O && O.movers ? O.movers.list : null;
+    for (let j = 0; j < this.movers.length; j++) {
+      if (!(this._mvNear & (1 << j))) continue;
+      const mp = this.movers[j];
+      const e = this.level.movers[mp.index];
+      const m = (tuned && tuned[mp.index] && tuned[mp.index].m) || e.m;
+      const ang = moverAngle(m, clock);
+      const qb = this._mvBasis[j];
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      for (const b of mp.boxes) {
+        // local position turned by the mover's angle about its third axis, then into the world through its frame
+        _p.set(b[0] * ca - b[1] * sa, b[0] * sa + b[1] * ca, b[2]).applyQuaternion(qb);
+        _p.x += m.x;
+        _p.y += m.y;
+        _p.z += m.z;
+        if (m.k === 0) _q.setFromAxisAngle(_zAx, ang).multiply(_q2.setFromAxisAngle(_up, b[6]));
+        else _q.setFromAxisAngle(_zAx, ang + b[6]);
+        _q.premultiply(qb);
+        _s.set(b[3], b[4], b[5]);
+        mesh.setMatrixAt(n, _m.compose(_p, _q, _s));
+        _c.setRGB(b[7], b[8], b[9]);
+        mesh.setColorAt(n++, _c);
+      }
+    }
+    return n;
   }
 
   /** Notches the counterweight shows (done: all of them). */

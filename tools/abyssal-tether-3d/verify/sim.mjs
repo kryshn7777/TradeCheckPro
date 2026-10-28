@@ -307,6 +307,9 @@ export class Sim {
     // emit to a silent bus and snapshot() / restore() carry the state, so a ghost never opens a seal for real.
     // opts.objectives === false: a sim without them (every seal open, today's level).
     this.objectives = Objectives3D && opts.objectives !== false ? new Objectives3D(level, this.diff, this.bus) : null;
+    // P4: a rockfall lane hurts (and kills) through the run's physics, as in Game3D
+    if (this.objectives) this.objectives.physics = this.physics;
+    this.laneHits = []; // [t, lane id] of the real run (LEVEL_FUN_PLAN P4: a bot route is never struck)
     this._quietBus = new EventBus();
     this.objEvents = []; // [t, type, id] of the real run
     this.objHash = 0x811c9dc5; // FNV of the objective event sequence (V13)
@@ -377,6 +380,13 @@ export class Sim {
     // P3 verbs: every fixture done / haul notch (id = the fixture) and every bell strike, in the V13 hash too
     this.bus.on('objective:progress', (e) => objEvent(`progress:${e.verb}`)({ id: `${e.fixture || e.id}:${e.k}` }));
     this.bus.on('bell:ring', objEvent('bell'));
+    // P4: the rockfall lanes (deterministic functions of the run clock) and a stone striking the player
+    this.bus.on('lane:on', objEvent('lane'));
+    this.bus.on('lane:hit', (e) => {
+      if (this.ghost) return;
+      this.laneHits.push([+this.t.toFixed(2), e.id]);
+      objEvent('lane:hit')(e);
+    });
     if (opts.timers) {
       this.timers = opts.timers instanceof SystemTimers ? opts.timers : new SystemTimers();
       instrument(this, this.timers);
@@ -424,6 +434,7 @@ export class Sim {
     }
     this.objEvents = [];
     this.objHash = 0x811c9dc5;
+    this.laneHits = [];
     this.player.reset(x, y, z);
     this.tethers.reset();
     this.t = 0;

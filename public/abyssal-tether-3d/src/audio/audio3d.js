@@ -2247,6 +2247,8 @@ export class AudioManager3D {
       'seal:open': this._onSealOpen,
       'bell:ring': this._onBellRing,
       'objective:progress': this._onObjectiveProgress,
+      'lane:warn': this._onLaneWarn,
+      'lane:on': this._onLaneOn,
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
@@ -2604,10 +2606,26 @@ export class AudioManager3D {
     this._commit(v);
   }
 
-  /** LEVEL_FUN_PLAN P3: a haul notch (a heavy ratchet clank at the ring) or a lamp catching (a soft breath of flame). */
+  /**
+   * LEVEL_FUN_PLAN P3: a haul notch (a heavy ratchet clank at the ring) or a lamp catching (a soft breath of flame); P4: a winch
+   * notch (the same ratchet, at the turning ring).
+   */
   _onObjectiveProgress(p) {
-    if (p.verb === 'haul') this._sfxRatchet(p);
+    if (p.verb === 'haul' || p.verb === 'winch') this._sfxRatchet(p);
     else if (p.verb === 'lamp') this._sfxLampCatch(p);
+  }
+
+  /** LEVEL_FUN_PLAN P4, the rockfall lane's telegraph: the structure groans (the level rumble) and grit trickles at its top. */
+  _onLaneWarn(p) {
+    this._sfxRumble();
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (pos) this._sfxBreak(p, 0.3);
+  }
+
+  /** LEVEL_FUN_PLAN P4: the stones of a rockfall lane come down (the level's debris voice, placed at the lane). */
+  _onLaneOn(p) {
+    const pos = this._at(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN));
+    if (pos) this._sfxDebris(pos);
   }
 
   _sfxRatchet(p) {

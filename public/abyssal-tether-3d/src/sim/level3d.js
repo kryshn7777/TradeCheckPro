@@ -20,6 +20,7 @@
 import { U, DIFFICULTY } from './config3d.js';
 import { LEVEL_DATA_3D } from '../data/level-data-3d.js';
 import { buildEdges, edgeQuery } from './climbEdges.js';
+import { buildMovers, poseAll } from './movers3d.js';
 
 /** Vertical bucket size (m). */
 const BUCKET = 8;
@@ -224,12 +225,20 @@ export class Level3D {
       z: num(o.z, 0),
       kind: o.kind === 'hook' || o.kind === 'fragile' ? o.kind : 'ring',
       normal: normalOf(o.normal),
-      mount: o.mount === 'chain' ? 'chain' : 'solid', // 'chain' = hangs from a giant chain (decor)
+      mount: o.mount === 'chain' || o.mount === 'mover' ? o.mount : 'solid', // 'chain' = hangs from a giant chain (decor); 'mover' = carried by a mover (LEVEL_FUN_PLAN item 7)
       section: this.sectionIndexAt(num(o.y, 0)),
       tag: o.tag || 'route',
       broken: false,
       load: 0,
       life: num(o.life, 1),
+      // LEVEL_FUN_PLAN item 7 (sim/movers3d.js): a ring carried by a mover is `dynamic`, moves with velocity (vx, vy, vz) and may
+      // be `hidden` (in its gear's housing); every other anchor keeps 0 / false (one object shape for the 240 Hz paths).
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      dynamic: false,
+      hidden: false,
+      mover: -1,
     }));
     // Abyss: the backup lines cannot be trusted. Half of the shortcut / recovery rings (not the escape ones: S8 is a flight, and the bot route through it needs them) (a seeded, id-derived choice, the same on
     // every device) are fragile (fragileTime 0.8 s): the lines you fall back on can fail. The route anchors are never touched.
@@ -323,6 +332,15 @@ export class Level3D {
       maxZ,
     };
 
+    // ---- movers (LEVEL_FUN_PLAN item 7, sim/movers3d.js) ----------------------------
+    // The anchors they carry are `dynamic`: posed at t = 0 here (Objectives3D poses them with the run clock), kept out of the
+    // Y index (they move) and appended by anchorsNear() after a box test.
+    const anchorById = Object.create(null);
+    for (const a of this.anchors) anchorById[a.id] = a;
+    this.movers = buildMovers(d.movers, v, anchorById);
+    poseAll(this.movers, 0, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, hidden: false });
+    this.dynAnchors = this.anchors.filter((a) => a.dynamic);
+
     // ---- spatial indices --------------------------------------------------------
     this._solidIndex = new YIndex(this.solids, (s) => s.minY, (s) => s.maxY);
     // Kit dressing that collides (sim/decorColliders.js): a list of its own, never part of `solids` (the view draws those as slabs, the
@@ -330,7 +348,11 @@ export class Level3D {
     this.decorSolids = [];
     this._decorIndex = null;
     this._hazardIndex = new YIndex(this.hazards, (s) => s.minY, (s) => s.maxY);
-    this._anchorIndex = new YIndex(this.anchors, (a) => a.y, (a) => a.y);
+    this._anchorIndex = new YIndex(
+      this.anchors.filter((a) => !a.dynamic),
+      (a) => a.y,
+      (a) => a.y,
+    );
     this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
     this._losScratch = [];
     this._rayScratch = [];
@@ -483,7 +505,10 @@ export class Level3D {
     return out;
   }
 
-  /** Anchors inside the bounding box of the sphere (x, y, z, r) — a superset; callers do the exact distance. */
+  /**
+   * Anchors inside the bounding box of the sphere (x, y, z, r) — a superset; callers do the exact distance. The moving ones
+   * (dynAnchors, LEVEL_FUN_PLAN item 7) are appended after the same box test at their current pose.
+   */
   anchorsNear(x, y, z, r, out) {
     let n = 0; // indexed writes: see _queryBoxes
     const index = this._anchorIndex;
@@ -497,6 +522,12 @@ export class Level3D {
         if (a.x < x - r || a.x > x + r || a.y < y - r || a.y > y + r || a.z < z - r || a.z > z + r) continue;
         out[n++] = a;
       }
+    }
+    const dyn = this.dynAnchors;
+    for (let i = 0; i < dyn.length; i++) {
+      const a = dyn[i];
+      if (a.x < x - r || a.x > x + r || a.y < y - r || a.y > y + r || a.z < z - r || a.z > z + r) continue;
+      out[n++] = a;
     }
     out.length = n;
     return out;

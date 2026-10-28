@@ -372,18 +372,26 @@ under('s3-lower', s3Arm, -29, -8, 'ring', 'route');
 S('s3-shelf', -34, -26, -99, -96, -11, 1);
 const g5 = S('s3-g5', -21, -19.5, -91, -90, -11, 11, 'metal');
 under('s3-b1', g5, -20.25, -6, 'ring', 'route');
-// FAST LINE (LEVEL_FUN_PLAN item 8): off the first span instead of along the other two. Step off its south side, catch the
-// frayed ring as you fall past (it opens the seal, then snaps), then the sound hook below, and lower yourself onto the Vault
-// hall's landing. No shelf, no supplies, nothing under you but the grating.
-chainRing('s3-f1', -6, -80, 6, 30, 'fragile', 'risk');
+// MACHINES (LEVEL_FUN_PLAN P4, items 7-9; MOVERS and LANES below): two moving rings carried by closed-form movers (sim/
+// movers3d.js; the view moves the cage and its chain and draws the gear: render/objectivesView.js) and a rockfall lane.
+//  FAST LINE (item 8): off the first span's south side: the old iron cage south of it now swings (the chain and cage decor
+//  below, `cage-s3`), and the rusted ring under it (fragile: it kills the fall, then snaps) catches you as you fall past; then
+//  the sound hook below, the winch from that hook, and lower yourself onto the Vault hall's landing. No more spans, no shelf.
+A('s3-cage', -8, -78.75, 7, 'fragile', 'risk', { mount: 'mover' });
 chainRing('s3-f2', -4, -88.5, 5, 40, 'hook', 'risk');
+//  THE WINCH (S3's objective `winch-s3`, item 2's S3 verb): a gear half sunk in the north wall turns once every 12 s; a ring
+//  rides its rim, out of the wall for less than half a turn. Hook it while it is out and let the gear wind: three notches and
+//  the grating below opens. It sits where the two lines meet (in reach of the shelf and of the fast line's hook, item 8), and
+//  a missed timing only means waiting for the next turn (it is in sight from most of the grating too).
+A('s3-winch', -12, -90, -9.4, 'ring', 'objective', { mount: 'mover' });
 
 dec('ribs', -33.7, -86, 6, 0.6, 22, 10, -PI / 2);
 dec('bones', 10, -62, 9, 3, 2, 3, 0.4);
 dec('plaque', 10.85, -64.5, -6, 0.15, 0.9, 3.6, PI / 2, { text: 'NINTH GALLERY — CLOSED. THE STONE HAS BEEN LISTENING.' });
 dec('plaque', -33.85, -94.4, -1.5, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE GALLERY FELL TWICE. THE MASONS BUILT IT A THIRD TIME.', lore: true }); // the shelf (safe line)
-dec('cage', -8, -77, 7, 2, 3, 2, 0);
-dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7 });
+// the cage and its chain swing with the cage ring (MOVERS: `mov-s3-cage` carries them; same box as ever, so the bakes keep it)
+dec('cage', -8, -77, 7, 2, 3, 2, 0, { id: 'cage-s3' });
+dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7, id: 'cage-s3-chain' });
 dec('glyphs', -33.9, -88, -6, 0.1, 2, 10, -PI / 2);
 dec('pipe', 10.6, -80, -10.4, 0.8, 40, 0.8, 0);
 dec('arch', -12, -75, 10.6, 20, 14, 1.2, 0);
@@ -756,7 +764,8 @@ light(8, -432, -15, '#6fa3b5', 0.9, 20, 0);
 //  it is a floor you stand on and a wall your hook cannot see through; its objective opens it (the solids go inactive and
 //  the bars slide away, render/objectivesView.js). P1 objective = the hook verb on a ring that is already on the route:
 //  hooking it opens the seal below. P3 ("first verbs"): S1 opens on the bell, S2 on the counterweight haul, S4 on the
-//  catwalk's three lamps (both lines of a fork reach them); the others keep their route ring. S8 stays unsealed (the flight).
+//  catwalk's three lamps (both lines of a fork reach them); the others keep their route ring. P4 ("machines"): S3 opens on
+//  the winch (a ring riding a turning gear, MOVERS below). S8 stays unsealed (the flight).
 //  Seal solids are ordinary solid boxes (kind 'grate', field `seal` = the seal id), declared after every chainRing above so
 //  no chain stops at one. Level3D keeps them OUT of `level.solids` (level.sealSolids): the view's slab buckets, the scene
 //  dressing, the climb edges, the lightmap / GI bakes and their hashes never see them; collision, line of sight and
@@ -802,12 +811,14 @@ const seals = [
  *   haul  S2: hook `anchorId` and haul (grip / reel in) for `time` s in `notches` ratchet steps; no reel toward the ring
  *   lamp  S4: the lantern within `r` of the wick for `time` s; costs `charge` of the lantern (never blocks: twice as long
  *         and it empties the lantern when less is left)
+ * P4 verb:
+ *   winch S3: a rope biting `anchorId` (the ring on the turning gear, MOVERS) for `time` s, in `notches` ratchet steps (the
+ *         gear hauls: no input; a line pulled off as the ring turns into the wall keeps its notches)
  */
 const fixtures = [
   { id: 'bell-s1', kind: 'bell', x: -1.5, y: -4.2, z: -1, r: 0.75, minSpeed: 2.5, by: { nightmare: { minSpeed: 3 }, abyss: { minSpeed: 3.5 } } },
   { id: 'cw-s2', kind: 'haul', anchorId: 's2-cw', time: 1.5, notches: 4, by: { nightmare: { time: 1.8 }, abyss: { time: 2.2 } } },
-  { id: 'fx-s3', kind: 'hook', anchorId: 's3-a2', hold: 0 },
-  { id: 'fx-s3-fast', kind: 'hook', anchorId: 's3-f1', hold: 0 },
+  { id: 'winch-s3', kind: 'winch', anchorId: 's3-winch', time: 0.9, notches: 3, by: { nightmare: { time: 1.2 }, abyss: { time: 1.5 } } },
   { id: 'lamp-s4a', kind: 'lamp', x: -16, y: -104.5, z: -23.4, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // catwalk end
   { id: 'lamp-s4b', kind: 'lamp', x: -12.15, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // east rail
   { id: 'lamp-s4c', kind: 'lamp', x: -19.85, y: -103.6, z: -15, r: 0.9, time: 1.5, charge: 0.06, by: { nightmare: { charge: 0.08 }, abyss: { charge: 0.1 } } }, // west rail
@@ -823,11 +834,37 @@ const fixtures = [
 const objectives = [
   { id: 'obj-s1', section: 's1', verb: 'bell', sealId: 'seal-s1', ids: ['bell-s1'], need: 1 },
   { id: 'obj-s2', section: 's2', verb: 'haul', sealId: 'seal-s2', ids: ['cw-s2'], need: 1 },
-  { id: 'obj-s3', section: 's3', verb: 'hook', sealId: 'seal-s3', ids: ['fx-s3', 'fx-s3-fast'], need: 1 },
+  { id: 'obj-s3', section: 's3', verb: 'winch', sealId: 'seal-s3', ids: ['winch-s3'], need: 1 },
   { id: 'obj-s4', section: 's4', verb: 'lamp', sealId: 'seal-s4', ids: ['lamp-s4a', 'lamp-s4b', 'lamp-s4c'], need: 3 },
   { id: 'obj-s5', section: 's5', verb: 'hook', sealId: 'seal-s5', ids: ['fx-s5', 'fx-s5-fast'], need: 1 },
   { id: 'obj-s6', section: 's6', verb: 'hook', sealId: 'seal-s6', ids: ['fx-s6-safe', 'fx-s6-risk'], need: 1 },
   { id: 'obj-s7', section: 's7', verb: 'hook', sealId: 'seal-s7', ids: ['fx-s7-spiral', 'fx-s7-spire', 'fx-s7-fast'], need: 1 },
+];
+
+// =============================================================================
+// MOVERS AND LANES (LEVEL_FUN_PLAN P4 "machines", items 7 and 9)
+//  movers: closed-form moving anchors (sim/movers3d.js): pose = f(run clock), so the bots' look-ahead and a replay agree.
+//   pendulum: pivot (x, y, z), horizontal swing `dir`, amp (rad), period (s), phase (of a period); the carried ring keeps its
+//   rest offset (authored where it hangs at rest). orbit: centre, `u` / `v` (the rim at 0° / 90°: the gear's axis is u × v),
+//   radius, period, phase, spin; `housing` h: the ring is in the wall (not hookable, a line on it is pulled off) while
+//   cos(angle) < h. Knobs per difficulty (`by`): period × 1 / 0.9 / 0.8; no carried ring ever faster than 1.5 m/s (verify V1).
+//   `parts` = what the view draws for it (render/objectivesView.js: 'cage' = the chain and the cage, 'gear' = the gear wheel),
+//   instances of the seals' one bar mesh: no new draw call, no light, nothing baked.
+//  lanes: rockfall lanes (sim/objectives3d.js): a box the stones fall through for `on` s every `period` s, cued `lead` s before
+//   (dust and a rumble: lane:warn); a body inside it while they fall takes `damage` of its health once per drop (cause
+//   'rockfall'). Their own list, not level hazards: the climb edges, the dressing and the supply rules do not move for them.
+// =============================================================================
+const movers = [
+  // S3: the old cage south of the first span on its 15 m chain (pivot at the chain's top), swinging along the gallery; the
+  // fast line's ring under it moves 1.07 / 1.19 / 1.33 m/s at most
+  { id: 'mov-s3-cage', kind: 'pendulum', section: 's3', x: -8, y: -60.5, z: 7, dir: { x: 1, z: 0 }, length: 18.25, amp: 0.08, period: 8.6, phase: 0.25, parts: 'cage', carry: { anchors: ['s3-cage'], decor: ['cage-s3', 'cage-s3-chain'] }, by: { nightmare: { period: 7.74 }, abyss: { period: 6.88 } } },
+  // S3: the winch gear half in the north wall; the ring comes out at the top and goes back in at the bottom (0.84 / 0.93 /
+  // 1.05 m/s), out of the wall for 44 % of a turn
+  { id: 'mov-s3-gear', kind: 'orbit', section: 's3', x: -12, y: -90, z: -11, u: { x: 0, y: 0, z: 1 }, v: { x: 0, y: 1, z: 0 }, radius: 1.6, period: 12, phase: 0, spin: -1, housing: 0.2, parts: 'gear', carry: { anchors: ['s3-winch'] }, by: { nightmare: { period: 10.8 }, abyss: { period: 9.6 } } },
+];
+const lanes = [
+  // S3: stones from the broken vault fall through the span2 → span3 gap, right where the a3 swing bottoms out
+  { id: 'rock-s3', section: 's3', minX: -27.5, maxX: -25, minY: -80, maxY: -63, minZ: -1.5, maxZ: 1.5, period: 7, on: 1.6, lead: 1.5, phase: 0.5, damage: 0.3, by: { nightmare: { period: 6.25, damage: 0.4 }, abyss: { period: 5.5, damage: 0.5 } } },
 ];
 
 // =============================================================================
@@ -842,8 +879,8 @@ const objectives = [
 const routes = [
   { id: 'r-s2-fast', fork: 'fork-s2', section: 's2', line: 'fast', ids: ['s2-hook', 's2-cw', 's2-f1', 's2-b1', 's2-x'], stops: ['s2-far', 's2-pier-w'] },
   { id: 'r-s2-safe', fork: 'fork-s2', section: 's2', line: 'safe', ids: ['s2-hook', 's2-cw', 's2-lower', 's2-b1', 's2-x'], stops: ['s2-floor-a', 's2-low', 's2-pier-w'] },
-  { id: 'r-s3-fast', fork: 'fork-s3', section: 's3', line: 'fast', ids: ['s3-a1', 's3-f1', 's3-f2'], stops: [] },
-  { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
+  { id: 'r-s3-fast', fork: 'fork-s3', section: 's3', line: 'fast', ids: ['s3-a1', 's3-cage', 's3-f2', 's3-winch'], stops: [] },
+  { id: 'r-s3-safe', fork: 'fork-s3', section: 's3', line: 'safe', ids: ['s3-a1', 's3-a2', 's3-a3', 's3-lower', 's3-winch', 's3-b1'], stops: ['s3-span2', 's3-span3', 's3-shelf'] },
   { id: 'r-s4-fast', fork: 'fork-s4', section: 's4', line: 'fast', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk'] },
   { id: 'r-s4-safe', fork: 'fork-s4', section: 's4', line: 'safe', ids: ['s4-a1', 's4-a2', 's4-a3', 's4-a4', 's4-a5'], stops: ['s4-catwalk', 's4-shelf', 's4-plinth'] },
   { id: 'r-s5-fast', fork: 'fork-s5', section: 's5', line: 'fast', ids: ['s5-f1', 's5-f2', 's5-f3'], stops: [] },
@@ -1118,6 +1155,9 @@ const sections = [
         text: 'Missed a landing? Don\'t wait — fire at a lower ring.',
         desktop: 'Missed a landing? Don\'t wait — fire at a lower ring.',
       },
+      // LEVEL_FUN_PLAN P4: the rockfall lane (dust and a rumble come first) and the S3 verb (the winch on the west wall)
+      { y: -73, duration: 6, text: 'Dust falls before the stones. Wait for the gap.', desktop: 'Dust falls before the stones. Wait for the gap.' },
+      { y: -76.5, duration: 7, text: 'Hook the ring on the turning gear and hold on.', desktop: 'Hook the ring on the turning gear and hold on.' },
     ],
     triggers: [
       { y: -68, name: 'debris', data: { x: -14, y: -59, z: 0, intensity: 0.35 } },
@@ -1263,4 +1303,6 @@ export const LEVEL_DATA_3D = {
   fixtures,
   objectives,
   routes, // the fast / safe line of every fork (see FORKS above)
+  movers, // moving anchors and rockfall lanes (see MOVERS AND LANES above)
+  lanes,
 };

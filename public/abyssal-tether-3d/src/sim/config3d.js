@@ -192,6 +192,7 @@ export const DIFFICULTY = {
     aimRange: 32,
     aimConeDeg: 12,
     rayAssist: 2.4, // metres from the aim ray that still count as "aimed at"
+    moverAssist: 0.6, // + metres of ray assist on a moving ring (LEVEL_FUN_PLAN item 7, sim/movers3d.js)
     lethalImpact: 17,
     impactsLethal: true,
     fragileTime: 1.5,
@@ -211,6 +212,7 @@ export const DIFFICULTY = {
     aimRange: 29,
     aimConeDeg: 8,
     rayAssist: 1.8,
+    moverAssist: 0.4,
     lethalImpact: 15.5,
     impactsLethal: true,
     fragileTime: 1.05,
@@ -230,6 +232,7 @@ export const DIFFICULTY = {
     aimRange: 27,
     aimConeDeg: 6,
     rayAssist: 1.3,
+    moverAssist: 0.2,
     lethalImpact: 14.5,
     impactsLethal: true,
     fragileTime: 0.8,
@@ -249,6 +252,7 @@ export const DIFFICULTY = {
     aimRange: 32,
     aimConeDeg: 12,
     rayAssist: 2.4,
+    moverAssist: 0.6,
     lethalImpact: 17,
     impactsLethal: false,
     fragileTime: 1.5,

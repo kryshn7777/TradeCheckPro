@@ -25,6 +25,15 @@
 //                                                   let go (walk: keep walking there while hauling, the rope slack)
 //   { light: 'fixtureId' }                          walk up to a lamp, hold the lantern probe PROBE_OUT m toward its wick
 //                                                   until it is lit
+// Machines (LEVEL_FUN_PLAN P4: movers and lanes are functions of Objectives3D's run clock, which the look-ahead rewinds):
+//   { a: id, exposed: s }                           fire at a moving ring only when it stays out of its gear's housing for
+//                                                   at least s more seconds (Objectives3D.exposedFor)
+//   { a: id, hold: true }                           hanging: hook `id` with the free hand and keep the other line (two
+//                                                   ropes; a `winch` step then lets go of the new one)
+//   { winch: 'fixtureId', keep?: bool }             hold the line on the winch ring until the gear has wound it (done), then
+//                                                   let go of it (keep: hang on: the next step chains from it)
+//   { wait: { lane: 'laneId', clear: s }, toward?: [x, z] }  stand (or hang) until the next drop of a rockfall lane is at
+//                                                   least s away (right after one has fallen)
 import { makeIntent, FRAME, HANDS, CONFIG } from './sim.mjs';
 
 const G = CONFIG.player.gravity;
@@ -503,28 +512,7 @@ export class Bot {
         this.fail = `timeout at step ${this.i} ${JSON.stringify(step)} pos ${this.p.x.toFixed(1)},${this.p.y.toFixed(1)},${this.p.z.toFixed(1)} v ${this.p.vx.toFixed(1)},${this.p.vy.toFixed(1)},${this.p.vz.toFixed(1)} grounded ${this.p.grounded} att ${this.attachedHands()}`;
         break;
       }
-      let done = false;
-      if (step.a) done = this.stepAnchor(it, step);
-      else if (step.p) done = this.stepPlatform(it, step);
-      else if (step.w) done = this.stepWalk(it, step);
-      else if (step.wait !== undefined) {
-        const A = this.currentAnchor();
-        if (A && step.toward) this.pump(it, A, step.toward[0], step.toward[1]);
-        else if (step.toward) this.run(it, step.toward[0], step.toward[1]);
-        let due = this.stepT + FRAME >= step.wait;
-        if (step.untilNear) {
-          const an = this.level.byId[step.untilNear[0]];
-          due = due || Math.hypot(an.x - this.p.x, an.y - this.p.y, an.z - this.p.z) < step.untilNear[1];
-        }
-        if (step.release && due) this.releaseAll(it);
-        done = due;
-      } else if (step.release) {
-        this.releaseAll(it);
-        done = true;
-      } else if (step.goal) done = this.stepGoal(it, step);
-      else if (step.ring) done = this.stepRing(it, step);
-      else if (step.haul) done = this.stepHaul(it, step);
-      else if (step.light) done = this.stepLight(it, step);
+      const done = this.dispatch(it, step);
       sim.frame(it);
       this.stepT += FRAME;
       if (done) {
@@ -553,6 +541,54 @@ export class Bot {
     };
   }
 
+  /** One frame of route step `step` (writes the intent); true when the step is done. (The e2e runner's StepBot shares it.) */
+  dispatch(it, step) {
+    if (step.a) return this.stepAnchor(it, step);
+    if (step.p) return this.stepPlatform(it, step);
+    if (step.w) return this.stepWalk(it, step);
+    if (step.wait !== undefined) return this.stepWait(it, step);
+    if (step.release) {
+      this.releaseAll(it);
+      return true;
+    }
+    if (step.goal) return this.stepGoal(it, step);
+    if (step.ring) return this.stepRing(it, step);
+    if (step.haul) return this.stepHaul(it, step);
+    if (step.light) return this.stepLight(it, step);
+    if (step.winch) return this.stepWinch(it, step);
+    return false;
+  }
+
+  /** { wait: s } (a timed wait, optionally swinging `toward` and letting go) or { wait: { lane, clear } } (a rockfall gap). */
+  stepWait(it, step) {
+    const A = this.currentAnchor();
+    const w = step.wait;
+    if (w && typeof w === 'object') {
+      const O = this.sim.objectives;
+      const li = O && typeof O.laneIndex === 'function' && w.lane ? O.laneIndex(w.lane) : -1;
+      if (A && !this.p.grounded) this.hover(it, this.p.x, this.p.z);
+      else if (step.toward && this.p.grounded) this.run(it, step.toward[0], step.toward[1]);
+      else it.brake = true;
+      return li < 0 || O.laneClearFor(li) >= (w.clear || 0);
+    }
+    if (A && step.toward) this.pump(it, A, step.toward[0], step.toward[1]);
+    else if (step.toward) this.run(it, step.toward[0], step.toward[1]);
+    let due = this.stepT + FRAME >= w;
+    if (step.untilNear) {
+      const an = this.level.byId[step.untilNear[0]];
+      due = due || Math.hypot(an.x - this.p.x, an.y - this.p.y, an.z - this.p.z) < step.untilNear[1];
+    }
+    if (step.release && due) this.releaseAll(it);
+    return due;
+  }
+
+  /** P4: a moving ring that would slide into its housing within `step.exposed` s is not fired at yet. */
+  exposedOk(N, step) {
+    if (!step.exposed) return true;
+    const O = this.sim.objectives;
+    return !O || typeof O.exposedFor !== 'function' || O.exposedFor(N) >= step.exposed;
+  }
+
   stepAnchor(it, step) {
     const p = this.p;
     const N = this.anchor(step.a);
@@ -577,7 +613,7 @@ export class Bot {
         if (!p.grounded) this.airSteer(it, step.walk ? step.walk[0] : N.x, step.walk ? step.walk[1] : N.z, N.y - 30);
         return false;
       }
-      if (belowOk && this.targetable(N, hand) && (!step.jump || !p.grounded) && catchOk) {
+      if (belowOk && this.exposedOk(N, step) && this.targetable(N, hand) && (!step.jump || !p.grounded) && catchOk) {
         this.press(it, hand, N);
         return false;
       }
@@ -592,6 +628,12 @@ export class Bot {
     }
     // Attached to something else: pump toward N; chain at a good moment.
     const A = this.currentAnchor();
+    if (step.hold && !p.grounded) {
+      // a second line (P4: the winch from the fast line's hook): hang still, fire with the free hand, keep the old line
+      this.hover(it, p.x, p.z);
+      if (!flying && att.length < 2 && this.exposedOk(N, step) && this.targetable(N, hand)) this.press(it, hand, N);
+      return false;
+    }
     if (step.mode === 'below') {
       // Fall-arrest chain: hang until the fall is killed, then let go and drop past N.
       const st = this.sim.tethers.hands[att[0]];
@@ -618,7 +660,7 @@ export class Bot {
         good = (prev !== null && prev > 0.3 && along <= 0.3) || d < (step.near || 6) || (p.speed < 1.2 && this.stepT > 1.5) || this.stepT > 9;
       }
       this.prevAlong = along;
-      if (good && !flying && this.targetable(N, hand) && this.testChain(N, hand)) {
+      if (good && !flying && this.exposedOk(N, step) && this.targetable(N, hand) && this.testChain(N, hand)) {
         const others = HANDS.filter((h) => h !== hand && this.holding[h]);
         this.press(it, hand, N);
         this.chainRelease = { hand, others };
@@ -868,6 +910,29 @@ export class Bot {
       it.move.z = 0;
       it.brake = true;
     }
+    return false;
+  }
+
+  /**
+   * Winch (P4): hold the line on the winch ring until the gear has wound it (the fixture is done), braking on the ground or
+   * hanging still; then let go of it (keep: hang on, the next step chains from it).
+   */
+  stepWinch(it, step) {
+    const O = this.sim.objectives;
+    const i = this.fixtureIndex(step.winch);
+    if (i < 0) return true;
+    const f = O.fixtures[i];
+    const T = this.sim.tethers;
+    let hand = null;
+    for (const h of HANDS) if (T.hands[h].rope.anchor === f.anchor) hand = h;
+    if (O.fixtureDone(i)) {
+      if (hand && !step.keep) this.releaseHand(it, hand);
+      return true;
+    }
+    if (!hand) return false; // not on the ring (pulled off by the housing before it was done: the step times out)
+    const p = this.p;
+    if (p.grounded) it.brake = true;
+    else this.hover(it, p.x, p.z);
     return false;
   }
 

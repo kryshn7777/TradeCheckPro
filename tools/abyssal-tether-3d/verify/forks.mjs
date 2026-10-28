@@ -6,7 +6,8 @@
 //                           uses are tagged risk / shortcut (never recovery); the section's objective can be done from each
 //                           line (LEVEL_FUN_PLAN P3: its rings on the line's anchors, its lamps within the lantern's reach
 //                           of the line's ledges, `need` of them) and each bot line does it (a `haul` / `light` step for
-//                           every verb that is not a plain hook); the bot lines hook exactly the data's anchors (in order)
+//                           every verb that is not a plain hook; P4: a `winch` step for the winch); the bot lines hook exactly
+//                           the data's anchors (in order)
 //                           and stand on its stops; no supply
 //                           spot lies within FAST_CLEAR m of a risk / shortcut ring; every 'slow' supply spot stands on a
 //                           stop of a safe line of its section.
@@ -22,10 +23,13 @@ export function lampFromLedge(s, fx) {
   return Math.hypot(fx.x - x, fx.y - (s.maxY + 0.38), fx.z - z) <= (fx.r || 0.9) + LAMP_STAND;
 }
 
-/** The objective steps of a bot route: the fixture ids of its `light` / `ring` steps, the objective ids of its `haul` steps. */
+/**
+ * The objective steps of a bot route: the fixture ids of its `light` / `ring` / `winch` (P4) steps, the objective ids of its
+ * `haul` steps.
+ */
 export function routeVerbs(route) {
-  const out = { light: [], ring: [], haul: [] };
-  for (const st of route || []) for (const k of ['light', 'ring', 'haul']) if (typeof st[k] === 'string') out[k].push(st[k]);
+  const out = { light: [], ring: [], haul: [], winch: [] };
+  for (const st of route || []) for (const k of ['light', 'ring', 'haul', 'winch']) if (typeof st[k] === 'string') out[k].push(st[k]);
   return out;
 }
 
@@ -130,7 +134,14 @@ export function forkIntegrity(L, R, P) {
       if (obj && obj.verb && obj.verb !== 'hook') {
         const vb = routeVerbs(route);
         const lit = new Set(vb.light.filter((id) => (obj.ids || []).includes(id)));
-        const ok = obj.verb === 'haul' ? vb.haul.includes(obj.id) : obj.verb === 'lamp' ? lit.size >= (obj.need || 1) : vb.ring.some((id) => (obj.ids || []).includes(id));
+        const ok =
+          obj.verb === 'haul'
+            ? vb.haul.includes(obj.id)
+            : obj.verb === 'lamp'
+              ? lit.size >= (obj.need || 1)
+              : obj.verb === 'winch'
+                ? vb.winch.some((id) => (obj.ids || []).includes(id))
+                : vb.ring.some((id) => (obj.ids || []).includes(id));
         if (!ok) P(`fork ${F.key} ${line}: the bot line ${F[line]} does not ${obj.verb} for ${obj.id}`);
       }
     }

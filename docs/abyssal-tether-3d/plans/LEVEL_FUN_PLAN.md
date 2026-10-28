@@ -25,7 +25,21 @@
 > the catwalk (its end lamp + two rail lamps), because P2's fast line never stands on the shelf or plinth (item 8: the
 > objective sits where the lines converge); the bell is not a level solid (Objectives3D bounces the body: no bake); on a
 > screen the probe is the view ray ≤ 2.5 m with no key (E already fires the right tether); reeling in hauls as well as the
-> grip; the S2 fast bot hauls while it walks to the lip (keeps the fork ≥ 15 %); no new plaques (hints only). P4-P6 open.
+> grip; the S2 fast bot hauls while it walks to the lip (keeps the fork ≥ 15 %); no new plaques (hints only).
+> **P4 done** (2026-10-28): movers-lite (`src/sim/movers3d.js`: closed-form `pendulum` / `orbit` of `Objectives3D.clock`, in
+> its snapshot; carried rings `dynamic`, out of the Y index, `vx/vy/vz`; the rope pulls by the relative velocity; a hook homes
+> on the ring's pose at arrival; a ring in its gear's `housing` is not targetable, a hook arriving there falls off, a line on
+> it is pulled off; `moverAssist` 0.6 / 0.4 / 0.2), the S3 winch (`winch-s3`, verb `winch`: a line on the gear's ring winds 3
+> notches over 0.9 / 1.2 / 1.5 s, ratchet through release / housing / save; replaces the hook), the rockfall lane `rock-s3`
+> (period 7 / 6.25 / 5.5 s, on 1.6, lead 1.5, damage 0.3 / 0.4 / 0.5 once per drop; `lane:warn/on/off/hit`; fx rain + level
+> rumble + captions), bot steps `wait: { lane }` / `exposed` / `hold` / `winch`, `verify/machines.mjs` (V1 movers ≤ 1.5 m/s and
+> clear of solids, lanes in open air; V6 lane probe; any bot line struck fails), `tests/objectives/machines.mjs`; par and
+> baseline rewritten. Differs from the plan: the swinging cage is the existing cage decor south of span 1 (its ring replaces
+> `s3-f1` on the P2 fast line), not a cage over the span2 → span3 gap; the gear sits on the north wall where the two lines
+> meet (in reach of the shelf and of `s3-f2`), not the west wall; amplitudes keep every ring ≤ 1.5 m/s (the plan's ±0.3 rad
+> at 7.5 s would be 3.5 m/s); lanes are their own list (`lanes`), not `level.hazards` (no climb edge, dressing or supply rule
+> moves); new rule: a seal whose objective is done while the player stands on it over a drop deeper than 3 m opens once they
+> are off it; the S2 collapsing span is not built (it changes the lightmap hash: with the P6 re-bake). P5-P6 open.
 > Approved scope (12 items). Date 2026-10-28.
 > Paths: `src/` = `public/abyssal-tether-3d/src/`, `tools/` = `tools/abyssal-tether-3d/`. Every code claim below names the
 > file and function or data field it was read from. Where an approved contract already exists in

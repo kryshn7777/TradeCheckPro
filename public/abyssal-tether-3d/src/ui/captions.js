@@ -56,6 +56,8 @@ export const RULES = Object.freeze({
   bell: R('[A bell tolls]', 'world', 1, 'bell', 2),
   ratchet: R('[A ratchet clacks]', 'world', 0, 'ratchet', 0.8),
   lampCatch: R('[A lamp catches]', 'world', 0, 'lamp', 1),
+  // LEVEL_FUN_PLAN P4: the rockfall lane's telegraph (the stones themselves are the existing `debris` caption)
+  laneWarn: R('[Rocks rattle above]', 'world', 1, 'rockfall', 3),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
@@ -163,7 +165,11 @@ export function captionForEvent(type, p) {
     case 'bell:ring':
       return RULES.bell;
     case 'objective:progress':
-      return e.verb === 'haul' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : null;
+      return e.verb === 'haul' || e.verb === 'winch' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : null;
+    case 'lane:warn':
+      return RULES.laneWarn;
+    case 'lane:on':
+      return RULES.debris;
     default:
       return null;
   }
@@ -176,7 +182,7 @@ export function statusForEvent(type, p) {
     case 'health:low':
       return STATUS_RULES.lowHealth;
     case 'health:damage':
-      return e.cause === 'hazard' ? STATUS_RULES.hazard : null;
+      return e.cause === 'hazard' || e.cause === 'rockfall' ? STATUS_RULES.hazard : null;
     case 'climb:strain':
       return finite(e.level) && e.level >= 1 ? STATUS_RULES.gripWeak : null;
     case 'climb:slip':
@@ -214,6 +220,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'seal:land',
   'bell:ring',
   'objective:progress',
+  'lane:warn',
+  'lane:on',
   'health:damage',
   'pickup:collect',
 ]);

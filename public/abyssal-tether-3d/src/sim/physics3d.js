@@ -220,10 +220,16 @@ export class Rope3D {
   pull(p, dt) {
     const R = C.rope;
     this.catchSpeed = 0;
+    // A moving anchor (LEVEL_FUN_PLAN item 7, sim/movers3d.js; E15): the stretch rate is the body's speed RELATIVE to the
+    // anchor along the line (a static anchor has vx = vy = vz = 0: the same numbers as before, bit for bit).
+    const an = this.anchor;
+    const rvx = p.vx - (an.vx || 0); // (|| 0: anchors made by hand in tools / tests carry no velocity)
+    const rvy = p.vy - (an.vy || 0);
+    const rvz = p.vz - (an.vz || 0);
     let grip = 1;
     if (this.rampT < R.attachRamp) {
       // The faster the body is running out on the line, the faster the brake takes hold (a fall arrest must not wait).
-      const vOut = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+      const vOut = rvx * this.nx + rvy * this.ny + rvz * this.nz;
       this.rampT += dt * (1 + (vOut > 0 ? vOut : 0) / R.attachRampSpeed);
       const u = this.rampT >= R.attachRamp ? 1 : this.rampT / R.attachRamp;
       grip = u * u * (3 - 2 * u);
@@ -239,7 +245,7 @@ export class Rope3D {
     const tmax = R.maxTensionG * gAcc;
     const sCap = R.strainAtMax * this.length;
     const k = tmax / sCap;
-    const vr = p.vx * this.nx + p.vy * this.ny + p.vz * this.nz;
+    const vr = rvx * this.nx + rvy * this.ny + rvz * this.nz;
     const sdot = vr - this.dl / dt;
     const as = sdot < 0 ? -sdot : sdot;
     // Damping rises with the stretch rate and with the stretch itself (q^3: ~0 in a swing, 1 at the
@@ -436,9 +442,11 @@ export class TetherSystem {
     }
     let best = null;
     let bestScore = Infinity;
+    // A moving ring (LEVEL_FUN_PLAN item 7, E15) is a little easier to catch with the aim ray: + diff.moverAssist m.
+    const moverR = assistR + (this.diff.moverAssist || 0) * this.assist();
     for (let i = 0; i < list.length; i++) {
       const an = list[i];
-      if (an.broken || an === other) continue;
+      if (an.broken || an.hidden || an === other) continue; // hidden: a winch ring inside its gear's housing
       const pd = len3(an.x - player.x, an.y - player.y, an.z - player.z);
       if (pd > range || pd < 0.3) continue;
       const ox = an.x - aim.ox;
@@ -451,8 +459,9 @@ export class TetherSystem {
       const pz = oz - dz * t;
       const perp = len3(px, py, pz);
       const ang = Math.atan2(perp, t);
-      if (ang > cone && perp > assistR) continue;
-      let score = (ang / cone) * 0.6 + (Math.min(perp, assistR * 3) / assistR) * 0.8 + (pd / range) * 0.2;
+      const aR = an.dynamic ? moverR : assistR;
+      if (ang > cone && perp > aR) continue;
+      let score = (ang / cone) * 0.6 + (Math.min(perp, aR * 3) / aR) * 0.8 + (pd / range) * 0.2;
       if (an === current) score -= C.targeting.stickiness;
       if (score >= bestScore) continue;
       if (this.level.segmentBlocked(player.x, player.y, player.z, an.x, an.y, an.z, C.targeting.losEndClearance)) continue;
@@ -573,13 +582,17 @@ export class TetherSystem {
     this.bus.emit('rope:cancel', { hand, reason: reason || 'input' });
   }
 
-  /** The hook reached its target: bite if it is still sound and in reach, else it falls off. */
+  /**
+   * The hook reached its target: bite if it is still sound and in reach, else it falls off. A moving anchor (LEVEL_FUN_PLAN
+   * item 7) is met where it is NOW (the hook homes on it: the flight time was fixed at launch, the drift is at most
+   * maxSpeed x flightMax = 0.7 m); one that slid into its housing meanwhile is missed.
+   */
   _arrive(player, hand) {
     const st = this.hands[hand];
     const an = st.flightObj.target;
     this._endFlight(st);
     const d = len3(player.x - an.x, player.y - an.y, player.z - an.z);
-    if (an.broken || d > this.maxRopeLength()) {
+    if (an.broken || an.hidden || d > this.maxRopeLength()) {
       // Crumbled while the hook was in the air, or the body moved out of reach: the hook falls off.
       const l = d || 1;
       st.miss = { x: player.x, y: player.y, z: player.z, dx: (an.x - player.x) / l, dy: (an.y - player.y) / l, dz: (an.z - player.z) / l, len: d, t: C.rope.missTime * 0.45 };
@@ -647,6 +660,11 @@ export class TetherSystem {
       if (!rope.attached) continue;
       st.attachTime += dt;
       const an = rope.anchor;
+      if (an.hidden) {
+        // a winch ring turning into its gear's housing (LEVEL_FUN_PLAN item 7): the hook is pulled off it
+        this.release(player, h, 'housing');
+        continue;
+      }
       if (an.kind === 'fragile') {
         an.load = (an.load || 0) + dt;
         if (an.load >= this.diff.fragileTime * (an.life || 1)) {

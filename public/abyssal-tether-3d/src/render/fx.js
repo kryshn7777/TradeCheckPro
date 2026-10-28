@@ -509,6 +509,22 @@ export class FX {
       else this._rain(THREE.MathUtils.clamp(num(d.count, 16), 1, 50));
       this.trickles.agitate(0.6 + inten * 0.6);
     });
+    // LEVEL_FUN_PLAN P4, a rockfall lane (sim/objectives3d.js): first the telegraph, grit and a few pebbles trickling from the
+    // lane's top for its lead time (the dust cue), then the stones themselves, the trigger:debris column for the drop's
+    // duration. The pooled rubble and rain slots only: nothing new is drawn.
+    on('lane:warn', (e) => {
+      const x = num(e && e.x, NaN);
+      if (!isFinite(x)) return;
+      const y = num(e.y, 0);
+      const z = num(e.z, 0);
+      this._startRain(x, y, z, 4, Math.max(0.3, num(e.lead, 1.5)));
+      this._pebbles(x, y, z, 3, 0.02, 0.06);
+      this.trickles.agitate(0.45);
+    });
+    on('lane:on', (e) => {
+      const x = num(e && e.x, NaN);
+      if (isFinite(x)) this._startRain(x, num(e.y, 0), num(e.z, 0), 30, Math.max(0.3, num(e.dur, 1.6)));
+    });
     on('trigger:rumble', (e) => {
       this._rain(THREE.MathUtils.clamp(num(e.data && e.data.count, 9), 1, 40));
       this.trickles.agitate(0.4 + num(e.data && e.data.intensity, 0.5));

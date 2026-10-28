@@ -95,12 +95,18 @@ class GameSim {
     if (this._ghost) {
       const T = this.tethers;
       const ph = this._phys();
+      const O = this.objectives;
       T.updateTargets(p, intent);
       T.handleInput(p, intent, FRAME);
       const jump = intent.jumpPressed;
       for (let i = 0; i < SUB; i++) {
         intent.jumpPressed = jump && i === 0;
         ph.step(p, T, intent, FRAME / SUB);
+        // LEVEL_FUN_PLAN P4: the movers (and lanes) follow the objectives' run clock; the look-ahead advances it silently
+        if (O && typeof O.reapply === 'function' && typeof O.clock === 'number') {
+          O.clock += FRAME / SUB;
+          if (O.movers) O.movers.pose(O.clock);
+        }
         if (!p.alive) break;
       }
       intent.jumpPressed = false;
@@ -150,6 +156,8 @@ class GameSim {
     }
     for (const o of this.level.solids) if (o.kind === 'crumble') s.dyn.push(o.active, o.load, o.fallen);
     for (const o of this.level.anchors) if (o.kind === 'fragile') s.dyn.push(o.broken, o.load);
+    const O = this.objectives;
+    s.clock = O && typeof O.clock === 'number' ? O.clock : null; // P4: the movers' clock
     return s;
   }
   restore(s) {
@@ -180,6 +188,11 @@ class GameSim {
       if (o.kind !== 'fragile') continue;
       o.broken = s.dyn[j++];
       o.load = s.dyn[j++];
+    }
+    const O = this.objectives;
+    if (O && s.clock !== null && s.clock !== undefined) {
+      O.clock = s.clock;
+      if (O.movers) O.movers.pose(O.clock);
     }
   }
   attachedHands() {
@@ -224,17 +237,7 @@ class StepBot extends Bot {
       this.fail = `timeout at step ${this.i} ${JSON.stringify(step)} pos ${p.x.toFixed(1)},${p.y.toFixed(1)},${p.z.toFixed(1)} grounded ${p.grounded} att ${this.attachedHands()}`;
       return 'fail';
     }
-    let done = false;
-    if (step.a) done = this.stepAnchor(it, step);
-    else if (step.p) done = this.stepPlatform(it, step);
-    else if (step.w) done = this.stepWalk(it, step);
-    else if (step.release) {
-      this.releaseAll(it);
-      done = true;
-    } else if (step.goal) done = this.stepGoal(it, step);
-    else if (step.ring) done = this.stepRing(it, step);
-    else if (step.haul) done = this.stepHaul(it, step);
-    else if (step.light) done = this.stepLight(it, step);
+    const done = this.dispatch(it, step); // the level bot's step grammar (P4 adds wait / winch / exposed / hold)
     sim.frame(it);
     this.stepT += FRAME;
     if (done) {

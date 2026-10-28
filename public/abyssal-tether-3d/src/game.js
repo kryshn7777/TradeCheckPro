@@ -483,8 +483,14 @@ export class FallbackRenderer3D {
     const an = level.anchors;
     dirty = false;
     for (let i = 0; i < an.length && i < this._anchorState.length; i++) {
-      const on = an[i].broken ? 0 : 1;
-      if (on !== this._anchorState[i]) {
+      const on = an[i].broken || an[i].hidden ? 0 : 1;
+      if (on && an[i].dynamic) {
+        // a moving ring (LEVEL_FUN_PLAN P4): where it is now, every frame
+        this._m.makeTranslation(an[i].x, an[i].y, an[i].z);
+        this._anchors.setMatrixAt(i, this._m);
+        this._anchorState[i] = on;
+        dirty = true;
+      } else if (on !== this._anchorState[i]) {
         this._anchorState[i] = on;
         this._m.makeTranslation(an[i].x, on ? an[i].y : -1e5, an[i].z);
         this._anchors.setMatrixAt(i, this._m);
@@ -1692,7 +1698,7 @@ export class Game3D {
     });
     bus.on('objective:progress', (e) => {
       if (!this._inRun() || !e) return;
-      if (e.verb === 'haul') this._hapticTethered(0.55, 70); // a ratchet notch through the line
+      if (e.verb === 'haul' || e.verb === 'winch') this._hapticTethered(0.55, 70); // a ratchet notch through the line (P4: the gear's too)
       else if (e.verb === 'lamp') {
         this._haptic('left', 0.35, 90); // the lantern hand
         if (e.k < e.of) this._toast(`Lamp ${e.k} of ${e.of}`, 1.6);
@@ -2235,6 +2241,7 @@ export class Game3D {
     try {
       this.objectives = new Objectives3D(lvl, diff, this._runBus);
       this.objectives.lantern = this.bag; // a lamp relight burns lantern charge (LEVEL_FUN_PLAN P3)
+      this.objectives.physics = this.physics; // a rockfall lane hurts through the run's health (LEVEL_FUN_PLAN P4)
       if (attract) this.objectives.openAll();
     } catch (err) {
       this._fault('objectives', err);

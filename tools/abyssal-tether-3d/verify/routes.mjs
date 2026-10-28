@@ -8,7 +8,11 @@
 // hooking the ring the level data names for it (s3 s3-a2, s5 s5-h4, s6 s6-sa3 / s6-ra3, s7 s7-n6 / s7-sp1), which every
 // route below already does: no extra steps. The fast lines of P2 hook their own ring (s3-f1, s5-f1, s7-f3) where they leave
 // the main line before its ring. P3 verbs (steps in bot.mjs): S1 swings into the bell (`ring`), every S2 line hooks the
-// counterweight and hauls it (`haul`), every S4 line relights the catwalk's three lamps (`light`).
+// counterweight and hauls it (`haul`), every S4 line relights the catwalk's three lamps (`light`). P4 machines: S3 opens on
+// the winch (a ring riding a turning gear: `{ a: 's3-winch', exposed }` fires only while it stays out of the wall long enough,
+// `winch` holds the line until the gear has wound it), the safe line waits for the rockfall lane's gap (`wait: { lane }`)
+// before the s3-a3 swing, and the fast line catches the swinging cage's ring as it falls past (`hold`: the winch is hooked
+// with the free hand while the other hangs on).
 // Forks (LEVEL_FUN_PLAN P2, item 8): ROUTES[key] is the MAIN line of each section (it passes on every variant); the fast and
 // safe lines of every fork are routes too (`<key>fast` / `<key>safe` where they differ from the main line, see FORKS) and
 // play exactly the level data's `routes` lines (ids = the anchors hooked, stops = the ledges stood on).
@@ -65,20 +69,26 @@ export const ROUTES = {
     { p: ['s3-span1', 's3-span1-ab'], at: [-7, 0] },
     { a: 's3-a2' },
     { p: 's3-span2', at: [-20, 0] },
+    { wait: { lane: 'rock-s3', clear: 3.4 } }, // P4: the stones fall through the gap ahead: go right after a drop
     { a: 's3-a3' },
     { p: 's3-span3', at: [-32.5, 0] },
     { a: 's3-lower' },
     { p: 's3-shelf', mode: 'lower', at: [-29, -8] },
+    { a: 's3-winch', exposed: 2.0, walk: [-27, -8] }, // P4: the winch ring on the north wall, from the shelf, while it stays out
+    { winch: 'winch-s3' },
     { a: 's3-b1' },
     { p: 's4-landing', at: [-2, 5] },
   ],
-  // S3 fast line: off the first span's south side: catch the frayed ring as you fall past (it opens the seal, then snaps), then
-  // the sound hook below, and lower onto the Vault hall's landing. No more spans, no shelf.
+  // S3 fast line: off the first span's south side: catch the swinging cage's frayed ring as you fall past (it kills the fall,
+  // then snaps), then the sound hook below; from it, hook the winch ring with the free hand while it is out (P4), and once the
+  // grating has opened lower onto the Vault hall's landing. No more spans, no shelf.
   s3fast: [
     { a: 's3-a1' },
     { p: ['s3-span1', 's3-span1-ab'], at: [-7, 0] },
-    { a: 's3-f1', mode: 'below', walk: [-6, 6], below: 0.6 },
+    { a: 's3-cage', mode: 'below', walk: [-8, 7], below: 0.6 },
     { a: 's3-f2', mode: 'below', below: 0.6 },
+    { a: 's3-winch', exposed: 2.0, hold: true },
+    { winch: 'winch-s3' },
     { p: 's4-landing', mode: 'lower', at: [-4, 5] },
   ],
   s4: [
@@ -277,9 +287,10 @@ export const SCENARIOS = {
   s3designTest: {
     variants: ALL_VARIANTS,
     start: () => ({ x: -18.5, y: -73.62, z: 0 }),
-    doneThrough: 3, // it starts on span 2, past the S3 seal's ring (s3-a2): the S3 seal is open
+    doneThrough: 3, // it starts on span 2 with the S3 seal open (the winch done: the test is the catch, not the verb)
 
     route: [
+      { wait: { lane: 'rock-s3', clear: 3.4 } }, // P4: not into the rockfall
       { a: 's3-a3' },
       { wait: 0.75, toward: [-32.5, 0], release: true },
       { a: ['s3-save', 's3-save-nm'], mode: 'below', below: 0.8 },
