@@ -77,9 +77,13 @@ const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
 // the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
 const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
-// The Mason always draws its full LOD0 mesh (owner's call, every tier): the LOD0 -> LOD1 switch distance is infinite. The small hunters keep
-// their own short LOD (SKITTER_VIEW in masonRigView.js). Set a finite value per tier here to bring the switch back.
-const CREATURE_LOD = { low: Infinity, quest: Infinity, high: Infinity };
+// The Mason's LOD0 -> LOD1 switch (nearest spine point -> camera, m; MasonRigView keeps LOD0 until it is 5 m closer again). Owner's
+// rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
+// LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
+// 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
+// distance. A tighter Quest value (e.g. 12) saves another ~80 k stereo triangles while it is 12-25 m away. The small hunters keep their
+// own short LOD (SKITTER_VIEW in masonRigView.js).
+const CREATURE_LOD = { low: 16, quest: 25, high: Infinity };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -3342,7 +3346,7 @@ export class Game3D {
     const cv = this.creatureView;
     if (cv) {
       try {
-        // LOD0 (60 k triangles, x2 eyes) only close up on Quest / low: LOD1 (25 k) beyond (BUDGET_CH1); high keeps the long range
+        // LOD0 (63 k triangles, x2 eyes) only within CREATURE_LOD on Quest / low: LOD1 (~23 k) beyond; high keeps LOD0 at every range
         if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {

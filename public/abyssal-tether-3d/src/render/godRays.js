@@ -29,10 +29,11 @@ const SIDES = 10;
 const HULL = 1.07; // circumradius of the 10-gon over the density radius (cos 18° = 0.951)
 
 const TIERS = {
-  // segs along the chord, noise octaves
-  off: { segs: 0, oct: 0 },
-  quest: { segs: 3, oct: 1 },
-  high: { segs: 5, oct: 2 },
+  // segs along the chord, noise octaves, samples of the lantern cone (perf pass: the cone fills most of the view with the lantern in
+  // hand, each sample is a 3D-noise fetch + the fog curve per pixel; 4 midpoint samples of its smooth density read the same as 6)
+  off: { segs: 0, oct: 0, cone: 0 },
+  quest: { segs: 3, oct: 1, cone: 4 },
+  high: { segs: 5, oct: 2, cone: 6 },
 };
 
 const VERT = /* glsl */ `
@@ -96,6 +97,7 @@ uniform vec3 uWind;
 uniform float uTime;
 uniform float uSegs;
 uniform float uOct;
+uniform float uCone;
 uniform float uGain;
 uniform float uG;
 uniform float uHaze;
@@ -217,7 +219,7 @@ void main() {
   float seed = fC.w;
   vec3 wind = uWind * uTime;
   if ( kind > 1.5 ) {
-    // the lantern's cone: a true cone (compact density in r / R(s)), integrated numerically with 6 jittered samples; the streaks are
+    // the lantern's cone: a true cone (compact density in r / R(s)), integrated numerically with uCone midpoint samples (4 quest / 6 high); the streaks are
     // angular noise (a function of the direction from the lantern only), so they fan out from it like light through the cage
     // chord inside the cone itself: a·t² + 2b·t + cc <= ( r(m) + k·vd·t )² with r(m) the radius at the eye's axial position
     float kk = ( fB.w - fA.w ) / L;
@@ -235,9 +237,10 @@ void main() {
       td = min( tb, ( - B2 + sd ) / A2 );
       if ( td <= tc ) discard;
     }
-    float dtc = ( td - tc ) / 6.0;
+    float dtc = ( td - tc ) / uCone;
     float jit = 0.5; // no jitter: the density is smooth, a jitter would print its pattern (diagonal hatching) into the streaks
     for ( int i = 0; i < 6; i++ ) {
+      if ( float( i ) >= uCone ) break;
       float t = tc + dtc * ( float( i ) + jit );
       vec3 lp = C + v * t - A;
       float ls = dot( lp, D );
@@ -397,6 +400,7 @@ export class GodRays {
       uTime: { value: 0 },
       uSegs: { value: 3 },
       uOct: { value: 1 },
+      uCone: { value: 4 },
       uGain: { value: this.params.gain },
       uG: { value: this.params.g },
       uHaze: { value: 1 },
@@ -531,7 +535,11 @@ export class GodRays {
     const on = this.enabled && T.segs > 0 && !!level;
     this.stats.on = on;
     this.stats.tier = this.tierName;
-    if (this.materials && this.materials.lightShaft) this.materials.lightShaft.visible = !on;
+    // the old additive shaft shells are hidden while the rays draw the same beams. `materials` is the MaterialLibrary (its materials sit
+    // behind get(name)): reading .lightShaft on it found nothing, so the shells always drew on top of the rays (perf pass fix: 2 calls
+    // per eye and their double-sided additive overdraw)
+    const shells = shaftShells(this.materials);
+    if (shells) shells.visible = !on;
     this.mesh.visible = on;
     if (!on) {
       this.geometry.instanceCount = 0;
@@ -543,6 +551,7 @@ export class GodRays {
     U.uTime.value = time;
     U.uSegs.value = T.segs;
     U.uOct.value = T.oct;
+    U.uCone.value = Math.max(1, T.cone);
     U.uG.value = P.g;
     U.uFog.value.copy(fog);
     const f = this.scene.fog;
@@ -683,7 +692,14 @@ export class GodRays {
     this.scene.remove(this.mesh);
     this.geometry.dispose();
     this.mesh.material.dispose();
-    if (this.materials && this.materials.lightShaft) this.materials.lightShaft.visible = true;
+    const shells = shaftShells(this.materials);
+    if (shells) shells.visible = true;
   }
+}
+
+/** The light-shaft shell material of a MaterialLibrary (get('lightShaft')) or of a plain { lightShaft } map. */
+function shaftShells(lib) {
+  if (!lib) return null;
+  return (typeof lib.get === 'function' ? lib.get('lightShaft') : null) || lib.lightShaft || null;
 }
 

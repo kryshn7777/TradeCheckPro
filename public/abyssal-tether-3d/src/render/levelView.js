@@ -3923,6 +3923,9 @@ export function cullBuried(geo, level) {
 // crossed a distance): the draw calls, the materials and the culling of the chunk stay exactly what they were.
 const LOD_NEAR = 10; // m (x detailScale): the rich level within this distance of the head (measured to the part's surface)
 const LOD_MID = 24; // m (x detailScale): the medium level up to here, the far level beyond
+// Quest / low (detail scale < 1) pull both limits in (perf pass, after the statues got 2-4x the triangles): rich within ~6.4 m of the head
+// (statues within arm's / rope's reach keep every facet), medium to ~16 m, the far level beyond (the haze is thick there). Desktop unchanged.
+const LOD_QUEST_K = { near: 0.75, mid: 0.8 };
 const LOD_HYST = 0.12; // a level is only left once the distance is this share past its limit
 const LOD_EVERY = 3; // frames between two evaluations
 const LOD_ON = !(typeof location !== 'undefined' && /[?&]lod=0\b/.test(location.search || '')); // ?lod=0: the medium level everywhere
@@ -5656,8 +5659,9 @@ export class LevelView {
     const dm = MID_DIST * this._detailScale;
     const dn = NEAR_DIST * this._detailScale;
     const nd = NEIGHBOUR_DIST * this._detailScale;
-    const lodNear = LOD_NEAR * this._detailScale;
-    const lodMid = LOD_MID * this._detailScale;
+    const lodQ = this._detailScale < 1;
+    const lodNear = LOD_NEAR * this._detailScale * (lodQ ? LOD_QUEST_K.near : 1);
+    const lodMid = LOD_MID * this._detailScale * (lodQ ? LOD_QUEST_K.mid : 1);
     const hb = this._band(head.y);
     for (let i = 0; i < this._chunks.length; i++) {
       const ch = this._chunks[i];

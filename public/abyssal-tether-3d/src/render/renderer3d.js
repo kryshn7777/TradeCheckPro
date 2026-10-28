@@ -132,8 +132,10 @@ const SURFACE_TIERS = {
 const PROBE_BOX_GROW = 1.0;
 const PROBE_BOX_EASE = 3; // 1/s: the box eases between sections (the theme blend band is ~18 m wide)
 // WebXR framebuffer scale per tier (1 = the runtime's recommended size). Must be set before the session starts; the platform
-// governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps.
-const XR_RENDER_SCALE = { low: 1.0, quest: 1.15, high: 1.2 };
+// governor (platform/governor.js) then lowers the viewport from this allocation through its own scale steps. Quest 1.15 -> 1.0
+// (perf pass: 1.15 shaded 1.32x the pixels of every lit, parallax / detail-normal fragment and of every blended layer; never measured
+// at 72 Hz on a headset). Settings > Display > Render scale (x0.7..1.3) still raises it per player, e.g. 115 % for the old picture.
+const XR_RENDER_SCALE = { low: 1.0, quest: 1.0, high: 1.2 };
 // Foveation by governor level when the platform governor is absent (it sets 0.5 / 1 itself).
 const XR_FOVEATION = [0.5, 0.66, 0.66, 1, 1];
 // Highest foveation level any caller may set per tier. Quest Browser maps 0..1 onto low / medium / high; the high level is a
@@ -299,7 +301,7 @@ export class Renderer3D {
     this._lampFlick = 1;
     this.governor = new RenderGovernor(this);
     this.lighting = new Lighting(this);
-    this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1.15;
+    this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1;
     this._applyXRRenderScale();
     // the next session starts with the tier's scale again (a degraded tier during this one never reaches the swapchain)
     if (r.xr.addEventListener) r.xr.addEventListener('sessionend', () => this._applyXRRenderScale());
@@ -814,7 +816,7 @@ export class Renderer3D {
   }
 
   /**
-   * WebXR framebuffer scale (1 = the runtime's recommended resolution): 1.15 on the quest tier, 1.2 high, 1.0 low. three.js only
+   * WebXR framebuffer scale (1 = the runtime's recommended resolution): 1.0 on the quest tier, 1.2 high, 1.0 low. three.js only
    * reads it when a session starts, so a change made while presenting waits for the next session; the platform governor
    * lowers the *viewport* inside this allocation (levels 2-4 = 0.9 / 0.8 / 0.7 of it) when frames are missed.
    */

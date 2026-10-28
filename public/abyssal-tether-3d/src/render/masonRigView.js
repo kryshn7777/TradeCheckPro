@@ -39,7 +39,11 @@ const DEFAULTS = {
   size: 1,
   clipRate: 1, // mixer speed (the skitterling twitches 1.5x faster)
   twitch: 0, // procedural quiver amplitude (fraction of the link length)
-  farDistance: 0, // beyond this the pose is refreshed every 2nd frame (CPU LOD)
+  farDistance: 40, // beyond this the pose is refreshed every 2nd frame (CPU LOD; the haze has hidden all but the glow well before 40 m)
+  // Beyond the fog's far distance + this margin (m, nearest spine point) only the emissive mesh is drawn: the stone and the crown have
+  // no emissive, so there they shade to the pure fog colour and cannot be seen; the glow (uGlowPierce) still shows through the haze.
+  // Never during a sighting (the fog cap shows the silhouette on purpose). 0 = off (the skitterlings: their veins glow on every mesh).
+  fogHide: 8,
   bodyScale: 0.93, // vertebra scale = link / rest pitch x this (a hair under, so the mortar-flesh joints show)
 };
 const SEG = 20;
@@ -102,6 +106,7 @@ export class MasonRigView {
     this.S = new Float32Array(SEG);
     this._sphere = new THREE.Sphere(new THREE.Vector3(), 30);
     this._lod = 0;
+    this._glowOnly = false; // past the haze: only the emissive mesh draws (opts.fogHide)
     this._prevHead = new Float32Array(3);
     this._havePrev = false;
     this._speed = 0;
@@ -294,10 +299,20 @@ export class MasonRigView {
   _setLod(lod, force) {
     if (!force && lod === this._lod) return;
     this._lod = lod;
-    for (const m of this.meshes[0]) m.visible = lod === 0 || this.meshes[1] === this.meshes[0];
-    if (this.meshes[1] !== this.meshes[0]) for (const m of this.meshes[1]) m.visible = lod === 1;
+    const g = this._glowOnly;
+    let calls = 0;
+    for (const m of this.meshes[0]) {
+      m.visible = (lod === 0 || this.meshes[1] === this.meshes[0]) && (!g || m.material === this.emissive);
+      if (m.visible) calls++;
+    }
+    if (this.meshes[1] !== this.meshes[0]) {
+      for (const m of this.meshes[1]) {
+        m.visible = lod === 1 && (!g || m.material === this.emissive);
+        if (m.visible) calls++;
+      }
+    }
     this.info.lod = lod;
-    this.info.drawCalls = this.meshes[lod].length;
+    this.info.drawCalls = calls;
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -342,7 +357,13 @@ export class MasonRigView {
     this._camD = camD;
     this.root.visible = true;
     const lodWant = camD > (this._lod === 1 ? o.lodDistance - o.lodHysteresis : o.lodDistance) ? 1 : 0;
-    this._setLod(lodWant);
+    // past the haze only the glow can be seen (opts.fogHide): the fogged-out stone meshes are not drawn (or skinned)
+    const fog = this.scene && this.scene.fog;
+    const glowOnly = !!(o.fogHide > 0 && this.emissive && camera && fog && fog.isFog && !C.sighting && camD > fog.far + o.fogHide);
+    if (glowOnly !== this._glowOnly) {
+      this._glowOnly = glowOnly;
+      this._setLod(lodWant, true);
+    } else this._setLod(lodWant);
     const lodFar = this._lod === 1;
     if (o.farDistance && camD > o.farDistance) {
       // far skitterlings: the whole pose is refreshed every 2nd frame (the stale pose is drawn in between)
@@ -1185,7 +1206,10 @@ export const SKITTER_VIEW = {
   lodDistance: 6, // LOD1 (20k tris) beyond 6 m; LOD0 only when it is on top of you
   lodHysteresis: 1,
   farDistance: 34, // beyond this the pose refreshes every 2nd frame
-  hideDistance: 110,
+  fogHide: 0, // the red veins glow on every mesh and pierce the fog: no glow-only mode
+  // 110 -> 75 m (perf pass): past the haze only the hair-thin veins show (sub-pixel beyond ~70 m), yet LOD1 is 20 k tris x 2 eyes,
+  // skinned, plus its mixer and leg IK every 2nd frame
+  hideDistance: 75,
   glowPierce: 0.6,
   bodyScale: 0.98,
 };

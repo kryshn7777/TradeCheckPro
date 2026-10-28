@@ -149,7 +149,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- display helpers ------------------------------------------------------------------------------------------------------
 {
-  ok(near(X.xrScaleFor('auto', 1, 'quest'), 1.15) && near(X.xrScaleFor('high', 1, 'quest'), 1.2) && near(X.xrScaleFor('low', 0.8, 'quest'), 0.8), 'tier x render scale -> XR framebuffer scale');
+  ok(near(X.xrScaleFor('auto', 1, 'quest'), 1.0) && near(X.xrScaleFor('high', 1, 'quest'), 1.2) && near(X.xrScaleFor('low', 0.8, 'quest'), 0.8), 'tier x render scale -> XR framebuffer scale');
   ok(X.xrScaleFor('auto', 5, 'high') <= 1.5, 'XR scale is capped');
   ok(X.blackLift(0) === 0 && near(X.blackLift(1), 6 / 255), 'black level lifts up to 6/255');
   ok(X.exposureMul(9) === C.UX_LIMITS.brightness[1] && X.exposureMul('x') === 1, 'brightness clamps');

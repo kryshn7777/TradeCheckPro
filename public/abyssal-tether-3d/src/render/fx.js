@@ -809,6 +809,9 @@ export class FX {
     this._updateDust(dt, head);
     this.windGusts.update(dt, head, tier, this.reduced);
     this._updateBursts(dt);
+    // creature dust is not emitted past the haze (fully fogged puffs are invisible but still blended and use the pool)
+    const fog = this.scene.fog;
+    this.creatureDust.far = fog && fog.isFog ? fog.far + 2 : Infinity;
     this.creatureDust.update(dt, head, tier, this.reduced);
     this.rubble.update(dt, level, head);
     this._updateFade(game);
