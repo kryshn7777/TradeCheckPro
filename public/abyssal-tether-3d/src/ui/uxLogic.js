@@ -14,6 +14,8 @@
  *   qualityTier / renderScale          'auto'|'low'|'quest'|'high', 0.7..1.3   ui/comfort.js applyDisplay()
  *   brightness / blackLevel            0.6..1.6 exposure multiplier, 0..1 black-point lift (ui/comfort.js)
  *   reducedEffects (existing)          fog cards, dust, debris and the wet film thinned; never below governor level 3
+ *   bloodWriting                       bool        opt-in (off by default): the Masons' messages in blood on the walls
+ *                                                  (render/bloodWriting.js; Renderer3D builds / removes them live)
  *   showBody, dominantHand, haptics, aimAssist, turnSpeed, mouseSensitivity, heightMode/heightOffset... (existing)
  */
 import { UX_LIMITS } from '../sim/config3d.js';

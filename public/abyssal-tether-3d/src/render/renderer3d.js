@@ -787,6 +787,9 @@ export class Renderer3D {
     this._game = game || this._game;
     this.lighting.update(d, game, th, tgt, this._lampFlick);
     this._fogInfo.near = fog.near;
+    // Settings › Display › Blood writing (off by default): built / removed live; a fresh build compiles and uploads now
+    const gs = this._game && this._game.settings;
+    if (gs && this.levelView.setBlood(gs.bloodWriting === true)) this.precompile();
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.godRays.materials = this.materials;

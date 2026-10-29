@@ -116,10 +116,10 @@ const F_UI = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Ar
 
 /** Fallback death copy by cause (the game may pass its own `message`). */
 const DEATH_COPY = {
-  impact: { kicker: 'The ground came too fast', message: 'The fall was longer than the line.' },
-  hazard: { kicker: 'Old iron', message: 'The ironwork was waiting for you.' },
-  fall: { kicker: 'No floor', message: 'The dark had no bottom.' },
-  creature: { kicker: 'Closer than it sounded', message: 'The Underspire closed its hand.' },
+  impact: { kicker: 'The ground came too fast', message: 'The floor keeps what falls. It kept you.' },
+  hazard: { kicker: 'Old iron', message: 'The ironwork was waiting. It has waited for others.' },
+  fall: { kicker: 'No floor', message: 'The dark had no bottom, only those who fell before.' },
+  creature: { kicker: 'Closer than it sounded', message: 'It wears you now.' },
 };
 
 const pct = fmtPct;
@@ -166,6 +166,7 @@ const SETTINGS_SCHEMA = [
   { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
   { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
   { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
+  { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
   { type: 'patches', tab: 'display', page: 'calibrate' },
@@ -481,7 +482,7 @@ const MARKUP = `
     <header class="title-block">
       <p class="kicker">The Underspire</p>
       <h1 class="game-title"><span class="title-word title-a">Abyssal</span><span class="title-tether" aria-hidden="true"><i></i><b></b><i></i></span><span class="title-word title-b"><span class="title-b-text">Tether</span><span class="vr-mark">VR</span></span></h1>
-      <p class="tagline">A lantern, a line, and a very long way down.</p>
+      <p class="tagline">A lantern, a line, and a long way down. No one has climbed back.</p>
     </header>
     <nav class="menu-actions" aria-label="Main menu">
       <button class="btn btn-primary btn-continue" type="button" data-action="continue-run" hidden data-autofocus><span class="btn-label">Continue</span><span class="btn-sub menu-continue-sub"></span></button>
@@ -616,7 +617,7 @@ const MARKUP = `
       <div class="teaser">
         <p class="teaser-kicker">Chapters II–V · coming soon</p>
         <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
-        <p class="teaser-line">The Underspire goes deeper than the light does. The descent continues.</p>
+        <p class="teaser-line">The Underspire goes deeper than the light does. So did the Masons.</p>
       </div>
       <div class="victory-actions">
         <button class="btn btn-primary" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
@@ -3806,7 +3807,7 @@ export class UI3D {
     ctx.fillStyle = 'rgba(224,160,80,0.12)';
     ctx.fill();
     txt(ctx, 'VR', bx + 33, 247, `800 30px ${F_UI}`, COL.amber, 'center', 0.06);
-    txt(ctx, 'A lantern, a line, and a very long way down.', cx, 304, `italic 400 30px ${F_DISPLAY}`, COL.ink2, 'center', 0);
+    txt(ctx, 'A lantern, a line, and a long way down. No one has climbed back.', cx, 304, `italic 400 30px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
 
     const key = this._defaultDifficulty();
     const best = Storage.getBest(key);
@@ -3958,7 +3959,7 @@ export class UI3D {
     });
     const tab = VR_TABS[this._vrTab] || VR_TABS[0];
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
-    // six rows (Comfort since P6's Wind squalls) still fit above the panel's foot: 80 px a row instead of 88
+    // six rows (Comfort since P6's Wind squalls, Display since Blood writing) still fit above the panel's foot: 80 px a row instead of 88
     const rowH = rows.filter((d) => d.key).length > 5 ? 80 : 88;
     let y = 190;
     for (const def of rows) {
@@ -4277,7 +4278,7 @@ export class UI3D {
     const names = 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
     const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
     txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
-    txt(ctx, 'The Underspire goes deeper than the light does.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
+    txt(ctx, 'It goes deeper than the light does. So did the Masons.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
     const bw = 680;
     const bx = (CW - bw) / 2;
     this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });

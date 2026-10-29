@@ -55,6 +55,7 @@ const suites = [
   ['render: WP-SHADOWS (tier table + governor / reducedEffects reduction, cone fit, cache-refresh thresholds, receiver shader chunks, static box proxy, caster layers)', 'render/test-lantern-shadow.mjs'],
   ['render: rigged Mason (mason_rig.glb structure: bones, skin, LODs, clips; clip graph phase lock; IK; head fit)', 'render/test-mason-rig.mjs'],
   ['render: creature locomotion (metachronal gait: planted feet, stride clock; body spring chain bounds)', 'render/test-creature-motion.mjs'],
+  ['render: blood writing (opt-in setting: OFF by default + save round trip; 2-3 writings per section, lines / charset that fit the scrawl cell, each on a static wall or floor face clear of climb zones and plaques, never level decor; one merged mesh, drips, dispose; LevelView builds it only while ON)', 'render/test-blood-writing.mjs'],
   ['release: platform (immersive launch, early XR request, SW policy, precache generator)', 'release/test-platform.mjs'],
   ['ux: LEVEL_FUN_PLAN P6 medals (thresholds per section and difficulty from par, next medal, rows / tally / split line from the schema-3 save; UI3D headless: split → next title card / toast / goal toast, VR Records tabs + 8 rows, menu Records button, victory splits, the six-row Comfort page; all inside the panel at >= 28 px)', 'ux/medals.mjs'],
   ['ux: WP-UX (settings persistence + sanitising, snap turn, comfort vignette rules, display helpers, caption mapping + tracker, first-run tutorial)', 'ux/unit.mjs'],
