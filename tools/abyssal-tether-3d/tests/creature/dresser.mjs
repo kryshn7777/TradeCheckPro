@@ -524,7 +524,7 @@ for (const [diff, gap] of [
 // ---- the view's budget ---------------------------------------------------------------------------------------------------
 {
   const THREE = await import('three');
-  const { buildDresserGeometry, DresserView, GLOW_DIST } = await import(srcUrl('render/dresserView.js'));
+  const { buildDresserGeometry, DresserView, GLOW_DIST, LOD_DIST } = await import(srcUrl('render/dresserView.js'));
   const near = buildDresserGeometry(0).index.count / 3;
   const far = buildDresserGeometry(1).index.count / 3;
   ok(near <= 12000, `near LOD ${near} triangles (<= 12000)`);
@@ -557,7 +557,7 @@ for (const [diff, gap] of [
   camera.position.set(35, 1.8, 0);
   v.update(1 / 60, game);
   r = drawn();
-  ok(v.lod === 1 && r.n === 1 && v.info.triangles === far, `at 35 m (Quest switch ${25} m): the far LOD, 1 call, ${v.info.triangles} triangles`);
+  ok(v.lod === 1 && r.n === 1 && v.info.triangles === far, `at 35 m (Quest switch ${LOD_DIST.quest} m): the far LOD, 1 call, ${v.info.triangles} triangles`);
   camera.position.set(GLOW_DIST + 10, 1.8, 0);
   v.update(1 / 60, game);
   r = drawn();
@@ -575,7 +575,7 @@ for (const [diff, gap] of [
   body.line.y = 1;
   body.line.z = 2;
   camera.position.set(8, 1.8, 0);
-  if (!v.outlineTex) v.outlineTex = { isStandIn: true }; // no canvas in Node: a stand-in so the outline path runs
+  if (!v.outlineTex) v.outlineTex = { isStandIn: true, dispose() {} }; // no canvas in Node: a stand-in so the outline path runs
   v.update(1 / 60, game);
   r = drawn();
   const cb = v.bones[v.bones.length - 1];

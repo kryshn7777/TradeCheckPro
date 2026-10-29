@@ -125,10 +125,10 @@ export class LowHealthText {
     const base = H * 0.5 + size * 0.3;
     g.textBaseline = 'alphabetic';
     // dust first (under the letters): soft smudges where the hand dragged, specks fallen from the stroke
-    for (let k = 0; k < 7; k++) {
+    for (let k = 0; k < 3; k++) {
       const x = (W - total) / 2 + hash1(seed * 1.3 + k * 4.7) * total;
-      const grd = g.createRadialGradient(x, base - size * 0.2, 2, x, base - size * 0.2, size * (0.5 + hash1(k + seed)));
-      grd.addColorStop(0, 'rgba(220, 216, 204, 0.06)');
+      const grd = g.createRadialGradient(x, base - size * 0.2, 2, x, base - size * 0.2, size * (0.4 + 0.5 * hash1(k + seed)));
+      grd.addColorStop(0, 'rgba(220, 216, 204, 0.035)');
       grd.addColorStop(1, 'rgba(220, 216, 204, 0)');
       g.fillStyle = grd;
       g.fillRect(x - size * 1.6, base - size * 1.4, size * 3.2, size * 2);

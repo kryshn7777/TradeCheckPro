@@ -27,8 +27,9 @@ is the Dresser's clock.
   1.1x). None in S1, S2, S5, S7, S8. Sandbox and the menu's attract flight: never.
 - **The gate:** whole at hp ≥ **0.75 / 0.70 / 0.65**; no longer whole below that minus **5 points** (0.70 / 0.65 / 0.60). Not whole it is
   **SPOILED**: it stops, turns its mask away and folds its arms; it never measures, cuts or dresses; it steps back if you come within 7 m.
-  It also **yields to the Mason**: while the Mason has your scent (its gate armed, or withdrawing) the Dresser does not hunt and leaves
-  play (out of sight, at most 10 s), and re-enters when the scent is gone. One big creature at a time.
+  It also **yields to the Mason**: while the Mason has your scent (its gate armed, or withdrawing) or makes its staged S4 pass, the
+  Dresser does not hunt and leaves play (at once if you are not looking at it, else when you look away, at most 10 s), and re-enters
+  out of sight when the Mason is gone. One big creature at a time.
 - **Entering play:** out of sight on a wall **30-44 m** away (never closer); a 4 s grace (no measure, no reach). Far behind you and out
   of sight (> 40 m, or past 64 m) or stuck where it cannot measure you for 8 s, it relocates **22-36 m** away, only where you cannot see
   it (behind masonry or outside your view cone: game.js feeds the head camera) and never from where you can see it.
@@ -47,6 +48,7 @@ is the Dresser's clock.
 - **Counterplay:** chain a second rope to another ring before the cut (it takes only the targeted one); take a hit or a fall to drop
   below whole; break its line of sight (a pillar, a ledge); fire a hook through its body: **STAGGER 2.5 s**, the measure cancelled, once
   per **12 s** (a shot into a wall in front of it does nothing).
+- **First contact:** an S3 hint ("Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.").
 - **Fairness:** every cut is telegraphed by 3 s of ticking + chalk + a rope buzz in that hand and 1 s of sawing; the measuring line is a
   pale thread from its hands to your ring; the chalk text in your head says it ("HOLD STILL. I AM MEASURING.").
 
@@ -69,13 +71,30 @@ Never both. **The regen clock** (Normal: 6 s, then 5 %/s): a hit to 50 % and it 
   segmented chisel arms out of ragged sleeves, two small grey hands paying out the line, long bare feet. Idle breathing, small sudden head
   tilts, a head that turns past a person's reach; measuring: arms spread like dividers, head tilted; cutting: the chisels work the line
   like a bow saw; spoiled: mask turned away to the wall, arms folded with the blades up behind the shoulders; staggered: flung back.
-- 31 bones, procedural; near LOD 8.8 k triangles, far 2.0 k (switch at 25 m on Quest, 45 m on desktop high), beyond 60 m only two
-  cold glints. **One draw call** (the measuring line is skinned into the body) + 1 for the chalk outline while it shows.
+- 32 bones, procedural; near LOD 8.8 k triangles, far 3.6 k (switch at 12 m on Quest, 45 m on desktop high), beyond 60 m only two
+  cold glints. **One draw call, always**: the measuring line (a bone at its far end) and the chalk outline of you (a quad on its own
+  bone, alpha-dithered from the outline texture) are part of the skinned mesh.
 - The level's lit material (lantern, baked GI, wet film, horror grade) + a cold rim, a faint pale self-light on the mask, a fog cap.
 - Sound: the line's irregular dry tick (~0.6 s, ~0.25 s and louder while it measures), a hummed three-note work-song (G, B flat, A),
   chalk scraping beside you while it measures, a rasping saw at your ring for the last second; the cut sounds as a snapped ring.
 - Health text: while it hunts you (you are whole) the head-locked line is white chalk ("YOU LOOK WHOLE", "GOOD STONE", "IT WAS SOMEONE";
   measuring: "HOLD STILL. I AM MEASURING.", "A CLEAN CUT"); never with the blood-red low-health line.
+
+## Quest budget (measured, not on a headset)
+
+Mock-XR, Quest tier, the dressing finished, `renderer.info` over both eyes incl. the lantern shadow pass (≤ 150 calls, ≤ 350 k
+triangles). "Without": the max over 8 look directions with the Dresser out of play. "With": looking at it on a wall while it
+measures (the line to a ring, the chalk outline on), at ~12 m and at ~22-29 m.
+
+| Section | Without | With the Dresser in view | Notes |
+|---|---|---|---|
+| S3 | 136 calls, 238 k | 128-134 calls, 229-233 k | |
+| S4 | 146 calls, 226 k | 144-148 calls, 226 k | the Mason's staged pass in the same view costs 150-154 alone: the Dresser gives way to it |
+| S6 | 134 calls, 253 k | 132-140 calls, 252-261 k | with Normal's live skitterling |
+| S6 + a 2nd skitterling at 9 m | | 142-150 calls, 294-302 k | |
+| S6 + 2 skitterlings at 9-10 m | 148-156 calls, 328-337 k (same views) | 150-158 calls, 336-344 k | the skitterlings' cost; the Dresser adds 2 calls |
+
+The Dresser costs **one call per eye** and 3.6 k triangles per eye (the far LOD from 12 m on Quest; 8.8 k closer).
 
 ## Switches
 

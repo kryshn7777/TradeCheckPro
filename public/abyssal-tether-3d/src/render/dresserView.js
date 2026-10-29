@@ -21,8 +21,9 @@
 import * as THREE from 'three';
 import { patchMaterial } from './materials.js';
 
-/** LOD switch distance (m, camera to its chest) per quality tier, and where it becomes only two cold glints. */
-export const LOD_DIST = { low: 18, quest: 25, high: 45 };
+/** LOD switch distance (m, camera to its chest) per quality tier, and where it becomes only two cold glints. The far LOD keeps the
+ * silhouette, the split mask and the slits (~4.4 k triangles), so on Quest the full mesh is only for when it is close to you. */
+export const LOD_DIST = { low: 10, quest: 12, high: 45 }; // Quest: the mid LOD from 12 m (THE CORRIDOR with skitterlings in view)
 export const GLOW_DIST = 60;
 const LOD_HYST = 3;
 const GLOW_COL = new THREE.Color(0.55, 0.78, 1.0);
@@ -354,8 +355,8 @@ export function buildDresserGeometry(lod = 0) {
 
   // ---- the robe (a tall column, cinched at the waist, deep folds, a ragged soaked hem) ----
   {
-    const nu = far ? 20 : 46;
-    const nv = far ? 12 : 30;
+    const nu = far ? 30 : 46;
+    const nv = far ? 17 : 30;
     const g = grid(nu, nv, (u, v) => {
       const th = u * Math.PI * 2;
       const hem = 0.13 + 0.06 * noise1(th * 3.1, 1) + 0.09 * Math.max(0, noise1(th * 7.3, 2)) * (Math.cos(th) < 0.6 ? 1 : 0.4);
@@ -368,8 +369,8 @@ export function buildDresserGeometry(lod = 0) {
   // ---- the hood: a tall pointed cowl, a heavy lip shadowing the mask, a drape over the shoulders ----
   const HC = [0, 2.95, -0.03];
   {
-    const nu = far ? 14 : 32;
-    const nv = far ? 9 : 22;
+    const nu = far ? 22 : 32;
+    const nv = far ? 13 : 22;
     const a0 = 0.86; // half-angle of the face opening (around +Z)
     const PK = [0, 0.83, -0.56]; // the peak's direction (up and back)
     const g = grid(nu, nv, (u, v) => {
@@ -432,8 +433,8 @@ export function buildDresserGeometry(lod = 0) {
     const MC = [0, 2.93, 0.085];
     const HW = 0.112;
     const HH = 0.205;
-    const nu = far ? 4 : 11;
-    const nv = far ? 10 : 30;
+    const nu = far ? 7 : 11;
+    const nv = far ? 18 : 30;
     const halfW = (v) => HW * (v > 0.15 ? Math.pow(Math.max(0, 1 - Math.pow((v - 0.15) / 0.85, 2)), 0.42) : 1 - 0.58 * Math.pow((0.15 - v) / 1.15, 1.6));
     const g2 = (u, v, cu, cv, su, sv) => Math.exp(-(Math.pow((u - cu) / su, 2) + Math.pow((v - cv) / sv, 2)));
     const depth = (u, v) => {
@@ -486,7 +487,7 @@ export function buildDresserGeometry(lod = 0) {
       {
         const ep = [];
         const ei = [];
-        const n = far ? 6 : 16;
+        const n = far ? 10 : 16;
         for (let i = 0; i <= n; i++) {
           const v = lerp(1, -1, i / n);
           const u = 0.03;
@@ -502,7 +503,7 @@ export function buildDresserGeometry(lod = 0) {
       // the slit eye: a thin downturned lens in the socket, dark with a cold glow inside
       const sp = [];
       const si = [];
-      const n = far ? 4 : 10;
+      const n = far ? 6 : 10;
       for (let i = 0; i <= n; i++) {
         const t = i / n;
         const u = lerp(0.2, 0.74, t);
@@ -528,7 +529,7 @@ export function buildDresserGeometry(lod = 0) {
     const fo = side > 0 ? B.foreArmL : B.foreArmR;
     const ch = side > 0 ? B.chiselL : B.chiselR;
     const X = 0.31 * side;
-    const S = far ? 5 : 8;
+    const S = far ? 6 : 8;
     // upper arm (hidden in the sleeve, it shows when the arms spread)
     let g = tube([X, 2.56, 0], [X, 1.86, 0], S, far ? 1 : 3, (v) => lerp(0.046, 0.036, v));
     Bd.add(g.p, g.ix, IRON, rigid(up));
@@ -536,7 +537,7 @@ export function buildDresserGeometry(lod = 0) {
     g = blob([X, 1.84, 0], 0.05, 0.055, 0.05, S, far ? 4 : 6);
     Bd.add(g.p, g.ix, IRON, () => [[up, 0.5], [fo, 0.5]]);
     // the forearm in three segments (rings at the joints)
-    g = tube([X, 1.84, 0], [X, 1.15, 0], S, far ? 3 : 12, (v) => {
+    g = tube([X, 1.84, 0], [X, 1.15, 0], S, far ? 7 : 12, (v) => {
       const ring = Math.max(Math.exp(-Math.pow((v - 0.34) / 0.025, 2)), Math.exp(-Math.pow((v - 0.67) / 0.025, 2)));
       return lerp(0.035, 0.027, v) * (1 + 0.45 * ring);
     });
@@ -585,8 +586,8 @@ export function buildDresserGeometry(lod = 0) {
     }
     // the sleeve: a ragged flared cone over the upper arm
     {
-      const nu = far ? 8 : 16;
-      const nv = far ? 3 : 8;
+      const nu = far ? 12 : 16;
+      const nv = far ? 5 : 8;
       const g2 = grid(nu, nv, (u, v) => {
         const th = u * Math.PI * 2;
         // a ragged mouth above the elbow: the segmented forearm and its blade come out bare
@@ -640,8 +641,8 @@ export function buildDresserGeometry(lod = 0) {
 
   // ---- the leather apron (chalk-dusted), the belt, the tools ----
   {
-    const nu = far ? 5 : 10;
-    const nv = far ? 8 : 20;
+    const nu = far ? 7 : 10;
+    const nv = far ? 12 : 20;
     const g = grid(nu, nv, (u, v) => {
       const y = lerp(2.32, 0.6 - 0.08 * noise1(u * 6, 9), v);
       const w = lerp(0.17, 0.25, v);
@@ -705,7 +706,7 @@ export function buildDresserGeometry(lod = 0) {
 
   // ---- the measuring line: from the small left hand's fingertips to the lineEnd bone (the right hand, or your ring) ----
   {
-    const n = far ? 2 : 10;
+    const n = far ? 4 : 10;
     const a = HAND_TIP_L;
     const e = BONES[B.lineEnd].slice(2);
     const w = far ? 0.01 : 0.007;
@@ -743,7 +744,7 @@ export function buildDresserGeometry(lod = 0) {
   Bd.add(
     [-0.475, -0.95, 0, 0.475, -0.95, 0, 0.475, 0.95, 0, -0.475, 0.95, 0],
     [0, 1, 2, 0, 2, 3],
-    (x, y) => [0.9, 0.89, 0.85, 1, x / 0.95 + 0.5, 0.5 - y / 1.9],
+    (x, y) => [0.9, 0.89, 0.85, 1, x / 0.95 + 0.5, 0.5 + y / 1.9], // v up (the canvas texture is flipped on upload)
     () => [[B.chalk, 1]],
     1,
   );
@@ -872,11 +873,11 @@ export function makeDresserUniforms() {
     uChalkK: { value: new THREE.Vector2(0, 0) }, // x grow (the draw-on reveal 0..1), y alpha
     uGlow: { value: 0.4 },
     uGlowCol: { value: GLOW_COL.clone() },
-    uPale: { value: 0.11 },
+    uPale: { value: 0.3 },
     uPierce: { value: 0.6 },
     uNear: { value: new THREE.Vector2(0.3, 0.75) },
-    uAmb: { value: new THREE.Color(0.16, 0.19, 0.22) },
-    uRimC: { value: new THREE.Color(0.055, 0.07, 0.085) },
+    uAmb: { value: new THREE.Color(0.2, 0.24, 0.28) },
+    uRimC: { value: new THREE.Color(0.075, 0.095, 0.115) },
   };
 }
 
@@ -1090,7 +1091,7 @@ export class DresserView {
     // ---- uniforms ----
     const U = this.uniforms;
     U.uGlow.value = b.glow;
-    U.uPale.value = 0.2 + 0.1 * b.measure;
+    U.uPale.value = 0.3 + 0.12 * b.measure; // the ivory face reads in the dark (brighter while it measures you)
     // bounds for the frustum test (the line can reach your ring)
     const bs = this.meshes[0].boundingSphere;
     const ln = b.line && b.line.on ? _v3.set(b.line.x - b.x, b.line.y - b.y, b.line.z - b.z).length() : 0;

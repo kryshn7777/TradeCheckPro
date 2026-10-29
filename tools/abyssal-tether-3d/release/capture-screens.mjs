@@ -49,9 +49,10 @@ fs.mkdirSync(KEYART, { recursive: true });
  *   url      extra query for the page (THE DRESSER's recipes: '&dresser=always'; the page otherwise runs ?hunt=always, which leaves
  *            the Dresser out)
  *   hang     an anchor id: the player hangs 3.5 m under that ring on the right-hand rope
- *   dresser  { dist, measure } THE DRESSER put on a wall about `dist` m away that sees the whole of you, facing you (debug
- *            dresser.place); measure: it starts measuring your ring (the chalk outline, the line); the look turns to its chest
- *            (lookMix 0..1 toward the outline instead)
+ *   dresser  { dist, measure, orbit } THE DRESSER put on a wall about `dist` m away that sees the whole of you, facing you (debug
+ *            dresser.place); measure: it starts measuring your ring (the chalk outline, the line); orbit (m): at the end the camera
+ *            moves that far from its chest, 50-70 degrees off its up, into open air; the look turns to its chest (lookMix 0..1
+ *            toward the outline instead)
  */
 const RECIPES = [
   { id: 'shot-01', section: 0, yaw: 0.0, pitch: -0.05, run: 0.6, note: 'the threshold: the first view' },
@@ -69,7 +70,7 @@ const RECIPES = [
   { id: 'shot-blood', section: 5, at: [-31.5, -241.6, -8.6], abs: true, yaw: 0, pitch: -0.06, run: 0.6, settings: { bloodWriting: true }, note: 'blood writing (not a store shot; --recipe shot-blood only)', only: true },
   // THE DRESSER (docs/abyssal-tether-3d/plans/DRESSER.md): on a wall of the Two Descents at ~12 m; the chalk outline of you while it
   // measures your ring; the chalk line it puts in your head while it hunts you (not store shots; --recipe <id> only)
-  { id: 'shot-dresser', section: 5, url: '&dresser=always', yaw: 0, pitch: 0, run: 0.8, dresser: { dist: 12 }, note: 'the Dresser on a wall at ~12 m', only: true },
+  { id: 'shot-dresser', section: 5, url: '&dresser=always', yaw: 0, pitch: 0, run: 0.8, dresser: { dist: 12, orbit: 12 }, note: 'the Dresser on a wall at ~12 m (a three-quarter view from the shaft)', only: true },
   { id: 'shot-dresser-measure', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.2, dresser: { dist: 11, measure: true }, lookMix: 0.85, note: 'measuring: the chalk outline of you', only: true },
   { id: 'shot-chalk', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.6, dresser: { dist: 11, measure: true }, note: 'the chalk line while it measures you', only: true },
 ];
@@ -213,6 +214,40 @@ async function setScene(page, r) {
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
     const dbody = rec.dresser && G.dresser && !G.dresser.isNull ? G.dresser.body : null;
+    if (dbody && dbody.visible && rec.dresser.orbit) {
+      // the camera `orbit` m from its chest at 50-70 degrees off its up (a three-quarter view of a figure standing sideways on its
+      // wall), along its facing or across it: the first such spot in open air with a clear view of it
+      const b = dbody;
+      const cx = b.x + b.ux * 1.8;
+      const cy = b.y + b.uy * 1.8;
+      const cz = b.z + b.uz * 1.8;
+      const sx = b.uy * b.fz - b.uz * b.fy;
+      const sy = b.uz * b.fx - b.ux * b.fz;
+      const sz = b.ux * b.fy - b.uy * b.fx;
+      const dirs = [
+        [b.fx, b.fy, b.fz],
+        [-b.fx, -b.fy, -b.fz],
+        [sx, sy, sz],
+        [-sx, -sy, -sz],
+      ];
+      const R = rec.dresser.orbit;
+      let spot = null;
+      const tmp = [];
+      for (const a of [1.05, 0.9, 1.2]) {
+        for (const d of dirs) {
+          if (spot) break;
+          const ex = cx + (b.ux * Math.cos(a) + d[0] * Math.sin(a)) * R;
+          const ey = cy + (b.uy * Math.cos(a) + d[1] * Math.sin(a)) * R;
+          const ez = cz + (b.uz * Math.cos(a) + d[2] * Math.sin(a)) * R;
+          const inside = G.level.querySolids(ex - 0.6, ey - 1.6, ez - 0.6, ex + 0.6, ey + 0.4, ez + 0.6, tmp).some((q) => q.active !== false && ex > q.minX && ex < q.maxX && ey > q.minY && ey < q.maxY && ez > q.minZ && ez < q.maxZ);
+          if (!inside && !G.level.segmentBlocked(ex, ey, ez, cx, cy, cz, 0.5)) spot = [ex, ey, ez];
+        }
+      }
+      if (spot) D.teleport(spot[0], spot[1] - 1.24, spot[2]);
+      b.lx = p.x;
+      b.ly = p.y + 0.9;
+      b.lz = p.z;
+    }
     if (dbody && dbody.visible) {
       // look at its chest (or, lookMix, toward the chalk outline beside you)
       let tx = dbody.x + dbody.ux * 1.9;
