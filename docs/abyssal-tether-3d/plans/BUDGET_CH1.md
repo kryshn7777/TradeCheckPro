@@ -257,3 +257,17 @@ Wind squalls (item 9), the medals UI (item 12), the S2 collapsing span with the 
 - **End to end (`e2e.cjs --hesitate 0`, one launch per tree):** this branch 43 / 48: the descent (Normal, creature live, squalls on) reached victory in 209.2 s with 2 deaths (creature), the victory panel listed the 8 splits (gold / silver / brass), the Records screen (real menu click, after a reload) showed all 8 bests from the saved profile, the VR menu has Records and its page paints, XR stereo S1 120 / 176k, S4 146 / 220k, S7 148 / 294k, no console errors. Failing: start-fade timing, the real-mouse and XR-trigger fire (read 2 frames after the press while the hook flies ~0.13 s), the S1 swing landing (no rope after the failed mouse fire), and "player stands at the spawn, fade cleared" (a cascade of the start-fade race: only 0.3 s of game time had run before the test froze it, fade 0.10 > 0.05; it passed in P4 and on 24f0a4b, this boot was 25.8 s vs 20.1-20.3 s, so likely machine load; not re-run: browser launches capped). Commit 24f0a4b (its own e2e, worktree): 38 / 45, the same start-fade, mouse, swing and XR-trigger failures (pre-existing, so not fixed here), plus its old runner's descent stalling in S1 (fixed in P3) and its S7 stereo triangles 361k (before PR #14).
 - Not measured: anything on a Quest (frame time, the squall's feel, the medals panel's legibility), the squall in a real descent with a human (the e2e descent met it only if its phase fell in S6), the S2 span telegraph's look.
 
+
+## Addendum: Mason and skitterling detail distances (owner: "1 and 2", the S6 budget fix)
+
+Quest mock-XR harness (stereo, quest tier, the Mason placed at 14 m in view, `HIDE=1` = the Dresser out of play), calls / triangles:
+
+| Section | Before (Mason LOD0 within 25 m) | After (`CREATURE_LOD.quest` = 12) |
+|---|---|---|
+| S3 | ~351k triangles | 134 calls / 267k |
+| S6 | 140 calls / 381k | 138 calls / 301k |
+| S7 | ~371k triangles | 138 calls / 283k |
+
+`CREATURE_LOD` is now `{ low: 10, quest: 12, high: Infinity }` (game.js): the full 57 k-triangle Mason only within 12 m on Quest; LOD1 (about 23 k) beyond. The skitterlings' LOD0 -> LOD1 switch is now `SKITTER_LOD` `{ low: 2.5, quest: 3.5, high: 6 }`.
+
+Still over budget (not fixed): S6 on Nightmare / Abyss with 2 / 3 skitterlings in one view at 9 m (about 148 calls / 337k and 156 calls / 378k). Each skitterling costs about 7 calls and 40k stereo triangles at LOD1 (its rig has 4 primitives and only a 21 k-triangle LOD1). A real fix is a LOD2 or merged primitives for `skitter_rig.glb` (an asset task).

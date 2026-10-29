@@ -89,9 +89,13 @@ const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.
 // rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
 // LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
 // 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
-// distance. A tighter Quest value (e.g. 12) saves another ~80 k stereo triangles while it is 12-25 m away. The small hunters keep their
+// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k). The small hunters keep their
 // own short LOD (SKITTER_VIEW in masonRigView.js).
-const CREATURE_LOD = { low: 16, quest: 25, high: Infinity };
+const CREATURE_LOD = { low: 10, quest: 12, high: Infinity };
+// The skitterlings' LOD0 (57 k triangles, x2 eyes) -> LOD1 (21 k) switch, m. They are 0.45 scale: LOD1 reads the same from 3-4 m. Quest budget
+// harness, S6: Normal / Nightmare / Abyss show 1 / 2 / 3 of them at once and each LOD1 one costs ~40 k stereo triangles, so a LOD0 one on
+// top of you (it bites at 2-3 m) must not cost another ~70 k.
+const SKITTER_LOD = { low: 2.5, quest: 3.5, high: 6 };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -3687,8 +3691,10 @@ export class Game3D {
     const sv = this.skitterViews;
     if (sv.length && this.skitters) {
       const cam = this.renderer && this.renderer.camera;
+      const skLod = SKITTER_LOD[this.renderer && this.renderer.qualityTier] || SKITTER_LOD.high;
       for (let i = 0; i < sv.length; i++) {
         try {
+          if (sv[i].opts) sv[i].opts.lodDistance = skLod;
           sv[i].update(this.skitters.slots[i] || null, dt, cam);
         } catch (err) {
           this._fault('skitterView', err);
