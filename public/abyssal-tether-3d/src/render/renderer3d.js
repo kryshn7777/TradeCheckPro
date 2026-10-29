@@ -121,7 +121,7 @@ const DEFAULT_THEME = {
 };
 // Per-section look (Chapter I, by section index; the art bible's wetness ramp: dry ash at the top,
 // soaked in the Last Throat) and the strength of the haze rim light on carved relief.
-const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
+const SECTION_WET = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.25];
 const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 
 // Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
