@@ -299,6 +299,7 @@ export const SETTINGS_DEFAULTS = {
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
+  swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   bloodWriting: false, // opt-in content: the Masons' messages in blood on the walls (data/blood-writing-3d.js, render/bloodWriting.js); off by default
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
@@ -374,6 +375,7 @@ export function sanitizeUxSettings(s) {
   s.reducedEffects = s.reducedEffects === true;
   s.windSqualls = s.windSqualls !== false;
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
+  s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   sanitizeTouchSettings(s);
   return s;

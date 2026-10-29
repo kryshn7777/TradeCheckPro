@@ -162,6 +162,7 @@ const SETTINGS_SCHEMA = [
   { key: 'heightOffset', tab: 'comfort', type: 'range', label: 'Fine height', desc: 'Raise or lower your eyes a little.', page: 'height', min: -VIEW.offsetMax, max: VIEW.offsetMax, step: VIEW.offsetStep, fmt: cm },
   { type: 'height', tab: 'comfort', page: 'height' },
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
+  { key: 'swingLag', tab: 'comfort', type: 'range', label: 'Swing camera lag', desc: 'The view trails your body a little while you swing on a tether. 0 = none. In VR it is fixed very small, and Reduced effects turns it off.', min: 0, max: 1, step: 0.05, fmt: pct, desktop: true },
 
   { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
   { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },

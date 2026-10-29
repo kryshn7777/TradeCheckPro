@@ -31,6 +31,7 @@ import { Objectives3D } from './sim/objectives3d.js';
 import { SplitClock, medalFor } from './sim/splits3d.js';
 import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
+import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
@@ -3490,6 +3491,35 @@ export class Game3D {
    * see InputManager.xrRigPosition. Desktop: the camera sits at a standing person's eye height (VIEW.standEye above the feet).
    */
   _updateRig() {
+    this._placeRig();
+    this._applySwingLag();
+  }
+
+  /**
+   * Camera lag while swinging (settings.swingLag, render/swingLag.js): the rig trails the body a little while it moves fast on a
+   * tether and settles when the swing ends. Capped small in a headset (positional lag the player did not make is uncomfortable).
+   */
+  _applySwingLag() {
+    const r = this.renderer;
+    const p = this.player;
+    if (!r || !p) return;
+    const lag = this._swingLag || (this._swingLag = { off: { x: 0, y: 0, z: 0 }, tgt: { x: 0, y: 0, z: 0 }, t: 0 });
+    const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+    const dt = lag.t > 0 ? Math.min(0.1, Math.max(0, now - lag.t)) : 0;
+    lag.t = now;
+    const v = this.settings ? this.settings.swingLag : 0.5;
+    const strength = this.settings && this.settings.reducedEffects ? 0 : typeof v === 'number' && isFinite(v) ? v : 0.5;
+    const active = this.state === 'playing' && p.alive !== false && !!(this.tethers && this.tethers.attached);
+    swingLagTarget(p.vx || 0, p.vy || 0, p.vz || 0, active, strength, this.xrActive, lag.tgt);
+    stepSwingLag(lag.off, lag.tgt, dt);
+    const o = lag.off;
+    if (o.x * o.x + o.y * o.y + o.z * o.z < 1e-8) return;
+    r.rig.position.x += o.x;
+    r.rig.position.y += o.y;
+    r.rig.position.z += o.z;
+  }
+
+  _placeRig() {
     const r = this.renderer;
     if (!r || !this.player) return;
     const rig = r.rig;
