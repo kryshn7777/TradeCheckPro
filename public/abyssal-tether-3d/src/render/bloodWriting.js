@@ -7,7 +7,7 @@
  * for the 21 texts, about 22 MB with mips, allocated only while the setting is on), merged into ONE mesh with ONE material for the whole level: at most one draw call (per
  * eye), only while a writing is within BLOOD_DIST (x the view's detail scale) of the head, otherwise none. The material is
  * the decals' recipe (render/materials.js m.decal: alpha-blended, lit by the baked GI volume, the lantern and the pooled
- * lamps; polygon offset, no depth write), so the writing reads by lamp light and lantern like the stains around it.
+ * lamps; polygon offset, no depth write; a drier wet film), so the writing reads by lamp light and lantern like the stains around it.
  * Nothing here is a level object: no collider, anchor, climb surface, bake, lightmap / GI hash or dressing keep-out.
  *
  * The scrawl (drawBloodText): no web font is needed: a generic hand / cursive stack, and every glyph gets its own size,
@@ -25,9 +25,15 @@ export const BLOOD_CELL_H = Math.round(BLOOD_CELL_W / BLOOD_ASPECT); // 256
 export const BLOOD_COLS = 2;
 /** A writing is in view while the head is within this many metres (x the view's detail scale: Quest 0.85 → 11.9 m). */
 export const BLOOD_DIST = 14;
-const OFF_WALL = 0.014; // metres off the wall / floor (plus polygon offset): never z-fights, never floats visibly
-const OFF_FLOOR = 0.012;
+/** Metres off the wall / the floor (plus the polygon offset): never z-fights, never floats visibly. The floor's is above the
+ *  carved floor inlays (render/levelView.js _inlay: 1.4 / 1.8 cm) so the bands and rosettes never cut through the writing. */
+export const BLOOD_OFF = Object.freeze({ wall: 0.014, floor: 0.026 });
+const OFF_WALL = BLOOD_OFF.wall;
+const OFF_FLOOR = BLOOD_OFF.floor;
 const PAD = 2; // px kept clear around each atlas cell (filtering / mips never bleed a neighbour)
+/** Albedo tint (vertex colour): the lit decal recipe catches the lantern harder than the lightmapped wall behind it; this keeps
+ *  close-lit blood a deep red instead of a glowing orange. */
+const BLOOD_TINT = 0.7;
 const FRESH = [0x7a, 0x0b, 0x0b]; // #7a0b0b
 const DRY = [0x2a, 0x03, 0x03]; // #2a0303
 const FONT = "'Segoe Print', 'Bradley Hand', 'Chalkboard SE', 'Comic Sans MS', cursive, sans-serif";
@@ -132,20 +138,25 @@ export function drawBloodText(ctx, text, x0, y0, cw, ch, seed = 1, fresh = 0.5) 
   ctx.lineCap = 'round';
   let glyphs = 0;
   let drips = 0;
-  // smears under the letters: a hand wiped through the wet writing
+  // smears under the letters: fingers wiped through the wet writing (a few thin, uneven streaks, never a band)
   const smears = 1 + (rng() < 0.6 ? 1 : 0);
   for (let s = 0; s < smears; s++) {
     const li = Math.floor(rng() * n);
-    const by = y0 + padTop + fs * (0.82 + li * lineH) - fs * (0.25 + rng() * 0.3);
-    const sx = x0 + padX + rng() * (cw - 2 * padX) * 0.5;
-    const len = (cw - 2 * padX) * (0.25 + rng() * 0.45);
-    ctx.globalAlpha = 0.1 + rng() * 0.08;
-    ctx.strokeStyle = bloodColor(0.55 + rng() * 0.3);
-    ctx.lineWidth = fs * (0.28 + rng() * 0.3);
-    ctx.beginPath();
-    ctx.moveTo(sx, by);
-    ctx.quadraticCurveTo(sx + len * 0.5, by + (rng() - 0.5) * fs * 0.6, Math.min(x0 + cw - padX, sx + len), by + (rng() - 0.5) * fs * 0.5);
-    ctx.stroke();
+    const by = y0 + padTop + fs * (0.82 + li * lineH) - fs * (0.2 + rng() * 0.35);
+    const sx = x0 + padX + rng() * (cw - 2 * padX) * 0.55;
+    const len = (cw - 2 * padX) * (0.18 + rng() * 0.3);
+    const tilt = (rng() - 0.5) * fs * 0.7;
+    for (let f = 0, fingers = 2 + Math.floor(rng() * 3); f < fingers; f++) {
+      const o = (f - fingers / 2) * fs * 0.11 + (rng() - 0.5) * fs * 0.05;
+      const l = len * (0.6 + rng() * 0.4);
+      ctx.globalAlpha = 0.05 + rng() * 0.07;
+      ctx.strokeStyle = bloodColor(0.6 + rng() * 0.3);
+      ctx.lineWidth = fs * (0.04 + rng() * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(sx, by + o);
+      ctx.quadraticCurveTo(sx + l * 0.5, by + o + tilt * 0.5 + (rng() - 0.5) * fs * 0.15, Math.min(x0 + cw - padX, sx + l), by + o + tilt);
+      ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
   for (let li = 0; li < lines.length; li++) {
@@ -179,11 +190,11 @@ export function drawBloodText(ctx, text, x0, y0, cw, ch, seed = 1, fresh = 0.5) 
       ctx.rotate(rot);
       ctx.scale(k * sx, k);
       ctx.font = font(fs);
-      // finger-thick, ragged: two offset ghost copies, then the stroke itself, then a fat outline of it
+      // finger-thick, ragged: two slightly offset ghost copies, then the stroke itself, then a fat outline of it
       ctx.fillStyle = col;
-      ctx.globalAlpha = 0.34;
-      ctx.fillText(c, (rng() - 0.5) * fs * 0.08, (rng() - 0.5) * fs * 0.07);
-      ctx.fillText(c, (rng() - 0.5) * fs * 0.08, (rng() - 0.5) * fs * 0.07);
+      ctx.globalAlpha = 0.24;
+      ctx.fillText(c, (rng() - 0.5) * fs * 0.05, (rng() - 0.5) * fs * 0.045);
+      ctx.fillText(c, (rng() - 0.5) * fs * 0.05, (rng() - 0.5) * fs * 0.045);
       ctx.globalAlpha = 0.95;
       ctx.fillText(c, 0, 0);
       ctx.strokeStyle = col;
@@ -192,9 +203,9 @@ export function drawBloodText(ctx, text, x0, y0, cw, ch, seed = 1, fresh = 0.5) 
       ctx.strokeText(c, 0, 0);
       // a faint wet highlight along the top-left edges, kept on the blood already there
       ctx.globalCompositeOperation = 'source-atop';
-      ctx.globalAlpha = 0.16 + 0.12 * (1 - t);
-      ctx.fillStyle = 'rgb(198,52,44)';
-      ctx.fillText(c, -fs * 0.03, -fs * 0.035);
+      ctx.globalAlpha = 0.08 + 0.1 * (1 - t);
+      ctx.fillStyle = 'rgb(176,40,34)';
+      ctx.fillText(c, -fs * 0.025, -fs * 0.03);
       ctx.globalCompositeOperation = 'source-over';
       ctx.restore();
       ctx.globalAlpha = 1;
@@ -276,7 +287,7 @@ export function bloodGeometry(entries, atlas) {
       pos.push(...v[k][0]);
       nrm.push(...q.n);
       uv.push(v[k][1], v[k][2]);
-      col.push(1, 1, 1, strength);
+      col.push(BLOOD_TINT, BLOOD_TINT, BLOOD_TINT, strength);
     }
   });
   const g = new THREE.BufferGeometry();
@@ -299,11 +310,11 @@ function bloodMaterial(tex) {
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
-    roughness: 0.42, // wet: the lantern and the lamps glint on it
+    roughness: 0.84, // tacky, not glossy: the lantern sits at the eye, so a glossier film glares in the middle of every writing
     metalness: 0,
-    envMapIntensity: 0.25,
+    envMapIntensity: 0.15,
   });
-  patchMaterial(mat, { tile: DEFAULT_TILE, role: 'decals', lit: true, grade: true });
+  patchMaterial(mat, { tile: DEFAULT_TILE, role: 'decals', lit: true, grade: true, wetK: 0.35 }); // a faint wet film, not a mirror
   mat.dithering = true;
   return mat;
 }

@@ -45,6 +45,7 @@ fs.mkdirSync(KEYART, { recursive: true });
  *   ropes    attach the two nearest anchors (reach in metres) before stepping
  *   run      seconds of simulation to run before the capture (creature, fx, ropes settle)
  *   creature  step in 0.25 s chunks until the creature is within [min,max] m of the player (or give up)
+ *   settings  settings applied before the scene (e.g. { bloodWriting: true }); every recipe starts from bloodWriting off
  */
 const RECIPES = [
   { id: 'shot-01', section: 0, yaw: 0.0, pitch: -0.05, run: 0.6, note: 'the threshold: the first view' },
@@ -58,6 +59,8 @@ const RECIPES = [
   { id: 'shot-09', section: 7, yaw: 0.4, pitch: -0.1, run: 0.6, note: 'the last throat' },
   { id: 'shot-low', section: 3, yaw: 0.2, pitch: -0.1, run: 3.4, hp: 0.2, note: 'low health: the scary line (not a store shot; --recipe shot-low only)', only: true },
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
+  // Settings › Display › Blood writing (opt-in): Hob's writing in the Long Stair's rest, under its lamp (bw-s6-hob)
+  { id: 'shot-blood', section: 5, at: [-31.5, -241.6, -8.6], abs: true, yaw: 0, pitch: -0.06, run: 0.6, settings: { bloodWriting: true }, note: 'blood writing (not a store shot; --recipe shot-blood only)', only: true },
 ];
 const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
 // rendered at the final cover sizes (make-art.py crops / resizes from these)
@@ -134,11 +137,13 @@ async function setScene(page, r) {
     D.freeze(false);
     G.start('normal');
     D.godMode(true);
+    G.applySettings(Object.assign({ bloodWriting: false }, rec.settings || {}));
     D.warp(rec.section);
     const p = G.player;
     if (rec.at) {
       const [dx, dy, dz] = rec.at;
-      D.teleport(p.x + dx, p.y + dy, p.z + dz);
+      if (rec.abs) D.teleport(dx, dy, dz);
+      else D.teleport(p.x + dx, p.y + dy, p.z + dz);
     }
     G.fade = 0;
     G.flash = 0;

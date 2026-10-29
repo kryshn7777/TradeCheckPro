@@ -143,7 +143,7 @@ const T = BD.BLOOD_TEXTS;
   const plaques = L.decor.filter((d) => ['plaque', 'tablet', 'sign', 'inscription'].includes(d.type));
   for (const e of T) {
     const q = BW.bloodQuad(e);
-    const off = e.floor ? 0.012 : 0.014;
+    const off = e.floor ? BW.BLOOD_OFF.floor : BW.BLOOD_OFF.wall;
     let good = true;
     const box = { minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
     for (const [sr, su] of [
