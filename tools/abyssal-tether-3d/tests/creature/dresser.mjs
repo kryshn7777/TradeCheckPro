@@ -536,7 +536,7 @@ for (const [diff, gap] of [
   const meshes = [];
   v.root.traverse((o) => o.isMesh && meshes.push(o));
   ok(v.meshes.every((m) => m.isSkinnedMesh && m.skeleton === v.skeleton && m.material === v.material), 'two LODs: skinned meshes on one skeleton and one material');
-  ok(meshes.length === 3 && v.bones.length === 31, `three meshes under it (near, far, glints), ${v.bones.length} bones; the measuring line is part of the skinned mesh`);
+  ok(meshes.length === 3 && v.bones.length === 32, `three meshes under it (near, far, glints), ${v.bones.length} bones; the measuring line and the chalk outline are part of the skinned mesh`);
   const body = { visible: true, x: 0, y: 0, z: 0, ux: 1, uy: 0, uz: 0, fx: 0, fy: 1, fz: 0, lx: 5, ly: 1, lz: 0, walk: 0, speed: 0, measure: 0, cut: 0, stagger: 0, spoiled: 0, glow: 0.4, tick: 0, line: { on: false, x: 0, y: 0, z: 0, taut: 0 }, outline: { on: false, x: 0, y: 0, z: 0, nx: 1, ny: 0, nz: 0, grow: 0, alpha: 0, seed: 0 } };
   const game = { dresser: { isNull: false, body, targetHand: 'right' }, renderer: { scene, camera, qualityTier: 'quest' }, settings: {} };
   const drawn = () => {
@@ -564,15 +564,23 @@ for (const [diff, gap] of [
   ok(r.n <= 1 && r.tris <= 4, `beyond ${GLOW_DIST} m: only the eye glints (${r.n} call, ${r.tris} triangles)`);
   body.outline.on = true;
   body.outline.alpha = 1;
+  body.outline.x = 6;
+  body.outline.y = 1;
+  body.outline.z = 3;
+  body.outline.nx = 0;
+  body.outline.nz = -1;
   body.measure = 1;
   body.line.on = true;
   body.line.x = 3;
   body.line.y = 1;
   body.line.z = 2;
   camera.position.set(8, 1.8, 0);
+  if (!v.outlineTex) v.outlineTex = { isStandIn: true }; // no canvas in Node: a stand-in so the outline path runs
   v.update(1 / 60, game);
-  const outlineDrawn = v.outline.visible ? 1 : 0;
-  ok(v.info.drawCalls === 1 + outlineDrawn && v.info.drawCalls <= 2, `measuring: body + line in 1 call, the chalk outline +${outlineDrawn} (no canvas in Node) = ${v.info.drawCalls}`);
+  r = drawn();
+  const cb = v.bones[v.bones.length - 1];
+  ok(v.outline.visible && cb.scale.y === 1 && r.n === 1 && v.info.drawCalls === 1, `measuring: the body, the line to your ring and the chalk outline (its own bone, ${cb.position.length().toFixed(1)} m out) in ONE call`);
+  ok(v.meshes[0].boundingSphere.radius >= cb.position.length(), 'the frustum bounds reach the outline and the ring');
   body.visible = false;
   body.outline.on = false;
   v.update(1 / 60, game);
