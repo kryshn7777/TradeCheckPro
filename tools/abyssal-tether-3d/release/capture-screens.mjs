@@ -46,6 +46,7 @@ fs.mkdirSync(KEYART, { recursive: true });
  *   run      seconds of simulation to run before the capture (creature, fx, ropes settle)
  *   creature  step in 0.25 s chunks until the creature is within [min,max] m of the player (or give up)
  *   settings  settings applied before the scene (e.g. { bloodWriting: true }); every recipe starts from bloodWriting off
+ *   frames   pumps the boards' and the blood's lazy atlases this many frames before the capture (they draw a cell per frame)
  *   url      extra query for the page (THE DRESSER's recipes: '&dresser=always'; the page otherwise runs ?hunt=always, which leaves
  *            the Dresser out, and &comms=off, which leaves the Expedition radio / restore out: a recipe with '&comms=on' keeps them)
  *   comms    EXPEDITION (sim/comms3d.js): { say, glitch, at, dur, t } puts a script line on air (a glitch of that kind at `at` s)
@@ -57,6 +58,11 @@ fs.mkdirSync(KEYART, { recursive: true });
  *            dresser.place); measure: it starts measuring your ring (the chalk outline, the line); orbit (m): at the end the camera
  *            moves that far from its chest, 50-70 degrees off its up, into open air; the look turns to its chest (lookMix 0..1
  *            toward the outline instead)
+ *   holdfast { site, state, dist, dy, target: [u, v, n], onT } THE HOLDFAST (sim/holdfast3d.js): the body `dist` m out from a site's
+ *            patch (dy above its centre) and held there, the site forced into `state` (DORMANT, AWARE, GRIP, CLOSE, RUINED,
+ *            ANSWER) with its palm going to `target` (metres in the site frame: along the wall, up, out of it); the look turns to it
+ *            (url '&holdfast=on': the page runs ?hunt=always, which leaves it out). `--only holdfast` renders the mock-headset
+ *            shot of it closed round the real gauntlet (vr-holdfast-closed)
  */
 const RECIPES = [
   { id: 'shot-01', section: 0, yaw: 0.0, pitch: -0.05, run: 0.6, note: 'the threshold: the first view' },
@@ -75,14 +81,25 @@ const RECIPES = [
   // DARK_STORY_BIBLE (not store shots; --recipe <id> only): a board with its correction (bd-s8-fed, the first step's ledge), a
   // second-pass blood writing by the Long Stair's second shelf (bw-s6-white, with the fresh measure beside it), and the chamber's
   // back wall (the figure cut to your measure, IT FITS NOW) from between the statues
-  { id: 'shot-board', section: 7, at: [0.4, -469.6, 17.6], abs: true, yaw: Math.PI, pitch: 0.34, run: 0.4, note: 'a board: ~WE FED IT.~ NO. WE WERE FED.', only: true },
-  { id: 'shot-blood2', section: 5, at: [-31.4, -229.6, 8.2], abs: true, yaw: Math.PI / 2, pitch: 0.22, run: 0.4, settings: { bloodWriting: true }, note: 'second-pass blood: THE WHITE ONE WAITS...', only: true },
-  { id: 'shot-chamber', section: 7, at: [-3.2, -555.6, 20.6], abs: true, yaw: Math.PI, pitch: 0.26, run: 0.3, settings: { bloodWriting: true }, note: 'the chamber: the figure and IT FITS NOW', only: true },
+  { id: 'shot-board', section: 7, at: [0.4, -469.6, 17.6], abs: true, yaw: Math.PI, pitch: 0.34, run: 0.4, frames: 20, note: 'a board: ~WE FED IT.~ NO. WE WERE FED.', only: true },
+  { id: 'shot-blood2', section: 5, at: [-31.4, -229.6, 8.2], abs: true, yaw: Math.PI / 2, pitch: 0.22, run: 0.4, frames: 20, settings: { bloodWriting: true }, note: 'second-pass blood: THE WHITE ONE WAITS...', only: true },
+  { id: 'shot-chamber', section: 7, at: [-3.2, -555.6, 20.6], abs: true, yaw: Math.PI, pitch: 0.26, run: 0.3, frames: 20, settings: { bloodWriting: true }, note: 'the chamber: the figure and IT FITS NOW', only: true },
+  { id: 'shot-figure', section: 7, at: [-3.7, -555.6, 23.9], abs: true, yaw: Math.PI - 0.32, pitch: 0.12, run: 0.3, frames: 20, note: 'the chamber: the figure cut to your measure, close', only: true },
   // THE DRESSER (docs/abyssal-tether-3d/plans/DRESSER.md): on a wall of the Two Descents at ~12 m; the chalk outline of you while it
   // measures your ring; the chalk line it puts in your head while it hunts you (not store shots; --recipe <id> only)
   { id: 'shot-dresser', section: 5, url: '&dresser=always', yaw: 0, pitch: 0, run: 0.8, dresser: { dist: 12, orbit: 12 }, note: 'the Dresser on a wall at ~12 m (a three-quarter view from the shaft)', only: true },
   { id: 'shot-dresser-measure', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.2, dresser: { dist: 11, measure: true }, lookMix: 0.85, note: 'measuring: the chalk outline of you', only: true },
   { id: 'shot-chalk', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.6, dresser: { dist: 11, measure: true }, note: 'the chalk line while it measures you', only: true },
+  // THE HOLDFAST (docs/abyssal-tether-3d/plans/CREATURE_PACING.md): the S2 patch as you climb to it (dormant: the studs are knuckles),
+  // reaching for your hand, torn out (not store shots; --recipe <id> only; the mock-headset shots: --only holdfast)
+  { id: 'shot-holdfast-dormant', section: 1, url: '&holdfast=on', yaw: 0, pitch: 0, run: 0.6, holdfast: { site: 'hf-s2-east', state: 'DORMANT', dist: 1.0, dy: -0.6 }, note: 'the patch: no chalk, wet knuckles in torn masonry', only: true },
+  { id: 'shot-holdfast-reach', section: 1, url: '&holdfast=on', yaw: 0, pitch: 0, run: 1.0, holdfast: { site: 'hf-s2-east', state: 'GRIP', onT: 0.45, dist: 0.85, dy: -0.5, target: [0.05, 0.08, 0.12] }, note: 'it opens toward your hand', only: true },
+  { id: 'shot-holdfast-ruined', section: 1, url: '&holdfast=on', yaw: 0, pitch: 0, run: 1.4, holdfast: { site: 'hf-s2-east', state: 'RUINED', dist: 0.9, dy: -0.55 }, note: 'torn out of the wall, the fingers broken', only: true },
+  // MESH_DETAIL_AND_OPTIMIZATION (props v2) close-ups, not store shots (--recipe <id>; '&props=0&propshi=0' in the url shows the old meshes):
+  // the Threshold's Lanternwright statue from 4 m, a giant chain at arm's length, a seeded scene-detail ledge (seed 7) at the feet
+  { id: 'prop-statue', section: 0, url: '&seed=7', at: [-1.3, 0.4, 6.6], abs: true, yaw: -2.37, pitch: 0.38, run: 0.4, note: 'props v2: the Lanternwright statue (S1)', only: true },
+  { id: 'prop-chain', section: 0, url: '&seed=7', at: [0.6, 0.4, -1], abs: true, yaw: 1.57, pitch: 0.05, run: 0.4, note: 'props v2: a giant chain at arm\'s length (S1)', only: true },
+  { id: 'prop-ledge', section: 4, url: '&seed=7', yaw: 0.6, pitch: -0.55, run: 0.4, note: 'props v2: scene-detail props on the S5 ledge (seed 7)', only: true },
   // EXPEDITION (docs/abyssal-tether-3d/plans/COMMS.md): the radio subtitle at the Threshold, a glitched line in the Last Throat, the
   // CONTINUITY restore (not store shots; --recipe <id> only)
   { id: 'shot-comms', section: 0, url: '&comms=on', yaw: 0.0, pitch: -0.05, run: 0.6, comms: { say: 's1-open-3', t: 1.6 }, note: 'a radio line at the Threshold', only: true },
@@ -206,6 +223,24 @@ async function setScene(page, r) {
       if (best) D.dresser.place({ az: best.az, dy: best.dy });
       if (rec.dresser.measure) D.dresser.measure();
     }
+    // THE HOLDFAST: wait for its GLB, stand the body off the patch (held there: the S2 patch is 5 m up a wall), force the state
+    let hfSite = null;
+    const hfFront = () => (rec.holdfast ? D.holdfast.front({ site: rec.holdfast.site, dist: rec.holdfast.dist == null ? 0.9 : rec.holdfast.dist, dy: rec.holdfast.dy == null ? -0.45 : rec.holdfast.dy }) : null);
+    if (rec.holdfast && D.holdfast && G.holdfastView) {
+      const hv = G.holdfastView;
+      if (!hv.ready && !hv.loading && !hv.failed) hv.load(() => G._holdfastLoader());
+      for (let k = 0; k < 1200 && !hv.ready && !hv.failed; k++) await new Promise((res) => setTimeout(res, 100));
+      const lv = G.renderer && G.renderer.levelView;
+      if (lv && typeof lv.finishDressing === 'function') lv.finishDressing(); // the walls round the patch (built 2 ms a frame otherwise)
+      hfSite = hfFront();
+      const q = rec.holdfast;
+      if (hfSite && q.state) {
+        const t = q.target || [0, 0, 0.1];
+        const ux = hfSite.nz;
+        const uz = -hfSite.nx; // u = up x n (walls)
+        D.holdfast.force(q.site, { state: q.state, hand: 'right', tx: hfSite.x + ux * t[0] + hfSite.nx * t[2], ty: hfSite.y + t[1], tz: hfSite.z + uz * t[0] + hfSite.nz * t[2], onT: q.onT });
+      }
+    }
     if (rec.ropes) {
       const out = G.level.anchorsNear(p.x, p.y + 4, p.z, rec.ropes, []);
       out.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y, a.z - p.z) - Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z));
@@ -217,6 +252,7 @@ async function setScene(page, r) {
     while (left > 0) {
       if (rec.hp != null) D.health(rec.hp); // low health: the scary line, the heartbeat vignette
       D.step(0.25, { render: false, state: false });
+      if (hfSite) hfFront();
       left -= 0.25;
       if (rec.creature && G.creature && !G.creature.isNull) {
         const d = G.creature.distance;
@@ -286,6 +322,29 @@ async function setScene(page, r) {
       const ey = p.y + 1.24;
       const ez = p.z;
       G._setLook(Math.atan2(-(tx - ex), -(tz - ez)), Math.atan2(ty - ey, Math.hypot(tx - ex, tz - ez)));
+    }
+    if (hfSite) {
+      // look at the patch (a little above its centre when something reaches out of it)
+      hfFront();
+      const ex = p.x;
+      const ey = p.y + 1.24;
+      const ez = p.z;
+      const tx = hfSite.x + hfSite.nx * 0.08;
+      const ty = hfSite.y + 0.02;
+      const tz = hfSite.z + hfSite.nz * 0.08;
+      G._setLook(Math.atan2(-(tx - ex), -(tz - ez)), Math.atan2(ty - ey, Math.hypot(tx - ex, tz - ez)));
+      for (let i = 0; i < 8; i++) G._render(1 / 60); // the level's pack LODs re-pick every 3rd frame after a teleport
+    }
+    if (rec.frames) {
+      // the boards and the blood are drawn a cell per frame near the head: pump their atlases here (no GL frames in between)
+      D.step(0.05, { render: true, state: false }); // applies the settings (the blood's), places the head
+      const lv = G.renderer.levelView;
+      const cam = G.renderer.camera;
+      const eye = cam.getWorldPosition(cam.position.clone());
+      for (let i = 0; i < rec.frames; i++) {
+        lv._boards.update(eye, lv._detailScale);
+        lv._blood.update(eye, lv._detailScale);
+      }
     }
     D.step(0.05, { render: true, state: false });
     G.fade = rec.fade || 0;
@@ -366,6 +425,78 @@ try {
       const info = await setScene(page, r);
       await sleep(400);
       void info;
+      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
+    }
+    await ctx.close();
+  }
+  if (ONLY === 'holdfast') {
+    // THE HOLDFAST closed round the real gauntlet at arm's length, in the mock headset (the stereo canvas; crop an eye)
+    console.log('the Holdfast in the mock headset 3840x1080');
+    const { ctx, page } = await newGamePage(3840, 1080, { xr: true, extra: '&holdfast=on' });
+    await page.evaluate(() => window.AT3D.game.enterVR());
+    await until(() => page.evaluate(() => window.AT3D.game.xrActive), { timeout: 30000, label: 'XR' });
+    await sleep(2000);
+    for (const r of [
+      { id: 'vr-holdfast-closed', state: 'CLOSE', run: 1.6, hold: [0.03, 0.06, 0.07] },
+      { id: 'vr-holdfast-grip', state: 'GRIP', onT: 0.42, run: 1.0, hold: [0.03, 0.06, 0.07] },
+    ]) {
+      const info = await page.evaluate(async (rec) => {
+        const G = window.AT3D.game;
+        const D = window.AT3D.debug;
+        const X = window.__xr;
+        D.freeze(false);
+        G.start('normal');
+        D.godMode(true);
+        G.applySettings({ bloodWriting: false });
+        const hv = G.holdfastView;
+        if (hv && !hv.ready && !hv.loading && !hv.failed) hv.load(() => G._holdfastLoader());
+        for (let k = 0; k < 1200 && hv && !hv.ready && !hv.failed; k++) await new Promise((res) => setTimeout(res, 100));
+        const lv = G.renderer && G.renderer.levelView;
+        if (lv && typeof lv.finishDressing === 'function') lv.finishDressing();
+        const site = 'hf-s2-east';
+        const s = G.holdfast.sites.find((q) => q.id === site);
+        D.warp(s.section);
+        Object.assign(X.head, { x: 0, y: 1.62, z: 0, yaw: 0 });
+        Object.assign(X.ctrl.right, { x: 0.06, y: 1.4, z: -0.44, pitch: -0.35, yaw: 0.25 });
+        Object.assign(X.ctrl.left, { x: -0.3, y: 0.9, z: -0.1, pitch: -1.2, yaw: 0 });
+        const hx = s.x + s.nz * rec.hold[0] + s.nx * rec.hold[2];
+        const hy = s.y + rec.hold[1];
+        const hz = s.z - s.nx * rec.hold[0] + s.nz * rec.hold[2];
+        const v = { x: 0, y: 0, z: 0 };
+        const sock = () => {
+          const o = G.input.handSocket('right');
+          const w = o.getWorldPosition(o.position.clone());
+          v.x = w.x;
+          v.y = w.y;
+          v.z = w.z;
+        };
+        D.holdfast.front({ site, dist: 0.5, dy: -0.4 });
+        G._setLook(Math.atan2(s.nx, s.nz), 0);
+        // the body moved until the right palm is on the patch (held there: the patch is 5 m up the wall)
+        const place = () => {
+          for (let k = 0; k < 3; k++) {
+            D.step(0.05, { render: false, state: false });
+            sock();
+            const p = G.player;
+            D.teleport(p.x + (hx - v.x), p.y + (hy - v.y), p.z + (hz - v.z));
+          }
+          D.step(0.02, { render: false, state: false });
+          sock();
+        };
+        place();
+        D.holdfast.force(site, { state: rec.state, hand: 'right', tx: v.x, ty: v.y, tz: v.z, onT: rec.onT });
+        let left = rec.run;
+        while (left > 0) {
+          D.step(0.2, { render: false, state: false });
+          place();
+          left -= 0.2;
+        }
+        D.step(0.05, { render: true, state: false });
+        for (let i = 0; i < 8; i++) G._render(1 / 60); // the level's pack LODs re-pick every 3rd frame after a teleport
+        D.freeze(true);
+        return { err: +Math.hypot(v.x - hx, v.y - hy, v.z - hz).toFixed(3), view: G.holdfastView ? { live: G.holdfastView.info.live, lod: G.holdfastView.info.lod.slice(), tris: G.holdfastView.info.triangles } : null };
+      }, r);
+      console.log('  ', r.id, JSON.stringify(info));
       await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
     }
     await ctx.close();

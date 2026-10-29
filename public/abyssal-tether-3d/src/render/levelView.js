@@ -926,22 +926,37 @@ function forgedRing(R, r, seg = 28, sides = 8) {
 /** Anchor mounts, one light geometry per shape: [ring, hook, fragile, stub]. Local +Z = mount normal. */
 function buildMountGeometries() {
   const plate = (parts, shape, s = 1) => {
-    const g = new THREE.BoxGeometry(0.22 * s, 0.22 * s, 0.05);
-    g.translate(0, 0, -0.2);
+    // props v2: a forged plate with rounded corners and chamfered edges (it was a plain box) and four domed rivets (6-sided pegs)
+    const h = 0.11 * s - 0.008;
+    const rc = 0.026 * s;
+    const sh = new THREE.Shape();
+    sh.moveTo(-h + rc, -h);
+    sh.lineTo(h - rc, -h);
+    sh.quadraticCurveTo(h, -h, h, -h + rc);
+    sh.lineTo(h, h - rc);
+    sh.quadraticCurveTo(h, h, h - rc, h);
+    sh.lineTo(-h + rc, h);
+    sh.quadraticCurveTo(-h, h, -h, h - rc);
+    sh.lineTo(-h, -h + rc);
+    sh.quadraticCurveTo(-h, -h, -h + rc, -h);
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.034, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 2, curveSegments: 3 });
+    g.deleteAttribute('uv');
+    g.translate(0, 0, -0.217);
     parts.push({ geo: g, shape, glow: 0, plate: 1 });
     for (let i = 0; i < 4; i++) {
-      const b = new THREE.CylinderGeometry(0.019, 0.019, 0.03, 6, 1);
+      const b = new THREE.SphereGeometry(0.019, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
       b.rotateX(Math.PI / 2);
-      b.translate((i % 2 ? 0.075 : -0.075) * s, (i < 2 ? 0.075 : -0.075) * s, -0.17);
+      b.scale(1, 1, 0.7);
+      b.translate((i % 2 ? 0.075 : -0.075) * s, (i < 2 ? 0.075 : -0.075) * s, -0.176);
       parts.push({ geo: b, shape, glow: 0, plate: 1 });
     }
   };
   /** Chain-mounted anchors: no wall plate; a shackle bar up to the chain's last link (local +Y = up). */
   const shackle = (parts, shape, y0, z = 0) => {
-    const b = new THREE.CylinderGeometry(0.02, 0.02, 0.32 - y0, 5, 1);
+    const b = new THREE.CylinderGeometry(0.02, 0.02, 0.32 - y0, 8, 1);
     b.translate(0, (0.32 + y0) / 2, z);
     parts.push({ geo: b, shape, glow: 0, plate: 2 });
-    const eye = new THREE.TorusGeometry(0.045, 0.014, 4, 8);
+    const eye = new THREE.TorusGeometry(0.045, 0.014, 8, 12);
     eye.rotateY(Math.PI / 2);
     eye.translate(0, 0.33, z);
     parts.push({ geo: eye, shape, glow: 0, plate: 2 });
@@ -4276,6 +4291,8 @@ export class LevelView {
     this._colossal = null;
     this._colossalParts = [];
     this._lightGlow = null;
+    this._links = null;
+    this._linkItems = null;
     this._sealView = null;
     this.gate = null;
     this.level = null;
@@ -4785,6 +4802,8 @@ export class LevelView {
     };
     this._farItems = [];
     this._propItems = [];
+    this._linkItems = [];
+    this._links = null;
     let haveStill = false;
     let haveGrate = false;
     // decor a mover carries (LEVEL_FUN_PLAN P4: the S3 cage and its chain) moves with it: render/objectivesView.js draws it
@@ -4925,8 +4944,109 @@ export class LevelView {
     return !!this._props;
   }
 
+  /**
+   * The giant chains' forged links as three InstancedMeshes (rich / medium / far link, the decor metal material like the cogs). Every
+   * LOD_EVERY frames once the head moved, each link of the head's section +-1 is binned by its distance (the kit's LOD limits, hysteresis,
+   * MID_DIST, the fog and the neighbour cap) and its matrix written into its level's mesh; each mesh's bounding sphere is that of its
+   * drawn links (frustum culling). Up to 3 draws per eye, no vertex memory per link.
+   */
+  _buildLinks() {
+    const items = this._linkItems;
+    if (!this._props || !items || !items.length) return;
+    if (this._links) for (const mesh of this._links.meshes) if (mesh) this.root.remove(mesh);
+    const meshes = [];
+    for (const suffix of ['_lod0', '', '_lod2']) {
+      const part = this._props.get('ch1_env_chainlink' + suffix);
+      if (!part) {
+        meshes.push(null);
+        continue;
+      }
+      const g = worldUV(part.geo.clone());
+      const mesh = new THREE.InstancedMesh(g, this.mats.get('decorMetal'), items.length);
+      mesh.name = 'chainLinks' + (suffix || '_lod1');
+      mesh.matrixAutoUpdate = false;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.count = 0;
+      mesh.visible = false;
+      mesh.boundingSphere = new THREE.Sphere();
+      this.root.add(mesh);
+      meshes.push(mesh);
+    }
+    if (!meshes[1]) {
+      for (const mesh of meshes) if (mesh) this.root.remove(mesh);
+      return;
+    }
+    this._links = { items, meshes, frame: 0, hx: Infinity, hy: 0, hz: 0, hb: -99, dirty: true };
+    this.stats.chainLinks = items.length;
+  }
+
+  _updateLinks(head, vd, hb, nd, d0, d1) {
+    const L = this._links;
+    if (!L) return;
+    L.frame++;
+    const moved = Math.abs(head.x - L.hx) + Math.abs(head.y - L.hy) + Math.abs(head.z - L.hz) >= 0.15;
+    if (!L.dirty && L.hb === hb && (L.frame % LOD_EVERY !== 0 || !moved)) return;
+    L.dirty = false;
+    L.hx = head.x;
+    L.hy = head.y;
+    L.hz = head.z;
+    L.hb = hb;
+    const h = LOD_HYST;
+    const md = MID_DIST * this._detailScale;
+    const cnt = [0, 0, 0];
+    const bx = [Infinity, Infinity, Infinity];
+    const by = [Infinity, Infinity, Infinity];
+    const bz = [Infinity, Infinity, Infinity];
+    const tx = [-Infinity, -Infinity, -Infinity];
+    const ty = [-Infinity, -Infinity, -Infinity];
+    const tz = [-Infinity, -Infinity, -Infinity];
+    const rich = !!(this._lodNear && L.meshes[0]);
+    const far = !!L.meshes[2];
+    for (const it of L.items) {
+      let l = 3;
+      if (it.sec >= hb - 1 && it.sec <= hb + 1) {
+        const d = Math.max(0, Math.hypot(it.x - head.x, it.y - head.y, it.z - head.z) - it.r);
+        let lim = md < vd ? md : vd;
+        if (it.sec !== hb && nd < lim) lim = nd;
+        if (d <= lim) {
+          if (rich && d < d0 * (it.cur === 0 ? 1 + h : 1 - h)) l = 0;
+          else if (!far || d < d1 * (it.cur <= 1 ? 1 + h : 1 - h)) l = 1;
+          else l = 2;
+        }
+      }
+      it.cur = l;
+      if (l === 3) continue;
+      L.meshes[l].setMatrixAt(cnt[l]++, it.m);
+      if (it.x - it.r < bx[l]) bx[l] = it.x - it.r;
+      if (it.y - it.r < by[l]) by[l] = it.y - it.r;
+      if (it.z - it.r < bz[l]) bz[l] = it.z - it.r;
+      if (it.x + it.r > tx[l]) tx[l] = it.x + it.r;
+      if (it.y + it.r > ty[l]) ty[l] = it.y + it.r;
+      if (it.z + it.r > tz[l]) tz[l] = it.z + it.r;
+    }
+    for (let l = 0; l < 3; l++) {
+      const mesh = L.meshes[l];
+      if (!mesh) continue;
+      mesh.count = cnt[l];
+      mesh.visible = cnt[l] > 0;
+      if (!cnt[l]) continue;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, cnt[l] * 16);
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.boundingSphere.center.set((bx[l] + tx[l]) / 2, (by[l] + ty[l]) / 2, (bz[l] + tz[l]) / 2);
+      mesh.boundingSphere.radius = Math.hypot(tx[l] - bx[l], ty[l] - by[l], tz[l] - bz[l]) / 2;
+    }
+    this.stats.chainLinksDrawn = cnt;
+  }
+
   /** Draws the pending prop items into band lists: LOD records from the props GLB, or the procedural fallback. */
   _emitPropItems(bands) {
+    const nLinks = this._linkItems ? this._linkItems.length : 0;
+    this._emitPropItems0(bands);
+    if (this._linkItems && this._linkItems.length !== nLinks) this._buildLinks();
+  }
+
+  _emitPropItems0(bands) {
     const P = new Parts();
     P.kitLamps = true;
     const itemM = new THREE.Matrix4();
@@ -4991,18 +5111,23 @@ export class LevelView {
     const m = new THREE.Matrix4();
     const loc = new THREE.Matrix4();
     if (it.type === 'chain') {
-      // as DECOR.chain: real links for the lower 24, crossed bars above them (the fog has those)
+      // as DECOR.chain: real links for the lower 24, crossed bars above them (the fog has those). The links are INSTANCES of the forged
+      // link (strategy O8: three instanced draws, one per level, re-binned by distance), not records in the packs: three levels of
+      // ~1,300 links merged non-indexed would cost ~46 MB of vertices
+      if (!this._props.get('ch1_env_chainlink')) return false;
       const sx = it.lw;
       const sy = it.sy;
       const pitch = d && isFinite(d.link) && d.link > 0.05 ? d.link : Math.max(0.1, sx * 1.15);
       const n = Math.min(Math.max(1, Math.round(sy / pitch)), 24);
       const rot = new THREE.Matrix4();
+      const links = this._linkItems || (this._linkItems = []);
       for (let i = 0; i < n; i++) {
         loc.makeScale(pitch, pitch, pitch);
         if (i % 2) loc.premultiply(rot.makeRotationY(Math.PI / 2));
         loc.premultiply(rot.makeTranslation(0, -sy / 2 + pitch * (i + 0.5), 0));
         m.multiplyMatrices(itemM, loc);
-        if (!this._propRec('ch1_env_chainlink', m.clone(), [1, 1, 1], 'metal', bands, MID_DIST, 'mid')) return false;
+        const e = m.elements;
+        links.push({ m: m.clone(), x: e[12], y: e[13], z: e[14], r: 0.8 * pitch, sec: this._band(e[13]), cur: 3 });
       }
       const R = pitch * 0.64;
       const tube = Math.max(0.02, pitch * 0.12);
@@ -5512,10 +5637,11 @@ export class LevelView {
       const s0 = String(bi0);
       const kind = s0[0] === 'd' ? 'd' : s0[0] === 'm' ? 'm' : s0[0] === 'n' ? 'n' : '';
       const sec = typeof bi0 === 'number' ? bi0 : parseInt(s0.slice(1), 10);
-      const maxD = kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : kind === 'n' ? NEAR_DIST : Infinity;
       for (const k of Object.keys(lists)) {
         const list = lists[k];
         if (!PACK_KINDS.has(k) || !list.length) continue;
+        // the 32 m detail tier of metal / flesh stays folded (drawn to the fog, as BUDGET_CH1's FOLD_DETAIL decided): no picture change
+        const maxD = kind === 'd' ? (FOLD_DETAIL.has(k) ? Infinity : DETAIL_DIST) : kind === 'm' ? MID_DIST : kind === 'n' ? NEAR_DIST : Infinity;
         lists[k] = [];
         const key = `${sec}|${k}`;
         if (!packs.has(key)) packs.set(key, { sec, k, recs: [] });
@@ -6157,6 +6283,7 @@ export class LevelView {
       // distance) layers near giants over far ones.
       this._colossal.material.color.copy(fogInfo.color).multiplyScalar(0.22);
     }
+    this._updateLinks(head, vd, hb, nd, lodNear, lodMid);
     this._updateCogs(head, t, vd);
     this._updateSolidStates(game, head, vd);
     if (this._sealView) this._sealView.update(dt, game ? game.objectives : null, head, vd, game ? game.time : 0);

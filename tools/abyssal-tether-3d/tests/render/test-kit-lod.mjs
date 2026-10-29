@@ -192,6 +192,34 @@ await ok('LodSet: the throttle (every 3rd frame, and only after the head moved 1
   assert.equal(set.update(30, 0, 0, 10, 24, 1, 1000, false), true, 'frame 6: evaluates (a level changed)');
 });
 
+// -- section packs (MESH_DETAIL_AND_OPTIMIZATION.md O1): plain records with a box, the neighbour cap, partial rewrites, drawn bounds ----
+const plainRec = (x, tris, maxD = Infinity) => ({ isLodRec: true, plain: true, geos: [null, tri(tris, x), null], box: [x - 1, -1, -1, x + 1, 1, 1], x, y: 0, z: 0, r: 1.7, maxD });
+await ok('LodSet packs: a plain record is measured to its box and culled by its tier distance, the fog and the neighbour cap', () => {
+  const set = new LodSet();
+  set.add([plainRec(0, 10), plainRec(30, 12, 26), rec(60, [30, 20, 8])]);
+  set.update(0, 0, 0, 10, 24, 1, 1000, true); // box 2: 29 m away (> 26: culled); kit record: 59.5 m (far level)
+  assert.equal(drawn(set), 10 + 8);
+  set.update(4, 0, 0, 10, 24, 1, 1000, true); // box 2 now 25 m away: drawn
+  assert.equal(drawn(set), 10 + 12 + 8);
+  set.update(4, 0, 0, 10, 24, 1, 1000, true, 20); // a neighbour pack: nothing beyond 20 m
+  assert.equal(drawn(set), 10);
+  assert.equal(set.drawnTris, 10);
+  const bs = set.rg.boundingSphere;
+  assert.ok(bs && Math.abs(bs.center.x) < 1e-6 && bs.radius < 2, 'the bounds are those of what is drawn');
+});
+await ok('LodSet packs: a change rewrites (and uploads) only the index from the first changed record on', () => {
+  const set = new LodSet();
+  set.add([plainRec(0, 10), rec(5, [30, 20, 8])]);
+  set.update(0, 0, 0, 10, 24, 1, 1000, true);
+  const head = [...set.index.array.slice(0, 30)];
+  set.update(20, 0, 0, 10, 24, 1, 1000, true); // the kit record goes rich -> medium; the box record stays
+  assert.deepEqual([...set.index.array.slice(0, 30)], head, 'the plain record keeps its indices');
+  const ranges = set.index.updateRanges;
+  assert.equal(ranges.length, 1);
+  assert.equal(ranges[0].start, 30, 'the upload starts after the unchanged record');
+  assert.equal(drawn(set), 10 + 20);
+});
+
 // -- cullBuried -----------------------------------------------------------------------------------------------------------------------
 await ok('cullBuried: faces pressed into a wall go, the others stay', () => {
   const wall = { minX: -5, maxX: 0, minY: -5, maxY: 5, minZ: -5, maxZ: 5, kind: 'wall', active: true };

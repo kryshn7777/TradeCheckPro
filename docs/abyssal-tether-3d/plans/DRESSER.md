@@ -23,8 +23,9 @@ is the Dresser's clock.
 
 ## Rules and numbers (Normal / Nightmare / Abyss)
 
-- **Where:** S3 Broken Gallery (Normal: walks at 0.85x, measures from 14 m), S4 Listening Vault, S6 The Two Descents (THE CORRIDOR,
-  1.1x). None in S1, S2, S5, S7, S8. Sandbox and the menu's attract flight: never.
+- **Where:** S3 Broken Gallery (Normal: walks at 0.85x, measures from 14 m), S4 Listening Vault, S5 The Gullet Stair (since
+  2026-10-29, CREATURE_PACING.md: Normal 0.9x and 14 m, so that a whole player is hunted there and a cut or a bite brings the Mason to
+  the keystone), S6 The Two Descents (THE CORRIDOR, 1.1x). None in S1, S2, S7, S8. Sandbox and the menu's attract flight: never.
 - **The gate:** whole at hp ≥ **0.75 / 0.70 / 0.65**; no longer whole below that minus **5 points** (0.70 / 0.65 / 0.60). Not whole it is
   **SPOILED**: it stops, turns its mask away and folds its arms; it never measures, cuts or dresses; it steps back if you come within 7 m.
   It also **yields to the Mason**: while the Mason has your scent (its gate armed, or withdrawing) or makes its staged S4 pass, the

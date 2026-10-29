@@ -262,10 +262,10 @@ player to avoid a real recovery ring, a blood writing that names Wren (the mende
 |---|---|---|---|
 | bd-s1-tally | west wall by the spawn's lamp, over the menders' first writing | scratch | *(forty tally strokes, no word)* |
 | bd-s1-wake | west wall, across from the spawn | plate | IF YOU WAKE HERE AND DO NOT REMEMBER THE CLIMB DOWN, THERE WAS NONE. |
-| bd-s1-cap | high on the south wall: you look up toward the Cap | plate | THE CAP WAS SET IN LIME SO THAT NONE WOULD FOLLOW. NONE HAVE COME THROUGH IT. |
+| bd-s1-cap | the east wall over the sill, in front of a body hanging from the second ring | plate | THE CAP WAS SET IN LIME SO THAT NONE WOULD FOLLOW. NONE HAVE COME THROUGH IT. |
 | bd-s1-count | the floor in front of the spawn | cut | COUNT YOURSELF AT THE LAMP. COUNT AGAIN AT THE BOTTOM. |
 | bd-s1-call | the sill's north wall by its lamp | plate | DO NOT CALL UP THE SHAFT. IT IS FARTHER THAN IT WAS. |
-| bd-s2-ledger | the landing's north wall | plate | LAMPS LIT: 4,112. / LAMPS PAID FOR: 4,111. |
+| bd-s2-ledger | the landing's floor at the checkpoint's right hand | cut | LAMPS LIT: 4,112. / LAMPS PAID FOR: 4,111. |
 | bd-s2-silence | **the ceiling** by the hook under the floor above (you look up as you aim) | plate | WE TRIED SALT, THEN SONG, THEN SILENCE. SILENCE WAS WORSE. |
 | bd-s2-statues | the far ledge, under the statue | plate | THE STATUES FACE THE LAMP. IF ONE DOES NOT, TELL NO ONE WHICH. |
 | bd-s2-ropes | the hall's north wall over the floor walk | plate | ROPES LOWERED: 38. ROPES RETURNED: 38. RETURNED EMPTY: 37. |
@@ -306,7 +306,7 @@ player to avoid a real recovery ring, a blood writing that names Wren (the mende
 | bd-s8-grate | the throat's west wall at its foot | cut | THE GRATE IS NOT TO KEEP IT OUT. |
 | bd-s8-short | the throat's foot, left of the grate | **fresh** | TOO SHORT. TOO WIDE. TOO AFRAID. NEXT. |
 | bd-s8-arms | the floor before the grate | cut | KEEP YOUR ARMS AS THEY ARE. IT IS CUT THAT WAY. |
-| bd-ch-figure | **the chamber's back wall**, left of the Still Lamp | outline | the life-size figure; the menders' heights (HOB, HALLAM, MAB, WENNA, TAMSIN, COLL, ISOLDE) all short of its head; XLI |
+| bd-ch-figure | **the chamber's back wall**, right of the Still Lamp as you face it | outline | the life-size figure; the menders' heights (HOB, HALLAM, MAB, WENNA, TAMSIN, COLL, ISOLDE) all short of its head; XLI |
 | bd-ch-fits | the back wall over the Still Lamp | **fresh** | MEASURED FORTY TIMES. CUT ONCE. IT FITS NOW. |
 | bd-ch-whole | **the chamber floor** between the statues | cut | FOR THE ONE WHO COMES DOWN WHOLE. |
 | bd-ch-stair | **the chamber ceiling** | cut | THERE IS NO STAIR UP. THERE NEVER NEEDED TO BE. |

@@ -298,7 +298,7 @@ def finger_low(name, sides=10):
     pts, frames, R = CHAINS[name]
     thumb = name == "thumb"
     names = [f"{name}_{k + 1}" for k in range(3 if thumb else 4)]
-    part = Part(f"lo_{name}", "flesh", 2.4 if not thumb else 2.2)
+    part = Part(f"lo_{name}", "flesh", 3.0 if not thumb else 2.6)
     Ls = [(pts[k + 1] - pts[k]).length for k in range(len(pts) - 1)]
     s_cum = [0.0]
     for L in Ls:
@@ -366,7 +366,7 @@ def finger_low(name, sides=10):
 
 
 def palm_low():
-    part = Part("lo_palm", "flesh", 1.8)
+    part = Part("lo_palm", "flesh", 2.3)
     n_around = 16
     stations = [-0.010, 0.004, 0.022, 0.042, 0.062, 0.080, 0.094, 0.104]
     rings = []
@@ -400,7 +400,7 @@ def palm_low():
 
 def thenar_low():
     """The ball of the thumb: a squashed ellipsoid under the palm, skinned to the hand and the thumb's metacarpal."""
-    part = Part("lo_thenar", "flesh", 1.6)
+    part = Part("lo_thenar", "flesh", 1.8)
     c = hpt(0.034, 0.019, -0.007)
     tp, tfr, _ = CHAINS["thumb"]
     ax = (tp[1] - tp[0]).normalized()
@@ -423,7 +423,7 @@ def thenar_low():
 
 
 def forearm_low(sides=12):
-    part = Part("lo_forearm", "flesh", 0.9)
+    part = Part("lo_forearm", "flesh", 0.55)
     ts = [-0.06, 0.0, 0.07, 0.16, 0.27, 0.40, 0.55, 0.72, 0.88, 1.0]
     rings = []
     L = (ELBOW - WRIST).length
@@ -472,7 +472,7 @@ def nail_low(name):
     f, b, sd = frames[k]
     L = (pts[k + 1] - pts[k]).length
     r = R[-2]
-    part = Part(f"lo_nail_{name}", "nail", 1.2)
+    part = Part(f"lo_nail_{name}", "nail", 1.8)
     bone = f"{name}_{k + 1}"
     base = pts[k] + f * (L * 0.38) + b * (r * 0.92)
     tip = pts[k + 1] + f * (0.0055 if not thumb else 0.0045) + b * (r * 0.30)
@@ -497,27 +497,27 @@ def socket_height(r, ang, hi=False):
     """Height out of the wall (m, along -Y) of the crater at radius r and angle ang (deterministic, matches HIGH and LOW)."""
     # angular irregularity: broken chunks of the rim, a missing bite at about 4 o'clock
     n1 = 0.5 * math.sin(3 * ang + 1.3) + 0.3 * math.sin(5 * ang + 0.4) + 0.2 * math.sin(9 * ang + 2.1)
-    bite = math.exp(-((math.atan2(math.sin(ang - 5.6), math.cos(ang - 5.6))) / 0.35) ** 2)
-    rim_r = 0.104 + 0.010 * n1
-    rim_h = 0.040 + 0.010 * n1 - 0.020 * bite
-    hole = 0.081 + 0.004 * n1
+    n2 = 0.6 * math.sin(7 * ang + 0.7) + 0.4 * math.sin(13 * ang + 1.9)
+    bite = math.exp(-((math.atan2(math.sin(ang - 5.6), math.cos(ang - 5.6))) / 0.4) ** 2)
+    hole = 0.064 + 0.004 * n1
+    rim_r = 0.080 + 0.007 * n1 + 0.003 * n2
+    rim_h = 0.030 + 0.008 * n1 + 0.004 * n2 - 0.018 * bite
     if r < hole:
         return 0.004  # the dark floor, just in front of the face
     if r < rim_r:
         t = (r - hole) / (rim_r - hole)
-        return lerp(0.004, rim_h, sstep(0.0, 1.0, t) ** 0.8)
-    out = 0.205 + 0.012 * n1
+        return lerp(0.004, rim_h, sstep(0.0, 1.0, t) ** 0.7)
+    # (smooth in the angle: a step here creases the flare into radial strokes)
+    chip = 0.009 * math.sin(17 * ang + 2 * n1) + 0.006 * math.sin(29 * ang + 1.1 + n2)
+    out = 0.150 + 0.018 * n1 + 0.010 * n2 + 0.030 * bite + chip  # broken plaster runs further out under the bite, chipped
     t = clamp((r - rim_r) / (out - rim_r))
-    h = rim_h * (1 - sstep(0.0, 1.0, t)) ** 1.6
-    if hi:
-        # peeled plaster plates in the flare: steps
-        h += 0.004 * (1 - t) * (math.sin(14 * ang + 3 * n1) > 0.3)
+    h = rim_h * (1 - sstep(0.0, 1.0, t)) ** 1.9
     return max(h, -0.0015)
 
 
 def socket_low():
-    part = Part("lo_socket", "socket", 0.7)
-    radii = [0.060, 0.0815, 0.090, 0.098, 0.112, 0.135, 0.165, 0.215]
+    part = Part("lo_socket", "socket", 0.22)
+    radii = [0.045, 0.0645, 0.071, 0.078, 0.088, 0.105, 0.128, 0.168]
     rings = []
     for ri, r0 in enumerate(radii):
         ring = []
@@ -539,7 +539,7 @@ def socket_low():
             j = (i + 1) % SOCK_SEG
             bm.faces.new((r0[i], r1[i], r1[j], r0[j]))
     # the floor disc: dark, closes the hole just in front of the face
-    fl = [part.v(Vector((math.cos(2 * math.pi * i / SOCK_SEG) * 0.0815, -0.004, math.sin(2 * math.pi * i / SOCK_SEG) * 0.0815)), {"socket": 1.0}) for i in range(SOCK_SEG)]
+    fl = [part.v(Vector((math.cos(2 * math.pi * i / SOCK_SEG) * 0.0645, -0.004, math.sin(2 * math.pi * i / SOCK_SEG) * 0.0645)), {"socket": 1.0}) for i in range(SOCK_SEG)]
     c = part.v(Vector((0, -0.004, 0)), {"socket": 1.0})
     for i in range(SOCK_SEG):
         j = (i + 1) % SOCK_SEG
@@ -624,7 +624,7 @@ def finger_high(bm, name):
             tipround = math.sqrt(max(0.0, 1 - ((s - (total - 0.0095)) / 0.0097) ** 2))
         cs.append(c)
         fr.append((f, b, sd))
-        slim = 1.0 - 0.07 * pad * (1 - knuck)  # the phalanges thin between the joints: bony
+        slim = 1.0 - 0.11 * pad * (1 - knuck)  # the phalanges thin between the joints: bony
         rx.append(r * 1.08 * (1 + 0.17 * knuck) * slim * max(0.05, tipround))
         ry.append(r * 0.98 * (1 + 0.06 * knuck) * slim * max(0.05, tipround))
         # stash per-ring knuckle / pad for the bump function
@@ -923,10 +923,10 @@ def sculpt(P, N):
         for j in range(1, len(pts) - 1):
             kp0 = vec(pts[j]) + vec(frames[j][1]) * R[j] * 1.0
             kdist = np.minimum(kdist, np.linalg.norm(P - kp0, axis=1))
-    jw = np.exp(-(kdist / 0.0062) ** 2)
-    across = np.sin(2 * np.pi * kdist / 0.00125 + 2.6 * g1 + 1.5 * fbm(P, 500.0, rng_seed + 3, 2))
-    across *= 0.55 + 0.45 * np.clip(fbm(P, 700.0, rng_seed + 4, 2) + 0.3, 0, 1)
-    disp += (is_f | is_t) * (0.00024 * jw * across * back)
+    jw = np.exp(-(joint_d / 0.0050) ** 2)
+    across = np.sin(2 * np.pi * joint_d / 0.0012 + 1.8 * g1 + 1.2 * fbm(P, 500.0, rng_seed + 3, 2))
+    across *= 0.5 + 0.5 * np.clip(fbm(P, 700.0, rng_seed + 4, 2) + 0.35, 0, 1)
+    disp += (is_f | is_t) * (0.00030 * jw * across * back ** 2)
     crease = np.exp(-(joint_d / 0.0006) ** 2)
     disp -= (is_f | is_t) * (0.00042 * crease * palmar)
     # the knuckle stone plates: raised, rough
@@ -1008,41 +1008,57 @@ def sculpt(P, N):
         tip = vec(pts[-1])
         tipz = np.maximum(tipz, (part == pi) * np.exp(-(np.linalg.norm(P - tip, axis=1) / 0.009) ** 2))
     disp -= 0.0002 * tipz * (fbm(P, 1500.0, rng_seed + 41, 2) > 0.1)
-    # ===== colour (linear), roughness, vein mask
-    stone = np.array([0.205, 0.192, 0.185])
-    flesh = np.array([0.33, 0.165, 0.160])
+    # ===== colour (linear), roughness, vein mask: a corpse in stone. Grey pallor (a little green), mottled; livor (pooled dead
+    # blood, purple-red) on the palm side and in the fingertips; bruised knuckles under mortar dust; dark cracks with pale dust lips;
+    # violet veins; hemp-brown rope tendons; the split at the wrist raw.
+    pallor = np.array([0.112, 0.112, 0.104])
+    green = np.array([0.090, 0.100, 0.084])
+    livor = np.array([0.150, 0.048, 0.066])
     mixn = np.clip(0.5 + 0.55 * fbm(P, 60.0, rng_seed + 51, 3), 0, 1)
-    flesh_amt = np.clip(0.35 + 0.45 * mixn - 0.25 * is_fa - 0.15 * np.clip(dors, 0, 1) + 0.35 * palmar, 0, 1)
-    col = stone[None, :] * (1 - flesh_amt[:, None]) + flesh[None, :] * flesh_amt[:, None]
-    col *= (0.86 + 0.20 * g1)[:, None]
-    # bruised knuckles, raw creases
-    bruise = np.array([0.30, 0.12, 0.13])
-    col = col * (1 - 0.55 * kp[:, None] * (is_f | is_t)[:, None]) + bruise * (0.55 * kp * (is_f | is_t))[:, None]
-    raw = np.array([0.20, 0.055, 0.06])
-    cr = np.clip(crease * palmar * 2, 0, 1)
+    blot = np.clip(0.5 + 0.7 * fbm(P, 140.0, rng_seed + 52, 3), 0, 1)
+    col = pallor[None, :] * (1 - 0.45 * mixn[:, None]) + green[None, :] * (0.45 * mixn)[:, None]
+    col *= (0.82 + 0.26 * g1 + 0.10 * fbm(P, 380.0, rng_seed + 53, 2))[:, None]
+    lv = np.clip(palmar * 0.85 + tipz * 0.9 + 0.25 * (1 - is_fa) * (blot > 0.62), 0, 1) * (0.45 + 0.55 * blot)
+    lv = np.clip(lv - 0.35 * is_fa, 0, 1)
+    col = col * (1 - lv[:, None]) + livor * lv[:, None]
+    # bruised knuckles under a film of mortar dust
+    bruise = np.array([0.105, 0.045, 0.055])
+    kb = np.clip(kp * (is_f | is_t) * 0.8, 0, 1)
+    col = col * (1 - kb[:, None]) + bruise * kb[:, None]
+    dust = np.array([0.20, 0.19, 0.172])
+    kd = np.clip(kp * (is_f | is_t) * (fbm(P, 2200.0, rng_seed + 54, 2) > 0.15) * 0.65, 0, 1)
+    col = col * (1 - kd[:, None]) + dust * kd[:, None]
+    raw = np.array([0.13, 0.03, 0.035])
+    cr = np.clip(crease * palmar * 2.5, 0, 1)
     col = col * (1 - cr[:, None]) + raw * cr[:, None]
-    # cracks: dark, a little red deep inside
-    deep = np.array([0.035, 0.018, 0.018])
-    col = col * (1 - 0.85 * crack[:, None]) + deep * (0.85 * crack)[:, None]
-    # veins: grey-violet
-    vein_c = np.array([0.14, 0.11, 0.19])
-    col = col * (1 - 0.55 * veins[:, None]) + vein_c * (0.55 * veins)[:, None]
+    # cracks: near black inside, pale dust on their lips (the wall's lime), fine crazing darker
+    deep = np.array([0.012, 0.009, 0.009])
+    lip = np.clip(1 - ve / (crack_w * 3.2), 0, 1) * (1 - crack) * crack_mask
+    col = col * (1 - 0.35 * lip[:, None]) + dust * (0.35 * lip)[:, None]
+    col = col * (1 - 0.92 * crack[:, None]) + deep * (0.92 * crack)[:, None]
+    col *= (1 - 0.35 * craze)[:, None]
+    # veins: violet-grey (the view darkens them on the heartbeat)
+    vein_c = np.array([0.050, 0.040, 0.085])
+    vv = np.clip(veins * 0.85, 0, 1)
+    col = col * (1 - vv[:, None]) + vein_c * vv[:, None]
     # rope: hemp, darker grooves (on the hand's tendons only where the ridge is high; the gash shows bare fibre)
-    hemp = np.array([0.24, 0.17, 0.095])
-    hr = np.clip(rope * 1.2 - 0.45, 0, 1) * 0.45
+    hemp = np.array([0.20, 0.135, 0.07])
+    hr = np.clip(rope * 1.3 - 0.4, 0, 1) * 0.6
     col = col * (1 - hr[:, None]) + hemp * hr[:, None]
     gf = np.clip(gash * 1.4, 0, 1)
-    fibre = hemp * (0.55 + 0.45 * (0.5 + 0.5 * fib))[:, None]
+    fibre = hemp * (0.35 + 0.65 * (0.5 + 0.5 * fib))[:, None]
+    gedge = np.clip((1 - np.abs(gash - 0.35) / 0.35), 0, 1) * (gash < 0.7)
     col = col * (1 - gf[:, None]) + fibre * gf[:, None]
-    # grime on the tips (mortar dust) and dried blood in the nail beds come with the nails
-    grime = np.array([0.11, 0.10, 0.092])
-    col = col * (1 - 0.6 * tipz[:, None]) + grime * (0.6 * tipz)[:, None]
+    col = col * (1 - 0.6 * gedge[:, None]) + raw * (0.6 * gedge)[:, None]  # the torn edge: raw
+    # grime on the tips (mortar under the nails)
+    grime = np.array([0.05, 0.042, 0.038])
+    col = col * (1 - 0.55 * tipz[:, None]) + grime * (0.55 * tipz)[:, None]
     # the forearm darkens toward the elbow (the inside of the wall: soot and wet)
-    soot = np.clip((-a_h - 0.05) / 0.18, 0, 1) * is_fa
-    col *= (1 - 0.55 * soot)[:, None]
-    # roughness: wet (low) flesh, rough cracks and plates
-    rough = 0.30 + 0.10 * mixn - 0.06 * palmar + 0.40 * crack + 0.25 * kp * (is_f | is_t) + 0.30 * gf + 0.15 * tipz - 0.08 * veins
-    rough = np.clip(rough, 0.16, 0.95)
+    soot = np.clip((-a_h - 0.04) / 0.16, 0, 1) * is_fa
+    col *= (1 - 0.6 * soot)[:, None]
+    # roughness: a wet film (low) on the skin, rough cracks, dusty knuckles, the raw split glistens
+    rough = 0.26 + 0.12 * mixn - 0.05 * palmar + 0.50 * crack + 0.35 * kd + 0.15 * lip + 0.1 * tipz - 0.08 * veins - 0.1 * gf
+    rough = np.clip(rough, 0.14, 0.95)
     vein_mask = np.clip(veins * (1 - gash) + 0.35 * crack * (dors > 0), 0, 1)
     return disp, np.clip(col, 0, 1), rough, vein_mask
 
@@ -1139,11 +1155,11 @@ def socket_high(coll):
     nr, na = 150, 360
     grid = []
     for j in range(nr + 1):
-        r = 0.050 + (0.232 - 0.050) * (j / nr) ** 1.15
+        r = 0.002 + (0.19 - 0.002) * (j / nr) ** 1.1
         row = []
         for i in range(na):
             ang = 2 * math.pi * i / na
-            y = -socket_height(r, ang, hi=True) if r > 0.06 else 0.02
+            y = -socket_height(r, ang, hi=True)
             row.append(bm.verts.new(Vector((math.cos(ang) * r, y, math.sin(ang) * r))))
         grid.append(row)
     for j in range(nr):
@@ -1159,13 +1175,21 @@ def socket_high(coll):
     rr = np.sqrt(P[:, 0] ** 2 + P[:, 2] ** 2)
     ang = np.arctan2(P[:, 2], P[:, 0])
     # chisel facets: Voronoi cells flattened (stone breaks in planes), strongest on the rim
-    rimw = np.exp(-((rr - 0.108) / 0.03) ** 2)
-    ve = voronoi_edge(P * np.array([1, 0, 1]), 0.018, SEED + 61)
-    facet = np.clip(ve / 0.006, 0, 1)
-    dy = -0.006 * rimw * (facet ** 0.5 - 0.5)
-    # cracks running out into the wall (radial)
-    rad = np.abs(np.sin(ang * 6 + 1.7 * np.sin(rr * 60))) < 0.04 + 0.03 * (rr < 0.14)
-    dy += 0.0012 * rad * (rr > 0.11)
+    rimw = np.exp(-((rr - 0.08) / 0.022) ** 2)
+    ve = voronoi_edge(P * np.array([1, 0, 1]), 0.026, SEED + 61, 0.95)
+    facet = np.clip(ve / 0.008, 0, 1)
+    dy = -0.004 * rimw * (facet ** 0.6 - 0.5)
+    # a few cracks running out into the wall, wandering, branching (not spokes)
+    wob = 1.6 * fbm(P, 30.0, SEED + 64, 3)
+    th = np.mod(ang + 0.35 * wob, 2 * np.pi)
+    rad = np.zeros(len(P), bool)
+    for c0, w0 in ((0.9, 0.022), (2.6, 0.018), (4.4, 0.02), (5.5, 0.016)):  # four cracks, wandering
+        rad |= np.abs(np.angle(np.exp(1j * (th - c0)))) < w0 * (1.2 - 0.6 * np.clip((rr - 0.08) / 0.08, 0, 1))
+    rad = rad & (rr < 0.165)
+    # plaster breaks in plates: Voronoi cells, each lifted a little (no regular steps)
+    vc = voronoi_edge(P * np.array([1, 0, 1]), 0.035, SEED + 66, 1.0)
+    plate = np.clip(1 - vc / 0.0015, 0, 1) * np.clip(1 - (rr - 0.085) / 0.07, 0, 1) * (rr > 0.085)
+    dy += 0.0011 * rad * (rr > 0.085) + 0.0008 * plate
     # surface grain
     dy += 0.0004 * fbm(P, 400.0, SEED + 62, 3)
     P[:, 1] += dy
@@ -1173,18 +1197,23 @@ def socket_high(coll):
     ob.data.update()
     # colour: masonry (the game's ashlar, sRGB ~0.29 / 0.28 / 0.26), fresh broken stone lighter on the rim, the hole black,
     # wet streaks running down from the hole
-    base = np.array([0.072, 0.066, 0.056])
+    base = np.array([0.080, 0.074, 0.064])
     fresh = np.array([0.15, 0.14, 0.125])
-    col = np.tile(base, (len(P), 1)) * (0.85 + 0.3 * fbm(P, 90.0, SEED + 63, 3))[:, None]
+    col = np.tile(base, (len(P), 1)) * (0.9 + 0.22 * fbm(P, 90.0, SEED + 63, 3))[:, None]
     h = -P[:, 1]
     fr = np.clip(rimw * (1 - facet) * 1.4, 0, 1) * (h > 0.01)
     col = col * (1 - fr[:, None]) + fresh * fr[:, None]
-    hole = np.clip(1 - (rr - 0.07) / 0.03, 0, 1)
-    col *= (1 - 0.92 * hole)[:, None]
+    hole = np.clip(1 - (rr - 0.058) / 0.016, 0, 1)
+    col *= (1 - 0.96 * hole)[:, None]
+    damp = np.clip(1 - (rr - 0.07) / 0.09, 0, 1) * (h < 0.012)
+    col *= (1 - 0.35 * damp)[:, None]
+    # wet mortar weeping from the lip, down the wall
+    weep = (P[:, 2] < -0.06) * (np.abs(np.sin(P[:, 0] * 120 + 1.3)) < 0.18) * np.clip(1 - (rr - 0.08) / 0.09, 0, 1)
+    col *= (1 - 0.35 * weep)[:, None]
     streak = (P[:, 2] < -0.06) * (np.abs(np.sin(P[:, 0] * 90 + 2)) < 0.25) * np.clip(1 - (rr - 0.1) / 0.12, 0, 1)
     col *= (1 - 0.45 * streak)[:, None]
     col *= (1 - 0.6 * rad * (rr > 0.11))[:, None]
-    rough = np.clip(0.82 - 0.45 * hole - 0.4 * streak - 0.15 * fr, 0.2, 0.95)
+    rough = np.clip(0.82 - 0.55 * hole - 0.4 * streak - 0.45 * weep - 0.15 * fr, 0.15, 0.95)
     set_vcols(ob, col, rough, np.zeros(len(P)))
     return ob
 
@@ -1603,6 +1632,7 @@ def gltf_settings_group():
 def game_material(paths, preview=False):
     mat = bpy.data.materials.new("HoldfastPreview" if preview else "HoldfastFlesh")
     mat.use_nodes = True
+    mat.use_backface_culling = True  # glTF doubleSided: false (one-sided: half the fill on Quest)
     nt = mat.node_tree
     nt.nodes.clear()
     out = nt.nodes.new("ShaderNodeOutputMaterial")
@@ -1731,7 +1761,7 @@ def vertex_ao(low, extra_objs):
     cls = [0] * len(me.polygons)
     me.attributes["cls_id"].data.foreach_get("value", cls)
     rr = np.sqrt(P[:, 0] ** 2 + P[:, 2] ** 2)
-    hole = np.clip(1 - (rr - 0.07) / 0.035, 0, 1) * (P[:, 1] > -0.012)
+    hole = np.clip(1 - (rr - 0.056) / 0.022, 0, 1) * (P[:, 1] > -0.012)
     sock_v = np.zeros(n, bool)
     for p in me.polygons:
         if cls[p.index] == 1:
@@ -1994,7 +2024,7 @@ def make_lod1(low, coll, target=620):
 
 
 def make_dormant(low, arm, coll):
-    """The fist in its socket as a static mesh (the far, instanced look): LOD0 posed by the idle clip at t = 0."""
+    """The fist in its socket as a static mesh (the far, instanced look): LOD1 posed by the idle clip at t = 0."""
     apply_pose(arm, clip_idle(0.0))
     bpy.context.view_layer.update()
     deps = bpy.context.evaluated_depsgraph_get()
@@ -2086,7 +2116,7 @@ def look_cam(name, loc, target, lens=35):
     bpy.context.scene.collection.objects.link(ob)
     ob.location = loc
     d = (Vector(target) - Vector(loc)).normalized()
-    ob.rotation_euler = d.to_track_quat("-Z", "Z").to_euler()
+    ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
     return ob
 
 
@@ -2142,34 +2172,50 @@ def wall_plane(scene):
 
 
 def gauntlet_proxy(scene, at, fwd, up):
-    """A stand-in for the player's gloved fist (leather glove + brass cuff) at `at`, the knuckles along fwd."""
+    """A stand-in for the player's gloved fist at `at` (fwd = toward the knuckles, up = the back of the hand): a leather glove
+    (the back of the hand, four curled fingers, the thumb) and an iron bracer with brass rivets."""
     objs = []
     side = fwd.cross(up).normalized()
     M = Matrix((side, fwd, up)).transposed().to_4x4()
     M.translation = at
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, radius=1)
-    g = bpy.context.active_object
-    g.matrix_world = M @ Matrix.Diagonal((0.046, 0.042, 0.030, 1))
-    mat = bpy.data.materials.new("Glove")
-    mat.use_nodes = True
-    b = mat.node_tree.nodes.get("Principled BSDF")
-    b.inputs["Base Color"].default_value = (0.055, 0.035, 0.022, 1)
-    b.inputs["Roughness"].default_value = 0.55
-    g.data.materials.append(mat)
-    objs.append(g)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=1, depth=1)
+
+    def mat(name, col, rough, metal=0.0):
+        m = bpy.data.materials.new(name)
+        m.use_nodes = True
+        b = m.node_tree.nodes.get("Principled BSDF")
+        b.inputs["Base Color"].default_value = (*col, 1)
+        b.inputs["Roughness"].default_value = rough
+        b.inputs["Metallic"].default_value = metal
+        return m
+    leather = mat("Glove", (0.05, 0.032, 0.02), 0.5)
+    iron = mat("Bracer", (0.05, 0.048, 0.045), 0.45, 0.9)
+    brass = mat("Rivet", (0.35, 0.22, 0.08), 0.35, 0.95)
+
+    def blob(local, scale, m, rot=None):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=1)
+        o = bpy.context.active_object
+        T = Matrix.Translation(Vector(local))
+        R = rot if rot is not None else Matrix()
+        o.matrix_world = M @ T @ R @ Matrix.Diagonal((*scale, 1))
+        for p in o.data.polygons:
+            p.use_smooth = True
+        o.data.materials.append(m)
+        objs.append(o)
+    blob((0, -0.01, 0.004), (0.043, 0.048, 0.022), leather)  # the back of the hand
+    for i, sx in enumerate((-0.027, -0.009, 0.009, 0.026)):  # four fingers curled under the knuckles
+        blob((sx, 0.036, -0.006), (0.0105, 0.016, 0.016), leather)
+        blob((sx, 0.03, -0.024), (0.0098, 0.0135, 0.0125), leather)
+    blob((0.04, 0.012, -0.012), (0.013, 0.026, 0.012), leather, Matrix.Rotation(math.radians(-35), 4, "Z"))  # the thumb
+    bpy.ops.mesh.primitive_cylinder_add(vertices=40, radius=1, depth=1)
     c = bpy.context.active_object
-    M2 = M.copy()
-    M2.translation = at - fwd * 0.075 + up * 0.002
-    c.matrix_world = M2 @ Matrix.Rotation(math.radians(90), 4, "X") @ Matrix.Diagonal((0.036, 0.030, 0.07, 1))
-    m2 = bpy.data.materials.new("Cuff")
-    m2.use_nodes = True
-    b2 = m2.node_tree.nodes.get("Principled BSDF")
-    b2.inputs["Base Color"].default_value = (0.32, 0.20, 0.07, 1)
-    b2.inputs["Metallic"].default_value = 0.85
-    b2.inputs["Roughness"].default_value = 0.4
-    c.data.materials.append(m2)
+    c.matrix_world = M @ Matrix.Translation(Vector((0, -0.085, 0))) @ Matrix.Rotation(math.radians(90), 4, "X") @ Matrix.Diagonal((0.037, 0.031, 0.075, 1))
+    for p in c.data.polygons:
+        p.use_smooth = True
+    c.data.materials.append(iron)
     objs.append(c)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        blob((math.cos(a) * 0.037, -0.06, math.sin(a) * 0.031), (0.0035, 0.0035, 0.0035), brass)
     return objs
 
 
@@ -2244,7 +2290,8 @@ def render_sheet(scene, arm, low, paths, sock_low=None):
     def ruined():
         apply_pose(arm, clip_dead(1.0))
         ik_pose(arm, Vector((0.01, -0.16, -0.17)), fingers_dir=Vector((0.1, -0.35, -1)), palm_normal=Vector((0, 0.6, -0.4)))
-    shot("ruined", front, "RUINED: torn out, the fingers broken", ruined)
+    low_cam = look_cam("CamLow", (0.12, -0.55, -0.12), (0.0, -0.08, -0.12), 38)
+    shot("ruined", low_cam, "RUINED: torn out, the fingers broken", ruined)
 
     def answer():
         apply_pose(arm, clip_answer(0.25))
@@ -2350,7 +2397,7 @@ def main():
     vertex_ao(low, [])
     make_clip_actions(arm)
     lod1 = make_lod1(low, work)
-    dormant = make_dormant(low, arm, work)
+    dormant = make_dormant(lod1, arm, work)
     dormant.data.materials.clear()
     dormant.data.materials.append(mat)
     for o in highs + [sock]:

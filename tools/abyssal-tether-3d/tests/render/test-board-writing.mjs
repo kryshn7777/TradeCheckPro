@@ -242,7 +242,7 @@ const T = BD.BOARD_TEXTS;
   const g = g0.mesh.geometry;
   ok(g.attributes.position.count === g0.list.length * 6 && !g.index && [...g.attributes.uv.array].every((v) => v >= 0 && v <= 1), `2 triangles per board, uvs inside the atlas (${g.attributes.position.count / 3} triangles)`);
   const m = g0.mesh.material;
-  ok(m.transparent && !m.depthWrite && m.polygonOffset && m.polygonOffsetFactor < 0 && m.map && m.side === THREE.DoubleSide && g0.mesh.renderOrder === 5, 'the plaques\' material: alpha-blended, no depth write, polygon offset toward the viewer, double-sided (ceilings), with the plaques');
+  ok(m.transparent && !m.depthWrite && m.polygonOffset && m.polygonOffsetFactor < 0 && m.map && m.side === THREE.DoubleSide && m.forceSinglePass && g0.mesh.renderOrder === 5, 'the plaques\' material: alpha-blended, no depth write, polygon offset toward the viewer, double-sided (ceilings) in ONE pass (one draw call), with the plaques');
   w.update(sp, 1);
   ok(g0.mesh.visible, 'shown while a board is within reach of the eye');
   const deep = { x: -3, y: -553, z: 16 };

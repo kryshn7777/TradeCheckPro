@@ -379,6 +379,8 @@ export class Holdfast3D {
       s.ty = s.y;
       s.tz = s.z;
       s.dist = 1e9;
+      s._debugHold = false;
+      s._debugT = false;
     }
     this._dmg = 0;
     this.t = 0;
@@ -528,6 +530,12 @@ export class Holdfast3D {
     s.pulse = bpm > 0 ? (s.pulse + dt * bpm) % 1 : 0;
     const d = this._nearest(s, p);
     s.dist = d;
+    if (s._debugHold) {
+      // debugForce (captures, the budget harness): the forced state holds, only the presentation runs
+      if (s.state === S.CLOSE) s.lockT += dt;
+      this._present(s, dt, p);
+      return;
+    }
     const grip = this.held === null || this.held === s ? this._gripOn(s) : null;
     switch (s.state) {
       case S.DORMANT:
@@ -902,7 +910,7 @@ export class Holdfast3D {
     s.squeeze = st === S.CLOSE ? Math.max(0, s.squeeze - dt * 3.2) : ease(s.squeeze, 0, 4);
     if (st === S.CLOSE && s.beatT > (s.low ? T.lowBeat : T.beat) - dt * 1.5) s.squeeze = s.low ? 1 : 0.8;
     // where the palm goes: the held hand; while AWARE / GRIP the nearest hand clamped to the patch (it reaches), else the centre
-    if (st !== S.CLOSE) {
+    if (st !== S.CLOSE && !s._debugT) {
       let tx = s.x;
       let ty = s.y;
       let tz = s.z;
@@ -944,7 +952,10 @@ export class Holdfast3D {
   // Debug / tests / capture tools
   // ===========================================================================
 
-  /** Forces a site into a state (debug, captures): { state, hand, tx, ty, tz }. Pins nothing. */
+  /**
+   * Forces a site into a state (debug, captures, the budget harness): { state, hand, tx, ty, tz, onT, hold (default true: the state
+   * holds until debugForce(i, { hold: false })) }. Pins nothing, costs nothing.
+   */
   debugForce(i, opts) {
     const s = this.sites[i];
     if (!s) return null;
@@ -953,6 +964,9 @@ export class Holdfast3D {
     this._setState(s, st);
     s.cd = 0;
     s.hand = o.hand || null;
+    s._debugHold = o.hold !== false;
+    s._debugT = s._debugHold && isFinite(o.tx);
+    if (isFinite(o.onT)) s.onT = o.onT;
     if (isFinite(o.tx)) {
       s.tx = o.tx;
       s.ty = o.ty;

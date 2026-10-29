@@ -44,27 +44,27 @@ export const BOARD_TEXTS = [
   // (bw-s1-forty reads them)
   { id: 'bd-s1-tally', section: 's1', face: 'wall', x: -11, y: 1.9, z: 5.2, yaw: W, w: 1.3, style: 'scratch', text: '{40}' },
   // the Threshold's west wall, across from the spawn
-  { id: 'bd-s1-wake', section: 's1', face: 'wall', x: -11, y: 2.1, z: 2.2, yaw: W, w: 2.6, text: 'IF YOU WAKE HERE AND DO NOT REMEMBER THE CLIMB DOWN, THERE WAS NONE.' },
-  // high on the south wall over the spawn's plaque: you look up toward the Cap
-  { id: 'bd-s1-cap', section: 's1', face: 'wall', x: 4, y: 4.6, z: 11, yaw: S, w: 2.6, text: 'THE CAP WAS SET IN LIME SO THAT NONE WOULD FOLLOW. NONE HAVE COME THROUGH IT.' },
+  { id: 'bd-s1-wake', section: 's1', face: 'wall', x: -11, y: 1.65, z: 1.75, yaw: W, w: 2.6, text: 'IF YOU WAKE HERE AND DO NOT REMEMBER THE CLIMB DOWN, THERE WAS NONE.' },
+  // the east wall over the sill, in front of a body hanging from the second ring
+  { id: 'bd-s1-cap', section: 's1', face: 'wall', x: 11, y: 0.6, z: -5.2, yaw: E, w: 2.6, text: 'THE CAP WAS SET IN LIME SO THAT NONE WOULD FOLLOW. NONE HAVE COME THROUGH IT.' },
   // the floor in front of the spawn, read facing down the shaft
   { id: 'bd-s1-count', section: 's1', face: 'floor', x: -4, y: 0, z: 6.4, yaw: 0, w: 2.4, style: 'cut', text: 'COUNT YOURSELF AT THE LAMP. COUNT AGAIN AT THE BOTTOM.' },
   // the sill's north wall by its lamp
   { id: 'bd-s1-call', section: 's1', face: 'wall', x: -0.2, y: -2.4, z: -11, yaw: N, w: 2.4, text: 'DO NOT CALL UP THE SHAFT. IT IS FARTHER THAN IT WAS.' },
 
   // ---- S2 · The Long Swing (the ledger; a year; the statues) -----------------------------------------------------------------
-  // the landing's north wall, right of the checkpoint's view
-  { id: 'bd-s2-ledger', section: 's2', face: 'wall', x: 6.4, y: -20.2, z: -11, yaw: N, w: 2.4, text: 'LAMPS LIT: 4,112.\nLAMPS PAID FOR: 4,111.' },
+  // the landing's floor at the checkpoint's right hand, read facing the hall
+  { id: 'bd-s2-ledger', section: 's2', face: 'floor', x: 8, y: -22, z: -8.6, yaw: E, w: 2.4, style: 'cut', text: 'LAMPS LIT: 4,112.\nLAMPS PAID FOR: 4,111.' },
   // the ceiling west of the hook under the floor above: you look up at it as you aim
-  { id: 'bd-s2-silence', section: 's2', face: 'ceil', x: -10, y: -11, z: 0, yaw: PI / 2, w: 3.2, text: 'WE TRIED SALT, THEN SONG, THEN SILENCE. SILENCE WAS WORSE.' },
+  { id: 'bd-s2-silence', section: 's2', face: 'ceil', x: -10.2, y: -11, z: 0, yaw: PI / 2, w: 3.2, text: 'WE TRIED SALT, THEN SONG, THEN SILENCE. SILENCE WAS WORSE.' },
   // the far ledge's north wall, under the statue that faces the lamp
   { id: 'bd-s2-statues', section: 's2', face: 'wall', x: -22.5, y: -22.4, z: -11, yaw: N, w: 2.4, text: 'THE STATUES FACE THE LAMP. IF ONE DOES NOT, TELL NO ONE WHICH.' },
   // the hall's north wall over the floor walk
-  { id: 'bd-s2-ropes', section: 's2', face: 'wall', x: -4.6, y: -33, z: -11, yaw: N, w: 2.4, text: 'ROPES LOWERED: 38. ROPES RETURNED: 38. RETURNED EMPTY: 37.' },
+  { id: 'bd-s2-ropes', section: 's2', face: 'wall', x: -5.4, y: -33, z: -11, yaw: N, w: 2.4, text: 'ROPES LOWERED: 38. ROPES RETURNED: 38. RETURNED EMPTY: 37.' },
   // the hall floor on the safe line's walk west
   { id: 'bd-s2-bram', section: 's2', face: 'floor', x: -5.5, y: -35, z: 1.8, yaw: PI / 2, w: 2.4, style: 'cut', text: 'THIS FLOOR IS BRAM AND HIS BROTHERS. WALK SOFTLY.' },
   // the safe line's low ledge, south wall
-  { id: 'bd-s2-settle', section: 's2', face: 'wall', x: -27, y: -41.4, z: 11, yaw: S, w: 2.6, text: 'IT TOOK TWO YEARS FOR THIS ONE COURSE TO FINISH SETTLING. DO NOT LEAN ON IT.' },
+  { id: 'bd-s2-settle', section: 's2', face: 'wall', x: -25.2, y: -41.4, z: 11, yaw: S, w: 2.6, text: 'IT TOOK TWO YEARS FOR THIS ONE COURSE TO FINISH SETTLING. DO NOT LEAN ON IT.' },
 
   // ---- S3 · Broken Gallery (closed in; the measure begins) -------------------------------------------------------------------
   // the landing's north wall, right of the checkpoint's view (the NINTH GALLERY board is behind you)
@@ -149,7 +149,7 @@ export const BOARD_TEXTS = [
   { id: 'bd-s8-arms', section: 's8', face: 'floor', x: -2, y: -556, z: 6.4, yaw: PI, w: 2.4, style: 'cut', text: 'KEEP YOUR ARMS AS THEY ARE. IT IS CUT THAT WAY.' },
 
   // ---- THE CHAMBER (the purpose at the bottom: THE FITTING) ------------------------------------------------------------------
-  // the back wall, left of the Still Lamp: a life-size outline cut and chalked, your pose (lantern up, launcher down), the
+  // the back wall, right of the Still Lamp as you face it: a life-size outline cut and chalked, your pose (lantern up, launcher down), the
   // heights the nine were measured at, all short of its head; XLI over it
   {
     id: 'bd-ch-figure', section: 's8', group: 'chamber', face: 'wall', x: -5.1, y: -554.9, z: 27, yaw: S, w: 1.05, aspect: 0.5, style: 'outline', text: 'XLI',

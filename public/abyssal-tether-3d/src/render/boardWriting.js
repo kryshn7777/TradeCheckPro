@@ -474,6 +474,7 @@ function boardMaterial(tex) {
     depthWrite: false,
     toneMapped: false,
     side: THREE.DoubleSide, // a ceiling's board is read from below (its back); walls and floors are never seen from behind
+    forceSinglePass: true, // flat quads: three.js would otherwise draw a transparent double-sided mesh twice (back, then front)
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,

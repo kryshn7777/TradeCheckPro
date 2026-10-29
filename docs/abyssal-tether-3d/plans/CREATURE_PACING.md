@@ -84,3 +84,13 @@ Not changed: the Mason / Dresser / skitterling behaviour code (no bug found), th
   inhale within 1.2 m, a wet breath within 0.3 m; 0.5 s to let go after taking hold.
 - Never lethal alone (its damage stops at 5 % hp); other damage on top of it can kill (a bite while it holds you).
 - Deterministic by level data (no randomness in the sim; the twitch timing is seeded by the site's id).
+
+## The Holdfast's cost on Quest (mock-XR budget harness, quest tier, stereo, both eyes + the lantern shadow pass)
+
+`holdfast.glb` 2.1 MB (meshopt + KTX2 1024 maps); LOD0 2306 triangles (skinned, one call per eye), LOD1 619, the dormant look
+(LOD1 posed, one `InstancedMesh` for every dormant site in range). Measured per site, looking at the patch, the level alone vs the
+same view with the Holdfast (`budget-hf.mjs`, `?dresser=off`): the dormant look from 8 m and a live rig closed on the hand at arm's
+length cost **+2 calls** each; triangles **+4.4 k to +6.6 k** for the closed rig, **+4.6 k to +14 k** for the dormant look with the
+first export (LOD0-posed, two sites sharing the call in S3 / S4; since then the dormant copy is LOD1: ~1.2 k stereo per site). The
+views stayed between 74 and 106 calls and 144-204 k triangles (budget 150 / 350 k). Not measured: a Holdfast and the Mason and two
+skitterlings in one view (WORST=1 run pending).

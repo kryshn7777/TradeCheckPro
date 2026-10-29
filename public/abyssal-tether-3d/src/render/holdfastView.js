@@ -144,7 +144,9 @@ class LiveRig {
     this.model.traverse((o) => {
       if (o.isBone) this.bones[o.name] = o;
       if (o.isSkinnedMesh) {
-        o.frustumCulled = false; // the bones move it far from its bind box; one small hand
+        // the bones move it about its socket: a fixed sphere round the socket (mesh space = the site frame) covers every pose
+        o.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0.12), 0.62);
+        o.frustumCulled = true;
         if (/LOD1/.test(o.name)) this.lod1 = o;
         else if (/LOD0/.test(o.name)) this.lod0 = o;
       }
@@ -519,14 +521,15 @@ export class HoldfastView {
       const s = sites[i];
       const d = this._cam.distanceTo(_v0.set(s.x, s.y, s.z));
       s._camD = d;
-      const awake = s.state !== 'DORMANT';
-      if (awake || d < V.liveRange) slots.push(s);
+      const awake = s.state !== 'DORMANT' || s.cd > 0; // (a cooling-down site keeps its retracted pose: no pop of the socket)
+      s._awake = awake;
+      if ((awake && d < V.showRange) || d < V.liveRange) slots.push(s);
       if (d < bd) {
         bd = d;
         best = s;
       }
     }
-    slots.sort((a, b) => (sim.held === b) - (sim.held === a) || (b.state !== 'DORMANT') - (a.state !== 'DORMANT') || a._camD - b._camD);
+    slots.sort((a, b) => (sim.held === b) - (sim.held === a) || b._awake - a._awake || a._camD - b._camD);
     if (slots.length > this.rigs.length) slots.length = this.rigs.length;
     // keep a rig on the site it had (no pose pop)
     const used = this._used || (this._used = []);
@@ -558,12 +561,12 @@ export class HoldfastView {
       info.triangles += r.lod === 0 ? info.trianglesLod0 : info.trianglesLod1;
       info.lod.push(r.lod);
     }
-    // 2. the dormant look for every other site in range (dormant state only; a spent / ruined site without a rig shows nothing)
+    // 2. the dormant look for every other site in range (any state: a site that got no rig still shows its socket)
     if (this.dormant) {
       let n = 0;
       for (let i = 0; i < sites.length; i++) {
         const s = sites[i];
-        if (s._camD > V.showRange || used.includes(s) || s.state !== 'DORMANT' || s.cd > 0) continue;
+        if (s._camD > V.showRange || used.includes(s)) continue;
         this.dormant.setMatrixAt(n++, this._siteMatrix(s, this._mat));
       }
       if (n !== this.dormant.count || n > 0) {

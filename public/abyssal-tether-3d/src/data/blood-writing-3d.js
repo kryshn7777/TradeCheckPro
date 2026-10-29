@@ -61,7 +61,7 @@ export const BLOOD_TEXTS = [
   // the landing's floor by the counterweight's line, read facing the hall
   { id: 'bw-s2-haul', section: 's2', x: 5, y: -22, z: -2.6, yaw: E, w: 1.9, floor: true, text: 'WE HAULED THE WEIGHT\nFOR AN HOUR. SOMETHING\nHAULED BACK.' },
   // the hall's north wall over the floor walk
-  { id: 'bw-s2-hob', section: 's2', x: -11.4, y: -33, z: -11, yaw: N, w: 1.8, text: "ONE STATUE HAS HOB'S\nFACE. HOB IS ALIVE.\nI WENT AND CHECKED." },
+  { id: 'bw-s2-hob', section: 's2', x: -12.8, y: -33, z: -11, yaw: N, w: 1.8, text: "ONE STATUE HAS HOB'S\nFACE. HOB IS ALIVE.\nI WENT AND CHECKED." },
 
   // ---- S3 · Broken Gallery (fear: Wenna's six; a tenth shadow) ------------------------------------------------------------
   // the landing's east wall, beside the NINTH GALLERY board (behind the checkpoint)

@@ -1060,7 +1060,7 @@ export class SceneDetail {
         const dy = items[o + 1] - head.y;
         const dz = items[o + 2] - head.z;
         const q = dx * dx + dy * dy + dz * dz;
-        if (q < n2) cand.push(q * 65536 + s); // distance-major key (s < 65536)
+        if (q < n2) cand.push(Math.floor(q * 1000) * 65536 + s); // integer key, distance (mm²) major, slot (< 65536) minor
       }
       cand.sort((a, b) => a - b);
       let left = HI_TRIS[tier.name] || 0;

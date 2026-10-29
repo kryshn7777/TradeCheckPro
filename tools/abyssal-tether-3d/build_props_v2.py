@@ -20,8 +20,8 @@ Every hero part is authored at a fine resolution, bevelled / chipped / pitted, t
 
 Run (Blender 5.x or the bpy module; one Blender at a time):
   flock /tmp/at3d-blender.lock BLENDER_VENV/bin/python tools/abyssal-tether-3d/build_props_v2.py [--out DIR] [--only a,b]
-then compress (meshopt, lossless, no quantisation: LevelView and the scene detail read the attributes as metres / floats):
-  GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir public/abyssal-tether-3d/assets/models/env --only ch1_props_v2 --lossless
+then compress (meshopt + KHR_mesh_quantization; LevelView.parseEnvKit and sceneDetail.addHeroTemplates de-quantise on load):
+  GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir DIR --out public/abyssal-tether-3d/assets/models/env --only ch1_props_v2
 """
 
 import argparse
@@ -578,7 +578,8 @@ def atlas_uv(ob):
             u, v = (c.z, c.y) if ax == 0 else (c.x, c.z) if ax == 1 else (c.x, c.y)
             fu = (u * 4.0) % 1.0
             fv = (v * 4.0) % 1.0
-            uvl.data[li].uv = (cell[0] + (cell[2] - cell[0]) * fu, cell[1] + (cell[3] - cell[1]) * fv)
+            # the glTF exporter writes v' = 1 - v: store 1 - v so the file holds the engine's (propCell) value
+            uvl.data[li].uv = (cell[0] + (cell[2] - cell[0]) * fu, 1.0 - (cell[1] + (cell[3] - cell[1]) * fv))
 
 
 def wear_fn(seed, amp_by_mat, size=0.03, chip=0.0, pin=None):
@@ -649,14 +650,14 @@ def lanternwright_src():
     prof = []
     for k in range(13):
         t = k / 12
-        r = W * (0.4 - 0.17 * t ** 0.85 + 0.03 * math.sin(t * math.pi))
+        r = W * (0.35 - 0.13 * t ** 0.85 + 0.025 * math.sin(t * math.pi))
         if k == 0:
-            r = W * 0.36
+            r = W * 0.33
         prof.append((r, y0 + robe_h * t + (0.0 if k else 0.02)))
 
     def pleats(a, y):
         t = (y - y0) / robe_h
-        return 1.0 + (0.07 * (1 - t) + 0.015) * math.cos(9 * a + 1.3 * t) + 0.03 * math.cos(4 * a + 0.7)
+        return 1.0 + (0.09 * (1 - t) + 0.02) * math.cos(9 * a + 1.3 * t) + 0.03 * math.cos(4 * a + 0.7)
 
     st.add(lathe(prof, 40, "stone", fold=pleats, cap_bottom=False))
     # rope belt with a knot and two tails
@@ -670,10 +671,10 @@ def lanternwright_src():
         st.add(tube(tail, [W * 0.018 * (1 - k / 9) for k in range(7)], 5, "stone", caps=(False, True)))
     # torso / shoulders
     sy = y0 + robe_h
-    st.add(ellipsoid((0, sy + H * 0.035, 0), (W * 0.25, H * 0.075, W * 0.19), 20, 10, "stone"))
+    st.add(ellipsoid((0, sy + H * 0.03, 0), (W * 0.27, H * 0.07, W * 0.2), 24, 12, "stone"))
     # hood: an outer shell with a pointed peak and a deep face opening (pushed inward in front)
-    hy = sy + H * 0.13
-    hr = W * 0.17
+    hy = sy + H * 0.125
+    hr = W * 0.19
 
     def hood(d):
         k = 1.0 + 0.35 * max(0.0, d.y) ** 3  # the peak
@@ -681,7 +682,7 @@ def lanternwright_src():
         k *= 1.0 + 0.06 * math.cos(6 * math.atan2(d.x, -d.z))  # drape folds
         return k
 
-    st.add(ellipsoid((0, hy, -W * 0.01), (hr, H * 0.075, hr * 1.12), 28, 16, "stone", disp=hood))
+    st.add(ellipsoid((0, hy, -W * 0.01), (hr, H * 0.08, hr * 1.12), 32, 18, "stone", disp=hood))
     # the rolled front edge of the hood
     rim = [(math.sin(a) * hr * 0.62, hy + math.cos(a) * H * 0.052 - H * 0.004, hr * 0.92 - 0.04 * abs(math.cos(a))) for a in [(-0.9 + 1.8 * k / 14) * math.pi for k in range(15)]]
     st.add(tube(rim, W * 0.022, 6, "stone"))
@@ -691,7 +692,7 @@ def lanternwright_src():
     # right arm raised forward with the lantern: sleeve (flared cuff), hand
     sh = Vector((W * 0.21, sy + H * 0.04, W * 0.02))
     el = Vector((W * 0.3, sy - H * 0.01, W * 0.3))
-    wr = Vector((W * 0.27, sy + H * 0.03, W * 0.58))
+    wr = Vector((W * 0.25, sy + H * 0.06, W * 0.64))
     arm = [sh, sh.lerp(el, 0.5), el, el.lerp(wr, 0.5), wr]
     st.add(tube([tuple(p) for p in arm], [W * 0.085, W * 0.08, W * 0.075, W * 0.075, W * 0.095], 14, "stone", caps=(True, False)))
     cuff = [tuple(wr + (wr - el).normalized() * (k * 0.02)) for k in range(3)]
@@ -760,23 +761,23 @@ def sd_skull(rng):
 
     g.add(ellipsoid((0, 0.095, -0.006), (0.084, 0.079, 0.1), 40, 30, "bone", disp=cr))
     # maxilla with the upper teeth
-    g.add(ellipsoid((0, 0.042, 0.072), (0.04, 0.02, 0.03), 14, 8, "bone"))
+    g.add(ellipsoid((0, 0.047, 0.068), (0.037, 0.017, 0.026), 14, 8, "bone"))  # the maxilla under the nose
     for k in range(10):
         a = (k - 4.5) / 4.5 * 1.1
-        x = math.sin(a) * 0.036
-        z = 0.068 + math.cos(a) * 0.024
-        g.add(box((x, 0.026, z), (0.0085, 0.013, 0.008), "bone").xf(T(x, 0.026, z) @ R("Y", a) @ T(-x, -0.026, -z)))
-    # the mandible, dropped a little open: a U of tube with the chin and the rami going up
+        x = math.sin(a) * 0.033
+        z = 0.088 - (1 - math.cos(a)) * 0.034
+        g.add(box((x, 0.032, z), (0.0075, 0.012, 0.0075), "bone").xf(T(x, 0.032, z) @ R("Y", a) @ T(-x, -0.032, -z)))
+    # the mandible, dropped a little open: a U of tube under the teeth with the rami going up the sides
     jaw = []
     for k in range(13):
-        a = (k / 12 - 0.5) * 2.5
-        jaw.append((math.sin(a) * 0.046, 0.008 + 0.004 * abs(math.sin(a)), 0.052 + math.cos(a) * 0.036 - 0.03))
+        a = (k / 12 - 0.5) * 2.6
+        jaw.append((math.sin(a) * 0.045, 0.009 + 0.003 * abs(math.sin(a)), 0.084 - (1 - math.cos(a)) * 0.05))
     g.add(tube(jaw, [0.0085 if 2 < k < 10 else 0.0075 for k in range(13)], 8, "bone", caps=(True, True), section=lambda i, j, a: (1.7, 1.0)))
     for s in (-1, 1):
-        g.add(tube([(s * 0.047, 0.01, 0.01), (s * 0.05, 0.03, -0.008), (s * 0.05, 0.05, -0.016)], [0.008, 0.007, 0.006], 6, "bone", caps=(False, True), section=lambda i, j, a: (0.6, 1.6)))
+        g.add(tube([(s * 0.0435, 0.01, 0.04), (s * 0.048, 0.03, 0.022), (s * 0.05, 0.052, 0.012)], [0.008, 0.007, 0.006], 6, "bone", caps=(False, True), section=lambda i, j, a: (0.6, 1.6)))
     for k in range(8):
         a = (k - 3.5) / 3.5 * 1.0
-        g.add(box((math.sin(a) * 0.034, 0.018, 0.062 + math.cos(a) * 0.02 - 0.03 + 0.012), (0.007, 0.01, 0.007), "bone"))
+        g.add(box((math.sin(a) * 0.031, 0.02, 0.08 - (1 - math.cos(a)) * 0.034), (0.0065, 0.01, 0.0065), "bone"))
     return g, {"bone": 0.0012}, ("floor", 0.0)
 
 
@@ -1048,7 +1049,7 @@ def sd_rope_coil(rng):
 
 def sd_block(rng):
     g = box((0, 0.1, 0), (0.36, 0.22, 0.3), "stone")
-    return g, {"stone": 0.007}, ("floor", 0.0)
+    return g, {"stone": 0.004}, ("floor", 0.0)
 
 
 SD = {
@@ -1058,7 +1059,7 @@ SD = {
     "crowbar": sd_crowbar, "ropeCoil": sd_rope_coil, "block": sd_block,
 }
 # bevel width (m) per template: hard-surface edges catch the lantern
-BEVEL = {"barrel": 0.003, "crateBroken": 0.004, "crateSmash": 0.004, "lantern": 0.0015, "bucket": 0.0, "block": 0.014, "pickaxe": 0.002, "hammer": 0.003}
+BEVEL = {"crateBroken": 0.004, "crateSmash": 0.004, "lantern": 0.0015, "bucket": 0.0, "block": 0.014, "pickaxe": 0.002, "hammer": 0.003}
 
 
 def export_glb(objects, path):
@@ -1111,7 +1112,7 @@ def main():
         st, ir, gl = lanternwright_src()
         # normalise to the decor box: x, z / 2.2, y / 6.4 (base at -0.5)
         N = S(1 / 2.2, 1 / 6.4, 1 / 2.2)
-        stone_w = wear_fn(9, {"stone": 0.025}, size=0.25, chip=0.03)
+        stone_w = wear_fn(9, {"stone": 0.012}, size=0.35, chip=0.02)
         kit_levels("ch1_env_lanternwright", st, "stone", stone_w, plane=("floor", -3.2), bev=0.02, edge=0.12, maxd=1.2)
         kit_levels("ch1_env_lanternwright_iron", ir, "metal", wear_fn(4, {"metal": 0.004}, size=0.08), maxd=0.5)
         g = make_object("ch1_env_lanternwright_glow", gl, ["glow"])
@@ -1137,9 +1138,9 @@ def main():
         bw = BEVEL.get(name, 0.0)
         if bw > 0:
             bevel(ob, bw, 2, 0.6)
-        subdivide(ob, {"block": 0.025, "barrel": 0.07, "crateBroken": 0.03, "crateSmash": 0.03}.get(name, 0.012), 60000)
+        subdivide(ob, {"block": 0.02, "barrel": 0.5, "crateBroken": 0.03, "crateSmash": 0.03}.get(name, 0.012), 60000)
         pin = (lambda c: c.y < 0.0012) if plane and plane[0] == "floor" else None
-        displace(ob, wear_fn(len(name), amps, size=0.012 if name != "block" else 0.04, chip=0.004 if name == "block" else 0.0, pin=pin))
+        displace(ob, wear_fn(len(name), amps, size=0.012 if name != "block" else 0.06, chip=0.018 if name == "block" else 0.0, pin=pin))
         decimate(ob, PROP_TRIS[name])
         for p in ob.data.polygons:
             p.use_smooth = True
