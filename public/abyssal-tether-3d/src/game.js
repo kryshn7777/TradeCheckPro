@@ -32,6 +32,8 @@ import { SplitClock, medalFor } from './sim/splits3d.js';
 import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
+import { ObjectiveHint } from './sim/objectiveHint.js';
+import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
@@ -268,6 +270,15 @@ function holdfastMode() {
     return /[?&]hunt=always\b/.test(q) ? 'off' : 'on';
   } catch {
     return 'on';
+  }
+}
+
+/** `?hints=off` disables the 20-second trigger highlight (tests, captures). */
+function hintsOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]hints=off/.test(location.search || '');
+  } catch {
+    return false;
   }
 }
 
@@ -961,6 +972,8 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
+    this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
+    this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -2605,6 +2618,7 @@ export class Game3D {
       this.objectives.setSqualls(!this.settings || this.settings.windSqualls !== false);
       this.physics.wind = this.objectives;
       if (attract) this.objectives.openAll();
+      this.objectiveHint = new ObjectiveHint(); // the 20 s trigger highlight (sim/objectiveHint.js)
     } catch (err) {
       this._fault('objectives', err);
       if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
@@ -3955,7 +3969,32 @@ export class Game3D {
     }
   }
 
+  /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
+  _updateObjectiveHint(dt) {
+    let view = this._hintView;
+    const h = this.objectiveHint;
+    const p = this.player;
+    if (!h || !this.objectives || !p || hintsOff() || this.state === 'menu') {
+      if (view) view.update(dt, null, false);
+      return;
+    }
+    const playing = this.state === 'playing' && p.alive !== false;
+    h.update(dt, this.objectives, p, this.sectionIndex, playing);
+    if (!view && this.renderer && this.renderer.scene) view = this._hintView = new ObjectiveHintView(this.renderer.scene);
+    if (h.on && !h.announced) {
+      h.announced = true;
+      const words = { bell: 'Something here answers a strike', hook: 'Something here wants a rope', haul: 'Something here wants hauling', winch: 'Something here wants a rope', lamp: 'A dead lamp: hold your light to it', breach: 'The keystone holds the grating' };
+      if (words[h.kind]) this._toast(words[h.kind], 3.2);
+    }
+    if (view) view.update(dt, h, !!(this.settings && this.settings.reducedEffects));
+  }
+
   _updateViews(dt) {
+    try {
+      this._updateObjectiveHint(dt);
+    } catch (err) {
+      this._fault('objectiveHint', err);
+    }
     const fx = this.healthFx;
     if (fx) {
       try {

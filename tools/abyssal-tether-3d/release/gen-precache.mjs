@@ -46,7 +46,9 @@ export const DEFAULT_EXCLUDE = [
 
 // Content the player does not need for the first minutes of Chapter I. Today the whole build is CORE; when chapters
 // II-V land, their packs go under assets/chapters/chN/ and become LAZY automatically.
-export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**'];
+// assets/models/holdfast.glb (4.2 MB): the Holdfast first appears in S2 and loads in the background (render/holdfastView.js); the core tier hit the
+// 80 MB cap with it. Lazy = cached on first use (the install's WARM pass fetches it); without it the patch simply stays the plain studs.
+export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb'];
 
 export function globToRegExp(glob) {
   let re = '';

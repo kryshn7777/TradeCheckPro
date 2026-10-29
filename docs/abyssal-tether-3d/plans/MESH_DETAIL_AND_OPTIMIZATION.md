@@ -180,4 +180,47 @@ nothing to the GPU beyond the existing window buffer (raised to 40k vertices / 1
 
 ## 4. Verification
 
-PENDING
+**Budget harness** (`budget.mjs` = the dresser `budget-lod.mjs` with a root switch and the scene-detail / props waits; `WORST=1 HIDE=1
+SKIT=0`, quest tier, mock XR stereo; "alone" = max over 8 look directions; "Mason" = the Mason placed in view at 14 m (LOD1) / 20 m, the
+Dresser out of play; a skitterling already in play in S6-S8 is drawn too). Before = the committed tree 07eb19c (this pass absent), after =
+the working tree. Calls / stereo triangles:
+
+| Section | before alone | after alone | before + Mason 14 m / 20 m | after + Mason 14 m / 20 m |
+|---|---|---|---|---|
+| S1 | 122 / 174k | 104 / 214k | 120 / 220k, 132 / 222k | 104 / 260k, 112 / 261k |
+| S2 | 120 / 189k | 104 / 193k | 124 / 235k, 124 / 235k | 102 / 238k, 102 / 238k |
+| S3 | 136 / 237k | 108 / 197k | 134 / 269k, 140 / 273k | 104 / 234k, 110 / 238k |
+| S4 | 146 / 227k | 102 / 187k | **150 / 266k, 154 / 267k** | 110 / 228k, 112 / 228k |
+| S5 | 136 / 200k | 110 / 187k | 132 / 244k, 140 / 244k | 110 / 231k, 118 / 232k |
+| S6 | 144 / 254k | 114 / 200k | 142 / 301k, 150 / 293k | 114 / 247k, 124 / 247k |
+| S7 | 148 / 248k | 108 / 176k | 138 / 284k, 146 / 293k | 106 / 222k, 108 / 222k |
+| S8 | 120 / 196k | 90 / 155k | 130 / 243k, 128 / 242k | 100 / 201k, 100 / 201k |
+
+Every section is now <= 124 calls and <= 261k stereo triangles with the Mason in view (before: up to 154 calls, S4 over budget); that leaves
+26+ calls and ~90k triangles, i.e. room for the Mason's LOD0 close up (+45-125k) or two skitterlings (+14 calls, +80k) in every section.
+S1 alone grew (+40k): the two Threshold statues stand within 6 m of the spawn at their rich level.
+
+- `npx eslint` on the changed JS: clean. `npm run test:at3d`: all suites pass (kit LOD suite +2 pack checks). `npm run verify:at3d`: all
+  checks pass, "all 3167 values identical vs baselines/verify-ch1.json". Lightmap / GI hashes: identical to the committed tree's for all three
+  variants (normal LM + GI match; nightmare / abyss LM match, their GI read-out is the same value as before this pass).
+- Nothing touches the sim, the level data, the collider plan (`_kitPlan` unchanged) or the bakes; `ch1_env_kit.glb` is byte-identical.
+
+## 5. Not done / not verified
+
+- Nothing ran on a Quest: frame time, the cost of the pack index rewrites on the Quest CPU (a kit level change rewrites the tail of one
+  section's index, tens of thousands of integers) and the single bigger merge per section and material while the dressing job runs during
+  play are unmeasured on the device.
+- Browser smoke (`smoke.mjs`, default and `?hunt=always`, warps S1 / S3 / S6 / S7 with the frame loop running): 0 page errors; one console
+  warning in both, "Multiple active KTX2 loaders" (the props GLB gets its own GLTF loader; harmless, a shared loader would silence it).
+- Screenshots: in-game close-ups after (`shots/after/sd-skull.png`, `sd-barrel.png`: the heroes draw in the game), Blender previews of all
+  heroes (`props2/sheet_sd.png`, `props2/sheet_kit.png`: statue at three levels, chain links at three levels), old-vs-packed section views
+  (`ab/A`, `ab/C`, `ab/diff_A_C`). The full before / after close-up series for 8+ props was cut (each software-GL capture run needs ~4 min
+  of boot under the shared machine's load); `closeups.mjs` + `pairs.py` and the `prop-*` recipes in `capture-screens.mjs` produce it.
+- Cut (owner asked to wrap up): the seal-bar bevels (item 15), a level-wide glow pack (-2 calls), welding the soups, a LOD for the richer
+  anchor plates, refined statue variants for the 19 m / 34 m colossi (they use the same normalised statue, stretched).
+- `npm run at3d:sw` refuses to write sw.js: the core precache is 81.41 MB > the 80 MB cap (the Holdfast GLB, 4.15 MB, and these props,
+  0.49 MB); moving a later-chapter asset to the lazy tier is the release owner's call.
+
+Scratchpad tools (`/tmp/claude-0/.../scratchpad/meshes/`): `attr.mjs` + `rows.mjs` / `table.mjs` (attribution), `budget.mjs`, `abviews.mjs` +
+`abdiff.py` (A/B images), `closeups.mjs` + `pairs.py` (prop close-ups), `smoke.mjs`, `glbdiff.mjs`, `preview_props.py` / `preview_kit.py`
+(Blender previews), `hash2.mjs` (bake hashes for any tree).
