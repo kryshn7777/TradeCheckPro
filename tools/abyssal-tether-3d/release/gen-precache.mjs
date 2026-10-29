@@ -48,7 +48,9 @@ export const DEFAULT_EXCLUDE = [
 // II-V land, their packs go under assets/chapters/chN/ and become LAZY automatically.
 // assets/models/holdfast.glb (4.2 MB): the Holdfast first appears in S2 and loads in the background (render/holdfastView.js); the core tier hit the
 // 80 MB cap with it. Lazy = cached on first use (the install's WARM pass fetches it); without it the patch simply stays the plain studs.
-export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb'];
+// assets/models/dresser.glb (~2 MB): THE DRESSER v2 first appears in S3 and loads in the background (render/dresserView.js); without it
+// the procedural Dresser stays.
+export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb', 'assets/models/dresser.glb'];
 
 export function globToRegExp(glob) {
   let re = '';

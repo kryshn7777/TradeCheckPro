@@ -249,6 +249,15 @@ function dresserMode() {
   }
 }
 
+/** `?dressermodel=procedural` keeps THE DRESSER's procedural model (no dresser.glb: before / after captures, debugging). */
+function dresserGlbOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]dressermodel=procedural\b/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /** `?comms=off` turns the Expedition layer off (the radio, the subtitles, the signal bars, the restore overlay): tests, captures. */
 function commsOff() {
   try {
@@ -1414,7 +1423,7 @@ export class Game3D {
     }
   }
 
-  /** The Holdfast's GLB loader: the vendored GLTFLoader with meshopt (default) + KTX2 (the atlas). */
+  /** The Holdfast's (and the Dresser's) GLB loader: the vendored GLTFLoader with meshopt (default) + KTX2 (the atlas). */
   _holdfastLoader() {
     const M = this.modules;
     const loader = new M.gltf.GLTFLoader();
@@ -1422,12 +1431,16 @@ export class Game3D {
     return loader;
   }
 
-  /** THE DRESSER's view (procedural: no asset to load); optional, `?dresser=off` skips it. */
+  /**
+   * THE DRESSER's view; optional, `?dresser=off` skips it. Procedural from the start; its v2 model (assets/models/dresser.glb) loads in
+   * the background once a run with a Dresser is under way (_updateViews) and swaps in; a missing / broken asset keeps the procedural one.
+   */
   _setupDresserView() {
     const M = this.modules;
     if (this.dresserView || !this.renderer || dresserMode() === 'off' || !M.dresserView || typeof M.dresserView.DresserView !== 'function') return;
     try {
       this.dresserView = new M.dresserView.DresserView(this);
+      this.dresserView.onError = (err) => this._fault('dresserAsset', err);
     } catch (err) {
       this._fault('dresserView', err);
       this.dresserView = null;
@@ -4043,6 +4056,10 @@ export class Game3D {
     const dv = this.dresserView;
     if (dv) {
       try {
+        // THE DRESSER v2 (dresser.glb, ~2 MB) loads in the background once a run with a Dresser is under way (Chapter I: S3 first)
+        if (!dv.glbReady && !dv.glbLoading && !dv.glbFailed && typeof dv.load === 'function' && this.state === 'playing' && this.dresser && !this.dresser.isNull && this.dresser.enabled && this.modules.gltf && !dresserGlbOff()) {
+          dv.load(() => this._holdfastLoader());
+        }
         dv.update(dt, this);
       } catch (err) {
         this._fault('dresserView', err);

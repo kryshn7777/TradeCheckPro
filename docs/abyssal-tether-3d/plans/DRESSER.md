@@ -15,11 +15,12 @@ is the Dresser's clock.
 | Sim (pure, Node, deterministic, allocation-free per frame) | `src/sim/dresser3d.js` (`Dresser3D`, `DRESSER_TUNING`, `DRESSER_DIFF`, `cuttable`) |
 | Section data | `src/data/level-data-3d.js`: `sections[i].creature.dresser = { active, walkMul?, measureRange?, wholeBy?, by? }` |
 | Wiring, `?dresser=` switch, haptics, `'dressed'` kill, debug API | `src/game.js` (`_updateDresser`, `AT3D.debug.dresser`), `src/sim/config3d.js` (`dresserMode`) |
-| View (procedural, one skinned mesh per LOD) | `src/render/dresserView.js` |
+| View (one skinned mesh per LOD: the v2 GLB, the procedural model as its fallback) | `src/render/dresserView.js` |
+| The v2 model (Blender, baked: `assets/models/dresser.glb`) | `tools/abyssal-tether-3d/build_dresser.py` (README: "The Dresser v2"), `previews/dresser_sheet.png` |
 | The cut ring | `src/sim/level3d.js` (`anchor.cut`), `src/render/levelView.js` (a sawn ring sprung open, bright clean iron) |
 | Chalk health text | `src/render/lowHealthText.js` (`LINES_CHALK`, `LINES_MEASURE`), fed by `src/render/healthFx.js` |
 | Sound, captions, death line | `src/audio/audio3d.js` (`_onDresser*`), `src/ui/captions.js` (`[Ticking] [Humming] [Scraping] [Sawing]`), `src/ui/ui3d.js` + `game.js` (`dressed`) |
-| Tests | `tools/abyssal-tether-3d/tests/creature/dresser.mjs` (in `npm run test:at3d`) |
+| Tests | `tools/abyssal-tether-3d/tests/creature/dresser.mjs` (in `npm run test:at3d`): the sim, the procedural fallback, the v2 LOD table, the GLB's budget and skeleton contract read from its JSON, its path in the view (parsed in Node) |
 
 ## Rules and numbers (Normal / Nightmare / Abyss)
 
@@ -72,10 +73,29 @@ Never both. **The regen clock** (Normal: 6 s, then 5 %/s): a hit to 50 % and it 
   segmented chisel arms out of ragged sleeves, two small grey hands paying out the line, long bare feet. Idle breathing, small sudden head
   tilts, a head that turns past a person's reach; measuring: arms spread like dividers, head tilted; cutting: the chisels work the line
   like a bow saw; spoiled: mask turned away to the wall, arms folded with the blades up behind the shoulders; staggered: flung back.
-- 32 bones, procedural; near LOD 8.8 k triangles, far 3.6 k (switch at 12 m on Quest, 45 m on desktop high), beyond 60 m only two
-  cold glints. **One draw call, always**: the measuring line (a bone at its far end) and the chalk outline of you (a quad on its own
-  bone, alpha-dithered from the outline texture) are part of the skinned mesh.
+- **v2 (2026-10-29, the owner: "he looks so low poly without a face")**: the model is sculpted and baked in Blender
+  (`tools/abyssal-tether-3d/build_dresser.py`, `assets/models/dresser.glb`, `previews/dresser_sheet.png`) for the same 32-bone
+  skeleton, so the procedural animation drives it unchanged. THE FACE: a carved porcelain-stone saint mask split on a vertical seam,
+  the halves mismatched (the left one dropped 1.8 cm and turned): the serene half with a calm closed lid, an archaic smile and a
+  chalked mason's mark on the brow; the wrong half with a heavier, swollen lid open a crack (more glow), a doubled crease, a hairline
+  crack from the eye to the jaw, the mouth corner pulled down, a tally scratched on the temple and a nail missing at the jaw. A brow
+  ridge, a long nose split by the seam, closed lids in sooted sockets with slit eyes (the glow is the ORM's blue channel), the mouth
+  sewn shut with cord through drilled holes (blood at the holes), grime tears, chisel dents, a chipped seam, craquelure, iron nails
+  and rust runs. The rest: a peaked wool hood with a rolled lip, a mantle over the shoulders with chalk dust, a wet robe with a
+  stitched patch and frayed hem, a stitched leather apron with a pocket, a belt with two chisels in a loop, a mallet and a brass
+  plumb bob on its cord, forged chisel arms (octagonal stepped bars, rivetted rings, ball joints centred on the pivots), cloth-
+  wrapped small hands holding the line's spool, long bare feet with four toes.
+- LODs (v2): **LOD0 22.6 k triangles** within 8 m on Quest (32 m on desktop high), **LOD1 7.6 k** to 22 m (50 m high), **LOD2
+  2.2 k** beyond (still the mask: brow, nose, seam, slits from the atlas), beyond 60 m only two cold glints. One 1024 atlas
+  (albedo ETC1S, normal + ORM UASTC), the GLB ~1.8 MB (lazy precache tier). It loads in the background once a run is under way;
+  until then, and if it is missing or fails, the procedural model (near 8.8 k, far 3.6 k, switch 12 m on Quest) is the fallback.
+  **One draw call, always**: the measuring line (a bone at its far end) and the chalk outline of you (a quad on its own bone,
+  alpha-dithered from the outline texture) are merged into the skinned mesh of whichever model is shown.
 - The level's lit material (lantern, baked GI, wet film, horror grade) + a cold rim, a faint pale self-light on the mask, a fog cap.
+  v2 visibility: the self-light is weak up close (the carving shows) and grows with the distance (x6 by 28 m), the pale mask and
+  the slits pierce the fog, a cold rim on the hood's lip and on the silhouette that grow with the distance (never inside the hood:
+  the silhouette rim is masked by the baked occlusion), the landmarks' fog cap
+  (0.5): the figure keeps half its own value in the haze. No extra draw call.
 - Sound: the line's irregular dry tick (~0.6 s, ~0.25 s and louder while it measures), a hummed three-note work-song (G, B flat, A),
   chalk scraping beside you while it measures, a rasping saw at your ring for the last second; the cut sounds as a snapped ring.
 - Health text: while it hunts you (you are whole) the head-locked line is white chalk ("YOU LOOK WHOLE", "GOOD STONE", "IT WAS SOMEONE";
@@ -96,6 +116,21 @@ measures (the line to a ring, the chalk outline on), at ~12 m and at ~22-29 m.
 | S6 + 2 skitterlings at 9-10 m | 148-156 calls, 328-337 k (same views) | 150-158 calls, 336-344 k | the skitterlings' cost; the Dresser adds 2 calls |
 
 The Dresser costs **one call per eye** and 3.6 k triangles per eye (the far LOD from 12 m on Quest; 8.8 k closer).
+
+**v2 (2026-10-29, the GLB), re-measured** the same way (`budget-lod` harness: mock-XR, Quest tier, it measures on a wall with the line
+and the chalk outline on), before = the procedural model at HEAD, after = the v2 GLB; "close" ~6-7 m (v2 forced to LOD0, the worst
+case: on a wall its chest is usually > 8 m from your eyes, which is LOD1), "near" ~12 m (v2 LOD1), "far" ~22-29 m (v2 LOD2):
+
+| Section | Without (before / after) | Close: before (8.8 k) / after LOD0 (22.6 k) | Near ~12 m: before (3.6 k) / after LOD1 (7.6 k) | Far: before / after LOD2 (2.2 k) |
+|---|---|---|---|---|
+| S3 | 104 calls 198 k / 106 calls 195 k | 98 calls 201 k / 100 calls 231 k | 96 calls 192 k / 98 calls 203 k | 102 calls 196 k / 104 calls 196 k |
+| S4 | 100 calls 182 k / 102 calls 175 k | 102 calls 191 k / 104 calls 217 k | 102 calls 182 k / 104 calls 188 k | 104 calls 182 k / 106 calls 178 k |
+| S5 | 110 calls 183 k / 112 calls 185 k | 102 calls 196 k / 104 calls 225 k | 102 calls 188 k / 104 calls 197 k | 110 calls 188 k / 112 calls 187 k |
+| S6 | 112 calls 199 k / 112 calls 198 k | 108 calls 216 k / 108 calls 243 k | 106 calls 206 k / 106 calls 213 k | 116 calls 206 k / 116 calls 203 k |
+
+v2 still costs **one call per eye** (the ±2-call differences between runs are the view sampling, the same in both), 22.6 k / 7.6 k /
+2.2 k triangles per eye by LOD (+45 k stereo at the worst, close to it): every view stays <= 116 calls and <= 243 k triangles
+(limits 150 / 350 k), well under the Mason's 57 k LOD0 x 2 that it never shares a view with. Not measured on a headset.
 
 ## Switches
 

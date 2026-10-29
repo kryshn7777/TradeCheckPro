@@ -11,7 +11,12 @@
 //   - THE CORRIDOR: an hp sweep 100 -> 0 -> 100 (real damage, real regen) with the Mason's gate: the Dresser hunts >= 75 (down to
 //     70 by the hysteresis), neither in between, the Mason <= 35 and its 14 s scent window, never both; the regen clock (a hit to
 //     50 % on Normal: it can see you again 11 s later);
-//   - the view: near LOD <= 12 k triangles, far <= 4.5 k, one skinned mesh (one call) + the outline decal; glints beyond 60 m;
+//   - the view (procedural fallback): near LOD <= 12 k triangles, far <= 4.5 k, one skinned mesh (one call) + the outline decal;
+//     glints beyond 60 m; a failing GLB load keeps it;
+//   - THE DRESSER v2: the LOD table (pickLod, hysteresis); assets/models/dresser.glb read from its JSON (<= 2.5 MB, LODs <= 24 k /
+//     8.5 k / 3.2 k, one primitive each, 3 KTX2 maps <= 1024, meshopt, the skin's joints = BONES: names, parents, bind offsets,
+//     identity rest rotations); parsed in Node and built by the view (three LODs on its skeleton + line + outline in ONE call per
+//     LOD at 4 / 15 / 30 m on Quest, the mask in every LOD, the bounds, the weights, the mask turning with the head);
 //   - the switch: ?dresser=off|always|on, ?hunt=always leaves it out; game.js builds neither sim nor view when off; the verify
 //     harness never builds it (its baselines are untouched).
 //   node dresser.mjs [--root DIR]
@@ -524,11 +529,11 @@ for (const [diff, gap] of [
 // ---- the view's budget ---------------------------------------------------------------------------------------------------
 {
   const THREE = await import('three');
-  const { buildDresserGeometry, DresserView, GLOW_DIST, LOD_DIST } = await import(srcUrl('render/dresserView.js'));
+  const { buildDresserGeometry, DresserView, GLOW_DIST, LOD_DIST, LOD_DIST_FALLBACK } = await import(srcUrl('render/dresserView.js'));
   const near = buildDresserGeometry(0).index.count / 3;
   const far = buildDresserGeometry(1).index.count / 3;
-  ok(near <= 12000, `near LOD ${near} triangles (<= 12000)`);
-  ok(far <= 4500, `far LOD ${far} triangles (<= 4500)`);
+  ok(near <= 12000, `procedural fallback: near LOD ${near} triangles (<= 12000)`);
+  ok(far <= 4500, `procedural fallback: far LOD ${far} triangles (<= 4500)`);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(90, 1, 0.05, 400);
   scene.add(camera);
@@ -557,7 +562,7 @@ for (const [diff, gap] of [
   camera.position.set(35, 1.8, 0);
   v.update(1 / 60, game);
   r = drawn();
-  ok(v.lod === 1 && r.n === 1 && v.info.triangles === far, `at 35 m (Quest switch ${LOD_DIST.quest} m): the far LOD, 1 call, ${v.info.triangles} triangles`);
+  ok(v.lod === 1 && r.n === 1 && v.info.triangles === far, `at 35 m (fallback Quest switch ${LOD_DIST_FALLBACK.quest} m, v2 ${LOD_DIST.quest.join(' / ')} m): the far LOD, 1 call, ${v.info.triangles} triangles`);
   camera.position.set(GLOW_DIST + 10, 1.8, 0);
   v.update(1 / 60, game);
   r = drawn();
@@ -585,7 +590,161 @@ for (const [diff, gap] of [
   body.outline.on = false;
   v.update(1 / 60, game);
   ok(!v.root.visible && v.info.drawCalls === 0, 'out of play: nothing drawn');
+  ok(!v.glbReady && !v.glbLoading && !v.glbFailed, 'no loader given: the procedural model stays (the fallback)');
+  v.load(() => {
+    throw new Error('offline');
+  });
+  ok(v.glbFailed && !v.glbReady && v.meshes.length === 2 && v.meshes.every((m) => m.isSkinnedMesh), 'a failing load (offline): flagged, the procedural meshes stay');
   v.dispose();
+}
+
+// ---- THE DRESSER v2: the LOD table, the GLB's budget and contract (read from its JSON), its path in the view (parsed in Node) ----
+{
+  const THREE = await import('three');
+  const { DresserView, GLOW_DIST, LOD_DIST, LOD_DIST_FALLBACK, BONES, pickLod } = await import(srcUrl('render/dresserView.js'));
+  const tiersOk = ['low', 'quest', 'high'].every((t) => LOD_DIST[t][0] < LOD_DIST[t][1] && LOD_DIST[t][1] < GLOW_DIST && LOD_DIST_FALLBACK[t] < GLOW_DIST);
+  ok(tiersOk && LOD_DIST.quest[0] === 8 && LOD_DIST.quest[1] === 22, `LOD table: Quest ${LOD_DIST.quest.join(' / ')} m, low ${LOD_DIST.low.join(' / ')}, high ${LOD_DIST.high.join(' / ')}, glints beyond ${GLOW_DIST} m`);
+  const q = LOD_DIST.quest;
+  ok(
+    pickLod(2, 'quest') === 0 && pickLod(q[0] + 0.5, 'quest') === 1 && pickLod(q[1] + 0.5, 'quest') === 2 && pickLod(GLOW_DIST + 1, 'quest') === -1 && pickLod(q[0] + 0.5, 'nope') === 1,
+    'pickLod: LOD0 near, LOD1 past the first switch, LOD2 past the second, glints beyond GLOW_DIST (unknown tier = Quest)',
+  );
+  ok(pickLod(q[0] - 1, 'quest', 1) === 1 && pickLod(q[0] - 3.5, 'quest', 1) === 0 && pickLod(q[1] - 1, 'quest', 2) === 2 && pickLod(q[1] - 3.5, 'quest', 2) === 1, 'pickLod: 3 m of hysteresis back to a finer LOD');
+  ok(pickLod(LOD_DIST_FALLBACK.quest + 1, 'quest', 0, false) === 1 && pickLod(LOD_DIST_FALLBACK.quest - 1, 'quest', 0, false) === 0 && pickLod(30, 'quest', 0, false) === 1, 'pickLod: the procedural fallback keeps its two LODs');
+  const file = path.join(SRC_DIR, '..', 'assets', 'models', 'dresser.glb');
+  if (!fs.existsSync(file)) {
+    ok(false, 'assets/models/dresser.glb is missing (tools/abyssal-tether-3d/build_dresser.py)');
+  } else {
+    const { readGLB } = await import(new URL('../render/glbRead.mjs', import.meta.url).href);
+    const g = await readGLB(file);
+    const js = g.js;
+    ok(g.size <= 2.5e6, `dresser.glb ${(g.size / 1e6).toFixed(2)} MB (<= 2.5 MB shipped)`);
+    const tris = [0, 1, 2].map((k) => {
+      const node = js.nodes.find((n) => n.name === 'Dresser_LOD' + k && n.mesh != null);
+      if (!node) return -1;
+      return js.meshes[node.mesh].primitives.reduce((s, p) => s + js.accessors[p.indices].count / 3, 0);
+    });
+    const prims = [0, 1, 2].map((k) => {
+      const node = js.nodes.find((n) => n.name === 'Dresser_LOD' + k && n.mesh != null);
+      return node ? js.meshes[node.mesh].primitives.length : 0;
+    });
+    ok(tris[0] > 0 && tris[0] <= 24000 && tris[1] <= 8500 && tris[2] <= 3200 && tris[0] > tris[1] && tris[1] > tris[2], `LODs ${tris.join(' / ')} triangles (<= 24 k / 8.5 k / 3.2 k), below the Mason's 57 k LOD0`);
+    ok(prims.every((p) => p === 1) && js.materials.length === 1, 'one primitive per LOD, one material: one draw call');
+    const imgs = js.images || [];
+    const ktx = imgs.every((im) => im.mimeType === 'image/ktx2') && (js.extensionsRequired || []).includes('KHR_texture_basisu');
+    const sizes = imgs.map((im) => {
+      const b = g.view(im.bufferView);
+      return Buffer.from(b.buffer, b.byteOffset, b.byteLength).readUInt32LE(20);
+    });
+    ok(imgs.length === 3 && ktx && sizes.every((w) => w <= 1024), `3 KTX2 maps (albedo, normal, ORM), ${sizes.join(' / ')} px`);
+    ok((js.extensionsUsed || []).includes('EXT_meshopt_compression'), 'meshopt-compressed geometry');
+    // the contract: the skin's joints ARE dresserView.js BONES (names, parents, bind offsets, identity rest rotations)
+    const skin = js.skins[0];
+    const names = skin.joints.map((j) => js.nodes[j].name);
+    const parentOf = new Map();
+    js.nodes.forEach((n, i) => (n.children || []).forEach((c) => parentOf.set(c, i)));
+    let bad = 0;
+    for (const [name, par, x, y, z] of BONES) {
+      const ni = js.nodes.findIndex((n) => n.name === name);
+      if (ni < 0) {
+        bad++;
+        continue;
+      }
+      const n = js.nodes[ni];
+      const t = n.translation || [0, 0, 0];
+      const r = n.rotation || [0, 0, 0, 1];
+      const p = par >= 0 ? BONES[par] : null;
+      const want = p ? [x - p[2], y - p[3], z - p[4]] : [x, y, z];
+      const pn = parentOf.has(ni) ? js.nodes[parentOf.get(ni)].name : null;
+      if (p && pn !== p[0]) bad++;
+      if (want.some((w, k) => Math.abs(w - t[k]) > 1e-4) || Math.abs(r[3]) < 0.99999) bad++;
+    }
+    ok(bad === 0 && names.length === BONES.length && BONES.every((b) => names.includes(b[0])), `the skin's ${names.length} joints are BONES: names, parents, bind offsets, identity rest rotations (${bad} mismatches)`);
+    // the view, built from the parsed file (Node: no image decoding, the maps stay null)
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    const loader = new GLTFLoader();
+    loader.pluginCallbacks.unshift(() => ({ name: 'noTex', loadTexture: () => Promise.resolve(null) }));
+    const gltf = await new Promise((res, rej) => loader.parse(g.buf.buffer.slice(g.buf.byteOffset, g.buf.byteOffset + g.buf.byteLength), '', res, rej));
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(90, 1, 0.05, 400);
+    scene.add(camera);
+    const v = new DresserView({ renderer: { scene, camera } });
+    v.buildFromGLTF(gltf);
+    ok(v.glbReady && v.meshes.length === 3 && v.meshes.every((m) => m.isSkinnedMesh && m.skeleton === v.skeleton && m.material === v.material), 'buildFromGLTF: three skinned LODs on the view\'s own skeleton, one material');
+    const extra = v.triangles.map((t, k) => t - tris[k]);
+    ok(extra[0] > 0 && extra[0] <= 60 && extra[2] <= 30, `each LOD = the GLB's triangles + the line and the chalk outline (+${extra.join(' / ')})`);
+    const body = { visible: true, x: 0, y: 0, z: 0, ux: 0, uy: 1, uz: 0, fx: 0, fy: 0, fz: 1, lx: 0, ly: 2.9, lz: 5, walk: 0, speed: 0, measure: 0, cut: 0, stagger: 0, spoiled: 0, glow: 0.6, tick: 0, line: { on: false, x: 0, y: 0, z: 0, taut: 0 }, outline: { on: false, x: 0, y: 0, z: 0, nx: 1, ny: 0, nz: 0, grow: 0, alpha: 0, seed: 0 } };
+    const game = { dresser: { isNull: false, body, targetHand: 'right' }, renderer: { scene, camera, qualityTier: 'quest' }, settings: {} };
+    const seen = [];
+    for (const dist of [4, 15, 30, GLOW_DIST + 8]) {
+      camera.position.set(0, 1.8, dist);
+      v._qReady = false;
+      v.update(1 / 60, game);
+      let n = 0;
+      let tr = 0;
+      scene.traverseVisible((o) => {
+        if (o.isMesh) {
+          n++;
+          tr += o.geometry.index ? o.geometry.index.count / 3 : 0;
+        }
+      });
+      seen.push(`${dist} m: LOD${v.lod} ${n} call ${tr}`);
+      if (dist < GLOW_DIST) ok(n === 1 && v.info.drawCalls === 1 && v.lod === [4, 15, 30].indexOf(dist) && tr === v.triangles[v.lod], `Quest at ${dist} m: LOD${v.lod}, one call, ${tr} triangles`);
+      else ok(n <= 1 && tr <= 4, `beyond ${GLOW_DIST} m: the glints only`);
+    }
+    // the face is there in every LOD (pale self-light on the mask, at the head, facing forward), and the mask follows the head
+    // (the GLB's own vertices: a white vertex colour, not the chalk quad nor the line, which carry their own colours)
+    const own = (geo, i) => geo.attributes.aChalk.getX(i) < 0.5 && geo.attributes.color.getX(i) === 1 && geo.attributes.color.getW(i) === 1;
+    const faces = v.geometries.map((geo) => {
+      const fx = geo.attributes.aFx;
+      const p = geo.attributes.position;
+      let c = 0;
+      let sy = 0;
+      let sz = 0;
+      for (let i = 0; i < fx.count; i++) {
+        if (own(geo, i) && fx.getY(i) > 0.5) {
+          c++;
+          sy += p.getY(i);
+          sz += p.getZ(i);
+        }
+      }
+      return { c, y: c ? sy / c : 0, z: c ? sz / c : 0 };
+    });
+    ok(faces.every((f) => f.c >= 40 && Math.abs(f.y - 2.92) < 0.06 && f.z > 0.1), `the mask in every LOD (${faces.map((f) => f.c).join(' / ')} pale vertices at y ${faces.map((f) => f.y.toFixed(2)).join(' / ')})`);
+    const geo0 = v.geometries[0];
+    const bb = new THREE.Box3();
+    for (let i = 0; i < geo0.attributes.position.count; i++) if (own(geo0, i)) bb.expandByPoint(new THREE.Vector3().fromBufferAttribute(geo0.attributes.position, i));
+    ok(bb.min.y > -0.05 && bb.max.y > 3.1 && bb.max.y < 3.6 && bb.max.x - bb.min.x < 1.2, `LOD0 bounds: ${bb.min.y.toFixed(2)} .. ${bb.max.y.toFixed(2)} m tall, ${(bb.max.x - bb.min.x).toFixed(2)} m wide`);
+    const si = geo0.attributes.skinIndex;
+    const sw = geo0.attributes.skinWeight;
+    let wbad = 0;
+    for (let i = 0; i < si.count; i++) {
+      let s = 0;
+      for (let j = 0; j < 4; j++) {
+        s += sw.getComponent(i, j);
+        if (si.getComponent(i, j) >= BONES.length) wbad++;
+      }
+      if (Math.abs(s - 1) > 1e-3) wbad++;
+    }
+    ok(wbad === 0, 'skin: every joint a BONES index, every weight set sums to 1');
+    // pose the head (a turn on you) and the left chisel arm: the mask turns with the head, the blade with chiselL
+    const m0 = v.meshes[0];
+    const fx = geo0.attributes.aFx;
+    let mi = -1;
+    for (let i = 0; i < fx.count && mi < 0; i++) if (own(geo0, i) && fx.getY(i) > 0.5) mi = i;
+    const before = new THREE.Vector3().fromBufferAttribute(geo0.attributes.position, mi);
+    v.root.position.set(0, 0, 0);
+    v.root.quaternion.identity();
+    for (const b of v.bones) b.quaternion.identity();
+    v.bones[5].quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), 1.0);
+    v.root.updateMatrixWorld(true);
+    v.skeleton.update();
+    const after = m0.applyBoneTransform(mi, new THREE.Vector3().fromBufferAttribute(geo0.attributes.position, mi));
+    const hp = new THREE.Vector3(0, 2.84, 0.01);
+    const turned = Math.abs(after.clone().sub(hp).length() - before.clone().sub(hp).length()) < 1e-3 && after.distanceTo(before) > 0.05;
+    ok(turned, `a mask vertex turns rigidly with the head (moved ${after.distanceTo(before).toFixed(3)} m about the head pivot)`);
+    v.dispose();
+  }
 }
 
 // ---- the switch ----------------------------------------------------------------------------------------------------------
