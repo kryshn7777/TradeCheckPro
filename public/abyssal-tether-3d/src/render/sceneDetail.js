@@ -44,8 +44,120 @@ export const DETAIL_TIERS = Object.freeze({
   quest: Object.freeze({ name: 'quest', rank: 0.75, tris: 4600, radius: 20, decals: 180, puddles: 20 }),
   high: Object.freeze({ name: 'high', rank: 1.0, tris: 6500, radius: 28, decals: 260, puddles: 30 }),
 });
-const MAX_V = 24000;
-const MAX_I = 3 * 8000;
+const MAX_V = 40000;
+const MAX_I = 3 * 14000;
+// Props v2 (MESH_DETAIL_AND_OPTIMIZATION.md): the hero templates of ch1_props_v2.glb (ch1_sd_<template>, Blender-built: real forms, baked
+// AO / grime / wear in the vertex colour) replace the lean procedural template for the NEAREST items within HI_NEAR m of the head, up to
+// HI_TRIS extra triangles per window (nearest first). Beyond it (and on the low tier) the lean templates stay. ?propshi=0 turns it off.
+const HI_NEAR = { low: 0, quest: 4.5, high: 7 };
+const HI_TRIS = { low: 0, quest: 4200, high: 9000 };
+const HI_ON = urlParam('propshi') !== '0';
+
+/**
+ * Appends the hero templates of the props GLB (meshes ch1_sd_<template>, in template space, colour = linear albedo, uv inside the atlas
+ * cells) to the scene-detail kit IN PLACE (the plan shares the kit) as `<template>_hi`, and points each lean template's `hi` at its hero.
+ * The sway (fx.x) of a hanging hero vertex is the lean template's at the nearest height, so chains / ropes move as before.
+ * @returns {number} hero templates added
+ */
+export function addHeroTemplates(kit, gltf) {
+  const root = gltf && (gltf.scene || (gltf.scenes && gltf.scenes[0]));
+  if (!kit || !root) return 0;
+  root.updateMatrixWorld(true);
+  const groups = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    const host = o.parent && o.parent.isGroup && /^ch1_sd_/.test(o.parent.name) ? o.parent : o;
+    const m = /^ch1_sd_([A-Za-z0-9]+)$/.exec((host.userData && host.userData.name) || host.name || '');
+    if (!m || kit.index[m[1]] === undefined) return;
+    if (!groups.has(m[1])) groups.set(m[1], []);
+    groups.get(m[1]).push(o);
+  });
+  if (!groups.size) return 0;
+  const add = [];
+  let nv = 0;
+  let ni = 0;
+  for (const [name, meshes] of groups) {
+    const P = [], N = [], C = [], T = [], I = [];
+    for (const o of meshes) {
+      const g = o.geometry;
+      const p = g.attributes.position;
+      const n = g.attributes.normal;
+      const c = g.attributes.color;
+      const uv = g.attributes.uv;
+      const base = P.length / 3;
+      const v = new THREE.Vector3();
+      const nm = new THREE.Matrix3().getNormalMatrix(o.matrixWorld);
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+        P.push(v.x, v.y, v.z);
+        if (n) {
+          v.fromBufferAttribute(n, i).applyMatrix3(nm).normalize();
+          N.push(v.x, v.y, v.z);
+        } else N.push(0, 1, 0);
+        if (c) C.push(c.getX(i), c.getY(i), c.getZ(i));
+        else C.push(0.2, 0.2, 0.2);
+        if (uv) T.push(uv.getX(i), uv.getY(i));
+        else T.push(0.5, 0.5);
+      }
+      if (g.index) for (let i = 0; i < g.index.count; i++) I.push(g.index.getX(i) + base);
+      else for (let i = 0; i < p.count; i++) I.push(i + base);
+    }
+    const vn = P.length / 3;
+    if (!vn || vn > 65535) continue;
+    // sway: the lean template's fx at the nearest height (hanging chains, ropes); phase / glow stay 0
+    const lean = kit.templates[kit.index[name]];
+    const F = new Float32Array(vn * 3);
+    if (lean.hang) {
+      for (let i = 0; i < vn; i++) {
+        const y = P[i * 3 + 1];
+        let best = Infinity;
+        let fx = 0;
+        for (let k = 0; k < lean.vn; k++) {
+          const d = Math.abs(kit.pos[(lean.v0 + k) * 3 + 1] - y);
+          if (d < best) {
+            best = d;
+            fx = kit.fx[(lean.v0 + k) * 3];
+          }
+        }
+        F[i * 3] = fx;
+      }
+    }
+    add.push({ name, lean, P, N, C, T, I, F, vn, inn: I.length });
+    nv += vn;
+    ni += I.length;
+  }
+  if (!add.length) return 0;
+  const grow = (arr, extra, Ctor) => {
+    const out = new Ctor(arr.length + extra);
+    out.set(arr);
+    return out;
+  };
+  let v0 = kit.verts;
+  let i0 = kit.idx.length;
+  const pos = grow(kit.pos, nv * 3, Float32Array);
+  const nrm = grow(kit.nrm, nv * 3, Float32Array);
+  const col = grow(kit.col, nv * 3, Float32Array);
+  const uvs = grow(kit.uv, nv * 2, Float32Array);
+  const fx = grow(kit.fx, nv * 3, Float32Array);
+  const idx = grow(kit.idx, ni, Uint16Array);
+  for (const a of add) {
+    pos.set(a.P, v0 * 3);
+    nrm.set(a.N, v0 * 3);
+    col.set(a.C, v0 * 3);
+    uvs.set(a.T, v0 * 2);
+    fx.set(a.F, v0 * 3);
+    idx.set(a.I, i0);
+    const t = Object.assign({}, a.lean, { name: a.name + '_hi', v0, vn: a.vn, i0, inn: a.inn, tris: a.inn / 3 });
+    delete t.hi;
+    kit.templates.push(t);
+    kit.index[t.name] = kit.templates.length - 1;
+    a.lean.hi = kit.templates.length - 1;
+    v0 += a.vn;
+    i0 += a.inn;
+  }
+  Object.assign(kit, { pos, nrm, col, uv: uvs, fx, idx, verts: v0, tris: i0 / 3 });
+  return add.length;
+}
 const MAX_DECALS = 260;
 const MAX_PUDDLES = 30;
 const REPACK_DIST = 2.0;
@@ -872,6 +984,16 @@ export class SceneDetail {
       return;
     }
     const rend = this.renderer;
+    if (HI_ON && !this._hiDone && rend && rend._propsGltf) {
+      this._hiDone = true;
+      try {
+        this._hiReady = addHeroTemplates(this.kit, rend._propsGltf) > 0;
+      } catch (err) {
+        if (typeof console !== 'undefined') console.warn('[AT3D] scene detail hero props unreadable', err);
+        this._hiReady = false;
+      }
+      this._dirty = true;
+    }
     // tier
     const light = rend && rend.lighting;
     const settings = (game && game.settings) || (rend && rend.settings) || {};
@@ -921,9 +1043,41 @@ export class SceneDetail {
     const I = this._idx;
     let vc = 0;
     let ic = 0;
+    // hero templates for the nearest items (props v2): nearest first, within HI_NEAR, up to HI_TRIS extra triangles
+    if (!this._hiFlag || this._hiFlag.length < this._sel.length) this._hiFlag = new Uint8Array(this._sel.length);
+    const hiFlag = this._hiFlag;
+    let nHi = 0;
+    if (this._hiReady) {
+      const near = HI_NEAR[tier.name] || 0;
+      const n2 = near * near;
+      const cand = this._hiCand || (this._hiCand = []);
+      cand.length = 0;
+      for (let s = 0; s < this._win.n; s++) {
+        hiFlag[s] = 0;
+        const o = this._sel[s] * ITEM_STRIDE;
+        if (kit.templates[items[o + 12]].hi === undefined) continue;
+        const dx = items[o] - head.x;
+        const dy = items[o + 1] - head.y;
+        const dz = items[o + 2] - head.z;
+        const q = dx * dx + dy * dy + dz * dz;
+        if (q < n2) cand.push(Math.floor(q * 1000) * 65536 + s); // integer key, distance (mm²) major, slot (< 65536) minor
+      }
+      cand.sort((a, b) => a - b);
+      let left = HI_TRIS[tier.name] || 0;
+      for (const key of cand) {
+        const s = key % 65536;
+        const t = kit.templates[items[this._sel[s] * ITEM_STRIDE + 12]];
+        const extra = kit.templates[t.hi].tris - t.tris;
+        if (extra > left) continue;
+        left -= extra;
+        hiFlag[s] = 1;
+        nHi++;
+      }
+    } else hiFlag.fill(0, 0, this._win.n);
     for (let s = 0; s < this._win.n; s++) {
       const o = this._sel[s] * ITEM_STRIDE;
-      const t = kit.templates[items[o + 12]];
+      let t = kit.templates[items[o + 12]];
+      if (hiFlag[s]) t = kit.templates[t.hi];
       if (vc + t.vn > MAX_V || ic + t.inn > MAX_I) break;
       const px = items[o];
       const py = items[o + 1];
@@ -1015,6 +1169,7 @@ export class SceneDetail {
     this.counts.items = this._win.n;
     this.counts.tris = ic / 3;
     this.counts.verts = vc;
+    this.counts.hi = nHi;
     void tris;
 
     // decals

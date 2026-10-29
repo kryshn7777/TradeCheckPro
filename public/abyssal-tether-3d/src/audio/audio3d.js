@@ -57,6 +57,7 @@ import { Music } from './music3d.js';
 import { RopeFx } from './ropeFx3d.js';
 import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
+import { Radio } from './radio3d.js';
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -431,6 +432,9 @@ export class AudioManager3D {
     this._mov = null;
     this._cs = null;
     this._mods = [];
+    this._radio = null; // EXPEDITION: the radio voices (radio3d.js), outside _mods (its own bus, driven by comms:line / comms:end)
+    this._radioDuck = 1; // music multiplier while a line is on air (radio3d.js sets it)
+    this._radioDuckAmb = 1; // ambience multiplier while a line is on air
     this._ctl = { tv: 0, playing: false, dead: false, victory: false, menu: true, ducked: true, speed: 0, hspeed: 0, lethal: 17, silence: 0, thin: 1 };
     this._log = [];
     this._logN = 0;
@@ -800,6 +804,13 @@ export class AudioManager3D {
         mod.broken = true; // the rest of the soundscape carries on without it
         this._warn('build', err);
       }
+    }
+    try {
+      this._radio = new Radio(this);
+      this._radio.build();
+    } catch (err) {
+      this._radio = null; // no radio voices: the subtitles still carry every line
+      this._warn('radio', err);
     }
 
     for (let i = 0; i < this._loops.length; i++) {
@@ -1459,7 +1470,7 @@ export class AudioManager3D {
     const tc = 0.15;
     const fx = this._sfxMul();
     // (LEVEL_FUN_PLAN P5: in a Masons' rest the ambience ducks to REST_DUCK)
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1), now, this._thin < 0.9 ? 0.12 : tc);
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1) * this._radioDuckAmb, now, this._thin < 0.9 ? 0.12 : tc);
     this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
     this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
     this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
@@ -1574,6 +1585,13 @@ export class AudioManager3D {
         mod.control(dtc, now, game, C);
       } catch (err) {
         this._warn('mod-control', err);
+      }
+    }
+    if (this._radio) {
+      try {
+        this._radio.control(dtc, now, game);
+      } catch (err) {
+        this._warn('radio', err);
       }
     }
 
@@ -2273,6 +2291,20 @@ export class AudioManager3D {
       'dresser:saw': this._onDresserSaw,
       'dresser:stagger': this._onDresserStagger,
       'dresser:spoiled': this._onDresserSpoiled,
+      // THE HOLDFAST (sim/holdfast3d.js): knuckle cracks, a wet inhale, the stone grinding as it closes, the hum while it holds you
+      'holdfast:inhale': this._onHoldfastInhale,
+      'holdfast:breath': this._onHoldfastBreath,
+      'holdfast:twitch': this._onHoldfastCrack,
+      'holdfast:grip': this._onHoldfastCrack,
+      'holdfast:close': this._onHoldfastClose,
+      'holdfast:squeeze': this._onHoldfastSqueeze,
+      'holdfast:tear': this._onHoldfastTear,
+      'holdfast:crush': this._onHoldfastCrush,
+      'holdfast:knock': this._onHoldfastKnock,
+      'holdfast:retract': this._onHoldfastGrind,
+      'holdfast:stagger': this._onHoldfastGrind,
+      'holdfast:flinch': this._onHoldfastGrind,
+      'holdfast:release': this._onHoldfastRelease,
       'creature:burst': this._onCreatureBurst,
       'creature:attack': this._onCreatureAttack,
       'creature:strike': this._onCreatureStrike,
@@ -2298,6 +2330,9 @@ export class AudioManager3D {
       'game:goal': this._onGameGoal,
       'ui:click': this._onUiClick,
       'settings:changed': this._onSettings,
+      // EXPEDITION (sim/comms3d.js via game.js): a transmission goes on air / leaves it (radio3d.js speaks it)
+      'comms:line': this._onCommsLine,
+      'comms:end': this._onCommsEnd,
       'xr:start': this._onXRStart,
       'xr:sessionstart': this._onXRStart,
     };
@@ -2412,6 +2447,14 @@ export class AudioManager3D {
     if (p.settings && typeof p.settings === 'object') this.settings = p.settings;
     this._polledVolume = U.clamp(num(this.settings.volume, this._volume), 0, 1);
     this.setVolume(this._polledVolume);
+  }
+
+  _onCommsLine(p) {
+    if (this._radio) this._radio.speak(p);
+  }
+
+  _onCommsEnd(p) {
+    if (this._radio) this._radio.end(p);
   }
 
   _onUiClick() {
@@ -2852,6 +2895,7 @@ export class AudioManager3D {
       peakVoices: this._peakVoices,
       hrtfVoices: this._hrtfCount,
       caps: { voices: this._maxVoices, hrtf: this._maxHrtf },
+      radio: this._radio ? this._radio.debug() : null,
       silence: +this._silence.toFixed(3),
       thin: +this._thin.toFixed(3),
       threat: +this._tv.toFixed(3),
@@ -4194,6 +4238,244 @@ export class AudioManager3D {
     ring.connect(rg);
     rg.connect(v.out);
     this._commit(v);
+  }
+
+  // ---- THE HOLDFAST (sim/holdfast3d.js): the wall's dead. Knuckles that crack like dry stone, a wet breath in the masonry once your
+  // hand is near, the grind of stone fingers closing, a lub-dub squeeze, and while it holds you a hum under everything: a voice at
+  // the edge of hearing (formant-filtered, slowly changing its vowel). All synthesised, placed at the patch.
+
+  /** Wet air pulled through stone: a rising band of noise with small liquid clicks (the inhale on waking, the breath close by). */
+  _hfAir(p, name, dur, peak, rise) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin(name, 2, dur * 0.8, dur + 0.3 + sp.delay, this.busCreature, peak * this._floor('near', sp.d, 0.3), 0, Math.max(sp.send, 0.25), 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', rise ? 420 : 900, 1.3);
+    bp.frequency.linearRampToValueAtTime(rise ? 1300 : 520, t + dur);
+    const lp = this._vFilter(v, 'lowpass', 2600, 0.7);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + dur * (rise ? 0.75 : 0.25));
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    n.connect(bp);
+    bp.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
+    // saliva in the throat of the wall: tiny clicks scattered through it
+    this._tickTrain(v, t + dur * 0.15, 7, dur * 0.7, 0.18, 1400, 4200, 6, 0.004, 0.85);
+    this._commit(v);
+  }
+
+  _onHoldfastInhale(p) {
+    this._hfAir(p, 'hfair', 1.25, 1.0, true);
+  }
+
+  _onHoldfastBreath(p) {
+    this._hfAir(p, 'hfair', 0.85, 1.15, false);
+  }
+
+  /** Knuckles cracking: two to four dry pops (a stone joint giving), each a sharp click over a short low knock. */
+  _onHoldfastCrack(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    if (sp.gain < 0.01 || this._countAlive('hfcrack') >= 2) return;
+    const v = this._begin('hfcrack', 2, 0.15, 0.9 + sp.delay, this.busCreature, 1.0 * this._floor('near', sp.d, 0.3), 0, sp.send * 0.5, Math.max(sp.cutoff, 4000), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t0 = v.t0 + sp.delay;
+    const k = 2 + Math.floor(Math.random() * 3);
+    const n = this._vNoise(v, this._white, t0, 1);
+    const bp = this._vFilter(v, 'bandpass', 2800, 3.5);
+    const g = this._vGain(v, 0);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 180, t0);
+    const og = this._vGain(v, 0);
+    o.connect(og);
+    og.connect(v.out);
+    let t = t0;
+    for (let i = 0; i < k; i++) {
+      bp.frequency.setValueAtTime(rand(1800, 3600), t);
+      this._tick(g.gain, t, rand(0.55, 0.9), 0.007);
+      o.frequency.setValueAtTime(rand(140, 220), t);
+      this._perc(og.gain, t, 0.22, 0.001, 0.025);
+      t += rand(0.06, 0.16);
+    }
+    this._commit(v);
+  }
+
+  /** It closes: stone grinding over the gauntlet, a hard double crack, and the hum begins (as long as the lock). */
+  _onHoldfastClose(p) {
+    this._onHoldfastGrind(p, 0.55, 1.1);
+    this._onHoldfastCrack(p);
+    this._hfHum(p, U.clamp(num(p.lock, 2), 0.5, 6) + 0.4, !!p.low);
+  }
+
+  /** Stone grinding (the forearm sliding in the socket): low noise, amplitude-modulated, a little pitch drift. */
+  _onHoldfastGrind(p, dur = 0.7, lvl = 0.8) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    if (sp.gain < 0.01) return;
+    const d = typeof dur === 'number' ? dur : 0.7;
+    const L = typeof lvl === 'number' ? lvl : 0.8;
+    const v = this._begin('hfgrind', 2, 0.2, d + 0.3 + sp.delay, this.busCreature, L * this._floor('near', sp.d, 0.25), 0, sp.send * 0.7, Math.min(Math.max(sp.cutoff, 600), 2200), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = this._vNoise(v, this._brown, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 420, 1.2);
+    lp.frequency.linearRampToValueAtTime(260, t + d);
+    const am = this._vGain(v, 0);
+    const lfo = this._vOsc(v, 'square', rand(18, 27), t);
+    const lg = this._vGain(v, 0.35);
+    lfo.connect(lg);
+    lg.connect(am.gain);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.9, t + 0.06);
+    g.gain.setValueAtTime(0.9, t + d * 0.7);
+    g.gain.linearRampToValueAtTime(0, t + d);
+    am.gain.setValueAtTime(0.5, t);
+    n.connect(lp);
+    lp.connect(am);
+    am.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The hum while it holds you: a low voice at the edge of hearing, its vowel drifting (ah -> oo -> eh), barely there. */
+  _hfHum(p, dur, low) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin('hfhum', 1, 0.5, dur + 0.6 + sp.delay, this.busCreature, (low ? 0.5 : 0.36) * this._floor('near', sp.d, 0.15), 0, Math.max(sp.send, 0.5), 1800, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const f0 = low ? 82 : 98;
+    const o1 = this._vOsc(v, 'sawtooth', f0, t);
+    const o2 = this._vOsc(v, 'sawtooth', f0 * 1.007, t);
+    const vib = this._vOsc(v, 'sine', 4.6, t);
+    const vg = this._vGain(v, 0.8);
+    vib.connect(vg);
+    vg.connect(o1.frequency);
+    vg.connect(o2.frequency);
+    // two formants (a vowel) that drift
+    const fA = this._vFilter(v, 'bandpass', 700, 6);
+    const fB = this._vFilter(v, 'bandpass', 1150, 7);
+    fA.frequency.setValueAtTime(700, t);
+    fA.frequency.linearRampToValueAtTime(330, t + dur * 0.5);
+    fA.frequency.linearRampToValueAtTime(520, t + dur);
+    fB.frequency.setValueAtTime(1150, t);
+    fB.frequency.linearRampToValueAtTime(800, t + dur * 0.5);
+    fB.frequency.linearRampToValueAtTime(1800, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.5);
+    g.gain.setValueAtTime(0.32, t + dur - 0.4);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    o1.connect(fA);
+    o2.connect(fA);
+    o1.connect(fB);
+    fA.connect(g);
+    fB.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A squeeze beat: a muffled thump (the wall's heart) with a short creak of stone round your hand. */
+  _onHoldfastSqueeze(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const k = U.clamp(num(p.strength, 0.7), 0.2, 1);
+    const v = this._begin('hfsqz', 2, 0.18, 0.6 + sp.delay, this.busCreature, (0.55 + 0.45 * k) * this._floor('near', sp.d, 0.35), 0, sp.send * 0.4, 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sine', 64, t);
+    o.frequency.setTargetAtTime(42, t, 0.05);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.85, 0.006, 0.07);
+    this._perc(og.gain, t + 0.17, 0.55, 0.006, 0.06);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._brown, t, 1);
+    const bp = this._vFilter(v, 'bandpass', rand(380, 520), 4);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t + 0.02, 0.35 * k, 0.03, 0.08);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  /** You tear free: a wet rip, stone cracking, the fingers snapping (it dies). */
+  _onHoldfastTear(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin('hftear', 3, 0.3, 1.2 + sp.delay, this.busCreature, 1.1 * this._floor('near', sp.d, 0.45), 0, sp.send * 0.6, 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'highpass', 900, 0.8);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.7, t + 0.03);
+    g.gain.setTargetAtTime(0, t + 0.12, 0.08);
+    n.connect(hp);
+    hp.connect(g);
+    g.connect(v.out);
+    this._tickTrain(v, t + 0.02, 10, 0.45, 0.85, 1500, 5200, 5, 0.006, 0.7);
+    const o = this._vOsc(v, 'triangle', 260, t);
+    o.frequency.setTargetAtTime(70, t, 0.06);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.6, 0.002, 0.09);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** Waited out: bones grinding inside the glove, a long crunch, then it lets go. */
+  _onHoldfastCrush(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin('hfcrush', 3, 0.3, 1.4 + sp.delay, this.busCreature, 1.1 * this._floor('near', sp.d, 0.5), 0, sp.send * 0.4, 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    this._tickTrain(v, t, 14, 0.7, 0.9, 900, 3400, 4, 0.01, 0.9);
+    const n = this._vNoise(v, this._brown, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 600, 2);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.8, t + 0.1);
+    g.gain.setTargetAtTime(0, t + 0.7, 0.15);
+    n.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** S4's answer: a knock from inside the wall (a dull thud with a stone ring), one per event. */
+  _onHoldfastKnock(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin('hfknock', 2, 0.1, 0.7 + sp.delay, this.busCreature, 0.95 * this._floor('near', sp.d, 0.35), 0, Math.max(sp.send, 0.35), Math.min(Math.max(sp.cutoff, 500), 1600), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sine', 115, t);
+    o.frequency.setTargetAtTime(78, t, 0.03);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.9, 0.002, 0.08);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 780, 5);
+    const ng = this._vGain(v, 0);
+    this._perc(ng.gain, t, 0.4, 0.001, 0.05);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  }
+
+  /** It lets go: an exhale through the stone (the shot / the rope: a short grind instead). */
+  _onHoldfastRelease(p) {
+    if (p && (p.reason === 'shot' || p.reason === 'outpull')) {
+      this._onHoldfastGrind(p, 0.5, 0.9);
+      return;
+    }
+    if (p && p.reason === 'lost') return;
+    this._hfAir(p, 'hfair', 0.9, 0.9, false);
   }
 
   /** A grapple shot through its body: the chisels clatter, a dry knock of the mask. */

@@ -7,6 +7,8 @@
  *   creature:clip {name,event,x,y,z}       the rig's clip events: wind-up, strike, roar, knocks, breathing, snaps ...
  *   creature:call / attack / burst / strike / sighting / retreat / step   the sim events (fallback when no rig clip)
  *   dresser:tick / hum / measure / saw     THE DRESSER (sim/dresser3d.js): [Ticking] [Humming] [Scraping] [Sawing]
+ *   holdfast:twitch / inhale / close / tear / crush / knock   THE HOLDFAST (sim/holdfast3d.js): [Knuckles cracking]
+ *                                          [A wet breath in the wall] [Stone fingers close on your hand] ...
  *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
@@ -53,6 +55,13 @@ export const RULES = Object.freeze({
   dHum: R('[Humming]', 'creature', 1, 'dhum', 8),
   dScrape: R('[Scraping]', 'creature', 2, 'dscrape', 3),
   dSaw: R('[Sawing]', 'creature', 2, 'dsaw', 2),
+  // THE HOLDFAST (sim/holdfast3d.js): the wall's hand
+  hfCrack: R('[Knuckles cracking]', 'creature', 1, 'hfcrack', 3),
+  hfBreath: R('[A wet breath in the wall]', 'creature', 2, 'hfbreath', 4),
+  hfClose: R('[Stone fingers close on your hand]', 'creature', 2, 'hfclose', 2),
+  hfTear: R('[Something tears out of the wall]', 'creature', 2, 'hftear', 2),
+  hfCrush: R('[Bones grinding in your glove]', 'creature', 2, 'hftear', 2),
+  hfKnock: R('[Three knocks inside the wall]', 'creature', 1, 'hfknock', 4),
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
@@ -163,6 +172,20 @@ export function captionForEvent(type, p) {
       return RULES.dScrape;
     case 'dresser:saw':
       return RULES.dSaw;
+    case 'holdfast:twitch':
+    case 'holdfast:grip':
+      return RULES.hfCrack;
+    case 'holdfast:inhale':
+    case 'holdfast:breath':
+      return RULES.hfBreath;
+    case 'holdfast:close':
+      return RULES.hfClose;
+    case 'holdfast:tear':
+      return RULES.hfTear;
+    case 'holdfast:crush':
+      return RULES.hfCrush;
+    case 'holdfast:knock':
+      return e.n === 1 ? RULES.hfKnock : null;
     case 'platform:crumble':
       return RULES.crumble;
     case 'rope:slip':
@@ -252,6 +275,14 @@ export const CAPTION_EVENTS = Object.freeze([
   'dresser:hum',
   'dresser:measure',
   'dresser:saw',
+  'holdfast:twitch',
+  'holdfast:grip',
+  'holdfast:inhale',
+  'holdfast:breath',
+  'holdfast:close',
+  'holdfast:tear',
+  'holdfast:crush',
+  'holdfast:knock',
   'platform:crumble',
   'rope:slip',
   'rope:jolt',

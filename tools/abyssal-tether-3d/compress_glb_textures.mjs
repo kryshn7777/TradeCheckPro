@@ -48,6 +48,8 @@ const PLAN = {
   mason_rig: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
   mason_kit: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
   mason_hero: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
+  // THE HOLDFAST (build_holdfast.py): baked at 2048, shipped at 1024 (normal / ORM UASTC, ORM B = the vein mask; albedo ETC1S): ~2 MB
+  holdfast: { albedo: 1024, normal: 1024, orm: 1024, emissive: 512, etc1s: ['albedo'] },
 };
 // etc1s: roles encoded as ETC1S (about 5x smaller downloads, same 1 byte / texel on the GPU); everything else is UASTC (clean normals,
 // the close-up hands)

@@ -83,6 +83,8 @@ const LANTERN_DECAY = 1.6; // gentler than physical so the lantern still grazes 
 const DEFAULT_TEXTURE_MANIFEST = 'assets/textures/manifest.json';
 /** The Underspire environment kit (tools/abyssal-tether-3d/build_env_kit.py), relative to this module. */
 const ENV_KIT_URL = new URL('../../assets/models/env/ch1_env_kit.glb', import.meta.url).href;
+/** The near-field props v2 (tools/abyssal-tether-3d/build_props_v2.py): giant chain links, the Lanternwright statue, the scene-detail heroes. */
+const PROPS_URL = new URL('../../assets/models/env/ch1_props_v2.glb', import.meta.url).href;
 const SKY_RADIUS = 330; // sky dome: inside camera.far (400), beyond every section's fog far (fully fogged)
 const DESKTOP_FOV = 70; // WebXR overwrites camera.fov with the headset's; resize() restores this
 // Material slots + uniform holders scanned by precompile() for textures to upload early.
@@ -315,6 +317,7 @@ export class Renderer3D {
     this.scene.add(this.sky);
     this.levelView = new LevelView(this.scene, this.materials);
     this.envKit = this._loadEnvKit();
+    this.props = this._loadProps();
     this.ropeView = new RopeView(this.scene);
     this.fx = new FX(this.scene, this.camera);
     this.levelView.fx = this.fx;
@@ -390,6 +393,29 @@ export class Renderer3D {
    * loader degrades to the procedural dressing only) and hands it to the
    * LevelView, which draws the planned kit parts into its decor chunks.
    */
+  /**
+   * Loads the props v2 GLB (meshopt, no textures) and hands it to the LevelView (chains / statues as levels of detail; the procedural
+   * builders draw them if it fails: setProps(null)); the scene detail picks its hero templates up from `_propsGltf`.
+   */
+  _loadProps() {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
+    const fail = () => {
+      this.levelView.setProps(null);
+      return false;
+    };
+    return createGLTFLoader()
+      .then((loader) => new Promise((resolve) => loader.load(PROPS_URL, (gltf) => resolve(gltf), undefined, () => resolve(null))))
+      .then((gltf) => {
+        if (!gltf) return fail();
+        this._propsGltf = gltf;
+        return this.levelView.setProps(gltf);
+      })
+      .catch((err) => {
+        if (typeof console !== 'undefined') console.warn('[AT3D] props v2 unavailable, procedural props only', err);
+        return fail();
+      });
+  }
+
   _loadEnvKit() {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return Promise.resolve(false);
     return createGLTFLoader()

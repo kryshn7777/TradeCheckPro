@@ -3,6 +3,11 @@
 > Owner request (2026-10-29): *"Make the story darker. And even darker if player chose to read there will be texts in blood
 > here and there. Normal story will involve curiosity; those are written in boards but blood stories invoke reality."*
 >
+> **2026-10-29, second pass:** [DARK_STORY_BIBLE.md](DARK_STORY_BIBLE.md) is now the reference for the voice (the hook patterns), the
+> purpose at the bottom (**THE FITTING**: a place cut to your shape in the chamber's back wall, *MEASURED FORTY TIMES. CUT ONCE. IT
+> FITS NOW.*), the revelation curve and every new text: **+51 boards** (a new non-decor channel, `src/data/board-writing-3d.js`,
+> drawn by `src/render/boardWriting.js`) and **+20 blood writings** (41 in all). The tables below keep the first pass's texts.
+>
 > Canon lives in [CHAPTERS.md §2](../CHAPTERS.md) (the Still Flame, the waking, the kept, the Mason). This page adds what the
 > boards and the blood say in Chapter I, who wrote them and the rules for writing more. Code: the boards are the `plaque` /
 > `tablet` decor of `src/data/level-data-3d.js`; the blood is `src/data/blood-writing-3d.js`, drawn by
@@ -77,20 +82,28 @@ Chapter I Names of CHAPTERS.md §5.5; the writings agree with their codex lines.
 | S8 first step (lore) | THE LAST LANTERNWRIGHTS RESTED HERE. THE WALLS STILL HAVE THEIR SHAPE. |
 | S8 over the grate (the Mark) | BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE, AND WHAT IT HOLDS. |
 
-Section subtitles: *Where the descent begins. Again.* · *Every fall here is kept* · *Closed from this side* · *Something
-answered the knock* · *It has your scent. It had theirs.* · *Slow and certain, or quick and carried* · *Nothing to stand
-on. Nothing to bury.* · *Down. Now. Before the walls wake.* (Section names are unchanged: saves, records and the e2e use them.)
+Section subtitles (second pass): *Where the descent begins. Again.* · *Every fall here is kept. So is the count.* · *Closed from
+this side. Measured from the other.* · *Something answered the knock. It knew the rhythm.* · *It has your scent. It had theirs.* ·
+*Slow and certain, or quick and carried. Never up.* · *Nothing to stand on. Nothing to bury.* · *Down. Now. Everything here wants
+you down.* (Section names are unchanged: saves, records and the e2e use them.)
 
-Hints (instruction first, a darker tail): S2 *... The rope forgives; the floor keeps.* · S4 *Hold your lantern to the cold
-lamps. Light them before the walls notice.* · S5 *Something made of the lost is coming down after you. Keep moving.* · S8
-*The grate — run for the light. Do not look at the walls.* The control tutorials (S1, S3, S7) are unchanged.
+Hints (instruction first, a darker tail): S1 bell *... opens the way down. Only down.* · S2 *... The rope forgives; the floor
+keeps.* · S2 haul *... It is heavier than stone should be.* · S3 rocks *... Do not look at what falls.* · S3 gear *... Something
+inside is turning it.* · S4 *Hold your lantern to the cold lamps. Light them before the walls notice.* · S5 *Something made of the
+lost is coming down after you. Keep moving.* · S6 *... Nobody has come back up to oil them.* · S7 *... Do not watch where it goes.* ·
+S8 *The grate — run for the light. Do not look at the walls.* The control tutorials (S1, S3, S7) are unchanged.
 
-Menu and screens (ui/ui3d.js): tagline *A lantern, a line, and a long way down. No one has climbed back.* · deaths: *The
-floor keeps what falls. It kept you.* / *The ironwork was waiting. It has waited for others.* / *The dark had no bottom,
-only those who fell before.* / the Mason: *It wears you now.* · victory teaser: *The Underspire goes deeper than the light
-does. So did the Masons.* Sound captions stay plain descriptions of the sound (accessibility).
+Menu and screens (ui/ui3d.js, second pass): tagline *A lantern, a line, and a long way down. No one has climbed back. You have
+tried.* · deaths: *The floor keeps what falls. It has kept you before.* / *The ironwork was waiting. It remembers your size.* /
+*It is not a fall if it is where you were going.* / the Mason: *It wears you now.* / the Dresser: *DRESSED. SOMEONE WILL BUILD WITH
+YOU.* · victory teaser: *Something at the bottom was cut to your measure. It took forty of you to get it right.* (the VR panel's
+line is the comms owner's *Uplink lost below the Mark. Expedition 42 on standby.*). Sound captions stay plain descriptions of the
+sound (accessibility).
 
-## 5. The blood writings (21; Settings › Display › Blood writing)
+## 5. The blood writings (41; Settings › Display › Blood writing)
+
+The first pass's 21 are below; the second pass's 20 (S1-S8 and two in the chamber) are listed in
+[DARK_STORY_BIBLE.md §4.2](DARK_STORY_BIBLE.md).
 
 | Id | Where | Text |
 |---|---|---|
@@ -126,16 +139,20 @@ The data file has the exact coordinates; the positions in the table above are on
 - **Placement rule.** Where the player stands or hangs anyway (a checkpoint, a supply spot, a route ledge, a rest, the
   grate), within reach of a lamp or the lantern; on a static wall's inner face or a floor's top (stone behind every corner,
   air in front), off climb zones, plaques, lamps, glyph bands, ribs and pipes, and clear of the kit dressing in front of the
-  wall (pilasters, string courses, panels: checked by raycasting the built level in the browser).
+  wall (pilasters, string courses, panels: checked by raycasting the built level in the browser). Second pass: 4-6 a section,
+  and the chamber behind the grate counts as near the route.
 - **Look.** A procedural canvas scrawl (no web font: a generic hand / cursive stack, every glyph rotated, scaled and offset
   on a drifting baseline), finger-thick strokes, a faint wet highlight, smears and drips with beads; dark wet red
   (#7a0b0b) drying to #2a0303 (the higher, older writings darker). One 1536 x 2816 atlas (2 x 11 cells of 768 x 256), one
   merged mesh of 21 quads (42 triangles), the decals' lit alpha-blended material (rougher, a faint wet film, a 0.7 albedo
   tint so the lantern never makes it glow) with a polygon offset, 1.4 cm off a wall and 2.6 cm above a floor (over the
-  carved floor inlays). At most one draw call, only while a writing is within 14 m (x the detail scale) of the head.
+  carved floor inlays). Second pass (41 writings): one atlas (2 columns of 768 x 256 cells, <= 1536 x 768, about 6 MB with mips)
+  and one merged mesh **per section**, drawn a writing per frame while the head is within 35 m of the section and freed beyond 70 m
+  (`render/textAtlasGroups.js`, shared with the boards): one draw call per section with a writing within 14 m (x the detail scale)
+  of the head.
 - **Live.** Renderer3D reads `settings.bloodWriting` every frame: on builds the mesh and precompiles; off disposes the
   mesh, its material and its atlas. A level rebuild keeps the state.
 - **Adding one.** Append an entry (section, wall point or floor point, yaw, width 1.4-2.4 m, 1-3 lines of <= 24
-  characters) and run `node tools/abyssal-tether-3d/tests/render/test-blood-writing.mjs` (2-3 per section, charset, on its
-  wall, clear of climb zones and plaques, near the route). Then look at it in the game (`capture-screens.mjs --only shots
+  characters) and run `node tools/abyssal-tether-3d/tests/render/test-blood-writing.mjs` (4-6 per section, charset, on its
+  wall, clear of climb zones and plaques, near the route) and `test-board-writing.mjs` (no board crosses a writing). Then look at it in the game (`capture-screens.mjs --only shots
   --recipe shot-blood` shows bw-s6-hob).

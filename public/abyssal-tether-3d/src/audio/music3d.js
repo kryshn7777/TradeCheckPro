@@ -122,7 +122,7 @@ export class Music {
     // ---- bus: out in 0.2 s when the creature listens, back over ~3 s ----
     const sil = clamp(1 - 1.5 * c.silence, 0, 1);
     const user = m.settings && typeof m.settings.musicVolume === 'number' ? clamp(m.settings.musicVolume, 0, 1) : 1;
-    const tgt = allowed && !ducked ? MUSIC.level * sil * user : 0;
+    const tgt = allowed && !ducked ? MUSIC.level * sil * user * (m._radioDuck > 0 ? m._radioDuck : 1) : 0; // (EXPEDITION: ~-6 dB under the radio)
     this.level = tgt;
     this.kBus.set(tgt, now, tgt < this.kBus.last ? 0.12 : 2.2);
 

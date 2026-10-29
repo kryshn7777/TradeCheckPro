@@ -108,6 +108,41 @@ v2 head: the kit's `Mason_Head` extras carry `pivots` (door, tooth-row, jaw, ora
 Runtime: `src/render/masonRigView.js` + `src/render/mason/*` (clip graph, pose maths, legs, head fit, material patch); `game.js` loads
 the GLB after the kit and swaps views, with the kit `CreatureView` as the automatic fallback (`?mason=kit` forces it).
 
+## The Holdfast (the hand in the wall)
+
+`build_holdfast.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 4242) builds THE HOLDFAST (`src/sim/holdfast3d.js`,
+`src/render/holdfastView.js`, `docs/abyssal-tether-3d/plans/CREATURE_PACING.md`): a grey-pink stone-flesh hand and forearm in a torn
+socket of masonry. Every finger has **one knuckle too many** (4 phalanges); slate nails, a wedding band of mortar, extensor tendons of
+twisted rope, a split at the wrist showing the fibres, corpse-grey skin with livor in the palm and fingertips, wet.
+
+Pipeline: an anatomy table (joints, radii, the thumb) -> LOW game mesh (finger tubes with ring pairs at every joint, palm, thenar,
+forearm, the band and the nails as geometry, the socket crater with a black floor just in front of the wall face) -> HIGH (dense
+tubes of the same table, a 0.9 mm voxel union, Laplacian smoothing, subdivision: 2 levels on the hand, 1 on the forearm, ~3.7 M
+triangles) + numpy "sculpt" layers (knuckle folds, joint creases, palm lines, Voronoi stone cracks and crazing, veins, rope
+tendons, the wrist split, worn tips) and per-vertex albedo / roughness / vein mask -> bake (Cycles: tangent normal, AO, albedo,
+roughness + vein mask) at 2048 into one atlas with per-part texel weights (fingers x3, socket x0.22) -> vertex-colour AO (BVH rays)
+-> 22 bones (`socket`, `forearm`, `hand`, `index|middle|ring|pinky_1..4`, `thumb_1..3`; finger bones roll so local X is the flex
+axis) -> ten clips authored in code (`idle` `stir` `reach` `close` `squeeze` `pull` `release` `retract` `dead` `answer`) -> LOD1
+(decimate, ~620 tris, same UVs / weights) and `Holdfast_Dormant` (LOD0 posed by `idle` t=0, static: the instanced far look).
+
+| Output | |
+|---|---|
+| `public/abyssal-tether-3d/assets/models/holdfast.glb` | `Holdfast_LOD0` (skinned, ~2.3 k tris), `Holdfast_LOD1` (~0.6 k), `Holdfast_Dormant` (static), one material `HoldfastFlesh` (albedo, normal, ORM: R AO, G roughness, B the vein mask; the runtime forces metalness 0), COLOR_0 = AO, ten animations; meshopt + KTX2 (1024 maps) |
+| `previews/holdfast_sheet.png` | Cycles contact sheet of the game mesh: dormant, aware, reach, closed on a gauntlet, ruined, the S4 answer, back, palm, macro |
+
+```bash
+PY=.../blender-venv/bin/python
+flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_holdfast.py --out <dir> --renders <dir> [--render] [--bake 2048] [--samples 40]
+        # ~10 min + ~5 min of previews; peak ~4 GB (the high is split hand / forearm to stay there); --stage shape = clay renders
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out <dir2> --only holdfast
+GLTF_TOOLS=$TOOLS KTX2_TOOLS=$KTX node tools/abyssal-tether-3d/compress_glb_textures.mjs --dir <dir2> --out public/abyssal-tether-3d/assets/models --only holdfast
+node tools/abyssal-tether-3d/tests/creature/holdfast.mjs      # sim rules + the GLB / view budget
+```
+
+Runtime: `holdfastView.js` loads the GLB in the background once a run is under way; at most 2 live rigs (AnimationMixer per rig:
+the base clip by state, `reach` / `close` scrubbed by the sim's `close`, `squeeze` additive on the beats; then an IK puts the palm on
+the held hand with the forearm through the socket's mouth, mirrored for a left hand), the rest one InstancedMesh of the dormant fist.
+
 ## Textures
 
 Seamless PBR sets (every map periodic by construction) live in `public/abyssal-tether-3d/assets/textures/` with a
@@ -298,4 +333,27 @@ named parts. Quick part check without the Cycles preview: import the GLB into Bl
 
 ```bash
 flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d/build_env_kit.py [--out DIR]
+```
+
+## Props v2 (`build_props_v2.py`): the near-field props rebuilt (MESH_DETAIL_AND_OPTIMIZATION.md)
+
+`build_props_v2.py` (Blender / `bpy`, procedural, deterministic, ~10 s) writes `public/abyssal-tether-3d/assets/models/env/ch1_props_v2.glb`
+(0.49 MB after meshopt + quantisation; it does NOT touch `ch1_env_kit.glb`, whose rebuild is not byte-identical: the collider boxes and the
+bake inputs would move). Two families:
+
+| Meshes | Used by | Levels / triangles |
+|---|---|---|
+| `ch1_env_chainlink` (metal, unit pitch, long axis +Y) | `LevelView` decor `chain` (one LOD record per link, `_propRecs`) | `_lod0` 288 / 96 / `_lod2` 36 |
+| `ch1_env_lanternwright` (stone) + `_iron` (metal) + `_glow` | `LevelView` decor `statue` (normalised to the decor box) | 9000 / 2600 / 800 and 728 / 420 / 120 |
+| `ch1_sd_<template>` (one per scene-detail template: skull, femur, femurBroken, rib, barrel, crateBroken, crateSmash, lantern, bucket, chain4, chain7, pickaxe, hammer, shovel, crowbar, ropeCoil, block) | `render/sceneDetail.js` `addHeroTemplates`: drawn instead of the lean template for the nearest items within `HI_NEAR` | 180-1500 each (`PROP_TRIS`) |
+
+Kit-like parts carry grey AO in `COLOR_0` and no UVs (the engine projects the shared sets); the scene-detail heroes carry the final
+linear albedo (AO, cavity grime, edge wear, rust baked in) and UVs already inside their props-atlas cells. The renderer loads the GLB after
+the environment kit (`Renderer3D._loadProps`); without it the procedural builders draw everything as before (`?props=0` /
+`?propshi=0` force that).
+
+```bash
+flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d/build_props_v2.py --out DIR [--only skull,barrel] [--stats DIR/stats.json]
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir DIR --out public/abyssal-tether-3d/assets/models/env --only ch1_props_v2
+npm run at3d:sw
 ```

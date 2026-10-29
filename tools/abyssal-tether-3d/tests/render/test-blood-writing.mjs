@@ -1,14 +1,16 @@
 // Node tests for the opt-in BLOOD WRITING (Settings › Display › Blood writing; data/blood-writing-3d.js, render/bloodWriting.js)
 // and the board texts it sits beside (no GPU, no browser: a recording 2D context stands in for the canvas):
-//   - the data: 2-3 writings per section (about 20), at most 3 lines of at most 24 characters each, only the characters the
-//     scrawl draws, unique ids, each in the section it names, close to where the player passes;
+//   - the data: 4-6 writings per section (about 40; plans/DARK_STORY_BIBLE.md), at most 3 lines of at most 24 characters each,
+//     only the characters the scrawl draws, unique ids, each in the section it names, close to where the player passes;
 //   - the placement: every corner of every writing lies on a static level solid (a wall's inner face or a floor's top: just
 //     inside is stone, just outside is air), never on a crumbling ledge, never across a climb zone or a plaque;
 //   - not level decor: no 'blood' decor, the decor count unchanged (no bake / lightmap / GI hash / dressing / collider input);
 //   - the setting: OFF by default, strict boolean, survives Storage and the save profile round trips;
-//   - the renderer: the scrawl fits its cell at a legible size with drips, draws only charset glyphs; one mesh, 2 triangles per
-//     writing, uvs inside the atlas; dispose frees geometry, material and atlas; LevelView: with the setting OFF no blood mesh
-//     exists, ON builds exactly one, OFF again removes it (and clear() leaves none).
+//   - the renderer: the scrawl fits its cell at a legible size with drips, draws only charset glyphs; a section at a time
+//     (render/textAtlasGroups.js): one mesh per section near the head, 2 triangles per writing, uvs inside its atlas, each
+//     section's atlas <= 8 MB, nothing drawn before the head comes near, far sections freed; dispose frees geometry, material
+//     and atlas; LevelView: with the setting OFF no blood mesh exists, ON builds the nearest section's, OFF again removes it
+//     (and clear() leaves none).
 //   node test-blood-writing.mjs [--root DIR]
 import { register } from 'node:module';
 import { srcUrl, VENDOR_THREE_URL } from '../../verify/root.mjs';
@@ -105,7 +107,7 @@ const T = BD.BLOOD_TEXTS;
   const per = {};
   for (const e of T) per[e.section] = (per[e.section] || 0) + 1;
   const counts = L.sections.map((s) => per[s.id] || 0);
-  ok(counts.every((c) => c >= 2 && c <= 3) && T.length >= 18 && T.length <= 24, `2-3 writings per section, about 20 in all: ${counts.join('/')} = ${T.length}`);
+  ok(counts.every((c) => c >= 4 && c <= 6) && T.length >= 36 && T.length <= 45, `4-6 writings per section, about 40 in all: ${counts.join('/')} = ${T.length}`);
   ok(new Set(T.map((e) => e.id)).size === T.length, 'unique ids');
   const lineBad = T.filter((e) => {
     const lines = e.text.split('\n');
@@ -121,17 +123,18 @@ const T = BD.BLOOD_TEXTS;
   ok(!inSec.length, `each writing lies in the section it names${inSec.length ? ': ' + inSec.map((e) => e.id).join(', ') : ''}`);
   ok(T.every((e) => e.w >= 1.4 && e.w <= 2.4 && isFinite(e.yaw)), 'sizes 1.4-2.4 m wide, a facing for each');
   // where the player passes: within 6 m of a checkpoint, a supply spot, a route / recovery anchor, a ledge a route stops on
-  // (its top face) or the grate before the goal
+  // (its top face), the grate before the goal or the chamber behind it
   const stops = new Set(L.data.routes.flatMap((r) => r.stops));
   const boxes = L.solids.filter((s) => stops.has(s.id)).map((s) => Object.assign({}, s, { minY: s.maxY }));
   if (L.data.gate) boxes.push(L.data.gate);
+  if (L.data.goal) boxes.push(L.data.goal);
   const boxDist = (b, e) => Math.hypot(Math.max(b.minX - e.x, 0, e.x - b.maxX), Math.max(b.minY - e.y, 0, e.y - b.maxY), Math.max(b.minZ - e.z, 0, e.z - b.maxZ));
   const far = T.filter((e) => {
     const sec = L.sections.find((s) => s.id === e.section);
     const pts = [sec.checkpoint, ...L.data.supplies, ...L.anchors.filter((a) => a.tag !== 'objective')];
     return !pts.some((p) => p && Math.hypot(p.x - e.x, p.y - e.y, p.z - e.z) < 6) && !boxes.some((b) => boxDist(b, e) < 6);
   });
-  ok(!far.length, `every writing is within 6 m of a checkpoint, supply spot, anchor, route ledge or the grate${far.length ? ': ' + far.map((e) => e.id).join(', ') : ''}`);
+  ok(!far.length, `every writing is within 6 m of a checkpoint, supply spot, anchor, route ledge, the grate or the chamber${far.length ? ': ' + far.map((e) => e.id).join(', ') : ''}`);
 }
 
 // ---- the placement -------------------------------------------------------------------------------------------------------
@@ -206,9 +209,10 @@ const T = BD.BLOOD_TEXTS;
 
 // ---- the scrawl ----------------------------------------------------------------------------------------------------------
 {
-  const atlas = BW.bloodAtlasSize(T.length);
+  const most = Math.max(...L.sections.map((sec) => T.filter((e) => e.section === sec.id).length));
+  const atlas = BW.bloodAtlasSize(most);
   const mb = (atlas.w * atlas.h * 4 * 4) / 3 / (1 << 20); // RGBA8 with its mip chain
-  ok(atlas.w === BW.BLOOD_COLS * BW.BLOOD_CELL_W && atlas.h === atlas.rows * BW.BLOOD_CELL_H && mb <= 24, `one atlas ${atlas.w} x ${atlas.h}, ${mb.toFixed(1)} MB with mips (<= 24 MB; only while the setting is on)`);
+  ok(atlas.w === BW.BLOOD_COLS * BW.BLOOD_CELL_W && atlas.h === atlas.rows * BW.BLOOD_CELL_H && mb <= 8, `a section's atlas at most ${atlas.w} x ${atlas.h}, ${mb.toFixed(1)} MB with mips (<= 8 MB; only near it, only while the setting is on)`);
   ok(Math.abs(BW.BLOOD_CELL_W / BW.BLOOD_CELL_H - BD.BLOOD_ASPECT) < 0.01, 'the cell has the writings\' shape (no stretching)');
   let minFs = Infinity;
   let drips = 0;
@@ -230,29 +234,41 @@ const T = BD.BLOOD_TEXTS;
   ok(drips >= T.length, `drips run from the letters (${drips} in all)`);
 }
 
-// ---- the mesh ------------------------------------------------------------------------------------------------------------
+// ---- the meshes: a section at a time -------------------------------------------------------------------------------------
 {
   const parent = new THREE.Group();
   const w = new BW.BloodWriting(parent, { makeCanvas: stubCanvas });
   ok(!parent.children.length && !w.mesh, 'nothing exists before a build');
-  ok(w.build(T) && parent.children.length === 1 && w.mesh.name === 'bloodWriting', 'one mesh for the whole level');
+  ok(w.build(T) && !parent.children.length && w.groups.length === L.sections.length, `a build draws nothing yet: ${w.groups.length} sections wait for the head`);
+  const e0 = T[0];
+  const head = { x: e0.x + 1, y: e0.y, z: e0.z };
+  let frames = 0;
+  while (!w.mesh && frames < 20) {
+    w.update(head, 1);
+    frames++;
+  }
+  const g0 = w.groups.find((g) => g.mesh);
+  ok(!!g0 && g0.key === e0.section && frames === g0.list.length && parent.children.length === 1 && w.mesh.name === 'bloodWriting', `near ${e0.id}: its section is drawn a writing per frame (${frames} frames) into one mesh`);
   const g = w.mesh.geometry;
   const uv = g.attributes.uv.array;
-  ok(g.attributes.position.count === T.length * 6 && !g.index, `2 triangles per writing (${g.attributes.position.count / 3} triangles)`);
+  ok(g.attributes.position.count === g0.list.length * 6 && !g.index, `2 triangles per writing (${g.attributes.position.count / 3} triangles)`);
   ok([...uv].every((v) => v >= 0 && v <= 1), 'uvs inside the atlas');
   const m = w.mesh.material;
   ok(m.transparent && !m.depthWrite && m.polygonOffset && m.polygonOffsetFactor < 0 && m.map && m.vertexColors, 'alpha-blended, no depth write, polygon offset toward the viewer, the atlas map (the decal recipe)');
+  w.update(head, 1);
+  const near = w.mesh.visible;
   w.update({ x: 999, y: 999, z: 999 }, 1);
-  const far = w.mesh.visible;
-  const e0 = T[0];
-  w.update({ x: e0.x + 1, y: e0.y, z: e0.z }, 1);
-  ok(!far && w.mesh.visible, 'hidden unless a writing is near the head (no draw call elsewhere)');
+  ok(near && !w.mesh, 'shown while a writing is near the head; far away its section is freed (no draw call, no atlas)');
   const freed = { geo: 0, mat: 0, tex: 0 };
-  g.addEventListener('dispose', () => freed.geo++);
-  m.addEventListener('dispose', () => freed.mat++);
-  m.map.addEventListener('dispose', () => freed.tex++);
+  const now = new BW.BloodWriting(parent, { makeCanvas: stubCanvas });
+  ok(now.build(T, head) && now.mesh && now.mesh.userData.group === e0.section, 'build(entries, head) draws the nearest section at once (Renderer3D precompiles on true)');
+  const mm = now.mesh;
+  mm.geometry.addEventListener('dispose', () => freed.geo++);
+  mm.material.addEventListener('dispose', () => freed.mat++);
+  mm.material.map.addEventListener('dispose', () => freed.tex++);
+  now.dispose();
   w.dispose();
-  ok(!parent.children.length && !w.mesh && freed.geo === 1 && freed.mat === 1 && freed.tex === 1, 'dispose removes it and frees geometry, material and atlas');
+  ok(!parent.children.length && !now.mesh && freed.geo === 1 && freed.mat === 1 && freed.tex === 1, 'dispose removes it and frees geometry, material and atlas');
   const none = new BW.BloodWriting(parent);
   ok(!none.build(T) && !parent.children.length, 'no canvas (Node without a DOM): no mesh, no error');
 }
@@ -272,7 +288,8 @@ const T = BD.BLOOD_TEXTS;
     return c;
   };
   ok(lv.setBlood(false) === false && blood() === 0, 'setting OFF: no blood mesh exists');
-  ok(lv.setBlood(true) === true && blood() === 1, 'setting ON: exactly one blood mesh (Renderer3D precompiles on true)');
+  lv._blood._lastHead = { x: T[0].x, y: T[0].y, z: T[0].z }; // where the head was last seen (LevelView.update)
+  ok(lv.setBlood(true) === true && blood() === 1, 'setting ON: the nearest section\'s blood mesh at once (Renderer3D precompiles on true)');
   ok(lv.setBlood(true) === false && blood() === 1, 'unchanged setting: nothing rebuilt');
   ok(lv.setBlood(false) === false && blood() === 0, 'OFF again: removed');
   lv.setBlood(true);

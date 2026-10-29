@@ -31,6 +31,9 @@ import { Objectives3D } from './sim/objectives3d.js';
 import { SplitClock, medalFor } from './sim/splits3d.js';
 import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
+import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
+import { ObjectiveHint } from './sim/objectiveHint.js';
+import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 
 const C = CONFIG;
@@ -89,9 +92,13 @@ const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.
 // rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
 // LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
 // 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
-// distance. A tighter Quest value (e.g. 12) saves another ~80 k stereo triangles while it is 12-25 m away. The small hunters keep their
+// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k). The small hunters keep their
 // own short LOD (SKITTER_VIEW in masonRigView.js).
-const CREATURE_LOD = { low: 16, quest: 25, high: Infinity };
+const CREATURE_LOD = { low: 10, quest: 12, high: Infinity };
+// The skitterlings' LOD0 (57 k triangles, x2 eyes) -> LOD1 (21 k) switch, m. They are 0.45 scale: LOD1 reads the same from 3-4 m. Quest budget
+// harness, S6: Normal / Nightmare / Abyss show 1 / 2 / 3 of them at once and each LOD1 one costs ~40 k stereo triangles, so a LOD0 one on
+// top of you (it bites at 2-3 m) must not cost another ~70 k.
+const SKITTER_LOD = { low: 2.5, quest: 3.5, high: 6 };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -101,6 +108,7 @@ const MODULES = {
   creature: './sim/creature3d.js',
   skitter: './sim/skitter3d.js',
   dresser: './sim/dresser3d.js', // THE DRESSER (hunts only while you are whole; docs/abyssal-tether-3d/plans/DRESSER.md)
+  holdfast: './sim/holdfast3d.js', // THE HOLDFAST (the wall holds your hand; docs/abyssal-tether-3d/plans/CREATURE_PACING.md)
   threat: './sim/threat3d.js',
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
@@ -112,6 +120,9 @@ const MODULES = {
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
+  holdfastView: './render/holdfastView.js',
+  comms: './sim/comms3d.js', // EXPEDITION: the radio script, the signal, the restore (docs/abyssal-tether-3d/plans/COMMS.md)
+  commsView: './render/commsView.js',
   sceneDetail: './render/sceneDetail.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
@@ -238,6 +249,39 @@ function dresserMode() {
   }
 }
 
+/** `?comms=off` turns the Expedition layer off (the radio, the subtitles, the signal bars, the restore overlay): tests, captures. */
+function commsOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]comms=off\b/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * THE HOLDFAST: `?holdfast=off` disables it (sim and view; the climb studs come back on its patches). `?hunt=always` (the e2e and the
+ * capture tools) leaves it out unless `holdfast=on` asks for it (the same rule as sim/holdfast3d.js holdfastMode). 'off' | 'on'.
+ */
+function holdfastMode() {
+  try {
+    const q = typeof location !== 'undefined' ? location.search || '' : '';
+    const m = /[?&]holdfast=(off|on)\b/.exec(q);
+    if (m) return m[1];
+    return /[?&]hunt=always\b/.test(q) ? 'off' : 'on';
+  } catch {
+    return 'on';
+  }
+}
+
+/** `?hints=off` disables the 20-second trigger highlight (tests, captures). */
+function hintsOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]hints=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /** `?skitter=off` disables the skitterlings (sim and views). */
 function skitterOff() {
   try {
@@ -320,6 +364,29 @@ function nullDresser() {
     setHp() {},
     setRival() {},
     setView() {},
+    update() {},
+    destroy() {},
+  };
+}
+
+/** Stand-in when the Holdfast is off or its module failed: no sites, never holds a hand. */
+function nullHoldfast() {
+  return {
+    isNull: true,
+    enabled: false,
+    sites: [],
+    held: null,
+    heldHand: null,
+    stats: null,
+    reset() {},
+    onRespawn() {},
+    setSection() {},
+    setHp() {},
+    setHands() {},
+    setInput() {},
+    takeDamage() {
+      return 0;
+    },
     update() {},
     destroy() {},
   };
@@ -887,14 +954,26 @@ export class Game3D {
     this.dresserView = null; // render/dresserView.js
     this._dresserBuzzT = 0;
     this._dresserTickN = 0;
+    this.holdfast = nullHoldfast(); // THE HOLDFAST (sim/holdfast3d.js): the wall holds your hand
+    this.holdfastView = null; // render/holdfastView.js (holdfast.glb, loaded in the background once a run starts)
+    this._hfIn = { reel: 0, yankL: 0, yankR: 0, jump: false, back: false, grabL: false, grabR: false };
+    this._hfHumT = 0;
     this._camPos = new THREE.Vector3();
     this._camDir = new THREE.Vector3();
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
+    // EXPEDITION (sim/comms3d.js): the radio director, its view (render/commsView.js), the restore plan while dead (null otherwise)
+    this.comms = null;
+    this.commsView = null;
+    this.restore = null;
+    this._restorePrev = '';
+    this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
+    this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
+    this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -1095,6 +1174,8 @@ export class Game3D {
     this._setupBodyView();
     this._setupBagViews();
     this._setupDresserView();
+    this._setupHoldfastView();
+    this._setupComms();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -1317,6 +1398,30 @@ export class Game3D {
     }
   }
 
+  /**
+   * THE HOLDFAST's view (render/holdfastView.js); optional, `?holdfast=off` skips it. The GLB loads in the background the first time
+   * a run is under way (_updateViews): a missing / broken asset leaves the sim without a view (the patches still lack their chalk).
+   */
+  _setupHoldfastView() {
+    const M = this.modules;
+    if (this.holdfastView || !this.renderer || holdfastMode() === 'off' || !M.holdfastView || typeof M.holdfastView.HoldfastView !== 'function') return;
+    try {
+      this.holdfastView = new M.holdfastView.HoldfastView(this);
+      this.holdfastView.onError = (err) => this._fault('holdfastAsset', err);
+    } catch (err) {
+      this._fault('holdfastView', err);
+      this.holdfastView = null;
+    }
+  }
+
+  /** The Holdfast's GLB loader: the vendored GLTFLoader with meshopt (default) + KTX2 (the atlas). */
+  _holdfastLoader() {
+    const M = this.modules;
+    const loader = new M.gltf.GLTFLoader();
+    if (M.glbLoad && typeof M.glbLoad.attachKTX2 === 'function') M.glbLoad.attachKTX2(loader);
+    return loader;
+  }
+
   /** THE DRESSER's view (procedural: no asset to load); optional, `?dresser=off` skips it. */
   _setupDresserView() {
     const M = this.modules;
@@ -1326,6 +1431,92 @@ export class Game3D {
     } catch (err) {
       this._fault('dresserView', err);
       this.dresserView = null;
+    }
+  }
+
+  /**
+   * EXPEDITION (sim/comms3d.js, render/commsView.js, audio/radio3d.js; docs/abyssal-tether-3d/plans/COMMS.md): the team on the
+   * radio, the failing signal and the CONTINUITY restore in place of the death panel. Presentation only: a director fed by the
+   * bus (its lines go back out as 'comms:line' / 'comms:end' for the radio), one head-locked quad. `?comms=off`: none of it.
+   */
+  _setupComms() {
+    const M = this.modules;
+    if (this.comms || commsOff() || !M.comms || typeof M.comms.CommsDirector !== 'function') return;
+    try {
+      const cm = new M.comms.CommsDirector({ seed: 0x41 });
+      const bus = this.bus;
+      cm.onStart = (tx) => bus.emit('comms:line', tx);
+      cm.onEnd = (tx) => bus.emit('comms:end', tx);
+      for (const type of M.comms.DIRECTOR_EVENTS) bus.on(type, (p) => this._try('comms', () => cm.onEvent(type, p)));
+      this.comms = cm;
+    } catch (err) {
+      this._fault('comms', err);
+      this.comms = null;
+      return;
+    }
+    if (!this.renderer || !M.commsView || typeof M.commsView.CommsView !== 'function') return;
+    try {
+      this.commsView = new M.commsView.CommsView(this.renderer.camera);
+    } catch (err) {
+      this._fault('commsView', err);
+      this.commsView = null;
+    }
+  }
+
+  /** The director's frame: where you are, whether a creature is winding up (no radio then), the skip, the bare-stone gaze. */
+  _updateComms(dt, intent) {
+    const cm = this.comms;
+    if (!cm || !this.player || !this.level) return;
+    try {
+      const x = this._commsCtx;
+      const p = this.player;
+      const idx = this.sectionIndex;
+      const sec = this.level.sections ? this.level.sections[idx] : null;
+      x.playing = this.state === 'playing' && p.alive && this.victoryT < 0;
+      x.section = idx;
+      x.depth = U.depthMeters(p.y);
+      const top = sec ? Math.max(0, -sec.yTop) : 0;
+      const bot = sec ? -sec.yBottom : 1;
+      x.frac = bot > top ? U.clamp((x.depth - top) / (bot - top), 0, 1) : 0;
+      const c = this.creature;
+      let danger = !!(c && ((c.attack && c.attack.phase) || c.state === 'BURST' || c.state === 'ATTACK'));
+      const dr = this.dresser;
+      if (dr && !dr.isNull && dr.measuring) danger = true;
+      const g = this.skitters;
+      if (g && g.slots) for (let i = 0; i < g.slots.length; i++) if (g.slots[i].on && g.slots[i].attack && g.slots[i].attack.phase) danger = true;
+      x.danger = danger;
+      x.tense = !!(c && c.active && c.distance < 40 && (c.state === 'PURSUING' || c.state === 'APPROACHING'));
+      x.skip = !!(intent && intent.confirmPressed);
+      x.bloodOn = !!(this.settings && this.settings.bloodWriting);
+      x.gaze = false;
+      const cam = x.bloodOn && x.playing && sec && this.renderer ? this.renderer.camera : null;
+      const list = cam && this.level.data ? this.level.data.blood : null;
+      if (list) {
+        const e = cam.matrixWorld.elements;
+        const l = Math.hypot(e[8], e[9], e[10]) || 1;
+        x.gaze = this.modules.comms.bloodGaze(list, sec.id, e[12], e[13], e[14], -e[8] / l, -e[9] / l, -e[10] / l);
+      }
+      cm.update(dt, x);
+    } catch (err) {
+      this._fault('comms', err);
+    }
+  }
+
+  /** A death with comms on: the CONTINUITY restore plan (the cause, the killer, the count, a last line never repeated). */
+  _restoreBegin(cause) {
+    const cm = this.comms;
+    const M = this.modules.comms;
+    this.restore = null;
+    if (!cm || !M || !this.player) return;
+    try {
+      const killer = M.restoreKiller(cause, cm.lastHurtCause, cm.clock - cm.lastHurtAt);
+      cm.noteDeath(killer);
+      const canRespawn = !!this.diff && this.diff.checkpoints !== 'none';
+      this.restore = M.planRestore({ cause, killer, count: this.deaths, depth: U.depthMeters(this.player.y), section: this.sectionIndex, canRespawn, seed: this._runCount, previous: this._restorePrev });
+      this._restorePrev = this.restore.last;
+    } catch (err) {
+      this._fault('comms', err);
+      this.restore = null;
     }
   }
 
@@ -1701,6 +1892,51 @@ export class Game3D {
       if (e.reason === 'slip') this._hapticBoth(0.9, 240);
       else if (e.reason !== 'death' && e.reason !== 'reset') this._haptic(e.hand, 0.16, 25);
     });
+    // THE HOLDFAST (sim/holdfast3d.js): it closes (a hard grip), squeezes on the beats (lub-dub, harder when you are LOW), you tear
+    // free (a snap in that hand), it crushes (a long hard pulse), the knuckles stir under your palm before it closes
+    bus.on('holdfast:grip', (e) => {
+      if (this._inRun() && e && e.hand) this._haptic(e.hand, 0.3, 60);
+    });
+    bus.on('holdfast:close', (e) => {
+      if (this._inRun() && e && e.hand) this._haptic(e.hand, e.low ? 1 : 0.9, 180);
+      if (this._inRun() && !this._hfHinted) {
+        // first contact (once a session): how to get your hand back
+        this._hfHinted = true;
+        const h = {
+          duration: 6,
+          text: 'A hand in the wall has yours. PULL YOUR ARM BACK HARD to tear free, reel your other tether, or hook its arm.',
+          desktop: 'A hand in the wall has yours. Hold S and press SPACE (or let go of F) to tear free, reel your other tether, or hook its arm.',
+        };
+        this.bus.emit('hint', { text: this._hintText(h), seconds: h.duration, duration: h.duration, hint: h });
+      }
+    });
+    bus.on('holdfast:squeeze', (e) => {
+      if (!this._inRun() || !e || !e.hand) return;
+      const k = U.clamp(finiteOr(e.strength, 0.7), 0.2, 1);
+      this._haptic(e.hand, k, 110);
+      this._hfHumT = 0.22; // the dub follows the lub: the hum waits
+      const hand = e.hand;
+      setTimeout(() => {
+        if (this._inRun() && this.holdfast && this.holdfast.held) this._haptic(hand, k * 0.7, 80);
+      }, 170);
+    });
+    bus.on('holdfast:tear', (e) => {
+      if (this._inRun() && e && e.hand) this._haptic(e.hand, 1, 140);
+    });
+    bus.on('holdfast:crush', (e) => {
+      if (this._inRun() && e && e.hand) this._haptic(e.hand, 1, 420);
+    });
+    bus.on('holdfast:outpull', (e) => {
+      if (this._inRun() && e && e.hand) this._haptic(e.hand, 0.7, 120);
+    });
+    bus.on('holdfast:twitch', (e) => {
+      const cl = this.climb || (this.physics && this.physics.climb);
+      if (!this._inRun() || !cl || !e) return;
+      for (let i = 0; i < 2; i++) {
+        const st = cl.hands[HANDS[i]];
+        if (st.gripping && Math.hypot(st.ax - e.x, st.ay - e.y, st.az - e.z) < 1.0) this._haptic(HANDS[i], 0.12, 30);
+      }
+    });
     bus.on('climb:scrape', (e) => {
       if (this._inRun()) this._haptic(e.hand, U.clamp(0.08 + 0.1 * finiteOr(e.speed, 1), 0.08, 0.3), 45);
     });
@@ -2042,6 +2278,8 @@ export class Game3D {
     this.deathT = 0;
     this.deathCause = null;
     this._deathShown = false;
+    this.restore = null;
+    this._restorePrev = '';
     this._acc = 0;
     this._pendingJump = false;
     this._resetProgress();
@@ -2051,6 +2289,7 @@ export class Game3D {
     this._try('creature', () => this.creature.reset(p));
     this._try('skitter', () => this.skitters && this.skitters.reset());
     this._try('dresser', () => this.dresser.reset(p));
+    this._try('holdfast', () => this.holdfast.reset(p));
     this._face(finiteOr(sp.yaw, 0));
 
     this.settings.lastDifficulty = key;
@@ -2133,12 +2372,14 @@ export class Game3D {
     this._pendingJump = false;
     this.deathT = 0;
     this._deathShown = false;
+    this.restore = null; // (the restore overlay fades out as the relay fades in)
     const idx = this.level.sectionIndexAt(cp.y);
     if (idx !== this.sectionIndex) this._enterSection(idx, 'respawn');
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
+    this._try('holdfast', () => this.holdfast.onRespawn(p));
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2221,6 +2462,7 @@ export class Game3D {
     this._pendingJump = false;
     this.deathT = 0;
     this._deathShown = false;
+    this.restore = null;
     this.checkpoint = { x: cp.x, y: cp.y, z: cp.z, yaw: finiteOr(cp.yaw, 0), index: finiteOr(cp.index, idx) };
     if (cp.y < this.deepest) this.deepest = cp.y;
     this._skipProgressAbove(cp.y);
@@ -2230,6 +2472,7 @@ export class Game3D {
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
+    this._try('holdfast', () => this.holdfast.onRespawn(p));
     this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2340,6 +2583,21 @@ export class Game3D {
       }
     }
     if (!this.dresser) this.dresser = nullDresser();
+    // THE HOLDFAST: sites are data on the climb zones (section.creature.holdfast); it pins the climb's hands (Climb3D.pin), reads
+    // the grapple shots on the run bus. Not in the attract flight; ?holdfast=off none.
+    const oldH = this.holdfast;
+    if (oldH && typeof oldH.destroy === 'function') this._try('holdfast', () => oldH.destroy());
+    this.holdfast = null;
+    const HoldfastCls = M.holdfast && M.holdfast.Holdfast3D;
+    if (!attract && holdfastMode() !== 'off' && typeof HoldfastCls === 'function') {
+      try {
+        this.holdfast = new HoldfastCls(lvl, diff, this._runBus, { climb: this.physics.climb, tethers: this.tethers });
+      } catch (err) {
+        this._fault('holdfast', err);
+        this.holdfast = null;
+      }
+    }
+    if (!this.holdfast) this.holdfast = nullHoldfast();
     const tc = this._threatCtx;
     tc.player = this.player;
     tc.creature = this.creature;
@@ -2360,6 +2618,7 @@ export class Game3D {
       this.objectives.setSqualls(!this.settings || this.settings.windSqualls !== false);
       this.physics.wind = this.objectives;
       if (attract) this.objectives.openAll();
+      this.objectiveHint = new ObjectiveHint(); // the 20 s trigger highlight (sim/objectiveHint.js)
     } catch (err) {
       this._fault('objectives', err);
       if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
@@ -2495,6 +2754,7 @@ export class Game3D {
     this._try('creature', () => this.creature.reset(this.player));
     this._try('skitter', () => this.skitters && this.skitters.reset());
     this._try('dresser', () => this.dresser.reset(null));
+    this._try('holdfast', () => this.holdfast.reset(null));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this.hidePlayer = true;
     this.time = 0;
@@ -2799,6 +3059,7 @@ export class Game3D {
 
     this._updateCreature(dt);
     this._updateThreat(dt);
+    this._updateComms(dt, intent);
 
     if (this.state === 'playing' && p.alive) this._updateProgress(dt);
     if (this.state === 'dead') this._updateDeath(dt);
@@ -2943,6 +3204,15 @@ export class Game3D {
       }
     }
     climb.probe(p, sc);
+    // THE HOLDFAST reads the raw frame (before the climb mutes the yank / the desktop reel): the rope out-pulling it, the desktop tear
+    const hf = this._hfIn;
+    hf.reel = si.reel;
+    hf.yankL = si.hands.left.yank;
+    hf.yankR = si.hands.right.yank;
+    hf.jump = hf.jump || !!intent.jumpPressed;
+    hf.back = sc.fwd < -0.5;
+    hf.grabL = sc.grab.left;
+    hf.grabR = sc.grab.right;
     for (let k = 0; k < 2; k++) if (climb.suppressYank(HANDS[k])) si.hands[HANDS[k]].yank = 0;
     if (climb.holding && !sc.vr) si.reel = 0;
   }
@@ -3148,11 +3418,20 @@ export class Game3D {
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._recordDepth();
+    this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
   }
 
   _updateDeath(dt) {
     this.deathT += dt;
     if (this._deathShown || this.deathT < DEATH_PANEL_DELAY) return;
+    const R = this.restore;
+    if (R && R.active) {
+      // EXPEDITION: the CONTINUITY restore plays instead of the death panel (the continue input skips it, the same respawn());
+      // at its end Continuity restores you at the last relay; with no relays (Abyss) the death panel follows it
+      if (this.deathT < R.end) return;
+      R.active = false;
+      if (R.canRespawn && this.respawn()) return;
+    }
     this._deathShown = true;
     const cause = this.deathCause || 'impact';
     const pool = DEATH_MESSAGES[cause] || DEATH_MESSAGES.impact;
@@ -3409,6 +3688,46 @@ export class Game3D {
     }
     this._updateSkitters(dt);
     this._updateDresser(dt);
+    this._updateHoldfast(dt);
+  }
+
+  /**
+   * THE HOLDFAST: fed the health (it squeezes harder and longer when you are LOW), the palms relative to the body and the frame's raw
+   * input (_prepareClimb), stepped after the physics; its damage (a tear -10 %, a crush -15 %, already floored so that it alone never
+   * kills) is taken like a bite; the squeeze beats are pulses in the held hand, a faint hum in it between them.
+   */
+  _updateHoldfast(dt) {
+    const g = this.holdfast;
+    if (!g || g.isNull || !g.enabled) return;
+    try {
+      const h = this.physics && this.physics.health;
+      g.setHp(h ? h.hp : 1);
+      const sc = this._stepIntent && this._stepIntent.climb;
+      const live = this.state === 'playing' && this.player.alive && this.victoryT < 0;
+      if (sc && live) g.setHands(!!sc.vr, sc.hands.left, sc.hands.right);
+      else g.setHands(false, null, null);
+      const fi = this._hfIn;
+      const t = this.tethers;
+      const roped = !!(t && t.hands && (t.hands.left.rope.attached || t.hands.right.rope.attached));
+      const reeling = live && roped && (fi.reel > 0.1 || (fi.yankL > 0.15 && t.hands.left.rope.attached) || (fi.yankR > 0.15 && t.hands.right.rope.attached));
+      g.setInput(live && fi.jump, live && fi.back, fi.grabL, fi.grabR, reeling);
+      fi.jump = false;
+      g.update(dt, this.player);
+      const dmg = g.takeDamage();
+      if (dmg > 0 && this.player.alive && this.state === 'playing' && h) {
+        if (h.damage(dmg, 'holdfast', 0)) this.physics.kill(this.player, this.tethers, 'creature');
+      }
+      // between the beats the held hand hums (a voice at the edge of feeling)
+      if (g.held && g.heldHand && this._inRun()) {
+        this._hfHumT -= dt;
+        if (this._hfHumT <= 0) {
+          this._hfHumT = 0.1;
+          this._haptic(g.heldHand, g.held.low ? 0.24 : 0.16, 90);
+        }
+      }
+    } catch (err) {
+      this._fault('holdfast', err);
+    }
   }
 
   /**
@@ -3486,6 +3805,35 @@ export class Game3D {
    * see InputManager.xrRigPosition. Desktop: the camera sits at a standing person's eye height (VIEW.standEye above the feet).
    */
   _updateRig() {
+    this._placeRig();
+    this._applySwingLag();
+  }
+
+  /**
+   * Camera lag while swinging (settings.swingLag, render/swingLag.js): the rig trails the body a little while it moves fast on a
+   * tether and settles when the swing ends. Capped small in a headset (positional lag the player did not make is uncomfortable).
+   */
+  _applySwingLag() {
+    const r = this.renderer;
+    const p = this.player;
+    if (!r || !p) return;
+    const lag = this._swingLag || (this._swingLag = { off: { x: 0, y: 0, z: 0 }, tgt: { x: 0, y: 0, z: 0 }, t: 0 });
+    const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+    const dt = lag.t > 0 ? Math.min(0.1, Math.max(0, now - lag.t)) : 0;
+    lag.t = now;
+    const v = this.settings ? this.settings.swingLag : 0.5;
+    const strength = this.settings && this.settings.reducedEffects ? 0 : typeof v === 'number' && isFinite(v) ? v : 0.5;
+    const active = this.state === 'playing' && p.alive !== false && !!(this.tethers && this.tethers.attached);
+    swingLagTarget(p.vx || 0, p.vy || 0, p.vz || 0, active, strength, this.xrActive, lag.tgt);
+    stepSwingLag(lag.off, lag.tgt, dt);
+    const o = lag.off;
+    if (o.x * o.x + o.y * o.y + o.z * o.z < 1e-8) return;
+    r.rig.position.x += o.x;
+    r.rig.position.y += o.y;
+    r.rig.position.z += o.z;
+  }
+
+  _placeRig() {
     const r = this.renderer;
     if (!r || !this.player) return;
     const rig = r.rig;
@@ -3621,13 +3969,46 @@ export class Game3D {
     }
   }
 
+  /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
+  _updateObjectiveHint(dt) {
+    let view = this._hintView;
+    const h = this.objectiveHint;
+    const p = this.player;
+    if (!h || !this.objectives || !p || hintsOff() || this.state === 'menu') {
+      if (view) view.update(dt, null, false);
+      return;
+    }
+    const playing = this.state === 'playing' && p.alive !== false;
+    h.update(dt, this.objectives, p, this.sectionIndex, playing);
+    if (!view && this.renderer && this.renderer.scene) view = this._hintView = new ObjectiveHintView(this.renderer.scene);
+    if (h.on && !h.announced) {
+      h.announced = true;
+      const words = { bell: 'Something here answers a strike', hook: 'Something here wants a rope', haul: 'Something here wants hauling', winch: 'Something here wants a rope', lamp: 'A dead lamp: hold your light to it', breach: 'The keystone holds the grating' };
+      if (words[h.kind]) this._toast(words[h.kind], 3.2);
+    }
+    if (view) view.update(dt, h, !!(this.settings && this.settings.reducedEffects));
+  }
+
   _updateViews(dt) {
+    try {
+      this._updateObjectiveHint(dt);
+    } catch (err) {
+      this._fault('objectiveHint', err);
+    }
     const fx = this.healthFx;
     if (fx) {
       try {
         fx.update(dt, this);
       } catch (err) {
         this._fault('healthFx', err);
+      }
+    }
+    const cmv = this.commsView; // EXPEDITION: the radio subtitle / the restore overlay (one head-locked quad)
+    if (cmv) {
+      try {
+        cmv.update(dt, this);
+      } catch (err) {
+        this._fault('commsView', err);
       }
     }
     if (this.bagFx) {
@@ -3673,6 +4054,22 @@ export class Game3D {
         }
       }
     }
+    const hfv = this.holdfastView;
+    if (hfv) {
+      try {
+        // the GLB loads in the background once a run is under way and the run has sites (Chapter I: S2 first)
+        if (!hfv.ready && !hfv.loading && !hfv.failed && this.state === 'playing' && this.holdfast && this.holdfast.enabled && this.modules.gltf) hfv.load(() => this._holdfastLoader());
+        hfv.update(dt, this);
+      } catch (err) {
+        this._fault('holdfastView', err);
+        this.holdfastView = null;
+        try {
+          hfv.dispose();
+        } catch {
+          /* already broken */
+        }
+      }
+    }
     const cv = this.creatureView;
     if (cv) {
       try {
@@ -3687,8 +4084,10 @@ export class Game3D {
     const sv = this.skitterViews;
     if (sv.length && this.skitters) {
       const cam = this.renderer && this.renderer.camera;
+      const skLod = SKITTER_LOD[this.renderer && this.renderer.qualityTier] || SKITTER_LOD.high;
       for (let i = 0; i < sv.length; i++) {
         try {
+          if (sv[i].opts) sv[i].opts.lodDistance = skLod;
           sv[i].update(this.skitters.slots[i] || null, dt, cam);
         } catch (err) {
           this._fault('skitterView', err);
@@ -4141,6 +4540,7 @@ export class Game3D {
       hands: { left: hand('left'), right: hand('right') },
       creature: c ? { state: c.state, stamina: r(c.stamina), distance: r(c.distance), x: r(c.x), y: r(c.y), z: r(c.z), active: !!c.active, lethal: !!c.lethal, isNull: !!c.isNull } : null,
       dresser: this.debugDresser(),
+      holdfast: this.debugHoldfast(),
       threat: this.threat ? r(this.threat.value) : 0,
       rig: rig ? { x: r(rig.position.x), y: r(rig.position.y), z: r(rig.position.z), yaw: r(rig.rotation.y) } : null,
       xr: this.xrActive,
@@ -4199,6 +4599,15 @@ export class Game3D {
   }
 
   /** THE DRESSER read-out for tests, QA and the debug state. */
+  debugHoldfast() {
+    const g = this.holdfast;
+    if (!g || g.isNull) return { isNull: true, mode: holdfastMode() };
+    const v = this.holdfastView;
+    return Object.assign({ mode: holdfastMode() }, typeof g.debugState === 'function' ? g.debugState() : {}, {
+      view: v ? { ready: v.ready, failed: v.failed, loading: v.loading, info: Object.assign({}, v.info, { lod: v.info.lod.slice() }) } : null,
+    });
+  }
+
   debugDresser() {
     const d = this.dresser;
     const r = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : v);
@@ -4311,6 +4720,29 @@ export class Game3D {
         },
         measure: () => (this.dresser && !this.dresser.isNull ? this.dresser.debugMeasure(this.player) : null),
       },
+      // THE HOLDFAST: state; front({ site (index or id), dist, dy }) puts the body `dist` m out from a site's patch (dy above it),
+      // facing it; force(site, { state, hand, tx, ty, tz }) puts a site in a state (captures, the budget harness); sites()
+      holdfast: {
+        state: () => this.debugHoldfast(),
+        sites: () => (this.holdfast && this.holdfast.sites ? this.holdfast.sites.map((s, i) => ({ i, id: s.id, section: s.section, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz, mode: s.mode })) : []),
+        front: (o) => {
+          const g = this.holdfast;
+          const q = o || {};
+          const s = g && g.sites ? (typeof q.site === 'string' ? g.sites.find((x) => x.id === q.site) : g.sites[q.site | 0]) : null;
+          if (!s) return null;
+          const d = finiteOr(q.dist, 0.75);
+          this.debugTeleport(s.x + s.nx * d, s.y + finiteOr(q.dy, -0.35), s.z + s.nz * d);
+          this._face(Math.atan2(s.nx, s.nz));
+          return { id: s.id, x: s.x, y: s.y, z: s.z, nx: s.nx, ny: s.ny, nz: s.nz };
+        },
+        force: (site, o) => {
+          const g = this.holdfast;
+          if (!g || g.isNull || typeof g.debugForce !== 'function') return null;
+          const i = typeof site === 'string' ? g.sites.findIndex((x) => x.id === site) : site | 0;
+          const s = g.debugForce(i, o || {});
+          return s ? { id: s.id, state: s.state } : null;
+        },
+      },
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),
       setInput: (partial) => this.debugSetInput(partial),
@@ -4357,6 +4789,36 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
+      // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
+      // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
+      comms: {
+        state: () => {
+          const cm = this.comms;
+          if (!cm) return { on: false };
+          const c = cm.current;
+          return {
+            on: true,
+            section: cm.section,
+            signal: Math.round(cm.signal * 1000) / 1000,
+            bars: cm.bars,
+            current: c ? { id: c.id, speaker: c.speaker, text: c.text, t: Math.round(c.t * 100) / 100, dur: c.dur, glitches: c.glitches.map((g) => g.kind) } : null,
+            queue: cm.queue.map((q) => q.line.id),
+            log: cm.log.slice(-16),
+            restore: this.restore ? { active: this.restore.active, count: this.restore.count, last: this.restore.last, cause: this.restore.causeLine } : null,
+          };
+        },
+        say: (id, o) => {
+          const c = this.comms ? this.comms.debugSay(String(id), o) : null;
+          return c ? { id: c.id, text: c.text, dur: c.dur, glitches: c.glitches.map((g) => g.kind) } : null;
+        },
+        die: (cause, count) => {
+          if (!this.player || this.state !== 'playing') return false;
+          this._godMode = false;
+          if (count > 1) this.deaths = (count | 0) - 1;
+          this.physics.kill(this.player, this.tethers, cause || 'impact', 0);
+          return this.state === 'dead';
+        },
+      },
       // WP-AUDIO: state() = voices, tier, music / ambience / rope / movement / creature-sync read-outs and the last events;
       // emit(type, payload) fires a bus event (QA: 'creature:clip', 'rope:slip', ...); music(kind) plays a stinger.
       audio: {
