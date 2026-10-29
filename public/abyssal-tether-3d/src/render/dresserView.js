@@ -1079,6 +1079,9 @@ export class DresserView {
     if (this.debug.forceLod >= 0) lod = this.debug.forceLod;
     this.lod = lod;
     const glowOnly = camD > GLOW_DIST && this.debug.forceLod < 0;
+    // seen from afar in the dark shaft it was a small dark shape: the ivory mask brightens with the distance (uPale below; free: the
+    // eye glints draw as a second call, which S4 cannot afford, so they stay glow-only beyond GLOW_DIST)
+    const farK = THREE.MathUtils.smoothstep(camD, 9, 28);
     this.meshes[0].visible = !glowOnly && lod === 0;
     this.meshes[1].visible = !glowOnly && lod === 1;
     this.glints.visible = glowOnly && b.glow > 0.2;
@@ -1091,7 +1094,7 @@ export class DresserView {
     // ---- uniforms ----
     const U = this.uniforms;
     U.uGlow.value = b.glow;
-    U.uPale.value = 0.3 + 0.12 * b.measure; // the ivory face reads in the dark (brighter while it measures you)
+    U.uPale.value = 0.3 + 0.12 * b.measure + 0.4 * farK; // the ivory face reads in the dark (brighter while it measures you, and from afar)
     // bounds for the frustum test (the line can reach your ring)
     const bs = this.meshes[0].boundingSphere;
     const ln = b.line && b.line.on ? _v3.set(b.line.x - b.x, b.line.y - b.y, b.line.z - b.z).length() : 0;
