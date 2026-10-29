@@ -28,6 +28,8 @@ import { CONFIG, U } from '../sim/config3d.js';
 import { LowHealthText } from './lowHealthText.js';
 
 const H = CONFIG.health;
+/** The speakers' initials on the wrist (sim/comms3d.js SPEAKERS; a copy here keeps this view free of the comms module). */
+const UPLINK_INITIAL = { ODESSA: 'O', TICK: 'T', MAREN: 'M', VESPER: 'V', UPLINK: '?' };
 
 const RENDER_ORDER = 880;
 const ECG_W = 256;
@@ -472,6 +474,10 @@ export class HealthFx {
     ctx.fillStyle = st.a60;
     ctx.font = '600 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.fillText(dead ? 'NO SIGNAL' : low ? 'CRITICAL' : hpv < 0.8 ? 'INJURED' : 'STABLE', 52, 14);
+    // EXPEDITION (sim/comms3d.js): the uplink's five bars under the status word (NO UPLINK at the Mark) and the initial of the
+    // speaker on air: drawn into this canvas, so the wrist (and the desktop HUD's copy) show it for no extra draw call
+    const cm = this.game && this.game.comms;
+    if (cm && !idle && !dead) this._drawUplink(ctx, cm, st);
 
     // Health bar
     const bx = 8;
@@ -497,6 +503,35 @@ export class HealthFx {
 
     this.ecgFrame++;
     this.ecgTexture.needsUpdate = true;
+  }
+
+  /** Five signal bars at (54, 40), or NO UPLINK; the on-air speaker's initial in a small box beside them. */
+  _drawUplink(ctx, cm, st) {
+    const n = cm.bars | 0;
+    if (n <= 0) {
+      ctx.font = '700 11px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ff5a4e';
+      ctx.fillText('NO UPLINK', 54, 40);
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const h = 4 + i * 3;
+        ctx.fillStyle = i < n ? st.solid : st.grid;
+        ctx.fillRect(54 + i * 7, 40 - h, 5, h);
+      }
+    }
+    const tx = cm.current;
+    const sp = tx && UPLINK_INITIAL[tx.speaker];
+    if (sp && n > 0) {
+      ctx.strokeStyle = st.a75;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(92.5, 25.5, 15, 15);
+      ctx.font = '700 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = st.solid;
+      ctx.fillText(sp, 100, 38);
+      ctx.textAlign = 'left';
+    }
   }
 
   dispose() {

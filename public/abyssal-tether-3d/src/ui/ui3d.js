@@ -116,9 +116,9 @@ const F_UI = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Ar
 
 /** Fallback death copy by cause (the game may pass its own `message`). */
 const DEATH_COPY = {
-  impact: { kicker: 'The ground came too fast', message: 'The floor keeps what falls. It kept you.' },
-  hazard: { kicker: 'Old iron', message: 'The ironwork was waiting. It has waited for others.' },
-  fall: { kicker: 'No floor', message: 'The dark had no bottom, only those who fell before.' },
+  impact: { kicker: 'The ground came too fast', message: 'The floor keeps what falls. It has kept you before.' },
+  hazard: { kicker: 'Old iron', message: 'The ironwork was waiting. It remembers your size.' },
+  fall: { kicker: 'No floor', message: 'It is not a fall if it is where you were going.' },
   creature: { kicker: 'Closer than it sounded', message: 'It wears you now.' },
   // THE DRESSER (sim/dresser3d.js): it reached you while you were whole
   dressed: { kicker: 'Measured. Cut. Laid.', message: 'DRESSED. SOMEONE WILL BUILD WITH YOU.' },
@@ -180,10 +180,13 @@ const SETTINGS_SCHEMA = [
   { key: 'sfxVolume', tab: 'audio', type: 'range', label: 'Effects', desc: 'The world, the rope and the creature.', min: 0, max: 1, step: 0.05, fmt: pct },
   { key: 'haptics', tab: 'audio', type: 'toggle', label: 'Haptics', desc: 'Pulses on attach, rope tension, landings and danger.' },
   { key: 'hapticStrength', tab: 'audio', type: 'range', label: 'Haptic strength', min: 0.25, max: 1.5, step: 0.05, fmt: pct },
+  // EXPEDITION (plans/COMMS.md): the team's radio voices are synthesised placeholders; the subtitles always show the words
+  { key: 'radioVoices', tab: 'audio', type: 'toggle', label: 'Radio voices', desc: 'The team on the radio (placeholder voices). Off: subtitles only.' },
 
   { key: 'captions', tab: 'access', type: 'toggle', label: 'Captions', desc: 'Text for the sounds that warn you: where it came from, how close.' },
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
+  { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
@@ -485,7 +488,8 @@ const MARKUP = `
     <header class="title-block">
       <p class="kicker">The Underspire</p>
       <h1 class="game-title"><span class="title-word title-a">Abyssal</span><span class="title-tether" aria-hidden="true"><i></i><b></b><i></i></span><span class="title-word title-b"><span class="title-b-text">Tether</span><span class="vr-mark">VR</span></span></h1>
-      <p class="tagline">A lantern, a line, and a long way down. No one has climbed back.</p>
+      <p class="tagline">A lantern, a line, and a long way down. No one has climbed back. You have tried.</p>
+      <p class="mission">Perennial · Expedition 41 · The Underspire · Descent authorised</p>
     </header>
     <nav class="menu-actions" aria-label="Main menu">
       <button class="btn btn-primary btn-continue" type="button" data-action="continue-run" hidden data-autofocus><span class="btn-label">Continue</span><span class="btn-sub menu-continue-sub"></span></button>
@@ -574,7 +578,7 @@ const MARKUP = `
         <div class="pause-actions">
           <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Continue this run in the headset</span></button>
           <button class="btn btn-primary" type="button" data-action="resume" data-autofocus><span class="btn-label">Resume</span></button>
-          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Restart section</span><span class="btn-sub">Back to the last checkpoint</span></button>
+          <button class="btn pause-respawn" type="button" data-action="respawn"><span class="btn-label">Restart section</span><span class="btn-sub">Restore at the last relay</span></button>
           <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span><span class="btn-sub">From the top</span></button>
           <button class="btn" type="button" data-action="settings"><span class="btn-label">Settings</span></button>
           <button class="btn" type="button" data-action="controls"><span class="btn-label">Controls</span></button>
@@ -593,7 +597,7 @@ const MARKUP = `
     <p class="death-stats"></p>
     <div class="death-actions">
       <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
-      <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">from the last checkpoint</span></button>
+      <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">restore at the last relay</span></button>
       <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
     </div>
@@ -620,7 +624,8 @@ const MARKUP = `
       <div class="teaser">
         <p class="teaser-kicker">Chapters II–V · coming soon</p>
         <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
-        <p class="teaser-line">The Underspire goes deeper than the light does. So did the Masons.</p>
+        <p class="teaser-line">Something at the bottom was cut to your measure. It took forty of you to get it right.</p>
+        <p class="teaser-line teaser-uplink">Uplink lost below the Mark. Continuity holding. Expedition 42 on standby.</p>
       </div>
       <div class="victory-actions">
         <button class="btn btn-primary" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
@@ -695,6 +700,7 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .title-tether b{width:.62em;height:.62em;margin:0 .7em;background:var(--amber);transform:rotate(45deg);box-shadow:0 0 0 3px rgba(224,160,80,.16),0 0 18px rgba(224,160,80,.55);animation:at3d-lamp 4.8s ease-in-out infinite}
 @keyframes at3d-lamp{0%,100%{opacity:.85}50%{opacity:1}}
 .at3d-ui .tagline{margin:0;font:italic 400 1em/1.35 var(--fd);color:var(--ink-2);letter-spacing:.03em}
+.at3d-ui .mission{margin:.35em 0 0;font:600 .7em/1.3 ui-monospace,'SF Mono',Menlo,Consolas,monospace;letter-spacing:.2em;text-transform:uppercase;color:var(--verdigris-2)}
 .at3d-ui .menu-actions{display:grid;grid-template-columns:1fr 1fr;gap:.55em;width:100%}
 .at3d-ui .menu-actions .btn-start,.at3d-ui .menu-actions .btn-vr{grid-column:1/-1}
 .at3d-ui .menu-actions .btn-start{min-height:max(52px,3.4em);align-items:center;text-align:center}
@@ -908,7 +914,7 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .cap .cap-dir{flex:none;min-width:2.4em;font:650 .7em var(--fu);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 .at3d-ui.is-xr .captions{display:none!important}
 @media (max-width:760px){.at3d-ui .diff-grid,.at3d-ui .ctl-cols{grid-template-columns:1fr}.at3d-ui .stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.at3d-ui .pause-cols{flex-direction:column}.at3d-ui .set-row{grid-template-columns:1fr}.at3d-ui .set-control{justify-content:flex-start}.at3d-ui .hud-gauge{display:none}.at3d-ui .menu-hint{display:none}}
-@media (max-height:560px){.at3d-ui .menu-wrap{gap:.7em}.at3d-ui .tagline,.at3d-ui .menu-hint{display:none}}
+@media (max-height:560px){.at3d-ui .menu-wrap{gap:.7em}.at3d-ui .tagline,.at3d-ui .mission,.at3d-ui .menu-hint{display:none}}
 @media (prefers-reduced-motion:reduce){.at3d-ui .screen,.at3d-ui .screen>*{animation:none!important}}
 `;
 
@@ -1209,7 +1215,7 @@ export class UI3D {
       t.t = TITLE_CUT; // VR: opacity follows t.t / 1 s from here
       if (this.dom) this.dom.sectionCard.classList.add('is-cut');
     });
-    on('checkpoint', () => this.showToast('Checkpoint', 2.2));
+    on('checkpoint', () => this.showToast('Relay synced', 2.2)); // the checkpoint lamp is an uplink relay: the restore point
     on('hint', (p) => this.showHint(p.hint && typeof p.hint === 'object' ? p.hint : p.text || p, num(p.duration, num(p.seconds, 0))));
     on('continue:changed', () => this.refreshMenu());
     on('app:update-ready', () => {
@@ -2228,7 +2234,7 @@ export class UI3D {
     d.deathMsg.textContent = i.message || copy.message;
     d.deathStats.textContent = `Deaths ${i.deaths} · ${fmtMeters(i.depthMeters)} · ${fmtTime(i.time)}`;
     d.deathContinue.querySelector('.btn-label').textContent = i.canRespawn ? 'Continue' : 'Begin again';
-    d.deathContinueSub.textContent = i.canRespawn ? 'from the last checkpoint' : 'no checkpoints on this difficulty';
+    d.deathContinueSub.textContent = i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty';
     if (i.prompt) setRichText(d.deathPrompt, i.prompt);
     else {
       d.deathPrompt.textContent = '';
@@ -2479,7 +2485,7 @@ export class UI3D {
     }
   }
 
-  /** Small top-centre notice, e.g. "Checkpoint". */
+  /** Small top-centre notice, e.g. "Relay synced". */
   showToast(text, seconds) {
     if (!text) return;
     if (this._lastToast.text === text && this._clock - this._lastToast.t < DEDUPE) return;
@@ -2987,7 +2993,7 @@ export class UI3D {
     // Death screen fallback (the game normally calls show('death', info) after its fade).
     if (this._deathTimer >= 0) {
       this._deathTimer -= step;
-      if (this._deathTimer < 0 && g.state === 'dead' && this.current !== 'death') this.showDeath(null);
+      if (this._deathTimer < 0 && g.state === 'dead' && this.current !== 'death' && !(g.restore && g.restore.active)) this.showDeath(null);
     }
 
     // Note timers (shared by DOM and VR).
@@ -3810,7 +3816,8 @@ export class UI3D {
     ctx.fillStyle = 'rgba(224,160,80,0.12)';
     ctx.fill();
     txt(ctx, 'VR', bx + 33, 247, `800 30px ${F_UI}`, COL.amber, 'center', 0.06);
-    txt(ctx, 'A lantern, a line, and a long way down. No one has climbed back.', cx, 304, `italic 400 30px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
+    // the Expedition frame: Perennial's mission brief where the tagline was (the DOM menu shows both)
+    txt(ctx, 'PERENNIAL · EXPEDITION 41 · DESCENT AUTHORISED', cx, 302, `600 28px ${F_UI}`, COL.verdigris, 'center', 0.08, CW - 80);
 
     const key = this._defaultDifficulty();
     const best = Storage.getBest(key);
@@ -4199,7 +4206,7 @@ export class UI3D {
     const bw = 540;
     const bx = (CW - bw) / 2;
     const by = sy + 40;
-    this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), i.canRespawn ? 'Continue' : 'Begin again', i.canRespawn ? 'from the last checkpoint' : 'no checkpoints on this difficulty', {
+    this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), i.canRespawn ? 'Continue' : 'Begin again', i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty', {
       primary: true,
       size: 34,
     });
@@ -4281,7 +4288,7 @@ export class UI3D {
     const names = 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
     const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
     txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
-    txt(ctx, 'It goes deeper than the light does. So did the Masons.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80);
+    txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
     const bw = 680;
     const bx = (CW - bw) / 2;
     this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });

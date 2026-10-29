@@ -69,11 +69,14 @@
  *
  * Blood writing (Settings › Display, off by default) is NOT decor: `blood` below (data/blood-writing-3d.js) is read only by
  * render/bloodWriting.js; nothing else (bake, hashes, dressing, colliders, verify counts) ever sees it.
+ * The boards beyond the plaques (always on) are not decor either: `boards` below (data/board-writing-3d.js) is read only by
+ * render/boardWriting.js (the plaques stay decor: their slabs are in the bands). Bible: plans/DARK_STORY_BIBLE.md.
  *
  * DOM-free, three.js-free: importable from Node.
  */
 
 import { BLOOD_TEXTS } from './blood-writing-3d.js';
+import { BOARD_TEXTS } from './board-writing-3d.js';
 
 const solids = [];
 const hazards = [];
@@ -1137,7 +1140,14 @@ const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
 // Normal), S4 learns it, S6 is THE CORRIDOR (it walks the stacks while the skitterlings bite and, below 35 %, the Mason hunts).
 // Not part of the lightmap / GI hashes (creature config only).
 const dresser = (extra) => Object.assign({ active: true }, extra);
-const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
+// THE HOLDFAST (sim/holdfast3d.js, docs/abyssal-tether-3d/plans/CREATURE_PACING.md): the wall holds your hand. creature.holdfast =
+// { sites: [hf(id, zone, at, y, mode?)] }: a patch (0.56 x 0.6 m) of an existing climb zone (`at` = along the wall: z on a w / e
+// wall, x on an n / s one; `y` = its centre) whose studs are knuckles. An overlay: no solid, decor, light or anchor moves (not
+// in the lightmap / GI hashes). resolveHoldfastSites drops a site that breaks a fairness rule (1 hold in 4, never in S1 or on
+// the first two climb patches, >= 3 m from every objective). mode 'answer' (S4): it never locks, a hand on it is answered.
+const hf = (id, zone, at, y, mode) => (mode ? { id, zone, at, y, mode } : { id, zone, at, y });
+const holdfast = (...sites) => ({ sites });
+const theme =(fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
 // REACH (LEVEL_FUN_PLAN item 5): sections[i].reach = the hook's targeting range there, per difficulty (Level3D.reachOf;
 // none = the difficulty's aimRange 32 / 29 / 27). The deep rings are rusted: S4 30/28/26, S5 29/27/25, S6 28/27/25, S7-S8
@@ -1164,7 +1174,7 @@ const sections = [
         desktop: 'W A S D pumps the swing. Release near the top of the arc to fly.',
       },
       // LEVEL_FUN_PLAN P3: the S1 verb (the bell opens the grating under the chimney)
-      { y: -1, duration: 7, text: 'Swing into the bell. Its toll opens the way down.', desktop: 'Swing into the bell. Its toll opens the way down.' },
+      { y: -1, duration: 7, text: 'Swing into the bell. Its toll opens the way down. Only down.', desktop: 'Swing into the bell. Its toll opens the way down. Only down.' },
       {
         y: -7.5, duration: 9,
         text: 'Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.',
@@ -1179,12 +1189,12 @@ const sections = [
     triggers: [{ y: -6.5, name: 'rumble', data: { intensity: 0.15 } }],
   },
   {
-    id: 's2', name: 'The Long Swing', subtitle: 'Every fall here is kept',
+    id: 's2', name: 'The Long Swing', subtitle: 'Every fall here is kept. So is the count.',
     yTop: -8, yBottom: -58,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 8, y: -21.6, z: -6, yaw: PI / 2 },
     theme: theme('#293a49', '#7fb0c8', '#e8a458', 8, 100, 0.34, { rim: 0.75 }),
-    creature: creature('dormant', false, 260),
+    creature: Object.assign(creature('dormant', false, 260), { holdfast: holdfast(hf('hf-s2-east', 'c-s2-east', 3.4, -30.2)) }), // the first Holdfast: the climb back up
     hints: [
       {
         y: -21, duration: 8,
@@ -1199,8 +1209,8 @@ const sections = [
       // LEVEL_FUN_PLAN P3: the S2 verb (moved up from the lower hall's yank hint: the grip that yanks also hauls)
       {
         y: -24.5, duration: 8,
-        text: 'Hook the counterweight. Squeeze GRIP to haul it.',
-        desktop: 'Hook the counterweight. Hold F to haul it.',
+        text: 'Hook the counterweight. Squeeze GRIP to haul it. It is heavier than stone should be.',
+        desktop: 'Hook the counterweight. Hold F to haul it. It is heavier than stone should be.',
       },
       {
         y: -44.5, duration: 7,
@@ -1211,12 +1221,12 @@ const sections = [
     triggers: [{ y: -30, name: 'rumble', data: { intensity: 0.25 } }],
   },
   {
-    id: 's3', name: 'Broken Gallery', subtitle: 'Closed from this side',
+    id: 's3', name: 'Broken Gallery', subtitle: 'Closed from this side. Measured from the other.',
     yTop: -58, yBottom: -98,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 7, y: -65.6, z: 0, yaw: PI / 2 },
     theme: theme('#25322f', '#86aeaa', '#4fa08e', 7, 90, 0.31, { rim: 0.7 }),
-    creature: Object.assign(creature('dormant', false, 240), { dresser: dresser({ walkMul: 0.85, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } }) }),
+    creature: Object.assign(creature('dormant', false, 240), { dresser: dresser({ walkMul: 0.85, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } }), holdfast: holdfast(hf('hf-s3-shelf', 'c-s3-shelf', -6.2, -88.8)) }),
     hints: [
       {
         y: -67, duration: 6,
@@ -1224,8 +1234,8 @@ const sections = [
         desktop: 'Missed a landing? Don\'t wait — fire at a lower ring.',
       },
       // LEVEL_FUN_PLAN P4: the rockfall lane (dust and a rumble come first) and the S3 verb (the winch on the west wall)
-      { y: -73, duration: 6, text: 'Dust falls before the stones. Wait for the gap.', desktop: 'Dust falls before the stones. Wait for the gap.' },
-      { y: -76.5, duration: 7, text: 'Hook the ring on the turning gear and hold on.', desktop: 'Hook the ring on the turning gear and hold on.' },
+      { y: -73, duration: 6, text: 'Dust falls before the stones. Wait for the gap. Do not look at what falls.', desktop: 'Dust falls before the stones. Wait for the gap. Do not look at what falls.' },
+      { y: -76.5, duration: 7, text: 'Hook the ring on the turning gear and hold on. Something inside is turning it.', desktop: 'Hook the ring on the turning gear and hold on. Something inside is turning it.' },
       // THE DRESSER's first contact (it hunts only the whole): the three ways out of a measure
       { y: -85, duration: 8, text: 'Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.', desktop: 'Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.' },
     ],
@@ -1235,14 +1245,14 @@ const sections = [
     ],
   },
   {
-    id: 's4', name: 'The Listening Vault', subtitle: 'Something answered the knock',
+    id: 's4', name: 'The Listening Vault', subtitle: 'Something answered the knock. It knew the rhythm.',
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     reach: { normal: 30, nightmare: 28, abyss: 26 }, // the rings start to rust (REACH below)
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
-    creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } }, dresser: dresser() }),
+    creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } }, dresser: dresser(), holdfast: holdfast(hf('hf-s4-answer', 'c-s4-shelf', -6.4, -112.4, 'answer')) }), // knock, and a hand answers
     // LEVEL_FUN_PLAN P3: the S4 verb (the catwalk's cold lamps)
     hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps. Light them before the walls notice.', desktop: 'Walk up to each cold lamp and look at it. Light them before the walls notice.' }],
     triggers: [
@@ -1262,7 +1272,9 @@ const sections = [
     reach: { normal: 29, nightmare: 27, abyss: 25 },
     checkpoint: { x: -6, y: -151.6, z: 0, yaw: PI / 2 },
     theme: theme('#38211a', '#a8683c', '#c4602a', 5, 70, 0.27, { rim: 0.7 }),
-    creature: creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), // Abyss: a skitterling already here
+    // CREATURE_PACING.md: a healthy player met nothing here (the Mason hunts only the hurt): the Dresser, gentler than S6, measures
+    // the whole; a cut ring or a bite drops you below 35 % and the Mason comes for the scent (the keystone lure needs it)
+    creature: Object.assign(creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), { dresser: dresser({ walkMul: 0.9, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } }), holdfast: holdfast(hf('hf-s5-sinew', 'c-s5-east', 1.5, -180.2)) }), // Abyss: a skitterling already here
     hints: [
       {
         y: -151, duration: 6,
@@ -1291,7 +1303,7 @@ const sections = [
     ],
   },
   {
-    id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and carried',
+    id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and carried. Never up.',
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
     reach: { normal: 28, nightmare: 27, abyss: 25 },
@@ -1302,8 +1314,8 @@ const sections = [
     hints: [
       {
         y: -208.5, duration: 6,
-        text: 'The deep rings are rusted. Get closer.',
-        desktop: 'The deep rings are rusted. Get closer.',
+        text: 'The deep rings are rusted. Get closer. Nobody has come back up to oil them.',
+        desktop: 'The deep rings are rusted. Get closer. Nobody has come back up to oil them.',
       },
     ],
     triggers: [
@@ -1318,7 +1330,7 @@ const sections = [
     reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: -12, y: -287.6, z: 0, yaw: 0 },
     theme: theme('#1d3541', '#5f9aaa', '#b8f0e0', 12, 150, 0.24, { rim: 0.8 }),
-    creature: creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)),
+    creature: Object.assign(creature('frenzy', true, 110, 1, 0, skit(1, 2, 2)), { holdfast: holdfast(hf('hf-s7-spire', 'c-s7-spire-s', -11.4, -346.8)) }),
     hints: [
       {
         y: -287, duration: 7,
@@ -1326,7 +1338,7 @@ const sections = [
         desktop: 'Chain the rings: fire the other mouse button at the next ring before you let go of this one.',
       },
       // LEVEL_FUN_PLAN P5: the S7 verb (survive: the floor unbolts while you hang on in the nave)
-      { y: -296, duration: 7, text: 'Hang on in the nave. The floor unbolts while you hold.', desktop: 'Hang on in the nave. The floor unbolts while you hold.' },
+      { y: -296, duration: 7, text: 'Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes.', desktop: 'Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes.' },
     ],
     triggers: [
       { y: -290, name: 'rumble', data: { intensity: 0.8 } },
@@ -1335,13 +1347,13 @@ const sections = [
     ],
   },
   {
-    id: 's8', name: 'The Last Throat', subtitle: 'Down. Now. Before the walls wake.',
+    id: 's8', name: 'The Last Throat', subtitle: 'Down. Now. Everything here wants you down.',
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
     reach: { normal: 26, nightmare: 25, abyss: 24 },
     checkpoint: { x: 8, y: -427.6, z: -15, yaw: PI * 0.75 },
     theme: theme('#46301a', '#e0b878', '#f0a850', 6, 90, 0.27, { rim: 0.7 }),
-    creature: creature('escape', true, 100, 1, 0, skit(1, 1, 2)),
+    creature: Object.assign(creature('escape', true, 100, 1, 0, skit(1, 1, 2)), { holdfast: holdfast(hf('hf-s8-wake', 'c-s8-w1', 2.6, -464.6)) }), // before the walls wake
     hints: [
       {
         y: -548, duration: 5,
@@ -1382,4 +1394,5 @@ export const LEVEL_DATA_3D = {
   nooks, // the Masons' rests (see NOOKS above)
   squalls, // the wind squalls (see SQUALLS above)
   blood: BLOOD_TEXTS, // Settings › Display › Blood writing (off by default): render/bloodWriting.js only, never decor
+  boards: BOARD_TEXTS, // the boards beyond the plaques (always on): render/boardWriting.js only, never decor
 };

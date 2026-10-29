@@ -3,9 +3,10 @@
  * `level.data.blood`), drawn only while the setting is on. LevelView owns one BloodWriting; Renderer3D switches it from
  * settings.bloodWriting every frame (built / removed live, then precompiled).
  *
- * Cost: every writing is one quad (2 triangles) cut from ONE procedural canvas atlas (2 columns of 768 x 256 cells: 1536 x 2816
- * for the 21 texts, about 22 MB with mips, allocated only while the setting is on), merged into ONE mesh with ONE material for the whole level: at most one draw call (per
- * eye), only while a writing is within BLOOD_DIST (x the view's detail scale) of the head, otherwise none. The material is
+ * Cost: every writing is one quad (2 triangles) cut from a procedural canvas atlas PER SECTION (2 columns of 768 x 256 cells:
+ * 1536 x 768 for a section's 4-6 writings, about 6 MB with mips), built a writing per frame only while the setting is on and
+ * the head is near that section, merged into one mesh with one material per section (render/textAtlasGroups.js): one draw
+ * call (per eye) per section with a writing within BLOOD_DIST (x the view's detail scale) of the head, otherwise none. The material is
  * the decals' recipe (render/materials.js m.decal: alpha-blended, lit by the baked GI volume, the lantern and the pooled
  * lamps; polygon offset, no depth write; a drier wet film), so the writing reads by lamp light and lantern like the stains around it.
  * Nothing here is a level object: no collider, anchor, climb surface, bake, lightmap / GI hash or dressing keep-out.
@@ -18,6 +19,7 @@
 
 import * as THREE from 'three';
 import { DEFAULT_TILE, patchMaterial } from './materials.js';
+import { TextAtlasGroups } from './textAtlasGroups.js';
 import { BLOOD_ASPECT, BLOOD_MAX_LINES } from '../data/blood-writing-3d.js';
 
 export const BLOOD_CELL_W = 768;
@@ -319,83 +321,51 @@ function bloodMaterial(tex) {
   return mat;
 }
 
-export class BloodWriting {
+/**
+ * The writings of a level, a section at a time (render/textAtlasGroups.js): a section's atlas (2 columns of 768 x 256 cells,
+ * at most 1536 x 768 for its 4-6 writings, about 6 MB with mips) and its ONE merged mesh are drawn a writing per frame while
+ * the head is within 35 m of the section's writings and freed beyond 70 m, so twice the writings cost less memory than the
+ * one whole-level atlas did (one or two sections resident; one draw call per section in view, usually one).
+ */
+export class BloodWriting extends TextAtlasGroups {
   /**
-   * @param {THREE.Object3D} parent  where the mesh goes (LevelView.root)
+   * @param {THREE.Object3D} parent  where the meshes go (LevelView.root)
    * @param {{makeCanvas?: (w: number, h: number) => object}} [opts]  canvas factory (tests); default: a DOM canvas, none in Node
    */
   constructor(parent, opts = {}) {
-    this.parent = parent;
-    this.makeCanvas = opts.makeCanvas || defaultCanvas;
-    this.mesh = null;
-    this.count = 0;
-    this._pts = null; // centres, xyz per writing (visibility)
-  }
-
-  /** Builds the one mesh for `entries` (replacing any). Returns true when there is a mesh. */
-  build(entries) {
-    this.dispose();
-    const list = (Array.isArray(entries) ? entries : []).filter((e) => e && isFinite(e.x) && isFinite(e.y) && isFinite(e.z) && e.text);
-    if (!list.length || !this.parent) return false;
-    const atlas = bloodAtlasSize(list.length);
-    const canvas = this.makeCanvas(atlas.w, atlas.h);
-    const ctx = canvas && canvas.getContext ? canvas.getContext('2d') : null;
-    if (!ctx) return false;
-    ctx.clearRect(0, 0, atlas.w, atlas.h);
-    const depth = list.map((e) => e.y);
-    const top = Math.max(...depth);
-    const span = Math.max(1, top - Math.min(...depth));
-    list.forEach((e, i) => {
-      const [x, y, w, h] = bloodCell(i);
-      ctx.save();
-      drawBloodText(ctx, e.text, x + PAD, y + PAD, w - 2 * PAD, h - 2 * PAD, hashStr(String(e.id || e.text)), 0.25 + (0.75 * (top - e.y)) / span); // fresher deeper down
-      ctx.restore();
+    super(parent, {
+      name: 'bloodWriting',
+      atlasW: BLOOD_COLS * BLOOD_CELL_W,
+      cellSize: () => [BLOOD_CELL_W, BLOOD_CELL_H],
+      drawCell: (ctx, e, x, y, w, h) => drawBloodText(ctx, e.text, x, y, w, h, hashStr(String(e.id || e.text)), 0.25 + (0.75 * (this._top - e.y)) / this._span), // fresher deeper down
+      quad: bloodQuad,
+      color: (e, i) => [BLOOD_TINT, BLOOD_TINT, BLOOD_TINT, 0.9 + 0.1 * ((hashStr(String(e.id || i)) % 100) / 100)],
+      material: bloodMaterial,
+      renderOrder: 3, // over the decals (2), under the plaques and boards (5)
+      viewDist: BLOOD_DIST,
+      buildDist: 35,
+      dropDist: 70,
+      cellsPerFrame: 1,
+      pad: PAD,
+      makeCanvas: opts.makeCanvas || defaultCanvas,
     });
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    const mesh = new THREE.Mesh(bloodGeometry(list, atlas), bloodMaterial(tex));
-    mesh.name = 'bloodWriting';
-    mesh.userData.ownMaterial = true; // LevelView.clear() would dispose it like the plaques (dispose() gets there first)
-    mesh.frustumCulled = false; // one mesh spread over the whole shaft: shown by distance instead (update)
-    mesh.matrixAutoUpdate = false;
-    mesh.renderOrder = 3; // over the decals (2), under the plaques (5)
-    mesh.visible = false;
-    this.parent.add(mesh);
-    this.mesh = mesh;
-    this.count = list.length;
-    this._pts = new Float32Array(list.length * 3);
-    list.forEach((e, i) => this._pts.set([e.x, e.y, e.z], i * 3));
-    return true;
+    this._top = 0;
+    this._span = 1;
   }
 
-  /** Removes the mesh and frees its geometry, material and atlas. */
-  dispose() {
-    const m = this.mesh;
-    this.mesh = null;
-    this.count = 0;
-    this._pts = null;
-    if (!m) return;
-    if (m.parent) m.parent.remove(m);
-    m.geometry.dispose();
-    if (m.material.map) m.material.map.dispose();
-    m.material.dispose();
+  /**
+   * Takes the writings (replacing any); the section nearest `near` (default: the head last seen by update) is drawn at once so
+   * the caller can precompile, the others lazily. Returns true when they can be drawn here (a canvas exists).
+   */
+  build(entries, near = this._lastHead) {
+    const ys = (Array.isArray(entries) ? entries : []).filter((e) => e && isFinite(e.y)).map((e) => e.y);
+    this._top = ys.length ? Math.max(...ys) : 0;
+    this._span = ys.length ? Math.max(1, this._top - Math.min(...ys)) : 1;
+    return super.build(entries, near);
   }
 
-  /** Shown while a writing is within BLOOD_DIST x scale of the head. */
   update(head, scale = 1) {
-    const m = this.mesh;
-    if (!m || !head) return;
-    const p = this._pts;
-    const r = BLOOD_DIST * scale;
-    const r2 = r * r;
-    let on = false;
-    for (let i = 0; i < p.length && !on; i += 3) {
-      const dx = p[i] - head.x;
-      const dy = p[i + 1] - head.y;
-      const dz = p[i + 2] - head.z;
-      on = dx * dx + dy * dy + dz * dz < r2;
-    }
-    m.visible = on;
+    if (head) this._lastHead = { x: head.x, y: head.y, z: head.z };
+    super.update(head, scale);
   }
 }

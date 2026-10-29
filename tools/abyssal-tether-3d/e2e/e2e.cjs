@@ -149,7 +149,7 @@ async function newPage(browser, { xr = false } = {}) {
 }
 
 async function boot(page, base) {
-  await page.goto(base + '/index.html?hunt=always');
+  await page.goto(base + '/index.html?hunt=always&comms=off'); // comms off: the plain death panel, no radio lines in the shots
   await page.waitForFunction(() => window.AT3D && window.AT3D.game && window.AT3D.game.booted, null, { timeout: 180000 });
 }
 const st = (page) => page.evaluate(() => window.AT3D.debug.state());

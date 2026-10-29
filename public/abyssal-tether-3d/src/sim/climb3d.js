@@ -39,6 +39,10 @@
  * (grab carries edge: true on a procedural edge hold).
  * reasons: 'input' | 'slip' | 'stretch' | 'zone' | 'hop' | 'mantle' | 'death' | 'reset'.
  *
+ * THE HOLDFAST (sim/holdfast3d.js) pins a gripping hand (pin / unpin): a pinned hand ignores letting go of the grip, the
+ * stretch limit, the hop and the stamina slip; on the desktop the cling cannot move, and pinPull (m) draws the body toward
+ * the wall. Only the Holdfast lets it go (unpin with a reason: 'holdfast' = torn free / crushed / out-pulled / shot).
+ *
  * Read-only for the presentation: stamina, warn, holding, mode (0 none, 1 VR, 2 desktop), wet, exhausted, canGrip, speed,
  * hands[h] = { gripping, hover, hoverIn, hx,hy,hz (nearest hold to the hand), ax,ay,az (the hold), zone }.
  */
@@ -53,7 +57,7 @@ const MODE_VR = 1;
 const MODE_DESK = 2;
 
 function makeHand() {
-  return { needRelease: false, gripping: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null };
+  return { needRelease: false, gripping: false, pinned: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null };
 }
 
 /** Closest point of a zone box to (x, y, z) and the distance, written into out. */
@@ -120,10 +124,12 @@ export class Climb3D {
     this.sv.x = 0;
     this.sv.y = 0;
     this.sv.z = 0;
+    this.pinPull = 0;
     for (const h of CLIMB_HANDS) {
       const st = this.hands[h];
       st.needRelease = false;
       st.gripping = false;
+      st.pinned = false;
       st.hover = false;
       st.hoverIn = false;
       st.zone = null;
@@ -147,6 +153,39 @@ export class Climb3D {
 
   get gripCount() {
     return (this.hands.left.gripping ? 1 : 0) + (this.hands.right.gripping ? 1 : 0);
+  }
+
+  /** A hand held by THE HOLDFAST (sim/holdfast3d.js): it cannot let go (input, stretch, hop, slip) until unpinned. */
+  get pinned() {
+    return this.hands.left.pinned || this.hands.right.pinned;
+  }
+
+  /** THE HOLDFAST closes on (on = true) a gripping hand / lets it be (false: the hold stays, the player may let go again). */
+  pin(hand, on) {
+    const st = this.hands[hand];
+    if (!st) return;
+    st.pinned = !!on && st.gripping;
+    if (!this.pinned) this.pinPull = 0;
+  }
+
+  /**
+   * THE HOLDFAST lets go by force (a tear, a crush, the rope out-pulling it, a hook shot): unpins the hand and releases it with
+   * `reason`; the grip must be let go of before that hand grips again. Desktop: the cling ends.
+   */
+  unpin(p, hand, reason) {
+    const st = this.hands[hand];
+    if (!st) return;
+    st.pinned = false;
+    if (!this.pinned) this.pinPull = 0;
+    if (!reason || !p) return;
+    st.needRelease = true;
+    if (this.mode === MODE_DESK) {
+      this.hands.left.pinned = this.hands.right.pinned = false;
+      this.hands.right.needRelease = true;
+      if (this.holding) this._endAll(p, reason, false);
+    } else if (st.gripping) {
+      this._letGo(p, hand, reason);
+    }
   }
 
   /** Nearest hold to a point within r (fills this._near); returns the zone or null. Authored zones win over procedural edges. */
@@ -273,7 +312,7 @@ export class Climb3D {
       this._endAll(p, 'reset', false);
     }
     this._stamina(p, dt, ctl);
-    if (this.holding && this.stamina <= 0) {
+    if (this.holding && this.stamina <= 0 && !this.pinned) {
       this._emit('climb:slip', { x: p.x, y: p.y, z: p.z });
       this.exhausted = true;
       this.lock = K.slipLock;
@@ -296,10 +335,11 @@ export class Climb3D {
       let want = ci.grab[h] && hi.ok;
       if (!want) st.needRelease = false;
       else if (st.needRelease) want = false; // a hold lost by force is not retaken until the grip has been let go of
+      if (st.pinned && st.gripping) want = true; // THE HOLDFAST holds this hand: letting go of the grip does nothing
       if (st.gripping) {
         if (!want) {
           this._letGo(p, h, 'input');
-        } else {
+        } else if (!st.pinned) {
           const dx = st.ax - hi.rx - p.x;
           const dy = st.ay - hi.ry - p.y;
           const dz = st.az - hi.rz - p.z;
@@ -334,8 +374,8 @@ export class Climb3D {
       }
     }
     if (!this.holding) return false;
-    // 2. hop off (A / jump while gripping)
-    if (intent.jumpPressed) {
+    // 2. hop off (A / jump while gripping; not while a hand is held)
+    if (intent.jumpPressed && !this.pinned) {
       this._hop(p, 0.8, 0.35);
       return false;
     }
@@ -397,7 +437,8 @@ export class Climb3D {
     const raw = ci.grab.left || ci.grab.right;
     const latch = this.hands.right; // after a hop or a slip F must be let go of before the next cling
     if (!raw) latch.needRelease = false;
-    const want = raw && !latch.needRelease;
+    const held = this.holding && this.pinned; // THE HOLDFAST holds the hand: letting go of F, Space, W/S/A/D do nothing
+    const want = (raw && !latch.needRelease) || held;
     if (!this.holding) {
       if (!want || this.lock > 0 || this.hopLock > 0 || this.exhausted || this.stamina < K.minStart) return false;
       const z = this._nearest(p.x, p.y, p.z, K.reachDesk);
@@ -425,7 +466,7 @@ export class Climb3D {
         this._endAll(p, 'input', false);
         return false;
       }
-      if (intent.jumpPressed) {
+      if (intent.jumpPressed && !held) {
         if (this._deskLip(p, this._zone)) {
           this._beginMantle(p, this._zone);
           return true;
@@ -520,8 +561,9 @@ export class Climb3D {
     let cvx = 0;
     let cvy = 0;
     let cvz = 0;
-    const fwd = ci.fwd || 0;
-    const side = ci.side || 0;
+    const fwd = held ? 0 : ci.fwd || 0;
+    const side = held ? 0 : ci.side || 0;
+    if (held) hold = Math.max(CONFIG.player.radius + 0.01, hold - this.pinPull); // dragged toward the wall
     if (ny < -0.5 || ny > 0.5) {
       // an overhead surface: traverse in the horizontal plane
       cvx = (ci.fx * fwd + ci.rx * side) * K.deskSide;
@@ -694,8 +736,10 @@ export class Climb3D {
     for (const h of CLIMB_HANDS) {
       const st = this.hands[h];
       st.gripping = false;
+      st.pinned = false;
       st.zone = null;
     }
+    this.pinPull = 0;
     this.holding = false;
     this.wet = false;
     this._zone = null;
@@ -708,6 +752,7 @@ export class Climb3D {
     const st = this.hands[hand];
     if (!st.gripping) return;
     st.gripping = false;
+    st.pinned = false;
     st.zone = null;
     const other = this.hands[hand === 'left' ? 'right' : 'left'];
     if (other.gripping) {

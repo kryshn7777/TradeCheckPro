@@ -626,7 +626,7 @@ export class CommsDirector {
       }
       if (e.due > this.clock) continue;
       if (e.prio <= 1 && (x.tense || this.clock - this._lastChatter < CHATTER_GAP)) continue;
-      if (best < 0 || e.prio > q[best].prio || (e.prio === q[best].prio && e.due < q[best].due)) best = i;
+      if (best < 0 || e.prio > q[best].prio || (e.prio === q[best].prio && e.due <= q[best].due)) best = i; // ties: the earlier queued
     }
     if (best < 0) return;
     const e = q[best];

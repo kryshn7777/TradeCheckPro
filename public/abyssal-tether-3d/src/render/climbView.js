@@ -15,6 +15,17 @@
  */
 
 import * as THREE from 'three';
+import { holdfastMode, onPatch, resolveHoldfastSites } from '../sim/holdfast3d.js';
+
+/** THE HOLDFAST's patches (sim/holdfast3d.js): no chalk stud there, the knuckles take their place (unless ?holdfast=off). */
+function holdfastPatches(level) {
+  try {
+    if (holdfastMode(typeof location !== 'undefined' ? location.search || '' : '') === 'off') return [];
+    return resolveHoldfastSites(level).sites;
+  } catch {
+    return [];
+  }
+}
 
 const SPACING_U = 0.8; // m along the surface
 const SPACING_V = 0.9;
@@ -55,6 +66,8 @@ export class ClimbView {
     this._clear();
     this._level = level || null;
     const zones = level && Array.isArray(level.climb) ? level.climb : [];
+    this._hf = level ? holdfastPatches(level) : [];
+    this.skipped = 0;
     const bySection = new Map();
     for (let zi = 0; zi < zones.length; zi++) {
       const z = zones[zi];
@@ -164,6 +177,15 @@ export class ClimbView {
           px = a;
           py = b;
           pz = z.face + z.nz * 0.06;
+        }
+        let held = false;
+        for (let h = 0; h < this._hf.length && !held; h++) {
+          const s = this._hf[h];
+          held = s.zone === z && onPatch(s, px, py, pz);
+        }
+        if (held) {
+          this.skipped++;
+          continue; // THE HOLDFAST: these studs are its knuckles
         }
         m.makeBasis(t, u, n);
         // a little twist about the normal so no two rungs read alike, and a width range

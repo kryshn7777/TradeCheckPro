@@ -45,6 +45,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
 import { SealView } from './objectivesView.js';
 import { BloodWriting } from './bloodWriting.js';
+import { BoardWriting } from './boardWriting.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -64,6 +65,18 @@ const MID_DIST = 64; // 'mid' tier (far-wall lancet frames: they read as silhoue
 const DETAIL_CATS = new Set(['stain', 'organ', 'bead']);
 const MID_CATS = new Set(['farlancet']);
 const FOLD_DETAIL = new Set(['metal', 'flesh']); // detail-band lists drawn from the section slab chunks instead (fewer draw calls)
+// Section packs (MESH_DETAIL_AND_OPTIMIZATION.md, strategy O1): ALL the lit decor of one section and one material (section slabs, the 32 m
+// detail bands, the mid / near tiers and every kit placement with its levels of detail) is ONE draw: a LodSet whose records are the kit
+// placements plus "plain" records (the procedural dressing grouped into PACK_CELL cubes, each culled by its own box and its tier's distance).
+// The per-record distance culling that the separate chunks did by draw call is done by rewriting the index instead. ?pack=0: the old chunks.
+const PACK_KINDS = new Set(['stone', 'metal', 'flesh', 'rock']);
+const PACK_CELL = 12; // m: plain dressing is grouped into cubes this size (finer fog / distance culling than the 40 m slabs)
+const PACK_ON = !(typeof location !== 'undefined' && /[?&]pack=0\b/.test(location.search || ''));
+const PACK_ATTRS = ['position', 'normal', 'color', 'uv'];
+// Props v2 (ch1_props_v2.glb, tools/abyssal-tether-3d/build_props_v2.py): these decor types are drawn from it as levels of detail (setProps).
+// ?props=0: the procedural builders, as before.
+const PROPS_ON = !(typeof location !== 'undefined' && /[?&]props=0\b/.test(location.search || ''));
+const PROP_TYPES = new Set(['chain', 'statue']);
 const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
 const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
 // slabs within sight are drawn: a section is 40-140 m tall and drew whole whenever any of it was in view
@@ -752,6 +765,11 @@ const PLAQUE_TYPES = new Set(['sign', 'plaque', 'inscription', 'tablet']);
 function bloodEntries(level) {
   const d = level && level.data;
   return d && Array.isArray(d.blood) ? d.blood : [];
+}
+/** The boards beyond the plaques (data/board-writing-3d.js via LEVEL_DATA_3D.boards; not decor: Level3D keeps the raw data). */
+function boardEntries(level) {
+  const d = level && level.data;
+  return d && Array.isArray(d.boards) ? d.boards : [];
 }
 
 // =============================================================================
@@ -3954,6 +3972,32 @@ function compactVertices(g) {
   return g;
 }
 
+/** A dressing geometry in the one layout a section pack merges: non-indexed, position / normal / colour (3, float) / uv, nothing else. */
+function packGeo(g) {
+  if (g.index) {
+    const n = g.toNonIndexed();
+    g.dispose();
+    g = n;
+  }
+  const n = g.attributes.position.count;
+  if (!g.attributes.normal) g.computeVertexNormals();
+  const c = g.attributes.color;
+  if (!c || c.itemSize !== 3 || !(c.array instanceof Float32Array)) {
+    const col = new Float32Array(n * 3).fill(1);
+    if (c) {
+      for (let i = 0; i < n; i++) {
+        col[i * 3] = c.getX(i);
+        col[i * 3 + 1] = c.getY(i);
+        col[i * 3 + 2] = c.getZ(i);
+      }
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+  if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(n * 2), 2));
+  keepAttrs(g, PACK_ATTRS);
+  return g;
+}
+
 export class LodSet {
   constructor() {
     this.recs = [];
@@ -3963,6 +4007,8 @@ export class LodSet {
     this.stats = [0, 0, 0];
     this._hx = Infinity;
     this._frame = 0;
+    this._cap = Infinity;
+    this.drawnTris = 0;
   }
 
   /** Adds records { geos: [lod0|null, lod1, lod2|null], x, y, z, r }; returns the new render geometry (the caller swaps it in). */
@@ -4004,9 +4050,16 @@ export class LodSet {
     return rg;
   }
 
-  /** Picks each record's level for a head at (x, y, z); rewrites the index when one changed. `force` skips the frame / distance throttle. */
-  update(x, y, z, d0, d1, dScale, vd, force) {
+  /**
+   * Picks each record's level for a head at (x, y, z); rewrites the index when one changed. `force` skips the frame / distance throttle.
+   * cap: a distance limit for every record this frame (a section pack seen from the neighbouring section: NEIGHBOUR_DIST).
+   * A record with a `box` ([minX, minY, minZ, maxX, maxY, maxZ], the plain dressing of a pack) is measured to its box, the others to
+   * their bounding sphere. Only the index from the first changed record on is rewritten and uploaded, and the geometry's bounding
+   * sphere is the drawn records' (so the whole draw is frustum culled when none of what it shows now is in view).
+   */
+  update(x, y, z, d0, d1, dScale, vd, force, cap = Infinity) {
     if (!this.rg) return false;
+    if (cap !== this._cap) force = true;
     if (!force) {
       if (++this._frame % LOD_EVERY !== 0 && this._hx !== Infinity) return false;
       if (Math.abs(x - this._hx) + Math.abs(y - this._hy) + Math.abs(z - this._hz) < 0.15) return false;
@@ -4014,17 +4067,28 @@ export class LodSet {
     this._hx = x;
     this._hy = y;
     this._hz = z;
+    this._cap = cap;
     const st = this.stats;
     st[0] = st[1] = st[2] = 0;
-    let changed = false;
+    let first = -1;
     const h = LOD_HYST;
-    for (let i = 0; i < this.recs.length; i++) {
-      const r = this.recs[i];
-      const d = Math.max(0, Math.hypot(r.x - x, r.y - y, r.z - z) - r.r);
+    const lim0 = vd < cap ? vd : cap;
+    const recs = this.recs;
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      let d;
+      const b = r.box;
+      if (b) {
+        const dx = x < b[0] ? b[0] - x : x > b[3] ? x - b[3] : 0;
+        const dy = y < b[1] ? b[1] - y : y > b[4] ? y - b[4] : 0;
+        const dz = z < b[2] ? b[2] - z : z > b[5] ? z - b[5] : 0;
+        d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      } else d = Math.max(0, Math.hypot(r.x - x, r.y - y, r.z - z) - r.r);
       let l;
-      if (d > Math.min(r.maxD * dScale, vd)) {
+      const md = r.maxD * dScale;
+      if (d > (md < lim0 ? md : lim0)) {
         // beyond the distance its band used to be drawn to (the 32 m detail bands) or into the fog: not drawn
-        if (r.cur !== 3) changed = true;
+        if (r.cur !== 3 && first < 0) first = i;
         r.cur = 3;
         continue;
       }
@@ -4035,20 +4099,45 @@ export class LodSet {
       st[l]++;
       if (l !== r.cur) {
         r.cur = l;
-        changed = true;
+        if (first < 0) first = i;
       }
     }
-    if (!changed) return false;
+    if (first < 0) return false;
     const a = this.index.array;
-    let w = 0;
-    for (let i = 0; i < this.recs.length; i++) {
-      const r = this.recs[i];
+    let w = first > 0 ? recs[first].w : 0;
+    const w0 = w;
+    for (let i = first; i < recs.length; i++) {
+      const r = recs[i];
+      r.w = w;
       if (r.cur === 3) continue;
       const o = r.off[r.cur];
       const c = r.cnt[r.cur];
       for (let k = 0; k < c; k++) a[w++] = o + k;
     }
-    this.index.needsUpdate = true;
+    // bounds of what is drawn now (frustum culling of the whole draw)
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let i = 0; i < recs.length; i++) {
+      const r = recs[i];
+      if (r.cur === 3) continue;
+      const b = r.box;
+      const ax = b ? b[0] : r.x - r.r, ay = b ? b[1] : r.y - r.r, az = b ? b[2] : r.z - r.r;
+      const bx = b ? b[3] : r.x + r.r, by = b ? b[4] : r.y + r.r, bz = b ? b[5] : r.z + r.r;
+      if (ax < x0) x0 = ax;
+      if (ay < y0) y0 = ay;
+      if (az < z0) z0 = az;
+      if (bx > x1) x1 = bx;
+      if (by > y1) y1 = by;
+      if (bz > z1) z1 = bz;
+    }
+    const bs = this.rg.boundingSphere || (this.rg.boundingSphere = new THREE.Sphere());
+    if (x1 >= x0) {
+      bs.center.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      bs.radius = Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2;
+    }
+    this.drawnTris = w / 3;
+    this.index.clearUpdateRanges();
+    if (w > w0) this.index.addUpdateRange(w0, w - w0);
+    if (w > w0) this.index.needsUpdate = true;
     this.rg.setDrawRange(0, w);
     return true;
   }
@@ -4064,6 +4153,20 @@ function parseEnvKit(gltf) {
     const name = o.name || (o.parent && o.parent.name) || '';
     if (!/^ch1_env_/.test(name)) return;
     let g = o.geometry.clone();
+    // a meshopt-quantised file (KHR_mesh_quantization: normalised integer positions / normals, the scale in the node matrix): back to
+    // float32 first, the placement maths and the merged soups expect metres and float normals
+    for (const name of ['position', 'normal']) {
+      const a = g.attributes[name];
+      if (a && (a.normalized || !(a.array instanceof Float32Array))) {
+        const f = new Float32Array(a.count * 3);
+        for (let i = 0; i < a.count; i++) {
+          f[i * 3] = a.getX(i);
+          f[i * 3 + 1] = a.getY(i);
+          f[i * 3 + 2] = a.getZ(i);
+        }
+        g.setAttribute(name, new THREE.BufferAttribute(f, 3));
+      }
+    }
     g.applyMatrix4(o.matrixWorld);
     g = nonIndexed(g);
     const n = g.attributes.position.count;
@@ -4109,6 +4212,8 @@ export class LevelView {
     // Settings › Display › Blood writing (off by default): one merged mesh, built only while on (setBlood, render/bloodWriting.js)
     this._blood = new BloodWriting(this.root);
     this._bloodOn = false;
+    // the boards beyond the plaques (always on): an atlas + one merged mesh per section, built near the head (boardWriting.js)
+    this._boards = new BoardWriting(this.root);
     this._unitBox = new THREE.BoxGeometry(1, 1, 1);
     this._glyphGeo = buildGlyphGeometry();
     this._mountGeos = buildMountGeometries();
@@ -4150,6 +4255,7 @@ export class LevelView {
 
   clear() {
     this._blood.dispose();
+    this._boards.dispose();
     for (const c of this.root.children.slice()) {
       this.root.remove(c);
       c.traverse((o) => {
@@ -4198,6 +4304,7 @@ export class LevelView {
     this._buildColossal(level, b);
     this._buildLightGlows(level);
     if (this._bloodOn) this._blood.build(bloodEntries(level));
+    this._boards.build(boardEntries(level), level.spawn || null); // the spawn's section at once (precompiled), the rest lazily
   }
 
   /**
@@ -4677,6 +4784,7 @@ export class LevelView {
       }
     };
     this._farItems = [];
+    this._propItems = [];
     let haveStill = false;
     let haveGrate = false;
     // decor a mover carries (LEVEL_FUN_PLAN P4: the S3 cage and its chain) moves with it: render/objectivesView.js draws it
@@ -4741,6 +4849,13 @@ export class LevelView {
       }
       if (type === 'grate') haveGrate = true;
       if (type === 'lamp' || type === 'lantern') this._lampPlans.push({ x: d.x, y: d.y, z, rotY, lit: d.lit !== false });
+      if (PROPS_ON && PROP_TYPES.has(type) && !this._propsFailed) {
+        // props v2 (ch1_props_v2.glb): forged chain links / the Lanternwright statue as levels of detail, drawn once the GLB is here
+        // (setProps); the procedural builder below is the fallback when it cannot load
+        this._propItems.push({ type, x: d.x, y: d.y, z, rotY, lw, sy, ld, d, drawn: false });
+        count++;
+        continue;
+      }
       const fn = DECOR[type] || DECOR[d.type];
       if (!fn) {
         skipped.add(type);
@@ -4782,7 +4897,135 @@ export class LevelView {
     }
     this.stats.decor = count;
     this.stats.skippedTypes = [...skipped];
+    if (this._props) this._emitPropItems(bands);
     return bands;
+  }
+
+  /**
+   * The props v2 GLB arrived (or failed: null): the chains and statues waiting for it become level-of-detail records in the section
+   * packs (or, without it, the procedural builders draw them). Safe before or after build().
+   */
+  setProps(gltf) {
+    if (this._props) return true;
+    if (gltf) {
+      try {
+        this._props = parseEnvKit(gltf);
+      } catch (err) {
+        if (typeof console !== 'undefined') console.warn('[AT3D] props v2 unreadable', err);
+        this._props = null;
+      }
+      if (this._props && !this._props.get('ch1_env_chainlink')) this._props = null;
+    }
+    if (!this._props) this._propsFailed = true;
+    if (this.level && this._propItems && this._propItems.some((it) => !it.drawn)) {
+      const bands = new Map();
+      this._emitPropItems(bands);
+      this._mergeBands(bands, true);
+    }
+    return !!this._props;
+  }
+
+  /** Draws the pending prop items into band lists: LOD records from the props GLB, or the procedural fallback. */
+  _emitPropItems(bands) {
+    const P = new Parts();
+    P.kitLamps = true;
+    const itemM = new THREE.Matrix4();
+    for (const it of this._propItems || []) {
+      if (it.drawn) continue;
+      it.drawn = true;
+      itemM.makeRotationY(it.rotY || 0);
+      itemM.setPosition(it.x, it.y, it.z);
+      for (const k of Object.keys(P.lists)) P.lists[k] = [];
+      const g = this._grade(it.y);
+      P.tint.stone = g.stone;
+      P.tint.rock = g.stone;
+      P.tint.metalM = P.tint.metal;
+      P.rng = makeRng(hashStr(it.d.id != null ? it.d.id : `${it.type}${it.d.x},${it.d.y}`));
+      if (!this._props || !this._propRecs(it, itemM, bands, P, g)) {
+        const fn = DECOR[it.type];
+        if (fn) fn(P, it.lw, it.sy, it.ld, it.d);
+      }
+      const band = this._bandLists(bands, it.y);
+      const mid = this._bandLists(bands, it.y, 'mid');
+      for (const k of Object.keys(P.lists)) {
+        for (const geo of P.lists[k]) {
+          geo.applyMatrix4(itemM);
+          if (k === 'metalM') mid.metal.push(geo);
+          else band[k].push(geo);
+        }
+      }
+    }
+  }
+
+  /** One kit-like part of the props GLB at world matrix m as a LOD record (or plain geometry for glow) in the band lists of its centre. */
+  _propRec(name, m, tint, list, bands, maxD, detail) {
+    const props = this._props;
+    const part = props.get(name);
+    if (!part) return false;
+    const it = { m, tint };
+    const g = this._kitGeo(part, it, list);
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    const y = (bb.min.y + bb.max.y) / 2;
+    if (list === 'glow') {
+      this._bandLists(bands, y)[list].push(g);
+      return true;
+    }
+    const lod0 = this._detailScale >= 0.7 ? props.get(name + '_lod0') : null;
+    const lod2 = props.get(name + '_lod2');
+    this._bandLists(bands, y, detail)[list].push({
+      isLodRec: true,
+      maxD,
+      geos: [lod0 ? this._kitGeo(lod0, it, list) : null, g, lod2 ? this._kitGeo(lod2, it, list) : null],
+      x: (bb.min.x + bb.max.x) / 2,
+      y,
+      z: (bb.min.z + bb.max.z) / 2,
+      r: Math.hypot(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) / 2,
+    });
+    return true;
+  }
+
+  /** The props-v2 records of one decor item (chain: one record per forged link; statue: stone, iron and the flame). */
+  _propRecs(it, itemM, bands, P, grade) {
+    const d = it.d;
+    const m = new THREE.Matrix4();
+    const loc = new THREE.Matrix4();
+    if (it.type === 'chain') {
+      // as DECOR.chain: real links for the lower 24, crossed bars above them (the fog has those)
+      const sx = it.lw;
+      const sy = it.sy;
+      const pitch = d && isFinite(d.link) && d.link > 0.05 ? d.link : Math.max(0.1, sx * 1.15);
+      const n = Math.min(Math.max(1, Math.round(sy / pitch)), 24);
+      const rot = new THREE.Matrix4();
+      for (let i = 0; i < n; i++) {
+        loc.makeScale(pitch, pitch, pitch);
+        if (i % 2) loc.premultiply(rot.makeRotationY(Math.PI / 2));
+        loc.premultiply(rot.makeTranslation(0, -sy / 2 + pitch * (i + 0.5), 0));
+        m.multiplyMatrices(itemM, loc);
+        if (!this._propRec('ch1_env_chainlink', m.clone(), [1, 1, 1], 'metal', bands, MID_DIST, 'mid')) return false;
+      }
+      const R = pitch * 0.64;
+      const tube = Math.max(0.02, pitch * 0.12);
+      const top = -sy / 2 + pitch * n;
+      if (top < sy / 2 - 0.1) {
+        const h = sy / 2 - top;
+        P.box('metal', 0, top + h / 2, 0, R * 1.2, h, tube * 2);
+        P.box('metal', 0, top + h / 2, 0, tube * 2, h, R * 1.2);
+      }
+      return true;
+    }
+    if (it.type === 'statue') {
+      // the normalised statue (x, z in -0.5..0.5, y -0.5..0.5) scaled to the decor box (DECOR.statue: depth >= 0.6 x width)
+      loc.makeScale(it.lw, it.sy, Math.max(it.ld, it.lw * 0.6));
+      m.multiplyMatrices(itemM, loc);
+      _c.set(PALETTE.amber);
+      const ok =
+        this._propRec('ch1_env_lanternwright', m.clone(), grade.stone, 'stone', bands, Infinity, false) &&
+        this._propRec('ch1_env_lanternwright_iron', m.clone(), [1, 1, 1], 'metal', bands, Infinity, false);
+      if (ok) this._propRec('ch1_env_lanternwright_glow', m.clone(), [_c.r * 0.9, _c.g * 0.9, _c.b * 0.9], 'glow', bands, Infinity, false);
+      return ok;
+    }
+    return false;
   }
 
   /** The decor lists of the band holding y (created on demand); detail → the finer, nearer tier. */
@@ -4964,6 +5207,10 @@ export class LevelView {
         // merges queued by a flush go first, one band per step (each is a big copy)
         if (job.merge.length) {
           const [bi, k, list] = job.merge.shift();
+          if (bi === null) {
+            this._mergeBands(list, true); // a section pack: all its band lists in one add
+            continue;
+          }
           const lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [] };
           lists[k] = list;
           this._mergeBands(new Map([[bi, lists]]), true);
@@ -5026,12 +5273,21 @@ export class LevelView {
     const job = this._dressJob;
     if (!job) return;
     if (this._kit) this._emitKitPlan(job.bands, maxSec);
+    const packs = new Map(); // PACK_ON: `${sec}|${k}` -> every band list of that section and material (one merge step, one add)
     for (const [bi, lists] of job.bands) {
       const sec = typeof bi === 'number' ? bi : parseInt(String(bi).slice(1), 10);
       if (sec > maxSec) continue;
-      for (const k of Object.keys(lists)) if (lists[k].length) job.merge.push([bi, k, lists[k]]);
+      for (const k of Object.keys(lists)) {
+        if (!lists[k].length) continue;
+        if (PACK_ON && PACK_KINDS.has(k)) {
+          const pk = `${sec}|${k}`;
+          if (!packs.has(pk)) packs.set(pk, new Map());
+          packs.get(pk).set(bi, { [k]: lists[k] });
+        } else job.merge.push([bi, k, lists[k]]);
+      }
       job.bands.delete(bi);
     }
+    for (const m of packs.values()) job.merge.push([null, null, m]);
   }
 
   /** One placement of a kit part: its geometry through the placement matrix, mirrored fix, tint and metric UVs. */
@@ -5176,6 +5432,7 @@ export class LevelView {
    */
   _mergeBands(bands, append) {
     if (!this._chunkByKey) this._chunkByKey = new Map();
+    if (PACK_ON) this._packBands(bands);
     for (const [bi0, lists] of bands) {
       const kind0 = String(bi0).startsWith('d') ? 'd' : String(bi0).startsWith('m') ? 'm' : String(bi0).startsWith('n') ? 'n' : '';
       for (const k of Object.keys(lists)) {
@@ -5238,6 +5495,116 @@ export class LevelView {
         }
         lists[k] = [];
       }
+    }
+  }
+
+  /**
+   * Section packs (PACK_ON): takes every stone / metal / flesh / rock list out of `bands` and adds it to the pack of its section and
+   * material, ONE LodSet (one draw) per pair. Kit placements keep their records (levels, distance limit); the procedural dressing is
+   * grouped into PACK_CELL cubes per tier, each a plain record culled by its own box at its tier's distance (the section tier: the fog
+   * only; the 32 m detail, mid and near tiers: DETAIL_DIST / MID_DIST / NEAR_DIST, now for metal and flesh too). One add per pack per call.
+   */
+  _packBands(bands) {
+    const level = this.level;
+    const buried = BURIED_ON && level && typeof level.querySolidsStatic === 'function';
+    const packs = new Map(); // `${sec}|${k}` -> { sec, k, recs }
+    for (const [bi0, lists] of bands) {
+      const s0 = String(bi0);
+      const kind = s0[0] === 'd' ? 'd' : s0[0] === 'm' ? 'm' : s0[0] === 'n' ? 'n' : '';
+      const sec = typeof bi0 === 'number' ? bi0 : parseInt(s0.slice(1), 10);
+      const maxD = kind === 'd' ? DETAIL_DIST : kind === 'm' ? MID_DIST : kind === 'n' ? NEAR_DIST : Infinity;
+      for (const k of Object.keys(lists)) {
+        const list = lists[k];
+        if (!PACK_KINDS.has(k) || !list.length) continue;
+        lists[k] = [];
+        const key = `${sec}|${k}`;
+        if (!packs.has(key)) packs.set(key, { sec, k, recs: [] });
+        const out = packs.get(key).recs;
+        const cells = new Map();
+        for (const g0 of list) {
+          if (g0.isLodRec) {
+            if (buried) {
+              g0.geos = g0.geos.map((g) => {
+                if (!g) return null;
+                const c = cullBuried(g, level);
+                this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
+                return c.geo.attributes.position.count ? packGeo(c.geo) : null;
+              });
+              if (!g0.geos[1]) {
+                for (const g of g0.geos) if (g) g.dispose();
+                continue;
+              }
+            } else g0.geos = g0.geos.map((g) => (g ? packGeo(g) : null));
+            out.push(g0);
+            continue;
+          }
+          let g = packGeo(g0);
+          if (buried) {
+            const c = cullBuried(g, level);
+            this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
+            if (c.geo !== g) g.dispose();
+            g = c.geo;
+          }
+          if (!g.attributes.position.count) {
+            g.dispose();
+            continue;
+          }
+          g.computeBoundingBox();
+          const bb = g.boundingBox;
+          const ck = `${Math.floor((bb.min.x + bb.max.x) / 2 / PACK_CELL)}|${Math.floor((bb.min.y + bb.max.y) / 2 / PACK_CELL)}|${Math.floor((bb.min.z + bb.max.z) / 2 / PACK_CELL)}`;
+          if (!cells.has(ck)) cells.set(ck, { geos: [], box: new THREE.Box3() });
+          const cell = cells.get(ck);
+          cell.geos.push(g);
+          cell.box.union(bb);
+        }
+        for (const cell of cells.values()) {
+          let merged = null;
+          try {
+            merged = cell.geos.length === 1 ? cell.geos[0] : mergeGeometries(cell.geos, false);
+          } catch {
+            merged = null;
+          }
+          if (merged !== cell.geos[0]) for (const g of cell.geos) g.dispose();
+          if (!merged) continue;
+          const b = cell.box;
+          out.push({
+            isLodRec: true,
+            plain: true,
+            maxD,
+            geos: [null, merged, null],
+            box: [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z],
+            x: (b.min.x + b.max.x) / 2,
+            y: (b.min.y + b.max.y) / 2,
+            z: (b.min.z + b.max.z) / 2,
+            r: b.min.distanceTo(b.max) / 2,
+          });
+        }
+      }
+    }
+    for (const { sec, k, recs } of packs.values()) {
+      if (!recs.length) continue;
+      recs.sort((a, b) => (a.plain ? 0 : 1) - (b.plain ? 0 : 1)); // plain records first: a kit level change rewrites only the tail of the index
+      const key = `pack|${sec}|${k}`;
+      const prev = this._chunkByKey.get(key);
+      const set = prev ? prev.lod : new LodSet();
+      const rg = set.add(recs);
+      rg.computeBoundingSphere();
+      rg.computeBoundingBox();
+      if (prev) {
+        prev.obj.geometry.dispose();
+        prev.obj.geometry = rg;
+        prev.box.copy(rg.boundingBox);
+        prev.fresh = true;
+        continue;
+      }
+      const mesh = new THREE.Mesh(rg, this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone'));
+      mesh.name = `decorpack_${k}_${sec}`;
+      mesh.matrixAutoUpdate = false;
+      this._addChunk(mesh, Infinity, sec, 'pack');
+      const ch = this._chunks[this._chunks.length - 1];
+      ch.lod = set;
+      ch.fresh = true;
+      this._chunkByKey.set(key, ch);
     }
   }
 
@@ -5592,17 +5959,48 @@ export class LevelView {
         groups.get(bi).push(g);
       }
       this._colossalParts = [];
-      for (const [bi, items] of groups) {
-        const merged = mergeGeometries(items, false);
-        for (const g of items) g.dispose();
-        merged.computeBoundingSphere();
-        const mesh = new THREE.Mesh(merged, this.mats.get('colossal'));
+      if (PACK_ON) {
+        // ONE draw for every band (strategy O2): the bands are ranges of one soup, the index lists the bands in reach (update)
+        const order = [...groups.keys()].sort((a, b) => a - b);
+        const geos = [];
+        const ranges = new Map();
+        let off = 0;
+        for (const bi of order) {
+          const items = groups.get(bi);
+          const merged = items.length === 1 ? items[0] : mergeGeometries(items, false);
+          if (merged !== items[0]) for (const g of items) g.dispose();
+          ranges.set(bi, [off, merged.attributes.position.count]);
+          off += merged.attributes.position.count;
+          geos.push(merged);
+        }
+        const soup = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+        if (soup !== geos[0]) for (const g of geos) g.dispose();
+        const index = new THREE.BufferAttribute(new Uint32Array(off), 1);
+        index.setUsage(THREE.DynamicDrawUsage);
+        soup.setIndex(index);
+        soup.setDrawRange(0, 0);
+        soup.computeBoundingSphere();
+        const mesh = new THREE.Mesh(soup, this.mats.get('colossal'));
         mesh.name = 'colossal';
         mesh.matrixAutoUpdate = false;
         mesh.renderOrder = -5;
+        mesh.visible = false;
         this.root.add(mesh);
-        this._colossalParts.push({ mesh, band: bi });
-        if (!this._colossal) this._colossal = mesh;
+        this._colossalParts.push({ mesh, band: -1, ranges, key: '' });
+        this._colossal = mesh;
+      } else {
+        for (const [bi, items] of groups) {
+          const merged = mergeGeometries(items, false);
+          for (const g of items) g.dispose();
+          merged.computeBoundingSphere();
+          const mesh = new THREE.Mesh(merged, this.mats.get('colossal'));
+          mesh.name = 'colossal';
+          mesh.matrixAutoUpdate = false;
+          mesh.renderOrder = -5;
+          this.root.add(mesh);
+          this._colossalParts.push({ mesh, band: bi });
+          if (!this._colossal) this._colossal = mesh;
+        }
       }
     }
     // Distant lit windows join the light-glow Points (one draw call for every glow).
@@ -5710,17 +6108,50 @@ export class LevelView {
       let md = ch.kind === 'd' ? dd : ch.kind === 'm' ? dm : ch.kind === 'n' ? dn : ch.maxDist;
       // the neighbouring sections lie behind their floors: only what is near the opening is in sight
       if (ch.band !== hb && ch.band >= 0 && md > nd) md = nd;
-      ch.obj.visible = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
-      if (ch.lod && ch.obj.visible) ch.lod.update(head.x, head.y, head.z, lodNear, lodMid, this._detailScale, vd, false);
+      const vis = near && ch.box.distanceToPoint(head) < (md < vd ? md : vd);
+      ch.obj.visible = vis;
+      if (ch.lod && vis) {
+        // a pack seen from the neighbouring section: every record within NEIGHBOUR_DIST only; a draw that just came back is re-evaluated now
+        ch.lod.update(head.x, head.y, head.z, lodNear, lodMid, this._detailScale, vd, !!ch.fresh || !ch.wasVis, ch.kind === 'pack' && ch.band !== hb ? nd : Infinity);
+        ch.fresh = false;
+        if (ch.lod.rg.drawRange.count === 0) ch.obj.visible = false; // an empty draw range still costs a draw call in three.js
+      }
+      ch.wasVis = vis;
     }
     const cp = this._colossalParts;
     const reach = this._detailScale >= 1.2 ? 2 : 1; // colossal silhouettes: the sections beyond the neighbours are pure haze on Quest / low
-    if (cp) for (let i = 0; i < cp.length; i++) cp[i].mesh.visible = cp[i].band >= hb - reach && cp[i].band <= hb + reach;
+    if (cp) {
+      for (let i = 0; i < cp.length; i++) {
+        const c = cp[i];
+        if (!c.ranges) {
+          c.mesh.visible = c.band >= hb - reach && c.band <= hb + reach;
+          continue;
+        }
+        const key = `${hb}|${reach}`;
+        if (key !== c.key) {
+          // the merged silhouettes: rewrite the index with the bands in reach (only when the head's section changes)
+          c.key = key;
+          const g = c.mesh.geometry;
+          const a = g.index.array;
+          let w = 0;
+          for (const [bi, [o, n]] of c.ranges) {
+            if (bi < hb - reach || bi > hb + reach) continue;
+            for (let k = 0; k < n; k++) a[w++] = o + k;
+          }
+          g.index.clearUpdateRanges();
+          if (w) g.index.addUpdateRange(0, w);
+          g.index.needsUpdate = w > 0;
+          g.setDrawRange(0, w);
+          c.mesh.visible = w > 0;
+        }
+      }
+    }
     for (let i = 0; i < this._plaques.length; i++) {
       const p = this._plaques[i];
       p.mesh.visible = p.pos.distanceTo(head) < PLAQUE_DIST * this._detailScale;
     }
     this._blood.update(head, this._detailScale);
+    this._boards.update(head, this._detailScale);
     if (fogInfo && fogInfo.color && this._colossal) {
       // Silhouettes: well darker than the haze; the capped fog (stronger with
       // distance) layers near giants over far ones.

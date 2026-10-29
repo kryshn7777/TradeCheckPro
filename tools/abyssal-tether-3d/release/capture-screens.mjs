@@ -47,7 +47,11 @@ fs.mkdirSync(KEYART, { recursive: true });
  *   creature  step in 0.25 s chunks until the creature is within [min,max] m of the player (or give up)
  *   settings  settings applied before the scene (e.g. { bloodWriting: true }); every recipe starts from bloodWriting off
  *   url      extra query for the page (THE DRESSER's recipes: '&dresser=always'; the page otherwise runs ?hunt=always, which leaves
- *            the Dresser out)
+ *            the Dresser out, and &comms=off, which leaves the Expedition radio / restore out: a recipe with '&comms=on' keeps them)
+ *   comms    EXPEDITION (sim/comms3d.js): { say, glitch, at, dur, t } puts a script line on air (a glitch of that kind at `at` s)
+ *            and runs `t` s into it; { die, count, t } ends this life (cause `die`) as restore `count` and runs `t` s into the
+ *            CONTINUITY overlay
+ *   fade     the head fade kept for the capture (0 otherwise; the restore overlay is drawn over the death fade)
  *   hang     an anchor id: the player hangs 3.5 m under that ring on the right-hand rope
  *   dresser  { dist, measure, orbit } THE DRESSER put on a wall about `dist` m away that sees the whole of you, facing you (debug
  *            dresser.place); measure: it starts measuring your ring (the chalk outline, the line); orbit (m): at the end the camera
@@ -68,11 +72,22 @@ const RECIPES = [
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
   // Settings › Display › Blood writing (opt-in): Hob's writing in the Long Stair's rest, under its lamp (bw-s6-hob)
   { id: 'shot-blood', section: 5, at: [-31.5, -241.6, -8.6], abs: true, yaw: 0, pitch: -0.06, run: 0.6, settings: { bloodWriting: true }, note: 'blood writing (not a store shot; --recipe shot-blood only)', only: true },
+  // DARK_STORY_BIBLE (not store shots; --recipe <id> only): a board with its correction (bd-s8-fed, the first step's ledge), a
+  // second-pass blood writing by the Long Stair's second shelf (bw-s6-white, with the fresh measure beside it), and the chamber's
+  // back wall (the figure cut to your measure, IT FITS NOW) from between the statues
+  { id: 'shot-board', section: 7, at: [0.4, -469.6, 17.6], abs: true, yaw: Math.PI, pitch: 0.34, run: 0.4, note: 'a board: ~WE FED IT.~ NO. WE WERE FED.', only: true },
+  { id: 'shot-blood2', section: 5, at: [-31.4, -229.6, 8.2], abs: true, yaw: Math.PI / 2, pitch: 0.22, run: 0.4, settings: { bloodWriting: true }, note: 'second-pass blood: THE WHITE ONE WAITS...', only: true },
+  { id: 'shot-chamber', section: 7, at: [-3.2, -555.6, 20.6], abs: true, yaw: Math.PI, pitch: 0.26, run: 0.3, settings: { bloodWriting: true }, note: 'the chamber: the figure and IT FITS NOW', only: true },
   // THE DRESSER (docs/abyssal-tether-3d/plans/DRESSER.md): on a wall of the Two Descents at ~12 m; the chalk outline of you while it
   // measures your ring; the chalk line it puts in your head while it hunts you (not store shots; --recipe <id> only)
   { id: 'shot-dresser', section: 5, url: '&dresser=always', yaw: 0, pitch: 0, run: 0.8, dresser: { dist: 12, orbit: 12 }, note: 'the Dresser on a wall at ~12 m (a three-quarter view from the shaft)', only: true },
   { id: 'shot-dresser-measure', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.2, dresser: { dist: 11, measure: true }, lookMix: 0.85, note: 'measuring: the chalk outline of you', only: true },
   { id: 'shot-chalk', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.6, dresser: { dist: 11, measure: true }, note: 'the chalk line while it measures you', only: true },
+  // EXPEDITION (docs/abyssal-tether-3d/plans/COMMS.md): the radio subtitle at the Threshold, a glitched line in the Last Throat, the
+  // CONTINUITY restore (not store shots; --recipe <id> only)
+  { id: 'shot-comms', section: 0, url: '&comms=on', yaw: 0.0, pitch: -0.05, run: 0.6, comms: { say: 's1-open-3', t: 1.6 }, note: 'a radio line at the Threshold', only: true },
+  { id: 'shot-comms-deep', section: 7, url: '&comms=on', yaw: 0.4, pitch: -0.1, run: 0.6, comms: { say: 's8-enter', glitch: 'static', at: 1.4, dur: 0.6, t: 1.6 }, note: 'a glitched line deep down (one bar)', only: true },
+  { id: 'shot-restore', section: 4, url: '&comms=on', yaw: 0.0, pitch: -0.1, run: 0.6, comms: { die: 'creature', count: 3, t: 4.9 }, fade: 0.9, note: 'the CONTINUITY restore overlay', only: true },
 ];
 const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
 // rendered at the final cover sizes (make-art.py crops / resizes from these)
@@ -102,7 +117,8 @@ async function newGamePage(w, h, { xr = false, extra = '' } = {}) {
     css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal,#at3d-gpu-banner,[id^=at3d-panel]{display:none!important}';
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
-  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always' + extra, { waitUntil: 'domcontentloaded' });
+  const comms = /[?&]comms=/.test(extra) ? '' : '&comms=off'; // the Expedition radio stays out of the store shots
+  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always' + comms + extra, { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 240000, label: 'boot' });
   await sleep(2500); // textures, env kit, creature kit, gear GLB finish loading
   return { ctx, page };
@@ -213,6 +229,13 @@ async function setScene(page, r) {
     G.fade = 0;
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
+    if (rec.comms && D.comms) {
+      const c = rec.comms;
+      if (c.die) D.comms.die(c.die, c.count || 1);
+      else if (c.say) D.comms.say(c.say, { glitch: c.glitch, at: c.at, dur: c.dur });
+      D.step(c.t || 1.5, { render: false, state: false });
+      G._setLook(rec.yaw, rec.pitch);
+    }
     const dbody = rec.dresser && G.dresser && !G.dresser.isNull ? G.dresser.body : null;
     if (dbody && dbody.visible && rec.dresser.orbit) {
       // the camera `orbit` m from its chest at 50-70 degrees off its up (a three-quarter view of a figure standing sideways on its
@@ -265,26 +288,26 @@ async function setScene(page, r) {
       G._setLook(Math.atan2(-(tx - ex), -(tz - ez)), Math.atan2(ty - ey, Math.hypot(tx - ex, tz - ez)));
     }
     D.step(0.05, { render: true, state: false });
-    G.fade = 0;
+    G.fade = rec.fade || 0;
     D.freeze(true);
     return { creature: rec.creature ? { seen, distance: G.creature && G.creature.distance } : null, state: G.state, y: Math.round(p.y) };
   }, r);
 }
 
-async function snap(page, file, w, h, { grab = false } = {}) {
+async function snap(page, file, w, h, { grab = false, fade = 0 } = {}) {
   await sleep(700); // a few frozen frames so fx and the lantern settle
   if (grab) {
     // desktop: read the canvas in the same task as a render (a WebGL canvas without preserveDrawingBuffer can show
     // black to a page screenshot taken between frames)
-    const b64 = await page.evaluate(() => {
+    const b64 = await page.evaluate((fd) => {
       const G = window.AT3D.game;
-      G.fade = 0;
+      G.fade = fd;
       G.flash = 0;
       G._render(1 / 60);
       const c = G.renderer.renderer.domElement;
       if (c.width !== window.innerWidth) throw new Error(`canvas is ${c.width}x${c.height}, expected ${window.innerWidth}x${window.innerHeight}`);
       return c.toDataURL('image/png').split(',')[1];
-    });
+    }, fade || 0);
     fs.writeFileSync(file, Buffer.from(b64, 'base64'));
   } else {
     await page.evaluate(() => {
@@ -306,7 +329,7 @@ try {
     for (const r of list) {
       const info = await setScene(page, r);
       if (info.state !== 'playing') console.log('   note: state', info.state);
-      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
+      await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true, fade: r.fade || 0 });
     }
     await ctx.close();
   }

@@ -25,6 +25,7 @@ const COL = { text: '#f4efe4', dim: '#c9c4b8', faint: '#8b9396', cyan: '#8fd3c8'
 const FADE_IN = 0.2;
 const FADE_OUT = 0.35;
 const RES_REDRAW = 0.1; // s between two restore redraws (10 Hz cap)
+const DESKTOP_SCALE = 1.35;
 
 function hash1(n) {
   const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
@@ -145,10 +146,14 @@ export class CommsView {
     this._bars0 = 5;
     this._n = -1;
     this.draws = 0; // canvas redraws (tests: per line / per change, never per frame)
+    this._layKey = -1;
     this._layout('sub', 1, false);
   }
 
   _layout(mode, scale, low) {
+    const key = (mode === 'restore' ? 2 : low ? 1 : 0) + scale * 4;
+    if (key === this._layKey) return;
+    this._layKey = key;
     const m = this.mesh;
     if (mode === 'restore') {
       m.scale.set(RES.w * scale, ((RES.w * RES.ch) / RES.cw) * scale, 1);
@@ -181,7 +186,8 @@ export class CommsView {
     const cm = g.comms || null;
     const R = g.restore || null;
     const fx = s.signalGlitches !== false && !s.reducedEffects;
-    const scale = clamp(typeof s.textScale === 'number' && isFinite(s.textScale) ? s.textScale : 1, 0.9, 1.5);
+    // Text size; on a flat screen (a wider field of view than the headset's) the quad is a third larger to read the same
+    const scale = clamp(typeof s.textScale === 'number' && isFinite(s.textScale) ? s.textScale : 1, 0.9, 1.5) * (g.xrActive ? 1 : DESKTOP_SCALE);
     let want = null;
     if (R && R.active && st === 'dead') want = 'restore'; // (Abyss: the death panel takes over when it ends: R.active false)
     else if (cm && cm.current && st === 'playing') want = 'sub';
@@ -213,7 +219,8 @@ export class CommsView {
       }
       const fi = clamp(tx.t / FADE_IN, 0, 1);
       const fo = clamp((tx.dur - tx.t) / FADE_OUT, 0, 1);
-      this.alpha = Math.min(fi, fo) * 0.98;
+      const a = (fi < fo ? fi : fo) * 0.98;
+      if (a !== this.alpha) this.alpha = a;
       const hintUp = !!(g.xrActive && g.ui && g.ui._hint && g.ui._hint.on);
       this._layout('sub', scale, hintUp);
       const so = fx && glitchOn(tx, 'static');
@@ -225,7 +232,7 @@ export class CommsView {
         this._subDraw(tx, so, dr && fx, lb, dr ? 0 : this._bars0);
       }
     }
-    this.material.opacity = this.alpha;
+    if (this.material.opacity !== this.alpha) this.material.opacity = this.alpha;
     this.mesh.visible = this.alpha > 0.003;
   }
 
@@ -289,16 +296,24 @@ export class CommsView {
     g.font = font;
     g.globalAlpha = dropOn ? 0.55 : 1;
     g.fillStyle = italic ? COL.dim : COL.text;
-    const tear = staticOn ? (tx.n % 2 ? 7 : -7) : 0;
+    const tear = staticOn ? (tx.n % 2 ? 10 : -10) : 0;
     const tearRow = tx.n % rows.length;
     for (let i = 0; i < rows.length; i++) g.fillText(rows[i], x0 + 36 + (i === tearRow ? tear : 0), y0 + 58 + size + i * (size + 12) - 6);
     g.globalAlpha = 1;
     if (staticOn) {
-      // static: fine speckle over the panel (deterministic per line), the text stays on top and readable
-      for (let k = 0; k < 520; k++) {
+      // static: two noise bands across the panel and a fine speckle (deterministic per line); the words stay readable
+      for (let b = 0; b < 2; b++) {
+        const by = y0 + 8 + hash1(tx.n * 7.7 + b * 3.1) * (boxH - 22);
+        for (let k = 0; k < 90; k++) {
+          const r = hash1(tx.n * 1.9 + b * 13.7 + k * 0.53);
+          g.fillStyle = r > 0.55 ? 'rgba(215,232,228,0.34)' : 'rgba(0,0,0,0.42)';
+          g.fillRect(x0 + (k / 90) * boxW, by + (hash1(k * 5.3 + b) - 0.5) * 3, boxW / 90 + 1, 2 + r * 3);
+        }
+      }
+      for (let k = 0; k < 900; k++) {
         const r1 = hash1(tx.n * 3.17 + k * 1.913);
         const r2 = hash1(tx.n * 5.31 + k * 0.717);
-        g.fillStyle = r1 > 0.5 ? 'rgba(220,235,232,0.22)' : 'rgba(0,0,0,0.35)';
+        g.fillStyle = r1 > 0.5 ? 'rgba(220,235,232,0.3)' : 'rgba(0,0,0,0.38)';
         g.fillRect(x0 + r1 * boxW, y0 + r2 * boxH, 2 + hash1(k * 2.3) * 3, 1 + hash1(k * 4.1) * 2);
       }
     }
