@@ -22,7 +22,7 @@
  */
 
 import * as THREE from 'three';
-import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings, sanitizeUxSettings } from './sim/config3d.js';
+import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBody, sanitizeHeightSettings, sanitizeUxSettings, dresserMode as dresserModeOf } from './sim/config3d.js';
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
@@ -100,6 +100,7 @@ const MODULES = {
   levelData: './data/level-data-3d.js',
   creature: './sim/creature3d.js',
   skitter: './sim/skitter3d.js',
+  dresser: './sim/dresser3d.js', // THE DRESSER (hunts only while you are whole; docs/abyssal-tether-3d/plans/DRESSER.md)
   threat: './sim/threat3d.js',
   renderer: './render/renderer3d.js',
   creatureView: './render/creatureView.js',
@@ -110,6 +111,7 @@ const MODULES = {
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
+  dresserView: './render/dresserView.js',
   sceneDetail: './render/sceneDetail.js',
   input: './input/inputManager.js',
   ui: './ui/ui3d.js',
@@ -132,6 +134,7 @@ const yieldToFrames = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** Short, original death lines per cause (round-robin by death count). */
 const DEATH_MESSAGES = {
+  dressed: ['DRESSED. SOMEONE WILL BUILD WITH YOU.', 'Whole bodies make good blocks.', 'Measured, cut and laid. It was you.', 'It dressed the old stone with care.'],
   impact: ['The floor came up faster than the line.', 'Stone keeps no promises.', 'Too far. Too fast.', 'The Underspire caught you. Badly.'],
   hazard: ['The old ironwork was still sharp.', 'The Lanternwrights left their edges keen.', 'Rust and teeth.'],
   fall: ['The dark took all of you.', 'Down past where the light can follow.', 'No line. No floor.'],
@@ -222,6 +225,19 @@ function huntAlways() {
   }
 }
 
+/**
+ * THE DRESSER: `?dresser=off` disables it (sim and view); `?dresser=always` turns its health gate off (it hunts whatever your
+ * health: captures, tests). `?hunt=always` (the Mason ungated: the e2e and the capture tools) leaves the Dresser out unless a
+ * `dresser=` flag asks for it, so those tools keep the world they were written for. Returns 'off' | 'always' | 'on'.
+ */
+function dresserMode() {
+  try {
+    return dresserModeOf(typeof location !== 'undefined' ? location.search || '' : '');
+  } catch {
+    return 'on';
+  }
+}
+
 /** `?skitter=off` disables the skitterlings (sim and views). */
 function skitterOff() {
   try {
@@ -281,6 +297,31 @@ function nullCreature() {
     onRespawn() {},
     onVictory() {},
     update() {},
+  };
+}
+
+/** Stand-in when the Dresser is off or its module failed: never in play. */
+function nullDresser() {
+  return {
+    isNull: true,
+    state: 'DORMANT',
+    inPlay: false,
+    armed: false,
+    hunting: false,
+    measuring: false,
+    distance: 1e9,
+    caughtPlayer: false,
+    targetHand: null,
+    body: null,
+    stats: null,
+    reset() {},
+    setSection() {},
+    onRespawn() {},
+    setHp() {},
+    setRival() {},
+    setView() {},
+    update() {},
+    destroy() {},
   };
 }
 
@@ -842,6 +883,12 @@ export class Game3D {
     this.creatureView = null;
     this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
     this.skitterViews = [];
+    this.dresser = nullDresser(); // THE DRESSER (sim/dresser3d.js): hunts only while you are whole
+    this.dresserView = null; // render/dresserView.js
+    this._dresserBuzzT = 0;
+    this._dresserTickN = 0;
+    this._camPos = new THREE.Vector3();
+    this._camDir = new THREE.Vector3();
     this.handsView = null;
     this.healthFx = null; // low-health vignette + ECG texture (render/healthFx.js)
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
@@ -1047,6 +1094,7 @@ export class Game3D {
     this._setupHealthFx();
     this._setupBodyView();
     this._setupBagViews();
+    this._setupDresserView();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -1266,6 +1314,18 @@ export class Game3D {
     } catch (err) {
       this._fault('healthFx', err);
       this.healthFx = null;
+    }
+  }
+
+  /** THE DRESSER's view (procedural: no asset to load); optional, `?dresser=off` skips it. */
+  _setupDresserView() {
+    const M = this.modules;
+    if (this.dresserView || !this.renderer || dresserMode() === 'off' || !M.dresserView || typeof M.dresserView.DresserView !== 'function') return;
+    try {
+      this.dresserView = new M.dresserView.DresserView(this);
+    } catch (err) {
+      this._fault('dresserView', err);
+      this.dresserView = null;
     }
   }
 
@@ -1990,6 +2050,7 @@ export class Game3D {
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
     this._try('skitter', () => this.skitters && this.skitters.reset());
+    this._try('dresser', () => this.dresser.reset(p));
     this._face(finiteOr(sp.yaw, 0));
 
     this.settings.lastDifficulty = key;
@@ -2077,6 +2138,7 @@ export class Game3D {
     else if (idx !== this._creatureSection) this._setCreatureSection(idx);
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._try('dresser', () => this.dresser.onRespawn(p));
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2167,6 +2229,7 @@ export class Game3D {
     this._enterSection(idx, 'warp');
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
+    this._try('dresser', () => this.dresser.onRespawn(p));
     this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2260,6 +2323,23 @@ export class Game3D {
         this._fault('skitter', err);
       }
     }
+    // THE DRESSER: hunts only while the player is whole (setGate; ?dresser=always ungated, ?dresser=off none). Not in the menu's
+    // attract flight. It reads the tethers (which ring to cut) and releases them when it cuts.
+    const oldD = this.dresser;
+    if (oldD && typeof oldD.destroy === 'function') this._try('dresser', () => oldD.destroy());
+    this.dresser = null;
+    const DresserCls = M.dresser && M.dresser.Dresser3D;
+    const dm = dresserMode();
+    if (!attract && dm !== 'off' && typeof DresserCls === 'function') {
+      try {
+        this.dresser = new DresserCls(lvl, diff, this._runBus, { seed: (0x85ebca6b * (this._runCount + 1)) >>> 0, tethers: this.tethers });
+        this.dresser.setGate(dm !== 'always');
+      } catch (err) {
+        this._fault('dresser', err);
+        this.dresser = null;
+      }
+    }
+    if (!this.dresser) this.dresser = nullDresser();
     const tc = this._threatCtx;
     tc.player = this.player;
     tc.creature = this.creature;
@@ -2414,6 +2494,7 @@ export class Game3D {
     this._buildWorld(this.diff, true);
     this._try('creature', () => this.creature.reset(this.player));
     this._try('skitter', () => this.skitters && this.skitters.reset());
+    this._try('dresser', () => this.dresser.reset(null));
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this.hidePlayer = true;
     this.time = 0;
@@ -2925,6 +3006,7 @@ export class Game3D {
     const sec = this.level.sections[idx];
     this._try('creature', () => this.creature.setSection(idx, sec, this.player));
     this._try('skitter', () => this.skitters && this.skitters.setSection(idx, this.player));
+    this._try('dresser', () => this.dresser.setSection(idx, sec, this.player));
     this._applyCreatureOverride();
   }
 
@@ -3060,8 +3142,8 @@ export class Game3D {
     this._acc = 0;
     this._pendingJump = false;
     this._setState('dead');
-    this.flash = cause === 'creature' ? 1 : cause === 'impact' ? 0.7 : 0.5;
-    this._hapticBoth(1, cause === 'creature' ? 380 : 240);
+    this.flash = cause === 'creature' || cause === 'dressed' ? 1 : cause === 'impact' ? 0.7 : 0.5;
+    this._hapticBoth(1, cause === 'creature' || cause === 'dressed' ? 380 : 240);
     this._hintQueue.length = 0;
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
@@ -3326,6 +3408,51 @@ export class Game3D {
       this._fault('creature', err);
     }
     this._updateSkitters(dt);
+    this._updateDresser(dt);
+  }
+
+  /**
+   * THE DRESSER: fed the health (its gate) and the head's view (it relocates only where you are not looking), stepped with the
+   * Mason; a reach while you are whole kills ('dressed'); while it measures / saws, the targeted hand's rope buzzes.
+   */
+  _updateDresser(dt) {
+    const d = this.dresser;
+    if (!d || d.isNull) return;
+    try {
+      const h = this.health;
+      d.setHp(h ? h.hp : 1);
+      // the Mason has your scent (its gate armed by low health / the scent window, or still withdrawing) or is making its staged
+      // pass (the S4 sighting): the Dresser gives way and leaves play (one big creature at a time, in the story and in the budget)
+      const c = this.creature;
+      d.setRival(!!(c && !c.isNull && ((c._gate && (c._armed || c._withdraw)) || c.sighting)));
+      const cam = this.renderer && this.renderer.camera;
+      if (cam && typeof cam.getWorldPosition === 'function') {
+        cam.getWorldPosition(this._camPos);
+        cam.getWorldDirection(this._camDir);
+        d.setView(this._camPos.x, this._camPos.y, this._camPos.z, this._camDir.x, this._camDir.y, this._camDir.z);
+      }
+      d.update(dt, this.player, this._runClock);
+      if (d.caughtPlayer) {
+        d.caughtPlayer = false;
+        if (this.player.alive && this.state === 'playing' && !this._godMode) this.physics.kill(this.player, this.tethers, 'dressed');
+      }
+      // the rope buzz: light pulses on each tick of the line while it measures, a hard saw buzz for the cut's last second
+      if (d.measuring && d.targetHand && this._inRun()) {
+        this._dresserBuzzT -= dt;
+        const tick = d.body ? d.body.tick : 0;
+        if (d.state === 'CUT') {
+          if (this._dresserBuzzT <= 0) {
+            this._dresserBuzzT = 0.07;
+            this._haptic(d.targetHand, 0.55 + 0.35 * Math.random(), 80);
+          }
+        } else if (tick !== this._dresserTickN) {
+          this._haptic(d.targetHand, 0.22, 35);
+        }
+        this._dresserTickN = tick;
+      }
+    } catch (err) {
+      this._fault('dresser', err);
+    }
   }
 
   /** WP-SKITTER: the little hunters step with the Mason; a hit costs health (health3d), and only an empty bar kills. */
@@ -3532,6 +3659,20 @@ export class Game3D {
       }
     }
     this._updateLantern();
+    const dv = this.dresserView;
+    if (dv) {
+      try {
+        dv.update(dt, this);
+      } catch (err) {
+        this._fault('dresserView', err);
+        this.dresserView = null;
+        try {
+          dv.dispose();
+        } catch {
+          /* already broken */
+        }
+      }
+    }
     const cv = this.creatureView;
     if (cv) {
       try {
@@ -3999,6 +4140,7 @@ export class Game3D {
         : null,
       hands: { left: hand('left'), right: hand('right') },
       creature: c ? { state: c.state, stamina: r(c.stamina), distance: r(c.distance), x: r(c.x), y: r(c.y), z: r(c.z), active: !!c.active, lethal: !!c.lethal, isNull: !!c.isNull } : null,
+      dresser: this.debugDresser(),
       threat: this.threat ? r(this.threat.value) : 0,
       rig: rig ? { x: r(rig.position.x), y: r(rig.position.y), z: r(rig.position.z), yaw: r(rig.rotation.y) } : null,
       xr: this.xrActive,
@@ -4053,6 +4195,34 @@ export class Game3D {
       lanternFactor: r(b.lanternFactor),
       refusal: b.lastRefusal,
       pickups: pk ? { total: pk.items.length, remaining: pk.remaining, seed: pk.seed } : null,
+    };
+  }
+
+  /** THE DRESSER read-out for tests, QA and the debug state. */
+  debugDresser() {
+    const d = this.dresser;
+    const r = (v) => (typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : v);
+    if (!d || d.isNull) return { isNull: true, mode: dresserMode() };
+    const v = this.dresserView;
+    return {
+      isNull: false,
+      mode: dresserMode(),
+      state: d.state,
+      inPlay: d.inPlay,
+      armed: d.armed,
+      hunting: d.hunting,
+      measuring: d.measuring,
+      gate: d._gate,
+      whole: d.whole,
+      distance: r(d.distance),
+      sees: d.sees,
+      x: r(d.x),
+      y: r(d.y),
+      z: r(d.z),
+      target: d.target ? d.target.id : null,
+      targetHand: d.targetHand,
+      stats: Object.assign({}, d.stats),
+      view: v ? { visible: v.root.visible, lod: v.lod, calls: v.info.drawCalls, tris: v.info.triangles } : null,
     };
   }
 
@@ -4128,6 +4298,18 @@ export class Game3D {
           views_: this.skitterViews.map((v) => ({ visible: v.root.visible, lod: v._lod, calls: v.info.drawCalls, tris: v.info.triangles })),
         }),
         view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
+      },
+      // THE DRESSER (tests, QA, screenshots): state(); place({az, dy, state}) puts it on the wall the ray from you at azimuth az
+      // (radians, atan2(dz, dx)) and height dy meets, facing you; measure() starts a measure on your loaded ring now.
+      dresser: {
+        state: () => this.debugDresser(),
+        place: (o) => {
+          const d = this.dresser;
+          if (!d || d.isNull) return null;
+          const q = o || {};
+          return d.debugPlace(this.player, finiteOr(q.az, 0), finiteOr(q.dy, 1.5), q.state || null);
+        },
+        measure: () => (this.dresser && !this.dresser.isNull ? this.dresser.debugMeasure(this.player) : null),
       },
       state: () => this.debugState(),
       teleport: (x, y, z) => this.debugTeleport(x, y, z),

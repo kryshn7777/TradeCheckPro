@@ -628,3 +628,14 @@ set-pieces (9): lanes (P4), squall + medals UI (12) + tuning       PHASE 6
 - The scary line (`render/lowHealthText.js`, owned by `HealthFx`): while `Health3D.low` a head-locked line ("IT CAN SMELL YOU", "KEEP YOUR HEART QUIET",
   below 16 % "LET GO", "JOIN THE WALL" ...) surfaces in blood-red scrawl with drips, flickers and fades, then another follows 2-5 s later. One quad,
   +1 draw call while it shows; `reducedEffects` removes the flicker and the shake.
+
+## Addendum: THE DRESSER, the inverse gate (owner's call: "New creature. Whatever works and makes things scary.")
+
+- A second gated hunter, `src/sim/dresser3d.js` (rules, numbers, tests: `DRESSER.md`): it hunts only while the player is **whole**
+  (hp ≥ 0.75 / 0.70 / 0.65, off again 5 points lower), in S3, S4 and S6 (THE CORRIDOR). It walks the walls, measures you for 3.0 s
+  (a chalk outline of you on the wall beside you, its line taut to your ring), saws 1.0 s and cuts the ring you hang from; it dresses
+  you (`dressed`) if it reaches you whole. It yields to the Mason (never both hunting, never both in play for more than 10 s), so the
+  player lives between the gates: whole = the Dresser, ≤ 35 % = the Mason, the corridor between = neither; regeneration is its clock.
+- `game.js` gates it (`setGate`, `setHp`, `setRival` from the Mason's gate), `?dresser=off|always`; `?hunt=always` leaves it out (the
+  e2e and the capture tools keep their world); the verify harness never builds it (baselines and the bake hashes are unchanged).
+- The low-health line gets a chalk-white sibling while the Dresser hunts you (`render/lowHealthText.js`); never both.

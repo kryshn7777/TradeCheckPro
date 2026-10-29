@@ -46,6 +46,13 @@ fs.mkdirSync(KEYART, { recursive: true });
  *   run      seconds of simulation to run before the capture (creature, fx, ropes settle)
  *   creature  step in 0.25 s chunks until the creature is within [min,max] m of the player (or give up)
  *   settings  settings applied before the scene (e.g. { bloodWriting: true }); every recipe starts from bloodWriting off
+ *   url      extra query for the page (THE DRESSER's recipes: '&dresser=always'; the page otherwise runs ?hunt=always, which leaves
+ *            the Dresser out)
+ *   hang     an anchor id: the player hangs 3.5 m under that ring on the right-hand rope
+ *   dresser  { dist, measure, orbit } THE DRESSER put on a wall about `dist` m away that sees the whole of you, facing you (debug
+ *            dresser.place); measure: it starts measuring your ring (the chalk outline, the line); orbit (m): at the end the camera
+ *            moves that far from its chest, 50-70 degrees off its up, into open air; the look turns to its chest (lookMix 0..1
+ *            toward the outline instead)
  */
 const RECIPES = [
   { id: 'shot-01', section: 0, yaw: 0.0, pitch: -0.05, run: 0.6, note: 'the threshold: the first view' },
@@ -61,6 +68,11 @@ const RECIPES = [
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
   // Settings › Display › Blood writing (opt-in): Hob's writing in the Long Stair's rest, under its lamp (bw-s6-hob)
   { id: 'shot-blood', section: 5, at: [-31.5, -241.6, -8.6], abs: true, yaw: 0, pitch: -0.06, run: 0.6, settings: { bloodWriting: true }, note: 'blood writing (not a store shot; --recipe shot-blood only)', only: true },
+  // THE DRESSER (docs/abyssal-tether-3d/plans/DRESSER.md): on a wall of the Two Descents at ~12 m; the chalk outline of you while it
+  // measures your ring; the chalk line it puts in your head while it hunts you (not store shots; --recipe <id> only)
+  { id: 'shot-dresser', section: 5, url: '&dresser=always', yaw: 0, pitch: 0, run: 0.8, dresser: { dist: 12, orbit: 12 }, note: 'the Dresser on a wall at ~12 m (a three-quarter view from the shaft)', only: true },
+  { id: 'shot-dresser-measure', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.2, dresser: { dist: 11, measure: true }, lookMix: 0.85, note: 'measuring: the chalk outline of you', only: true },
+  { id: 'shot-chalk', section: 5, url: '&dresser=always', hang: 's6-sa2', yaw: 0, pitch: 0, run: 2.6, dresser: { dist: 11, measure: true }, note: 'the chalk line while it measures you', only: true },
 ];
 const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
 // rendered at the final cover sizes (make-art.py crops / resizes from these)
@@ -74,7 +86,7 @@ const KEYART_SIZES = [
 const srv = await createStaticServer({ root: ROOT, prefix: '/', prodHeaders: false }).start();
 const browser = await launch();
 
-async function newGamePage(w, h, { xr = false } = {}) {
+async function newGamePage(w, h, { xr = false, extra = '' } = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
   const page = await newPage(ctx, { viewport: { width: w, height: h }, xr: false });
   page.on('crash', () => {
@@ -90,7 +102,7 @@ async function newGamePage(w, h, { xr = false } = {}) {
     css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal,#at3d-gpu-banner,[id^=at3d-panel]{display:none!important}';
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
-  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always', { waitUntil: 'domcontentloaded' });
+  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always' + extra, { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 240000, label: 'boot' });
   await sleep(2500); // textures, env kit, creature kit, gear GLB finish loading
   return { ctx, page };
@@ -149,6 +161,35 @@ async function setScene(page, r) {
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
     D.step(0.4, { render: false, state: false });
+    if (rec.hang) {
+      const a = G.level.anchors.find((x) => x.id === rec.hang);
+      if (a) {
+        D.teleport(a.x, a.y - 3.5, a.z);
+        D.attach('right', a.id);
+        D.step(1.5, { render: false, state: false });
+      }
+    }
+    if (rec.dresser && D.dresser) {
+      // the wall spot nearest the wanted distance from which it sees the whole of you
+      const dr = G.dresser;
+      let best = null;
+      for (let k = 0; k < 64 * 3 && dr && !dr.isNull; k++) {
+        const az = ((k % 64) / 64) * Math.PI * 2;
+        const dy = [1.5, 5, -3][Math.floor(k / 64)];
+        const r = D.dresser.place({ az, dy });
+        if (!r) continue;
+        dr._measureDist(p);
+        // a three-quarter view of it (not straight down its length): the angle between its up and the line to you
+        const vx = p.x - (r.x + r.nx * 2);
+        const vy = p.y - (r.y + r.ny * 2);
+        const vz = p.z - (r.z + r.nz * 2);
+        const cosA = (vx * r.nx + vy * r.ny + vz * r.nz) / (Math.hypot(vx, vy, vz) || 1);
+        const sc = -Math.abs(dr.distance - rec.dresser.dist) + (dr._seesWhole(p) ? 10 : 0) - Math.max(0, cosA - 0.6) * 12;
+        if (!best || sc > best.sc) best = { az, dy, sc };
+      }
+      if (best) D.dresser.place({ az: best.az, dy: best.dy });
+      if (rec.dresser.measure) D.dresser.measure();
+    }
     if (rec.ropes) {
       const out = G.level.anchorsNear(p.x, p.y + 4, p.z, rec.ropes, []);
       out.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y, a.z - p.z) - Math.hypot(b.x - p.x, b.y - p.y, b.z - p.z));
@@ -172,6 +213,57 @@ async function setScene(page, r) {
     G.fade = 0;
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
+    const dbody = rec.dresser && G.dresser && !G.dresser.isNull ? G.dresser.body : null;
+    if (dbody && dbody.visible && rec.dresser.orbit) {
+      // the camera `orbit` m from its chest at 50-70 degrees off its up (a three-quarter view of a figure standing sideways on its
+      // wall), along its facing or across it: the first such spot in open air with a clear view of it
+      const b = dbody;
+      const cx = b.x + b.ux * 1.8;
+      const cy = b.y + b.uy * 1.8;
+      const cz = b.z + b.uz * 1.8;
+      const sx = b.uy * b.fz - b.uz * b.fy;
+      const sy = b.uz * b.fx - b.ux * b.fz;
+      const sz = b.ux * b.fy - b.uy * b.fx;
+      const dirs = [
+        [b.fx, b.fy, b.fz],
+        [-b.fx, -b.fy, -b.fz],
+        [sx, sy, sz],
+        [-sx, -sy, -sz],
+      ];
+      const R = rec.dresser.orbit;
+      let spot = null;
+      const tmp = [];
+      for (const a of [1.05, 0.9, 1.2]) {
+        for (const d of dirs) {
+          if (spot) break;
+          const ex = cx + (b.ux * Math.cos(a) + d[0] * Math.sin(a)) * R;
+          const ey = cy + (b.uy * Math.cos(a) + d[1] * Math.sin(a)) * R;
+          const ez = cz + (b.uz * Math.cos(a) + d[2] * Math.sin(a)) * R;
+          const inside = G.level.querySolids(ex - 0.6, ey - 1.6, ez - 0.6, ex + 0.6, ey + 0.4, ez + 0.6, tmp).some((q) => q.active !== false && ex > q.minX && ex < q.maxX && ey > q.minY && ey < q.maxY && ez > q.minZ && ez < q.maxZ);
+          if (!inside && !G.level.segmentBlocked(ex, ey, ez, cx, cy, cz, 0.5)) spot = [ex, ey, ez];
+        }
+      }
+      if (spot) D.teleport(spot[0], spot[1] - 1.24, spot[2]);
+      b.lx = p.x;
+      b.ly = p.y + 0.9;
+      b.lz = p.z;
+    }
+    if (dbody && dbody.visible) {
+      // look at its chest (or, lookMix, toward the chalk outline beside you)
+      let tx = dbody.x + dbody.ux * 1.9;
+      let ty = dbody.y + dbody.uy * 1.9;
+      let tz = dbody.z + dbody.uz * 1.9;
+      const mix = rec.lookMix || 0;
+      if (mix > 0 && dbody.outline.on) {
+        tx += (dbody.outline.x - tx) * mix;
+        ty += (dbody.outline.y + 0.3 - ty) * mix;
+        tz += (dbody.outline.z - tz) * mix;
+      }
+      const ex = p.x;
+      const ey = p.y + 1.24;
+      const ez = p.z;
+      G._setLook(Math.atan2(-(tx - ex), -(tz - ez)), Math.atan2(ty - ey, Math.hypot(tx - ex, tz - ez)));
+    }
     D.step(0.05, { render: true, state: false });
     G.fade = 0;
     D.freeze(true);
@@ -209,8 +301,9 @@ async function snap(page, file, w, h, { grab = false } = {}) {
 try {
   if (ONLY === 'all' || ONLY === 'shots') {
     console.log('desktop screenshots 1920x1080');
-    const { ctx, page } = await newGamePage(1920, 1080);
-    for (const r of RECIPES.filter((x) => (RECIPE ? x.id === RECIPE : !x.only))) {
+    const list = RECIPES.filter((x) => (RECIPE ? x.id === RECIPE : !x.only));
+    const { ctx, page } = await newGamePage(1920, 1080, { extra: RECIPE && list[0] && list[0].url ? list[0].url : '' });
+    for (const r of list) {
       const info = await setScene(page, r);
       if (info.state !== 'playing') console.log('   note: state', info.state);
       await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });

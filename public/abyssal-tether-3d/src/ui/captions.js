@@ -6,6 +6,7 @@
  * Sources (all already on the bus; payload fields used are listed in captionForEvent):
  *   creature:clip {name,event,x,y,z}       the rig's clip events: wind-up, strike, roar, knocks, breathing, snaps ...
  *   creature:call / attack / burst / strike / sighting / retreat / step   the sim events (fallback when no rig clip)
+ *   dresser:tick / hum / measure / saw     THE DRESSER (sim/dresser3d.js): [Ticking] [Humming] [Scraping] [Sawing]
  *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
@@ -47,6 +48,11 @@ export const RULES = Object.freeze({
   skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
   skitBite: R('[A sharp bite]', 'creature', 2, 'skitstrike', 1.2),
   skitMiss: R('[Small jaws snap, missing]', 'creature', 1, 'skitstrike', 1.2),
+  // THE DRESSER (sim/dresser3d.js): the line, the work-song, the chalk beside you while it measures, the saw at your ring
+  dTick: R('[Ticking]', 'creature', 1, 'dtick', 6),
+  dHum: R('[Humming]', 'creature', 1, 'dhum', 8),
+  dScrape: R('[Scraping]', 'creature', 2, 'dscrape', 3),
+  dSaw: R('[Sawing]', 'creature', 2, 'dsaw', 2),
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
@@ -149,6 +155,14 @@ export function captionForEvent(type, p) {
       return RULES.retreat;
     case 'creature:step':
       return finite(e.intensity) && e.intensity > 0.5 && (!finite(e.distance) || e.distance < 38) ? RULES.steps : null;
+    case 'dresser:tick':
+      return e.fast || (finite(e.distance) && e.distance < 24) ? RULES.dTick : null;
+    case 'dresser:hum':
+      return !finite(e.distance) || e.distance < 36 ? RULES.dHum : null;
+    case 'dresser:measure':
+      return RULES.dScrape;
+    case 'dresser:saw':
+      return RULES.dSaw;
     case 'platform:crumble':
       return RULES.crumble;
     case 'rope:slip':
@@ -234,6 +248,10 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:sighting',
   'creature:retreat',
   'creature:step',
+  'dresser:tick',
+  'dresser:hum',
+  'dresser:measure',
+  'dresser:saw',
   'platform:crumble',
   'rope:slip',
   'rope:jolt',

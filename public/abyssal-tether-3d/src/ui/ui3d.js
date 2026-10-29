@@ -120,6 +120,8 @@ const DEATH_COPY = {
   hazard: { kicker: 'Old iron', message: 'The ironwork was waiting. It has waited for others.' },
   fall: { kicker: 'No floor', message: 'The dark had no bottom, only those who fell before.' },
   creature: { kicker: 'Closer than it sounded', message: 'It wears you now.' },
+  // THE DRESSER (sim/dresser3d.js): it reached you while you were whole
+  dressed: { kicker: 'Measured. Cut. Laid.', message: 'DRESSED. SOMEONE WILL BUILD WITH YOU.' },
 };
 
 const pct = fmtPct;

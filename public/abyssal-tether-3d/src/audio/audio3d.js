@@ -2266,6 +2266,13 @@ export class AudioManager3D {
       'trigger:call': this._onTriggerCall,
       'creature:step': this._onCreatureStep,
       'creature:call': this._onCreatureCall,
+      // THE DRESSER (sim/dresser3d.js): the line's tick, the hummed work-song, the chalk, the saw (its cut sounds as a snapped ring)
+      'dresser:tick': this._onDresserTick,
+      'dresser:hum': this._onDresserHum,
+      'dresser:measure': this._onDresserChalk,
+      'dresser:saw': this._onDresserSaw,
+      'dresser:stagger': this._onDresserStagger,
+      'dresser:spoiled': this._onDresserSpoiled,
       'creature:burst': this._onCreatureBurst,
       'creature:attack': this._onCreatureAttack,
       'creature:strike': this._onCreatureStrike,
@@ -4032,6 +4039,195 @@ export class AudioManager3D {
     param.setValueAtTime(f, t);
     param.linearRampToValueAtTime(f * 1.55, t + 0.9);
     param.exponentialRampToValueAtTime(f * 0.68, t + 2.7);
+  }
+
+  // ---- THE DRESSER (sim/dresser3d.js): it makes almost no sound. The line ticks (a knot through a brass eye, dry, irregular,
+  // louder and quicker while it measures you), it hums a three-note work-song under the hood, the chalk scrapes beside you while
+  // it measures, the line saws at your ring for the last second. All synthesised, placed at the source (HRTF while there is room).
+
+  /** The measuring line's tick (and, often, its double: tick-tick). */
+  _onDresserTick(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const fast = !!p.fast;
+    const lvl = (fast ? 1.5 : 0.95) * U.clamp(num(p.intensity, 0.6), 0.1, 1);
+    if (lvl * sp.gain < 0.012 || this._countAlive('dtick') >= 3) return;
+    const v = this._begin('dtick', 1, 0.05, 0.3 + sp.delay, this.busCreature, lvl * this._floor('near', sp.d, fast ? 0.3 : 0), 0, sp.send * 0.6, Math.max(sp.cutoff, 3000), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', rand(2600, 3800), 7);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.9, 0.0008, 0.006);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'triangle', rand(1500, 1950), t);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.22, 0.0005, 0.012);
+    o.connect(og);
+    og.connect(v.out);
+    if (Math.random() < 0.55) this._tick(g.gain, t + rand(0.07, 0.12), 0.5, 0.006); // tick-tick
+    this._commit(v);
+  }
+
+  /** The work-song: one recurring three-note motif (G, B flat, A) hummed low and nasal under the hood, a slow vibrato. */
+  _onDresserHum(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const lvl = 0.6;
+    if (lvl * sp.gain < 0.01) return;
+    const dur = 2.7;
+    const v = this._begin('dhum', 1, 3, dur + 0.4 + sp.delay, this.busCreature, lvl * this._floor('near', sp.d, 0.1), 0, Math.max(sp.send, 0.4), Math.min(Math.max(sp.cutoff, 900), 2600), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const NOTES = [98, 116.54, 110];
+    const AT = [0, 0.78, 1.5];
+    const o1 = this._vOsc(v, 'sawtooth', NOTES[0], t);
+    const o2 = this._vOsc(v, 'sawtooth', NOTES[0] * 1.005, t);
+    for (let i = 1; i < 3; i++) {
+      o1.frequency.setTargetAtTime(NOTES[i], t + AT[i], 0.05);
+      o2.frequency.setTargetAtTime(NOTES[i] * 1.005, t + AT[i], 0.05);
+    }
+    const lfo = this._vOsc(v, 'sine', 5.1, t);
+    const lg = this._vGain(v, 1.1);
+    lfo.connect(lg);
+    lg.connect(o1.frequency);
+    lg.connect(o2.frequency);
+    const lp = this._vFilter(v, 'lowpass', 720, 0.6);
+    const nasal = this._vFilter(v, 'bandpass', 290, 1.6);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.28);
+    for (let i = 1; i < 3; i++) {
+      g.gain.linearRampToValueAtTime(0.3, t + AT[i]);
+      g.gain.linearRampToValueAtTime(0.5, t + AT[i] + 0.14);
+    }
+    g.gain.setValueAtTime(0.5, t + dur - 0.6);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    const body = this._vGain(v, 0.35);
+    o1.connect(lp);
+    o2.connect(lp);
+    lp.connect(nasal);
+    nasal.connect(g);
+    lp.connect(body);
+    body.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** Measuring: chalk scraping on the stone beside you (strokes and squeaks) for the 3 s it draws your outline. */
+  _onDresserChalk(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const dur = 3.0;
+    const v = this._begin('dchalk', 2, 1, dur + 0.3 + sp.delay, this.busCreature, 0.9 * this._floor('near', sp.d, 0.35), 0, sp.send * 0.5, 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const n = this._vNoise(v, this._pink, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 1900, 2.4);
+    const g = this._vGain(v, 0);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    let tt = t + 0.05;
+    while (tt < t + dur - 0.2) {
+      const len = rand(0.18, 0.42);
+      bp.frequency.setValueAtTime(rand(1500, 2600), tt);
+      g.gain.setValueAtTime(0, tt);
+      g.gain.linearRampToValueAtTime(rand(0.35, 0.6), tt + 0.03);
+      g.gain.setValueAtTime(rand(0.25, 0.5), tt + len - 0.04);
+      g.gain.linearRampToValueAtTime(0, tt + len);
+      if (Math.random() < 0.45) {
+        // a squeak of chalk catching on the grain
+        const o = this._vOsc(v, 'sine', rand(2300, 2900), tt + len * 0.3);
+        o.frequency.linearRampToValueAtTime(rand(2900, 3500), tt + len * 0.3 + 0.08);
+        const og = this._vGain(v, 0);
+        this._perc(og.gain, tt + len * 0.3, 0.08, 0.01, 0.04);
+        o.connect(og);
+        og.connect(v.out);
+      }
+      tt += len + rand(0.05, 0.16);
+    }
+    this._commit(v);
+  }
+
+  /** The cut: the taut line saws at your ring for a second (a rasping buzz in strokes, rising), placed at the ring. */
+  _onDresserSaw(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const dur = 1.0;
+    const v = this._begin('dsaw', 3, 0.5, dur + 0.25 + sp.delay, this.busCreature, 1.0 * this._floor('near', sp.d, 0.45), 0, sp.send * 0.4, 0, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sawtooth', 105, t);
+    o.frequency.linearRampToValueAtTime(165, t + dur);
+    const am = this._vGain(v, 0);
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'bandpass', 3200, 1.5);
+    const ng = this._vGain(v, 0);
+    const lp = this._vFilter(v, 'lowpass', 1800, 0.8);
+    o.connect(lp);
+    lp.connect(am);
+    n.connect(hp);
+    hp.connect(ng);
+    am.connect(v.out);
+    ng.connect(v.out);
+    // strokes, back and forth, quickening
+    let tt = t;
+    let k = 0;
+    while (tt < t + dur) {
+      const st = 0.11 - 0.035 * ((tt - t) / dur);
+      am.gain.setValueAtTime(0.05, tt);
+      am.gain.linearRampToValueAtTime(0.42, tt + st * 0.45);
+      am.gain.linearRampToValueAtTime(0.06, tt + st);
+      ng.gain.setValueAtTime(0.02, tt);
+      ng.gain.linearRampToValueAtTime(0.32 + 0.1 * (k % 2), tt + st * 0.5);
+      ng.gain.linearRampToValueAtTime(0.03, tt + st);
+      tt += st;
+      k++;
+    }
+    am.gain.setTargetAtTime(0, t + dur, 0.03);
+    ng.gain.setTargetAtTime(0, t + dur, 0.03);
+    // the iron singing as the cut goes deeper
+    const ring = this._vOsc(v, 'sine', 2250, t);
+    const rg = this._vGain(v, 0);
+    rg.gain.setValueAtTime(0, t);
+    rg.gain.linearRampToValueAtTime(0.07, t + dur);
+    rg.gain.setTargetAtTime(0, t + dur, 0.15);
+    ring.connect(rg);
+    rg.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A grapple shot through its body: the chisels clatter, a dry knock of the mask. */
+  _onDresserStagger(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    const v = this._begin('dstagger', 2, 0.5, 1.0 + sp.delay, this.busCreature, 1.0 * this._floor('near', sp.d, 0.3), 0, sp.send, Math.max(sp.cutoff, 2500), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    this._tickTrain(v, t, 9, 0.6, 0.6, 2200, 6400, 8, 0.01, 0.6);
+    const o = this._vOsc(v, 'triangle', 420, t);
+    o.frequency.setTargetAtTime(160, t, 0.04);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.5, 0.002, 0.07);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** You are no longer whole: one low falling note under the hood, and it turns away. */
+  _onDresserSpoiled(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    if (sp.gain < 0.02) return;
+    const v = this._begin('dhum', 1, 2, 1.8 + sp.delay, this.busCreature, 0.45 * this._floor('near', sp.d, 0.08), 0, Math.max(sp.send, 0.4), 1800, sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sawtooth', 110, t);
+    o.frequency.setTargetAtTime(82.4, t + 0.3, 0.35);
+    const lp = this._vFilter(v, 'lowpass', 600, 0.6);
+    const g = this._vGain(v, 0);
+    this._swell(g.gain, t, 0.45, 0.2, 0.6, 0.3);
+    o.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
   }
 
   /** Burst: a rising surge of grinding noise, a heavy push-off and a flurry of limb clicks. */
