@@ -1,8 +1,8 @@
 /* ABYSSAL TETHER 3D — objectiveHintView.js
  * The glow that marks a seal's trigger once the player has not found it for 20 s (sim/objectiveHint.js): up to six camera-facing
  * quads in ONE draw call, drawn only while a hint is on (+1 call). Each quad keeps a roughly constant angular size (so it can be
- * seen from across the shaft: world size grows with the distance, clamped), is additive, unlit, ignores the fog, and is depth-tested
- * (a trigger behind a wall is not shown through it). A soft warm core, a breathing rim and a ring that expands from the trigger.
+ * seen from across the shaft: world size grows with the distance, clamped), is additive, unlit, ignores the fog, and is NOT depth-tested
+ * (a trigger behind a wall or under the floor still shows: the whole point of a hint). A soft warm core, a breathing rim and a ring that expands from the trigger.
  * Stereo-correct (camera-facing from each eye's view matrix). Fades in over 1.5 s and out over 0.5 s. Reduced effects: no pulse.
  */
 import * as THREE from 'three';
@@ -76,7 +76,7 @@ export class ObjectiveHintView {
       uniforms: { uTime: { value: 0 }, uK: { value: 0 }, uPulse: { value: 1 } },
       transparent: true,
       depthWrite: false,
-      depthTest: true,
+      depthTest: false, // a hint must show through the floor / wall the trigger is behind (the S1 bell hangs under the grating)
       blending: THREE.AdditiveBlending,
       fog: false,
       toneMapped: false,
