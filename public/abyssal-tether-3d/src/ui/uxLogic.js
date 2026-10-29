@@ -16,6 +16,10 @@
  *   reducedEffects (existing)          fog cards, dust, debris and the wet film thinned; never below governor level 3
  *   bloodWriting                       bool        opt-in (off by default): the Masons' messages in blood on the walls
  *                                                  (render/bloodWriting.js; Renderer3D builds / removes them live)
+ *   radioVoices                        bool        on by default: the team's synthesised radio voices (audio/radio3d.js);
+ *                                                  off = silent, the subtitles (render/commsView.js) still show every line
+ *   signalGlitches                     bool        on by default: static / flicker of the failing signal on the subtitle
+ *                                                  panel; off = a plain panel and the radio static lowered
  *   showBody, dominantHand, haptics, aimAssist, turnSpeed, mouseSensitivity, heightMode/heightOffset... (existing)
  */
 import { UX_LIMITS } from '../sim/config3d.js';

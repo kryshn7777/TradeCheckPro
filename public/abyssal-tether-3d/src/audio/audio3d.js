@@ -57,6 +57,7 @@ import { Music } from './music3d.js';
 import { RopeFx } from './ropeFx3d.js';
 import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
+import { Radio } from './radio3d.js';
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -431,6 +432,9 @@ export class AudioManager3D {
     this._mov = null;
     this._cs = null;
     this._mods = [];
+    this._radio = null; // EXPEDITION: the radio voices (radio3d.js), outside _mods (its own bus, driven by comms:line / comms:end)
+    this._radioDuck = 1; // music multiplier while a line is on air (radio3d.js sets it)
+    this._radioDuckAmb = 1; // ambience multiplier while a line is on air
     this._ctl = { tv: 0, playing: false, dead: false, victory: false, menu: true, ducked: true, speed: 0, hspeed: 0, lethal: 17, silence: 0, thin: 1 };
     this._log = [];
     this._logN = 0;
@@ -800,6 +804,13 @@ export class AudioManager3D {
         mod.broken = true; // the rest of the soundscape carries on without it
         this._warn('build', err);
       }
+    }
+    try {
+      this._radio = new Radio(this);
+      this._radio.build();
+    } catch (err) {
+      this._radio = null; // no radio voices: the subtitles still carry every line
+      this._warn('radio', err);
     }
 
     for (let i = 0; i < this._loops.length; i++) {
@@ -1459,7 +1470,7 @@ export class AudioManager3D {
     const tc = 0.15;
     const fx = this._sfxMul();
     // (LEVEL_FUN_PLAN P5: in a Masons' rest the ambience ducks to REST_DUCK)
-    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1), now, this._thin < 0.9 ? 0.12 : tc);
+    this.kAmbient.set(hushed ? 0 : BUS_LEVEL.ambient * fx * (ducked ? DUCKED.ambient : 1) * (0.35 + 0.65 * this._thin) * (this._rest ? REST_DUCK : 1) * this._radioDuckAmb, now, this._thin < 0.9 ? 0.12 : tc);
     this.kPlayer.set(hushed || ducked ? 0 : BUS_LEVEL.player * fx, now, tc);
     this.kCreature.set(hushed || ducked ? 0 : BUS_LEVEL.creature * fx, now, tc);
     this.kPsych.set(hushed || ducked || dead ? 0 : BUS_LEVEL.psych * fx, now, dead ? 0.08 : tc);
@@ -1574,6 +1585,13 @@ export class AudioManager3D {
         mod.control(dtc, now, game, C);
       } catch (err) {
         this._warn('mod-control', err);
+      }
+    }
+    if (this._radio) {
+      try {
+        this._radio.control(dtc, now, game);
+      } catch (err) {
+        this._warn('radio', err);
       }
     }
 
@@ -2298,6 +2316,9 @@ export class AudioManager3D {
       'game:goal': this._onGameGoal,
       'ui:click': this._onUiClick,
       'settings:changed': this._onSettings,
+      // EXPEDITION (sim/comms3d.js via game.js): a transmission goes on air / leaves it (radio3d.js speaks it)
+      'comms:line': this._onCommsLine,
+      'comms:end': this._onCommsEnd,
       'xr:start': this._onXRStart,
       'xr:sessionstart': this._onXRStart,
     };
@@ -2412,6 +2433,14 @@ export class AudioManager3D {
     if (p.settings && typeof p.settings === 'object') this.settings = p.settings;
     this._polledVolume = U.clamp(num(this.settings.volume, this._volume), 0, 1);
     this.setVolume(this._polledVolume);
+  }
+
+  _onCommsLine(p) {
+    if (this._radio) this._radio.speak(p);
+  }
+
+  _onCommsEnd(p) {
+    if (this._radio) this._radio.end(p);
   }
 
   _onUiClick() {
@@ -2852,6 +2881,7 @@ export class AudioManager3D {
       peakVoices: this._peakVoices,
       hrtfVoices: this._hrtfCount,
       caps: { voices: this._maxVoices, hrtf: this._maxHrtf },
+      radio: this._radio ? this._radio.debug() : null,
       silence: +this._silence.toFixed(3),
       thin: +this._thin.toFixed(3),
       threat: +this._tv.toFixed(3),
