@@ -149,7 +149,7 @@ async function newPage(browser, { xr = false } = {}) {
 }
 
 async function boot(page, base) {
-  await page.goto(base + '/index.html');
+  await page.goto(base + '/index.html?hunt=always');
   await page.waitForFunction(() => window.AT3D && window.AT3D.game && window.AT3D.game.booted, null, { timeout: 180000 });
 }
 const st = (page) => page.evaluate(() => window.AT3D.debug.state());

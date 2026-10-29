@@ -75,6 +75,7 @@ const AMBIENT_SCALE = 3.0; // theme.ambient → hemisphere intensity
 const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read as moonlit lines, walls keep their dark)
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_THICKNESS = 2; // the haze is twice as thick: the distance fog closes in at half the range (the volumetric fog doubles in atmosphere.js)
+const FOG_WARM_DESAT = 0.65; // how much of a warm fog's colour is drawn out (0 = none): S5 / S8 read as an orange wash at full saturation
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
@@ -736,6 +737,13 @@ export class Renderer3D {
     const tk = this.threat;
     const fog = this.scene.fog;
     fog.color.copy(th.fog).multiplyScalar(FOG_GAIN);
+    // The warm sections' fog (S5 / S6 / S8: brown, amber) is the whole backdrop and the far wall of every view, and it moves with the head:
+    // at full saturation it read as an orange screen stuck to the camera. Pull warm hues toward their own grey (luminance kept);
+    // the blue / green fogs (r <= b) are untouched.
+    const lum0 = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
+    const warm = THREE.MathUtils.clamp(((fog.color.r - fog.color.b) / Math.max(fog.color.r, 1e-4)) * 1.6, 0, 1);
+    const keep = 1 - FOG_WARM_DESAT * warm;
+    fog.color.setRGB(lum0 + (fog.color.r - lum0) * keep, lum0 + (fog.color.g - lum0) * keep, lum0 + (fog.color.b - lum0) * keep);
     const lum = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
     const lumFloor = FOG_LUM_FLOOR * (1 - 0.95 * dark); // the haze may go darker than the floor of the other difficulties
     if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
@@ -779,6 +787,9 @@ export class Renderer3D {
     this._game = game || this._game;
     this.lighting.update(d, game, th, tgt, this._lampFlick);
     this._fogInfo.near = fog.near;
+    // Settings › Display › Blood writing (off by default): built / removed live; a fresh build compiles and uploads now
+    const gs = this._game && this._game.settings;
+    if (gs && this.levelView.setBlood(gs.bloodWriting === true)) this.precompile();
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
     this.ropeView.update(d, game, head);
     this.fx.godRays.materials = this.materials;

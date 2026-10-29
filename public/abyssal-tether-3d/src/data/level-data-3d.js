@@ -67,8 +67,13 @@
  *   'bones'          mineral bones half-sunk in stone
  *   'grate'          the gate grate (visual of the gate box)
  *
+ * Blood writing (Settings › Display, off by default) is NOT decor: `blood` below (data/blood-writing-3d.js) is read only by
+ * render/bloodWriting.js; nothing else (bake, hashes, dressing, colliders, verify counts) ever sees it.
+ *
  * DOM-free, three.js-free: importable from Node.
  */
+
+import { BLOOD_TEXTS } from './blood-writing-3d.js';
 
 const solids = [];
 const hazards = [];
@@ -233,7 +238,7 @@ dec('chain', -1.5, 1.775, -1, 0.5, 10.45, 0.5, 0, { link: 0.9 });
 dec('arch', -4, 5, 10.5, 12, 10, 1.2, 0); // the Threshold arch on the south wall, over the spawn
 dec('statue', -9.5, 3.2, 9.5, 2.2, 6.4, 2.2, -PI / 4); // Lanternwrights flanking the Threshold, facing the chimney
 dec('statue', 1.5, 3.2, 9.5, 2.2, 6.4, 2.2, PI / 4);
-dec('plaque', -4, 2.2, 10.85, 3.6, 0.9, 0.15, 0, { text: 'HERE THE DESCENT BEGINS. TRUST THE RING, NOT THE FLOOR.' });
+dec('plaque', -4, 2.2, 10.85, 3.6, 0.9, 0.15, 0, { text: 'HERE THE DESCENT BEGINS. TRUST THE RING, NOT THE FLOOR. THE FLOOR KEEPS.' });
 dec('lamp', -9.9, 1.8, 6, 0.4, 0.8, 0.4, -PI / 2, { lit: true, flicker: 0.35 });
 dec('chain', 9, 14, 6, 0.6, 30, 0.6, 0, { link: 1 });
 dec('chain', 4.5, 22, -9, 0.6, 26, 0.6, 0, { link: 1 });
@@ -310,9 +315,9 @@ dec('far-structure', -95, -40, 8, 26, 110, 26, 0, { variant: 'statue' }); // a c
 dec('far-structure', -70, -60, -40, 16, 90, 16, 0, { variant: 'tower' });
 dec('statue', -28, -15.5, -9.5, 3.5, 19, 3.5, -PI / 2); // a colossal Lanternwright on the far pier
 dec('cables', 10, -12, -10, 1, 1, 1, 0, { x2: -33, y2: -20, z2: -10 });
-dec('plaque', -33.9, -24, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT.' });
+dec('plaque', -33.9, -24, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT. IT DOES NOT SEND US BACK.' });
 // LORE (LEVEL_FUN_PLAN item 6): one plaque on each safe line, by its supplies, under a lamp that is already there.
-dec('plaque', -16, -33.4, 10.85, 3.6, 0.9, 0.15, 0, { text: 'WE LOWERED THE FIRST LAMP BY HAND. IT TOOK A YEAR.', lore: true });
+dec('plaque', -16, -33.4, 10.85, 3.6, 0.9, 0.15, 0, { text: 'A YEAR TO LOWER THE FIRST LAMP. THE ROPE CAME BACK WET.', lore: true });
 dec('arch', -11.5, -20, -10.6, 16, 18, 1.2, PI);
 dec('arch', -11.5, -20, 10.6, 16, 18, 1.2, 0);
 dec('chain', -15, -22, 6, 0.6, 26, 0.6, 0, { link: 1 });
@@ -391,8 +396,8 @@ A('s3-winch', -12, -90, -9.4, 'ring', 'objective', { mount: 'mover' });
 
 dec('ribs', -33.7, -86, 6, 0.6, 22, 10, -PI / 2);
 dec('bones', 10, -62, 9, 3, 2, 3, 0.4);
-dec('plaque', 10.85, -64.5, -6, 0.15, 0.9, 3.6, PI / 2, { text: 'NINTH GALLERY — CLOSED. THE STONE HAS BEEN LISTENING.' });
-dec('plaque', -33.85, -94.4, -1.5, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE GALLERY FELL TWICE. THE MASONS BUILT IT A THIRD TIME.', lore: true }); // the shelf (safe line)
+dec('plaque', 10.85, -64.5, -6, 0.15, 0.9, 3.6, PI / 2, { text: 'NINTH GALLERY — CLOSED FROM THIS SIDE. THE STONE HAS BEEN LISTENING.' });
+dec('plaque', -33.85, -94.4, -1.5, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE GALLERY FELL TWICE. IT WAS REBUILT WITH THOSE IT FELL ON.', lore: true }); // the shelf (safe line)
 // the cage and its chain swing with the cage ring (MOVERS: `mov-s3-cage` carries them; same box as ever, so the bakes keep it)
 dec('cage', -8, -77, 7, 2, 3, 2, 0, { id: 'cage-s3' });
 dec('chain', -8, -68, 7, 0.4, 15, 0.4, 0, { link: 0.7, id: 'cage-s3-chain' });
@@ -454,8 +459,8 @@ dec('far-structure', 40, -190, -145, 40, 180, 20, 0, { variant: 'statue' });
 dec('far-structure', -10, -230, -120, 120, 14, 10, 0, { variant: 'bridge' });
 dec('shaft-light', -30, -180, -110, 10, 240, 10, 0, { color: '#b8f0e0' });
 dec('shaft-light', 50, -170, -80, 8, 220, 8, 0, { color: '#b8f0e0' });
-dec('plaque', -16, -103.6, -5.5, 3.6, 0.9, 0.15, PI, { text: 'DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL.' });
-dec('plaque', 9, -117.4, -10.85, 3.6, 0.9, 0.15, PI, { text: 'THE VAULT WAS NOT DUG. WE FOUND IT, AND IT LISTENED.', lore: true }); // the shelf (safe line)
+dec('plaque', -16, -103.6, -5.5, 3.6, 0.9, 0.15, PI, { text: 'DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL. IT HAS LEARNED OUR KNOCKS.' });
+dec('plaque', 9, -117.4, -10.85, 3.6, 0.9, 0.15, PI, { text: 'THE VAULT WAS NOT DUG. IT WAS FOUND FULL, AND LISTENING.', lore: true }); // the shelf (safe line)
 dec('ribs', -40, -150, -15, 30, 50, 2, 0);
 dec('machinery', 9, -108, -9, 3, 6, 3, 0);
 dec('glyphs', 10.9, -112, 4, 0.1, 1.5, 12, PI / 2);
@@ -531,8 +536,8 @@ dec('ribs', -3.25, -168, -2, 0.5, 14, 12, PI / 2);
 dec('ribs', -20.75, -182, -1, 0.5, 12, 8, -PI / 2);
 dec('pipe', -20.4, -178, -8.4, 0.8, 50, 0.8, 0);
 dec('pipe', -3.6, -192, 8.4, 0.8, 22, 0.8, 0);
-dec('plaque', -3.15, -150.4, 6, 0.15, 0.9, 3.6, PI / 2, { text: 'THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF.' });
-dec('plaque', -3.15, -183.3, -7.1, 0.15, 0.9, 3.2, PI / 2, { text: 'A MASON CUT EACH LEDGE, THEN WENT DOWN TO CUT THE NEXT.', lore: true }); // step 4 (safe line)
+dec('plaque', -3.15, -150.4, 6, 0.15, 0.9, 3.6, PI / 2, { text: 'THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF. THEY WERE NOT RETURNED.' });
+dec('plaque', -3.15, -183.3, -7.1, 0.15, 0.9, 3.2, PI / 2, { text: 'A MASON CUT EACH LEDGE. THE LEDGE BELOW WAS CUT FROM HIM.', lore: true }); // step 4 (safe line)
 dec('glyphs', -12, -165, -8.9, 10, 1.2, 0.1, 0);
 dec('cage', -7, -190, 6, 2, 3, 2, 0);
 dec('shaft-light', -12, -180, 0, 4, 50, 4, 0, { color: '#7a3b22' });
@@ -597,9 +602,9 @@ H('s6-rebar-e', 9.7, 10, -254, -236, -11, 11, 'rebar', { normal: { x: -1, y: 0, 
 chainRing('s6-up', 2, -266, 6, 61, 'ring', 'recovery');
 H('s6-rebar-nm', 5.5, 8.5, -227, -226.5, -8.5, 0.5, 'rebar', { onlyIn: NM }); // under the ledge's far end
 
-dec('plaque', -16, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE LONG STAIR — FOR THE PATIENT' });
-dec('plaque', -8, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE THROAT — FOR THE LATE' });
-dec('plaque', -33.85, -265.2, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE PATIENT REACH THE BOTTOM. THE LATE ARE CARRIED THERE.', lore: true }); // shelf 5 (safe line)
+dec('plaque', -16, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE LONG STAIR — FOR THE PATIENT, WHILE THE LAMPS HOLD.' });
+dec('plaque', -8, -206.4, -5.85, 3.2, 0.9, 0.15, PI, { text: 'THE THROAT — FOR THE LATE. IT IS NEVER EMPTY.' });
+dec('plaque', -33.85, -265.2, -9, 0.15, 0.9, 3.6, -PI / 2, { text: 'THE PATIENT REACH THE BOTTOM. THE LATE ARE CARRIED THERE, INSIDE.', lore: true }); // shelf 5 (safe line)
 dec('lamp', -19.6, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.25 });
 dec('lamp', -4.4, -207, -5.6, 0.4, 0.8, 0.4, 0, { lit: true, flicker: 0.6 });
 dec('glyphs', -13.05, -240, 0, 0.1, 26, 16, PI / 2); // carved down the dividing wall, both faces
@@ -694,7 +699,7 @@ dec('statue', 22, -380, 34, 6, 34, 6, PI / 4);
 dec('bones', 20, -421, -30, 8, 4, 8, 0.7);
 dec('cage', 22, -340, -32, 3, 4, 3, 0);
 dec('chain', 22, -312, -32, 0.5, 52, 0.5, 0, { link: 0.9 });
-dec('plaque', -51.85, -352, 26, 0.15, 0.9, 3.6, -PI / 2, { text: 'IT WEARS OUR WORK.' });
+dec('plaque', -51.85, -352, 26, 0.15, 0.9, 3.6, -PI / 2, { text: 'IT WEARS OUR WORK. NONE OF OUR STONE WAS QUARRIED.' });
 dec('shaft-light', 20, -350, -26, 8, 120, 8, 0, { color: '#b8f0e0' });
 light(-12, -414, 0, '#b8f0e0', 2.4, 80, 0, { far: true }); // cold glow under the spire's tip
 // ART PASS S7: the spire is the lit landmark (cold, top to tip); the corner colossi hold warm lanterns far out.
@@ -747,8 +752,8 @@ dec('ribs', 17.25, -445, 0, 1.5, 30, 30, PI / 2);
 dec('ribs', -21.25, -450, 0, 1.5, 30, 30, -PI / 2);
 dec('glyphs', -2, -540, -9.9, 14, 2, 0.1, PI);
 dec('machinery', 6, -553, -7, 3, 5, 3, 0);
-dec('plaque', -2, -546.8, 9.85, 3.8, 0.9, 0.15, 0, { text: 'BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE.' });
-dec('plaque', -10, -468.4, 19.85, 3.6, 0.9, 0.15, 0, { text: 'THE LAST LANTERNWRIGHTS RESTED HERE. NONE OF THEM CLIMBED BACK.', lore: true }); // the first step (safe line)
+dec('plaque', -2, -546.8, 9.85, 3.8, 0.9, 0.15, 0, { text: 'BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE, AND WHAT IT HOLDS.' });
+dec('plaque', -10, -468.4, 19.85, 3.6, 0.9, 0.15, 0, { text: 'THE LAST LANTERNWRIGHTS RESTED HERE. THE WALLS STILL HAVE THEIR SHAPE.', lore: true }); // the first step (safe line)
 dec('statue', -7, -552, 22, 2.2, 8, 2.2, PI);
 dec('statue', 1, -552, 22, 2.2, 8, 2.2, PI);
 dec('still-lamp', -3, -552.5, 26.5, 1.2, 2.4, 1.2, 0);
@@ -877,12 +882,12 @@ const nooks = [
 ];
 // how each rest is told: the plaque (S4, the plan's one), the lure's plaque (S5), a carved glyph band at each (no light: the
 // rests sit by lamps that are already there; plaques and glyphs are not in the lightmap / GI hashes)
-dec('plaque', -18.2, -103.75, -23.88, 2.6, 0.55, 0.15, PI, { text: "THE MASONS' REST. IT CANNOT FOLLOW." });
-dec('plaque', -20.92, -198.4, 1.6, 0.15, 0.6, 1.6, -PI / 2, { text: 'LET IT KNOCK.' });
+dec('plaque', -18.2, -103.75, -23.88, 2.6, 0.55, 0.15, PI, { text: "THE MASONS' REST. IT CANNOT FOLLOW. IT WAITS." });
+dec('plaque', -20.92, -198.4, 1.6, 0.15, 0.6, 1.6, -PI / 2, { text: 'LET IT KNOCK. DO NOT KNOCK BACK.' });
 dec('glyphs', -20.95, -197.6, -1.4, 0.1, 0.6, 1.8, -PI / 2);
 dec('glyphs', -33.95, -240.9, -8.6, 0.1, 0.7, 1.8, -PI / 2);
 // S7 (item 11): the teach line on a tablet at the landing's north lip, facing the checkpoint
-dec('tablet', -12, -287.3, -10.6, 2.6, 1.4, 0.2, PI, { text: 'THE NAVE OPENS FOR THOSE WHO HANG.' });
+dec('tablet', -12, -287.3, -10.6, 2.6, 1.4, 0.2, PI, { text: 'THE NAVE OPENS FOR THOSE WHO HANG. MANY STILL DO.' });
 
 // =============================================================================
 // MOVERS AND LANES (LEVEL_FUN_PLAN P4 "machines", items 7 and 9)
@@ -1135,7 +1140,7 @@ const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.as
 // reddens the deep mounts (render/levelView.js), the laser dot goes hollow beyond it (render/handsView.js), S6 says why once.
 const sections = [
   {
-    id: 's1', name: 'The Threshold', subtitle: 'Where the line is learned',
+    id: 's1', name: 'The Threshold', subtitle: 'Where the descent begins. Again.',
     yTop: 40, yBottom: -8,
     shaft: { minX: -11, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: -4, y: 0.4, z: 8.5, yaw: 0 },
@@ -1168,7 +1173,7 @@ const sections = [
     triggers: [{ y: -6.5, name: 'rumble', data: { intensity: 0.15 } }],
   },
   {
-    id: 's2', name: 'The Long Swing', subtitle: 'Momentum is a promise',
+    id: 's2', name: 'The Long Swing', subtitle: 'Every fall here is kept',
     yTop: -8, yBottom: -58,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 8, y: -21.6, z: -6, yaw: PI / 2 },
@@ -1182,8 +1187,8 @@ const sections = [
       },
       {
         y: -28.5, duration: 6,
-        text: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
-        desktop: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor does not.',
+        text: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor keeps.',
+        desktop: 'Falling? Fire again — any anchor will catch you. The rope forgives; the floor keeps.',
       },
       // LEVEL_FUN_PLAN P3: the S2 verb (moved up from the lower hall's yank hint: the grip that yanks also hauls)
       {
@@ -1200,7 +1205,7 @@ const sections = [
     triggers: [{ y: -30, name: 'rumble', data: { intensity: 0.25 } }],
   },
   {
-    id: 's3', name: 'Broken Gallery', subtitle: 'Every fall is a question',
+    id: 's3', name: 'Broken Gallery', subtitle: 'Closed from this side',
     yTop: -58, yBottom: -98,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 7, y: -65.6, z: 0, yaw: PI / 2 },
@@ -1222,7 +1227,7 @@ const sections = [
     ],
   },
   {
-    id: 's4', name: 'The Listening Vault', subtitle: 'Something answered',
+    id: 's4', name: 'The Listening Vault', subtitle: 'Something answered the knock',
     yTop: -98, yBottom: -150,
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     reach: { normal: 30, nightmare: 28, abyss: 26 }, // the rings start to rust (REACH below)
@@ -1231,7 +1236,7 @@ const sections = [
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
     creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } } }),
     // LEVEL_FUN_PLAN P3: the S4 verb (the catwalk's cold lamps)
-    hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps.', desktop: 'Walk up to each cold lamp and look at it.' }],
+    hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps. Light them before the walls notice.', desktop: 'Walk up to each cold lamp and look at it. Light them before the walls notice.' }],
     triggers: [
       // Fires as the player stands on the catwalk over the Vault: the predator
       // crosses the Vault's far wall (inner face z = −160) and is gone. Path:
@@ -1243,7 +1248,7 @@ const sections = [
     ],
   },
   {
-    id: 's5', name: 'The Gullet Stair', subtitle: 'It has your scent',
+    id: 's5', name: 'The Gullet Stair', subtitle: 'It has your scent. It had theirs.',
     yTop: -150, yBottom: -204,
     shaft: { minX: -21, maxX: -3, minZ: -9, maxZ: 9 },
     reach: { normal: 29, nightmare: 27, abyss: 25 },
@@ -1252,9 +1257,9 @@ const sections = [
     creature: creature('stalk', true, 130, 1, 0, skit(0, 0, 1)), // Abyss: a skitterling already here
     hints: [
       {
-        y: -151, duration: 5,
-        text: 'Something is coming down after you. Keep moving.',
-        desktop: 'Something is coming down after you. Keep moving.',
+        y: -151, duration: 6,
+        text: 'Something made of the lost is coming down after you. Keep moving.',
+        desktop: 'Something made of the lost is coming down after you. Keep moving.',
       },
       {
         // The S6 fork, briefed here on the first step while the creature is still
@@ -1278,7 +1283,7 @@ const sections = [
     ],
   },
   {
-    id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and thin',
+    id: 's6', name: 'The Two Descents', subtitle: 'Slow and certain, or quick and carried',
     yTop: -204, yBottom: -284,
     shaft: { minX: -34, maxX: 10, minZ: -11, maxZ: 11 },
     reach: { normal: 28, nightmare: 27, abyss: 25 },
@@ -1299,7 +1304,7 @@ const sections = [
     ],
   },
   {
-    id: 's7', name: 'The Hollow Nave', subtitle: 'Nothing to stand on',
+    id: 's7', name: 'The Hollow Nave', subtitle: 'Nothing to stand on. Nothing to bury.',
     yTop: -284, yBottom: -420,
     shaft: { minX: -52, maxX: 28, minZ: -40, maxZ: 40 },
     reach: { normal: 26, nightmare: 25, abyss: 24 },
@@ -1322,7 +1327,7 @@ const sections = [
     ],
   },
   {
-    id: 's8', name: 'The Last Throat', subtitle: 'Down. Now.',
+    id: 's8', name: 'The Last Throat', subtitle: 'Down. Now. Before the walls wake.',
     yTop: -420, yBottom: -562,
     shaft: { minX: -22, maxX: 18, minZ: -20, maxZ: 20 },
     reach: { normal: 26, nightmare: 25, abyss: 24 },
@@ -1332,8 +1337,8 @@ const sections = [
     hints: [
       {
         y: -548, duration: 5,
-        text: 'The grate — run for the light.',
-        desktop: 'The grate — run for the light.',
+        text: 'The grate — run for the light. Do not look at the walls.',
+        desktop: 'The grate — run for the light. Do not look at the walls.',
       },
     ],
     triggers: [
@@ -1368,4 +1373,5 @@ export const LEVEL_DATA_3D = {
   lanes,
   nooks, // the Masons' rests (see NOOKS above)
   squalls, // the wind squalls (see SQUALLS above)
+  blood: BLOOD_TEXTS, // Settings › Display › Blood writing (off by default): render/bloodWriting.js only, never decor
 };

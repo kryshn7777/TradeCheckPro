@@ -44,6 +44,7 @@ import { decorColliders } from '../sim/decorColliders.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
 import { SealView } from './objectivesView.js';
+import { BloodWriting } from './bloodWriting.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -747,6 +748,11 @@ function farShape(P, list, variant, w, h, d) {
 }
 
 const PLAQUE_TYPES = new Set(['sign', 'plaque', 'inscription', 'tablet']);
+/** The level's blood writings (data/blood-writing-3d.js via LEVEL_DATA_3D.blood; not decor: Level3D keeps the raw data). */
+function bloodEntries(level) {
+  const d = level && level.data;
+  return d && Array.isArray(d.blood) ? d.blood : [];
+}
 
 // =============================================================================
 // Shape-select geometries (anchors, glyphs, hazards)
@@ -4099,6 +4105,9 @@ export class LevelView {
     this.stats = { solids: 0, anchors: 0, hazards: 0, decor: 0, decorSkipped: 0, skippedTypes: [] };
     this._chunks = []; // { obj, box }
     this._plaques = []; // { mesh, pos }
+    // Settings › Display › Blood writing (off by default): one merged mesh, built only while on (setBlood, render/bloodWriting.js)
+    this._blood = new BloodWriting(this.root);
+    this._bloodOn = false;
     this._unitBox = new THREE.BoxGeometry(1, 1, 1);
     this._glyphGeo = buildGlyphGeometry();
     this._mountGeos = buildMountGeometries();
@@ -4139,6 +4148,7 @@ export class LevelView {
   }
 
   clear() {
+    this._blood.dispose();
     for (const c of this.root.children.slice()) {
       this.root.remove(c);
       c.traverse((o) => {
@@ -4186,6 +4196,22 @@ export class LevelView {
     this._buildDressing(level);
     this._buildColossal(level, b);
     this._buildLightGlows(level);
+    if (this._bloodOn) this._blood.build(bloodEntries(level));
+  }
+
+  /**
+   * Settings › Display › Blood writing: builds (on) or removes (off) the writings of the current level. Returns true when it
+   * has just built them (the caller precompiles: Renderer3D.update).
+   */
+  setBlood(on) {
+    on = !!on;
+    if (on === this._bloodOn) return false;
+    this._bloodOn = on;
+    if (!on) {
+      this._blood.dispose();
+      return false;
+    }
+    return this.level ? this._blood.build(bloodEntries(this.level)) : false;
   }
 
   /** Layout identity: variant + object ids (fresh Level3D copies of the same data match). */
@@ -5693,6 +5719,7 @@ export class LevelView {
       const p = this._plaques[i];
       p.mesh.visible = p.pos.distanceTo(head) < PLAQUE_DIST * this._detailScale;
     }
+    this._blood.update(head, this._detailScale);
     if (fogInfo && fogInfo.color && this._colossal) {
       // Silhouettes: well darker than the haze; the capped fog (stronger with
       // distance) layers near giants over far ones.

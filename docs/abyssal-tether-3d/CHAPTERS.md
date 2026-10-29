@@ -145,17 +145,19 @@ optional rewards for players who look around. If a playtest shows a truth not la
 
 ### 2.7 Chapter I's plaques, read twice
 
-All seven existing plaques stay word for word; each gains a second reading after the endings.
+The seven core plaques keep their canon phrase word for word; the owner's darker pass (2026-10-29, [plans/STORY.md](plans/STORY.md))
+adds a riddling tail to each, and the opt-in blood writing tells the same story in the menders' own words. Each gains a second
+reading after the endings.
 
-| Plaque (existing) | First read | Second read |
+| Plaque (as shipped; the canon phrase first) | First read | Second read |
 |---|---|---|
-| HERE THE DESCENT BEGINS. TRUST THE RING, NOT THE FLOOR. | Tutorial advice | The floor is where your bodies stay. The rings carry the waking. |
-| THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT. | Pilgrimage | They were bound to it. They could only go down. |
-| NINTH GALLERY — CLOSED. THE STONE HAS BEEN LISTENING. | Creepy | The stone is people. |
-| DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL. | A warning | The Keepers' fear, and the key to ending C |
-| THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF. | Ominous | The Mason being born |
-| IT WEARS OUR WORK. | It is built into the walls | "Our work" is our bodies |
-| BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE. | You reached the end | The Keepers' law, which Lamphold broke |
+| HERE THE DESCENT BEGINS. TRUST THE RING, NOT THE FLOOR. THE FLOOR KEEPS. | Tutorial advice | The floor is where your bodies stay. The rings carry the waking. |
+| THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT. IT DOES NOT SEND US BACK. | Pilgrimage | They were bound to it. They could only go down. |
+| NINTH GALLERY — CLOSED FROM THIS SIDE. THE STONE HAS BEEN LISTENING. | Creepy | The stone is people. |
+| DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL. IT HAS LEARNED OUR KNOCKS. | A warning | The Keepers' fear, and the key to ending C |
+| THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF. THEY WERE NOT RETURNED. | Ominous | The Mason being born |
+| IT WEARS OUR WORK. NONE OF OUR STONE WAS QUARRIED. | It is built into the walls | "Our work" is our bodies |
+| BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE, AND WHAT IT HOLDS. | You reached the end | The Keepers' law, which Lamphold broke |
 
 ---
 

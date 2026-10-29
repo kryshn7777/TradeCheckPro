@@ -213,6 +213,15 @@ function scopedBus(bus) {
   return scope;
 }
 
+/** `?hunt=always` turns the Mason's hunt gate off (it hunts regardless of the player's health: tests, captures, debugging). */
+function huntAlways() {
+  try {
+    return typeof location !== 'undefined' && /[?&]hunt=always/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /** `?skitter=off` disables the skitterlings (sim and views). */
 function skitterOff() {
   try {
@@ -2240,6 +2249,8 @@ export class Game3D {
       }
     }
     if (!this.creature) this.creature = nullCreature();
+    // the Mason hunts only while the player is hurt (the menu's attract flight keeps its own inactive creature)
+    if (!attract && !huntAlways() && typeof this.creature.setHuntGate === 'function') this.creature.setHuntGate(true);
     this.skitters = null;
     const SkitterCls = M.skitter && M.skitter.SkitterGroup;
     if (typeof SkitterCls === 'function' && !skitterOff()) {
@@ -3301,6 +3312,7 @@ export class Game3D {
       const rb = rk ? O.refugeBlock : null;
       if (typeof c.setRefuge === 'function') c.setRefuge(rk, rb);
       if (this.skitters && typeof this.skitters.setRefuge === 'function') this.skitters.setRefuge(rk, rb);
+      if (typeof c.setHurt === 'function') c.setHurt(!!(this.health && this.health.low && this.state === 'playing'));
       c.update(dt, this.player, this._runClock);
       if (this._nookPulseT > 0) {
         this._nookPulseT -= dt;

@@ -169,6 +169,11 @@ export const CREATURE_TUNING = {
   // Hunger: every strike that misses makes it `hunger.step` faster for the rest of the section, up to `hunger.max`.
   hunger: { step: 0.05, max: 0.25 },
   annoy: { dur: 3, mul: 1.5, burstDur: 0.3, burstMul: 6, cooldown: 20, radius: 2.2, pad: 0.35 },
+  // Hunt gate (setHuntGate): the Mason hunts only while the player is hurt (health low) and for `huntHold` s after, the scent of blood.
+  // When the hold ends it withdraws up the masonry (never a pop in view): gone once `withdrawFar` m away or after `withdrawMax` s.
+  huntHold: 14,
+  withdrawFar: 60,
+  withdrawMax: 9,
 };
 const T = CREATURE_TUNING;
 
@@ -591,7 +596,70 @@ export class Creature3D {
     this._hit = { t: 0, az: 0 };
 
     if (!this.v) linkBus(this.bus, this); // variants ignore the sighting / call triggers
+    this._gate = false; // setHuntGate: the Mason hunts only while the player is hurt (off = the sim as ever: the tests and the route bots)
     this.reset(null);
+  }
+
+  /**
+   * The hunt gate (owner's call: "the worm chases only when your health is low"). On, every hunting mode of the data is the unseen,
+   * non-lethal dormant one until the player is hurt (setHurt(true), game.js from Health3D.low); the hunt then starts as a section
+   * entry would (it arrives from above, the intro grace) and holds for T.huntHold s after the player is well again, then it withdraws
+   * up the masonry out of sight. A scripted override (S7 escape) is never gated. Skitterlings (variants) are never gated.
+   */
+  setHuntGate(on) {
+    if (this.v) return;
+    this._gate = !!on;
+    this._holdT = 0;
+    this._hurt = false;
+    this._withdraw = false;
+    this._armed = !this._gate || this._override != null;
+  }
+
+  /** The player's health is low right now (Health3D.low); call every frame, it is a flag. */
+  setHurt(low) {
+    this._hurt = !!low;
+  }
+
+  /** Per frame while the gate is on: arms / disarms the hunt (see setHuntGate). */
+  _updateGate(dt, player) {
+    if (this._hurt) this._holdT = T.huntHold;
+    else if (this._holdT > 0) this._holdT -= dt;
+    const armed = this._override != null || this._holdT > 0;
+    if (armed === this._armed) return;
+    this._armed = armed;
+    const lv = this.level;
+    const si = this.sectionIndex;
+    if (this.victory || !lv || !lv.sections || si < 0 || !lv.sections[si]) return;
+    if (armed) {
+      this._withdraw = false;
+      this.setSection(si, lv.sections[si], player); // lethal again; it arrives from above when it was out of play
+    } else if (this.inPlay) {
+      // it loses the scent: no more kills, and it climbs away up the masonry (RECOVERING steering) instead of vanishing in view
+      this._withdraw = true;
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+    } else {
+      this.setSection(si, lv.sections[si], player);
+    }
+  }
+
+  /** The withdraw after the scent is lost: climbs away until far, then leaves play (the section's dormant behaviour). */
+  _withdrawStep(dt, player, dist, below) {
+    this._withdrawT += dt;
+    if (this.state !== S.RECOVERING) this._setState(S.RECOVERING);
+    this.stateTime = Math.min(this.stateTime, 0.6); // keeps the recover pace from decaying
+    if (dist > T.withdrawFar || this._withdrawT > T.withdrawMax) {
+      this._withdraw = false;
+      const lv = this.level;
+      const si = this.sectionIndex;
+      if (lv && lv.sections && lv.sections[si]) this.setSection(si, lv.sections[si], player);
+      else this._leavePlay();
+      return;
+    }
+    this._steerHunt(dt, player, dist, below);
   }
 
   // ===========================================================================
@@ -639,6 +707,12 @@ export class Creature3D {
     // a section mode laid over the data after an objective (S7: escape once the iris is open), cleared on a section change
     this._override = null;
     this._overrideSec = -1;
+    // the hunt gate's state (see setHuntGate): armed = hunting allowed right now
+    this._holdT = 0;
+    this._hurt = false;
+    this._withdraw = false;
+    this._withdrawT = 0;
+    this._armed = !this._gate;
     this._occBy = null; // _occlusion: what stopped the last lunge line
     this.onSurface = false;
     this.distance = FAR;
@@ -752,6 +826,12 @@ export class Creature3D {
     const c = Object.assign({}, SECTION_DEFAULTS, sec && sec.creature);
     const by = c.by && c.by[this.tuneKey];
     if (by) Object.assign(c, by);
+    // the hunt gate: while the player is not hurt every hunting mode is the unseen, non-lethal dormant one (an objective's override,
+    // laid below, is a scripted beat and is never gated)
+    if (this._gate && !this._armed && LETHAL_MODES[c.mode]) {
+      c.mode = 'dormant';
+      c.lethal = false;
+    }
     // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
     if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
     return c;
@@ -840,6 +920,13 @@ export class Creature3D {
   onRespawn(player) {
     if (!this.active || !player) return;
     this.caughtPlayer = false;
+    if (this._gate) {
+      // a respawn restores full health: the scent is gone (a scripted override still hunts)
+      this._holdT = 0;
+      this._hurt = false;
+      this._withdraw = false;
+      this._armed = this._override != null;
+    }
     this.attack.phase = null;
     this.nearMiss = 0;
     this.stillTime = 0;
@@ -996,6 +1083,7 @@ export class Creature3D {
       const si = lv.sectionIndexAt(player.y);
       if (si !== this.sectionIndex) this.setSection(si, lv.sections[si], player);
     }
+    if (this._gate && !this.victory) this._updateGate(dt, player);
 
     this.stateTime += dt;
     this._stepCd -= dt;
@@ -1057,6 +1145,10 @@ export class Creature3D {
     this.callTimer -= dt;
     if (this._introT > 0) this._introT -= dt;
     this._tickHitch(dt);
+    if (this._withdraw) {
+      this._withdrawStep(dt, player, dist, below);
+      return;
+    }
 
     // Hard rubber band: never let it fall hopelessly far behind (it is out of sight there).
     if (below > K.maxGap) this._shift(0, K.maxGap - below, 0);

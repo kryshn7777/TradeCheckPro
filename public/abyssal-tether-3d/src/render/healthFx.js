@@ -25,6 +25,7 @@
 
 import * as THREE from 'three';
 import { CONFIG, U } from '../sim/config3d.js';
+import { LowHealthText } from './lowHealthText.js';
 
 const H = CONFIG.health;
 
@@ -142,6 +143,8 @@ export class HealthFx {
     this.vignette.frustumCulled = false;
     this.vignette.visible = true; // visible until the first update: the scene precompile compiles its program
     this.camera.add(this.vignette);
+    // the scary line shown while health is low (head-locked, one quad)
+    this.text = new LowHealthText(this.camera);
 
     // ---- ECG ------------------------------------------------------------------------------------
     this.ecgCanvas = document.createElement('canvas');
@@ -201,6 +204,7 @@ export class HealthFx {
 
   /** A fresh start: full health look, calm trace. */
   reset() {
+    if (this.text) this.text.reset();
     this._grip = 0;
     this._vig = 0;
     this._haze = 0;
@@ -294,6 +298,7 @@ export class HealthFx {
     const r1 = this._xr ? 1.22 : 1.4;
     u.uRange.value.set(r0, r1);
     this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004 || this._grip > 0.004;
+    this.text.update(dts, { low: !!(hp && hp.low), dead, playing: state === 'playing' && inRun, hp: hp ? hp.hp : 1, bpm, reduced });
 
     // ---- ECG ------------------------------------------------------------------------------------
     this._ecgAcc += dts;
@@ -502,6 +507,7 @@ export class HealthFx {
     if (this.vignette.parent) this.vignette.parent.remove(this.vignette);
     this.vignette.geometry.dispose();
     this.material.dispose();
+    this.text.dispose();
     this.ecgTexture.dispose();
     if (this._ecgMat) this._ecgMat.dispose();
   }
