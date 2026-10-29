@@ -239,6 +239,7 @@ export class Level3D {
       section: this.sectionIndexAt(num(o.y, 0)),
       tag: o.tag || 'route',
       broken: false,
+      cut: false, // THE DRESSER sawed it through (sim/dresser3d.js; also broken): the view shows a clean sawn ring
       load: 0,
       life: num(o.life, 1),
       // LEVEL_FUN_PLAN item 7 (sim/movers3d.js): a ring carried by a mover is `dynamic`, moves with velocity (vx, vy, vz) and may
@@ -720,6 +721,7 @@ export class Level3D {
     for (let i = 0; i < this.anchors.length; i++) {
       const a = this.anchors[i];
       a.broken = false;
+      a.cut = false;
       a.load = 0;
     }
   }

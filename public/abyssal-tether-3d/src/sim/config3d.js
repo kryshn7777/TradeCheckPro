@@ -511,6 +511,18 @@ export const U = {
   depthMeters: (y) => Math.max(0, Math.round(-y)),
 };
 
+/**
+ * THE DRESSER's URL switch (sim/dresser3d.js, game.js): `?dresser=off` none, `?dresser=always` no health gate, `?dresser=on` the
+ * default. `?hunt=always` (the Mason ungated: the e2e and the capture tools) leaves the Dresser out unless a `dresser=` flag asks
+ * for it, so those tools keep the world they were written for. Returns 'off' | 'always' | 'on'.
+ */
+export function dresserMode(search) {
+  const q = typeof search === 'string' ? search : '';
+  const m = /[?&]dresser=(off|always|on)\b/.exec(q);
+  if (m) return m[1];
+  return /[?&]hunt=always\b/.test(q) ? 'off' : 'on';
+}
+
 // -----------------------------------------------------------------------------
 // Event bus
 // -----------------------------------------------------------------------------

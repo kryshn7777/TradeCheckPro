@@ -1131,6 +1131,12 @@ CL('c-s8-w3', 'w', -12, -8, -1, -546.4, -535.2);
 const creature = (mode, lethal, spawnOffsetY, speedMul = 1, burstRate = 0, skitter = null) => (skitter ? { mode, lethal, speedMul, burstRate, spawnOffsetY, skitter } : { mode, lethal, speedMul, burstRate, spawnOffsetY });
 // WP-SKITTER: the Ossuary Column's little kin (small, red, 4.5x faster hunters) per difficulty; deeper sections of Chapter I only.
 const skit = (normal, nightmare, abyss) => ({ normal, nightmare, abyss });
+// THE DRESSER (sim/dresser3d.js, docs/abyssal-tether-3d/plans/DRESSER.md): hunts only while you are WHOLE (the inverse of the
+// Mason's hunt gate), cuts the ring you hang from after a 3 s measure + 1 s saw. creature.dresser = { active, walkMul?,
+// measureRange?, wholeBy? {normal, nightmare, abyss}, by? {difficulty: overrides} }. S3 meets it (slower, shorter sight on
+// Normal), S4 learns it, S6 is THE CORRIDOR (it walks the stacks while the skitterlings bite and, below 35 %, the Mason hunts).
+// Not part of the lightmap / GI hashes (creature config only).
+const dresser = (extra) => Object.assign({ active: true }, extra);
 const theme = (fog, light, accent, fogNear, fogFar, ambient, extra) => Object.assign({ fog, light, accent, fogNear, fogFar, ambient }, extra);
 
 // REACH (LEVEL_FUN_PLAN item 5): sections[i].reach = the hook's targeting range there, per difficulty (Level3D.reachOf;
@@ -1210,7 +1216,7 @@ const sections = [
     shaft: { minX: -34, maxX: 11, minZ: -11, maxZ: 11 },
     checkpoint: { x: 7, y: -65.6, z: 0, yaw: PI / 2 },
     theme: theme('#25322f', '#86aeaa', '#4fa08e', 7, 90, 0.31, { rim: 0.7 }),
-    creature: creature('dormant', false, 240),
+    creature: Object.assign(creature('dormant', false, 240), { dresser: dresser({ walkMul: 0.85, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } }) }),
     hints: [
       {
         y: -67, duration: 6,
@@ -1220,6 +1226,8 @@ const sections = [
       // LEVEL_FUN_PLAN P4: the rockfall lane (dust and a rumble come first) and the S3 verb (the winch on the west wall)
       { y: -73, duration: 6, text: 'Dust falls before the stones. Wait for the gap.', desktop: 'Dust falls before the stones. Wait for the gap.' },
       { y: -76.5, duration: 7, text: 'Hook the ring on the turning gear and hold on.', desktop: 'Hook the ring on the turning gear and hold on.' },
+      // THE DRESSER's first contact (it hunts only the whole): the three ways out of a measure
+      { y: -85, duration: 8, text: 'Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.', desktop: 'Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.' },
     ],
     triggers: [
       { y: -68, name: 'debris', data: { x: -14, y: -59, z: 0, intensity: 0.35 } },
@@ -1234,7 +1242,7 @@ const sections = [
     checkpoint: { x: 5, y: -99.6, z: 6, yaw: 0 },
     theme: theme('#254650', '#6aa4b4', '#b8f0e0', 10, 190, 0.3, { rim: 0.8 }),
     // Nightmare / Abyss: no staged sighting, the hunt starts here (a lethal stalk, like S5)
-    creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } } }),
+    creature: Object.assign(creature('sighting', false, 220), { by: { nightmare: { mode: 'stalk', lethal: true, spawnOffsetY: 130 }, abyss: { mode: 'stalk', lethal: true, spawnOffsetY: 130 } }, dresser: dresser() }),
     // LEVEL_FUN_PLAN P3: the S4 verb (the catwalk's cold lamps)
     hints: [{ y: -104.3, duration: 8, text: 'Hold your lantern to the cold lamps. Light them before the walls notice.', desktop: 'Walk up to each cold lamp and look at it. Light them before the walls notice.' }],
     triggers: [
@@ -1289,7 +1297,7 @@ const sections = [
     reach: { normal: 28, nightmare: 27, abyss: 25 },
     checkpoint: { x: -12, y: -207.6, z: 0, yaw: 0 },
     theme: theme('#2e2420', '#6a98a2', '#c0602e', 6, 85, 0.25, { rim: 0.75 }),
-    creature: creature('hunt', true, 120, 1, 0, skit(1, 1, 1)),
+    creature: Object.assign(creature('hunt', true, 120, 1, 0, skit(1, 1, 1)), { dresser: dresser({ walkMul: 1.1 }) }), // THE CORRIDOR
     // the fork is briefed in S5 (see its second hint); the reach (REACH) is at its shortest from here down
     hints: [
       {

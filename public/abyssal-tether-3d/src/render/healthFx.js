@@ -298,7 +298,11 @@ export class HealthFx {
     const r1 = this._xr ? 1.22 : 1.4;
     u.uRange.value.set(r0, r1);
     this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004 || this._grip > 0.004;
-    this.text.update(dts, { low: !!(hp && hp.low), dead, playing: state === 'playing' && inRun, hp: hp ? hp.hp : 1, bpm, reduced });
+    // THE DRESSER hunting you (you are whole): the line comes in chalk (lowHealthText.js; never with low health)
+    const dr = g.dresser;
+    const chalk = !!(dr && !dr.isNull && dr.hunting);
+    const measuring = chalk && !!dr.measuring;
+    this.text.update(dts, { low: !!(hp && hp.low), dead, playing: state === 'playing' && inRun, hp: hp ? hp.hp : 1, bpm, reduced, chalk, measuring });
 
     // ---- ECG ------------------------------------------------------------------------------------
     this._ecgAcc += dts;

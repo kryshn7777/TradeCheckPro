@@ -938,7 +938,8 @@ function buildMountGeometries() {
     bolt.translate(0, 0.13, -0.1);
     parts.push({ geo: bolt, shape: 0, glow: 0, plate: 1 });
     shackle(parts, 0, 0.15);
-    parts.push({ geo: forgedRing(0.135, 0.028), shape: 0, glow: 0.6 });
+    // THE DRESSER's cut (anchor.cut): iShape.y opens the ring's lower half sideways, a clean saw cut sprung apart (0 on every sound ring)
+    parts.push({ geo: forgedRing(0.135, 0.028), shape: 0, glow: 0.6, split: (x, y) => (x >= 0 ? 1 : -1) * THREE.MathUtils.smoothstep(-y, 0.0, 0.13) });
     // the collar where the ring hangs from its eye (a swollen weld) and a keeper pin through it
     const collar = new THREE.CylinderGeometry(0.034, 0.04, 0.05, 8, 1);
     collar.rotateZ(Math.PI / 2);
@@ -5854,7 +5855,7 @@ export class LevelView {
       }
       // Physical mount (near only).
       if (dh <= MOUNT_MAX_DIST) {
-        const shape = a.broken ? SHAPE_STUB : base.shape;
+        const shape = a.cut ? base.shape : a.broken ? SHAPE_STUB : base.shape; // a Dresser's cut keeps the sawn ring
         const slot = mm[shape];
         const j = slot.n++;
         if (a.dynamic) _v1.set(a.x, a.y, a.z); // a moving ring: where it is now
@@ -5867,8 +5868,9 @@ export class LevelView {
         }
         _s.set(1, 1, 1);
         slot.mesh.setMatrixAt(j, _m4.compose(_v1, base.q, _s));
-        slot.attr.setXYZW(j, shape, stress, a.broken ? 0 : level + pulse * 0.8, base.chain);
-        if (a.kind === 'fragile') slot.mesh.setColorAt(j, _c.setRGB(0.95, 0.66, 0.56));
+        slot.attr.setXYZW(j, shape, a.cut ? 1 : stress, a.broken ? 0 : level + pulse * 0.8, base.chain);
+        if (a.cut) slot.mesh.setColorAt(j, _c.setRGB(0.93, 0.92, 0.88)); // bright, clean, freshly sawn iron
+        else if (a.kind === 'fragile') slot.mesh.setColorAt(j, _c.setRGB(0.95, 0.66, 0.56));
         else {
           // Rust (the diegetic reason the deep rings must be hooked from closer): the shorter the reach of the ring's own
           // section against the difficulty's full range, the redder the mount (per-instance colour: no new material or call).
