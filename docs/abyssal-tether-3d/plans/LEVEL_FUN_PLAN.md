@@ -610,3 +610,21 @@ set-pieces (9): lanes (P4), squall + medals UI (12) + tuning       PHASE 6
 - No 22 m reach in S7/S8; no shrinking of rope length (only targeting range).
 - No audio logs, voice-over or text panels; no leaderboards or ghosts.
 - No rising-hazard set-piece until S8 playtests ask for it.
+
+## Addendum: the hunt gate and the low-health line (owner's call)
+
+"The worm chases only when your health is low."
+
+- `Creature3D.setHuntGate(true)` (game.js turns it on for the Mason only; the skitterlings and the menu's attract flight are never gated): while
+  the player is not hurt, every hunting mode of the section data (stalk / hunt / frenzy) is the unseen, non-lethal `dormant` one. `setHurt(low)` is
+  fed every frame from `Health3D.low` (hp <= 0.35, off again at 0.5). When it turns on the hunt starts as a section entry would (it arrives from
+  above with the intro grace); `T.huntHold` (14 s) after the player is well again it loses the scent and withdraws up the masonry (RECOVERING
+  steering, never lethal) until it is `T.withdrawFar` (60 m) away or `T.withdrawMax` (9 s), then leaves play. A respawn (full health) forgets the scent.
+- A scripted override (the S7 escape once the iris opens) is a story beat and is never gated. The S5 keystone lure needs the Mason: with the gate on and
+  a healthy player it does not come, so the keystone is opened by the haul fallback (LEVEL_FUN_PLAN P5), as the plan always allowed.
+- `?hunt=always` turns the gate off (the e2e and the capture tools use it; the route bots and the sim tests build `Creature3D` directly, where the gate
+  is off by default, so their numbers are unchanged).
+- Consequence for play: fall damage, hazards and the skitterlings' bites are what call the Mason now. Staying above 35 % health keeps the shaft quiet.
+- The scary line (`render/lowHealthText.js`, owned by `HealthFx`): while `Health3D.low` a head-locked line ("IT CAN SMELL YOU", "KEEP YOUR HEART QUIET",
+  below 16 % "LET GO", "JOIN THE WALL" ...) surfaces in blood-red scrawl with drips, flickers and fades, then another follows 2-5 s later. One quad,
+  +1 draw call while it shows; `reducedEffects` removes the flicker and the shake.

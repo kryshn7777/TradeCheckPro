@@ -25,6 +25,7 @@ const suites = [
   ['creature: dread (the stare on first sight and the lead: Mason only, cooldown, ends in a surge)', 'creature/dread.mjs'],
   ['creature: twist (the body axes are locked: facing, block tangents and ups while it chases a player who stays close and moves to and fro)', 'creature/twist.mjs'],
   ['creature: walls (the body lies on the walls: blocks inside masonry, height above the surface, deep penetrations)', 'creature/walls.mjs'],
+  ['creature: the hunt gate (the Mason hunts only while the player is hurt: healthy = dormant on every difficulty, hurt = it arrives, the scent window, the withdraw, respawn forgets, an override and the skitterlings are never gated)', 'creature/gate.mjs'],
   ['creature: annoyed by grapple shots (the aim ray through the body: x1.5 for 3 s, x6 for 0.3 s, once per 20 s; misses, variants, respawn)', 'creature/annoy.mjs'],
   ['creature: WP-SKITTER (variant config: exactly 4.5x speeds, 0.45 scale, wind-up/reach, spawn data S6-S8, safe entry distance, determinism, tagged events, damage path, Mason trigger link)', 'creature/skitter.mjs'],
   ['creature: LEVEL_FUN_PLAN P5 Masons\' rests (hidden in a rest: no attack starts, nothing hits, the stall clock frozen, the head out of the block, it listens; after the budget it catches you as today; skitterlings never bite there; the threat eases; determinism)', 'creature/nooks.mjs'],

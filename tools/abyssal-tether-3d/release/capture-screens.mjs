@@ -56,6 +56,7 @@ const RECIPES = [
   { id: 'shot-07', section: 5, yaw: -0.4, pitch: -0.2, run: 0.6, note: 'two descents' },
   { id: 'shot-08', section: 6, yaw: 0.2, pitch: -0.15, ropes: 30, run: 1.5, note: 'the hollow nave: nothing to stand on' },
   { id: 'shot-09', section: 7, yaw: 0.4, pitch: -0.1, run: 0.6, note: 'the last throat' },
+  { id: 'shot-low', section: 3, yaw: 0.2, pitch: -0.1, run: 3.4, hp: 0.2, note: 'low health: the scary line (not a store shot; --recipe shot-low only)', only: true },
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
 ];
 const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
@@ -86,7 +87,7 @@ async function newGamePage(w, h, { xr = false } = {}) {
     css.textContent = '#ui-root,.at3d-ui,#boot,#at-fatal,#at3d-gpu-banner,[id^=at3d-panel]{display:none!important}';
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
-  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off', { waitUntil: 'domcontentloaded' });
+  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always', { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 240000, label: 'boot' });
   await sleep(2500); // textures, env kit, creature kit, gear GLB finish loading
   return { ctx, page };
@@ -152,6 +153,7 @@ async function setScene(page, r) {
     let left = rec.run;
     let seen = false;
     while (left > 0) {
+      if (rec.hp != null) D.health(rec.hp); // low health: the scary line, the heartbeat vignette
       D.step(0.25, { render: false, state: false });
       left -= 0.25;
       if (rec.creature && G.creature && !G.creature.isNull) {
@@ -203,7 +205,7 @@ try {
   if (ONLY === 'all' || ONLY === 'shots') {
     console.log('desktop screenshots 1920x1080');
     const { ctx, page } = await newGamePage(1920, 1080);
-    for (const r of RECIPES.filter((x) => !RECIPE || x.id === RECIPE)) {
+    for (const r of RECIPES.filter((x) => (RECIPE ? x.id === RECIPE : !x.only))) {
       const info = await setScene(page, r);
       if (info.state !== 'playing') console.log('   note: state', info.state);
       await snap(page, path.join(SHOTS, `${r.id}.png`), 1920, 1080, { grab: true });
