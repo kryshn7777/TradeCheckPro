@@ -345,17 +345,28 @@ for the whole level, spread over the job's slices).
 - The kit plan and the decor colliders: hashed in the browser at the end of the dressing: 808 placements (hash 2423444940) and 1,141
   collider boxes (hash 3050253387), identical with and without `?arch=0` and against the untouched tree: every pass-2 piece draws from its
   own seeded stream and reserves nothing in the plan space.
-- Browser smoke (`details/smoke.mjs`, S1 / S3 / S4 / S6 / S7 / S8 with the frame loop running): 0 page errors; the one known console warning
-  ("Multiple active KTX2 loaders", pass 1).
+- Browser smoke (`details/smoke.mjs`, the final code, S1 / S3 / S4 / S6 / S7 / S8 with the frame loop running): 0 page errors; the one
+  known console warning ("Multiple active KTX2 loaders", pass 1). The capture and budget runs (dressing finished, every pass-2 path run):
+  no page errors.
 - First load: `src/render/archDetail.js` 21.6 KB + ~10 KB of levelView.js, no asset; `gen-sw.mjs`: 169 core files / 79.47 MB (<= 80, with
   the other agents' concurrent additions).
-- Screenshots (scratchpad `details/`): `before/` (59 cameras, the untouched tree, 10:20), `before2/` (`?arch=0`) and `after3/` (default)
-  on the 37 targeted cameras of `cams2.json` (quoins S1-S8, doors, rivets, rests, cables, lamps, plaques, wall anchors, gate, pipe,
-  machinery); contact sheets `details/contact_*.png`, pairs in `details/pairs/`.
+- Screenshots (scratchpad `details/`): the audit, `before/` (59 cameras, the untouched tree); the A/B, `before2/` (`?arch=0`) and `after2/`
+  (default) on the 37 targeted cameras of `cams2.json` (quoins S1-S8, doors, walkway plates, rests, cables, lamps, plaques, wall anchors,
+  gate, pipe, machinery). `after2/` predates the last trims (it still has the walkway rivets, six / ten pipe bolts a face, the soot on
+  panel-covered walls); the contact sheets `details/contact_1.png`, `contact_2.png` (pairs in `details/pairs/`) use only pairs whose
+  pixels differ by this pass alone: plaques, soot, tallies, doors, cables, pipe. Between the two runs the slab faces' texture state changed
+  (smooth in `before2/`, the usual busy ashlar in `after2/` and in the untouched `before/`: not this pass, which changes no material or
+  texture), so the quoin pairs are not on the sheet; the quoins show in `after2/quoin-s7.png`.
 
 ### 6e. Not done / not verified
 
 - Nothing ran on a Quest: fill rate of the extra (small, near) geometry, the build cost of the extra dressing on the Quest CPU.
 - The seal gratings could not be captured (a teleport opens the seals above); seals, the S3 cage and girders were left as they were.
-- Capture runs on this machine die when two browsers run at once (memory cgroup OOM kill of the renderer, 4.5 GB each: two of five after
-  runs); the S8 wall "zebra stripes" (the open issue of the S8 wetness experiments) show in some captures of both trees.
+- Capture runs on this machine die when browsers overlap (the shared memory cgroup, 14.3 GB, OOM-kills the renderer at 4.5-8 GB; other
+  agents' capture scripts run without the browser lock): the final-code A/B (`ab.sh`) and two re-captures died after one or two shots,
+  `?arch=0` runs as well, so the last trims (walkway rivets removed, four pipe bolts a face, the panel test for soot / rust / tallies, the
+  closed-gate shot) have no screenshot. The gate is therefore not on the contact sheet (`after2/s8-gate.png` caught it raised).
+- One capture (`after2/quoin-s8.png`) shows wavy horizontal bands on the S8 shaft wall behind the slab (the open "zebra stripes" issue of
+  the S8 wetness experiments); the same camera in `before2/` and the other S8 views (chamber, gate, walls) do not. This pass touches no
+  solid, material or texture, so it was not chased further.
+- The machinery rivets / hub bolts were only seen side-on (`dec-machinery`): their front face is not in any capture.
