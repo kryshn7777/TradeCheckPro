@@ -17,7 +17,7 @@
  *  - the meta record (the manifest) is deleted first and written last: an interrupted save leaves no entry, never a partial one;
  *  - any failure (no IndexedDB, private mode, quota, a short read, a size mismatch) is a miss: the old synchronous path runs.
  * Memory: one entry in all (the last dressed level saved); the arrays restored are the geometry the procedural build would have allocated (no second copy is
- * kept); a save copies 1 MB slices, one per frame. `?levelcache=0` (or `?loadopt=0`) turns it off.
+ * kept); a save copies 1 MB slices, as many per frame as fit in 2 ms (at least one). `?levelcache=0` (or `?loadopt=0`) turns it off.
  */
 import * as THREE from 'three';
 import { LOADOPT } from './levelBuildFast.js';
@@ -25,7 +25,8 @@ import { LOADOPT } from './levelBuildFast.js';
 const SCHEMA = 1;
 const DB_NAME = 'at3d-level-cache';
 const DB_VERSION = 1;
-const SLICE = 1 << 20; // bytes per stored slice: one put (one structured clone) per frame while saving
+const SLICE = 1 << 20; // bytes per stored slice (one put, one structured clone)
+const SAVE_MS = 2; // ms of slice copies + puts per frame while saving (at least one slice a frame)
 const READ_BATCH = 8; // slices per read request
 const ROOTS = ['./levelView.js', '../sim/level3d.js', '../data/level-data-3d.js'];
 const CTORS = { Float32Array, Int16Array, Uint16Array, Uint32Array, Int32Array, Uint8Array, Int8Array, Float64Array };
@@ -479,7 +480,7 @@ export class LevelCache {
 
   /**
    * Called every frame (Renderer3D.update). Once the procedural dressing of a level built with the kit and props is complete, writes its
-   * snapshot, one slice per call. Nothing to do: returns at once.
+   * snapshot, a few slices per call (SAVE_MS). Nothing to do: returns at once.
    */
   tick(lv) {
     if (!this.on) return;
@@ -532,13 +533,27 @@ export class LevelCache {
         .then(() => req('data', 'readwrite', (s) => s.clear()))
         .then(() => (sv.phase = 'data'));
     } else if (sv.phase === 'data') {
-      const i = sv.i;
-      const u8 = sv.slices[i];
-      const copy = u8.slice().buffer; // a slice of its own (a view would clone the whole buffer)
-      p = req('data', 'readwrite', (s) => s.put(copy, [sv.variant, sv.id, i])).then(() => {
-        sv.slices[i] = null;
-        if (++sv.i >= sv.slices.length) sv.phase = 'meta';
-      });
+      // as many slices as fit in SAVE_MS of this frame (at least one), in one transaction: each a copy of its own (a view would
+      // clone its whole buffer); a failed transaction ends the save (no meta: nothing readable was written)
+      p = openDB().then(
+        (db) =>
+          new Promise((resolve, reject) => {
+            const tx = db.transaction('data', 'readwrite');
+            const st = tx.objectStore('data');
+            const t0 = performance.now();
+            do {
+              const i = sv.i++;
+              st.put(sv.slices[i].slice().buffer, [sv.variant, sv.id, i]);
+              sv.slices[i] = null;
+            } while (sv.i < sv.slices.length && performance.now() - t0 < SAVE_MS);
+            tx.oncomplete = () => {
+              if (sv.i >= sv.slices.length) sv.phase = 'meta';
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('level cache: aborted'));
+          }),
+      );
     } else if (sv.phase === 'meta') {
       p = req('meta', 'readwrite', (s) => s.put({ base: sv.base, id: sv.id, manifest: sv.manifest, parts: sv.slices.length, bytes: sv.bytes, at: Date.now() }, sv.variant)).then(() => {
         this.info.saved = true;

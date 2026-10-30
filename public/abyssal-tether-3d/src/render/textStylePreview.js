@@ -17,13 +17,13 @@ function hash(n) {
   return s - Math.floor(s);
 }
 
-function wrapWords(ctx, text, maxW) {
+function wrapWords(ctx, text, maxW, track = 0) {
   const words = text.split(' ');
   const rows = [];
   let cur = '';
   for (const w of words) {
     const t = cur ? `${cur} ${w}` : w;
-    if (cur && ctx.measureText(t).width > maxW) {
+    if (cur && ctx.measureText(t).width + t.length * track > maxW) {
       rows.push(cur);
       cur = w;
     } else cur = t;
@@ -93,7 +93,7 @@ function tex(THREE, c, srgb) {
 function layoutLetters(ctx, text, W, H, opts, draw) {
   const size0 = opts.size;
   ctx.font = `${opts.weight || 700} ${size0}px ${opts.font || 'Georgia, serif'}`;
-  const rows = wrapWords(ctx, text, W * 0.9);
+  const rows = wrapWords(ctx, text, W * 0.86, opts.track || 0);
   const lh = size0 * 1.25;
   let y = H / 2 - ((rows.length - 1) * lh) / 2 + size0 * 0.34;
   let n = 0;
