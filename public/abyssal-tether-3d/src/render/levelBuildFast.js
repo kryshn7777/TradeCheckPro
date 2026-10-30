@@ -207,9 +207,9 @@ export const CULLED = new WeakSet();
  * The dressing job's section-pack merge was one step of up to a few hundred ms (Quest: a long frame). Before it runs, the buried-face
  * culling of its geometries (most of its cost) is done here, ONE geometry or kit record per call, so the job's clock is checked between
  * them. Exactly what _packBands would do to each (packGeo then cullBuried for a plain geometry, cullBuried then packGeo per level for a kit
- * record, a record whose medium level vanished dropped), in the same order, so the pack it then merges is the same; the kit records'
- * levels are also compacted (LodSet.add would do it next, idempotent). Returns true when it did a piece of work (more may remain), false
- * when the item has nothing (left) to cull: the caller merges it.
+ * record, a record whose medium level vanished dropped), in the same order, so the pack it then merges is the same; every geometry is
+ * also compacted (LodSet.add's 16-bit normals / colours, element-wise: the same bytes; _packBands takes a CULLED one as it is).
+ * Returns true when it did a piece of work (more may remain), false when the item has nothing (left) to cull: the caller merges it.
  * @param {Array} item  a job.merge entry: [null, null, Map(band -> { [material]: list })] for a section pack (others are not culled here)
  * @param {object} H  levelView's own { cullBuried, packGeo, compactVertices, buried (BURIED_ON) }
  * @param {object} lv  the LevelView (its level and stats)
@@ -261,6 +261,9 @@ export function precullStep(item, H, lv) {
     stats.buriedCulled = (stats.buriedCulled || 0) + c.removed;
     if (c.geo !== g) g.dispose();
     g = c.geo;
+    // compacted now too (LodSet.add would compact the merged cell: element-wise, so compacting the parts first gives the same bytes;
+    // every plain geometry of the pack goes through here, so the cell merge sees one layout)
+    H.compactVertices(g);
     CULLED.add(g);
     list[q.i++] = g;
     return true;

@@ -16,7 +16,7 @@
  *    dressing job finished without an error, and only if every new object under the view's root is one it knows how to restore;
  *  - the meta record (the manifest) is deleted first and written last: an interrupted save leaves no entry, never a partial one;
  *  - any failure (no IndexedDB, private mode, quota, a short read, a size mismatch) is a miss: the old synchronous path runs.
- * Memory: one entry per variant; the arrays restored are the geometry the procedural build would have allocated (no second copy is
+ * Memory: one entry in all (the last dressed level saved); the arrays restored are the geometry the procedural build would have allocated (no second copy is
  * kept); a save copies 1 MB slices, one per frame. `?levelcache=0` (or `?loadopt=0`) turns it off.
  */
 import * as THREE from 'three';
@@ -149,7 +149,8 @@ function req(store, mode, fn) {
   );
 }
 
-const range = (variant, a, b) => IDBKeyRange.bound([variant, a], [variant, b]);
+// data keys are [variant, saveId, slice]: a meta record only ever reads the slices its own save wrote (two tabs saving at once cannot mix)
+const range = (variant, id, a, b) => IDBKeyRange.bound([variant, id, a], [variant, id, b]);
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // Snapshot <-> LevelView
@@ -384,13 +385,13 @@ export class LevelCache {
       const base = await baseKey(variant, this.glbUrls);
       let snap = null;
       const meta = await req('meta', 'readonly', (s) => s.get(variant));
-      const have = !!(meta && meta.base === base && meta.manifest && meta.manifest.schema === SCHEMA);
+      const have = !!(meta && meta.base === base && typeof meta.id === 'number' && meta.manifest && meta.manifest.schema === SCHEMA);
       if (have && !this._abandon.has(variant)) {
         const parts = meta.parts | 0;
         const asm = new Assembler(meta.manifest.arrays);
         for (let i = 0; i < parts; i += READ_BATCH) {
           if (this._abandon.has(variant)) throw new Error('level cache: read abandoned (the level was built meanwhile)');
-          const got = await req('data', 'readonly', (s) => s.getAll(range(variant, i, Math.min(parts, i + READ_BATCH) - 1)));
+          const got = await req('data', 'readonly', (s) => s.getAll(range(variant, meta.id, i, Math.min(parts, i + READ_BATCH) - 1)));
           if (!got || got.length !== Math.min(READ_BATCH, parts - i)) throw new Error('level cache: short read');
           for (const buf of got) asm.push(buf);
         }
@@ -465,7 +466,7 @@ export class LevelCache {
       return;
     }
     const { slices, bytes } = slicesOf(snap.arrays);
-    this._save = { lv, level: lv.level, variant, base: ready.base, manifest: snap.manifest, slices, i: 0, phase: 'clear', busy: false, bytes };
+    this._save = { lv, level: lv.level, variant, base: ready.base, id: Date.now() * 1000 + Math.floor(Math.random() * 1000), manifest: snap.manifest, slices, i: 0, phase: 'clear', busy: false, bytes };
   }
 
   _step(sv) {
@@ -477,20 +478,21 @@ export class LevelCache {
     sv.busy = true;
     let p;
     if (sv.phase === 'clear') {
-      // the old entry goes first (its meta, then its data): an interrupted save leaves nothing to read
-      p = req('meta', 'readwrite', (s) => s.delete(sv.variant))
-        .then(() => req('data', 'readwrite', (s) => s.delete(range(sv.variant, 0, Infinity))))
+      // every old entry goes first (the metas, then the data): an interrupted save leaves nothing to read, and the store never holds
+      // more than one dressed level (~100 MB) whatever the variants played
+      p = req('meta', 'readwrite', (s) => s.clear())
+        .then(() => req('data', 'readwrite', (s) => s.clear()))
         .then(() => (sv.phase = 'data'));
     } else if (sv.phase === 'data') {
       const i = sv.i;
       const u8 = sv.slices[i];
       const copy = u8.slice().buffer; // a slice of its own (a view would clone the whole buffer)
-      p = req('data', 'readwrite', (s) => s.put(copy, [sv.variant, i])).then(() => {
+      p = req('data', 'readwrite', (s) => s.put(copy, [sv.variant, sv.id, i])).then(() => {
         sv.slices[i] = null;
         if (++sv.i >= sv.slices.length) sv.phase = 'meta';
       });
     } else if (sv.phase === 'meta') {
-      p = req('meta', 'readwrite', (s) => s.put({ base: sv.base, manifest: sv.manifest, parts: sv.slices.length, bytes: sv.bytes, at: Date.now() }, sv.variant)).then(() => {
+      p = req('meta', 'readwrite', (s) => s.put({ base: sv.base, id: sv.id, manifest: sv.manifest, parts: sv.slices.length, bytes: sv.bytes, at: Date.now() }, sv.variant)).then(() => {
         this.info.saved = true;
         this._save = { done: true };
       });

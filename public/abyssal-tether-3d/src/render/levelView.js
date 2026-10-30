@@ -473,7 +473,7 @@ const DECOR = {
       const R = new ARCH.Soup();
       const hx = sx * 0.45 - 0.07;
       const hy = sy * 0.45 - 0.07;
-      for (const [a, b] of [[[-hx, -hy, 0], [hx, -hy, 0]], [[-hx, hy, 0], [hx, hy, 0]], [[-hx, -hy, 0], [-hx, hy, 0]], [[hx, -hy, 0], [hx, hy, 0]]]) ARCH.rivetRow(R, a, b, [0, 0, 1], 0.24, 0.02, 0.014);
+      for (const [a, b] of [[[-hx, -hy, 0], [hx, -hy, 0]], [[-hx, hy, 0], [hx, hy, 0]], [[-hx, -hy, 0], [-hx, hy, 0]], [[hx, -hy, 0], [hx, hy, 0]]]) ARCH.rivetRow(R, a, b, [0, 0, 1], 0.34, 0.022, 0.015);
       for (const [cx, cy, z, rr] of [[-sx * 0.12, sy * 0.05, gz + sz * 0.09, gr * 0.3], [sx * 0.28, -sy * 0.22, gz + sz * 0.08, g2 * 0.55]]) {
         for (let i = 0; i < 6; i++) ARCH.rivet(R, [cx + Math.cos((i / 6) * Math.PI * 2) * rr, cy + Math.sin((i / 6) * Math.PI * 2) * rr, z], [0, 0, 1], 0.03, 0.025, 6, 0.6, true);
       }
@@ -524,7 +524,7 @@ const DECOR = {
       else if (axis === 'x') P.cyl('metal', t, 0, 0, r, r, fl, seg, 'x');
       else P.cyl('metal', 0, 0, t, r, r, fl, seg, 'z');
       // archDetail: hex bolt heads on both faces of every flange (the near tier only)
-      if (bolts) ARCH.flangeBolts(bolts, [axis === 'x' ? t : 0, axis === 'y' ? t : 0, axis === 'z' ? t : 0], axis, r * 0.91, fl / 2, 6, Math.min(0.03, r * 0.08));
+      if (bolts) ARCH.flangeBolts(bolts, [axis === 'x' ? t : 0, axis === 'y' ? t : 0, axis === 'z' ? t : 0], axis, r * 0.91, fl / 2, 4, Math.min(0.032, r * 0.085));
     }
     if (bolts) P.soup('metalN', bolts, 'metal');
   },
@@ -3631,7 +3631,7 @@ class Dresser {
       if (ARCH_ON && len > 0.6) {
         // archDetail: a rivet line along each edge plate's outer face (the near tier only)
         const R = new ARCH.Soup();
-        for (const side of [-1, 1]) ARCH.rivetRow(R, [mid - len / 2 + 0.1, -0.21, side * (W / 2 + 0.1)], [mid + len / 2 - 0.1, -0.21, side * (W / 2 + 0.1)], [0, 0, side], 0.42, 0.017, 0.012, 5);
+        for (const side of [-1, 1]) ARCH.rivetRow(R, [mid - len / 2 + 0.1, -0.21, side * (W / 2 + 0.1)], [mid + len / 2 - 0.1, -0.21, side * (W / 2 + 0.1)], [0, 0, side], 0.5, 0.018, 0.012, 5);
         this._cat = 'rivet';
         this.putWorld(R.geometry(), m, 'metal', g.stone, 'near');
         this._cat = 'iron';
@@ -5947,7 +5947,7 @@ export class LevelView {
             out.push(g0);
             continue;
           }
-          let g = packGeo(g0);
+          let g = CULLED.has(g0) ? g0 : packGeo(g0); // (CULLED: precullStep packed, culled and compacted it: LOADING_OPTIMIZATION.md)
           if (buried && !CULLED.has(g)) {
             const c = cullBuried(g, level);
             this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
