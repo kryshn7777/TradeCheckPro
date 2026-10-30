@@ -21,3 +21,8 @@ A mix, with **no free-standing plate anywhere**: A for ~6 monumental lines, B fo
 Reuses the board atlas pipeline (one merged mesh per section): the styles are shaders and atlas cells, no new draw calls. Removing the 18 slab plaques changes the decor (the verify counts and the lightmap bake inputs): do it as a second step with a re-bake; the first step restyles the plaque quad and the `plate` boards only (no bake change).
 
 Dev-only builders for the mock-ups: `src/render/textStylePreview.js` (not imported by the game).
+
+## Decision and what was built (owner chose option 3 = B, written by a hand)
+- The 18 slab plaques and the 27 `plate` + 17 `cut` boards are now written on the wall in chalk with the stroke hand (`render/scrawlFont.js`, `boardWriting.js` style `hand`): no slab, no plate, no frame, no rule, no glow. Each line is a little crooked, each letter its own tilt and drift, three dry passes, and a plaque sits a little off where a sign would hang (rotation about +-2 degrees, +-15 cm).
+- A plaque's wall is found by a ray behind it (`LevelView._plaqueWall`); one with no wall behind keeps its slab. `?slabs=1` brings the old slabs back for comparison. Visual only: no change to the bake, the lightmap / GI hashes or the verify counts.
+- Screenshot: `img/text-implemented-B.png`. Still to do if wanted: the placement rule (move texts beside holds / anchors / lamps by hand), lowercase hurried voices for the human writers, option C tags and option D goggles-only writing for a few pieces.
