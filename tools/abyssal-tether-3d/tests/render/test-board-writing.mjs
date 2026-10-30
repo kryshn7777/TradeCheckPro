@@ -207,8 +207,9 @@ const T = BD.BOARD_TEXTS;
   for (const style of ['plate', 'cut', 'scratch', 'fresh']) {
     const cv = stubCanvas(1024, 256);
     const ctx = cv.getContext('2d');
+    ctx.__words = [];
     BW.drawBoardCell(ctx, { id: 'x', style, text: 'WE #SECRET WORD# IT ~WITH~ LOVE {5}' }, 0, 0, 1024, 256);
-    const drawn = [...ctx.calls.fillText, ...ctx.calls.strokeText];
+    const drawn = [...ctx.calls.fillText, ...ctx.calls.strokeText, ...ctx.__words]; // plates and cuts are written with the stroke hand (their words are in __words)
     if (drawn.some((s) => /SECRET|WORD/.test(s)) || !drawn.includes('LOVE') || !drawn.includes('WITH')) stray++;
   }
   ok(minFs >= 30, `every board fits its cell at >= 30 px of a 256 px cell (smallest ${minFs.toFixed(1)} px: ${worst})`);

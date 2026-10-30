@@ -34,7 +34,9 @@ Scripts (scratchpad `loadprof/`, Playwright through tools/abyssal-tether-3d/rele
 | `progs.mjs` | which shader programs compile after the menu (cache keys new after Start / each warp) |
 
 `?loadopt=0` turns every change of this pass off (the original code paths): it is the "before" of every table below, run back to back
-with the "after" on the same tree (the mesh-detail pass was editing levelView.js at the same time, so commits are not comparable).
+with the "after" on the same tree (the mesh-detail pass was editing levelView.js at the same time, so commits are not comparable). The
+browser runs serve a frozen copy of the game (`AT3D_ROOT=<copy> node prof.mjs ...`): an edit to any file of the build between two runs
+changes the cache key (correctly a miss), and the before / after must see the same code.
 
 ## 2. Before: where the time goes
 
@@ -116,7 +118,8 @@ records, decals, cogs and decor colliders: identical in every run (e.g. `69671a9
 Found on the way, NOT changed (it would change the picture): the section packs' vertex colours. `compactVertices` builds
 `new THREE.Float16BufferAttribute(floatColours)`, whose r170 constructor is `new Uint16Array(array)`: the colours are truncated to the
 integers 0 / 1, and the pack merge (`mergeGeometries`) then makes them a plain Uint16 attribute uploaded as UNSIGNED_SHORT, so the
-shader reads 0.0 / 1.0 per channel instead of the tints. See `progs.mjs` (pack colours) for the values; worth a look by the mesh-detail
+shader reads 0.0 / 1.0 per channel instead of the tints. Measured (`progs.mjs`, `decorpack_stone_0`): a `Uint16Array` colour attribute,
+not half-float, not normalised, its only values 0 and 1, on a `vertexColors: true` material. Worth a look by the mesh-detail
 pass (the fix is `toHalfFloat` per element and keeping the half-float flag through the merge, a visible change to review on its own).
 
 ## 5. After
@@ -137,15 +140,65 @@ and the same machine load; two such pages on two tree states):
 The remaining long steps are the section-pack merges themselves (section 4). Divide by the per-frame budget for the frames they take;
 multiply by ~4 for a Quest.
 
-**The cache** (`cachecheck.mjs`, unthrottled, frozen copy of the tree): run 1 with an empty store built procedurally, finished the job
-and saved (37 chunks, 100.2 MB of arrays, 1141 decor colliders); run 2 in the same browser profile restored it: level hash `ea65f824`
-in both, colliders 1141 in both, `restored: true`. Run 2 read 99.3 MB (key + read) in 1.5 s while the late modules loaded; the build
-waited 0.63 s for it. Boot to menu (`content`) 4.9 s (empty store) -> 3.4 s (restored), and no dressing job at all after it (run 1's job
-ended 3.3 s after the menu, unthrottled, on the menu's budget). JS heap at the end of each run: 349 MB (procedural + save) vs 300 MB
-(restored). An earlier attempt on the live tree showed the invalidation working: the mesh-detail pass changed levelView.js between the
+**The cache** (`cachecheck.mjs`, unthrottled, frozen copy of the tree, final code; an earlier run of the previous revision agreed): run 1
+with an empty store built procedurally (the build did not wait for the key: 0.3 ms), finished the job and saved (37 chunks, 100.2 MB of
+arrays, 1141 decor colliders); run 2 in the same browser profile restored it: level hash `ea65f824` in both, colliders 1141 in both,
+`restored: true`. Run 2 read 99.3 MB (key + read) in 0.9 s beside the late modules; the build waited 0.44 s for it. Boot to menu
+(`content`) 4.35 s (empty store) -> 2.47 s (restored), and no dressing job at all after it (run 1's job ended 2.2 s after the menu,
+unthrottled, on the menu's budget). JS heap at the end of each run: 343 MB (procedural + save) vs 298 MB (restored). An earlier attempt on the live tree showed the invalidation working: the mesh-detail pass changed levelView.js between the
 two runs and run 2 missed ("stale") and built procedurally.
 
-TBD-PROFILE
+**The whole session at 2x CPU throttling** (`prof.mjs`, frozen copy of the tree, boot -> 6 s menu -> Start -> warp S3, S6 ->
+`finishDressing`; single runs). 4x throttling was the plan, but at 4x the renderer process grew to ~8.5 GB and was OOM-killed in BOTH
+modes (also with `?loadopt=0`), so those runs gave no data; 2x completed. The machine is shared with other agents' browsers (some run
+without the lock): the "after, first run" column ran under visibly heavier load (its module load, `lighting.setLevel` and GI decode,
+code this pass does not touch, took ~2x longer than in the other two), so only the large differences mean anything; the per-step
+table above is the reliable comparison of the procedural work.
+
+| at 2x | before (`?loadopt=0`) | after, first run (procedural, then saved) | after, cache hit |
+|---|---|---|---|
+| build waits for the cache | - | 0.47 s (the key; since then not waited for when nothing is stored) | 1.06 s (key + 99.3 MB read) |
+| `Renderer3D.buildLevel` | 1.36 s | 1.59 s | 1.23 s (`_buildDecor` still runs: plaques, gate, links) |
+| boot -> menu (`content`) | 5.82 s | 8.89 s (load, see above) | 4.80 s |
+| dressing job CPU | 5.5 s (14 frames of it in 38 s, the rest in `finishDressing`) | ~9.8 s (same pattern) | 0 (no job) |
+| level fully dressed + decor colliders | only when `finishDressing` forced it (44 s) | idem (63 s) | at the menu |
+| longest single dressing call | 485 ms (a pack merge) | 378 ms (a pack merge) | - |
+| JS heap at the menu / at the end | 71 / 354 MB | 69 / 326 MB | 157 / 344 MB |
+| frames after Start / warps (`windows`) | software GL renders at ~0.3-3 fps here: the windows hold 0-1 frames each and measure SwiftShader, not loading | | |
+
+Heap: with the cache the dressed geometry (~100 MB of arrays) is there from the menu instead of arriving during play; the end state is the
+same level (the procedural run's heap passes through more garbage on the way). Nothing stays referenced twice: the read arrays become
+the attributes.
+
+**A/B screenshots** (`ab-load.mjs`, S1-S8 at the warp cameras, quest tier, frozen sim, `R.time = 100`, textures / baked light / creature kit
+loaded; mean absolute difference 0-255 and share of changed pixels):
+
+| | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 |
+|---|---|---|---|---|---|---|---|---|
+| noise floor: A vs A2 (the same `?loadopt=0` build, two runs) | 0.62 / 55 % | 0.09 / 7 % | 0.22 / 8 % | 0.12 / 17 % | 0.05 / 9 % | 0.42 / 12 % | 0.10 / 9 % | 0.03 / 0.6 % |
+| A vs B1 (after, procedural) | 0.92 / 73 % | 0.32 / 10 % | 0.34 / 12 % | 0.34 / 25 % | 0.15 / 17 % | 0.61 / 20 % | 0.14 / 16 % | 0.02 / 1.4 % |
+| A vs B2 (after, restored from the cache) | 1.56 / 82 % | 0.39 / 13 % | 0.39 / 15 % | 0.52 / 27 % | 0.27 / 24 % | 0.63 / 24 % | 0.23 / 22 % | 0.05 / 2.8 % |
+
+The geometry is byte-identical in all three (hashes above); the diff images (scratchpad `loadprof/ab/diff-*.png`) show only animated
+things, in A vs A2 as in A vs B: the rain streaks and motes, the carried lantern's light pool and flicker on the walls, the hands and the
+held item, a chain link. They are a little larger for B (its frames come at other moments of those animations: the job, the save and the
+restore change how much happens before the shot), but no object is missing, added or moved. Not exactly 0: the shots could not be made
+fully deterministic here (frame-count / wall-clock driven particles and flicker).
+
+**Shader programs** (`progs.mjs`): before, the Dresser / Holdfast programs (at3dDresserV2, HoldfastFlesh x3-4) compiled on first sight
+(new at the S5 / S8 warps); after, they compile right after Start when their GLBs arrive, and no warp adds a program (77 on the menu, 81
+after Start, 80-81 at every warp).
+
+**Other checks**: `?hunt=always` session (boot, Start, S3 / S6 / S8, `finishDressing`): no page error. Every `prof.mjs` / `cachecheck` /
+`ab-load` run: no page error. Worker probe (every `prof.mjs` run): the module worker's error event fires (no import map in workers).
+
+**Verification**: `npm run test:at3d` all 55 suites pass (new: `render/test-loading.mjs`); `npm run verify:at3d` all checks pass, the
+3167 baseline values identical, the baked GI / lightmap suite passes (level data, sim and bake inputs untouched); eslint clean on the
+changed files; `gen-sw.mjs` 177 core files / 79.6 MB (<= 80). `test-pwa.mjs` 18/23 (twice): offline boot, no faults, a run and VR
+pass; the failing checks are lazy-tier files requested during the offline run (dresser.glb, holdfast.glb, assets/audio/voice/
+manifest.json: kept out of the 80 MB core by earlier passes) and the last step's navigation after the update phase; not code this pass
+changed (the level cache's own fetches, all core files, were served offline). The Quest draw-call / triangle budget is unchanged by
+construction (the same 37 chunks with byte-identical buffers); the budget harness itself was not re-run by this pass.
 
 ## 6. Risks and how they are contained
 
@@ -160,5 +213,10 @@ TBD-PROFILE
   for another variant is dropped, never held; a save copies 1 MB per frame.
 - **Fallbacks**: no IndexedDB / crypto.subtle / fetch, private mode, quota, a bad entry, the kit or props not parsed at build: the original
   synchronous build + job. `?levelcache=0` disables the cache, `?loadopt=0` everything here.
-- **First run** still runs the job (now ~20-30 % less CPU, sliced, adaptive); its remaining long steps are the pack merges (section 4).
+- **First run** still runs the job (now ~15-30 % less CPU, sliced, adaptive); its remaining long steps are the pack merges (section 4).
+  The adaptive budget is a trade: on a busy frame the job gets less than the old fixed 8 ms on the menu, so on a first run the level can
+  finish dressing later in wall time (no frame is pushed past ~10 ms of work by it in exchange; the loading-scene frames now help). In this
+  container, whose frames take seconds, it ran at its 1-2 ms floor, which is why `finishDressing` did most of the work in the profiles.
+- **Plain pages without HTTP caching** fetch the env kit and props GLBs twice (the key hashes their bytes): 3.3 MB, from the cache on the
+  PWA (service worker) and on a normal host with cache headers; seen on the test server only.
 - **Not run on a Quest**: the throttled numbers approximate the CPU; the GPU-side effects (uploads, compiles) were not measured on hardware.

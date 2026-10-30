@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import { TextAtlasGroups } from './textAtlasGroups.js';
+import { scrawlAdvance, scrawlGlyph } from './scrawlFont.js';
 import { BOARD_ASPECT } from '../data/board-writing-3d.js';
 
 export const BOARD_CELL_W = 1024;
@@ -126,7 +127,15 @@ export function boardPlain(text) {
 function fontOf(style, fs) {
   return `${style === 'scratch' ? 400 : style === 'fresh' ? 700 : 600} ${Math.round(fs)}px ${FONT}`;
 }
-function tokW(ctx, t, fs) {
+/** Styles written by a hand (chalk, stroke font: scrawlFont.js) instead of typeset on a plate: the Keepers' plates and cuts, the plaques. */
+export const isHand = (style) => style === 'plate' || style === 'cut' || style === 'hand';
+function handW(s, fs) {
+  let w = 0;
+  for (const ch of s) w += scrawlAdvance(ch, fs);
+  return w;
+}
+function tokW(ctx, t, fs, hand) {
+  if (hand && t.k !== 't' && t.k !== 'g') return handW(t.s, fs);
   if (t.k === 't') {
     const sp = fs * 0.2;
     return Math.floor(t.n / 5) * sp * 5.6 + (t.n % 5) * sp;
@@ -139,16 +148,17 @@ export function fitBoard(ctx, lines, W, H, style = 'plate') {
   let fs = H * 0.4;
   let rows = [];
   let widths = [];
+  const hand = isHand(style);
   for (let iter = 0; iter < 30; iter++) {
     ctx.font = fontOf(style, fs);
-    const sp = ctx.measureText(' ').width;
+    const sp = hand ? scrawlAdvance(' ', fs) : ctx.measureText(' ').width;
     rows = [];
     widths = [];
     for (const line of lines) {
       let cur = [];
       let cw = 0;
       for (const t of line) {
-        const w = tokW(ctx, t, fs);
+        const w = tokW(ctx, t, fs, hand);
         if (cur.length && cw + sp + w > W * 0.86) {
           rows.push(cur);
           widths.push(cw);
@@ -162,54 +172,10 @@ export function fitBoard(ctx, lines, W, H, style = 'plate') {
       widths.push(cw);
     }
     const widest = Math.max(1, ...widths);
-    if (rows.length * fs * 1.22 <= H * (style === 'plate' ? 0.74 : 0.84) && widest <= W * 0.88) break;
+    if (rows.length * fs * 1.22 <= H * (hand ? 0.8 : 0.84) && widest <= W * 0.88) break;
     fs *= 0.92;
   }
   return { fs, rows, widths };
-}
-
-function rr(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function drawPlate(ctx, W, H, rng) {
-  ctx.fillStyle = 'rgba(13,14,15,0.84)';
-  rr(ctx, 4, 4, W - 8, H - 8, 7);
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(255,246,226,0.10)'; // bevel: lit top / left
-  ctx.beginPath();
-  ctx.moveTo(8, H - 8);
-  ctx.lineTo(8, 8);
-  ctx.lineTo(W - 8, 8);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,0.6)'; // shadowed bottom / right
-  ctx.beginPath();
-  ctx.moveTo(W - 8, 8);
-  ctx.lineTo(W - 8, H - 8);
-  ctx.lineTo(8, H - 8);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(232,220,192,0.42)'; // the rule, as on the plaques
-  ctx.lineWidth = 3;
-  ctx.strokeRect(17, 17, W - 34, H - 34);
-  ctx.fillStyle = 'rgba(0,0,0,0.5)'; // a few chips off the rim
-  for (let i = 0; i < 5; i++) {
-    const x = 10 + rng() * (W - 20);
-    const top = rng() < 0.5;
-    ctx.beginPath();
-    ctx.arc(x, top ? 6 : H - 6, 3 + rng() * 5, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }
 
 function drawGouge(ctx, x, y, w, fs, rng) {
@@ -259,32 +225,57 @@ function drawTally(ctx, x, y, n, fs, col, rng) {
   }
 }
 
+/** One word in chalk: every letter its own little tilt and drift, three dry passes, none of them quite on the last. */
+function drawHandWord(ctx, s, x, y, fs, ink, rng) {
+  if (ctx.__words) ctx.__words.push(s); // (a test hook: the words drawn as strokes)
+  const a0 = ctx.globalAlpha;
+  const base = y + fs * 0.36;
+  let px = x;
+  for (const ch of s) {
+    if (ch !== ' ') {
+      ctx.save();
+      ctx.translate(px, base + (rng() - 0.5) * fs * 0.1);
+      ctx.rotate((rng() - 0.5) * 0.14);
+      for (let pass = 0; pass < 3; pass++) {
+        ctx.globalAlpha = a0 * (pass === 0 ? 0.28 : 0.5 + 0.16 * pass);
+        scrawlGlyph(ctx, ch, fs, ink, rng, { width: pass === 0 ? 0.55 : 0.34 + 0.08 * pass, tremor: 1.1, dash: pass > 0, pool: false });
+      }
+      ctx.restore();
+    }
+    px += scrawlAdvance(ch, fs);
+  }
+  ctx.globalAlpha = a0;
+}
+
 function drawRows(ctx, fit, W, H, style, rng) {
   const { fs, rows, widths } = fit;
   const n = rows.length;
+  const hand = isHand(style);
   ctx.font = fontOf(style, fs);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  const sp = ctx.measureText(' ').width;
-  const ink = style === 'fresh' ? '#f2ebda' : style === 'scratch' ? 'rgba(226,219,202,0.82)' : style === 'cut' ? '#d8cba9' : '#e8dcc0';
+  const sp = hand ? scrawlAdvance(' ', fs) : ctx.measureText(' ').width;
+  const ink = hand ? 'rgb(232,226,208)' : style === 'fresh' ? '#f2ebda' : style === 'scratch' ? 'rgba(226,219,202,0.82)' : style === 'cut' ? '#d8cba9' : '#e8dcc0';
   let drawn = 0;
   rows.forEach((row, i) => {
-    const y = H / 2 + (i - (n - 1) / 2) * fs * 1.22 + (style === 'scratch' ? (rng() - 0.5) * fs * 0.12 : 0);
-    let x = (W - widths[i]) / 2;
-    if (style === 'scratch') {
+    const y = H / 2 + (i - (n - 1) / 2) * fs * 1.22 + (style === 'scratch' || hand ? (rng() - 0.5) * fs * 0.12 : 0);
+    let x = (W - widths[i]) / 2 + (hand ? (rng() - 0.5) * fs * 0.5 : 0);
+    if (style === 'scratch' || hand) {
       ctx.save();
       ctx.translate(W / 2, y);
-      ctx.rotate((rng() - 0.5) * 0.03);
+      ctx.rotate((rng() - 0.5) * (hand ? 0.045 : 0.03));
       ctx.translate(-W / 2, -y);
     }
     row.forEach((t, j) => {
-      const w = tokW(ctx, t, fs);
+      const w = tokW(ctx, t, fs, hand);
       if (t.k === 'g') drawGouge(ctx, x, y, w, fs, rng);
       else if (t.k === 't') drawTally(ctx, x, y, t.n, fs, ink, rng);
       else {
         ctx.save();
         if (t.k === 's') ctx.globalAlpha = 0.55;
-        if (style === 'scratch') {
+        if (hand) {
+          drawHandWord(ctx, t.s, x, y, fs, ink, rng);
+        } else if (style === 'scratch') {
           ctx.lineWidth = Math.max(1.4, fs * 0.045);
           ctx.strokeStyle = ink;
           ctx.strokeText(t.s, x, y);
@@ -322,7 +313,7 @@ function drawRows(ctx, fit, W, H, style, rng) {
       }
       x += w + sp;
     });
-    if (style === 'scratch') ctx.restore();
+    if (style === 'scratch' || hand) ctx.restore();
   });
   if (style === 'fresh') {
     ctx.fillStyle = 'rgba(244,238,224,0.22)'; // chalk dust fallen from the cut
@@ -460,7 +451,6 @@ export function drawBoardCell(ctx, e, x0, y0, W, H) {
     drawOutline(ctx, e, W, H, rng);
     return { fs: H, rows: [] };
   }
-  if (style === 'plate') drawPlate(ctx, W, H, rng);
   const fit = fitBoard(ctx, parseBoard(e.text), W, H, style);
   fit.drawn = drawRows(ctx, fit, W, H, style, rng);
   return fit;

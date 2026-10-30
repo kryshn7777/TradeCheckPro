@@ -45,7 +45,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
 import { SealView } from './objectivesView.js';
 import { BloodWriting } from './bloodWriting.js';
-import { BoardWriting } from './boardWriting.js';
+import { BoardWriting, drawBoardCell } from './boardWriting.js';
 import { cullBuriedFast, kitGeoFast, precullStep, CULLED, LOADOPT, dressBudgetMs } from './levelBuildFast.js'; // LOADING_OPTIMIZATION.md: faster, identical build steps
 import { restoreSnapshot, detailOf } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
 const KIT_STEP = 6; // kit placements drawn per dressing step (LOADING_OPTIMIZATION.md)
@@ -84,6 +84,8 @@ const PACK_ATTRS = ['position', 'normal', 'color', 'uv'];
 const PROPS_ON = !(typeof location !== 'undefined' && /[?&]props=0\b/.test(location.search || ''));
 const PROP_TYPES = new Set(['chain', 'statue']);
 // Architecture detail pass (archDetail.js): ?arch=0 builds the level as before (A/B captures, budget comparisons).
+/** The plaques are words written on the wall by a hand, not slabs (docs/abyssal-tether-3d/plans/TEXT_IN_THE_WORLD.md); `?slabs=1` brings the old slabs back. */
+const HAND_PLAQUES = !(typeof location !== 'undefined' && /[?&]slabs=1\b/.test(location.search || ''));
 const ARCH_ON = !(typeof location !== 'undefined' && /[?&]arch=0\b/.test(location.search || ''));
 const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
 const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
@@ -121,6 +123,7 @@ const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const _box = new THREE.Box3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _rayOut = {};
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _zero = { x: 0, y: 0, z: 0 };
 
@@ -1221,8 +1224,22 @@ function glowPointsMaterial(tex, size, fogCap) {
 }
 
 /** Text plaque canvas (original inscriptions, phosphor-filled carving). */
-function plaqueTexture(text, aspect) {
+function plaqueTexture(text, aspect, handId) {
   if (typeof document === 'undefined') return null;
+  if (handId) {
+    // written by a hand on the wall (no plate, no rule): the boards' chalk style
+    const Wh = 1024;
+    const Hh = Math.max(128, Math.min(1024, Math.round(Wh / Math.max(0.5, aspect))));
+    const ch = document.createElement('canvas');
+    ch.width = Wh;
+    ch.height = Hh;
+    const cx = ch.getContext('2d');
+    drawBoardCell(cx, { id: handId, text: String(text).replace(/\s+/g, ' '), style: 'hand' }, 0, 0, Wh, Hh);
+    const th = new THREE.CanvasTexture(ch);
+    th.colorSpace = THREE.SRGBColorSpace;
+    th.anisotropy = 4;
+    return th;
+  }
   const W = 1024;
   const H = Math.max(128, Math.min(1024, Math.round(W / Math.max(0.5, aspect))));
   const c = document.createElement('canvas');
@@ -5080,11 +5097,15 @@ export class LevelView {
       const z = num(d.z, 0);
       P.rng = makeRng(hashStr(d.id != null ? d.id : `${type}${d.x},${d.y}`));
       if (PLAQUE_TYPES.has(type)) {
-        addItem(d.x, d.y, z, rotY, () => {
-          P.box('stone', 0, 0, -0.02, lw, sy, ld);
-          if (ARCH_ON) P.soup('stoneN', plaqueFrameSoup(lw, sy, ld), 'stone'); // archDetail: carved frame + corner bosses
-        });
-        this._addPlaque(d, lw, sy, ld, rotY);
+        // no slab: the words are written on the wall itself, by a hand (boardWriting.js 'hand'). A plaque whose wall cannot be found behind it keeps its slab.
+        const back = HAND_PLAQUES ? this._plaqueWall(level, d, z, rotY) : null;
+        if (back === null) {
+          addItem(d.x, d.y, z, rotY, () => {
+            P.box('stone', 0, 0, -0.02, lw, sy, ld);
+            if (ARCH_ON) P.soup('stoneN', plaqueFrameSoup(lw, sy, ld), 'stone'); // archDetail: carved frame + corner bosses
+          });
+        }
+        this._addPlaque(d, lw, sy, ld, rotY, back);
         count++;
         continue;
       }
@@ -6143,18 +6164,34 @@ export class LevelView {
     g.visible = this._gateCenter.distanceTo(head) < vd + this._gateRadius;
   }
 
-  _addPlaque(d, lw, sy, ld, rotY) {
+  /** Metres from the plaque's centre back to the wall behind it (0.05..1), or null (no wall found: the slab stays). */
+  _plaqueWall(level, d, z, rotY) {
+    if (!level || typeof level.raycast !== 'function') return null;
+    _v1.set(0, 0, -1).applyAxisAngle(_up, rotY);
+    const hit = level.raycast(d.x, d.y, z, _v1.x, _v1.y, _v1.z, 1.2, _rayOut);
+    return hit && hit.t > 0.05 && hit.t < 1 ? hit.t : null;
+  }
+
+  _addPlaque(d, lw, sy, ld, rotY, back) {
     const text = d.text || d.label || d.title || '';
     if (!text) return;
-    const tex = plaqueTexture(text, lw / sy);
+    const tex = plaqueTexture(text, lw / sy, back !== null && back !== undefined ? String(d.id != null ? d.id : text) : '');
     if (!tex) return;
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(lw * 0.95, sy * 0.86), mat);
     mesh.userData.ownMaterial = true;
     mesh.name = `plaque_${d.id || ''}`;
     mesh.rotation.y = rotY;
-    _v1.set(0, 0, ld / 2 + 0.012).applyAxisAngle(_up, rotY);
-    mesh.position.set(d.x + _v1.x, d.y + _v1.y, num(d.z, 0) + _v1.z);
+    if (back !== null && back !== undefined) {
+      // on the wall, 1.4 cm off it, a little crooked and not quite where a sign would hang
+      const j = hashStr(String(d.id != null ? d.id : text));
+      _v1.set(0, 0, -(back - 0.014)).applyAxisAngle(_up, rotY);
+      mesh.position.set(d.x + _v1.x, d.y + _v1.y + (((j & 255) / 255) - 0.5) * 0.3, num(d.z, 0) + _v1.z);
+      mesh.rotateZ((((j >>> 8) & 255) / 255 - 0.5) * 0.07);
+    } else {
+      _v1.set(0, 0, ld / 2 + 0.012).applyAxisAngle(_up, rotY);
+      mesh.position.set(d.x + _v1.x, d.y + _v1.y, num(d.z, 0) + _v1.z);
+    }
     mesh.renderOrder = 5;
     mesh.visible = false;
     this.root.add(mesh);
