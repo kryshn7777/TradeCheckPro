@@ -30,9 +30,9 @@ export const NV = Object.freeze({
 });
 
 /** Extra darkness (0..1) by section index, folded into the difficulty's darkness: 1 - (1 - base) * (1 - depth). */
-export const DEPTH_DARK = Object.freeze([0, 0.03, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+export const DEPTH_DARK = Object.freeze([0, 0.04, 0.12, 0.24, 0.36, 0.48, 0.58, 0.68]);
 /** The lantern's reach / strength by section index: it fades the deeper the diver goes. */
-export const DEPTH_LANTERN = Object.freeze([1, 1, 0.92, 0.84, 0.74, 0.64, 0.55, 0.48]);
+export const DEPTH_LANTERN = Object.freeze([1, 1, 0.9, 0.78, 0.66, 0.54, 0.44, 0.34]);
 
 function at(table, section) {
   const n = table.length;

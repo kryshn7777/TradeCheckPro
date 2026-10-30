@@ -88,7 +88,7 @@ const names = (ev) => ev.map((e) => e[0]).join(',');
   let mono = true;
   for (let i = 1; i < N.DEPTH_DARK.length; i++) if (N.DEPTH_DARK[i] < N.DEPTH_DARK[i - 1] || N.DEPTH_LANTERN[i] > N.DEPTH_LANTERN[i - 1]) mono = false;
   ok(mono && N.DEPTH_DARK[0] === 0 && N.DEPTH_LANTERN[0] === 1, 'darker and a weaker lantern with every section, the first untouched');
-  ok(N.DEPTH_DARK[N.DEPTH_DARK.length - 1] <= 0.7 && N.DEPTH_LANTERN[N.DEPTH_LANTERN.length - 1] >= 0.4, 'bounded: the bottom is dark, not black, and the lantern never dies of depth alone');
+  ok(N.DEPTH_DARK[N.DEPTH_DARK.length - 1] <= 0.7 && N.DEPTH_LANTERN[N.DEPTH_LANTERN.length - 1] >= 0.3, 'bounded: the bottom is dark, not black, and the lantern never dies of depth alone');
   ok(Math.abs(N.depthDarknessAt(2.5) - (N.DEPTH_DARK[2] + N.DEPTH_DARK[3]) / 2) < 1e-9, 'a fractional section interpolates');
   ok(N.depthDarknessAt(-3) === 0 && N.depthDarknessAt(99) === N.DEPTH_DARK[N.DEPTH_DARK.length - 1], 'clamped outside the table');
   ok(N.lanternFadeAt(0) === 1 && N.lanternFadeAt(99) === N.DEPTH_LANTERN[N.DEPTH_LANTERN.length - 1], 'lantern fade clamps');

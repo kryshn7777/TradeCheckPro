@@ -40,7 +40,7 @@ void main() {
   float m = 1.0 - smoothstep( uRim.x, uRim.y, r );
   m = mix( uFloor, 1.0, m * m * ( 3.0 - 2.0 * m ) );
   // the tubes' picture: nearly only the green channel survives; the centre is a touch hotter than the rim
-  vec3 tint = vec3( 0.07, 1.0, 0.20 ) * m * ( 1.0 + 0.25 * ( 1.0 - r * 0.7 ) );
+  vec3 tint = vec3( 0.07, 1.0, 0.20 ) * m * ( 1.0 + 0.1 * ( 1.0 - r * 0.7 ) );
   gl_FragColor = vec4( mix( vec3( 1.0 ), tint, uK ), 1.0 );
 }`;
 

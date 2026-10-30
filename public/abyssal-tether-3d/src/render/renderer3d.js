@@ -799,11 +799,11 @@ export class Renderer3D {
     const grey = (_tmpC.r + _tmpC.g + _tmpC.b) / 3;
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
-    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.4 * nvK);
+    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.0 * nvK);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
-    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.6 * nvK);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.3 * nvK);
 
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
     LOOK.uTime.value = this.time;

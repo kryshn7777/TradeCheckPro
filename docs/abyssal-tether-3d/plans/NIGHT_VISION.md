@@ -14,7 +14,7 @@ The diver's kit is the Perennial's: tether guns, a bag, a wrist display, a radio
 | Look | One grey-green picture, phosphor grain, a soft tube rim (softer and never closing past ~35 % light in a headset), a warm-up bloom, a five-segment cell gauge under the picture |
 | Cost | A cell: about **2 minutes** of use, trickling back in about **3 minutes** while the goggles are off. Below 20 % the picture stutters (bounded, dips to ~55 %, never a strobe) and a toast warns. At zero they drop and refuse to start until 12 % is back |
 | Sound | A thin electronic whine climbing as the tubes warm up, a quicker one down; captioned as `[Goggles whine up/down]` |
-| Hint | The first time the depth darkness passes 0.18 (the third section) a toast says how to switch them on |
+| Hint | The first time the depth darkness passes 0.18 (between the third and fourth section) a toast says how to switch them on |
 
 They are for scouting a stretch (find the trigger, see the ledge), not for wearing all the way down: the player decides when to spend the cell and when to climb by the dim lantern.
 
@@ -24,17 +24,17 @@ They are for scouting a stretch (find the trigger, see the ledge), not for weari
 
 | Section | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 |
 |---|---|---|---|---|---|---|---|---|
-| depth darkness | 0 | .03 | .10 | .20 | .30 | .40 | .50 | .60 |
-| lantern strength and reach | 1 | 1 | .92 | .84 | .74 | .64 | .55 | .48 |
-| Normal (base .3) folded | .30 | .32 | .37 | .44 | .51 | .58 | .65 | .72 |
+| depth darkness | 0 | .04 | .12 | .24 | .36 | .48 | .58 | .68 |
+| lantern strength and reach | 1 | 1 | .90 | .78 | .66 | .54 | .44 | .34 |
+| Normal (base .3) folded | .30 | .33 | .38 | .47 | .55 | .64 | .71 | .78 |
 
-Normal at the bottom is about as dark as Nightmare at the top; Nightmare and Abyss go darker still. The menu's drifting background is not darkened. `?deepdark=0..1` scales the depth part (0 = the old levels), for testing and for a comfort setting later.
+Normal at the bottom (.78) is darker than Nightmare at the top (.72); Nightmare and Abyss go darker still. The menu's drifting background is not darkened. `?deepdark=0..1` scales the depth part (0 = the old levels), for testing and for a comfort setting later.
 
 The renderer reads the section blend by height, so the darkness eases in across a section boundary with the theme instead of popping.
 
 ## How the picture is made (no post-processing pass)
 
-1. **The scene is lifted** (cheap uniforms, no shader recompile): while the tubes warm up (`nv.k` 0..1) the darkness comes off (`dark *= 1 - 0.92 k`), the ambient and key rise (x3.4 and x2.6), the baked-light exposure (+100 %) and floor (+0.035) rise, the haze goes pale green.
+1. **The scene is lifted** (cheap uniforms, no shader recompile): while the tubes warm up (`nv.k` 0..1) the darkness comes off (`dark *= 1 - 0.92 k`), the ambient and key rise (x3 and x2.3), the baked-light exposure (+80 %) and floor (+0.03) rise, the haze goes pale green.
 2. **A multiply triangle** keeps almost only the green channel through a rounded tube mask. **An additive triangle** adds the phosphor floor, grain, warm-up bloom, a slow scan band and the cell gauge. Both are camera-child clip-space triangles (zero parallax in stereo), no depth test, `renderOrder` 860 / 861, below the red health vignette (880) so a hit still shows over the green.
 3. Both programs are compiled at load (the meshes exist visible at construction, like the health vignette), so the first toggle never hitches on Quest.
 
