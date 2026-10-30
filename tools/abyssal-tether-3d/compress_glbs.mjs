@@ -39,7 +39,7 @@ const repo = path.resolve(here, '..', '..');
 const dir = path.resolve(opt('dir', path.join(repo, 'public', 'abyssal-tether-3d', 'assets', 'models')));
 const outDir = path.resolve(opt('out', dir));
 const toolsDir = process.env.GLTF_TOOLS || opt('tools');
-const FILES = ['mason_rig', 'player_arms', 'mason_hero', 'mason_kit', 'player_body', 'holdfast'];
+const FILES = ['mason_rig', 'player_arms', 'mason_hero', 'mason_kit', 'player_body', 'holdfast', 'dresser'];
 const only = opt('only', FILES.join(','))
   .split(',')
   .map((s) => s.trim())

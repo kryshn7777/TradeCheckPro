@@ -143,6 +143,45 @@ Runtime: `holdfastView.js` loads the GLB in the background once a run is under w
 the base clip by state, `reach` / `close` scrubbed by the sim's `close`, `squeeze` additive on the beats; then an IK puts the palm on
 the held hand with the forearm through the socket's mouth, mirrored for a left hand), the rest one InstancedMesh of the dormant fist.
 
+## The Dresser v2 (the mason in the hooded apron)
+
+`build_dresser.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 7171) builds THE DRESSER's model (`src/sim/dresser3d.js`,
+`src/render/dresserView.js`, `docs/abyssal-tether-3d/plans/DRESSER.md`) for the view's EXISTING skeleton: the bone table (names, parents,
+bind positions) is parsed from `dresserView.js` `BONES`, the bones are exported vertical with roll 0 (identity glTF rest rotations), so
+the view rebinds the GLB geometry to its own skeleton and its procedural `_pose` drives it unchanged.
+
+Pipeline: every part is a parametric (u, v) patch with its own rectangle in ONE atlas (skyline-packed by area x texel weight; the mask
+x30) -> LOD0 / LOD1 / LOD2 are the same patches sampled at three densities (shared UVs; the mask's rows and columns concentrated on the
+eyes, nose and mouth) -> HIGH = the patches at about one vertex per texel of the 2048 bake + numpy 'sculpt' layers (the mask: slit eyes,
+lid creases, a doubled crease on the wrong lid, the lip line and the cord stitches with drilled holes, the crack and its branch, chisel
+dents, the chipped seam, nails and a missing one, craquelure, tear erosion; cloth wrinkles, stitched seams, a patch and the fraying;
+leather grain, stitch rows and creases; forging facets, steps and rivets; finger wraps) -> Cycles bakes (tangent normal and fine AO per
+part HIGH -> LOD0, global AO of LOD0) -> albedo / roughness / the slit glow painted analytically in UV space from the same feature
+functions (tears, grime pooled in the forms, rust runs, chalk on the mantle, stains) -> composite -> skin (rigid iron on ball joints
+centred on the pivots, the robe on hips / spine / chest / the eight skirt bones, the hood head -> neck -> chest, the mantle and sleeves
+chest -> upper arm, the small arms blended at the elbow) -> GLB.
+
+| Output | |
+|---|---|
+| `public/abyssal-tether-3d/assets/models/dresser.glb` (1.8 MB) | `Dresser_LOD0` / `_LOD1` / `_LOD2` (22.5 k / 7.6 k / 2.2 k triangles; skinned, one primitive each; the HIGH they are baked from is ~7 M), the 32-bone `Dresser_Armature`, one material `DresserBody` (albedo, normal, ORM: R AO, G roughness, B the slit glow), COLOR_0 (R the pale self-light mask, B the hood-lip rim mask), extras `dresser` (whiteUV = the atlas's white block for the line and the chalk outline); meshopt + KTX2 (1024 maps) |
+| `previews/dresser_sheet.png` | Cycles contact sheet of the game mesh (idle, 3/4, measuring, back, the face at 1.5 m, serene / wrong, the wrong eye macro, hands, a chisel arm, LOD0 / 1 / 2) |
+
+```bash
+PY=.../blender-venv/bin/python
+flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_dresser.py --out <dir> --renders <dir> --cache <dir>/cache --bake 2048 --render [--samples 32] [--blend <file>]
+        # ~6 min + ~2 min of previews; --stage shape = clay renders (LOW + the HIGH mask), --stage paint = the analytic maps only,
+        # --bake 1024 for a quick look; delete the cache after any geometry change (the bakes are cached per resolution)
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out <dir2> --only dresser
+GLTF_TOOLS=$TOOLS KTX2_TOOLS=$KTX node tools/abyssal-tether-3d/compress_glb_textures.mjs --dir <dir2> --out public/abyssal-tether-3d/assets/models --only dresser
+node tools/abyssal-tether-3d/tests/creature/dresser.mjs        # the LOD table, the GLB's budget / contract, its path in the view
+npm run at3d:sw                                                # dresser.glb is in the LAZY tier (release/gen-precache.mjs)
+```
+
+Runtime: `dresserView.js` loads the GLB in the background once a run with a Dresser is under way (game.js `_updateViews`, the Holdfast's
+loader factory); `buildFromGLTF` rebinds each LOD to the view's skeleton (joints by name), appends the procedural measuring line and the
+chalk outline (uv on the white block), swaps the meshes and the material: still ONE draw call. Missing / failing GLB, Node, or
+`?dressermodel=procedural`: the procedural meshes stay.
+
 ## Textures
 
 Seamless PBR sets (every map periodic by construction) live in `public/abyssal-tether-3d/assets/textures/` with a

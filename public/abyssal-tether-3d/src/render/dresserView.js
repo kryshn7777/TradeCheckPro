@@ -12,21 +12,51 @@
  *   .info                  { drawCalls, triangles } of what it draws this frame (the debug API, the budget harness)
  *   .dispose()
  *
- * Budget: near LOD <= 12 k triangles, far LOD <= 4.5 k (switch at LOD_DIST[tier], hysteresis 3 m), beyond GLOW_DIST only the
- * two eye glints (one tiny additive mesh), hidden when the sim is out of play. The chalk outline of you is a quad of the same
- * skinned mesh on its own bone (alpha-dithered from the outline texture), so measuring costs no extra call. The material is the level's lit patch (materials.js patchMaterial: lantern, baked GI, wet
- * film, the horror grade) plus: a cold glow on the slits and the line (piercing the fog), a faint pale self-light on the mask so
- * the face reads in the dark, a fog cap so the silhouette survives the haze, and the near-eye dissolve.
+ * THE DRESSER v2 (assets/models/dresser.glb, tools/abyssal-tether-3d/build_dresser.py): the same creature sculpted and baked in
+ * Blender for THIS skeleton (bone names, parents and bind positions parsed from BONES below): a carved split saint mask (serene /
+ * wrong halves, slit eyes, the mouth sewn shut, a crack, grime tears), a peaked hood with a rolled lip, a wool mantle, a stitched
+ * apron, a belt of tools, forged chisel arms, cloth-wrapped hands with the line's spool; three LODs (~22.5 k / 7.6 k / 2.2 k triangles,
+ * the last still a face) sharing one 1024 atlas (albedo, normal, ORM: B = the slit glow; COLOR_0: R pale self-light, B hood rim).
+ * It loads lazily in the background (load(), game.js once a run is under way); when it arrives its geometry is rebound to THIS
+ * skeleton (merged with the procedural measuring line and chalk outline, still ONE draw call) and swapped in; until then, and
+ * whenever it is missing or fails (offline, Node tests), the procedural meshes below are the fallback.
+ *
+ * Budget: procedural near LOD <= 12 k triangles, far LOD <= 4.5 k (LOD_DIST_FALLBACK); the GLB's LOD0 <= 24 k, LOD1 <= 8.5 k, LOD2
+ * <= 3.2 k (LOD_DIST); beyond GLOW_DIST only the two eye glints (one tiny additive mesh), hidden when the sim is out of play. The
+ * chalk outline of you is a quad of the same skinned mesh on its own bone (alpha-dithered from the outline texture), so measuring
+ * costs no extra call. The material is the level's lit patch (materials.js patchMaterial: lantern, baked GI, wet film, the horror
+ * grade) plus: a cold glow on the slits and the line (piercing the fog), a faint pale self-light on the mask so the face reads in
+ * the dark (stronger from afar), a cold rim on the hood's lip, a fog cap so the silhouette survives the haze, the near-eye dissolve.
  */
 import * as THREE from 'three';
 import { patchMaterial } from './materials.js';
 
-/** LOD switch distance (m, camera to its chest) per quality tier, and where it becomes only two cold glints. The far LOD keeps the
- * silhouette, the split mask and the slits (~4.4 k triangles), so on Quest the full mesh is only for when it is close to you. */
-export const LOD_DIST = { low: 10, quest: 12, high: 45 }; // Quest: the mid LOD from 12 m (THE CORRIDOR with skitterlings in view)
+export const DRESSER_URL = new URL('../../assets/models/dresser.glb', import.meta.url).href;
+/** The GLB's LOD switches per quality tier: [LOD0 -> LOD1, LOD1 -> LOD2] (m, camera to its chest). Quest: the full sculpt within 8 m,
+ * the mid LOD to 22 m (THE CORRIDOR with skitterlings in view), then LOD2 (~2 k triangles, still the mask, its brow, nose and slits). */
+export const LOD_DIST = { low: [6, 16], quest: [8, 22], high: [32, 50] };
+/** The procedural fallback's single switch (near -> far). */
+export const LOD_DIST_FALLBACK = { low: 10, quest: 12, high: 45 };
 export const GLOW_DIST = 60;
 const LOD_HYST = 3;
 const GLOW_COL = new THREE.Color(0.55, 0.78, 1.0);
+
+/**
+ * The level of detail for a camera distance (pure: the tests read it). `cur` the current LOD (hysteresis: a finer LOD needs the
+ * camera LOD_HYST m closer than the switch), `glb` the v2 model is in (three LODs) or not (the procedural pair). -1 = glints only.
+ */
+export function pickLod(camD, tier, cur = 0, glb = true) {
+  if (camD > GLOW_DIST) return -1;
+  if (!glb) {
+    const d = LOD_DIST_FALLBACK[tier] || LOD_DIST_FALLBACK.quest;
+    return camD > (cur >= 1 ? d - LOD_HYST : d) ? 1 : 0;
+  }
+  const t = LOD_DIST[tier] || LOD_DIST.quest;
+  let lod = 0;
+  if (camD > (cur >= 1 ? t[0] - LOD_HYST : t[0])) lod = 1;
+  if (camD > (cur >= 2 ? t[1] - LOD_HYST : t[1])) lod = 2;
+  return lod;
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Skeleton (bind pose: the creature's own frame, +Y its up (away from the wall), +Z the way it faces, +X its left)
@@ -98,7 +128,7 @@ const smooth = (a, b, v) => {
 };
 
 // ---------------------------------------------------------------------------------------------------------------------
-// Geometry builder: parts with per-vertex colour (rgb + roughness in a), fx (x eye glow, y pale self-light) and skin
+// Geometry builder: parts with per-vertex colour (rgb + roughness in a), fx (x eye glow, y pale self-light, z hood rim) and skin
 // ---------------------------------------------------------------------------------------------------------------------
 class Builder {
   constructor() {
@@ -132,7 +162,7 @@ class Builder {
       this.nrm.push(nr[k * 3], nr[k * 3 + 1], nr[k * 3 + 2]);
       const c = paint(x, y, z, k);
       this.col.push(c[0], c[1], c[2], c[3]);
-      this.fx.push(c[4] || 0, c[5] || 0);
+      this.fx.push(c[4] || 0, c[5] || 0, c[6] || 0);
       this.ch.push(chalk);
       const w = skin(x, y, z, k);
       let tot = 0;
@@ -152,7 +182,7 @@ class Builder {
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nrm, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 4));
-    g.setAttribute('aFx', new THREE.Float32BufferAttribute(this.fx, 2));
+    g.setAttribute('aFx', new THREE.Float32BufferAttribute(this.fx, 3));
     g.setAttribute('aChalk', new THREE.Float32BufferAttribute(this.ch, 1));
     g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(this.si, 4));
     g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(this.sw, 4));
@@ -704,6 +734,13 @@ export function buildDresserGeometry(lod = 0) {
     }
   }
 
+  addLineAndChalk(Bd, far);
+  return Bd.geometry();
+}
+
+/** The measuring line (a crossed ribbon from the small left hand's fingertips to the lineEnd bone) and the chalk outline quad (the
+ * 'chalk' bone): the two procedural parts every LOD carries, the GLB's too (merged into its skinned mesh: still one call). */
+function addLineAndChalk(Bd, far) {
   // ---- the measuring line: from the small left hand's fingertips to the lineEnd bone (the right hand, or your ring) ----
   {
     const n = far ? 4 : 10;
@@ -748,7 +785,134 @@ export function buildDresserGeometry(lod = 0) {
     () => [[B.chalk, 1]],
     1,
   );
-  return Bd.geometry();
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// THE DRESSER v2 (the GLB): its LODs rebound to this skeleton, merged with the line and the chalk outline
+// ---------------------------------------------------------------------------------------------------------------------
+const _rv = new THREE.Vector3();
+const _rm = new THREE.Matrix4();
+const _rn = new THREE.Matrix3();
+
+/**
+ * One GLB LOD (a SkinnedMesh of dresser.glb, its scene's world matrices updated) as a BufferGeometry on THIS skeleton: positions and
+ * normals in the creature frame (the GLB's rest pose IS the bind pose; the quantisation's dequantising transform rides in its
+ * inverse bind matrices, so the rest transform is read from the skeleton), joints remapped by NAME to BONES, COLOR_0 -> aFx (y pale,
+ * z rim), the UVs; then the procedural line and chalk outline appended (their uv on the atlas's white block, their colours in the
+ * vertex colour). Pure (no DOM): the Node tests build it from the parsed file.
+ * @returns {THREE.BufferGeometry}
+ */
+export function buildGlbGeometry(mesh, lod, whiteUV = [0.5, 0.5]) {
+  const g = mesh.geometry;
+  const pos = g.attributes.position;
+  const nrm = g.attributes.normal;
+  const uv = g.attributes.uv;
+  const si = g.attributes.skinIndex;
+  const sw = g.attributes.skinWeight;
+  const col = g.attributes.color;
+  if (!pos || !nrm || !uv || !si || !sw || !g.index) throw new Error('dresser.glb: a LOD lacks position / normal / uv / skin / index');
+  const sk = mesh.skeleton;
+  const map = sk.bones.map((b) => (b.name in B ? B[b.name] : -1));
+  if (map.some((m) => m < 0)) throw new Error('dresser.glb: unknown bone ' + sk.bones.find((b) => !(b.name in B)).name);
+  // the rest transform (mesh space -> the creature frame), through the root joint
+  const r = sk.bones.findIndex((b) => b.name === 'root');
+  _rm.multiplyMatrices(sk.bones[r].matrixWorld, sk.boneInverses[r]);
+  _rm.premultiply(mesh.bindMatrixInverse).multiply(mesh.bindMatrix).premultiply(mesh.matrixWorld);
+  _rn.getNormalMatrix(_rm);
+  const ex = new Builder();
+  addLineAndChalk(ex, lod > 0);
+  const n0 = pos.count;
+  const n = n0 + ex.n;
+  const P = new Float32Array(n * 3);
+  const N = new Float32Array(n * 3);
+  const T = new Float32Array(n * 2);
+  const C = new Float32Array(n * 4);
+  const F = new Float32Array(n * 3);
+  const H = new Float32Array(n);
+  const SI = new Uint16Array(n * 4);
+  const SW = new Float32Array(n * 4);
+  for (let i = 0; i < n0; i++) {
+    _rv.fromBufferAttribute(pos, i).applyMatrix4(_rm);
+    P[i * 3] = _rv.x;
+    P[i * 3 + 1] = _rv.y;
+    P[i * 3 + 2] = _rv.z;
+    _rv.fromBufferAttribute(nrm, i).applyMatrix3(_rn).normalize();
+    N[i * 3] = _rv.x;
+    N[i * 3 + 1] = _rv.y;
+    N[i * 3 + 2] = _rv.z;
+    T[i * 2] = uv.getX(i);
+    T[i * 2 + 1] = uv.getY(i);
+    C[i * 4] = 1;
+    C[i * 4 + 1] = 1;
+    C[i * 4 + 2] = 1;
+    C[i * 4 + 3] = 1;
+    if (col) {
+      F[i * 3 + 1] = col.getX(i); // pale self-light
+      F[i * 3 + 2] = col.getZ(i); // hood rim
+    }
+    let tot = 0;
+    for (let j = 0; j < 4; j++) tot += sw.getComponent(i, j);
+    for (let j = 0; j < 4; j++) {
+      const w = sw.getComponent(i, j);
+      SI[i * 4 + j] = w > 0 ? map[si.getComponent(i, j)] : 0;
+      SW[i * 4 + j] = tot > 0 ? w / tot : j === 0 ? 1 : 0;
+    }
+  }
+  for (let k = 0; k < ex.n; k++) {
+    const i = n0 + k;
+    for (let c = 0; c < 3; c++) {
+      P[i * 3 + c] = ex.pos[k * 3 + c];
+      N[i * 3 + c] = ex.nrm[k * 3 + c];
+      F[i * 3 + c] = ex.fx[k * 3 + c];
+    }
+    for (let c = 0; c < 4; c++) {
+      C[i * 4 + c] = ex.col[k * 4 + c];
+      SI[i * 4 + c] = ex.si[k * 4 + c];
+      SW[i * 4 + c] = ex.sw[k * 4 + c];
+    }
+    T[i * 2] = whiteUV[0];
+    T[i * 2 + 1] = whiteUV[1];
+    H[i] = ex.ch[k];
+  }
+  const ib = g.index;
+  const idx = new (n > 65535 ? Uint32Array : Uint16Array)(ib.count + ex.idx.length);
+  for (let k = 0; k < ib.count; k++) idx[k] = ib.getX(k);
+  for (let k = 0; k < ex.idx.length; k++) idx[ib.count + k] = ex.idx[k] + n0;
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  out.setAttribute('uv', new THREE.BufferAttribute(T, 2));
+  out.setAttribute('color', new THREE.BufferAttribute(C, 4));
+  out.setAttribute('aFx', new THREE.BufferAttribute(F, 3));
+  out.setAttribute('aChalk', new THREE.BufferAttribute(H, 1));
+  out.setAttribute('skinIndex', new THREE.BufferAttribute(SI, 4));
+  out.setAttribute('skinWeight', new THREE.BufferAttribute(SW, 4));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  out.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.7, 0), 2.2);
+  return out;
+}
+
+/** The GLB's skinned LODs in order (Dresser_LOD0..2), its material's maps and the white-block uv (extras), from a loaded glTF. */
+export function readDresserGltf(gltf) {
+  const scene = gltf && (gltf.scene || (gltf.scenes && gltf.scenes[0]));
+  if (!scene) throw new Error('dresser.glb: no scene');
+  scene.updateMatrixWorld(true);
+  const lods = [];
+  let extras = null;
+  scene.traverse((o) => {
+    const m = /Dresser_LOD(\d)/.exec(o.name || '');
+    if (o.isSkinnedMesh && m) lods[+m[1]] = o;
+    if (o.userData && typeof o.userData.dresser === 'string') extras = o.userData.dresser;
+  });
+  if (lods.length !== 3 || !lods.every(Boolean)) throw new Error('dresser.glb: expected Dresser_LOD0..2');
+  let meta = {};
+  try {
+    meta = extras ? JSON.parse(extras) : {};
+  } catch {
+    meta = {};
+  }
+  const mat = lods[0].material;
+  return { lods, meta, whiteUV: Array.isArray(meta.whiteUV) ? meta.whiteUV : [0.5, 0.5], maps: { map: mat.map || null, normalMap: mat.normalMap || null, normalScale: mat.normalScale || null, orm: mat.roughnessMap || mat.metalnessMap || null } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -878,21 +1042,42 @@ export function makeDresserUniforms() {
     uNear: { value: new THREE.Vector2(0.3, 0.75) },
     uAmb: { value: new THREE.Color(0.2, 0.24, 0.28) },
     uRimC: { value: new THREE.Color(0.075, 0.095, 0.115) },
+    uRimHood: { value: new THREE.Color(0.16, 0.2, 0.24) }, // the cold rim on the hood's lip (v2: COLOR_0.B)
   };
 }
 
-function makeBodyMaterial(U) {
+/**
+ * The body material (one for every LOD). `maps` (the v2 GLB's: map, normalMap, normalScale, orm) adds the baked atlas: albedo x the
+ * vertex colour (white on the body; the line's and the chalk's own colours on the white block), the tangent normal, roughness from
+ * ORM.G (x the vertex colour's alpha), occlusion from ORM.R, the slit glow from ORM.B; metalness stays 0.
+ */
+function makeBodyMaterial(U, maps = null) {
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.6 });
-  mat.name = 'at3dDresser';
-  patchMaterial(mat, { lit: true, grade: true, wetMin: 0.15, fog: 'cap', fogCap: 0.8 });
+  mat.name = maps ? 'at3dDresserV2' : 'at3dDresser';
+  if (maps) {
+    if (maps.map) mat.map = maps.map;
+    if (maps.normalMap) {
+      mat.normalMap = maps.normalMap;
+      if (maps.normalScale) mat.normalScale.copy(maps.normalScale);
+    }
+    if (maps.orm) {
+      mat.roughnessMap = maps.orm;
+      mat.aoMap = maps.orm;
+      mat.aoMapIntensity = 0.85;
+    }
+  }
+  // v2: the landmarks' fog cap (the haze never takes more than half of it: the dark figure and its pale face stay readable down the
+  // shaft) and the pale mask piercing the fog like the slits (DR_V2)
+  patchMaterial(mat, { lit: true, grade: true, wetMin: 0.15, fog: 'cap', fogCap: maps ? 0.5 : 0.8 });
+  if (maps) mat.defines = Object.assign(mat.defines || {}, { DR_V2: '' });
   const fogFn = /atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? 'atFogFactor( vFogDepth )' : 'smoothstep( fogNear, fogFar, vFogDepth )';
-  chain(mat, 'dresser1', (shader) => {
+  chain(mat, maps ? 'dresser2' : 'dresser1', (shader) => {
     Object.assign(shader.uniforms, U);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aFx;\nattribute float aChalk;\nvarying vec2 vDrFx;\nvarying float vDrCh;')
+      .replace('#include <common>', '#include <common>\nattribute vec3 aFx;\nattribute float aChalk;\nvarying vec3 vDrFx;\nvarying float vDrCh;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vDrFx = aFx;\n  vDrCh = aChalk;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vDrFx;\nvarying float vDrCh;\nuniform float uGlow;\nuniform vec3 uGlowCol;\nuniform float uPale;\nuniform float uPierce;\nuniform vec2 uNear;\nuniform vec3 uAmb;\nuniform vec3 uRimC;\nuniform sampler2D uChalk;\nuniform vec2 uChalkK;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vDrFx;\nvarying float vDrCh;\nuniform float uGlow;\nuniform vec3 uGlowCol;\nuniform float uPale;\nuniform float uPierce;\nuniform vec2 uNear;\nuniform vec3 uAmb;\nuniform vec3 uRimC;\nuniform vec3 uRimHood;\nuniform sampler2D uChalk;\nuniform vec2 uChalkK;\nfloat drGlowM = 0.0;\nfloat drAo = 1.0;')
       .replace(
         '#include <clipping_planes_fragment>',
         `#include <clipping_planes_fragment>
@@ -900,7 +1085,7 @@ function makeBodyMaterial(U) {
   float drChalk = 0.0;
   if ( vDrCh > 0.5 ) {
     // the chalk outline: drawn on in stroke order (green), its chalk in alpha, dithered (no blending: no draw call of its own)
-    vec4 dcT = texture2D( uChalk, vDrFx );
+    vec4 dcT = texture2D( uChalk, vDrFx.xy );
     drChalk = dcT.a * smoothstep( dcT.g - 0.02, dcT.g, uChalkK.x ) * uChalkK.y;
     if ( drChalk < drIgn * 0.9 + 0.05 ) discard;
   } else {
@@ -909,26 +1094,33 @@ function makeBodyMaterial(U) {
     if ( drNf < 0.999 && drNf < drIgn ) discard;
   }`,
       )
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n#ifdef USE_COLOR_ALPHA\n  roughnessFactor *= vColor.a;\n#endif')
+      .replace(
+        '#include <roughnessmap_fragment>',
+        '#include <roughnessmap_fragment>\n#ifdef USE_COLOR_ALPHA\n  roughnessFactor *= vColor.a;\n#endif\n#ifdef USE_ROUGHNESSMAP\n  drGlowM = texelRoughness.b;\n  drAo = texelRoughness.r;\n#endif',
+      )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
   if ( vDrCh > 0.5 ) {
     totalEmissiveRadiance += diffuseColor.rgb * 0.16; // chalk reads in the dark before the lantern reaches it
   } else {
-  totalEmissiveRadiance += uGlowCol * ( vDrFx.x * uGlow * 0.9 ) + diffuseColor.rgb * ( vDrFx.y * uPale );
+  totalEmissiveRadiance += uGlowCol * ( max( vDrFx.x, drGlowM ) * uGlow * 0.9 ) + diffuseColor.rgb * ( vDrFx.y * uPale );
   }
   if ( vDrCh < 0.5 ) {
     // a faint cold ambient (x albedo) and a grazing rim: the dark robe keeps its outline against the haze
     float drFr = 1.0 - clamp( dot( normalize( normal ), normalize( vViewPosition ) ), 0.0, 1.0 );
-    totalEmissiveRadiance += diffuseColor.rgb * uAmb + uRimC * ( drFr * drFr * drFr );
+    // (v2: no grazing rim inside the hood or under the mantle: the baked occlusion, and the hood lip has its own)
+    totalEmissiveRadiance += diffuseColor.rgb * uAmb + uRimC * ( drFr * drFr * drFr * drAo * drAo * ( 1.0 - vDrFx.z ) ) + uRimHood * ( vDrFx.z * drFr * drFr );
   }`,
       )
       .replace(
         '#include <dithering_fragment>',
         `#include <dithering_fragment>
 #ifdef USE_FOG
-  if ( vDrCh < 0.5 ) gl_FragColor.rgb += uGlowCol * ( vDrFx.x * uGlow * uPierce * ${fogFn} );
+  if ( vDrCh < 0.5 ) gl_FragColor.rgb += uGlowCol * ( max( vDrFx.x, drGlowM ) * uGlow * uPierce * ${fogFn} );
+#ifdef DR_V2
+  if ( vDrCh < 0.5 ) gl_FragColor.rgb += diffuseColor.rgb * ( vDrFx.y * uPale * uPierce * 0.6 * ${fogFn} );
+#endif
 #endif`,
       );
   });
@@ -1034,6 +1226,82 @@ export class DresserView {
     this._swv = new Float32Array(8);
     this._outlineHand = 'right';
     this.debug = { forceLod: -1 };
+    // THE DRESSER v2 (dresser.glb): loaded in the background, swapped in when ready; the procedural meshes stay until then
+    this.game = game || null;
+    this.glbReady = false;
+    this.glbLoading = false;
+    this.glbFailed = false;
+    this.glbError = null;
+    this.onError = null;
+    this._glbTex = [];
+  }
+
+  /** Starts the background load of dresser.glb (idempotent). `loaderFactory()` returns a GLTFLoader (meshopt + KTX2 attached). */
+  load(loaderFactory, url = DRESSER_URL) {
+    if (this.glbLoading || this.glbReady || this.glbFailed || typeof loaderFactory !== 'function') return;
+    this.glbLoading = true;
+    const fail = (err) => {
+      this.glbLoading = false;
+      this.glbFailed = true;
+      this.glbError = err;
+      if (this.onError) this.onError(err);
+    };
+    let loader;
+    try {
+      loader = loaderFactory();
+    } catch (err) {
+      fail(err);
+      return;
+    }
+    loader.load(
+      url,
+      (gltf) => {
+        this.glbLoading = false;
+        try {
+          this.buildFromGLTF(gltf);
+        } catch (err) {
+          fail(err);
+        }
+      },
+      undefined,
+      fail,
+    );
+  }
+
+  /** Swaps in the v2 model from a loaded glTF (also the tests, with a parsed file): three LODs on THIS skeleton, one new material. */
+  buildFromGLTF(gltf) {
+    const d = readDresserGltf(gltf);
+    const geos = d.lods.map((m, i) => buildGlbGeometry(m, i, d.whiteUV));
+    const mat = makeBodyMaterial(this.uniforms, d.maps);
+    const ls = this.game && this.game.renderer && this.game.renderer.lanternShadow;
+    if (ls && typeof ls.attach === 'function' && !mat.userData.lsAttached) ls.attach(mat);
+    const meshes = geos.map((g, i) => {
+      const m = new THREE.SkinnedMesh(g, mat);
+      m.name = 'dresserLOD' + i;
+      m.bind(this.skeleton, new THREE.Matrix4());
+      m.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1.7, 0), 2.4);
+      m.visible = false;
+      return m;
+    });
+    // the swap: the procedural meshes go (the bones, the uniforms, the glints and the outline texture stay)
+    for (const m of this.meshes) this.root.remove(m);
+    for (const g of this.geometries) g.dispose();
+    this.material.dispose();
+    for (const m of meshes) this.root.add(m);
+    this.meshes = meshes;
+    this.geometries = geos;
+    this.material = mat;
+    this.triangles = geos.map((g) => g.index.count / 3);
+    this._glbTex = [d.maps.map, d.maps.normalMap, d.maps.orm].filter(Boolean);
+    // the glints on the new eyes (the wrong half sits lower)
+    const gp = this.glints.geometry.attributes.position;
+    for (let k = 0; k < 4; k++) {
+      gp.setXYZ(k, gp.getX(k) + 0.0, gp.getY(k) - 0.018, gp.getZ(k) - 0.005);
+      gp.setXYZ(k + 4, gp.getX(k + 4), gp.getY(k + 4) + 0.01, gp.getZ(k + 4) - 0.005);
+    }
+    gp.needsUpdate = true;
+    this.lod = 0;
+    this.glbReady = true;
   }
 
   /** Per frame. */
@@ -1074,16 +1342,15 @@ export class DresserView {
       camD = _v.distanceTo(_v2.set(b.x + _y.x * 1.8, b.y + _y.y * 1.8, b.z + _y.z * 1.8));
     }
     const tier = game && game.renderer && game.renderer.qualityTier;
-    const lodD = LOD_DIST[tier] || LOD_DIST.quest;
-    let lod = camD > (this.lod === 1 ? lodD - LOD_HYST : lodD) ? 1 : 0;
-    if (this.debug.forceLod >= 0) lod = this.debug.forceLod;
+    const nL = this.meshes.length;
+    let lod = Math.max(0, pickLod(camD, tier, this.lod, this.glbReady));
+    if (this.debug.forceLod >= 0) lod = Math.min(nL - 1, this.debug.forceLod);
     this.lod = lod;
     const glowOnly = camD > GLOW_DIST && this.debug.forceLod < 0;
     // seen from afar in the dark shaft it was a small dark shape: the ivory mask brightens with the distance (uPale below; free: the
     // eye glints draw as a second call, which S4 cannot afford, so they stay glow-only beyond GLOW_DIST)
     const farK = THREE.MathUtils.smoothstep(camD, 9, 28);
-    this.meshes[0].visible = !glowOnly && lod === 0;
-    this.meshes[1].visible = !glowOnly && lod === 1;
+    for (let i = 0; i < nL; i++) this.meshes[i].visible = !glowOnly && lod === i;
     this.glints.visible = glowOnly && b.glow > 0.2;
     this._glowMat.opacity = 0.35 + 0.5 * b.glow;
     // ---- pose ----
@@ -1093,13 +1360,23 @@ export class DresserView {
     const od = this._updateOutline(b, d);
     // ---- uniforms ----
     const U = this.uniforms;
-    U.uGlow.value = b.glow;
-    U.uPale.value = 0.3 + 0.12 * b.measure + 0.4 * farK; // the ivory face reads in the dark (brighter while it measures you, and from afar)
+    // the ivory face reads in the dark (brighter while it measures you, and from afar); v2: the slits' glow is a few texels of the
+    // atlas, averaged away in the far mips, so it is pushed up with the distance (and the baked mask is a little darker than the
+    // procedural paint: a higher floor)
+    if (this.glbReady) {
+      // up close the carved mask must keep its detail (a weak self-light: the lantern does the work); from afar it is the beacon
+      U.uGlow.value = b.glow * (1 + 1.6 * farK);
+      U.uPale.value = 0.14 + 0.1 * b.measure + 0.8 * farK;
+      U.uRimHood.value.setRGB(0.07, 0.09, 0.115).multiplyScalar(0.2 + 4.5 * farK); // barely there up close, a beacon edge from afar
+      U.uRimC.value.setRGB(0.075, 0.095, 0.115).multiplyScalar(1 + 3 * farK);
+    } else {
+      U.uGlow.value = b.glow;
+      U.uPale.value = 0.3 + 0.12 * b.measure + 0.4 * farK;
+    }
     // bounds for the frustum test (the line can reach your ring)
-    const bs = this.meshes[0].boundingSphere;
     const ln = b.line && b.line.on ? _v3.set(b.line.x - b.x, b.line.y - b.y, b.line.z - b.z).length() : 0;
-    bs.radius = Math.max(2.4, ln + 1.2, od + 1.4);
-    this.meshes[1].boundingSphere.radius = bs.radius;
+    const rad = Math.max(2.4, ln + 1.2, od + 1.4);
+    for (let i = 0; i < nL; i++) this.meshes[i].boundingSphere.radius = rad;
     // ---- what it draws (the line and the chalk outline are part of the skinned mesh) ----
     if (glowOnly) {
       this.info.drawCalls = this.glints.visible ? 1 : 0;
@@ -1332,6 +1609,7 @@ export class DresserView {
     if (this.root.parent) this.root.parent.remove(this.root);
     for (const g of this.geometries) g.dispose();
     this.material.dispose();
+    for (const t of this._glbTex) t.dispose();
     this.glints.geometry.dispose();
     this._glowMat.dispose();
     if (this.outlineTex) this.outlineTex.dispose();
