@@ -12,6 +12,7 @@
  * seeded sequence, no Math.random), allocation-free per frame. `reduced` (settings.reducedEffects): no flicker, no shake, a plain fade.
  */
 import * as THREE from 'three';
+import { scrawlAdvance, scrawlGlyph } from './scrawlFont.js';
 
 const W = 1024;
 const H = 256;
@@ -111,18 +112,18 @@ export class LowHealthText {
     if (!g) return;
     g.clearRect(0, 0, W, H);
     const n = text.length;
-    let size = 100;
-    const font = (sz) => `bold ${sz}px "Times New Roman", Georgia, serif`;
-    g.font = font(size);
-    let total = 0;
-    for (let i = 0; i < n; i++) total += g.measureText(text[i]).width + 5;
+    let size = 112;
+    const measure = (sz) => {
+      let t = 0;
+      for (let i = 0; i < n; i++) t += scrawlAdvance(text[i], sz) + 2;
+      return t;
+    };
+    let total = measure(size);
     if (total > W - 80) {
       size = Math.floor((size * (W - 80)) / total);
-      g.font = font(size);
-      total = 0;
-      for (let i = 0; i < n; i++) total += g.measureText(text[i]).width + 5;
+      total = measure(size);
     }
-    const base = H * 0.5 + size * 0.3;
+    const base = H * 0.5 + size * 0.36;
     g.textBaseline = 'alphabetic';
     // dust first (under the letters): soft smudges where the hand dragged, specks fallen from the stroke
     for (let k = 0; k < 3; k++) {
@@ -139,30 +140,27 @@ export class LowHealthText {
       g.fillStyle = `rgba(226, 222, 210, ${(0.08 + 0.22 * hash1(k * 0.7 + seed)).toFixed(3)})`;
       g.fillRect(x, y, 1 + hash1(k * 3.3) * 2, 1 + hash1(k * 4.1) * 2);
     }
-    // the letters: several dry passes, each a little off, then the stone's grain breaks them
+    // the letters: a dry stick of chalk, several passes, each a little off; then the stone's grain breaks them
     let px = (W - total) / 2;
     for (let i = 0; i < n; i++) {
       const ch = text[i];
-      const w = g.measureText(ch).width;
+      const w = scrawlAdvance(ch, size) + 2;
       if (ch !== ' ') {
         const r = hash1(seed * 31 + i * 7.13);
         const r2 = hash1(seed * 17 + i * 3.71);
-        for (let pass = 0; pass < 4; pass++) {
+        let c = seed * 77 + i * 13;
+        const rng = () => hash1(c++ * 1.618);
+        for (let pass = 0; pass < 3; pass++) {
           g.save();
-          g.translate(px + w / 2 + (hash1(i * 9.1 + pass * 3.3) - 0.5) * 3, base + (r2 - 0.5) * size * 0.08 + (hash1(i * 5.7 + pass * 1.9) - 0.5) * 3);
+          g.translate(px + (hash1(i * 9.1 + pass * 3.3) - 0.5) * 3, base + (r2 - 0.5) * size * 0.08 + (hash1(i * 5.7 + pass * 1.9) - 0.5) * 3);
           g.rotate((r - 0.5) * 0.16);
-          if (pass < 2) {
-            g.lineWidth = Math.max(2, size * 0.035);
-            g.strokeStyle = `rgba(232, 229, 219, ${(0.22 + 0.1 * pass).toFixed(2)})`;
-            g.strokeText(ch, -w / 2, 0);
-          } else {
-            g.fillStyle = `rgba(238, 235, 225, ${(0.38 + 0.2 * (pass - 2)).toFixed(2)})`;
-            g.fillText(ch, -w / 2, 0);
-          }
+          g.globalAlpha = pass === 0 ? 0.3 : 0.5 + 0.18 * pass;
+          scrawlGlyph(g, ch, size, 'rgb(236,233,223)', rng, { width: pass === 0 ? 0.62 : 0.4 + 0.1 * pass, tremor: 1.2, dash: pass > 0, pool: false });
           g.restore();
         }
+        g.globalAlpha = 1;
       }
-      px += w + 5;
+      px += w;
     }
     g.globalCompositeOperation = 'destination-out';
     for (let k = 0; k < 3400; k++) {
@@ -181,54 +179,54 @@ export class LowHealthText {
     if (!g) return;
     g.clearRect(0, 0, W, H);
     const n = text.length;
-    let size = 118;
-    g.font = `bold ${size}px "Times New Roman", Georgia, serif`;
-    let total = 0;
-    for (let i = 0; i < n; i++) total += g.measureText(text[i]).width + 7;
+    let size = 128;
+    const measure = (sz) => {
+      let t = 0;
+      for (let i = 0; i < n; i++) t += scrawlAdvance(text[i], sz) + 3;
+      return t;
+    };
+    let total = measure(size);
     if (total > W - 90) {
       size = Math.floor((size * (W - 90)) / total);
-      g.font = `bold ${size}px "Times New Roman", Georgia, serif`;
-      total = 0;
-      for (let i = 0; i < n; i++) total += g.measureText(text[i]).width + 7;
+      total = measure(size);
     }
-    const base = H * 0.5 + size * 0.28;
-    let x = (W - total) / 2;
+    const base = H * 0.5 + size * 0.36;
     g.textBaseline = 'alphabetic';
     g.lineJoin = 'round';
-    for (let pass = 0; pass < 2; pass++) {
-      let px = x;
+    for (let pass = 0; pass < 3; pass++) {
+      let px = (W - total) / 2;
       for (let i = 0; i < n; i++) {
         const ch = text[i];
-        const w = g.measureText(ch).width;
+        const w = scrawlAdvance(ch, size) + 3;
         const r = hash1(seed * 31 + i * 7.13);
         const r2 = hash1(seed * 17 + i * 3.71);
         if (ch !== ' ') {
+          let c = seed * 53 + i * 11; // the same hand on every pass
+          const rng = () => hash1(c++ * 1.618);
           g.save();
-          g.translate(px + w / 2, base + (r2 - 0.5) * size * 0.14);
-          g.rotate((r - 0.5) * 0.22);
+          g.translate(px, base + (r2 - 0.5) * size * 0.12);
+          g.rotate((r - 0.5) * 0.2);
           if (pass === 0) {
-            g.shadowColor = 'rgba(255, 20, 20, 0.95)';
-            g.shadowBlur = 30;
-            g.fillStyle = 'rgba(150, 8, 12, 0.9)';
-            g.fillText(ch, -w / 2, 0);
+            // a small red halo (a tight one: a wide blur made the line read as out of focus)
+            g.shadowColor = 'rgba(255, 24, 24, 0.45)';
+            g.shadowBlur = 6;
+            scrawlGlyph(g, ch, size, 'rgba(120, 6, 10, 0.9)', rng, { width: 1.25, pool: false });
+          } else if (pass === 1) {
+            scrawlGlyph(g, ch, size, 'rgba(24, 2, 4, 0.96)', rng, { width: 1.32 });
+            g.lineWidth = 0;
           } else {
-            g.shadowBlur = 0;
-            g.lineWidth = Math.max(3, size * 0.045);
-            g.strokeStyle = 'rgba(26, 2, 4, 0.95)';
-            g.strokeText(ch, -w / 2, 0);
-            g.fillStyle = r > 0.5 ? '#b3111a' : '#8f0c14';
-            g.fillText(ch, -w / 2, 0);
-            // a wet highlight on the upper edge of the stroke
-            g.fillStyle = 'rgba(255, 120, 120, 0.16)';
-            g.fillText(ch, -w / 2 - 1.5, -2);
+            scrawlGlyph(g, ch, size, r > 0.5 ? '#b3111a' : '#951018', rng, { width: 0.9 + 0.2 * r2 });
+            // a wet highlight along the stroke
+            g.translate(-size * 0.012, -size * 0.014);
+            scrawlGlyph(g, ch, size, 'rgba(255, 130, 126, 0.24)', rng, { width: 0.22, tremor: 0.3, pool: false });
           }
           g.restore();
-          if (pass === 1 && hash1(seed * 13 + i * 5.3) > 0.58) {
+          if (pass === 2 && hash1(seed * 13 + i * 5.3) > 0.58) {
             const len = 22 + hash1(seed * 7 + i * 9.1) * 62;
-            const dx = px + w * (0.25 + 0.5 * hash1(seed * 3 + i * 2.2));
-            const top = base - size * 0.05;
+            const dx = px + w * (0.2 + 0.5 * hash1(seed * 3 + i * 2.2));
+            const top = base - size * 0.02;
             const grad = g.createLinearGradient(0, top, 0, top + len);
-            grad.addColorStop(0, 'rgba(140, 8, 12, 0.95)');
+            grad.addColorStop(0, 'rgba(150, 10, 14, 0.95)');
             grad.addColorStop(1, 'rgba(90, 4, 8, 0.75)');
             g.fillStyle = grad;
             g.fillRect(dx - 2.5, top, 5, len);
@@ -237,7 +235,7 @@ export class LowHealthText {
             g.fill();
           }
         }
-        px += w + 7;
+        px += w;
       }
     }
     if (this.texture) this.texture.needsUpdate = true;

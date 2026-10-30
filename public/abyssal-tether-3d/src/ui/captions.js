@@ -91,6 +91,8 @@ export const RULES = Object.freeze({
   gripLost: R('[Grip lost]', 'player', 2, 'grip', 1.5),
   heart: R('[Heartbeat pounding]', 'player', 1, 'heart', 8),
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
+  nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
+  nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
 });
 
 // ---- colour-safe status cues (settings.colorSafe): a shape and words for what colour alone says elsewhere --------------------
@@ -202,6 +204,10 @@ export function captionForEvent(type, p) {
       return RULES.heart;
     case 'lantern:low':
       return RULES.lantern;
+    case 'nv:on':
+      return RULES.nvOn;
+    case 'nv:off':
+      return e.reason === 'respawn' ? null : RULES.nvOff;
     case 'trigger:rumble':
       return RULES.rumble;
     case 'trigger:debris':
@@ -291,6 +297,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'climb:slip',
   'health:low',
   'lantern:low',
+  'nv:on',
+  'nv:off',
   'trigger:rumble',
   'trigger:debris',
   'seal:open',

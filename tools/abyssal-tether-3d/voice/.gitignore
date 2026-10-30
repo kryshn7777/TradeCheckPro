@@ -1,0 +1,2 @@
+# the Kokoro model + voices fetched by build_voices.py --fetch (~93 MB): never commit
+.cache/

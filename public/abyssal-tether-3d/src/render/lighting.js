@@ -94,6 +94,7 @@ export class Lighting {
     };
     this.lmTune = Object.assign({}, LM_TUNE); // live grading knobs (exposure, ambient floor)
     this.dark = 0; // 0..1, the difficulty's darkness (setDarkness): dims the baked light
+    this.nv = 0; // 0..1, the night vision goggles' power-up (setNightVision): lifts it again
     this._lm = null; // { tex, tab, index }
     this._lmPromise = null;
     this._lmForcedOff = false; // pinned / ?fx= low tier: the old volume only
@@ -462,6 +463,14 @@ export class Lighting {
     this._applyUniforms(false);
   }
 
+  /** 0..1: the night vision goggles' power-up. Lifts the baked light (exposure and the ambient floor) on top of the darkness coming off. */
+  setNightVision(k) {
+    const v = Math.max(0, Math.min(1, +k || 0));
+    if (Math.abs(v - this.nv) < 0.002) return;
+    this.nv = v;
+    this._applyUniforms(false);
+  }
+
   /** Effective numbers after the governor steps. */
   _effective() {
     const c = this.cfg;
@@ -482,8 +491,8 @@ export class Lighting {
     LOOK.uEnvK.value.w = probeOk && this.tier === 'high' ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
-    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark);
-    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark);
+    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark) * (1 + 0.8 * this.nv);
+    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark) + 0.03 * this.nv;
     LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);

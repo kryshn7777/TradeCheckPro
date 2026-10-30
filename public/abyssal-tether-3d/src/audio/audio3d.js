@@ -2264,6 +2264,14 @@ export class AudioManager3D {
       'bag:effect': this._onBagEffect,
       'lantern:low': this._onLanternLow,
       'lantern:empty': this._onLanternEmpty,
+      'intro:page': this._onIntroPage,
+      'intro:dark': this._onIntroDark,
+      'intro:cut': this._onIntroCut,
+      'holster:draw': this._onHolsterDraw,
+      'holster:stow': this._onHolsterStow,
+      'nv:on': this._onNvOn,
+      'nv:off': this._onNvOff,
+      'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
@@ -2457,6 +2465,20 @@ export class AudioManager3D {
     if (this._radio) this._radio.end(p);
   }
 
+  /**
+   * The radio director's clip hook (game.js -> sim/comms3d.js CommsDirector.voice): the voice manifest entry of `id` when its
+   * clip is decoded and the radio can speak now, else null (the line is timed by its text and the babble speaks it).
+   */
+  voiceFor(id) {
+    if (!this._radio || !this._live()) return null;
+    try {
+      return this._radio.voiceFor(id);
+    } catch (err) {
+      this._warn('radio', err);
+      return null;
+    }
+  }
+
   _onUiClick() {
     this._sfxClick();
   }
@@ -2467,6 +2489,7 @@ export class AudioManager3D {
 
   _onSection(p) {
     const idx = num(p.index, this._secIndex);
+    if (this._radio) this._radio.prefetch(idx | 0); // the radio clips of this section (and the next) load first
     const now = this.ctx.currentTime;
     this._firstEntry = !!p.first;
     if ((idx | 0) !== this._secIndex) this._applySection(idx, p.section || null, now, 2.5);
@@ -2606,6 +2629,40 @@ export class AudioManager3D {
   }
 
   _onLanternEmpty() {
+    this._sfxLanternWarn(true);
+  }
+
+  /** The opening story: a soft page turn, a low swell when the record darkens, a burst of static and a drop when it is torn off. */
+  _onIntroPage() {
+    this._sfxIntroPage();
+  }
+
+  _onIntroDark() {
+    this._sfxRumble();
+  }
+
+  _onIntroCut() {
+    this._sfxIntroCut();
+  }
+
+  _onHolsterDraw() {
+    this._sfxHolster(true);
+  }
+
+  _onHolsterStow() {
+    this._sfxHolster(false);
+  }
+
+  _onNvOn() {
+    this._sfxNv(true);
+  }
+
+  _onNvOff(p) {
+    if (p && p.reason === 'respawn') return;
+    this._sfxNv(false);
+  }
+
+  _onNvRefuse() {
     this._sfxLanternWarn(true);
   }
 
@@ -3817,6 +3874,95 @@ export class AudioManager3D {
     this._swell(g.gain, t, 0.45, 0.08, 0.1, 0.3);
     n.connect(lp);
     lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A page of the record turns: a dry, quiet paper-and-relay tick. */
+  _sfxIntroPage() {
+    const v = this._begin('introPage', 1, 0.3, 0.4, this.busStinger, 0.22, 0, 0.2, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._pink, t, 1.3);
+    const bp = this._vFilter(v, 'bandpass', 2400, 0.8);
+    const g = this._vGain(v, 0);
+    this._tick(g.gain, t, 0.4, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 180, t);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t, 0.25, 0.01, 0.04, 0.12);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The record is torn: a burst of static, then everything drops away. */
+  _sfxIntroCut() {
+    const v = this._begin('introCut', 3, 1, 1.8, this.busStinger, 0.34, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'highpass', 1800, 0.7);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.02);
+    g.gain.setValueAtTime(0.5, t + 0.7);
+    g.gain.linearRampToValueAtTime(0, t + 1.1);
+    n.connect(hp);
+    hp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 90, t + 0.05);
+    o.frequency.exponentialRampToValueAtTime(34, t + 1.6);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t + 0.05, 0.5, 0.05, 0.5, 0.5);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A rope gun leaves / returns to its holster: leather rubbing on the way, a short metal click at the end. */
+  _sfxHolster(draw) {
+    const v = this._begin('holster', 1, 0.1, 0.5, this.busPlayer, 0.3, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const dur = draw ? 0.14 : 0.18;
+    const n = this._vNoise(v, this._brown, t, 1.6);
+    const bp = this._vFilter(v, 'bandpass', draw ? 1500 : 900, 0.9);
+    bp.frequency.linearRampToValueAtTime(draw ? 700 : 1700, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.42, t + 0.03);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    // the click as it seats (stowed) or as it clears (drawn)
+    const o = this._vOsc(v, 'square', draw ? 1900 : 1300, t + dur);
+    const cg = this._vGain(v, 0);
+    this._tick(cg.gain, t + dur, 0.2, 0.012);
+    o.connect(cg);
+    cg.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The night vision goggles: a thin electronic whine climbing as the tubes warm up (down and quicker as they spool off). */
+  _sfxNv(on) {
+    const v = this._begin('nvToggle', 2, 0.25, 0.9, this.busPlayer, 0.34, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const dur = on ? 0.62 : 0.3;
+    const o = this._vOsc(v, 'sine', on ? 1400 : 5200, t);
+    o.frequency.exponentialRampToValueAtTime(on ? 5200 : 700, t + dur);
+    const o2 = this._vOsc(v, 'triangle', on ? 700 : 2600, t);
+    o2.frequency.exponentialRampToValueAtTime(on ? 2600 : 350, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(on ? 0.22 : 0.18, t + (on ? 0.12 : 0.02));
+    g.gain.setTargetAtTime(0, t + dur * 0.55, on ? 0.09 : 0.05);
+    o.connect(g);
+    o2.connect(g);
     g.connect(v.out);
     this._commit(v);
   }

@@ -45,7 +45,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
 import { SealView } from './objectivesView.js';
 import { BloodWriting } from './bloodWriting.js';
-import { BoardWriting } from './boardWriting.js';
+import { BoardWriting, drawBoardCell } from './boardWriting.js';
+import { cullBuriedFast, kitGeoFast, precullStep, CULLED, LOADOPT, dressBudgetMs } from './levelBuildFast.js'; // LOADING_OPTIMIZATION.md: faster, identical build steps
+import { restoreSnapshot, detailOf } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
+const KIT_STEP = 6; // kit placements drawn per dressing step (LOADING_OPTIMIZATION.md)
+// Architecture detail pass (MESH_DETAIL_AND_OPTIMIZATION.md §6): render-only geometry merged into the existing lists / packs.
+import * as ARCH from './archDetail.js';
+const { plaqueFrameSoup } = ARCH;
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -77,6 +83,10 @@ const PACK_ATTRS = ['position', 'normal', 'color', 'uv'];
 // ?props=0: the procedural builders, as before.
 const PROPS_ON = !(typeof location !== 'undefined' && /[?&]props=0\b/.test(location.search || ''));
 const PROP_TYPES = new Set(['chain', 'statue']);
+// Architecture detail pass (archDetail.js): ?arch=0 builds the level as before (A/B captures, budget comparisons).
+/** The plaques are words written on the wall by a hand, not slabs (docs/abyssal-tether-3d/plans/TEXT_IN_THE_WORLD.md); `?slabs=1` brings the old slabs back. */
+const HAND_PLAQUES = !(typeof location !== 'undefined' && /[?&]slabs=1\b/.test(location.search || ''));
+const ARCH_ON = !(typeof location !== 'undefined' && /[?&]arch=0\b/.test(location.search || ''));
 const VIEW_MARGIN = 3; // metres beyond the cull distance still drawn (a chunk is tested by its box)
 const SLAB_H = 40; // the large section chunks (stone / metal / flesh) are split into slabs this tall, so only the
 // slabs within sight are drawn: a section is 40-140 m tall and drew whole whenever any of it was in view
@@ -113,6 +123,7 @@ const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const _box = new THREE.Box3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _rayOut = {};
 const _zAxis = new THREE.Vector3(0, 0, 1);
 const _zero = { x: 0, y: 0, z: 0 };
 
@@ -213,10 +224,19 @@ function scaleUV(geo, su, sv) {
 class Parts {
   constructor() {
     // metalM: metal that only needs to exist near (chain links): the 'mid' tier, see _bandLists
-    this.lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [], metalM: [] };
+    // stoneN / metalN: arm's-length detail (archDetail.js: plaque frames, rivets, bolts) in the 'near' tier (NEAR_DIST)
+    this.lists = { stone: [], metal: [], rock: [], flesh: [], glow: [], shaft: [], metalM: [], stoneN: [], metalN: [] };
     this.rng = Math.random;
     /** Vertex colour per lit list (the section grade); glow / shaft carry their own colours. */
     this.tint = { stone: [1, 1, 1], metal: [1, 1, 1], rock: [1, 1, 1], flesh: [1, 1, 1], metalM: [1, 1, 1] };
+  }
+  /** An archDetail.js soup (position / normal / AO colour) times the grade of `tintOf`, metric UVs; no RNG drawn. */
+  soup(list, S, tintOf) {
+    if (!S || S.empty) return null;
+    const g = S.tint(this.tint[tintOf]).geometry();
+    boxUV(g, 0.37, 0.71);
+    this.lists[list].push(g);
+    return g;
   }
   _push(list, geo, matrix) {
     if (matrix) geo.applyMatrix4(matrix);
@@ -336,7 +356,7 @@ class Parts {
       pts.push(new THREE.Vector3(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - Math.sin(Math.PI * t) * sag, z0 + (z1 - z0) * t));
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    let g = new THREE.TubeGeometry(curve, 12, r, 4, false);
+    let g = ARCH_ON ? new THREE.TubeGeometry(curve, 20, r, 6, false) : new THREE.TubeGeometry(curve, 12, r, 4, false); // archDetail: no square cables
     scaleUV(g, hyp(x1 - x0, y1 - y0, z1 - z0), 2 * Math.PI * r);
     g = nonIndexed(g);
     return this._push(list, keepAttrs(g, ['position', 'normal', 'uv']));
@@ -451,6 +471,17 @@ const DECOR = {
     const g2 = gr * 0.45;
     P.cyl('metal', sx * 0.28, -sy * 0.22, gz, g2, g2, sz * 0.16, 12, 'z');
     P.cyl('metal', sx * 0.3, 0, gz + sz * 0.08, sx * 0.03, sx * 0.03, sy * 0.9, 6);
+    if (ARCH_ON) {
+      // archDetail: a riveted frame round the housing's front plate, hex bolts round both gear hubs (near tier)
+      const R = new ARCH.Soup();
+      const hx = sx * 0.45 - 0.07;
+      const hy = sy * 0.45 - 0.07;
+      for (const [a, b] of [[[-hx, -hy, 0], [hx, -hy, 0]], [[-hx, hy, 0], [hx, hy, 0]], [[-hx, -hy, 0], [-hx, hy, 0]], [[hx, -hy, 0], [hx, hy, 0]]]) ARCH.rivetRow(R, a, b, [0, 0, 1], 0.34, 0.022, 0.015);
+      for (const [cx, cy, z, rr] of [[-sx * 0.12, sy * 0.05, gz + sz * 0.09, gr * 0.3], [sx * 0.28, -sy * 0.22, gz + sz * 0.08, g2 * 0.55]]) {
+        for (let i = 0; i < 6; i++) ARCH.rivet(R, [cx + Math.cos((i / 6) * Math.PI * 2) * rr, cy + Math.sin((i / 6) * Math.PI * 2) * rr, z], [0, 0, 1], 0.03, 0.025, 6, 0.6, true);
+      }
+      P.soup('metalN', R, 'metal');
+    }
   },
   cage(P, sx, sy) {
     const r = sx * 0.45;
@@ -485,15 +516,20 @@ const DECOR = {
     const axis = sy >= sx && sy >= sz ? 'y' : sx >= sz ? 'x' : 'z';
     const len = axis === 'y' ? sy : axis === 'x' ? sx : sz;
     const r = (axis === 'y' ? Math.min(sx, sz) : axis === 'x' ? Math.min(sy, sz) : Math.min(sx, sy)) / 2;
-    P.cyl('metal', 0, 0, 0, r * 0.82, r * 0.82, len, 10, axis);
+    const seg = ARCH_ON ? 16 : 10; // archDetail: a round pipe at arm's length (10 facets read as a prism)
+    P.cyl('metal', 0, 0, 0, r * 0.82, r * 0.82, len, seg, axis);
     const n = Math.max(1, Math.floor(len / 3.2));
+    const bolts = ARCH_ON ? new ARCH.Soup() : null;
     for (let i = 0; i <= n; i++) {
       const t = -len / 2 + (len * i) / n;
       const fl = Math.max(0.05, r * 0.25);
-      if (axis === 'y') P.cyl('metal', 0, t, 0, r, r, fl, 10, 'y');
-      else if (axis === 'x') P.cyl('metal', t, 0, 0, r, r, fl, 10, 'x');
-      else P.cyl('metal', 0, 0, t, r, r, fl, 10, 'z');
+      if (axis === 'y') P.cyl('metal', 0, t, 0, r, r, fl, seg, 'y');
+      else if (axis === 'x') P.cyl('metal', t, 0, 0, r, r, fl, seg, 'x');
+      else P.cyl('metal', 0, 0, t, r, r, fl, seg, 'z');
+      // archDetail: hex bolt heads on both faces of every flange (the near tier only)
+      if (bolts) ARCH.flangeBolts(bolts, [axis === 'x' ? t : 0, axis === 'y' ? t : 0, axis === 'z' ? t : 0], axis, r * 0.91, fl / 2, 4, Math.min(0.032, r * 0.085));
     }
+    if (bolts) P.soup('metalN', bolts, 'metal');
   },
   girder(P, sx, sy, sz) {
     // I-beam along the longest axis.
@@ -1188,8 +1224,22 @@ function glowPointsMaterial(tex, size, fogCap) {
 }
 
 /** Text plaque canvas (original inscriptions, phosphor-filled carving). */
-function plaqueTexture(text, aspect) {
+function plaqueTexture(text, aspect, handId) {
   if (typeof document === 'undefined') return null;
+  if (handId) {
+    // written by a hand on the wall (no plate, no rule): the boards' chalk style
+    const Wh = 1024;
+    const Hh = Math.max(128, Math.min(1024, Math.round(Wh / Math.max(0.5, aspect))));
+    const ch = document.createElement('canvas');
+    ch.width = Wh;
+    ch.height = Hh;
+    const cx = ch.getContext('2d');
+    drawBoardCell(cx, { id: handId, text: String(text).replace(/\s+/g, ' '), style: 'hand' }, 0, 0, Wh, Hh);
+    const th = new THREE.CanvasTexture(ch);
+    th.colorSpace = THREE.SRGBColorSpace;
+    th.anisotropy = 4;
+    return th;
+  }
   const W = 1024;
   const H = Math.max(128, Math.min(1024, Math.round(W / Math.max(0.5, aspect))));
   const c = document.createElement('canvas');
@@ -2173,6 +2223,8 @@ class Dresser {
       }
       else this._ceiling(o);
     }
+    // archDetail: lamp soot, anchor rust, the rests' tallies (decals only, after the plan: the kit wall panels are known by now)
+    if (ARCH_ON) this._archDecals();
   }
 
   // ---------------------------------------------------------------------------
@@ -3593,6 +3645,8 @@ class Dresser {
       }
       this.putWorld(B.geometry(), m, 'metal', g.stone);
       this.stats.irons = (this.stats.irons || 0) + 1;
+      // (archDetail W11, rejected: a geometric rivet line on these edge plates cost 17.6k triangles over the level and did not read in
+      // the close-ups: the iron set's texture already carries rivets. MESH_DETAIL_AND_OPTIMIZATION.md §6b)
     }
     this._cat = null;
     // seams across and rivet lines along the walking surface (flush strips)
@@ -3675,6 +3729,179 @@ class Dresser {
   }
 
   // ---------------------------------------------------------------------------
+  // Architecture detail pass (archDetail.js, MESH_DETAIL_AND_OPTIMIZATION.md §6). Render only, own RNG streams, nothing reserved in
+  // the plan space: the kit plan, the decor colliders and every other random pick of the dressing stay exactly as they were.
+  // ---------------------------------------------------------------------------
+  /** A stone slab: dressed quoins on its free vertical corners (near tier) and water / grime runs (atlas decals) under its lip. */
+  _archSlab(s, g) {
+    const S = this.S;
+    const H = s.maxY - s.minY;
+    if (s.kind !== 'stone' || H < 0.8) return;
+    const rng = makeRng(hashStr(`arch${s.id}`));
+    const Q = new ARCH.Soup();
+    const ym = s.minY + H * 0.5;
+    for (const sx of [1, -1]) {
+      for (const sz of [1, -1]) {
+        const cx = sx > 0 ? s.maxX : s.minX;
+        const cz = sz > 0 ? s.maxZ : s.minZ;
+        let free = true; // open air out from the corner and just off both faces beside it (a wall or a neighbour slab: no quoin)
+        for (const yy of [ym, s.maxY - 0.3]) {
+          if (S.inSolid(cx + sx * 0.25, yy, cz + sz * 0.25) || S.inSolid(cx + sx * 0.12, yy, cz - sz * 0.45) || S.inSolid(cx - sx * 0.45, yy, cz + sz * 0.12)) free = false;
+        }
+        if (free) ARCH.quoinSoup(Q, rng, cx, cz, sx, sz, s.maxY, H);
+      }
+    }
+    if (!Q.empty) {
+      const geo = Q.tint(g.stone).geometry();
+      worldUV(geo);
+      this._count('quoin', s.maxY, geo.attributes.position.count / 3);
+      this.emit(geo, 'stone', 'near');
+      this.stats.quoins = (this.stats.quoins || 0) + 1;
+    }
+    // runs down the open faces from under the crown (the walls get theirs in _decalsWall; the slab faces had none)
+    if (H < 1.6) return;
+    const wet = this._wet(s.maxY);
+    const cell = decalCell(2);
+    for (const [N, c, a0, a1] of [
+      [[1, 0, 0], s.maxX, s.minZ, s.maxZ],
+      [[-1, 0, 0], s.minX, s.minZ, s.maxZ],
+      [[0, 0, 1], s.maxZ, s.minX, s.maxX],
+      [[0, 0, -1], s.minZ, s.minX, s.maxX],
+    ]) {
+      const L = a1 - a0;
+      if (L < 2) continue;
+      const n = Math.min(4, Math.max(1, Math.round((L / 5) * (0.6 + wet))));
+      for (let i = 0; i < n; i++) {
+        const u = a0 + 0.7 + rng() * (L - 1.4);
+        const w = 0.45 + rng() * 0.55;
+        const h = Math.min(H - 0.7, 1.1 + rng() * (0.8 + 1.4 * wet));
+        const yc = s.maxY - 0.56 - h / 2;
+        const x = N[0] ? c + N[0] * 0.011 : u;
+        const z = N[2] ? c + N[2] * 0.011 : u;
+        if (S.inSolid(x + N[0] * 0.2, yc, z + N[2] * 0.2) || S.inSolid(x + N[0] * 0.2, s.maxY - 0.7, z + N[2] * 0.2)) continue;
+        const A = [N[2], 0, -N[0]];
+        const al = Math.min(1, (0.5 + rng() * 0.35) * (0.55 + 0.6 * wet));
+        const k = 0.85 + 0.15 * rng();
+        ARCH.decalRGB(this.dec, x, yc, z, A, [0, 1, 0], N, w / 2, h / 2, (rng() - 0.5) * 0.08, cell, al, [k, k, k]);
+        this.stats.decals = (this.stats.decals || 0) + 1;
+      }
+    }
+  }
+
+  /** An iron-bound door leaf recessed in a ledge's blind doorway (_lancet's measures), near tier, its own RNG stream. */
+  _archDoor(F, du, y0, w, jamb, rise, g) {
+    const rng = makeRng(hashStr(`door${F.o.x.toFixed(2)},${F.o.y.toFixed(2)},${F.o.z.toFixed(2)},${du.toFixed(2)}`));
+    const S = ARCH.doorSoup(new ARCH.Soup(), rng, w, jamb, rise, y0, 0.2);
+    if (S.empty) return;
+    const cat = this._cat;
+    this._cat = 'door-leaf';
+    this.put(F, S.geometry(), du, 0, 'metal', [g.stone[0] * 0.85, g.stone[1] * 0.8, g.stone[2] * 0.75], null, 'near');
+    this._cat = cat;
+    this.stats.doorLeaves = (this.stats.doorLeaves || 0) + 1;
+  }
+
+  /**
+   * Level-wide decals (once, at the end of the plan): soot plumes above the wall lamps, rust runs under the wall-mounted anchor plates,
+   * tallies in the Masons' rests. Into the one decal mesh (no draw call); placed on the solid found behind the fixture, skipped when there
+   * is none or when an authored kit panel covers that face.
+   */
+  _archDecals() {
+    const S = this.S;
+    const lv = this.level;
+    const rng = makeRng(hashStr('archDecals'));
+    // an authored kit wall panel (4 x 4 m, up to 0.3 m proud: _placePanels' reservation) covers this point: a decal on the solid's
+    // face would be hidden behind it, so none is placed there
+    const panelAt = (x, y, z) => {
+      for (const b of S.decor) {
+        if (b.maxY - b.minY < 3.5 || Math.max(b.maxX - b.minX, b.maxZ - b.minZ) < 3.5) continue;
+        if (x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ) return true;
+      }
+      return false;
+    };
+    // distance along the (axis-aligned) direction (bx, bz) to the face of the solid behind (x, y, z), or -1
+    const wallBehind = (x, y, z, bx, bz, max) => {
+      if (Math.abs(bx) > 0.05 && Math.abs(bz) > 0.05) return -1;
+      for (let d = 0; d <= max; d += 0.04) {
+        const w = S.inSolid(x + bx * d, y, z + bz * d, 0.005);
+        if (w) return Math.abs(bx) > 0.5 ? (bx > 0 ? w.minX - x : x - w.maxX) : bz > 0 ? w.minZ - z : z - w.maxZ;
+      }
+      return -1;
+    };
+    for (const it of Array.isArray(lv.decor) ? lv.decor : []) {
+      const type = String(it.type || '').toLowerCase();
+      if (type !== 'lamp' && type !== 'lantern') continue;
+      const yaw = num(it.yaw, 0);
+      const bx = Math.sin(yaw); // behind the lamp (it faces (-sin yaw, -cos yaw))
+      const bz = Math.cos(yaw);
+      const z0 = num(it.z, 0);
+      const d = wallBehind(it.x, it.y + 0.6, z0, bx, bz, 0.9);
+      if (d < 0 || wallBehind(it.x, it.y + 1.6, z0, bx, bz, 0.95) < 0) continue;
+      if (panelAt(it.x + bx * (d - 0.1), it.y + 1.0, z0 + bz * (d - 0.1))) continue;
+      const N = [-bx, 0, -bz];
+      const A = [N[2], 0, -N[0]];
+      const lit = it.lit !== false;
+      const h = 1.2 + rng() * 0.5;
+      const w = 0.7 + rng() * 0.25;
+      const k = lit ? 0.55 : 0.75; // a burning lamp's plume is the darkest
+      const sy = num(it.sy, 0.8);
+      ARCH.decalRGB(this.dec, it.x + bx * (d - 0.012), it.y + sy * 0.35 + h * 0.42, z0 + bz * (d - 0.012), A, [0, 1, 0], N, w / 2, h / 2, (rng() - 0.5) * 0.1, decalCell(5), lit ? 0.85 : 0.6, [k, k * 0.96, k * 0.92]);
+      this.stats.decals = (this.stats.decals || 0) + 1;
+      this.stats.soot = (this.stats.soot || 0) + 1;
+    }
+    for (const a of Array.isArray(lv.anchors) ? lv.anchors : []) {
+      const n = a && a.normal;
+      if (!n || a.mount !== 'solid' || a.dynamic || Math.abs(n.y) > 0.5) continue;
+      if (!S.inSolid(a.x - n.x * 0.3, a.y - 0.4, a.z - n.z * 0.3, 0.005)) continue; // the plate is on a level solid, the run on its face
+      const wet = this._wet(a.y);
+      const h = 0.8 + rng() * (0.6 + 0.9 * wet);
+      const w = 0.34 + rng() * 0.14;
+      if (panelAt(a.x - n.x * 0.15, a.y - 0.06 - h / 2, a.z - n.z * 0.15)) continue;
+      const N = [n.x, 0, n.z];
+      const A = [N[2], 0, -N[0]];
+      const k = 0.9 + 0.2 * rng();
+      ARCH.decalRGB(this.dec, a.x - n.x * 0.238, a.y - 0.06 - h / 2, a.z - n.z * 0.238, A, [0, 1, 0], N, w / 2, h / 2, (rng() - 0.5) * 0.06, decalCell(2), Math.min(1, 0.7 + 0.3 * wet), [12 * k, 5.8 * k, 3 * k]); // the grime cell (~0.007 linear) to a rust brown
+      this.stats.decals = (this.stats.decals || 0) + 1;
+      this.stats.rust = (this.stats.rust || 0) + 1;
+    }
+    // the Masons' rests: the pale scratched tallies of those who waited here before you, on the walls round the safe volume
+    const nooks = (lv.data && Array.isArray(lv.data.nooks) && lv.data.nooks) || [];
+    for (const nk of nooks) {
+      const b = nk && nk.box;
+      if (!b || !isFinite(b.minX)) continue;
+      const y0 = b.minY;
+      const xc = (b.minX + b.maxX) / 2;
+      const zc = (b.minZ + b.maxZ) / 2;
+      for (const [N, px, pz] of [
+        [[1, 0, 0], b.minX - 0.2, zc],
+        [[-1, 0, 0], b.maxX + 0.2, zc],
+        [[0, 0, 1], xc, b.minZ - 0.2],
+        [[0, 0, -1], xc, b.maxZ + 0.2],
+      ]) {
+        const w = S.inSolid(px, y0 + 1.2, pz, 0.005);
+        if (!w || w.maxY - w.minY < 2) continue;
+        const face = N[0] > 0 ? w.maxX : N[0] < 0 ? w.minX : N[2] > 0 ? w.maxZ : w.minZ;
+        const a0 = N[0] ? b.minZ : b.minX;
+        const a1 = N[0] ? b.maxZ : b.maxX;
+        if (a1 - a0 < 0.8) continue;
+        const A = [N[2], 0, -N[0]];
+        const cnt = Math.min(4, 1 + Math.floor((a1 - a0) / 1.2));
+        for (let i = 0; i < cnt; i++) {
+          const u = a0 + 0.35 + ((i + 0.2 + rng() * 0.6) / cnt) * (a1 - a0 - 0.7);
+          const x = N[0] ? face + N[0] * 0.012 : u;
+          const z = N[0] ? u : face + N[2] * 0.012;
+          const y = y0 + 0.9 + rng() * 0.9;
+          if (S.inSolid(x + N[0] * 0.1, y, z + N[2] * 0.1, 0.005) || panelAt(x + N[0] * 0.09, y, z + N[2] * 0.09)) continue;
+          const sz = 0.3 + rng() * 0.18;
+          const k = 1.2 + rng() * 0.25;
+          ARCH.decalRGB(this.dec, x, y, z, A, [0, 1, 0], N, sz / 2, sz / 2, Math.PI / 2 + (rng() - 0.5) * 0.35, decalCell(6), 0.8, [k, k * 0.97, k * 0.9]);
+          this.stats.decals = (this.stats.decals || 0) + 1;
+          this.stats.tallies = (this.stats.tallies || 0) + 1;
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Slabs: crown mouldings, beads, corbels / atlas figures, iron braces
   // ---------------------------------------------------------------------------
   _dressSlab(s) {
@@ -3687,6 +3914,7 @@ class Dresser {
     if (metal && s.kind !== 'grate') this._dressIron(s);
     if (!metal && s.kind !== 'crumble') this._rubble(s, makeRng(hashStr(`rub${s.id}`)));
     if (s.kind !== 'grate' && s.kind !== 'crumble') this._decalsFloor(s, makeRng(hashStr(`dcf${s.id}`)));
+    if (ARCH_ON) this._archSlab(s, g); // archDetail: quoins, runs under the lip (own RNG stream)
     const sides = [
       { N: { x: 1, y: 0, z: 0 }, c: s.maxX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
       { N: { x: -1, y: 0, z: 0 }, c: s.minX, a0: s.minZ, a1: s.maxZ, ax: 'z' },
@@ -3824,6 +4052,7 @@ class Dresser {
             if (!S.blocked(dbox, hostsW, true, DR.propClear)) {
               this._cat = 'door';
               this._lancet(W, du, H, dw, dh - 1.0, 1.0, 0.2, 0.2, g.stone, 'stone', true, false);
+              if (ARCH_ON) this._archDoor(W, du, H, dw, dh - 1.0, 1.0, g); // archDetail: an iron-bound door leaf in the doorway
               this._cat = null;
               this.stats.doors = (this.stats.doors || 0) + 1;
               this.marks.door.push([W.o.x + wx * du, s.maxY + 1.3, W.o.z + wz * du, N.x, N.z]);
@@ -3907,6 +4136,10 @@ export function cullBuried(geo, level) {
   const n = geo.attributes.normal;
   if (!p || !n || geo.index || typeof level.querySolidsStatic !== 'function') return { geo, removed: 0 };
   const tris = (p.count / 3) | 0;
+  // LOADING_OPTIMIZATION.md: the same test on plain float arrays against the few solids near the whole geometry (one query, not one
+  // per triangle): identical result, several times faster (the dressing job's costliest step)
+  const fast = cullBuriedFast(geo, level, p, n, tris, BURIED_KINDS, BURIED_OFFSET, BURIED_MARGIN);
+  if (fast) return fast;
   const keep = new Uint8Array(tris);
   let kept = 0;
   const o = BURIED_OFFSET;
@@ -4316,12 +4549,47 @@ export class LevelView {
     this._buildHazards(level);
     this._buildAnchors(level);
     const bands = this._buildDecor(level);
-    this._mergeBands(bands, false);
-    this._buildDressing(level);
+    // LOADING_OPTIMIZATION.md: the dressed level from the IndexedDB cache (levelCache.js) in place of the decor merge + dressing job
+    if (!this._restoreDressed(level, bands)) {
+      this._mergeBands(bands, false);
+      this._dressStartChunks = this._chunks.length;
+      this._buildDressing(level);
+    }
     this._buildColossal(level, b);
     this._buildLightGlows(level);
     if (this._bloodOn) this._blood.build(bloodEntries(level));
     this._boards.build(boardEntries(level), level.spawn || null); // the spawn's section at once (precompiled), the rest lazily
+    this._startSet = new Set(this.root.children); // what the build itself made (the cache's save checks the rest is restorable)
+  }
+
+  /**
+   * LOADING_OPTIMIZATION.md: restores the cached dressed level (render/levelCache.js) when this.cache holds one for these inputs; false:
+   * nothing changed, the procedural merge + dressing job run. Only with the kit and props parsed (what the snapshot was made with).
+   */
+  _restoreDressed(level, bands) {
+    this._restored = false;
+    this._buildDetail = detailOf(this);
+    this._dressedWithAssets = LOADOPT.on && !!(this._kit && this._props);
+    const cache = this.cache;
+    if (!cache || !this._dressedWithAssets) return false;
+    const snap = cache.take(level);
+    if (!snap) return false;
+    let ok = false;
+    try {
+      ok = restoreSnapshot(this, level, snap, this._cacheEnv());
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('[AT3D] level cache restore failed, building', err);
+    }
+    cache.noteRestore(ok, ok ? '' : 'did not fit');
+    if (!ok) return false;
+    bands.clear(); // the decor geometry the merge would have used (never uploaded): garbage
+    this._restored = true;
+    return true;
+  }
+
+  /** What levelCache.js needs of this view: the pack class and the material of each decor list. */
+  _cacheEnv() {
+    return { LodSet, materialFor: (k) => this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone') };
   }
 
   /**
@@ -4796,6 +5064,7 @@ export class LevelView {
         for (const g of P.lists[k]) {
           g.applyMatrix4(itemM);
           if (k === 'metalM') mid.metal.push(g);
+          else if (k === 'stoneN' || k === 'metalN') this._bandLists(bands, y, 'near')[k === 'stoneN' ? 'stone' : 'metal'].push(g); // archDetail
           else band[k].push(g);
         }
       }
@@ -4828,8 +5097,15 @@ export class LevelView {
       const z = num(d.z, 0);
       P.rng = makeRng(hashStr(d.id != null ? d.id : `${type}${d.x},${d.y}`));
       if (PLAQUE_TYPES.has(type)) {
-        addItem(d.x, d.y, z, rotY, () => P.box('stone', 0, 0, -0.02, lw, sy, ld));
-        this._addPlaque(d, lw, sy, ld, rotY);
+        // no slab: the words are written on the wall itself, by a hand (boardWriting.js 'hand'). A plaque whose wall cannot be found behind it keeps its slab.
+        const back = HAND_PLAQUES ? this._plaqueWall(level, d, z, rotY) : null;
+        if (back === null) {
+          addItem(d.x, d.y, z, rotY, () => {
+            P.box('stone', 0, 0, -0.02, lw, sy, ld);
+            if (ARCH_ON) P.soup('stoneN', plaqueFrameSoup(lw, sy, ld), 'stone'); // archDetail: carved frame + corner bosses
+          });
+        }
+        this._addPlaque(d, lw, sy, ld, rotY, back);
         count++;
         continue;
       }
@@ -5331,6 +5607,8 @@ export class LevelView {
       do {
         // merges queued by a flush go first, one band per step (each is a big copy)
         if (job.merge.length) {
+          // LOADING_OPTIMIZATION.md: a section pack's buried-face culling first, one geometry per step (it was one long step)
+          if (precullStep(job.merge[0], this._preH || (this._preH = { cullBuried, packGeo, compactVertices, buried: BURIED_ON }), this)) continue;
           const [bi, k, list] = job.merge.shift();
           if (bi === null) {
             this._mergeBands(list, true); // a section pack: all its band lists in one add
@@ -5345,8 +5623,17 @@ export class LevelView {
           this._dressJob = null;
           return;
         }
+        if (job.pend !== undefined) {
+          // LOADING_OPTIMIZATION.md: a finished section's flush, its kit placements a few per step first (the flush drew them all at once)
+          if (this._emitKitPlan(job.bands, job.pend, KIT_STEP)) continue;
+          this._flushDressing(job.pend);
+          this._flushDecals();
+          job.pend = undefined;
+          continue;
+        }
         const r = job.it.next();
         if (r.done) {
+          if (LOADOPT.on && this._emitKitPlan(job.bands, Infinity, KIT_STEP)) continue; // the last kit placements, a few per step
           this._collideDecor();
           this._flushDressing(Infinity);
           this._flushDecals();
@@ -5356,8 +5643,11 @@ export class LevelView {
         }
         if (r.value > job.sec) {
           if (job.sec >= 0) {
-            this._flushDressing(r.value - 1);
-            this._flushDecals();
+            if (LOADOPT.on) job.pend = r.value - 1; // flushed by the steps above before the plan goes on (the same lists, the same order)
+            else {
+              this._flushDressing(r.value - 1);
+              this._flushDecals();
+            }
           }
           job.sec = r.value;
         }
@@ -5417,6 +5707,8 @@ export class LevelView {
 
   /** One placement of a kit part: its geometry through the placement matrix, mirrored fix, tint and metric UVs. */
   _kitGeo(part, it, lst) {
+    const fast = kitGeoFast(part, it, lst, tintColors, worldUV); // LOADING_OPTIMIZATION.md: the same floats on plain arrays (null: below)
+    if (fast) return fast;
     const g = part.geo.clone();
     g.applyMatrix4(it.m);
     // mirrored placements (negative determinant) would turn the part inside out
@@ -5439,14 +5731,19 @@ export class LevelView {
   }
 
   /** Instantiates the planned kit parts into band lists (world space, graded, metric UVs). */
-  _emitKitPlan(bands, maxSec = Infinity) {
+  _emitKitPlan(bands, maxSec = Infinity, limit = Infinity) {
     const kit = this._kit;
-    if (!kit || !this._kitPlan) return;
+    if (!kit || !this._kitPlan) return false;
     let t = 0;
+    let more = false; // limit (LOADING_OPTIMIZATION.md: the dressing job draws them a few per step): true when some were left for later
     const missing = new Set(this.stats.kitMissing || []);
     const byPart = this.stats.kitTris || (this.stats.kitTris = {});
     for (const it of this._kitPlan) {
       if (it.drawn || it.sec > maxSec) continue;
+      if (limit-- <= 0) {
+        more = true;
+        break;
+      }
       it.drawn = true;
       const part = kit.get(it.part);
       if (!part) {
@@ -5486,6 +5783,7 @@ export class LevelView {
     }
     if (this.stats.dressTris) this.stats.dressTris.kit += t;
     this.stats.kitMissing = [...missing];
+    return more;
   }
 
   /** Drops the buried triangles (and the geometries left empty) of a band list, in place. */
@@ -5649,7 +5947,8 @@ export class LevelView {
         const cells = new Map();
         for (const g0 of list) {
           if (g0.isLodRec) {
-            if (buried) {
+            if (buried && !g0._culled) {
+              // (g0._culled: precullStep did this already, a record per step: LOADING_OPTIMIZATION.md)
               g0.geos = g0.geos.map((g) => {
                 if (!g) return null;
                 const c = cullBuried(g, level);
@@ -5660,12 +5959,12 @@ export class LevelView {
                 for (const g of g0.geos) if (g) g.dispose();
                 continue;
               }
-            } else g0.geos = g0.geos.map((g) => (g ? packGeo(g) : null));
+            } else if (!g0._culled) g0.geos = g0.geos.map((g) => (g ? packGeo(g) : null));
             out.push(g0);
             continue;
           }
-          let g = packGeo(g0);
-          if (buried) {
+          let g = CULLED.has(g0) ? g0 : packGeo(g0); // (CULLED: precullStep packed, culled and compacted it: LOADING_OPTIMIZATION.md)
+          if (buried && !CULLED.has(g)) {
             const c = cullBuried(g, level);
             this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
             if (c.geo !== g) g.dispose();
@@ -5794,7 +6093,10 @@ export class LevelView {
     const sz = size.slice();
     sz[thin] *= 0.88;
     const raise = thin !== 1 ? Math.max(0, size[1] - GATE_LIP) : 0;
-    gateBars(P, sz, thin, raise > 0);
+    // archDetail: forged octagonal bars, riveted chamfered straps, eight-sided spikes (same layout; the plain bars as fallback)
+    const gs = ARCH_ON ? ARCH.gateSoup(sz, thin, raise > 0) : null;
+    if (gs) P.soup('metal', gs, 'metal');
+    else gateBars(P, sz, thin, raise > 0);
     const group = new THREE.Group();
     group.name = 'chamberGate';
     _m4.makeRotationY(rotY || 0);
@@ -5862,18 +6164,34 @@ export class LevelView {
     g.visible = this._gateCenter.distanceTo(head) < vd + this._gateRadius;
   }
 
-  _addPlaque(d, lw, sy, ld, rotY) {
+  /** Metres from the plaque's centre back to the wall behind it (0.05..1), or null (no wall found: the slab stays). */
+  _plaqueWall(level, d, z, rotY) {
+    if (!level || typeof level.raycast !== 'function') return null;
+    _v1.set(0, 0, -1).applyAxisAngle(_up, rotY);
+    const hit = level.raycast(d.x, d.y, z, _v1.x, _v1.y, _v1.z, 1.2, _rayOut);
+    return hit && hit.t > 0.05 && hit.t < 1 ? hit.t : null;
+  }
+
+  _addPlaque(d, lw, sy, ld, rotY, back) {
     const text = d.text || d.label || d.title || '';
     if (!text) return;
-    const tex = plaqueTexture(text, lw / sy);
+    const tex = plaqueTexture(text, lw / sy, back !== null && back !== undefined ? String(d.id != null ? d.id : text) : '');
     if (!tex) return;
     const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false });
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(lw * 0.95, sy * 0.86), mat);
     mesh.userData.ownMaterial = true;
     mesh.name = `plaque_${d.id || ''}`;
     mesh.rotation.y = rotY;
-    _v1.set(0, 0, ld / 2 + 0.012).applyAxisAngle(_up, rotY);
-    mesh.position.set(d.x + _v1.x, d.y + _v1.y, num(d.z, 0) + _v1.z);
+    if (back !== null && back !== undefined) {
+      // on the wall, 1.4 cm off it, a little crooked and not quite where a sign would hang
+      const j = hashStr(String(d.id != null ? d.id : text));
+      _v1.set(0, 0, -(back - 0.014)).applyAxisAngle(_up, rotY);
+      mesh.position.set(d.x + _v1.x, d.y + _v1.y + (((j & 255) / 255) - 0.5) * 0.3, num(d.z, 0) + _v1.z);
+      mesh.rotateZ((((j >>> 8) & 255) / 255 - 0.5) * 0.07);
+    } else {
+      _v1.set(0, 0, ld / 2 + 0.012).applyAxisAngle(_up, rotY);
+      mesh.position.set(d.x + _v1.x, d.y + _v1.y, num(d.z, 0) + _v1.z);
+    }
     mesh.renderOrder = 5;
     mesh.visible = false;
     this.root.add(mesh);
@@ -6211,7 +6529,12 @@ export class LevelView {
    */
   update(dt, game, head, viewDist, fogInfo) {
     if (!this.level) return;
-    if (this._dressJob) this._pumpDressing(game && game.state === 'playing' ? 2 : 8);
+    if (this._dressJob) {
+      // budget from the frame's measured work (LOADING_OPTIMIZATION.md; without a measurement the fixed 2 ms playing / 8 ms otherwise)
+      const tp = performance.now();
+      this._pumpDressing(dressBudgetMs(game));
+      this._pumpMs = (this._pumpMs || 0) + performance.now() - tp;
+    }
     if (this._decals) this._decals.mesh.visible = this._decals.count > 0 && !!this.mats.get('decal').map;
     this.time += dt;
     const t = this.time;

@@ -169,6 +169,7 @@ const SETTINGS_SCHEMA = [
   { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
   { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
   { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
+  { key: 'storyIntro', tab: 'display', type: 'toggle', label: 'Story intro', desc: 'The opening story when a new descent begins. Any key moves it on; Esc skips it.', desktop: true },
   { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
@@ -212,8 +213,8 @@ const CONTROLS_QUEST = [
   [['A'], 'Jump.', 'Jump'],
   [['B', '≡'], 'Pause · back out of a menu.', 'Pause · back'],
   [['X'], 'Hold to restart the run while paused or after a fall.', 'Hold: restart (paused / fallen)'],
-  [['Y'], 'Hold to re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Hold: re-centre'],
-  [['Left stick click'], 'Brake on the ground.', 'Brake'],
+  [['Y'], 'Tap: night vision goggles on / off (the deeper sections are dark on purpose). Hold: re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Tap: goggles · hold: re-centre'],
+  [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
   [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
@@ -224,6 +225,8 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
+  [['H'], 'Stow / draw both rope guns. They start holstered on your hips; a click draws that hand’s gun, and a gun left alone on the ground goes back after a few seconds. Walking with a gun out is 20 % slower.'],
+  [['N'], 'Night vision goggles on / off. The deeper sections are dark on purpose and the lantern fades with depth; the goggles run on a cell that drains while they are on and trickles back while they are off.'],
   [['F'], 'Hold near a chalk-studded surface or any ledge edge / corner to cling to it (W A S D climb, W or Space at a ledge lip climbs over, otherwise Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
   [['Esc'], 'Pause.'],
   [['R'], 'Restart the run.'],
@@ -236,11 +239,12 @@ const CONTROLS_DESKTOP = [
 const CONTROLS_TOUCH = [
   [['Left thumb'], 'Drag anywhere on the left half: a stick appears under your thumb. Move, pump the swing, steer in the air.'],
   [['Right thumb'], 'Drag anywhere on the right half to look. Dragging from a rope or grip button looks while you hold it.'],
-  [['ROPE R', 'ROPE L'], 'Fire that hand’s tether at the highlighted anchor. Hold to stay attached, release to let go (or tap to toggle, see Settings, Touch).'],
+  [['ROPE R', 'ROPE L'], 'Fire that hand’s tether at the highlighted anchor (a holstered gun is drawn by the press). Hold to stay attached, release to let go (or tap to toggle, see Settings, Touch). Walking with a gun out is 20 % slower; it goes back in its holster when left alone on the ground.'],
   [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
   [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip.'],
   [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
   [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
+  [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],
   [['II'], 'Pause.'],
 ];
 
@@ -1946,7 +1950,7 @@ export class UI3D {
   _buildAbout() {
     const d = this.dom;
     d.aboutCredits.textContent =
-      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live, there are no samples. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
+      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live. The radio voices are AI-generated placeholders (Kokoro-82M text-to-speech, Apache-2.0 licence), not human actors; recorded performances will replace them. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
   }
 
   _versionLine() {
@@ -2681,9 +2685,9 @@ export class UI3D {
 
   _startRun(key, fromVR) {
     const k = DIFFICULTY[key] ? key : 'normal';
-    this._call('start', k);
+    this._call(this.game && typeof this.game.startNewGame === 'function' ? 'startNewGame' : 'start', k); // a new descent plays the opening story first
     const game = this.game || {};
-    if (game.state === 'playing' && this.current !== null) this.show(null);
+    if ((game.state === 'playing' || game.state === 'intro') && this.current !== null) this.show(null);
     if (!fromVR) this._lockPointer();
   }
 
@@ -4067,7 +4071,7 @@ export class UI3D {
     row(410, 'PRIVACY', this._privacyUrl());
     row(458, 'SUPPORT', this._supportUrl());
     txt(ctx, 'No account. Nothing about you leaves this headset.', 44, 514, val, COL.ink2, 'left', 0);
-    const credits = 'Created by the Abyssal Tether team. Original world, creature, score and sound (synthesised live). Built with three.js (MIT) and Blender.';
+    const credits = 'Abyssal Tether team. Original world, creature, score; sound synthesised live. Radio voices: AI placeholders (Kokoro TTS), not actors. three.js (MIT), Blender.';
     wrapLines(ctx, credits, CW - 88, `400 28px ${F_UI}`)
       .slice(0, 3)
       .forEach((ln, i) => txt(ctx, ln, 44, 568 + i * 36, `400 28px ${F_UI}`, COL.ink3, 'left', 0));

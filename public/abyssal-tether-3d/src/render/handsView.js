@@ -36,6 +36,8 @@ import {
   BufferGeometry,
   Color,
   ConeGeometry,
+  Euler,
+  InstancedMesh,
   CylinderGeometry,
   DoubleSide,
   DynamicDrawUsage,
@@ -49,6 +51,7 @@ import {
   Quaternion,
   Scene,
   ShaderMaterial,
+  Sphere,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -632,6 +635,7 @@ export class HandsView {
     this._camR = new Vector3();
     this._camU = new Vector3();
     this._s = new Vector3();
+    this._hip = { piv: null, mesh: null, mat: new Matrix4(), inv: new Matrix4(), p: new Vector3(), q: new Quaternion(), s: new Vector3(), qI: new Quaternion(), e: new Euler(), pos: new Vector3(), yaw: 0 }; // the rope guns' holsters (_buildHolsters)
     this._e = new Vector3();
     this._d = new Vector3();
     this._side = new Vector3();
@@ -944,6 +948,7 @@ export class HandsView {
     }
     this._gearMats = mats;
     this.gear = gear;
+    this._buildHolsters(gear);
     for (const h of HANDS) this.launchers[h].visible = false;
     if (this._lanternFallback) this._lanternFallback.visible = false;
     this._order = -1; // re-apply render orders to the new meshes
@@ -1114,6 +1119,94 @@ export class HandsView {
   }
 
   /** Poses the fingers, runs the launcher mechanics and places the loose grapple head. */
+  /**
+   * The rope guns' holsters (sim/holster3d.js). The launcher rig, its muzzle and its gauge glass hang from a pivot under the arm's root:
+   * identity = in the hand (the old look); while stowed the pivot rides on the hip instead (_updateHolsters), the gun hanging barrel
+   * down in a leather sleeve, and the hand is bare. The two sleeves are ONE instanced draw call and are frustum-culled (the hips are
+   * out of view unless the player looks down), so a run pays nothing for them most of the time.
+   */
+  _buildHolsters(gear) {
+    const H = this._hip;
+    this._piv = {};
+    for (const h of HANDS) {
+      const g = gear[h];
+      const rig = g.root.getObjectByName(`Launcher_${h === 'left' ? 'L' : 'R'}_Rig`);
+      if (!rig) continue;
+      const piv = new Object3D();
+      piv.name = `AT3D-holster-pivot-${h}`;
+      g.root.add(piv);
+      piv.add(rig);
+      if (g.muzzle) piv.add(g.muzzle);
+      if (g.glass) piv.add(g.glass);
+      this._piv[h] = piv;
+    }
+    // the sleeves: a leather cup round the barrel's root plus a rim and a belt loop (one merged geometry, two instances)
+    const cup = new BoxGeometry(0.1, 0.11, 0.15);
+    cup.translate(0, -0.012, -0.13);
+    const rim = new BoxGeometry(0.118, 0.128, 0.026);
+    rim.translate(0, -0.012, -0.06);
+    const loop = new BoxGeometry(0.05, 0.05, 0.2);
+    loop.translate(0, 0.1, 0.02);
+    const geo = mergeGeometries([cup, rim, loop]);
+    cup.dispose();
+    rim.dispose();
+    loop.dispose();
+    const mat = new MeshStandardMaterial({ color: 0x2c1d14, roughness: 0.82, metalness: 0.06 });
+    mat.name = 'AT3D-holster-leather';
+    const mesh = new InstancedMesh(geo, mat, 2);
+    mesh.name = 'AT3D-holsters';
+    mesh.boundingSphere = new Sphere(new Vector3(), 0.6); // moved with the head each frame: culled when the hips are out of view
+    mesh.visible = false;
+    H.mesh = mesh;
+    if (this.scene) this.scene.add(mesh);
+  }
+
+  /** Places each launcher between the hip (stowed) and the hand (out) by the holster's `k`, and the two sleeves on the hips. */
+  _updateHolsters(game, showHands) {
+    const H = this._hip;
+    const mesh = H.mesh;
+    if (!mesh || !this._piv) return;
+    if (!mesh.parent && this.scene) this.scene.add(mesh);
+    const hol = game && game.holster;
+    const he = this._head.elements;
+    // the body's heading from the head (looking straight up / down keeps the last one)
+    const fx = -he[8];
+    const fz = -he[10];
+    if (fx * fx + fz * fz > 0.04) H.yaw = Math.atan2(-fx, -fz);
+    const cy = Math.cos(H.yaw);
+    const sy = Math.sin(H.yaw);
+    const show = !!showHands && !!hol && hol.enabled;
+    mesh.visible = show;
+    mesh.boundingSphere.center.set(this._hp.x, this._hp.y - 0.62, this._hp.z);
+    for (let i = 0; i < 2; i++) {
+      const h = HANDS[i];
+      const sg = i === 0 ? -1 : 1;
+      // the hip: 0.27 m to the side, 0.64 m under the eyes, barrel down, sights forward, a little outward
+      H.pos.set(this._hp.x + cy * sg * 0.27 - sy * 0.03, this._hp.y - 0.64, this._hp.z - sy * sg * 0.27 - cy * 0.03);
+      H.e.set(-1.45, H.yaw, -sg * 0.12, 'YXZ');
+      H.q.setFromEuler(H.e);
+      H.s.set(1, 1, 1);
+      H.mat.compose(H.pos, H.q, H.s);
+      mesh.setMatrixAt(i, H.mat);
+      const piv = this._piv[h];
+      if (!piv) continue;
+      const k = hol && hol.enabled ? hol.k[i] : 1;
+      if (k >= 0.999 || !show) {
+        piv.position.set(0, 0, 0);
+        piv.quaternion.identity();
+        continue;
+      }
+      const g = this.gear[h];
+      g.root.updateWorldMatrix(true, false);
+      H.inv.copy(g.root.matrixWorld).invert().multiply(H.mat);
+      H.inv.decompose(H.p, H.q, H.s);
+      const e = k * k * (3 - 2 * k);
+      piv.position.copy(H.p).multiplyScalar(1 - e);
+      piv.quaternion.copy(H.q).slerp(H.qI.identity(), e);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+
   _updateGear(hand, dt, game, tethers, xr, showHands) {
     const G = this.gear[hand];
     const T = this.tuning;
@@ -1297,6 +1390,7 @@ export class HandsView {
 
     const tethers = game ? game.tethers : null;
     if (gear) for (const h of HANDS) this._updateGear(h, step, game, tethers, xr, showHands);
+    if (gear) this._updateHolsters(game, showHands);
     const playing = state === 'playing' && !inp.uiMode && (!game || !game.player || game.player.alive !== false);
     const batch = this.batch;
     batch.begin();
@@ -1428,7 +1522,9 @@ export class HandsView {
     }
 
     // Laser / reticle visibility targets.
-    const pose = showHands && playing && !attached ? inp.handPose(hand) : null;
+    const hol = game && game.holster;
+    const drawn = !hol || hol.k[hand === 'left' ? 0 : 1] > 0.85; // a stowed gun shows no laser, reticle or dot
+    const pose = showHands && playing && !attached && drawn ? inp.handPose(hand) : null;
     const ray = pose ? inp.aimRay(hand, this._ray) : null;
     let wantLaser = 0;
     let wantReticle = 0;
