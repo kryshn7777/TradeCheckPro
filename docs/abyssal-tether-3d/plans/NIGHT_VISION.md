@@ -24,11 +24,11 @@ They are for scouting a stretch (find the trigger, see the ledge), not for weari
 
 | Section | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 |
 |---|---|---|---|---|---|---|---|---|
-| depth darkness | 0 | .04 | .12 | .24 | .36 | .48 | .58 | .68 |
-| lantern strength and reach | 1 | 1 | .90 | .78 | .66 | .54 | .44 | .34 |
-| Normal (base .3) folded | .30 | .33 | .38 | .47 | .55 | .64 | .71 | .78 |
+| depth darkness | 0 | .05 | .15 | .28 | .42 | .56 | .68 | .80 |
+| lantern strength and reach | 1 | 1 | .88 | .74 | .60 | .47 | .36 | .26 |
+| Normal (base .3) folded | .30 | .34 | .41 | .50 | .59 | .69 | .78 | .86 |
 
-Normal at the bottom (.78) is darker than Nightmare at the top (.72); Nightmare and Abyss go darker still. The menu's drifting background is not darkened. `?deepdark=0..1` scales the depth part (0 = the old levels), for testing and for a comfort setting later.
+Normal at the bottom (.86) is as dark as the Abyss difficulty is at the top (.85); Nightmare and Abyss go darker still. The menu's drifting background is not darkened. `?deepdark=0..1` scales the depth part (0 = the old levels), for testing and for a comfort setting later.
 
 The renderer reads the section blend by height, so the darkness eases in across a section boundary with the theme instead of popping.
 

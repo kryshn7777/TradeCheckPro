@@ -3628,14 +3628,8 @@ class Dresser {
       }
       this.putWorld(B.geometry(), m, 'metal', g.stone);
       this.stats.irons = (this.stats.irons || 0) + 1;
-      if (ARCH_ON && len > 0.6) {
-        // archDetail: a rivet line along each edge plate's outer face (the near tier only)
-        const R = new ARCH.Soup();
-        for (const side of [-1, 1]) ARCH.rivetRow(R, [mid - len / 2 + 0.1, -0.21, side * (W / 2 + 0.1)], [mid + len / 2 - 0.1, -0.21, side * (W / 2 + 0.1)], [0, 0, side], 0.5, 0.018, 0.012, 5);
-        this._cat = 'rivet';
-        this.putWorld(R.geometry(), m, 'metal', g.stone, 'near');
-        this._cat = 'iron';
-      }
+      // (archDetail W11, rejected: a geometric rivet line on these edge plates cost 17.6k triangles over the level and did not read in
+      // the close-ups: the iron set's texture already carries rivets. MESH_DETAIL_AND_OPTIMIZATION.md §6b)
     }
     this._cat = null;
     // seams across and rivet lines along the walking surface (flush strips)
@@ -3790,8 +3784,9 @@ class Dresser {
   }
 
   /**
-   * Level-wide decals (once, before the first section): soot plumes above the wall lamps, rust runs under the wall-mounted anchor
-   * plates. Into the one decal mesh (no draw call); placed on the solid found behind the fixture, skipped when there is none.
+   * Level-wide decals (once, at the end of the plan): soot plumes above the wall lamps, rust runs under the wall-mounted anchor plates,
+   * tallies in the Masons' rests. Into the one decal mesh (no draw call); placed on the solid found behind the fixture, skipped when there
+   * is none or when an authored kit panel covers that face.
    */
   _archDecals() {
     const S = this.S;
