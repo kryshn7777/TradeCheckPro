@@ -74,6 +74,7 @@ export class Player3D {
     this.deathCause = null;
     this.landedThisStep = false;
     this.speedMul = 1; // adrenaline: set each frame by the game (sim/inventory3d.js)
+    this.walkMul = 1; // <= 1: the ground walk only (a rope gun in the hand: 0.8), set each frame by the game (sim/holster3d.js)
     this.climbing = false; // a hand holds a climb zone and drives the velocity (sim/climb3d.js)
   }
 
@@ -800,7 +801,7 @@ export class Physics3D {
         player.vx *= k;
         player.vz *= k;
       } else if (moving) {
-        const runMax = P.runMaxSpeed * sm;
+        const runMax = P.runMaxSpeed * sm * (player.walkMul > 0 && player.walkMul < 1 ? player.walkMul : 1);
         const tx = mx * runMax;
         const tz = mz * runMax;
         const hs = len2(player.vx, player.vz);

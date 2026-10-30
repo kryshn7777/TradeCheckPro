@@ -75,6 +75,7 @@ const KEY_TO_CODE = {
   p: 'KeyP',
   r: 'KeyR',
   n: 'KeyN',
+  h: 'KeyH',
   g: 'KeyG',
   x: 'KeyX',
   1: 'Digit1',
@@ -115,6 +116,7 @@ const GAME_KEYS = {
   KeyC: 1,
   KeyF: 1,
   KeyN: 1,
+  KeyH: 1,
   KeyP: 1,
   KeyR: 1,
   Space: 1,
@@ -403,6 +405,9 @@ export class DesktopInput {
         break;
       case 'KeyN':
         if (!ui && !xr) im._edge('nv'); // the night vision goggles
+        break;
+      case 'KeyH':
+        if (!ui && !xr) im._edge('holster'); // stow / draw both rope guns
         break;
       case 'Enter':
       case 'NumpadEnter':

@@ -26,6 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
+import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
 import { Objectives3D } from './sim/objectives3d.js';
@@ -203,13 +204,14 @@ export function blankIntent() {
     confirmPressed: false,
     backPressed: false,
     nvPressed: false,
+    holsterPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     climb: blankClimb(),
   };
 }
 
-const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed'];
+const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed'];
 
 /**
  * A view of the main bus for per-run objects (creature, tethers, physics):
@@ -286,6 +288,15 @@ function holdfastMode() {
     return /[?&]hunt=always\b/.test(q) ? 'off' : 'on';
   } catch {
     return 'on';
+  }
+}
+
+/** `?holster=off` keeps both rope guns in the hands at the old walk speed (the bots, tests, captures). */
+function holsterOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]holster=off/.test(location.search || '');
+  } catch {
+    return false;
   }
 }
 
@@ -810,6 +821,7 @@ export class FallbackInput {
     it.pausePressed = !!(this._keyEdges.Escape || this._keyEdges.KeyP);
     it.restartPressed = !!this._keyEdges.KeyR;
     it.nvPressed = !!this._keyEdges.KeyN;
+    it.holsterPressed = !!this._keyEdges.KeyH;
     it.confirmPressed = !!(this._keyEdges.Enter || this._keyEdges.NumpadEnter);
     it.backPressed = !!this._keyEdges.Backspace;
     // Aim ray from the camera centre (both hands).
@@ -986,6 +998,7 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.holster = null; // the rope guns' holsters (sim/holster3d.js): out[h], k[h] 0..1, walkMul; the hands view reads it
     this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
     this.nvView = null; // their picture (render/nightVisionView.js)
     this._nvHint = 0; // the one-time "it is dark: goggles" hint: 0 not yet, 1 shown, 2 used
@@ -2687,6 +2700,8 @@ export class Game3D {
     // The bag and the supplies of this run (empty / unseeded until start() resets them).
     this.bag = new Inventory3D(this._runBus);
     this.nv = new NightVision3D(this._runBus);
+    this.holster = new Holster3D(this._runBus);
+    this.holster.setEnabled(!holsterOff());
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
@@ -2747,6 +2762,7 @@ export class Game3D {
   _restoreBag() {
     if (this.bag) this.bag.restore();
     if (this.nv) this.nv.restore();
+    if (this.holster) this.holster.reset(); // a respawn: both guns back in their holsters
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -2806,6 +2822,27 @@ export class Game3D {
         this._hapticBoth(0.1 + 0.12 * (ap.t / ap.dur), 22);
       }
     }
+  }
+
+  /**
+   * The holsters: H / right stick click stows or draws both, a press draws a holstered gun (the shot waits for it, then goes), a gun left
+   * alone on the ground goes back after a few seconds. The ground walk is 20 % slower while a gun is out (Player3D.walkMul).
+   */
+  _updateHolster(dt, intent, live) {
+    const h = this.holster;
+    const p = this.player;
+    if (!h || !p) return;
+    if (live && intent && intent.holsterPressed) h.toggle();
+    const th = this.tethers ? this.tethers.hands : null;
+    const c = this._holsterCtx || (this._holsterCtx = { live: false, grounded: false, busy: [false, false] });
+    c.live = live;
+    c.grounded = !!p.grounded;
+    for (let i = 0; i < 2; i++) {
+      const st = th ? th[i === 0 ? 'left' : 'right'] : null;
+      c.busy[i] = !!(st && (st.rope.attached || st.flying || st.buffer > 0));
+    }
+    h.step(dt, intent, c);
+    p.walkMul = h.walkMul;
   }
 
   /**
@@ -3140,6 +3177,7 @@ export class Game3D {
     this._updateBag(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
+      this._updateHolster(dt, intent, true);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
       this._stepPhysics(dt, intent);

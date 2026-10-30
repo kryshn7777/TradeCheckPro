@@ -2264,6 +2264,8 @@ export class AudioManager3D {
       'bag:effect': this._onBagEffect,
       'lantern:low': this._onLanternLow,
       'lantern:empty': this._onLanternEmpty,
+      'holster:draw': this._onHolsterDraw,
+      'holster:stow': this._onHolsterStow,
       'nv:on': this._onNvOn,
       'nv:off': this._onNvOff,
       'nv:refuse': this._onNvRefuse,
@@ -2625,6 +2627,14 @@ export class AudioManager3D {
 
   _onLanternEmpty() {
     this._sfxLanternWarn(true);
+  }
+
+  _onHolsterDraw() {
+    this._sfxHolster(true);
+  }
+
+  _onHolsterStow() {
+    this._sfxHolster(false);
   }
 
   _onNvOn() {
@@ -3849,6 +3859,31 @@ export class AudioManager3D {
     n.connect(lp);
     lp.connect(g);
     g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A rope gun leaves / returns to its holster: leather rubbing on the way, a short metal click at the end. */
+  _sfxHolster(draw) {
+    const v = this._begin('holster', 1, 0.1, 0.5, this.busPlayer, 0.3, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const dur = draw ? 0.14 : 0.18;
+    const n = this._vNoise(v, this._brown, t, 1.6);
+    const bp = this._vFilter(v, 'bandpass', draw ? 1500 : 900, 0.9);
+    bp.frequency.linearRampToValueAtTime(draw ? 700 : 1700, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.42, t + 0.03);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    // the click as it seats (stowed) or as it clears (drawn)
+    const o = this._vOsc(v, 'square', draw ? 1900 : 1300, t + dur);
+    const cg = this._vGain(v, 0);
+    this._tick(cg.gain, t + dur, 0.2, 0.012);
+    o.connect(cg);
+    cg.connect(v.out);
     this._commit(v);
   }
 
