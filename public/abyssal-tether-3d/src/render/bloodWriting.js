@@ -11,7 +11,7 @@
  * lamps; polygon offset, no depth write; a drier wet film), so the writing reads by lamp light and lantern like the stains around it.
  * Nothing here is a level object: no collider, anchor, climb surface, bake, lightmap / GI hash or dressing keep-out.
  *
- * The scrawl (drawBloodText): no web font is needed: a generic hand / cursive stack, and every glyph gets its own size,
+ * The scrawl (drawBloodText): drawn with the stroke hand of scrawlFont.js (no installed font: a headset's fallback made it Arial), every glyph gets its own size,
  * rotation, offset and an irregular, drifting baseline; finger-thick strokes (offset copies + a fat stroke), a faint wet
  * highlight on the top-left edges, wiped smears under the letters and drips running down from them with a bead at the end;
  * dark wet red (#7a0b0b) drying to near black (#2a0303), fresher the deeper it was written. Transparent background.
@@ -38,7 +38,7 @@ const PAD = 2; // px kept clear around each atlas cell (filtering / mips never b
 const BLOOD_TINT = 0.7;
 const FRESH = [0x7a, 0x0b, 0x0b]; // #7a0b0b
 const DRY = [0x2a, 0x03, 0x03]; // #2a0303
-const FONT = "'Segoe Print', 'Bradley Hand', 'Chalkboard SE', 'Comic Sans MS', cursive, sans-serif";
+import { scrawlAdvance, scrawlGlyph } from './scrawlFont.js';
 
 function hashStr(s) {
   let h = 2166136261 >>> 0;
@@ -109,17 +109,7 @@ export function drawBloodText(ctx, text, x0, y0, cw, ch, seed = 1, fresh = 0.5) 
     .split('\n')
     .slice(0, BLOOD_MAX_LINES);
   const n = Math.max(1, lines.length);
-  const font = (px) => `700 ${Math.max(1, Math.round(px))}px ${FONT}`;
-  ctx.font = font(100);
-  const adv100 = new Map();
-  const advOf = (c) => {
-    let a = adv100.get(c);
-    if (a === undefined) {
-      a = Math.max(1, ctx.measureText(c).width);
-      adv100.set(c, a);
-    }
-    return a;
-  };
+  const advOf = (c) => Math.max(1, scrawlAdvance(c, 100)); // the stroke hand (scrawlFont.js): no installed font is used
   let widest = 1;
   for (const l of lines) {
     let w = 0;
@@ -191,24 +181,17 @@ export function drawBloodText(ctx, text, x0, y0, cw, ch, seed = 1, fresh = 0.5) 
       ctx.translate(gx, gy);
       ctx.rotate(rot);
       ctx.scale(k * sx, k);
-      ctx.font = font(fs);
-      // finger-thick, ragged: two slightly offset ghost copies, then the stroke itself, then a fat outline of it
-      ctx.fillStyle = col;
-      ctx.globalAlpha = 0.24;
-      ctx.fillText(c, (rng() - 0.5) * fs * 0.05, (rng() - 0.5) * fs * 0.045);
-      ctx.fillText(c, (rng() - 0.5) * fs * 0.05, (rng() - 0.5) * fs * 0.045);
-      ctx.globalAlpha = 0.95;
-      ctx.fillText(c, 0, 0);
-      ctx.strokeStyle = col;
-      ctx.lineWidth = fs * (0.035 + rng() * 0.03);
-      ctx.globalAlpha = 0.7;
-      ctx.strokeText(c, 0, 0);
-      // a faint wet highlight along the top-left edges, kept on the blood already there
-      ctx.globalCompositeOperation = 'source-atop';
-      ctx.globalAlpha = 0.08 + 0.1 * (1 - t);
-      ctx.fillStyle = 'rgb(176,40,34)';
-      ctx.fillText(c, -fs * 0.025, -fs * 0.03);
-      ctx.globalCompositeOperation = 'source-over';
+      // a finger dragged through blood: two ghost strokes a hair off (the smear), the stroke itself, a thin wet line along it
+      ctx.save();
+      ctx.translate((rng() - 0.5) * fs * 0.05, (rng() - 0.5) * fs * 0.045);
+      ctx.globalAlpha = 0.22;
+      scrawlGlyph(ctx, c, fs, col, rng, { width: 1.25, tremor: 1.4, pool: false });
+      ctx.restore();
+      ctx.globalAlpha = 0.96;
+      scrawlGlyph(ctx, c, fs, col, rng, { width: 0.92 + rng() * 0.2 });
+      ctx.globalAlpha = 0.07 + 0.1 * (1 - t);
+      ctx.translate(-fs * 0.02, -fs * 0.025);
+      scrawlGlyph(ctx, c, fs, 'rgb(190,52,44)', rng, { width: 0.28, tremor: 0.4, pool: false });
       ctx.restore();
       ctx.globalAlpha = 1;
       glyphs++;
