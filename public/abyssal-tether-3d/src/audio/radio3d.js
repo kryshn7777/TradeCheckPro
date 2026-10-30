@@ -34,6 +34,7 @@ export const VOICES = Object.freeze({
   ODESSA: Object.freeze({ f0: 196, rate: 4.2, wave: 'triangle', glide: -0.12, jitter: 0.07, formant: 1.1, level: 0.95, q: 6 }),
   TICK: Object.freeze({ f0: 138, rate: 5.3, wave: 'sawtooth', glide: 0.04, jitter: 0.17, formant: 1.0, level: 0.72, q: 5 }),
   MAREN: Object.freeze({ f0: 176, rate: 4.0, wave: 'triangle', glide: -0.05, jitter: 0.05, formant: 1.16, level: 0.9, q: 8 }),
+  ELIAS: Object.freeze({ f0: 104, rate: 4.0, wave: 'triangle', glide: -0.03, jitter: 0.05, formant: 0.97, level: 0.7, q: 6 }),
   VESPER: Object.freeze({ f0: 116, rate: 4.6, wave: 'square', glide: 0, jitter: 0, formant: 0.92, level: 0.32, q: 11 }),
   UPLINK: Object.freeze({ f0: 0, rate: 0, wave: 'none', glide: 0, jitter: 0, formant: 1, level: 0.8, q: 1 }),
 });
@@ -136,7 +137,7 @@ export const VOICE_BASE = 'assets/audio/voice/';
 /** Seconds of decoded clips kept (an LRU: the current section, the next and the anywhere lines fit; ~10 MB at 24 kHz). */
 export const VOICE_CACHE_S = 110;
 /** A clip's gain into its chain (the clips are normalised to -23 LUFS; the babble's VOICES[].level does not apply). */
-export const CLIP_LEVEL = Object.freeze({ ODESSA: 1, TICK: 1, MAREN: 1, VESPER: 0.8, UPLINK: 1 });
+export const CLIP_LEVEL = Object.freeze({ ODESSA: 1, TICK: 1, MAREN: 1, VESPER: 0.8, ELIAS: 0.92, UPLINK: 1 });
 /** At most this many clips loading at once. */
 const VOICE_PARALLEL = 2;
 /** The not-quite voice's second copy: a hair faster (a slow beat against the first), this late (s), this loud. */
@@ -413,7 +414,8 @@ export class Radio {
     const nodes = [];
     const sources = [];
     const local = tx.speaker === 'VESPER';
-    const dryVoice = local || tx.kind === 'notquite';
+    const own = tx.speaker === 'ELIAS'; // the player's own voice in the suit: dry, no radio, no squelch, no chime
+    const dryVoice = local || own || tx.kind === 'notquite';
     const off = tx.kind === 'offmic';
     const V = VOICES[tx.speaker] || VOICES.TICK;
     // the line's clip when the director timed it by one (else, or if it is gone: the babble)
@@ -432,12 +434,12 @@ export class Radio {
     tail.connect(dryVoice ? this.dry : this.inp);
     const speakT = buf ? clamp(tx.speak || buf.duration, 0.3, 12) : clamp(tx.speak || 1, 0.5, 6);
     // a clip of the suit starts after its chime (a real first syllable under the chime would be masked)
-    const vStart = t0 + (buf && local ? 0.16 : local || off || tx.kind === 'notquite' ? 0.05 : SQUELCH);
+    const vStart = t0 + (buf && local ? 0.16 : local || own || off || tx.kind === 'notquite' ? 0.05 : SQUELCH);
     const end = vStart + speakT + 0.25;
     // squelch on / off (the radio), or the suit's two-tone chime (Vesper)
     if (local) {
       this._chime(t0, nodes, sources, out);
-    } else if (!off && tx.kind !== 'notquite') {
+    } else if (!off && !own && tx.kind !== 'notquite') {
       this._squelch(t0, nodes, sources);
       this._squelch(vStart + speakT + 0.06, nodes, sources);
     }

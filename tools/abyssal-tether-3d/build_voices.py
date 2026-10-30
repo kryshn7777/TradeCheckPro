@@ -60,6 +60,7 @@ VOICES = {
     'ODESSA': ('af_heart', 'en-us', 0.95, 'd583ccff3cdca2f7fae535cb998ac07e9fcb90f09737b9a41fa2734ec44a8f0b'),
     'TICK': ('am_puck', 'en-us', 1.10, 'fcf73c989033e9233e0b98713eca600c8c74dcc1614b37009d5450ff4a2274a0'),
     'MAREN': ('bf_emma', 'en-gb', 0.92, '669fe0647f9dd04fcab92f1439a40eeb4c8b4ab1f82e4996fe3d918ce4a63b73'),
+    'ELIAS': ('am_michael', 'en-us', 0.96, '1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1'),
     'VESPER': ('bm_george', 'en-gb', 1.00, 'c4b235a4c1f2cd3b939fed08b899ce9385638b763f7b73a59616c4fc9bd6c9bc'),
 }
 NO_CLIP_REASON = {
@@ -464,7 +465,7 @@ def demo(out, manifest, ids):
             src = os.path.join(OUT_DIR, e['f'])
             sp = e['f'].split('/')[0].upper()
             kind = rows.get(lid, {}).get('kind', 'radio')
-            dry = sp == 'VESPER' or kind == 'notquite'
+            dry = sp in ('VESPER', 'ELIAS') or kind == 'notquite'
             seg = os.path.join(tmp, f'{n:02d}.wav')
             voice = os.path.join(tmp, f'{n:02d}.v.wav')
             # the stuck word: [0, a+s) + [a, a+s) + [a, end)

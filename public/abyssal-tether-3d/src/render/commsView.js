@@ -49,7 +49,7 @@ function rr(g, x, y, w, h, r) {
   g.closePath();
 }
 
-/** The speaker's shape (diamond / circle / triangle / square / cross) at (cx, cy). */
+/** The speaker's shape (diamond / circle / triangle / square / ring / cross) at (cx, cy). */
 function shape(g, kind, cx, cy, r, color) {
   g.fillStyle = color;
   g.strokeStyle = color;
@@ -74,6 +74,9 @@ function shape(g, kind, cx, cy, r, color) {
   } else if (kind === 'square') {
     g.rect(cx - r, cy - r, r * 2, r * 2);
     g.fill();
+  } else if (kind === 'ring') {
+    g.arc(cx, cy, r - 1, 0, Math.PI * 2);
+    g.stroke();
   } else {
     g.moveTo(cx - r, cy - r);
     g.lineTo(cx + r, cy + r);
