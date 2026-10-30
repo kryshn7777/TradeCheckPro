@@ -113,7 +113,7 @@ function toMarkdown(rows) {
   const out = [];
   const head = '| Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |\n|---|---|---|---|---|---|---|';
   const row = (r) => `| \`${r.id}\` | ${r.section} | ${md(r.trigger)} | **${md(r.text)}**${r.say ? `<br>*say:* ${md(r.say.replace(/_/g, ' '))}` : ''}${r.kind !== 'radio' ? ` *(${r.kind})*` : ''} | ${md(r.direction)} | ${r.max_s} | ${r.pickup || ''} |`;
-  for (const sp of ['ODESSA', 'TICK', 'MAREN', 'VESPER', 'UPLINK']) {
+  for (const sp of ['ODESSA', 'TICK', 'MAREN', 'VESPER', 'ELIAS', 'UPLINK']) {
     const mine = rows.filter((r) => r.speaker === sp && r.status !== 'spec');
     if (!mine.length) continue;
     out.push(`#### ${sp} (${mine.length} line${mine.length > 1 ? 's' : ''}) — ${CAST[sp].who}`, '', head, ...mine.map(row), '');

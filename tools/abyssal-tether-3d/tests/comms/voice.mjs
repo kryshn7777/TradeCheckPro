@@ -93,7 +93,7 @@ const byCsv = Object.fromEntries(csvRows.map((r) => [r.id, r]));
     if (b.subarray(0, 4).toString() !== 'OggS' || oh < 0 || oh > 64) bad.push(`${id}: not Ogg Opus`);
     else if (b[oh + 9] !== 1 || b.readUInt32LE(oh + 12) !== 24000) bad.push(`${id}: not mono 24 kHz`);
     if (e.bytes !== b.length) bad.push(`${id}: manifest bytes ${e.bytes} != ${b.length}`);
-    if (!/^(odessa|tick|maren|vesper)\/[a-z0-9-]+\.ogg$/.test(e.f) || !e.f.endsWith(`/${id}.ogg`)) bad.push(`${id}: path ${e.f}`);
+    if (!/^(odessa|tick|maren|vesper|elias)\/[a-z0-9-]+\.ogg$/.test(e.f) || !e.f.endsWith(`/${id}.ogg`)) bad.push(`${id}: path ${e.f}`);
     const line = COMMS_SCRIPT.find((l) => l.id === id);
     if (line && e.f.split('/')[0] !== line.speaker.toLowerCase()) bad.push(`${id}: speaker folder`);
     if (!(e.d > 0.3 && e.d <= 6.5)) bad.push(`${id}: duration ${e.d}`);

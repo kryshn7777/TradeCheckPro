@@ -228,3 +228,9 @@ per frame (tested in a fresh process). The radio builds a handful of nodes once 
 
 Nothing has run on a headset: the head-locked text comfort and size, the spatial feel of the radio (the earpiece bias, the
 not-quite voice from no direction), the restore overlay over the real death fade, and of course the real VO.
+
+
+## Elias answers (his own voice) and thinks aloud
+The player character is a speaker now: **ELIAS** (pale blue-white, ring), in the suit like Vesper but not the suit AI: his lines play **dry**, with no radio chain, squelch or chime, close and a little breathy, with no latency or glitch (`SPEAKERS.ELIAS.local`). 12 lines (voiced by the AI placeholder `am_michael`; a human actor replaces them via `voice/recordings/<id>.wav`, see VO_SCRIPT.md):
+- **The opening** (he answers each of the four crew lines, the chain now alternates crew / Elias): *First. Right. Copy, Odessa.* / *Five bars. Keep them coming, Tick.* / *Every board, Doctor Soll. You'll hear all of it.* / *Kindling. Rope by rope. Going down.*
+- **One minute in a puzzle** (`STALL_TIME` = 60 s without progress in a section, once per section, S1-S8): he mutters the puzzle to himself (`sN-self`: the bell, the counterweight, the gear's ring, the cold lamps, the keystone, the fork, the rings, the grate), then the crew's existing stall hint follows.

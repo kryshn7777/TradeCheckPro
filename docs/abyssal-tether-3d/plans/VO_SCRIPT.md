@@ -118,7 +118,7 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 | Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
 |---|---|---|---|---|---|---|
 | `s1-open-2` | S1 | 0.4 s after s1-open-1 | **First descent, Elias. History.** | Warm, proud, controlled: a director marking a moment for the record. A small smile. "History." lands a beat later. | 3 |  |
-| `s1-open-5` | S1 | 0.5 s after s1-open-4 | **The Ember's dimming, Elias. Bring us a kindling. Take your time.** | Warm, unhurried. "Take your time" is reassurance that is slightly too practised. | 5.7 |  |
+| `s1-open-5` | S1 | 0.4 s after s1-open-4w | **The Ember's dimming, Elias. Bring us a kindling. Take your time.** | Warm, unhurried. "Take your time" is reassurance that is slightly too practised. | 5.7 |  |
 | `s1-bell-1` | S1 | event hint (hint about "bell") or event bell:ring | **Mind the bell, Elias. It's louder than last time.** | A casual warning. THE SLIP: "louder than last time" must come out natural; she does not notice it. Do not land it. | 5 |  |
 | `s1-bell-3` | S1 | 0.3 s after s1-bell-2 | **The probes, Tomasz. Focus.**<br>*say:* The probes, Tomash. Focus. | A smooth correction a fraction too fast: covering. Cool, not angry. | 3 |  |
 | `s4-enter` | S4 | entering S4 (+1.5 s) | **A hundred metres, Elias. Vitals good. Signal's thinning.** | A calm status update. "Signal's thinning" neutral, deliberately unworried. | 4.6 |  |
@@ -138,7 +138,7 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 
 | Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
 |---|---|---|---|---|---|---|
-| `s1-open-3` | S1 | 0.5 s after s1-open-2 | **Uplink's clean, five bars. I've got your eyes and your heart.** | Bright and quick, showing off his kit; a touch too cheerful. Close on a headset mic. | 5.7 |  |
+| `s1-open-3` | S1 | 0.4 s after s1-open-2w | **Uplink's clean, five bars. I've got your eyes and your heart.** | Bright and quick, showing off his kit; a touch too cheerful. Close on a headset mic. | 5.7 |  |
 | `s1-bell-2` | S1 | 0.35 s after s1-bell-1 | **Last time?** | Genuinely puzzled, half a laugh. Quick. | 3 |  |
 | `s1-stall` | S1 | no progress for 60 s (voiced hint) | **Fire at the glowing ring and hold. Let the rope work.** | A patient hint; he has been watching you hang there. Coaching, friendly. | 5.7 |  |
 | `s2-stall` | S2 | no progress for 60 s (voiced hint) | **Hook the counterweight and haul. That's your way down.** | A practical hint, plain. | 5 |  |
@@ -163,7 +163,7 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 
 | Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
 |---|---|---|---|---|---|---|
-| `s1-open-4` | S1 | 0.5 s after s1-open-3 | **Nobody's stood there since 1791. Read me every board you pass.**<br>*say:* Nobody's stood there since seventeen ninety-one. Read me every board you pass. | Dry, precise, quietly thrilled underneath: the historian meeting her subject. Crisp consonants. | 6 |  |
+| `s1-open-4` | S1 | 0.4 s after s1-open-3w | **Nobody's stood there since 1791. Read me every board you pass.**<br>*say:* Nobody's stood there since seventeen ninety-one. Read me every board you pass. | Dry, precise, quietly thrilled underneath: the historian meeting her subject. Crisp consonants. | 6 |  |
 | `s2-board` | S2 | reaching 24 m in S2 | **'It does not send us back.' Cheerful people, the Lanternwrights.**<br>*say:* 'It does not send us back.' Cheerful people, the Lantern wrights. | Reads the board aloud flat, as a quotation; then a bone-dry aside. | 5.7 |  |
 | `s2-haul` | S2 | event objective:done verb=haul | **That chain's been oiled. Recently. Write that down, Tomasz.**<br>*say:* That chain's been oiled. Recently. Write that down, Tomash. | Precise, unsettled underneath. A beat before "Recently." A brisk instruction to finish. | 5 |  |
 | `s3-enter` | S3 | entering S3 (+3 s) | **Closed from this side. So someone was still inside.** | Quiet deduction. The second sentence lower and slower. | 5 |  |
@@ -182,6 +182,23 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 | `s6-skit` | any | first skitterling contact | **Contact. Small. Closing.** | Suit alert. Three flat words, evenly spaced. No urgency in the voice; the words carry it. | 3 |  |
 | `s8-two` | S8 | reaching 470 m in S8 | **Heart rates: two. Recalibrating.** | Suit readout. Even; the number is just a number. | 3 |  |
 | `s8-lost` | S8 | reaching 538 m in S8 | **Uplink lost.** | Suit readout. Two words, flat, final. | 3 |  |
+
+#### ELIAS (12 lines) — Elias Wren, the player: your own voice in the suit (pale blue-white, ring)
+
+| Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
+|---|---|---|---|---|---|---|
+| `s1-open-2w` | S1 | 0.5 s after s1-open-2 | **First. Right. Copy, Odessa.** | A beat after "History." Flat, a half-step too quiet: "First." catches on something; "Right." is him putting it away. Then the professional "Copy, Odessa." | 3 |  |
+| `s1-open-3w` | S1 | 0.4 s after s1-open-3 | **Five bars. Keep them coming, Tick.** | Practical, a little dry. "Keep them coming" is half a joke and half meant. | 3.8 |  |
+| `s1-open-4w` | S1 | 0.4 s after s1-open-4 | **Every board, Doctor Soll. You'll hear all of it.** | Patient, the faintest smile. The reassurance of a man who has done this kind of thing before. | 5 |  |
+| `s1-open-5w` | S1 | 0.4 s after s1-open-5 | **Kindling. Rope by rope. Going down.** | Low and quiet, to himself as much as to them. "Going down" is a decision, not a boast. | 3.8 |  |
+| `s1-self` | S1 | no progress for 60 s (voiced hint) | **Think, Elias. The grating won't open itself. A bell, somewhere.** | Muttered, thinking aloud; the third sentence rises, finding it. Close to the mic, a little breath. | 5.3 |  |
+| `s2-self` | S2 | no progress for 60 s (voiced hint) | **A counterweight. Hook it and haul, Elias. Don't just stand here.** | Muttered, a little impatient with himself. "Don't just stand here" is an order he gives himself. | 5.7 |  |
+| `s3-self` | S3 | no progress for 60 s (voiced hint) | **The gear still turns. Hook its ring, let it carry me.** | Working it out as he says it, slow, then decided on "let it carry me". | 5.7 |  |
+| `s4-self` | S4 | no progress for 60 s (voiced hint) | **Cold lamps. My lantern, one at a time. Slowly.** | Hushed: the vault is listening. Slow, careful, each word placed. | 5 |  |
+| `s5-self` | S5 | no progress for 60 s (voiced hint) | **The keystone. Hide and let it knock. Or haul the ring.** | Tight, under his breath; the "Or" is a real choice he has not made yet. | 5.7 |  |
+| `s6-self` | S6 | no progress for 60 s (voiced hint) | **Two ways down. Pick one, Elias. Standing here picks neither.** | Dry, tired, almost amused at his own stalling. | 5.3 |  |
+| `s7-self` | S7 | no progress for 60 s (voiced hint) | **One ring, then the next. Never let go first.** | A rhythm he is saying to keep moving: even, a mantra. "Never let go first" is the rule. | 5 |  |
+| `s8-self` | S8 | no progress for 60 s (voiced hint) | **The grate. Don't look back. Run for the light.** | Out of breath, low, urgent but controlled. Not a shout. | 5 |  |
 
 #### UPLINK (1 line) — the open channel (no speaker)
 

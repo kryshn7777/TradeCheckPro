@@ -26,6 +26,7 @@ export const SPEAKERS = Object.freeze({
   TICK: Object.freeze({ key: 'TICK', label: 'TICK', who: 'Tomasz "Tick" Ilic, uplink tech', color: '#64d3e0', shape: 'circle', initial: 'T', local: false }),
   MAREN: Object.freeze({ key: 'MAREN', label: 'MAREN', who: 'Dr. Maren Soll, historian of the Lanternwrights', color: '#f2eee4', shape: 'triangle', initial: 'M', local: false }),
   VESPER: Object.freeze({ key: 'VESPER', label: 'VESPER', who: 'Vesper, suit AI', color: '#a9b2b8', shape: 'square', initial: 'V', local: true }),
+  ELIAS: Object.freeze({ key: 'ELIAS', label: 'ELIAS', who: 'Elias Wren, you: your own voice in the suit, not on the channel', color: '#d7e3ea', shape: 'ring', initial: 'E', local: true }),
   UPLINK: Object.freeze({ key: 'UPLINK', label: 'UPLINK', who: 'the open channel (no speaker)', color: '#d06a5a', shape: 'cross', initial: '?', local: false }),
 });
 
@@ -236,42 +237,53 @@ export const COMMS_SCRIPT = Object.freeze([
   // ---- S1 THE THRESHOLD: the opening (the restore he takes for a lowering), then Odessa's slip at the bell ----
   L('s1-open-1', 'VESPER', 'Restore complete. Continuity 99.8%.', { section: 0, when: { enter: true, after: 1.4 }, prio: 3, skip: true, beat: 'opening', glitch: 'none' }),
   L('s1-open-2', 'ODESSA', 'First descent, Elias. History.', { section: 0, when: { chain: 's1-open-1', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
-  L('s1-open-3', 'TICK', "Uplink's clean, five bars. I've got your eyes and your heart.", { section: 0, when: { chain: 's1-open-2', gap: 0.5 }, prio: 3, skip: true, glitch: 'none' }),
-  L('s1-open-4', 'MAREN', "Nobody's stood there since 1791. Read me every board you pass.", { section: 0, when: { chain: 's1-open-3', gap: 0.5 }, prio: 3, skip: true, glitch: 'none' }),
-  L('s1-open-5', 'ODESSA', "The Ember's dimming, Elias. Bring us a kindling. Take your time.", { section: 0, when: { chain: 's1-open-4', gap: 0.5 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-2w', 'ELIAS', 'First. Right. Copy, Odessa.', { section: 0, when: { chain: 's1-open-2', gap: 0.5 }, prio: 3, skip: true, glitch: 'none', beat: 'his answer' }),
+  L('s1-open-3', 'TICK', "Uplink's clean, five bars. I've got your eyes and your heart.", { section: 0, when: { chain: 's1-open-2w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-3w', 'ELIAS', 'Five bars. Keep them coming, Tick.', { section: 0, when: { chain: 's1-open-3', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-4', 'MAREN', "Nobody's stood there since 1791. Read me every board you pass.", { section: 0, when: { chain: 's1-open-3w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-4w', 'ELIAS', "Every board, Doctor Soll. You'll hear all of it.", { section: 0, when: { chain: 's1-open-4', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-5', 'ODESSA', "The Ember's dimming, Elias. Bring us a kindling. Take your time.", { section: 0, when: { chain: 's1-open-4w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-5w', 'ELIAS', 'Kindling. Rope by rope. Going down.', { section: 0, when: { chain: 's1-open-5', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
   L('s1-bell-1', 'ODESSA', "Mind the bell, Elias. It's louder than last time.", { section: 0, when: [{ ev: 'hint', text: 'bell' }, { ev: 'bell:ring' }], prio: 2, ttl: 45, beat: 'the slip' }),
   L('s1-bell-2', 'TICK', 'Last time?', { section: 0, when: { chain: 's1-bell-1', gap: 0.35 }, prio: 2 }),
   L('s1-bell-3', 'ODESSA', 'The probes, Tomasz. Focus.', { section: 0, when: { chain: 's1-bell-2', gap: 0.3 }, prio: 2 }),
+  L('s1-self', 'ELIAS', "Think, Elias. The grating won't open itself. A bell, somewhere.", { section: 0, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s1-stall', 'TICK', 'Fire at the glowing ring and hold. Let the rope work.', { section: 0, when: { stall: true }, prio: 1 }),
   // ---- S2 THE LONG SWING ----
   L('s2-board', 'MAREN', "'It does not send us back.' Cheerful people, the Lanternwrights.", { section: 1, when: { depth: 24 }, prio: 1 }),
   L('s2-haul', 'MAREN', "That chain's been oiled. Recently. Write that down, Tomasz.", { section: 1, when: { ev: 'objective:done', match: { verb: 'haul' } }, prio: 2 }),
+  L('s2-self', 'ELIAS', "A counterweight. Hook it and haul, Elias. Don't just stand here.", { section: 1, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s2-stall', 'TICK', "Hook the counterweight and haul. That's your way down.", { section: 1, when: { stall: true }, prio: 1 }),
   // ---- S3 BROKEN GALLERY ----
   L('s3-enter', 'MAREN', 'Closed from this side. So someone was still inside.', { section: 2, when: { enter: true, after: 3 }, prio: 2 }),
   L('s3-winch', 'TICK', "Gear's turning. Five hundred years, and it still turns.", { section: 2, when: { ev: 'objective:done', match: { verb: 'winch' } }, prio: 1 }),
+  L('s3-self', 'ELIAS', "The gear still turns. Hook its ring, let it carry me.", { section: 2, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s3-stall', 'TICK', 'Ride the gear. Hook its ring and hold on.', { section: 2, when: { stall: true }, prio: 1 }),
   // ---- S4 THE LISTENING VAULT: the channel plays your breathing back ----
   L('s4-enter', 'ODESSA', "A hundred metres, Elias. Vitals good. Signal's thinning.", { section: 3, when: { enter: true, after: 1.5 }, prio: 2 }),
   L('s4-sight', 'TICK', 'Did you see that? Something big, out in the dark.', { when: { ev: 'creature:sighting' }, prio: 2, ttl: 10 }),
   L('s4-knock', 'MAREN', "If something knocks, don't knock back. Their rule. I'd keep it.", { section: 3, when: { depth: 108 }, prio: 2 }),
   L('s4-echo', 'UPLINK', '[Your breathing comes back on the channel. Two seconds late.]', { section: 3, when: { depth: 124 }, prio: 2, kind: 'echo', glitch: 'none', beat: 'the late breath' }),
+  L('s4-self', 'ELIAS', "Cold lamps. My lantern, one at a time. Slowly.", { section: 3, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s4-stall', 'ODESSA', 'The cold lamps, Elias. Hold your lantern to each one.', { section: 3, when: { stall: true }, prio: 1 }),
   // ---- S5 THE GULLET STAIR: the line nobody sent ----
   L('s5-enter', 'ODESSA', "Contact above you, Elias. Keep moving. Don't look for it.", { section: 4, when: { enter: true, after: 1 }, prio: 2 }),
   L('s5-frayed', 'TICK', 'Careful in the middle. Those rings are frayed. They hold once.', { section: 4, when: { enter: true, after: 14 }, prio: 3, beat: 'the line nobody sent' }),
   L('s5-mute', 'TICK', 'Sorry, been on mute for two minutes. Did I miss anything?', { when: { chain: 's5-frayed', gap: 40 }, prio: 3, ttl: 60 }),
   L('s5-key', 'TICK', 'That was loud. Everything down there heard that.', { section: 4, when: { ev: 'objective:done', match: { verb: 'breach' } }, prio: 2 }),
+  L('s5-self', 'ELIAS', "The keystone. Hide and let it knock. Or haul the ring.", { section: 4, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s5-stall', 'TICK', 'The keystone: hide and let it knock, or haul its ring.', { section: 4, when: { stall: true }, prio: 1 }),
   // ---- S6 THE TWO DESCENTS: the first skitterlings ----
   L('s6-enter', 'VESPER', 'Signal degraded. Latency rising.', { section: 5, when: { enter: true, after: 0.8 }, prio: 2 }),
   L('s6-fork', 'MAREN', "The Throat is 'for the late'. I'd like you early, Elias.", { section: 5, when: { enter: true, after: 5 }, prio: 1 }),
   L('s6-skit', 'VESPER', 'Contact. Small. Closing.', { when: { skit: true }, prio: 2, ttl: 8 }),
+  L('s6-self', 'ELIAS', "Two ways down. Pick one, Elias. Standing here picks neither.", { section: 5, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s6-stall', 'MAREN', "Either way down will do. Standing still won't.", { section: 5, when: { stall: true }, prio: 1 }),
   // ---- S7 THE HOLLOW NAVE: the stuck word ----
   L('s7-enter', 'MAREN', 'Nothing to stand on. A church you can only hang in.', { section: 6, when: { enter: true, after: 2 }, prio: 1 }),
   L('s7-hang', 'TICK', 'The floor unbolts while you hold. So hold, Wren.', { section: 6, when: { depth: 296 }, prio: 2, glitch: 'repeat' }),
   L('s7-iris', 'ODESSA', 'The iris is open. Go now, Elias.', { section: 6, when: { ev: 'objective:done', match: { verb: 'survive' } }, prio: 2, ttl: 10 }),
+  L('s7-self', 'ELIAS', "One ring, then the next. Never let go first.", { section: 6, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s7-stall', 'TICK', 'Chain the rings. Fire the next before you let go.', { section: 6, when: { stall: true }, prio: 1 }),
   // ---- S8 THE LAST THROAT: two hearts, the voice that is not quite Odessa, the uplink lost ----
   L('s8-enter', 'ODESSA', "Signal's going, Elias. Whatever you hear after this, it's us.", { section: 7, when: { enter: true, after: 1 }, prio: 3, beat: 'it is us' }),
@@ -279,6 +291,7 @@ export const COMMS_SCRIPT = Object.freeze([
   L('s8-probes', 'TICK', 'Probes all died at five-fifty-six. No pressure, Wren.', { section: 7, when: { depth: 500 }, prio: 2 }),
   L('s8-warm', 'ODESSA', "Keep coming down, Elias. It's warm down here.", { section: 7, when: { depth: 526 }, prio: 3, kind: 'notquite', beat: 'not quite Odessa' }),
   L('s8-lost', 'VESPER', 'Uplink lost.', { section: 7, when: { depth: 538 }, prio: 3, ttl: 12 }),
+  L('s8-self', 'ELIAS', "The grate. Don't look back. Run for the light.", { section: 7, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s8-stall', 'ODESSA', 'The grate, Elias. Run for the light.', { section: 7, when: { stall: true }, prio: 1 }),
   // ---- anywhere: hurt, staging, the first relay, the bare stone ----
   L('any-hurt', 'TICK', 'Vesper says that was minor. I say ow. Easy, Wren.', { when: { ev: 'health:damage', match: { lethal: false } }, prio: 1, ttl: 8 }),

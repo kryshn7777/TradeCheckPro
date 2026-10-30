@@ -1,5 +1,5 @@
 // Node tests for the EXPEDITION comms core and the restore reframing (docs/abyssal-tether-3d/plans/COMMS.md):
-//   - the script (sim/comms3d.js COMMS_SCRIPT): 35-55 lines, unique ids, the cast, every line <= 84 characters in at most two
+//   - the script (sim/comms3d.js COMMS_SCRIPT): 35-75 lines, unique ids, the cast, every line <= 84 characters in at most two
 //     panel rows of 42, at most 11 words (a 2.5-5.5 s hold), only characters the panel draws; every section S1-S8 covered (and a
 //     voiced stall hint each); the killer beats; chains point at real lines;
 //   - the signal: non-increasing down the shaft, five bars at the Threshold, NO SIGNAL at the Mark, latency rising; glitch kinds
@@ -136,7 +136,7 @@ const NSEC = SECTIONS.length;
 // ===========================================================================================================================
 {
   const ids = new Set(COMMS_SCRIPT.map((l) => l.id));
-  ok(COMMS_SCRIPT.length >= 35 && COMMS_SCRIPT.length <= 55 && ids.size === COMMS_SCRIPT.length, `the script: ${COMMS_SCRIPT.length} transmissions (35-55), unique ids`);
+  ok(COMMS_SCRIPT.length >= 35 && COMMS_SCRIPT.length <= 75 && ids.size === COMMS_SCRIPT.length, `the script: ${COMMS_SCRIPT.length} transmissions (35-75: the crew and the player's own voice), unique ids`);
   ok(
     COMMS_SCRIPT.every((l) => SPEAKERS[l.speaker]),
     'every line has a speaker of the cast (Odessa, Tick, Maren, Vesper, the open channel)',
