@@ -73,6 +73,15 @@ function canvas(w, h) {
   return c;
 }
 
+/** One blurred copy of a canvas (a filter per glyph made a 2048 px canvas take 45 s). */
+function blurred(c, px) {
+  const o = canvas(c.width, c.height);
+  const x = o.getContext('2d');
+  x.filter = `blur(${px}px)`;
+  x.drawImage(c, 0, 0);
+  return o;
+}
+
 function tex(THREE, c, srgb) {
   const t = new THREE.CanvasTexture(c);
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
@@ -124,10 +133,7 @@ export function carved(THREE, text, w = 3.4) {
     cx.restore();
   };
   layoutLetters(hx, text, W, H, { size: 118, track: 26, baseJit: 5, sizeJit: 0.07, rotJit: 0.03, xjit: 20, weight: 700 }, (ch, x, y, s, rot, n) => {
-    hx.save();
-    hx.filter = 'blur(2.5px)';
     draw(hx, ch, x, y, s, rot, n, '#101010');
-    hx.restore();
   });
   // weathering: chips of the wall break the cut edges, a few letters worn to nothing
   for (let i = 0; i < 900; i++) {
@@ -142,7 +148,7 @@ export function carved(THREE, text, w = 3.4) {
     ax.fillStyle = `rgba(0,0,0,${0.35 + 0.4 * hash(i * 3.7)})`;
     ax.fillRect(hash(i * 1.3) * W, hash(i * 8.7) * H, 4 + hash(i * 2.1) * 20, 3 + hash(i * 9.1) * 10);
   }
-  const nm = normalFromHeight(hc, 5.5);
+  const nm = normalFromHeight(blurred(hc, 2.5), 5.5);
   const mat = new THREE.MeshStandardMaterial({ map: tex(THREE, ac, true), normalMap: tex(THREE, nm, false), transparent: true, depthWrite: false, roughness: 1, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   mat.normalScale.set(1.6, 1.6);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, (w * H) / W), mat);
@@ -227,14 +233,13 @@ export function tag(THREE, text) {
   hx.strokeRect(14, 14, W - 28, H - 28);
   layoutLetters(hx, text, W, H, { size: 104, track: 12, baseJit: 4, sizeJit: 0.04, rotJit: 0.02, weight: 800, font: 'Georgia, serif' }, (ch, x, y, s, rot) => {
     hx.save();
-    hx.filter = 'blur(1.5px)';
     hx.translate(x, y);
     hx.rotate(rot);
     hx.fillStyle = '#e0e0e0'; // stamped letters stand proud
     hx.fillText(ch, 0, 0);
     hx.restore();
   });
-  const nm = normalFromHeight(hc, 4);
+  const nm = normalFromHeight(blurred(hc, 1.5), 4);
   const ac = canvas(W, H);
   const ax = ac.getContext('2d');
   ax.fillStyle = '#5d3a28';

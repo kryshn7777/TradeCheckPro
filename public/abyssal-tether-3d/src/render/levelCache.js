@@ -424,9 +424,21 @@ export class LevelCache {
     if (this._pre.has(variant)) return this._pre.get(variant);
     const t0 = performance.now();
     const p = (async () => {
-      const base = await baseKey(variant, this.glbUrls);
-      let snap = null;
+      // the stored entry first: with nothing stored for this variant the build does not wait for the key (the save does)
       const meta = await req('meta', 'readonly', (s) => s.get(variant));
+      const keyed = baseKey(variant, this.glbUrls);
+      if (!meta) {
+        this.info.miss = 'empty';
+        this.info.readMs = Math.round(performance.now() - t0);
+        this._ready.set(variant, { base: null, snap: null, saved: null });
+        keyed.then(
+          (base) => this._ready.set(variant, { base, snap: null, saved: null }),
+          (err) => (this.info.error = String((err && err.message) || err)),
+        );
+        return null;
+      }
+      const base = await keyed;
+      let snap = null;
       const have = !!(meta && meta.base === base && typeof meta.id === 'number' && meta.manifest && meta.manifest.schema === SCHEMA);
       if (have && !this._abandon.has(variant)) {
         const asm = new Assembler(meta.manifest.arrays);
