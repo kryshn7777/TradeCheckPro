@@ -57,6 +57,8 @@ import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
 import { maxPixelRatio } from '../platform/deviceProfile.js';
+import { LevelCache } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
+import { depthDarknessAt, foldDarkness } from '../sim/nightVision3d.js';
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -76,6 +78,7 @@ const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_THICKNESS = 2; // the haze is twice as thick: the distance fog closes in at half the range (the volumetric fog doubles in atmosphere.js)
 const FOG_WARM_DESAT = 0.65; // how much of a warm fog's colour is drawn out (0 = none): S5 / S8 read as an orange wash at full saturation
+const NV_FOG = new THREE.Color(0.012, 0.075, 0.03); // the haze through the night vision goggles (render/nightVisionView.js tints the picture)
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
@@ -316,6 +319,9 @@ export class Renderer3D {
     this.sky.frustumCulled = false;
     this.scene.add(this.sky);
     this.levelView = new LevelView(this.scene, this.materials);
+    // LOADING_OPTIMIZATION.md: the dressed level (decor merge + dressing job) from IndexedDB when its inputs did not change (levelCache.js)
+    this.levelCache = new LevelCache([ENV_KIT_URL, PROPS_URL]);
+    if (this.levelCache.on) this.levelView.cache = this.levelCache;
     this.envKit = this._loadEnvKit();
     this.props = this._loadProps();
     this.ropeView = new RopeView(this.scene);
@@ -358,6 +364,8 @@ export class Renderer3D {
     };
     this._themeInit = false;
     this._dark = 0;
+    this.depthF = 0; // the fractional section index at the head (sim/nightVision3d.js: the depth darkness and the lantern's fade read it)
+    this.deepDark = 1; // 0..1 scale of the darkness the depth adds (Settings; ?deepdark=)
     this._fogInfo = { color: this.scene.fog.color, light: this._theme.light };
     this.stats = { calls: 0, triangles: 0, points: 0, programs: 0, frameMs: 0 };
     this._texCache = new Map(); // manifest URL or object → Promise<sets|null>
@@ -732,14 +740,20 @@ export class Renderer3D {
     const threat = THREE.MathUtils.clamp(num(threatSys && (typeof threatSys === 'number' ? threatSys : threatSys.value), 0), 0, 1);
     this.threat += (threat - this.threat) * (1 - Math.exp(-3 * d));
 
-    // The difficulty's darkness (Nightmare / Abyss): eased in, then applied to the theme target below and to the baked light / the lamps.
-    const wantDark = num(game && game.diff && game.diff.darkness, 0);
-    this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
-    const dark = this._dark;
-    this.lighting.setDarkness(dark);
-
     // Section theme (blended in space, eased in time; snaps after teleports).
     const tgt = this.themeAt(head.y, this._themeTarget);
+
+    // The darkness: the difficulty's (Nightmare / Abyss) folded with the depth's (the descent is dark on purpose: every section adds
+    // some, sim/nightVision3d.js; not on the menu's drifting background), eased in, then applied to the theme target below and to
+    // the baked light / the lamps. The night vision goggles take it off again for the picture they show (k = their power-up ramp).
+    this.depthF = tgt.ia + (tgt.ib - tgt.ia) * tgt.w;
+    const nvK = THREE.MathUtils.clamp(num(game && game.nv && game.nv.k, 0), 0, 1);
+    const inRun = !!game && !game.hidePlayer;
+    const wantDark = foldDarkness(num(game && game.diff && game.diff.darkness, 0), inRun ? depthDarknessAt(this.depthF) * this.deepDark : 0);
+    this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
+    const dark = this._dark * (1 - 0.92 * nvK);
+    this.lighting.setDarkness(dark);
+    this.lighting.setNightVision(nvK);
     if (dark > 0.001) {
       tgt.ambient *= 1 - 0.95 * dark; // hemisphere + key + everything that reads the theme's ambient
       tgt.fog.multiplyScalar(1 - 0.85 * dark);
@@ -774,7 +788,8 @@ export class Renderer3D {
     const lumFloor = FOG_LUM_FLOOR * (1 - 0.95 * dark); // the haze may go darker than the floor of the other difficulties
     if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
-    fog.near = Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
+    if (nvK > 0.001) fog.color.lerp(NV_FOG, 0.85 * nvK); // through the goggles the haze is a pale phosphor green
+    fog.near =Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
     fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
     this.scene.background.copy(fog.color);
     if (this.sky) this.sky.position.copy(head);
@@ -784,11 +799,11 @@ export class Renderer3D {
     const grey = (_tmpC.r + _tmpC.g + _tmpC.b) / 3;
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
-    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25);
+    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 1.6 * nvK);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
-    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.0 * nvK);
 
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
     LOOK.uTime.value = this.time;
@@ -817,6 +832,7 @@ export class Renderer3D {
     const gs = this._game && this._game.settings;
     if (gs && this.levelView.setBlood(gs.bloodWriting === true)) this.precompile();
     this.levelView.update(d, game, head, fog.far, this._fogInfo);
+    if (this.levelCache.on) this.levelCache.tick(this.levelView); // a finished procedural dressing: saved, a slice per frame
     this.ropeView.update(d, game, head);
     this.fx.godRays.materials = this.materials;
     this.fx.godRays.setQuality(this.lighting.tier, 0, this.settings && this.settings.reducedEffects);

@@ -74,6 +74,7 @@ const KEY_TO_CODE = {
   f: 'KeyF',
   p: 'KeyP',
   r: 'KeyR',
+  n: 'KeyN',
   g: 'KeyG',
   x: 'KeyX',
   1: 'Digit1',
@@ -113,6 +114,7 @@ const GAME_KEYS = {
   KeyE: 1,
   KeyC: 1,
   KeyF: 1,
+  KeyN: 1,
   KeyP: 1,
   KeyR: 1,
   Space: 1,
@@ -398,6 +400,9 @@ export class DesktopInput {
       }
       case 'KeyR':
         im._edge('restart');
+        break;
+      case 'KeyN':
+        if (!ui && !xr) im._edge('nv'); // the night vision goggles
         break;
       case 'Enter':
       case 'NumpadEnter':

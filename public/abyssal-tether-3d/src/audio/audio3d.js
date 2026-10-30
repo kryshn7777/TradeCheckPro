@@ -2264,6 +2264,9 @@ export class AudioManager3D {
       'bag:effect': this._onBagEffect,
       'lantern:low': this._onLanternLow,
       'lantern:empty': this._onLanternEmpty,
+      'nv:on': this._onNvOn,
+      'nv:off': this._onNvOff,
+      'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
@@ -2621,6 +2624,19 @@ export class AudioManager3D {
   }
 
   _onLanternEmpty() {
+    this._sfxLanternWarn(true);
+  }
+
+  _onNvOn() {
+    this._sfxNv(true);
+  }
+
+  _onNvOff(p) {
+    if (p && p.reason === 'respawn') return;
+    this._sfxNv(false);
+  }
+
+  _onNvRefuse() {
     this._sfxLanternWarn(true);
   }
 
@@ -3832,6 +3848,26 @@ export class AudioManager3D {
     this._swell(g.gain, t, 0.45, 0.08, 0.1, 0.3);
     n.connect(lp);
     lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The night vision goggles: a thin electronic whine climbing as the tubes warm up (down and quicker as they spool off). */
+  _sfxNv(on) {
+    const v = this._begin('nvToggle', 2, 0.25, 0.9, this.busPlayer, 0.34, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    const dur = on ? 0.62 : 0.3;
+    const o = this._vOsc(v, 'sine', on ? 1400 : 5200, t);
+    o.frequency.exponentialRampToValueAtTime(on ? 5200 : 700, t + dur);
+    const o2 = this._vOsc(v, 'triangle', on ? 700 : 2600, t);
+    o2.frequency.exponentialRampToValueAtTime(on ? 2600 : 350, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(on ? 0.22 : 0.18, t + (on ? 0.12 : 0.02));
+    g.gain.setTargetAtTime(0, t + dur * 0.55, on ? 0.09 : 0.05);
+    o.connect(g);
+    o2.connect(g);
     g.connect(v.out);
     this._commit(v);
   }

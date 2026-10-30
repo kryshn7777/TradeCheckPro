@@ -190,6 +190,7 @@ export const LAYOUT = [
   { id: 'jump', side: 'r', x: 0.3, y: 1.75, s: 1.0 },
   { id: 'grip', side: 'r', x: 1.7, y: 1.7, s: 1.0, look: true },
   { id: 'bag', side: 'r', x: 1.7, y: 3.0, s: 1.0 },
+  { id: 'nv', side: 'r', x: 0.3, y: 3.0, s: 0.95 }, // the night vision goggles (sim/nightVision3d.js)
   { id: 'reel', side: 'l', x: 0.3, y: 2.6, s: 1.0 },
   { id: 'out', side: 'l', x: 0.3, y: 1.4, s: 1.0 },
   { id: 'pause', side: 'r', x: 0.3, y: 0.3, s: 0.875, top: true },

@@ -103,6 +103,7 @@ export function makeIntent() {
     restartPressed: false,
     confirmPressed: false,
     backPressed: false,
+    nvPressed: false, // the night vision goggles (sim/nightVision3d.js): desktop N, VR Y tap (a hold still recenters), touch GOGGLES
     ui: { ray: null, click: false },
     // The bag (WP-BAG): slot 0..3 = quick-use that item (desktop 1-4, VR radial release), use = apply the selected one
     // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
@@ -196,7 +197,7 @@ function applyOverride(I, o) {
   }
   if (typeof o.reel === 'number') I.reel = o.reel;
   if (typeof o.turnRate === 'number') I.turnRate = o.turnRate;
-  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'anyPressed']) {
+  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'anyPressed']) {
     if (k in o) I[k] = !!o[k];
   }
   if (o.hands) {
@@ -260,7 +261,7 @@ export class InputManager {
     this.lastError = null;
 
     this.intent = makeIntent();
-    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false };
+    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false };
     this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
     this._bagGesture = makeBagGesture();
@@ -394,6 +395,7 @@ export class InputManager {
     I.jumpPressed = E.jump && !this.uiMode;
     I.pausePressed = E.pause;
     I.restartPressed = E.restart;
+    I.nvPressed = E.nv;
     I.confirmPressed = E.confirm;
     I.backPressed = E.back;
     I.anyPressed = E.any;
@@ -419,6 +421,7 @@ export class InputManager {
     E.back = false;
     E.any = false;
     E.click = false;
+    E.nv = false;
     const BE = this._bagEdges;
     BE.slot = -1;
     BE.use = false;
@@ -1122,6 +1125,8 @@ export class InputManager {
         this.recenter();
       }
     } else {
+      // Y released: a hold recentered (above); a TAP is the night vision goggles
+      if (this._yHold > 0 && !this._recenterLatched && !this.uiMode) this._edges.nv = true;
       this._yHold = 0;
       this._recenterLatched = false;
     }

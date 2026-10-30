@@ -46,7 +46,9 @@ import { PALETTE } from './materials.js';
 import { SealView } from './objectivesView.js';
 import { BloodWriting } from './bloodWriting.js';
 import { BoardWriting } from './boardWriting.js';
-import { cullBuriedFast } from './levelBuildFast.js'; // LOADING_OPTIMIZATION.md: faster, identical build steps
+import { cullBuriedFast, kitGeoFast, precullStep, CULLED, LOADOPT, dressBudgetMs } from './levelBuildFast.js'; // LOADING_OPTIMIZATION.md: faster, identical build steps
+import { restoreSnapshot, detailOf } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
+const KIT_STEP = 6; // kit placements drawn per dressing step (LOADING_OPTIMIZATION.md)
 // Architecture detail pass (MESH_DETAIL_AND_OPTIMIZATION.md §6): render-only geometry merged into the existing lists / packs.
 import * as ARCH from './archDetail.js';
 const { plaqueFrameSoup } = ARCH;
@@ -2174,7 +2176,6 @@ class Dresser {
    * planned (−1 while surveying): everything above that section is final.
    */
   *steps() {
-    if (ARCH_ON) this._archDecals(); // archDetail: lamp soot, anchor rust (decals only: the plan below is unchanged)
     const faces = [];
     const slabs = [];
     for (const s of this.S.solids) {
@@ -2205,6 +2206,8 @@ class Dresser {
       }
       else this._ceiling(o);
     }
+    // archDetail: lamp soot, anchor rust, the rests' tallies (decals only, after the plan: the kit wall panels are known by now)
+    if (ARCH_ON) this._archDecals();
   }
 
   // ---------------------------------------------------------------------------
@@ -3628,7 +3631,7 @@ class Dresser {
       if (ARCH_ON && len > 0.6) {
         // archDetail: a rivet line along each edge plate's outer face (the near tier only)
         const R = new ARCH.Soup();
-        for (const side of [-1, 1]) ARCH.rivetRow(R, [mid - len / 2 + 0.1, -0.21, side * (W / 2 + 0.1)], [mid + len / 2 - 0.1, -0.21, side * (W / 2 + 0.1)], [0, 0, side], 0.3);
+        for (const side of [-1, 1]) ARCH.rivetRow(R, [mid - len / 2 + 0.1, -0.21, side * (W / 2 + 0.1)], [mid + len / 2 - 0.1, -0.21, side * (W / 2 + 0.1)], [0, 0, side], 0.42, 0.017, 0.012, 5);
         this._cat = 'rivet';
         this.putWorld(R.geometry(), m, 'metal', g.stone, 'near');
         this._cat = 'iron';
@@ -3794,6 +3797,15 @@ class Dresser {
     const S = this.S;
     const lv = this.level;
     const rng = makeRng(hashStr('archDecals'));
+    // an authored kit wall panel (4 x 4 m, up to 0.3 m proud: _placePanels' reservation) covers this point: a decal on the solid's
+    // face would be hidden behind it, so none is placed there
+    const panelAt = (x, y, z) => {
+      for (const b of S.decor) {
+        if (b.maxY - b.minY < 3.5 || Math.max(b.maxX - b.minX, b.maxZ - b.minZ) < 3.5) continue;
+        if (x > b.minX && x < b.maxX && y > b.minY && y < b.maxY && z > b.minZ && z < b.maxZ) return true;
+      }
+      return false;
+    };
     // distance along the (axis-aligned) direction (bx, bz) to the face of the solid behind (x, y, z), or -1
     const wallBehind = (x, y, z, bx, bz, max) => {
       if (Math.abs(bx) > 0.05 && Math.abs(bz) > 0.05) return -1;
@@ -3812,6 +3824,7 @@ class Dresser {
       const z0 = num(it.z, 0);
       const d = wallBehind(it.x, it.y + 0.6, z0, bx, bz, 0.9);
       if (d < 0 || wallBehind(it.x, it.y + 1.6, z0, bx, bz, 0.95) < 0) continue;
+      if (panelAt(it.x + bx * (d - 0.1), it.y + 1.0, z0 + bz * (d - 0.1))) continue;
       const N = [-bx, 0, -bz];
       const A = [N[2], 0, -N[0]];
       const lit = it.lit !== false;
@@ -3828,12 +3841,13 @@ class Dresser {
       if (!n || a.mount !== 'solid' || a.dynamic || Math.abs(n.y) > 0.5) continue;
       if (!S.inSolid(a.x - n.x * 0.3, a.y - 0.4, a.z - n.z * 0.3, 0.005)) continue; // the plate is on a level solid, the run on its face
       const wet = this._wet(a.y);
-      const h = 0.7 + rng() * (0.5 + 0.9 * wet);
-      const w = 0.24 + rng() * 0.12;
+      const h = 0.8 + rng() * (0.6 + 0.9 * wet);
+      const w = 0.34 + rng() * 0.14;
+      if (panelAt(a.x - n.x * 0.15, a.y - 0.06 - h / 2, a.z - n.z * 0.15)) continue;
       const N = [n.x, 0, n.z];
       const A = [N[2], 0, -N[0]];
       const k = 0.9 + 0.2 * rng();
-      ARCH.decalRGB(this.dec, a.x - n.x * 0.238, a.y - 0.06 - h / 2, a.z - n.z * 0.238, A, [0, 1, 0], N, w / 2, h / 2, (rng() - 0.5) * 0.06, decalCell(2), Math.min(1, 0.55 + 0.35 * wet), [9 * k, 4.6 * k, 2.6 * k]); // the grime cell (~0.007 linear) to a rust brown
+      ARCH.decalRGB(this.dec, a.x - n.x * 0.238, a.y - 0.06 - h / 2, a.z - n.z * 0.238, A, [0, 1, 0], N, w / 2, h / 2, (rng() - 0.5) * 0.06, decalCell(2), Math.min(1, 0.7 + 0.3 * wet), [12 * k, 5.8 * k, 3 * k]); // the grime cell (~0.007 linear) to a rust brown
       this.stats.decals = (this.stats.decals || 0) + 1;
       this.stats.rust = (this.stats.rust || 0) + 1;
     }
@@ -3864,7 +3878,7 @@ class Dresser {
           const x = N[0] ? face + N[0] * 0.012 : u;
           const z = N[0] ? u : face + N[2] * 0.012;
           const y = y0 + 0.9 + rng() * 0.9;
-          if (S.inSolid(x + N[0] * 0.1, y, z + N[2] * 0.1, 0.005)) continue;
+          if (S.inSolid(x + N[0] * 0.1, y, z + N[2] * 0.1, 0.005) || panelAt(x + N[0] * 0.09, y, z + N[2] * 0.09)) continue;
           const sz = 0.3 + rng() * 0.18;
           const k = 1.2 + rng() * 0.25;
           ARCH.decalRGB(this.dec, x, y, z, A, [0, 1, 0], N, sz / 2, sz / 2, Math.PI / 2 + (rng() - 0.5) * 0.35, decalCell(6), 0.8, [k, k * 0.97, k * 0.9]);
@@ -4523,12 +4537,47 @@ export class LevelView {
     this._buildHazards(level);
     this._buildAnchors(level);
     const bands = this._buildDecor(level);
-    this._mergeBands(bands, false);
-    this._buildDressing(level);
+    // LOADING_OPTIMIZATION.md: the dressed level from the IndexedDB cache (levelCache.js) in place of the decor merge + dressing job
+    if (!this._restoreDressed(level, bands)) {
+      this._mergeBands(bands, false);
+      this._dressStartChunks = this._chunks.length;
+      this._buildDressing(level);
+    }
     this._buildColossal(level, b);
     this._buildLightGlows(level);
     if (this._bloodOn) this._blood.build(bloodEntries(level));
     this._boards.build(boardEntries(level), level.spawn || null); // the spawn's section at once (precompiled), the rest lazily
+    this._startSet = new Set(this.root.children); // what the build itself made (the cache's save checks the rest is restorable)
+  }
+
+  /**
+   * LOADING_OPTIMIZATION.md: restores the cached dressed level (render/levelCache.js) when this.cache holds one for these inputs; false:
+   * nothing changed, the procedural merge + dressing job run. Only with the kit and props parsed (what the snapshot was made with).
+   */
+  _restoreDressed(level, bands) {
+    this._restored = false;
+    this._buildDetail = detailOf(this);
+    this._dressedWithAssets = LOADOPT.on && !!(this._kit && this._props);
+    const cache = this.cache;
+    if (!cache || !this._dressedWithAssets) return false;
+    const snap = cache.take(level);
+    if (!snap) return false;
+    let ok = false;
+    try {
+      ok = restoreSnapshot(this, level, snap, this._cacheEnv());
+    } catch (err) {
+      if (typeof console !== 'undefined') console.warn('[AT3D] level cache restore failed, building', err);
+    }
+    cache.noteRestore(ok, ok ? '' : 'did not fit');
+    if (!ok) return false;
+    bands.clear(); // the decor geometry the merge would have used (never uploaded): garbage
+    this._restored = true;
+    return true;
+  }
+
+  /** What levelCache.js needs of this view: the pack class and the material of each decor list. */
+  _cacheEnv() {
+    return { LodSet, materialFor: (k) => this.mats.get(DECOR_MAT[k]) || this.mats.get('decorStone') };
   }
 
   /**
@@ -5542,6 +5591,8 @@ export class LevelView {
       do {
         // merges queued by a flush go first, one band per step (each is a big copy)
         if (job.merge.length) {
+          // LOADING_OPTIMIZATION.md: a section pack's buried-face culling first, one geometry per step (it was one long step)
+          if (precullStep(job.merge[0], this._preH || (this._preH = { cullBuried, packGeo, compactVertices, buried: BURIED_ON }), this)) continue;
           const [bi, k, list] = job.merge.shift();
           if (bi === null) {
             this._mergeBands(list, true); // a section pack: all its band lists in one add
@@ -5556,8 +5607,17 @@ export class LevelView {
           this._dressJob = null;
           return;
         }
+        if (job.pend !== undefined) {
+          // LOADING_OPTIMIZATION.md: a finished section's flush, its kit placements a few per step first (the flush drew them all at once)
+          if (this._emitKitPlan(job.bands, job.pend, KIT_STEP)) continue;
+          this._flushDressing(job.pend);
+          this._flushDecals();
+          job.pend = undefined;
+          continue;
+        }
         const r = job.it.next();
         if (r.done) {
+          if (LOADOPT.on && this._emitKitPlan(job.bands, Infinity, KIT_STEP)) continue; // the last kit placements, a few per step
           this._collideDecor();
           this._flushDressing(Infinity);
           this._flushDecals();
@@ -5567,8 +5627,11 @@ export class LevelView {
         }
         if (r.value > job.sec) {
           if (job.sec >= 0) {
-            this._flushDressing(r.value - 1);
-            this._flushDecals();
+            if (LOADOPT.on) job.pend = r.value - 1; // flushed by the steps above before the plan goes on (the same lists, the same order)
+            else {
+              this._flushDressing(r.value - 1);
+              this._flushDecals();
+            }
           }
           job.sec = r.value;
         }
@@ -5628,6 +5691,8 @@ export class LevelView {
 
   /** One placement of a kit part: its geometry through the placement matrix, mirrored fix, tint and metric UVs. */
   _kitGeo(part, it, lst) {
+    const fast = kitGeoFast(part, it, lst, tintColors, worldUV); // LOADING_OPTIMIZATION.md: the same floats on plain arrays (null: below)
+    if (fast) return fast;
     const g = part.geo.clone();
     g.applyMatrix4(it.m);
     // mirrored placements (negative determinant) would turn the part inside out
@@ -5650,14 +5715,19 @@ export class LevelView {
   }
 
   /** Instantiates the planned kit parts into band lists (world space, graded, metric UVs). */
-  _emitKitPlan(bands, maxSec = Infinity) {
+  _emitKitPlan(bands, maxSec = Infinity, limit = Infinity) {
     const kit = this._kit;
-    if (!kit || !this._kitPlan) return;
+    if (!kit || !this._kitPlan) return false;
     let t = 0;
+    let more = false; // limit (LOADING_OPTIMIZATION.md: the dressing job draws them a few per step): true when some were left for later
     const missing = new Set(this.stats.kitMissing || []);
     const byPart = this.stats.kitTris || (this.stats.kitTris = {});
     for (const it of this._kitPlan) {
       if (it.drawn || it.sec > maxSec) continue;
+      if (limit-- <= 0) {
+        more = true;
+        break;
+      }
       it.drawn = true;
       const part = kit.get(it.part);
       if (!part) {
@@ -5697,6 +5767,7 @@ export class LevelView {
     }
     if (this.stats.dressTris) this.stats.dressTris.kit += t;
     this.stats.kitMissing = [...missing];
+    return more;
   }
 
   /** Drops the buried triangles (and the geometries left empty) of a band list, in place. */
@@ -5860,7 +5931,8 @@ export class LevelView {
         const cells = new Map();
         for (const g0 of list) {
           if (g0.isLodRec) {
-            if (buried) {
+            if (buried && !g0._culled) {
+              // (g0._culled: precullStep did this already, a record per step: LOADING_OPTIMIZATION.md)
               g0.geos = g0.geos.map((g) => {
                 if (!g) return null;
                 const c = cullBuried(g, level);
@@ -5871,12 +5943,12 @@ export class LevelView {
                 for (const g of g0.geos) if (g) g.dispose();
                 continue;
               }
-            } else g0.geos = g0.geos.map((g) => (g ? packGeo(g) : null));
+            } else if (!g0._culled) g0.geos = g0.geos.map((g) => (g ? packGeo(g) : null));
             out.push(g0);
             continue;
           }
           let g = packGeo(g0);
-          if (buried) {
+          if (buried && !CULLED.has(g)) {
             const c = cullBuried(g, level);
             this.stats.buriedCulled = (this.stats.buriedCulled || 0) + c.removed;
             if (c.geo !== g) g.dispose();
@@ -6425,7 +6497,12 @@ export class LevelView {
    */
   update(dt, game, head, viewDist, fogInfo) {
     if (!this.level) return;
-    if (this._dressJob) this._pumpDressing(game && game.state === 'playing' ? 2 : 8);
+    if (this._dressJob) {
+      // budget from the frame's measured work (LOADING_OPTIMIZATION.md; without a measurement the fixed 2 ms playing / 8 ms otherwise)
+      const tp = performance.now();
+      this._pumpDressing(dressBudgetMs(game));
+      this._pumpMs = (this._pumpMs || 0) + performance.now() - tp;
+    }
     if (this._decals) this._decals.mesh.visible = this._decals.count > 0 && !!this.mats.get('decal').map;
     this.time += dt;
     const t = this.time;

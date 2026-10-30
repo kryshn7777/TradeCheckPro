@@ -26,6 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
+import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
 import { Objectives3D } from './sim/objectives3d.js';
 import { SplitClock, medalFor } from './sim/splits3d.js';
@@ -36,6 +37,7 @@ import { ObjectiveHint } from './sim/objectiveHint.js';
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
+import { LOADOPT } from './render/levelBuildFast.js';
 
 const C = CONFIG;
 // LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
@@ -84,6 +86,8 @@ const RENDER_FAULT_SWAP = 20; // consecutive renderer failures before the fallba
 const FATAL_FRAME_ERRORS = 90;
 const MAX_DEBUG_STEP_FRAMES = 60 * 600;
 const BOOT_ASSET_TIMEOUT = 4000; // ms to wait for the texture manifest before building the level view
+const LOADING_DRESS_MS = 4; // ms of the level's dressing job per loading-scene frame (LOADING_OPTIMIZATION.md)
+const LEVEL_CACHE_WAIT_MS = 4000; // the level build waits this long at most for a cached dressed level being read (LOADING_OPTIMIZATION.md)
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
@@ -116,6 +120,7 @@ const MODULES = {
   masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
+  nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   bagFx: './render/bagFx.js',
@@ -197,13 +202,14 @@ export function blankIntent() {
     restartPressed: false,
     confirmPressed: false,
     backPressed: false,
+    nvPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     climb: blankClimb(),
   };
 }
 
-const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed'];
+const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed'];
 
 /**
  * A view of the main bus for per-run objects (creature, tethers, physics):
@@ -803,6 +809,7 @@ export class FallbackInput {
     it.turnRate = 0;
     it.pausePressed = !!(this._keyEdges.Escape || this._keyEdges.KeyP);
     it.restartPressed = !!this._keyEdges.KeyR;
+    it.nvPressed = !!this._keyEdges.KeyN;
     it.confirmPressed = !!(this._keyEdges.Enter || this._keyEdges.NumpadEnter);
     it.backPressed = !!this._keyEdges.Backspace;
     // Aim ray from the camera centre (both hands).
@@ -979,6 +986,9 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
+    this.nvView = null; // their picture (render/nightVisionView.js)
+    this._nvHint = 0; // the one-time "it is dark: goggles" hint: 0 not yet, 1 shown, 2 used
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
@@ -1142,6 +1152,7 @@ export class Game3D {
     this._saveReady = this._startSave(); // IndexedDB open + migration run beside the module downloads; never rejects
 
     if (LOADPROF_ON) lpAttachRenderer(this);
+    this._levelCacheRead = this._prefetchLevelCache(); // LOADING_OPTIMIZATION.md: key + IndexedDB read beside the content downloads
     this._startLoop(); // the loop renders the loading scene until bootContent finishes
     this.bootTimes.minimal = nowSinceNav();
     lpMark('minimal');
@@ -1183,12 +1194,15 @@ export class Game3D {
     this._viewReady = true;
     await progress(0.7, 'Reading the walls');
     lpMark('textureManifest');
+    if (this._levelCacheRead) await Promise.race([this._levelCacheRead, new Promise((r) => setTimeout(r, LEVEL_CACHE_WAIT_MS))]);
+    lpMark('levelCache');
     this._ensureLevelView();
     lpMark('levelView');
     await progress(0.82, 'Lighting the lamps');
 
     this._setupHandsView();
     this._setupHealthFx();
+    this._setupNightVisionView();
     this._setupBodyView();
     this._setupBagViews();
     this._setupDresserView();
@@ -1312,6 +1326,9 @@ export class Game3D {
       } else if (!this.bootTimes.firstFrame) this.bootTimes.firstFrame = nowSinceNav();
       if (this.loading) this.loading.update(dt, presenting);
       r.render();
+      // LOADING_OPTIMIZATION.md: the level's dressing job starts behind the loading scene (it used to wait for the menu)
+      const lv = r.levelView;
+      if (LOADOPT.on && lv && lv.dressing && this._levelBuiltFor) lv._pumpDressing(LOADING_DRESS_MS);
       this._frameErrors = 0;
     } catch (err) {
       this._frameErrors++;
@@ -1379,6 +1396,19 @@ export class Game3D {
     return out;
   }
 
+  /** LOADING_OPTIMIZATION.md: starts reading the cached dressed level of the menu's variant (render/levelCache.js); never rejects. */
+  _prefetchLevelCache() {
+    const cache = this.renderer && this.renderer.levelCache;
+    if (!cache || !cache.on) return null;
+    const key = DIFFICULTY[this.settings.lastDifficulty] ? this.settings.lastDifficulty : 'normal'; // the attract level's (_enterAttract)
+    try {
+      return cache.prefetch((DIFFICULTY[key] && DIFFICULTY[key].levelVariant) || 'normal');
+    } catch (err) {
+      this._fault('levelCache', err);
+      return null;
+    }
+  }
+
   _ensureLevelView() {
     if (!this._viewReady || !this.renderer || !this.level || this._levelBuiltFor === this.level) return;
     this._levelBuiltFor = this.level;
@@ -1403,6 +1433,18 @@ export class Game3D {
     } catch (err) {
       this._fault('handsView', err);
       this.handsView = null;
+    }
+  }
+
+  /** The goggles' picture (two camera-child triangles); optional (a failure leaves the goggles without a picture). */
+  _setupNightVisionView() {
+    const M = this.modules;
+    if (this.nvView || !M.nightVisionView || typeof M.nightVisionView.NightVisionView !== 'function' || !this.renderer) return;
+    try {
+      this.nvView = new M.nightVisionView.NightVisionView(this.renderer.camera);
+    } catch (err) {
+      this._fault('nightVisionView', err);
+      this.nvView = null;
     }
   }
 
@@ -2011,6 +2053,18 @@ export class Game3D {
     });
     bus.on('lantern:empty', () => {
       if (this._inRun()) this._toast('The lantern is nearly spent', 3);
+    });
+    bus.on('nv:on', () => {
+      if (this._inRun()) this._hapticBoth(0.18, 40);
+    });
+    bus.on('nv:low', () => {
+      if (this._inRun()) this._toast('Goggle cell low', 2.5);
+    });
+    bus.on('nv:flat', () => {
+      if (this._inRun()) this._toast('Goggle cell flat: it trickles back', 3);
+    });
+    bus.on('nv:refuse', () => {
+      if (this._inRun()) this._toast('Goggle cell flat', 1.6);
     });
     bus.on('checkpoint', () => {
       const h = this.health;
@@ -2632,6 +2686,7 @@ export class Game3D {
     tc.level = lvl;
     // The bag and the supplies of this run (empty / unseeded until start() resets them).
     this.bag = new Inventory3D(this._runBus);
+    this.nv = new NightVision3D(this._runBus);
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
@@ -2685,11 +2740,13 @@ export class Game3D {
 
   _snapshotBag() {
     if (this.bag) this.bag.snapshot();
+    if (this.nv) this.nv.snapshot();
     if (this.pickups) this.pickups.snapshot();
   }
 
   _restoreBag() {
     if (this.bag) this.bag.restore();
+    if (this.nv) this.nv.restore();
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -2751,6 +2808,24 @@ export class Game3D {
     }
   }
 
+  /**
+   * The night vision goggles: the toggle (desktop N / VR Y tap / touch), the cell, the one-time hint when the shaft first goes too dark
+   * to read. The renderer takes the darkness off with `nv.k`; the lantern is not touched.
+   */
+  _updateNightVision(dt, intent, live) {
+    const nv = this.nv;
+    if (!nv) return;
+    if (live && intent && intent.nvPressed) {
+      if (nv.toggle() && this._nvHint < 2) this._nvHint = 2;
+    }
+    nv.update(dt, live);
+    // the first time the world is dark enough that the lantern alone will not do (depth darkness >= 0.18, ~ the third section)
+    if (live && this._nvHint === 0 && this.renderer && depthDarknessAt(this.renderer.depthF || 0) >= 0.18) {
+      this._nvHint = 1;
+      this._toast(this.xrActive ? 'Too dark. Tap Y: night vision' : 'Too dark. Press N: night vision', 5);
+    }
+  }
+
   /** Dims the lantern with its charge through the renderer's public fields (lanternBase, lantern.distance). */
   _updateLantern() {
     const r = this.renderer;
@@ -2760,7 +2835,7 @@ export class Game3D {
     if (!L || L.renderer !== r) L = this._lantern0 = { renderer: r, base: typeof r.lanternBase === 'number' ? r.lanternBase : NaN, range: finiteOr(r.lantern.distance, 0) };
     const st = this.state;
     const inRun = !!bag && !this.hidePlayer && (st === 'playing' || st === 'paused' || st === 'dead' || st === 'victory');
-    let f = inRun ? bag.lanternFactor : 1;
+    let f = inRun ? bag.lanternFactor * lanternFadeAt(r.depthF || 0) : 1; // the lantern fades with depth (sim/nightVision3d.js)
     if (inRun && bag.lanternCharge <= C.bag.lanternLow && st === 'playing') {
       // a low battery stutters (bounded, never a strobe)
       const t = this.realTime;
@@ -2890,6 +2965,9 @@ export class Game3D {
       const st = this.state;
       rgov.update(st === 'playing' || st === 'dead' ? realDt * 1000 : 0);
     }
+    const tw = nowMs(); // LOADING_OPTIMIZATION.md: this frame's main-thread work without the dressing job sets the job's next budget
+    const lvw = this.renderer && this.renderer.levelView;
+    if (lvw) lvw._pumpMs = 0;
     try {
       if (this._frozen) {
         // Debug manual stepping: presentation keeps running (rig, views, UI, render),
@@ -2912,6 +2990,7 @@ export class Game3D {
         showFatal(err);
       }
     }
+    this._frameWorkMs = nowMs() - tw - (lvw ? lvw._pumpMs || 0 : 0);
   }
 
   /** One frame. `doRender` is false for headless debug stepping. */
@@ -3059,6 +3138,7 @@ export class Game3D {
     const p = this.player;
     const t = this.tethers;
     this._updateBag(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
+    this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
@@ -4029,6 +4109,19 @@ export class Game3D {
         this._fault('healthFx', err);
       }
     }
+    const nvv = this.nvView;
+    if (nvv) {
+      try {
+        const cv = this.renderer && this.renderer.renderer ? this.renderer.renderer.domElement : null;
+        nvv.update(dt, this.nv, {
+          reduced: !!(this.settings && this.settings.reducedEffects),
+          xr: !!this.xrActive,
+          aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 1,
+        });
+      } catch (err) {
+        this._fault('nightVisionView', err);
+      }
+    }
     const cmv = this.commsView; // EXPEDITION: the radio subtitle / the restore overlay (one head-locked quad)
     if (cmv) {
       try {
@@ -4074,6 +4167,11 @@ export class Game3D {
           dv.load(() => this._holdfastLoader());
         }
         dv.update(dt, this);
+        // LOADING_OPTIMIZATION.md: its programs + textures when the GLB is in (S1), not on first sight mid-climb
+        if (dv.glbReady && !this._dvCompiled) {
+          this._dvCompiled = true;
+          this._precompile();
+        }
       } catch (err) {
         this._fault('dresserView', err);
         this.dresserView = null;
@@ -4090,6 +4188,10 @@ export class Game3D {
         // the GLB loads in the background once a run is under way and the run has sites (Chapter I: S2 first)
         if (!hfv.ready && !hfv.loading && !hfv.failed && this.state === 'playing' && this.holdfast && this.holdfast.enabled && this.modules.gltf) hfv.load(() => this._holdfastLoader());
         hfv.update(dt, this);
+        if (hfv.ready && !this._hfvCompiled) {
+          this._hfvCompiled = true; // (LOADING_OPTIMIZATION.md) compiled when it arrives, like the creature GLBs
+          this._precompile();
+        }
       } catch (err) {
         this._fault('holdfastView', err);
         this.holdfastView = null;

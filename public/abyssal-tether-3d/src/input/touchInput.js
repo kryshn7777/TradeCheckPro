@@ -30,6 +30,7 @@ const ICON = {
   reel: '<path d="M12 21V8M6 13l6-6 6 6M5 3.5h14"/>',
   out: '<path d="M12 3v13M6 11l6 6 6-6M5 20.5h14"/>',
   bag: '<path d="M6 9h12l1.5 11h-15zM9 9V7a3 3 0 016 0v2M9 14h6"/>',
+  nv: '<circle cx="7.5" cy="12" r="4.2"/><circle cx="16.5" cy="12" r="4.2"/><path d="M11.7 12h.6M3.3 12H2M22 12h-1.3M7.5 10v4M16.5 10v4" stroke-width="1.4"/>',
   pause: '<path d="M8 5v14M16 5v14" stroke-width="3.2"/>',
   x: '<path d="M6 6l12 12M18 6L6 18" stroke-width="2.6"/>',
   fs: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
@@ -39,8 +40,8 @@ const ICON = {
   i2: '<path d="M4 20l6-6M9 9l6 6M11 7l6 6 3-3-6-6zM17 3l4 4M5 15l4 4"/>',
   i3: '<rect x="7" y="5" width="10" height="16" rx="2"/><path d="M10 3h4v2h-4zM13 9l-3 4h4l-3 4" stroke-width="1.6"/>',
 };
-const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', pause: '', fs: '' };
-const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', pause: 'Pause' };
+const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', nv: 'NV', pause: '', fs: '' };
+const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', nv: 'Night vision goggles', pause: 'Pause' };
 const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT'];
 const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery'];
 
@@ -484,6 +485,10 @@ export class TouchInput {
         this._btn[id].down(pid);
         this._tick(10);
         im._edge('any');
+        break;
+      case 'nv':
+        im._edge('nv');
+        this._tick(10);
         break;
       case 'jump':
         im._edge('any');
