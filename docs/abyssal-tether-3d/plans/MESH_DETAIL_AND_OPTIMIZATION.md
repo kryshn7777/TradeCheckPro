@@ -310,25 +310,30 @@ Considered and rejected:
 ### 6c. Budget (quest tier, mock-XR stereo, level alone)
 
 `details/budget.mjs` (the dresser `budget-lod.mjs` + an arch stats line), `WORST=1 HIDE=1 MASON=0 SKIT=0`, max over 8 look directions at
-each section's warp point; before = the same tree with `?arch=0`, after = default, measured while the walkway rivets (W11, since rejected:
-up to 7k mono triangles in S3, 3.7k in S4) were still in, so the after column is an upper bound. Calls / stereo triangles:
+each section's warp point (a real skitterling in play in S6-S8 in every run); before = the same tree with `?arch=0`, after = default, the
+final code. Calls / stereo triangles:
 
 | Section | before (`?arch=0`) | after | delta | near-tier triangles added in the section (level totals, mono) |
 |---|---|---|---|---|
-| S1 | 100 / 217k | 104 / 223k | +4 / +6k | quoins 1,560, door leaves 666 |
-| S2 | 102 / 190k | 102 / 195k | +0 / +5k | quoins 480, door leaves 4,662 |
-| S3 | 106 / 195k | 108 / 211k | +2 / +16k | quoins 240, door leaves 3,330 |
-| S4 | 104 / 178k | 104 / 199k | +0 / +21k | quoins 1,680, door leaves 1,998 |
-| S5 | 108 / 182k | 110 / 194k | +2 / +12k | quoins 1,440 |
-| S6 | 114 / 199k | 112 / 218k | -2 / +19k | quoins 960, door leaves 2,664 |
-| S7 | 108 / 177k | 108 / 180k | +0 / +3k | quoins 960 |
-| S8 | 90 / 153k | 92 / 151k | +2 / -2k | quoins 240 (+ the gate, its own mesh) |
+| S1 | 100 / 217k | 104 / 215k | +4 / -2k | quoins 1,560, door leaves 666 |
+| S2 | 102 / 190k | 102 / 194k | +0 / +4k | quoins 480, door leaves 4,662 |
+| S3 | 106 / 195k | 110 / 207k | +4 / +12k | quoins 240, door leaves 3,330 |
+| S4 | 104 / 178k | 104 / 193k | +0 / +15k | quoins 1,680, door leaves 1,998 |
+| S5 | 108 / 182k | 110 / 193k | +2 / +11k | quoins 1,440 |
+| S6 | 114 / 199k | 112 / 220k | -2 / +21k | quoins 960, door leaves 2,664 |
+| S7 | 108 / 177k | 108 / 181k | +0 / +4k | quoins 960 |
+| S8 | 90 / 153k | 92 / 157k | +2 / +4k | quoins 240 (+ the gate, its own mesh) |
 
-Calls: no new draw by construction (the additions join packs, the decal mesh and the gate mesh that already draw); the harness's
-calls vary by +-4 between runs of the same tree (dynamic pickups, the comms panel, a wandering skitterling in S6-S8: S1 measured 100 and
-104 in two after runs). Triangles: at most +21k stereo (inside the +25k allowance); every section stays <= 223k, i.e. the
-creature headroom of pass 1 (Mason close up +45-125k, two skitterlings +80k) is kept. CPU: nothing per frame; the LOD pass evaluates
-65 more plain records over the whole level (3,877 -> 3,942 LodSet records, +3..+12 a section) (box-distance tests every 3rd frame once the head moved); the dressing job (time-sliced, during play) does the extra building.
+The decor items (plaque frames, pipes, machinery, cables) add on top of the near-tier column where they stand (S6: the S5 pipe's lower
+flanges, the S6 machinery, two plaques). Calls: no new draw object by construction (the additions join packs, the decal mesh and the gate
+mesh that already draw; a near-tier record can at most wake an otherwise empty neighbour pack, +2); the harness varies by up to 4 calls and
+~3k triangles between runs of the same code (three after runs: S1 100 / 104 / 104, S3 106 / 108 / 110), so +0..+4 calls is within its
+noise and within the +4 allowance either way. Triangles: at most +21k stereo (S6; inside the +25k allowance); every section stays <= 220k
+alone, so pass 1's creature headroom (Mason close up +45-125k, two skitterlings +80k) still fits under 350k (arithmetic, not measured: S6 220k +
+the Mason's LOD0 close up 125k = ~345k, the tightest). The rejected walkway rivets (W11) were measured too: with them S3 was 211-212k and S4 199-202k. CPU: no new per-frame
+code; the existing LOD pass sees 65 more plain records over the level (3,877 -> 3,942 LodSet records, +3..+12 a section; box-distance tests
+every 3rd frame once the head moved); the time-sliced dressing job builds ~45k more triangles (the pass-2 builders alone: ~60-90 ms in Node
+for the whole level, spread over the job's slices).
 
 ### 6d. Verification
 

@@ -169,6 +169,7 @@ const SETTINGS_SCHEMA = [
   { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
   { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
   { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
+  { key: 'storyIntro', tab: 'display', type: 'toggle', label: 'Story intro', desc: 'The opening story when a new descent begins. Any key moves it on; Esc skips it.' },
   { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
@@ -2684,9 +2685,9 @@ export class UI3D {
 
   _startRun(key, fromVR) {
     const k = DIFFICULTY[key] ? key : 'normal';
-    this._call('start', k);
+    this._call(this.game && typeof this.game.startNewGame === 'function' ? 'startNewGame' : 'start', k); // a new descent plays the opening story first
     const game = this.game || {};
-    if (game.state === 'playing' && this.current !== null) this.show(null);
+    if ((game.state === 'playing' || game.state === 'intro') && this.current !== null) this.show(null);
     if (!fromVR) this._lockPointer();
   }
 

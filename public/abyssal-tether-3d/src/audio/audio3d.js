@@ -2264,6 +2264,9 @@ export class AudioManager3D {
       'bag:effect': this._onBagEffect,
       'lantern:low': this._onLanternLow,
       'lantern:empty': this._onLanternEmpty,
+      'intro:page': this._onIntroPage,
+      'intro:dark': this._onIntroDark,
+      'intro:cut': this._onIntroCut,
       'holster:draw': this._onHolsterDraw,
       'holster:stow': this._onHolsterStow,
       'nv:on': this._onNvOn,
@@ -2627,6 +2630,19 @@ export class AudioManager3D {
 
   _onLanternEmpty() {
     this._sfxLanternWarn(true);
+  }
+
+  /** The opening story: a soft page turn, a low swell when the record darkens, a burst of static and a drop when it is torn off. */
+  _onIntroPage() {
+    this._sfxIntroPage();
+  }
+
+  _onIntroDark() {
+    this._sfxRumble();
+  }
+
+  _onIntroCut() {
+    this._sfxIntroCut();
   }
 
   _onHolsterDraw() {
@@ -3859,6 +3875,50 @@ export class AudioManager3D {
     n.connect(lp);
     lp.connect(g);
     g.connect(v.out);
+    this._commit(v);
+  }
+
+  /** A page of the record turns: a dry, quiet paper-and-relay tick. */
+  _sfxIntroPage() {
+    const v = this._begin('introPage', 1, 0.3, 0.4, this.busStinger, 0.22, 0, 0.2, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._pink, t, 1.3);
+    const bp = this._vFilter(v, 'bandpass', 2400, 0.8);
+    const g = this._vGain(v, 0);
+    this._tick(g.gain, t, 0.4, 0.05);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 180, t);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t, 0.25, 0.01, 0.04, 0.12);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** The record is torn: a burst of static, then everything drops away. */
+  _sfxIntroCut() {
+    const v = this._begin('introCut', 3, 1, 1.8, this.busStinger, 0.34, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'highpass', 1800, 0.7);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.02);
+    g.gain.setValueAtTime(0.5, t + 0.7);
+    g.gain.linearRampToValueAtTime(0, t + 1.1);
+    n.connect(hp);
+    hp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sine', 90, t + 0.05);
+    o.frequency.exponentialRampToValueAtTime(34, t + 1.6);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t + 0.05, 0.5, 0.05, 0.5, 0.5);
+    o.connect(og);
+    og.connect(v.out);
     this._commit(v);
   }
 

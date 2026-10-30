@@ -26,6 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
+import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -121,6 +122,7 @@ const MODULES = {
   masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
+  prologueView: './render/prologueView.js', // the opening story's page (one canvas quad)
   nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
@@ -288,6 +290,15 @@ function holdfastMode() {
     return /[?&]hunt=always\b/.test(q) ? 'off' : 'on';
   } catch {
     return 'on';
+  }
+}
+
+/** `?intro=off` skips the opening story (tests, captures; the setting Story intro does the same for a player). */
+function introOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]intro=off/.test(location.search || '');
+  } catch {
+    return false;
   }
 }
 
@@ -998,6 +1009,9 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
+    this.prologueView = null; // its page (render/prologueView.js)
+    this._introGrace = 0; // s: presses are ignored right after the click that began the run
     this.holster = null; // the rope guns' holsters (sim/holster3d.js): out[h], k[h] 0..1, walkMul; the hands view reads it
     this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
     this.nvView = null; // their picture (render/nightVisionView.js)
@@ -1216,6 +1230,7 @@ export class Game3D {
     this._setupHandsView();
     this._setupHealthFx();
     this._setupNightVisionView();
+    this._setupPrologueView();
     this._setupBodyView();
     this._setupBagViews();
     this._setupDresserView();
@@ -1446,6 +1461,18 @@ export class Game3D {
     } catch (err) {
       this._fault('handsView', err);
       this.handsView = null;
+    }
+  }
+
+  /** The opening story's page (one canvas quad); optional (a failure skips the story). */
+  _setupPrologueView() {
+    const M = this.modules;
+    if (this.prologueView || !M.prologueView || typeof M.prologueView.PrologueView !== 'function' || !this.renderer) return;
+    try {
+      this.prologueView = new M.prologueView.PrologueView(this.renderer.camera, this.renderer.scene);
+    } catch (err) {
+      this._fault('prologueView', err);
+      this.prologueView = null;
     }
   }
 
@@ -2336,12 +2363,18 @@ export class Game3D {
    * Starts a fresh run (call from a click handler: unlocks audio).
    * @param {string} diffKey 'normal' | 'nightmare' | 'abyss' | 'sandbox'
    */
-  start(diffKey) {
+  /** A new descent from the menu: the opening story first (when the setting is on), then the run. */
+  startNewGame(diffKey) {
+    return this.start(diffKey, { intro: true });
+  }
+
+  start(diffKey, opts) {
     if (!this.booted && !this.level) return false;
     const fallbackKey = DIFFICULTY[this.settings.lastDifficulty] ? this.settings.lastDifficulty : 'normal';
     const key = DIFFICULTY[diffKey] ? diffKey : fallbackKey;
     this._unlockAudio();
     const fromMenu = this.state === 'menu';
+    const intro = !!(opts && opts.intro) && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
     if (this._runActive()) this._recordDepth();
     try {
       this.difficultyKey = key;
@@ -2389,12 +2422,52 @@ export class Game3D {
     Storage.saveSettings(this.settings);
     this._bumpStat(`runs.${key}`);
 
-    this._setState('playing');
+    this._setState(intro ? 'intro' : 'playing');
     this._try('ui', () => this.ui.show(null));
     this._try('audio', () => this.audio.setPaused(false));
     this.bus.emit('game:start', { difficulty: key, diff: this.diff });
-    this._enterSection(this.sectionIndex, 'initial');
+    if (intro) this._beginIntro();
+    else this._enterSection(this.sectionIndex, 'initial');
     return true;
+  }
+
+  /** The opening story: the world waits under the black fade, nothing is simulated, the first section is entered when it ends. */
+  _beginIntro() {
+    this.prologue = new Prologue3D((type, arg) => this._onIntroEvent(type, arg));
+    this._introGrace = 0.45;
+    this.fade = 1;
+  }
+
+  _onIntroEvent(type, arg) {
+    if (type === 'page') this.bus.emit('intro:page', { page: arg });
+    else if (type === 'dark') this.bus.emit('intro:dark', {});
+    else if (type === 'cut') this.bus.emit('intro:cut', {});
+    else if (type === 'end') this._endIntro(!!arg);
+  }
+
+  _updateIntro(dt, intent) {
+    const pro = this.prologue;
+    if (!pro || pro.done) {
+      this._endIntro(false);
+      return;
+    }
+    this.fade = 1; // the black behind the page
+    if (this._introGrace > 0) this._introGrace -= dt;
+    else if (intent) {
+      if (intent.pausePressed || intent.backPressed) pro.skipAll();
+      else if (intent.confirmPressed || intent.jumpPressed || intent.anyPressed || this._anyHandPressed(intent) || (intent.ui && intent.ui.click)) pro.advance();
+    }
+    if (!pro.done) pro.update(dt);
+  }
+
+  _endIntro(skipped) {
+    if (this.state !== 'intro') return;
+    this.bus.emit('intro:end', { skipped: !!skipped });
+    this.prologue = null;
+    this._acc = 0;
+    this._setState('playing');
+    this.fade = 1; // the page's black eases away into the first section
+    this._enterSection(this.sectionIndex, 'initial');
   }
 
   /** Instant restart of the current difficulty from the top. */
@@ -3049,6 +3122,9 @@ export class Game3D {
           this._updateRun(dt, runIntent);
           break;
         case 'paused':
+          break;
+        case 'intro':
+          this._updateIntro(dt, intent);
           break;
         case 'victory':
           this._updateVictoryScene(dt);
@@ -4146,6 +4222,20 @@ export class Game3D {
       } catch (err) {
         this._fault('healthFx', err);
       }
+    }
+    const prv = this.prologueView;
+    if (prv) {
+      try {
+        const cv = this.renderer && this.renderer.renderer ? this.renderer.renderer.domElement : null;
+        prv.update(dt, this.prologue, { xr: !!this.xrActive, reduced: !!(this.settings && this.settings.reducedEffects), aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9 });
+      } catch (err) {
+        this._fault('prologueView', err);
+        this.prologue = null;
+        if (this.state === 'intro') this._endIntro(true);
+      }
+    } else if (this.state === 'intro' && this.prologue && !this._introNoView) {
+      this._introNoView = true; // no view (it failed to load): the story cannot be shown, so it does not hold the run
+      this._endIntro(true);
     }
     const nvv = this.nvView;
     if (nvv) {
