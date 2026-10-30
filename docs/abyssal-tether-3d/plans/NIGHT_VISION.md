@@ -34,7 +34,7 @@ The renderer reads the section blend by height, so the darkness eases in across 
 
 ## How the picture is made (no post-processing pass)
 
-1. **The scene is lifted** (cheap uniforms, no shader recompile): while the tubes warm up (`nv.k` 0..1) the darkness comes off (`dark *= 1 - 0.92 k`), the ambient and key rise (x2.6 and x2), the baked-light exposure (+60 %) and floor (+0.022) rise, the haze goes pale green.
+1. **The scene is lifted** (cheap uniforms, no shader recompile): while the tubes warm up (`nv.k` 0..1) the darkness comes off (`dark *= 1 - 0.92 k`), the ambient and key rise (x3.4 and x2.6), the baked-light exposure (+100 %) and floor (+0.035) rise, the haze goes pale green.
 2. **A multiply triangle** keeps almost only the green channel through a rounded tube mask. **An additive triangle** adds the phosphor floor, grain, warm-up bloom, a slow scan band and the cell gauge. Both are camera-child clip-space triangles (zero parallax in stereo), no depth test, `renderOrder` 860 / 861, below the red health vignette (880) so a hit still shows over the green.
 3. Both programs are compiled at load (the meshes exist visible at construction, like the health vignette), so the first toggle never hitches on Quest.
 

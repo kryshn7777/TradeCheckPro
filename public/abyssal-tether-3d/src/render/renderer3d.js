@@ -78,7 +78,7 @@ const KEY_SCALE = 6.8; // theme.ambient → shaft key light intensity (tops read
 const FOG_GAIN = 1.3; // section fog colours are lifted a little: haze reads as faint light, not black
 const FOG_THICKNESS = 2; // the haze is twice as thick: the distance fog closes in at half the range (the volumetric fog doubles in atmosphere.js)
 const FOG_WARM_DESAT = 0.65; // how much of a warm fog's colour is drawn out (0 = none): S5 / S8 read as an orange wash at full saturation
-const NV_FOG = new THREE.Color(0.012, 0.075, 0.03); // the haze through the night vision goggles (render/nightVisionView.js tints the picture)
+const NV_FOG = new THREE.Color(0.014, 0.095, 0.035); // the haze through the night vision goggles (render/nightVisionView.js tints the picture)
 const FOG_LUM_FLOOR = 0.013; // minimum linear luminance of the haze (≈ sRGB 30/255) so no section is pure black
 const LANTERN_CANDELA = 6.5;
 const LANTERN_RANGE = 30;
@@ -799,11 +799,11 @@ export class Renderer3D {
     const grey = (_tmpC.r + _tmpC.g + _tmpC.b) / 3;
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
-    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 1.6 * nvK);
+    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.4 * nvK);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
-    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.0 * nvK);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.6 * nvK);
 
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
     LOOK.uTime.value = this.time;

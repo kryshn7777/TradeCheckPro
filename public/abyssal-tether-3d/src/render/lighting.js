@@ -491,8 +491,8 @@ export class Lighting {
     LOOK.uEnvK.value.w = probeOk && this.tier === 'high' ? 1 : 0;
     LOOK.uGIK.value.x = e.gi && LOOK.uGI.value ? 1 : 0;
     LOOK.uLMK.value.x = e.lm && LOOK.uLM.value ? 1 : 0;
-    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark) * (1 + 0.6 * this.nv);
-    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark) + 0.022 * this.nv;
+    LOOK.uLMK.value.y = this.lmTune.exposure * (1 - 0.85 * this.dark) * (1 + 1.0 * this.nv);
+    LOOK.uLMK.value.w = this.lmTune.floor * (1 - 0.95 * this.dark) + 0.035 * this.nv;
     LOOK.uLMLan.value.set(this.lmTune.lanternGain, this.lmTune.lanternFalloff);
     LOOK.uLanternC.value.w = e.coat * 0.9;
     if (this.r3d.levelView && typeof this.r3d.levelView.setDetailScale === 'function') this.r3d.levelView.setDetailScale(e.detail, force);
