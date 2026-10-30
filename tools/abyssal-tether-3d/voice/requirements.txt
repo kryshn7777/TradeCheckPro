@@ -1,0 +1,5 @@
+kokoro-onnx==0.6.1
+onnxruntime>=1.20
+numpy>=1.26
+soundfile>=0.12
+pocketsphinx>=5.0.4

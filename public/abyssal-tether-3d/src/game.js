@@ -35,6 +35,7 @@ import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { ObjectiveHint } from './sim/objectiveHint.js';
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
+import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 
 const C = CONFIG;
 // LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
@@ -1106,8 +1107,10 @@ export class Game3D {
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
     this.save = nullSaveStandIn();
+    if (LOADPROF_ON) lpAttachGame(this);
 
     await this._loadModules(EARLY_MODULES);
+    lpMark('earlyModules');
     const M = this.modules;
 
     // Renderer (fallback: a plain three.js view).
@@ -1138,8 +1141,10 @@ export class Game3D {
     );
     this._saveReady = this._startSave(); // IndexedDB open + migration run beside the module downloads; never rejects
 
+    if (LOADPROF_ON) lpAttachRenderer(this);
     this._startLoop(); // the loop renders the loading scene until bootContent finishes
     this.bootTimes.minimal = nowSinceNav();
+    lpMark('minimal');
     this.bus.emit('game:boot-minimal', {});
     return this;
   }
@@ -1157,6 +1162,7 @@ export class Game3D {
       await yieldToFrames();
     };
     await this._loadModules(LATE_MODULES);
+    lpMark('lateModules');
     const M = this.modules;
     if (!M.level || typeof M.level.Level3D !== 'function') {
       throw new Error('The level module (src/sim/level3d.js or src/data/level-data-3d.js) could not be loaded.');
@@ -1169,13 +1175,16 @@ export class Game3D {
     await progress(0.4, 'Lowering the lantern');
 
     this._enterAttract(); // level / player / tethers / creature exist before the UI looks at them
+    lpMark('attract');
     await progress(0.55, 'Reading the walls');
 
     // Texture manifest for the level view (bounded wait), then build it.
     this.textures = await this._loadTextureManifest();
     this._viewReady = true;
     await progress(0.7, 'Reading the walls');
+    lpMark('textureManifest');
     this._ensureLevelView();
+    lpMark('levelView');
     await progress(0.82, 'Lighting the lamps');
 
     this._setupHandsView();
@@ -1197,6 +1206,7 @@ export class Game3D {
       this.ui = nullUI();
     }
     this._uiFallback = !!this.ui.isNull;
+    lpMark('views+ui');
     await progress(0.92, 'Almost there');
     // Every mesh that exists now (level, hands, UI panels, fade sphere): compile its
     // shader programs before the first frame so nothing hitches on first use.
@@ -1215,6 +1225,7 @@ export class Game3D {
     this.booted = true;
     this.contentReady = true;
     this.bootTimes.content = nowSinceNav();
+    lpMark('content');
     if (this.xrActive) this._resyncXRBindings(); // the session started while the content was loading
     this._startLoop();
     this.bus.emit('game:boot', {});
@@ -1460,6 +1471,8 @@ export class Game3D {
       const bus = this.bus;
       cm.onStart = (tx) => bus.emit('comms:line', tx);
       cm.onEnd = (tx) => bus.emit('comms:end', tx);
+      // a recorded voice clip ready for a line (audio/radio3d.js): the line and its subtitle are timed by the clip
+      cm.voice = (id) => (this.audio && typeof this.audio.voiceFor === 'function' ? this.audio.voiceFor(id) : null);
       for (const type of M.comms.DIRECTOR_EVENTS) bus.on(type, (p) => this._try('comms', () => cm.onEvent(type, p)));
       this.comms = cm;
     } catch (err) {

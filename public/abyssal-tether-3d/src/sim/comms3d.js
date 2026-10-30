@@ -13,7 +13,8 @@
  *                     line that worsens with the count and the depth)
  *   bloodGaze()       the "camera sees bare stone" beat: is the view resting on a blood writing (Settings › Display only)?
  * The presentation lives elsewhere: render/commsView.js (the subtitle panel and the restore overlay: one head-locked quad),
- * audio/radio3d.js (the synthesised radio voices: a PLACEHOLDER for real VO), render/healthFx.js (the signal bars on the ECG).
+ * audio/radio3d.js (the radio voices: the clips of assets/audio/voice/, AI placeholders until the VO session of VO_SCRIPT.md, and
+ * the synthesised babble as their fallback), render/healthFx.js (the signal bars on the ECG).
  * game.js owns one director, feeds it the bus and the context, and forwards its lines to the bus ('comms:line' / 'comms:end').
  * Nothing here changes the simulation: comms is presentation keyed on events (`?comms=off` turns all of it off).
  */
@@ -68,6 +69,45 @@ export function speakTime(text) {
   const t = wordCount(text) / 2.9 + 0.2 + p;
   const max = holdTime(text) - 0.45;
   return t < 0.6 ? 0.6 : t > max ? max : t;
+}
+
+// ---- recorded voices (docs/abyssal-tether-3d/plans/VO_SCRIPT.md) ----------------------------------------------------------
+// When audio/radio3d.js holds a decoded clip for a line (assets/audio/voice/manifest.json: { d: seconds, w: [[start, end] per
+// subtitle word] }), the director times the line by the clip instead of by its text: the hook CommsDirector.voice(id) returns
+// that entry (game.js wires it to the radio; null = no clip ready, Radio voices off: the text timing and the babble).
+/** s from a line going on air to its clip's first sound (the squelch before it; radio3d.js starts the clip this late). */
+export const VOICE_LEAD = 0.11;
+/** s the subtitle stays after the clip ends. */
+export const VOICE_TAIL = 0.45;
+/** The voice that is not quite the speaker: its clip plays this much slower and lower (radio3d.js). */
+export const NOTQUITE_RATE = 0.94;
+/** The stuck word in a clip: its first STUCK_MAX s plays twice more ("ho- ho- hold"), as the subtitle shows it three times. */
+export const STUCK_MAX = 0.28;
+
+/** A manifest entry the director can time a line by (a clip of a sane length), or null. */
+export function voiceEntry(e) {
+  return e && typeof e.d === 'number' && e.d > 0.2 && e.d < 12 ? e : null;
+}
+
+/** The stutter of subtitle word `w` in a clip, in the clip's own time: { w, a: the word's onset, s: one stuck repeat }, or null. */
+export function voiceStuck(entry, w) {
+  const ws = entry && entry.w;
+  const wd = ws && w >= 0 ? ws[w] : null;
+  if (!wd || !(wd[1] > wd[0])) return null;
+  const s = Math.min(STUCK_MAX, wd[1] - wd[0]);
+  return s >= 0.08 ? { w, a: wd[0], s } : null;
+}
+
+/** Seconds a clip speaks on air: its length (the stuck word adds two repeats), slower for the not-quite voice. */
+export function voiceSpeak(entry, kind, stuck) {
+  return (entry.d + (stuck ? 2 * stuck.s : 0)) / (kind === 'notquite' ? NOTQUITE_RATE : 1);
+}
+
+/** Seconds the subtitle holds for a clip: the squelch, the clip, the tail; never under HOLD_MIN or ~3 words a second. */
+export function voiceHold(text, speak) {
+  const t = VOICE_LEAD + speak + VOICE_TAIL;
+  const read = wordCount(text) / 3 + 0.6;
+  return Math.max(HOLD_MIN, read, t);
 }
 
 /** Greedy word wrap at `width` characters (the panel wraps by measured width; this is the data rule the tests hold). */
@@ -275,15 +315,18 @@ export function reactsToRestore(n) {
 /**
  * Deterministic glitch events of one transmission: [{ kind: 'static' | 'dropout' | 'repeat' | 'label', t, dur }], sorted,
  * onsets >= GLITCH_SPACING apart. Only the kinds SIGNAL_ARC allows in `section`; none for the suit (Vesper), the opening or a
- * line marked clean. Returns { events, text } (text: the display text, with the stuck word when a repeat fires).
+ * line marked clean. Returns { events, text, w } (text: the display text, with the stuck word when a repeat fires; w: the index
+ * of that subtitle word, -1 if none). `voice` (optional, a voiceEntry): the line speaks a clip, `speak` is its time on air and
+ * the stuck word's event sits on the word's stutter in the clip (the random draws are the same with or without a clip).
  */
-export function makeGlitches(seed, line, section, speak, n) {
+export function makeGlitches(seed, line, section, speak, n, voice) {
   const events = [];
   let text = line.text;
+  let stuckW = -1;
   const sp = SPEAKERS[line.speaker];
   const i = clamp(section | 0, 0, SIGNAL_ARC.length - 1);
   if (line.kind === 'notquite') events.push({ kind: 'label', t: Math.min(0.7, speak * 0.3), dur: 0.5 });
-  if (line.glitch === 'none' || line.skip || !sp || sp.local) return { events, text };
+  if (line.glitch === 'none' || line.skip || !sp || sp.local) return { events, text, w: stuckW };
   const g = SIGNAL_ARC[i].glitch;
   const st = { s: mix(mix(seed >>> 0, hashStr(line.id)), n | 0) };
   const span = Math.max(0.4, speak - 0.5);
@@ -303,7 +346,11 @@ export function makeGlitches(seed, line, section, speak, n) {
       const stuck = words.slice(0, w).concat([bare + '—', bare + '—'], words.slice(w)).join(' ');
       if (stuck.length > LINE_MAX_CHARS || wrapText(stuck).length > WRAP_LINES || wrapText(stuck).some((l) => l.length > WRAP_CHARS)) continue;
       text = stuck;
-      events.push({ kind: 'repeat', t: Math.min(span, 0.2 + (speak * w) / Math.max(1, words.length)), dur: 0.45 });
+      stuckW = w;
+      const vs = voice ? voiceStuck(voice, w) : null;
+      const k = line.kind === 'notquite' ? 1 / NOTQUITE_RATE : 1;
+      if (vs) events.push({ kind: 'repeat', t: Math.min(span, (vs.a + vs.s) * k), dur: 2 * vs.s * k, w });
+      else events.push({ kind: 'repeat', t: Math.min(span, 0.2 + (speak * w) / Math.max(1, words.length)), dur: 0.45, w });
       break;
     }
   }
@@ -319,7 +366,7 @@ export function makeGlitches(seed, line, section, speak, n) {
     lastOn = e.t;
     lastEnd = e.t + e.dur;
   }
-  return { events: out, text };
+  return { events: out, text, w: stuckW };
 }
 
 // ---- the director ----------------------------------------------------------------------------------------------------------
@@ -385,6 +432,8 @@ export class CommsDirector {
     this.log = [];
     this.onStart = null;
     this.onEnd = null;
+    /** (id) => a voice manifest entry whose clip is ready to play, or null (game.js wires it to the radio; null: text timing). */
+    this.voice = null;
     this.reset(true);
   }
 
@@ -636,9 +685,13 @@ export class CommsDirector {
 
   _start(line, requeued) {
     this.count++;
-    const speak = speakTime(line.text);
-    const g = makeGlitches(this.seed, line, this.section, speak, this.count);
+    // a recorded clip ready for this line: the line is timed by the clip (its real length, the stuck word in it), else by its text
+    const v = this._voiceOf(line);
+    const speak = v ? voiceSpeak(v, line.kind, null) : speakTime(line.text);
+    const g = makeGlitches(this.seed, line, this.section, speak, this.count, v);
     const text = g.text;
+    const stuck = v && g.w >= 0 ? voiceStuck(v, g.w) : null;
+    const vSpeak = v ? voiceSpeak(v, line.kind, stuck) : 0;
     const sp = SPEAKERS[line.speaker] || SPEAKERS.UPLINK;
     const tx = {
       n: this.count,
@@ -654,14 +707,18 @@ export class CommsDirector {
       prio: line.prio,
       section: this.section,
       signal: this.signal,
-      speak: text === line.text ? speak : speakTime(text),
-      dur: holdTime(text),
+      speak: v ? vSpeak : text === line.text ? speak : speakTime(text),
+      dur: v ? voiceHold(text, vSpeak) : holdTime(text),
       t: 0,
       t0: this.clock,
       glitches: g.events,
       skip: line.skip,
       cut: false,
       requeued: !!requeued,
+      // the clip (radio3d.js plays it when set, the babble otherwise): the entry, its playback rate, the stuck word's stutter
+      voice: v,
+      voiceRate: line.kind === 'notquite' ? NOTQUITE_RATE : 1,
+      stuck,
     };
     this.current = tx;
     this.said[line.id] = this.clock;
@@ -669,6 +726,18 @@ export class CommsDirector {
     if (this.log.length >= LOG_MAX) this.log.shift();
     this.log.push({ n: tx.n, id: tx.id, t0: +this.clock.toFixed(3), t1: -1, section: this.section, glitches: tx.glitches.map((ev) => ev.kind) });
     if (this.onStart) this.onStart(tx);
+  }
+
+  /** The hook's clip for a line (a bad hook or a bad entry is no clip: the text timing). */
+  _voiceOf(line) {
+    if (typeof this.voice !== 'function') return null;
+    let e = null;
+    try {
+      e = this.voice(line.id);
+    } catch {
+      e = null;
+    }
+    return voiceEntry(e);
   }
 
   _end(tx) {

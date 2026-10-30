@@ -71,6 +71,7 @@ Comfort rating: Intense. Abyssal Tether uses smooth artificial movement, swingin
 
 CONTENT
 Horror atmosphere, sudden loud sounds and peril. No blood, no gore.
+The radio voices in this version are AI-generated (text-to-speech) placeholders, not human actors.
 
 Chapter I is free and ends on a hook. The descent continues in future updates.
 ```

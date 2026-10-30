@@ -656,6 +656,17 @@ What only you can do, in order:
    release date (section 17).
 9. **Paid unlock (later)**: create SKU `abyssal_tether_full_game`, Data Use Checkup IAP grant, private repo, only when
    Chapters II-V exist (18.1 items 6, 11, 12).
+10. **Radio voices: AI placeholders today; disclose them, then replace them with actors.** The 50 spoken radio lines ship as
+    AI text-to-speech clips (Kokoro-82M, Apache-2.0; `public/abyssal-tether-3d/assets/audio/voice/`, 0.4 MB, lazy tier), built
+    by `tools/abyssal-tether-3d/build_voices.py`. No human actor has been cast or recorded. While any AI clip ships:
+    (a) keep the About credits line (it says so, in the page and in the VR panel); (b) keep the AI-voice sentence in the store
+    listing's long description (`store/LISTING.md`) and answer the Dashboard's AI-generated-content question (if your
+    submission form asks one) with "AI-generated voice placeholders"; (c) do not market the voices as performances. To get real
+    voices: cast four actors from `plans/VO_SCRIPT.md` (casting notes, 61 lines incl. the 11 specified story-bible lines,
+    recording specs), record 48 kHz / 24-bit dry WAVs named by line id into `tools/abyssal-tether-3d/voice/recordings/`, run
+    `python3 tools/abyssal-tether-3d/build_voices.py`: recordings override the AI clips line by line with no code change. Get
+    a signed release from each actor (game, trailers, store; no synthetic re-use of their voice without consent). Once no AI
+    clip is left, remove the AI wording from the credits and the listing.
 
 ### 18.1 Full list (including the later paid unlock)
 

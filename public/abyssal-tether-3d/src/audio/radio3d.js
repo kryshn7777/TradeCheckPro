@@ -1,7 +1,11 @@
-/* ABYSSAL TETHER 3D — radio3d.js (EXPEDITION: the radio voices; docs/abyssal-tether-3d/plans/COMMS.md)
- * PLACEHOLDER VOICE-OVER. There are no recordings in this game: every transmission of sim/comms3d.js is "spoken" by a
- * synthesised voice-substitute (pitched, formant-filtered syllable babble, one per speaker) timed to its subtitle, so the
- * radio has a voice, a rhythm and a speaker you can tell apart until the real VO session replaces it (RELEASE / COMMS.md).
+/* ABYSSAL TETHER 3D — radio3d.js (EXPEDITION: the radio voices; docs/abyssal-tether-3d/plans/COMMS.md, VO_SCRIPT.md)
+ * VOICE CLIPS. A line with a clip in assets/audio/voice/manifest.json (tools/abyssal-tether-3d/build_voices.py: today AI
+ * placeholder voices, Kokoro-82M text-to-speech; a human recording of a line replaces its clip with no code change) speaks that
+ * clip through the radio chain below; the director (sim/comms3d.js) times the line and its subtitle by the clip (the hook
+ * voiceFor(id): only a clip already decoded counts). The clips load lazily (VoiceBank: the manifest, then the current section's
+ * lines, the next section's, the lines heard anywhere; an LRU of decoded seconds), never at boot.
+ * THE BABBLE (the fallback: no clip for the line, not loaded yet, or it failed): a synthesised voice-substitute (pitched,
+ * formant-filtered syllable babble, one per speaker) timed to its subtitle, so the radio always has a voice and a rhythm.
  *
  *   Odessa  warm, unhurried, a falling line (triangle, ~196 Hz)      Tick    quick, bouncy (sawtooth, ~138 Hz)
  *   Maren   dry, measured (triangle, ~176 Hz, narrower formants)      Vesper  the suit, not the radio: flat square-wave syllables,
@@ -13,8 +17,11 @@
  * voice gaps), a 30 % bias to the left ear (the earpiece). The hot mic is off-mic (muffled, no squelch); the voice that is not
  * quite the speaker comes without the radio filter (warm, close, wrong). While a line is on air the music ducks ~6 dB and the
  * ambience ~3 dB; the creature is never ducked (the radio ducks under the cave, never the reverse).
- * Settings › Sound › Radio voices OFF: silent (the subtitles still show every line). Settings › Access › Signal glitches OFF:
- * the static is lowered and the bursts are soft.
+ * Settings › Sound › Radio voices OFF: silent (the subtitles still show every line, timed by their text; no clip is fetched).
+ * `?comms=off`: no clip is fetched. Settings › Access › Signal glitches OFF: the static is lowered and the bursts are soft.
+ * A clip keeps every signal effect: the static bed, the static bursts, the dropouts (the voice gaps; the clip runs on under
+ * them), the stuck word (the word's first 0.28 s twice more: three sources over the word timing), and the not-quite voice (the
+ * clip slower and lower, doubled by a second copy a hair faster and 22 ms late, without the radio filter).
  *
  * AudioManager3D owns one Radio (not one of its _mods): build() with the graph, speak(tx) on 'comms:line', end(tx) on
  * 'comms:end', control(dtc, now, game) on the control tick. Per-line nodes are released after the line; nothing per frame.
@@ -123,6 +130,166 @@ export function babblePlan(text, speaker, speak, seed) {
 const SQUELCH = 0.09; // s of squelch before the voice
 const STATIC_IDLE = 0;
 
+// ---- voice clips ---------------------------------------------------------------------------------------------------------
+/** The clips and their manifest, relative to the page (like assets/textures/manifest.json). */
+export const VOICE_BASE = 'assets/audio/voice/';
+/** Seconds of decoded clips kept (an LRU: the current section, the next and the anywhere lines fit; ~10 MB at 24 kHz). */
+export const VOICE_CACHE_S = 110;
+/** A clip's gain into its chain (the clips are normalised to -23 LUFS; the babble's VOICES[].level does not apply). */
+export const CLIP_LEVEL = Object.freeze({ ODESSA: 1, TICK: 1, MAREN: 1, VESPER: 0.8, UPLINK: 1 });
+/** At most this many clips loading at once. */
+const VOICE_PARALLEL = 2;
+/** The not-quite voice's second copy: a hair faster (a slow beat against the first), this late (s), this loud. */
+const DOUBLE_RATE = 1.012;
+const DOUBLE_DELAY = 0.022;
+const DOUBLE_GAIN = 0.45;
+
+function commsOffUrl() {
+  try {
+    return typeof location !== 'undefined' && /[?&]comms=off\b/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+function defaultLoad(url, as) {
+  if (typeof fetch !== 'function') return Promise.reject(new Error('no fetch'));
+  return fetch(url).then((r) => {
+    if (!r.ok) throw new Error(`${url}: ${r.status}`);
+    return as === 'json' ? r.json() : r.arrayBuffer();
+  });
+}
+
+/**
+ * The clips: the manifest (fetched once), the decoded AudioBuffers (an LRU of VOICE_CACHE_S seconds; the clip on air is never
+ * evicted), the loading queue (the wanted section's lines first). io: { load(url, 'json' | 'buffer') -> Promise, decode(ArrayBuffer)
+ * -> Promise<AudioBuffer>, base }. Nothing here runs per frame: it works on section entries and line starts.
+ */
+export class VoiceBank {
+  constructor(io) {
+    const o = io || {};
+    this.base = o.base || VOICE_BASE;
+    this.load = o.load || defaultLoad;
+    this.decode = o.decode || null;
+    this.manifest = null;
+    this.state = 'idle'; // idle | loading | ready | failed (no manifest: every line keeps the babble)
+    this.bufs = new Map(); // id -> { buf, used, s }
+    this.pending = new Set();
+    this.failed = new Set();
+    this.queue = [];
+    this.active = 0;
+    this.seconds = 0;
+    this.clock = 0;
+    this.section = 0;
+    this.pinned = null;
+    this.loaded = 0;
+    this.ready = null;
+  }
+
+  /** Fetch the manifest (once), then the wanted section's clips. */
+  start() {
+    if (this.state !== 'idle') return this.ready;
+    this.state = 'loading';
+    this.ready = Promise.resolve()
+      .then(() => this.load(this.base + 'manifest.json', 'json'))
+      .then((m) => {
+        if (!m || typeof m !== 'object' || !m.lines || typeof m.lines !== 'object') throw new Error('bad voice manifest');
+        this.manifest = m;
+        this.state = 'ready';
+        this.want(this.section);
+      })
+      .catch(() => {
+        this.state = 'failed';
+      });
+    return this.ready;
+  }
+
+  entry(id) {
+    const L = this.manifest && this.manifest.lines;
+    return L && Object.prototype.hasOwnProperty.call(L, id) ? L[id] : null;
+  }
+
+  has(id) {
+    return this.bufs.has(id);
+  }
+
+  /** The decoded clip of `id` (marked as used), or null. */
+  buffer(id) {
+    const b = this.bufs.get(id);
+    if (!b) return null;
+    b.used = ++this.clock;
+    return b.buf;
+  }
+
+  /** Queue the lines of `section`, then of the next section, then the lines heard anywhere. */
+  want(section) {
+    this.section = section | 0;
+    if (this.state !== 'ready') return;
+    const L = this.manifest.lines;
+    const q = [];
+    for (const pass of [this.section, this.section + 1, -1]) for (const id in L) if ((L[id].s == null ? -1 : L[id].s | 0) === pass) q.push(id);
+    this.queue = q;
+    this._evict();
+    this._pump();
+  }
+
+  /** A line asked for before its clip was ready: load it next (for its next time on air). */
+  request(id) {
+    if (this.state !== 'ready' || !this.entry(id) || this.bufs.has(id) || this.pending.has(id) || this.failed.has(id)) return;
+    this.queue.unshift(id);
+    this._pump();
+  }
+
+  _pump() {
+    while (this.active < VOICE_PARALLEL && this.queue.length) {
+      const id = this.queue.shift();
+      const e = this.entry(id);
+      if (!e || !this.decode || this.bufs.has(id) || this.pending.has(id) || this.failed.has(id)) continue;
+      this.active++;
+      this.pending.add(id);
+      Promise.resolve()
+        .then(() => this.load(this.base + e.f, 'buffer'))
+        .then((ab) => this.decode(ab))
+        .then((buf) => this._put(id, buf, e))
+        .catch(() => {
+          this.failed.add(id); // this session: the babble speaks it
+        })
+        .then(() => {
+          this.pending.delete(id);
+          this.active--;
+          this._pump();
+        });
+    }
+  }
+
+  _put(id, buf, e) {
+    if (!buf || !(buf.duration > 0)) throw new Error('empty clip');
+    this.bufs.set(id, { buf, used: ++this.clock, s: e.s == null ? -1 : e.s | 0 });
+    this.seconds += buf.duration;
+    this.loaded++;
+    this._evict();
+  }
+
+  /** Over the budget: drop the least recently used clip outside the wanted sections (never the one on air). */
+  _evict() {
+    while (this.seconds > VOICE_CACHE_S && this.bufs.size > 1) {
+      let worst = null;
+      let wk = 0;
+      for (const [id, b] of this.bufs) {
+        if (id === this.pinned) continue;
+        const keep = b.s === this.section || b.s === this.section + 1 || b.s < 0 ? 1e12 : 0;
+        if (worst === null || keep + b.used < wk) {
+          worst = id;
+          wk = keep + b.used;
+        }
+      }
+      if (worst === null) break;
+      this.seconds -= this.bufs.get(worst).buf.duration;
+      this.bufs.delete(worst);
+    }
+  }
+}
+
 export class Radio {
   /** @param {object} mgr AudioManager3D (ctx, master, spaceIn, _white, _pink, _filter, _gainNode, _loop, _knob, _gate, settings) */
   constructor(mgr) {
@@ -132,6 +299,8 @@ export class Radio {
     this.lines = 0; // lines spoken (tests)
     this.duck = 0; // 0..1 smoothed "a line is on air"
     this._staticT = 0;
+    this.bank = null; // the voice clips (VoiceBank), made at build()
+    this.clips = 0; // lines spoken from a clip (tests)
   }
 
   build() {
@@ -179,11 +348,58 @@ export class Radio {
     this.staticG.connect(this.pan);
     this.kStatic = m._knob(this.staticG.gain, 0, 0.0004);
     this.gStatic = m._gate([nz, nbp]);
+    // the voice clips: the manifest and the Threshold's lines start loading now (the first user gesture, after boot)
+    this.bank = new VoiceBank({ decode: this._decoder() });
+    if (this._clipsWanted()) this.bank.start();
   }
 
   get enabled() {
     const s = this.m.settings;
     return !(s && s.radioVoices === false);
+  }
+
+  _clipsWanted() {
+    return this.enabled && !commsOffUrl();
+  }
+
+  /** Decoding at 24 kHz (an OfflineAudioContext) halves the memory of a decoded clip; the live context otherwise. */
+  _decoder() {
+    const ctx = this.m.ctx;
+    let dc = ctx;
+    try {
+      const OAC = typeof OfflineAudioContext === 'function' ? OfflineAudioContext : null;
+      if (OAC && !this.m._offline) dc = new OAC(1, 1, 24000);
+    } catch {
+      dc = ctx;
+    }
+    if (!dc || typeof dc.decodeAudioData !== 'function') return null;
+    return (ab) => dc.decodeAudioData(ab);
+  }
+
+  /** A section entered: its clips (and the next section's) load first. */
+  prefetch(section) {
+    const b = this.bank;
+    if (!b || !this._clipsWanted()) return;
+    b.section = section | 0;
+    if (b.state === 'idle') b.start();
+    else b.want(section);
+  }
+
+  /** The director's hook (sim/comms3d.js CommsDirector.voice): the manifest entry of a clip ready to play now, or null. */
+  voiceFor(id) {
+    const b = this.bank;
+    if (!b || !this.enabled) return null;
+    if (b.state === 'idle') {
+      if (this._clipsWanted()) b.start();
+      return null;
+    }
+    const e = b.entry(id);
+    if (!e) return null;
+    if (!b.has(id)) {
+      b.request(id);
+      return null;
+    }
+    return e;
   }
 
   /** A transmission goes on air (sim/comms3d.js tx). */
@@ -200,8 +416,11 @@ export class Radio {
     const dryVoice = local || tx.kind === 'notquite';
     const off = tx.kind === 'offmic';
     const V = VOICES[tx.speaker] || VOICES.TICK;
+    // the line's clip when the director timed it by one (else, or if it is gone: the babble)
+    const buf = tx.voice && this.bank ? this.bank.buffer(tx.id) : null;
+    const lvl = (buf ? CLIP_LEVEL[tx.speaker] || 1 : V.level) * (off ? 0.42 : 1);
     const out = ctx.createGain();
-    out.gain.value = V.level * (off ? 0.42 : 1) * (tx.kind === 'notquite' ? 1.15 : 1);
+    out.gain.value = lvl * (tx.kind === 'notquite' ? 1.15 : 1);
     nodes.push(out);
     let tail = out;
     if (off) {
@@ -211,8 +430,9 @@ export class Radio {
       tail = mlp;
     }
     tail.connect(dryVoice ? this.dry : this.inp);
-    const speakT = clamp(tx.speak || 1, 0.5, 6);
-    const vStart = t0 + (local || off || tx.kind === 'notquite' ? 0.05 : SQUELCH);
+    const speakT = buf ? clamp(tx.speak || buf.duration, 0.3, 12) : clamp(tx.speak || 1, 0.5, 6);
+    // a clip of the suit starts after its chime (a real first syllable under the chime would be masked)
+    const vStart = t0 + (buf && local ? 0.16 : local || off || tx.kind === 'notquite' ? 0.05 : SQUELCH);
     const end = vStart + speakT + 0.25;
     // squelch on / off (the radio), or the suit's two-tone chime (Vesper)
     if (local) {
@@ -222,6 +442,7 @@ export class Radio {
       this._squelch(vStart + speakT + 0.06, nodes, sources);
     }
     if (tx.kind === 'echo') this._breaths(vStart, speakT, nodes, sources, out);
+    else if (buf) this._clip(tx, buf, vStart, nodes, sources, out, tx.kind === 'notquite');
     else this._voice(tx, vStart, speakT, nodes, sources, out, tx.kind === 'notquite');
     // dropouts: the voice gaps (the static fills them)
     const g = tx.glitches || [];
@@ -232,11 +453,15 @@ export class Radio {
       out.gain.setValueAtTime(out.gain.value, a);
       out.gain.linearRampToValueAtTime(0, a + 0.03);
       out.gain.setValueAtTime(0, a + e.dur);
-      out.gain.linearRampToValueAtTime(V.level * (off ? 0.42 : 1), a + e.dur + 0.04);
+      out.gain.linearRampToValueAtTime(lvl, a + e.dur + 0.04);
     }
     for (let i = 0; i < sources.length; i++) sources[i].stop(end + 0.3);
-    this.cur = { tx, nodes, sources, t0, vStart, end, dry: dryVoice };
+    this.cur = { tx, nodes, sources, t0, vStart, end, dry: dryVoice, clip: !!buf };
     this.lines++;
+    if (buf) {
+      this.clips++;
+      this.bank.pinned = tx.id; // never evicted while on air
+    }
   }
 
   /** The line left the air (it ended, or was cut by danger / a pause / a death). */
@@ -310,6 +535,44 @@ export class Radio {
     }
     P.setTargetAtTime(0, vStart + speakT, 0.03);
     osc.start(vStart - 0.01);
+  }
+
+  /**
+   * A recorded line: the clip from vStart (slower and lower for the not-quite voice, tx.voiceRate). The stuck word (tx.stuck:
+   * { a: the word's onset, s: one repeat }, in clip time) plays as three sources: [0, a + s), [a, a + s), [a, end). The voice
+   * that is not quite the speaker gets a second copy a hair faster and 22 ms late under it (the doubling).
+   */
+  _clip(tx, buf, vStart, nodes, sources, out, warm) {
+    const ctx = this.m.ctx;
+    const rate = tx.voiceRate > 0 ? tx.voiceRate : 1;
+    const st = tx.stuck;
+    const D = buf.duration;
+    const n = st && st.s > 0 && st.a >= 0 && st.a + st.s < D ? 3 : 1;
+    let t = vStart;
+    for (let k = 0; k < n; k++) {
+      const from = n === 1 || k === 0 ? 0 : st.a;
+      const len = n === 1 ? D : k === 0 ? st.a + st.s : k === 1 ? st.s : D - st.a;
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.playbackRate.value = rate;
+      s.connect(out);
+      s.start(t, from, len);
+      nodes.push(s);
+      sources.push(s);
+      t += len / rate;
+    }
+    if (warm && n === 1) {
+      const s2 = ctx.createBufferSource();
+      s2.buffer = buf;
+      s2.playbackRate.value = rate * DOUBLE_RATE;
+      const g = ctx.createGain();
+      g.gain.value = DOUBLE_GAIN;
+      s2.connect(g);
+      g.connect(out);
+      s2.start(vStart + DOUBLE_DELAY);
+      nodes.push(s2, g);
+      sources.push(s2);
+    }
   }
 
   /** The S4 echo: two of your breaths, a beat late, on the channel. */
@@ -407,6 +670,7 @@ export class Radio {
     c.nodes.length = 0;
     c.sources.length = 0;
     this.cur = null;
+    if (this.bank) this.bank.pinned = null;
   }
 
   /** Control tick: the static bed (signal, glitch bursts, dropouts), the ducking signal, collecting a finished line. */
@@ -437,6 +701,17 @@ export class Radio {
 
   /** Debug: what the radio is doing. */
   debug() {
-    return { lines: this.lines, on: !!this.cur, id: this.cur ? this.cur.tx.id : null, nodes: this.cur ? this.cur.nodes.length : 0, duck: +this.duck.toFixed(3), enabled: this.enabled };
+    const b = this.bank;
+    return {
+      lines: this.lines,
+      clips: this.clips,
+      on: !!this.cur,
+      id: this.cur ? this.cur.tx.id : null,
+      clip: !!(this.cur && this.cur.clip),
+      nodes: this.cur ? this.cur.nodes.length : 0,
+      duck: +this.duck.toFixed(3),
+      enabled: this.enabled,
+      voice: b ? { state: b.state, resident: b.bufs.size, seconds: +b.seconds.toFixed(1), loaded: b.loaded, failed: b.failed.size, pending: b.pending.size } : null,
+    };
   }
 }

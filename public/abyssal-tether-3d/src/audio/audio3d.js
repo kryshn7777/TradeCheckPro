@@ -2457,6 +2457,20 @@ export class AudioManager3D {
     if (this._radio) this._radio.end(p);
   }
 
+  /**
+   * The radio director's clip hook (game.js -> sim/comms3d.js CommsDirector.voice): the voice manifest entry of `id` when its
+   * clip is decoded and the radio can speak now, else null (the line is timed by its text and the babble speaks it).
+   */
+  voiceFor(id) {
+    if (!this._radio || !this._live()) return null;
+    try {
+      return this._radio.voiceFor(id);
+    } catch (err) {
+      this._warn('radio', err);
+      return null;
+    }
+  }
+
   _onUiClick() {
     this._sfxClick();
   }
@@ -2467,6 +2481,7 @@ export class AudioManager3D {
 
   _onSection(p) {
     const idx = num(p.index, this._secIndex);
+    if (this._radio) this._radio.prefetch(idx | 0); // the radio clips of this section (and the next) load first
     const now = this.ctx.currentTime;
     this._firstEntry = !!p.first;
     if ((idx | 0) !== this._secIndex) this._applySection(idx, p.section || null, now, 2.5);

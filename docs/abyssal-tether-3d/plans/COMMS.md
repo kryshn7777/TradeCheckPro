@@ -162,6 +162,11 @@ bed that rises as the signal fails, the line's static bursts and dropouts, 30 % 
 muffled with no squelch; the not-quite voice comes without the radio filter, lower and warm. While a line is on air the music
 ducks ~6 dB and the ambience ~3 dB; the creature is never ducked. **The real VO session (plan §8, M-C) replaces the babble with
 recorded lines; the subtitles, timings and the radio chain stay.**
+**Update (voice clips, [VO_SCRIPT.md](VO_SCRIPT.md)):** every spoken line now has a clip (`assets/audio/voice/`, built by
+`tools/abyssal-tether-3d/build_voices.py`): today **AI placeholder voices** (Kokoro-82M TTS), disclosed in the credits; a human
+recording dropped into `tools/abyssal-tether-3d/voice/recordings/<id>.wav` replaces a line's clip with no code change. A line
+with a decoded clip is timed by it (the director's `voice` hook: speak = the clip, the subtitle holds squelch + clip + 0.45 s);
+the babble above remains the fallback (no clip, not loaded yet, a failed load), and the UPLINK echo stays synthesised.
 
 **The restore** (`planRestore` + `commsView.js` restore mode, `game.js _updateDeath`). Instead of the death panel, a 5.6 s
 overlay in the clinical voice over the existing death fade (the death causes, sounds and respawn logic are untouched):
