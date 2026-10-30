@@ -52,7 +52,7 @@ step per call, unthrottled, two runs each):
 
 | dressing job (unthrottled) | before (`?loadopt=0`) |
 |---|---|
-| build (boot critical path) | 292-405 ms |
+| build (boot critical path) | 251-651 ms |
 | job CPU total | 1.47-2.51 s |
 | steps / longest step | 1268 / 106-202 ms |
 | steps > 12 ms / > 33 ms | 24-31 / 13-19 |
@@ -104,7 +104,7 @@ records, decals, cogs and decor colliders: identical in every run (e.g. `69671a9
 
 | idea | result | decision |
 |---|---|---|
-| Build the packs in a Web Worker | `prof.mjs` probe: a module worker importing levelBuildFast.js (`import 'three'`) fails: workers do not get the page's import map, and the game ships unbundled ES modules. The Dresser + packer are ~4k lines inside levelView.js whose imports (materials.js, boardWriting / bloodWriting, objectivesView) pull canvas / DOM code, and levelView.js was under concurrent edit by the mesh-detail pass. A worker would need a bundling step or a second copy of the build, plus the main-thread fallback. | rejected for now; the cache removes the same work on every boot after the first |
+| Build the packs in a Web Worker | `prof.mjs` probe: a module worker importing levelBuildFast.js (`import 'three'`) fails to load (its error event fires): workers do not get the page's import map, and the game ships unbundled ES modules. The Dresser + packer are ~4k lines inside levelView.js whose imports (materials.js, boardWriting / bloodWriting, objectivesView) pull canvas / DOM code, and levelView.js was under concurrent edit by the mesh-detail pass. A worker would need a bundling step or a second copy of the build, plus the main-thread fallback. | rejected for now; the cache removes the same work on every boot after the first |
 | Bake the dressed level offline into the precache | ~102 MB of vertex arrays; the precache core is 79.5 / 80 MB | rejected (the IndexedDB cache stores it per device instead) |
 | Stream: build only S1 +- 1 at boot | the dressing job already goes top section first; deferring the authored decor's packs changes the pack record order (not byte-identical) and the precompile's coverage, for ~0.2 s | not done |
 | Split the section-pack merge itself (`LodSet.add`) | after this pass the remaining long dressing steps are these merges (9-11 steps > 12 ms unthrottled, max 31-57 ms): one copy of the whole pack + bounds. An incremental LodSet is a change to the packs (the mesh-detail pass's code) | not done; next step if first-run hitches matter (later runs have no job) |
@@ -121,7 +121,31 @@ pass (the fix is `toHalfFloat` per element and keeping the half-float flag throu
 
 ## 5. After
 
-TBD
+**The dressing job** (`geohash.mjs`, unthrottled, the same page building the level off / on / off / on, so both sides see the same tree
+and the same machine load; two such pages on two tree states):
+
+| dressing job (unthrottled) | before (`?loadopt=0`) | after |
+|---|---|---|
+| geometry hash (all chunks, records, decals, cogs, colliders) | 69671a93 | 69671a93 (byte-identical) |
+| build on the boot critical path | 251-651 ms | 221-379 ms |
+| job CPU total | 1.47-2.51 s | 1.25-2.16 s (-15 to -30 %) |
+| steps / longest step / p99 step | 1268 / 106-202 ms / 33-58 ms | 9228 / 31-57 ms / 1.9-4.4 ms |
+| steps > 12 ms / > 33 ms | 24-31 / 13-19 | 11-22 / 0-8 |
+| section-pack merges (total / longest / > 12 ms) | 0.89-1.28 s / 123-202 ms / 15-16 | 0.31-0.41 s / 31-57 ms / 9-11 |
+| kit flush (longest) | 47-64 ms (8 steps) | 3.8-7.9 ms (147 steps) |
+
+The remaining long steps are the section-pack merges themselves (section 4). Divide by the per-frame budget for the frames they take;
+multiply by ~4 for a Quest.
+
+**The cache** (`cachecheck.mjs`, unthrottled, frozen copy of the tree): run 1 with an empty store built procedurally, finished the job
+and saved (37 chunks, 100.2 MB of arrays, 1141 decor colliders); run 2 in the same browser profile restored it: level hash `ea65f824`
+in both, colliders 1141 in both, `restored: true`. Run 2 read 99.3 MB (key + read) in 1.5 s while the late modules loaded; the build
+waited 0.63 s for it. Boot to menu (`content`) 4.9 s (empty store) -> 3.4 s (restored), and no dressing job at all after it (run 1's job
+ended 3.3 s after the menu, unthrottled, on the menu's budget). JS heap at the end of each run: 349 MB (procedural + save) vs 300 MB
+(restored). An earlier attempt on the live tree showed the invalidation working: the mesh-detail pass changed levelView.js between the
+two runs and run 2 missed ("stale") and built procedurally.
+
+TBD-PROFILE
 
 ## 6. Risks and how they are contained
 
