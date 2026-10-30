@@ -152,6 +152,48 @@ function req(store, mode, fn) {
 // data keys are [variant, saveId, slice]: a meta record only ever reads the slices its own save wrote (two tabs saving at once cannot mix)
 const range = (variant, id, a, b) => IDBKeyRange.bound([variant, id, a], [variant, id, b]);
 
+/**
+ * Every slice of an entry into the Assembler: one read transaction, all batch requests issued at once (their results arrive in request
+ * order, each batch deserialised and copied as it comes, then dropped). Rejects on a short batch or when abandoned().
+ */
+function readSlices(variant, meta, asm, abandoned) {
+  const parts = meta.parts | 0;
+  return openDB().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction('data', 'readonly');
+        const st = tx.objectStore('data');
+        let failed = null;
+        const fail = (err) => {
+          if (failed) return;
+          failed = err;
+          try {
+            tx.abort();
+          } catch {
+            /* already finished */
+          }
+        };
+        for (let i = 0; i < parts; i += READ_BATCH) {
+          const want = Math.min(READ_BATCH, parts - i);
+          const rq = st.getAll(range(variant, meta.id, i, i + want - 1));
+          rq.onsuccess = () => {
+            if (failed) return;
+            try {
+              if (abandoned()) throw new Error('level cache: read abandoned (the level was built meanwhile)');
+              if (!rq.result || rq.result.length !== want) throw new Error('level cache: short read');
+              for (const buf of rq.result) asm.push(buf);
+            } catch (err) {
+              fail(err);
+            }
+          };
+        }
+        tx.oncomplete = () => (failed ? reject(failed) : resolve());
+        tx.onerror = () => reject(failed || tx.error);
+        tx.onabort = () => reject(failed || tx.error || new Error('level cache: aborted'));
+      }),
+  );
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // Snapshot <-> LevelView
 // ---------------------------------------------------------------------------------------------------------------------------------------
@@ -387,14 +429,8 @@ export class LevelCache {
       const meta = await req('meta', 'readonly', (s) => s.get(variant));
       const have = !!(meta && meta.base === base && typeof meta.id === 'number' && meta.manifest && meta.manifest.schema === SCHEMA);
       if (have && !this._abandon.has(variant)) {
-        const parts = meta.parts | 0;
         const asm = new Assembler(meta.manifest.arrays);
-        for (let i = 0; i < parts; i += READ_BATCH) {
-          if (this._abandon.has(variant)) throw new Error('level cache: read abandoned (the level was built meanwhile)');
-          const got = await req('data', 'readonly', (s) => s.getAll(range(variant, meta.id, i, Math.min(parts, i + READ_BATCH) - 1)));
-          if (!got || got.length !== Math.min(READ_BATCH, parts - i)) throw new Error('level cache: short read');
-          for (const buf of got) asm.push(buf);
-        }
+        await readSlices(variant, meta, asm, () => this._abandon.has(variant));
         snap = { manifest: meta.manifest, arrays: asm.done() };
         this.info.bytes = meta.bytes;
       } else if (!have) this.info.miss = meta ? 'stale' : 'empty';

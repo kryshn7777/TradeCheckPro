@@ -224,3 +224,133 @@ S1 alone grew (+40k): the two Threshold statues stand within 6 m of the spawn at
 Scratchpad tools (`/tmp/claude-0/.../scratchpad/meshes/`): `attr.mjs` + `rows.mjs` / `table.mjs` (attribution), `budget.mjs`, `abviews.mjs` +
 `abdiff.py` (A/B images), `closeups.mjs` + `pairs.py` (prop close-ups), `smoke.mjs`, `glbdiff.mjs`, `preview_props.py` / `preview_kit.py`
 (Blender previews), `hash2.mjs` (bake hashes for any tree).
+
+## 6. Pass 2 (2026-10-30): the level kit and the surfaces the player touches
+
+Owner brief: "Check existing meshes and add some more details for cheap graphic wins." Pass 1 did the props; this pass is the rest: the
+ledges and their edges, walls / slabs, doorways, plaques, lamps, anchor plates, iron walkways, pipes, cables, machinery, the Masons' rests
+and the chamber at the bottom (S8, THE FITTING). Rules kept: render only (no level data, collider, anchor or kit-plan change; the bake
+inputs untouched), no new material / texture / light / draw call, no new per-frame code on the CPU (the existing LOD pass sees 1.7 % more
+plain records), every addition behind `?arch=0` (A/B and budget comparisons on one tree). Code: `src/render/archDetail.js` (builders) and
+small, commented hooks in `levelView.js` (`Parts.soup`, `Dresser._archSlab` / `_archDoor` / `_archDecals`, the gate, pipe, cable, machinery
+and plaque builders).
+
+### 6a. Audit (eyes first)
+
+Close-ups at arm's length (1-3 m) in every section: `details/shots.mjs` (scratchpad; the real game at 960 x 540, quest tier, seed 7,
+25 s for the texture sets, the dressing finished, hands hidden except one shot), 59 cameras solved once from the level data (each
+section's ledge from on top and from the open side, the nearest wall, the nearest anchor; lamps, plaques, cage, pipe, girder, machinery,
+arch, tablet, glyphs, kit parts, iron decks, seals, the three rests, the S8 chamber and gate) and saved, so the after run uses the same
+cameras. The 15 plainest / flattest / most repeated things, with what they cost:
+
+| # | What (where) | Cost before | Why it reads cheap at arm's length |
+|---|---|---|---|
+| 1 | Free vertical corners of the stone ledges (20 slabs, every section) | the instanced unit box: 0 extra | a bare 90-degree arris top to bottom: the crown, bead and kerb stop 0.45 m short of a free corner |
+| 2 | Ledge side faces under the lip | the masonry set only | one tiling texture; the walls get atlas decals (runs, cracks), the slab faces had none |
+| 3 | Plaques (17) and the S7 tablet | a 12-triangle box each | a sharp-edged slab behind the text the player reads at 1-2 m (S1 "HERE THE DESCENT BEGINS" is the first) |
+| 4 | Wall lamps (28) | - | the wall above a burning lamp is clean |
+| 5 | Wall-mounted anchor plates | - | clean stone under rusting iron |
+| 6 | Blind doorways where a ledge meets its wall (20) | 2 triangles (a dark panel) | a carved frame round nothing, at arm's length on the ledge |
+| 7 | The chamber gate (S8) | 568 triangles, own mesh, 1 call | 26 square 7 cm bars, plain straps, four-sided spikes |
+| 8 | Pipes (4, 22-50 m, 0.8 m across) | 2,040 triangles | 10 facets (a prism up close), the flanges plain bands |
+| 9 | Cable bundles (2) | 576 triangles | square (4-sided) tubes, 12 segments over 20-43 m |
+| 10 | Machinery housings (4) | 1,392 triangles | plain boxes, bare gear hubs |
+| 11 | Iron walkway edge plates (37 runs) | part of the iron dressing | flat plates beside a deck whose texture is riveted |
+| 12 | The Masons' rests (3) | - | the player waits there up to 25 s facing bare stone (one plaque / glyph band) |
+| 13 | The S3 moving cage (objectivesView instances of the unit box) | 1 shared call | square bars, no rivets |
+| 14 | Seal gratings | 1 shared call | not capturable by teleport (a teleport opens the seals above); the bars already take the shader bevel (metal bucket) |
+| 15 | Box-solid faces (walls, slab sides) | - | one value per ashlar block (the block layout lives in the texture) |
+
+Not offenders: the kit parts (corbels, saints, lanterns, pipe runs, panels: Blender-built levels), the hands and launchers (gauge, spool,
+straps: already rich), the rope (8 sides, a shader lay), the anchor rings and plates (pass 1), the forged chains and statues (pass 1).
+
+### 6b. Wins (cheapest first), measured
+
+Triangles are level totals (mono, `stats.decorTris` / the Dresser's per-section counts) unless marked; calls / stereo triangles per
+section are in 6c. All geometry is merged into the existing lists: the section packs (stone / metal, the `near` tier = 22 m on Quest, 12 m
+cells) or the one decal draw; the gate keeps its own single mesh.
+
+| Win | What | Cost | Verdict |
+|---|---|---|---|
+| W1 Soot plumes | the atlas burn cell above each wall lamp with a level solid behind it (not where an authored kit panel covers the wall: it would hide it) | 18 decals (of 28 lamps: the rest hang free or sit on panels), 2 triangles each, 0 calls | kept |
+| W2 Runs under the ledge lips | the atlas grime cell down the open slab faces from under the crown, more and longer in the wet sections | 129 decals, 0 calls | kept |
+| W3 Rust runs | the grime cell tinted rust (vertex rgb x12 / 5.8 / 3: ~0.1 linear) under wall-mounted anchor plates | 4 decals | kept (few anchors qualify: most hang under beams or sit on panels) |
+| W4 Tallies in the rests | the pale scratch cell (chalk-white tint) on the walls round each rest's safe volume | 10 decals | kept |
+| W5 Plaque frames | four chamfered rails just outside the text, a pyramid boss at each corner, contact AO in the vertex colour | +344 a plaque: 216 -> 6,408 (17 plaques and the tablet) | kept |
+| W6 Quoins | alternating long / short chamfered blocks, 2-3 cm proud, on every free vertical corner of a stone ledge; joint gaps, per-block value | 7,560 over 20 slabs (240 a corner) | kept |
+| W7 Door leaves | an iron door recessed 11 cm in each blind doorway: chamfered plates stepping up under the arch, three riveted straps, a hasp | 666 a door, 13,320 over 20 | kept |
+| W8 The gate | octagonal bars, chamfered straps with a rivet each side of every bar, eight-sided spikes (same layout) | 568 -> 4,544, still 1 call | kept |
+| W9 Pipes | 16 facets (was 10), four hex bolt heads on each face of every flange | 2,040 -> 10,032 (four bolts a face; ten were 20,184) | kept |
+| W10 Cables | 6-sided tubes, 20 segments (were 4 / 12) | 576 -> 1,440 | kept |
+| W11 Walkway rivets | a rivet line along each iron edge plate (every 0.3-0.5 m, five / six-sided domes) | 34k (0.3 m) / 17.6k (0.5 m) over 37 runs, 7-14k in S3 alone | **rejected**: invisible in the 1 m close-ups (the iron set's texture already carries rivets) for most of S3 / S4's added triangles |
+| W12 Machinery | a riveted frame round the housing's front plate, hex bolts round both gear hubs | 1,392 -> 5,640 | kept |
+
+Everything decal-based goes into the one existing decal draw (1,294 -> 1,455 quads: 2,588 -> 2,910 triangles, drawn whole); everything
+geometric is in the `near` tier of the existing packs (the stone / metal LodSet of its section: 12 m cells culled at 22 m on Quest; the
+decor builders reach it through two new Parts lists, `stoneN` / `metalN`), except the rounder pipe bodies and cables (their section tier,
+as before) and the gate (its own mesh, as before). The dressing
+gained 20,880 near-tier triangles over the whole level (quoins 7,560, door leaves 13,320); the decor 23,272 (plaques and tablet 6,192,
+pipes 7,992, machinery 4,248, gate 3,976, cables 864). GPU vertex memory: ~+4 MB. No new draw, material, texture, light, shader variant or asset.
+
+Considered and rejected:
+
+| Idea | Expected | Verdict |
+|---|---|---|
+| Shader-only wet streaks / grime gradient on the box solids (BEVEL_FRAG has the box-local position) | runs under every lip, no geometry | ~15-40 ALU on every wall / slab fragment within 30 m: Quest fill is the scarcest resource and the read is invisible unless lantern-lit; W2's decals give it for 2 triangles a run. Rejected |
+| A chipped (noise-modulated) shader bevel on the box edges | irregular arrises | same cost argument; W6 does the corners geometrically. Rejected |
+| Per-block value variation on the box-mapped ashlar | less repetition | the block grid lives in the texture (no block id in the shader): patches would not follow the joints. Rejected |
+| Rivets / geometric bevels on the seal bars, the S3 cage | iron detail underfoot | the bars are instances of the unit box (one shared draw) and already take the shader bevel; rivets need a second instanced geometry (+2 calls while in view). Rejected |
+| Girder rivets | iron detail | the two decor girders are 10-25 m from the route: rivets sub-pixel there. Rejected |
+| Blender rebuild of kit parts (corbels, capitals, panels) | richer kit | already rich (pass 1 audit) and a rebuild moves the decor part boxes (bake input). Rejected |
+| Cobweb cards in corners | dressing | a new alpha texture / atlas cell and blended overdraw in every corner. Not done |
+| Pebbles / dust instancing | dressing | the scene-detail system already scatters rubble, bones and props on every ledge. Not needed |
+| Hands / launchers, rope | small parts | already rich (gauge, spool, straps; an 8-sided rope with a shader lay). No change |
+| Soot on the kit wall panels | soot on every lamp | a decal on the solid's face behind a 15-30 cm proud panel is hidden; the panels' relief would need per-panel depth. 10 of 28 lamps without soot |
+
+### 6c. Budget (quest tier, mock-XR stereo, level alone)
+
+`details/budget.mjs` (the dresser `budget-lod.mjs` + an arch stats line), `WORST=1 HIDE=1 MASON=0 SKIT=0`, max over 8 look directions at
+each section's warp point; before = the same tree with `?arch=0`, after = default, measured while the walkway rivets (W11, since rejected:
+up to 7k mono triangles in S3, 3.7k in S4) were still in, so the after column is an upper bound. Calls / stereo triangles:
+
+| Section | before (`?arch=0`) | after | delta | near-tier triangles added in the section (level totals, mono) |
+|---|---|---|---|---|
+| S1 | 100 / 217k | 104 / 223k | +4 / +6k | quoins 1,560, door leaves 666 |
+| S2 | 102 / 190k | 102 / 195k | +0 / +5k | quoins 480, door leaves 4,662 |
+| S3 | 106 / 195k | 108 / 211k | +2 / +16k | quoins 240, door leaves 3,330 |
+| S4 | 104 / 178k | 104 / 199k | +0 / +21k | quoins 1,680, door leaves 1,998 |
+| S5 | 108 / 182k | 110 / 194k | +2 / +12k | quoins 1,440 |
+| S6 | 114 / 199k | 112 / 218k | -2 / +19k | quoins 960, door leaves 2,664 |
+| S7 | 108 / 177k | 108 / 180k | +0 / +3k | quoins 960 |
+| S8 | 90 / 153k | 92 / 151k | +2 / -2k | quoins 240 (+ the gate, its own mesh) |
+
+Calls: no new draw by construction (the additions join packs, the decal mesh and the gate mesh that already draw); the harness's
+calls vary by +-4 between runs of the same tree (dynamic pickups, the comms panel, a wandering skitterling in S6-S8: S1 measured 100 and
+104 in two after runs). Triangles: at most +21k stereo (inside the +25k allowance); every section stays <= 223k, i.e. the
+creature headroom of pass 1 (Mason close up +45-125k, two skitterlings +80k) is kept. CPU: nothing per frame; the LOD pass evaluates
+65 more plain records over the whole level (3,877 -> 3,942 LodSet records, +3..+12 a section) (box-distance tests every 3rd frame once the head moved); the dressing job (time-sliced, during play) does the extra building.
+
+### 6d. Verification
+
+- `npx eslint` on the changed JS: clean. `npm run test:at3d`: ALL SUITES PASS (53 suites, incl. the new `render/test-arch-detail.mjs`: clean
+  soups, the plaque frame never over the text, quoins under the walking surface and <= 3.5 cm proud, the gate's bar layout kept, the door
+  leaf inside its doorway, rgb decals). `npm run verify:at3d`: ALL CHECKS PASS, "all 3167 values identical vs baselines/verify-ch1.json".
+- Lightmap / GI: `hash2.mjs` on the working tree: normal LM + GI match; nightmare / abyss LM match, their GI read-out the same values as in
+  pass 1 (the GI file holds the normal hash only). Nothing touches the sim, the level data or the bake inputs.
+- The kit plan and the decor colliders: hashed in the browser at the end of the dressing: 808 placements (hash 2423444940) and 1,141
+  collider boxes (hash 3050253387), identical with and without `?arch=0` and against the untouched tree: every pass-2 piece draws from its
+  own seeded stream and reserves nothing in the plan space.
+- Browser smoke (`details/smoke.mjs`, S1 / S3 / S4 / S6 / S7 / S8 with the frame loop running): 0 page errors; the one known console warning
+  ("Multiple active KTX2 loaders", pass 1).
+- First load: `src/render/archDetail.js` 21.6 KB + ~10 KB of levelView.js, no asset; `gen-sw.mjs`: 169 core files / 79.47 MB (<= 80, with
+  the other agents' concurrent additions).
+- Screenshots (scratchpad `details/`): `before/` (59 cameras, the untouched tree, 10:20), `before2/` (`?arch=0`) and `after3/` (default)
+  on the 37 targeted cameras of `cams2.json` (quoins S1-S8, doors, rivets, rests, cables, lamps, plaques, wall anchors, gate, pipe,
+  machinery); contact sheets `details/contact_*.png`, pairs in `details/pairs/`.
+
+### 6e. Not done / not verified
+
+- Nothing ran on a Quest: fill rate of the extra (small, near) geometry, the build cost of the extra dressing on the Quest CPU.
+- The seal gratings could not be captured (a teleport opens the seals above); seals, the S3 cage and girders were left as they were.
+- Capture runs on this machine die when two browsers run at once (memory cgroup OOM kill of the renderer, 4.5 GB each: two of five after
+  runs); the S8 wall "zebra stripes" (the open issue of the S8 wetness experiments) show in some captures of both trees.
