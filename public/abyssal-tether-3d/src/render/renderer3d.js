@@ -789,7 +789,7 @@ export class Renderer3D {
     if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
     if (nvK > 0.001) fog.color.lerp(NV_FOG, 0.85 * nvK); // through the goggles the haze is a pale phosphor green
-    fog.near =Math.max(0.5, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS);
+    fog.near = Math.max(2, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS); // the haze starts 2 m out at the earliest: nothing close to the eyes is fogged
     fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
     this.scene.background.copy(fog.color);
     if (this.sky) this.sky.position.copy(head);
