@@ -48,3 +48,18 @@ Tell me the exact engine version you installed; I write the C++ for that version
 - The custom lightmap / GI bake and the effects (god rays, lantern shadow, fog) have no one-to-one Unreal equivalent: the look will be re-tuned, not copied.
 - Blender sources export fine; the existing GLBs use meshopt / KTX2 (not importable by Unreal): export from the sources.
 - Unreal on Quest has long cook / deploy times: iteration is slower than the web build.
+
+## The quality bar (owner feedback, 2026-11-02): the port exists to fix these
+> "The current game looks super bad. Models are poorly detailed. Shadows are not there. Lighting is not there. Things look fake. Fog is not deep. Grappling can be better. Many objects don't have proper collisions."
+
+Porting the logic fixes none of this: it is art, lighting and feel work, and most of the Unreal effort. Each point is a gate for phase 4 (section 1 on the headset) and again for phase 5, judged by the owner's eyes and hands, not by a test. What is realistic on Quest standalone (mobile renderer, no Lumen / Nanite):
+
+| Complaint | What we do in Unreal | Honest limit |
+|---|---|---|
+| Models poorly detailed | Rebuild the environment as a modular kit with real bevels, trim sheets, tiling PBR materials with normal maps, decals, and hand-made hero pieces; LODs per piece. Kitbash with Fab / Megascans stone, rubble and lichen (the owner's Epic account; free for Unreal projects). Creatures re-exported from the Blender sources. | No Nanite on Quest: detail comes from normal maps, trim sheets and LODs, not raw triangles. Triangle budget still ~350k per view. |
+| No shadows | Baked shadows from the lightmaps for everything static, one dynamic shadow-casting lantern (a movable spot light), blob / capsule shadows for the player's hands and creatures. | Mobile can afford about one dynamic shadow caster. To be confirmed on the device. |
+| No lighting | A real lighting pass per section: many baked lights (lamps, windows, glowing cracks), GPU Lightmass at high lightmap resolution, volumetric lightmap for moving things, reflection captures, a lit-by-the-lantern look on top. | Baked only: lamps cannot flicker as real lights (flicker is faked in the material and a few movable lights). |
+| Things look fake | Consistent PBR (roughness / normal / AO), scale and wear discipline, variation, a single colour grade, decals for grime and wet stone, no flat-shaded boxes. | The look is an art direction job; it will take iteration with the owner's eyes. |
+| Fog is not deep | Exponential height fog, layered fog sheets (Niagara cards), light shafts, distant silhouettes (the colossi), fog gradient baked into the far geometry. The shaft must read as a depth of hundreds of metres. | Volumetric fog does not exist on the mobile renderer: depth is built from layers, not simulated. |
+| Grappling can be better | Rope as a real simulated cable (sag when slack, taut under load, wrapping on corners), a visible hook flight with an arc and a whoosh, impact and bite effects, haptics tied to the tension, better aim assist and target feedback, a stronger swing and release feel. Tuned on the headset. | Feel needs hand-testing; the physics (verified from the web build) is only the starting point. |
+| Objects without collision | Collision is authored with the kit: every placed mesh gets a convex hull set (or box set), for the player AND the rope. An automated audit lists every placed mesh without a collider. | Today: of the 178 hand-placed decor pieces, about 38 big ones (8 statues, 6 arches, 9 ribs, 4 machines, 4 pipes, 3 cages, 2 girders, 2 cables) have no collision shape in the sim data; only 160 box solids and the kit pieces that pass the "not near a grip / anchor / walkway" rule collide. |
