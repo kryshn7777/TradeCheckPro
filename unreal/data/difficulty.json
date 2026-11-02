@@ -1,0 +1,149 @@
+{
+ "normal": {
+  "key": "normal",
+  "darkness": 0.3,
+  "label": "Normal",
+  "blurb": "The intended descent. Generous aim assist, recovery anchors, a patient predator.",
+  "levelVariant": "normal",
+  "aimRange": 32,
+  "aimConeDeg": 12,
+  "rayAssist": 2.4,
+  "moverAssist": 0.6,
+  "lethalImpact": 17,
+  "impactsLethal": true,
+  "fragileTime": 1.5,
+  "crumbleTime": 0.9,
+  "checkpoints": "all",
+  "recordTimes": true,
+  "creature": {
+   "enabled": true,
+   "speed": 1,
+   "aggression": 1,
+   "staminaDrain": 1,
+   "staminaRegen": 1,
+   "killRadius": 2.6
+  },
+  "health": {
+   "fallThreshold": 0.35,
+   "regenDelay": 6,
+   "regenRate": 0.05,
+   "hazardDamage": 0.6,
+   "wallScale": 1
+  },
+  "climb": {
+   "drainMul": 1,
+   "reelDrain": 0
+  },
+  "aimCone": 0.20943951023931956
+ },
+ "nightmare": {
+  "key": "nightmare",
+  "darkness": 0.72,
+  "label": "Nightmare",
+  "blurb": "Faster hunters (the small ones far faster, and one more that climbs up from below), a much darker shaft, tighter aim, fewer recovery anchors, nastier geometry.",
+  "levelVariant": "nightmare",
+  "aimRange": 29,
+  "aimConeDeg": 8,
+  "rayAssist": 1.8,
+  "moverAssist": 0.4,
+  "lethalImpact": 15.5,
+  "impactsLethal": true,
+  "fragileTime": 1.05,
+  "crumbleTime": 0.65,
+  "checkpoints": "alternate",
+  "recordTimes": true,
+  "creature": {
+   "enabled": true,
+   "speed": 1.18,
+   "aggression": 1.3,
+   "staminaDrain": 0.9,
+   "staminaRegen": 1.25,
+   "killRadius": 2.9
+  },
+  "health": {
+   "fallThreshold": 0.33,
+   "regenDelay": 9,
+   "regenRate": 0.03,
+   "hazardDamage": 0.75,
+   "wallScale": 1.1
+  },
+  "climb": {
+   "drainMul": 1.1,
+   "reelDrain": 0.03
+  },
+  "aimCone": 0.13962634015954636
+ },
+ "abyss": {
+  "key": "abyss",
+  "darkness": 0.85,
+  "label": "Abyss",
+  "blurb": "For speedrunners. Minimal assist, almost no recovery, no checkpoints.",
+  "levelVariant": "abyss",
+  "aimRange": 27,
+  "aimConeDeg": 6,
+  "rayAssist": 1.3,
+  "moverAssist": 0.2,
+  "lethalImpact": 14.5,
+  "impactsLethal": true,
+  "fragileTime": 0.8,
+  "crumbleTime": 0.5,
+  "checkpoints": "none",
+  "recordTimes": true,
+  "creature": {
+   "enabled": true,
+   "speed": 1.34,
+   "aggression": 1.6,
+   "staminaDrain": 0.8,
+   "staminaRegen": 1.5,
+   "killRadius": 3.1
+  },
+  "health": {
+   "fallThreshold": 0.3,
+   "regenDelay": 12,
+   "regenRate": 0.02,
+   "hazardDamage": 1,
+   "wallScale": 1.25
+  },
+  "climb": {
+   "drainMul": 1.25,
+   "reelDrain": 0.05
+  },
+  "aimCone": 0.10471975511965978
+ },
+ "sandbox": {
+  "key": "sandbox",
+  "darkness": 0,
+  "label": "Sandbox",
+  "blurb": "No predator, no lethal falls. Practise the tethers at your own pace.",
+  "levelVariant": "normal",
+  "aimRange": 32,
+  "aimConeDeg": 12,
+  "rayAssist": 2.4,
+  "moverAssist": 0.6,
+  "lethalImpact": 17,
+  "impactsLethal": false,
+  "fragileTime": 1.5,
+  "crumbleTime": 0.9,
+  "checkpoints": "all",
+  "recordTimes": false,
+  "creature": {
+   "enabled": false,
+   "speed": 0,
+   "aggression": 0,
+   "staminaDrain": 1,
+   "staminaRegen": 1,
+   "killRadius": 0
+  },
+  "health": {
+   "fallThreshold": 0.35,
+   "regenDelay": 6,
+   "regenRate": 0.05,
+   "hazardDamage": 1,
+   "wallScale": 1
+  },
+  "climb": {
+   "drainMul": 0.5
+  },
+  "aimCone": 0.20943951023931956
+ }
+}
