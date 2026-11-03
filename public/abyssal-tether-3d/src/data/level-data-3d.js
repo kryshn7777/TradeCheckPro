@@ -1165,8 +1165,8 @@ const sections = [
     hints: [
       {
         y: 2, duration: 9,
-        text: 'Point at the glowing ring and hold the TRIGGER to fire your tether. Let go of the trigger to release.',
-        desktop: 'Aim at the glowing ring and hold the LEFT MOUSE BUTTON to fire your tether. Release to let go.',
+        text: 'Point at any wall, ceiling or ledge and hold the TRIGGER to fire your tether. Let go of the trigger to release.',
+        desktop: 'Aim at any wall, ceiling or ledge and hold the LEFT MOUSE BUTTON to fire your tether. Release to let go.',
       },
       {
         y: -0.2, duration: 7,
@@ -1334,8 +1334,8 @@ const sections = [
     hints: [
       {
         y: -287, duration: 7,
-        text: 'Chain the rings: fire your other hand at the next ring before you let go of this one.',
-        desktop: 'Chain the rings: fire the other mouse button at the next ring before you let go of this one.',
+        text: 'Chain your tethers: fire your other hand at the next hold before you let go of this one.',
+        desktop: 'Chain your tethers: fire the other mouse button at the next hold before you let go of this one.',
       },
       // LEVEL_FUN_PLAN P5: the S7 verb (survive: the floor unbolts while you hang on in the nave)
       { y: -296, duration: 7, text: 'Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes.', desktop: 'Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes.' },

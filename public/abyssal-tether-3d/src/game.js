@@ -311,6 +311,18 @@ function holsterOff() {
   }
 }
 
+/**
+ * `?freeattach=off` brings back the authored ring-only level: every traversal ring and hook, the hook biting only those (the route
+ * bots of the e2e descent and the verify harness play that level; also an A/B for the free-attach feel).
+ */
+function freeAttachOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]freeattach=(off|0)\b/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /** `?hints=off` disables the 20-second trigger highlight (tests, captures). */
 function hintsOff() {
   try {
@@ -2694,7 +2706,8 @@ export class Game3D {
     if (this.level && this._levelVariant === variant) this.level.reset();
     else {
       const data = M.levelData && M.levelData.LEVEL_DATA_3D ? M.levelData.LEVEL_DATA_3D : undefined;
-      this.level = new M.level.Level3D(data, variant);
+      // Free attach (CONFIG.targeting.freeAttach): the hook bites any surface; the plain traversal rings are retired.
+      this.level = new M.level.Level3D(data, variant, { freeAttach: C.targeting.freeAttach !== false && !freeAttachOff() });
       this._levelVariant = variant;
     }
     const lvl = this.level;

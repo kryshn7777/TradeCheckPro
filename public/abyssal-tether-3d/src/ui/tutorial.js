@@ -18,9 +18,9 @@ import { Storage } from '../sim/config3d.js';
 export const STEPS = Object.freeze([
   Object.freeze({
     id: 'fire',
-    text: 'Pull the [Trigger] to fire your tether at a glowing ring.',
-    desktop: 'Hold the [Left mouse button] to fire your tether at a glowing ring.',
-    touch: 'Hold [ROPE R] or [ROPE L] to fire that hand’s tether at a glowing ring.',
+    text: 'Pull the [Trigger] to fire your tether at any wall, ceiling or ledge.',
+    desktop: 'Hold the [Left mouse button] to fire your tether at any wall, ceiling or ledge.',
+    touch: 'Hold [ROPE R] or [ROPE L] to fire that hand’s tether at any wall, ceiling or ledge.',
     seconds: 6,
   }),
   Object.freeze({

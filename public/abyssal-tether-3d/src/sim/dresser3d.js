@@ -183,7 +183,7 @@ function segSegDist2(p0x, p0y, p0z, p1x, p1y, p1z, q0x, q0y, q0z, q1x, q1y, q1z)
 
 /** May the Dresser cut this ring? Never one an objective (seal key, haul, winch), a mover or a hidden housing needs. */
 export function cuttable(a) {
-  if (!a || a.broken || a.hidden || a.dynamic || a.haul) return false;
+  if (!a || a.broken || a.hidden || a.dynamic || a.haul || a.free) return false; // a free-attach surface hold is not a ring: nothing to saw
   if (a.mount === 'mover') return false;
   if (a.sealKey !== undefined && a.sealKey !== null) return false;
   return true;

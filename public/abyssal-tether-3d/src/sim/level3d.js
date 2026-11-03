@@ -114,6 +114,41 @@ function normalOf(n) {
   return l > 1e-6 ? { x: x / l, y: y / l, z: z / l } : { x: 0, y: -1, z: 0 };
 }
 
+/** Top-level data lists that are not references TO anchors (the anchors themselves, the geometry, the bot lines). */
+const NOT_REFERENCES = new Set(['anchors', 'routes', 'solids', 'hazards', 'decor', 'lights', 'climb', 'supplies']);
+
+/** Every anchor id the level data names outside its own anchor list: `anchorId` fields (objectives, fixtures) and `carry.anchors` (movers). */
+function referencedAnchorIds(data) {
+  const ids = new Set();
+  const walk = (v, key) => {
+    if (Array.isArray(v)) {
+      if (key === 'anchors') for (const s of v) if (typeof s === 'string') ids.add(s);
+      for (const e of v) walk(e, key);
+    } else if (v && typeof v === 'object') {
+      for (const k of Object.keys(v)) {
+        if (k === 'anchorId' && typeof v[k] === 'string') ids.add(v[k]);
+        else walk(v[k], k);
+      }
+    }
+  };
+  for (const k of Object.keys(data || {})) if (!NOT_REFERENCES.has(k)) walk(data[k], k);
+  return ids;
+}
+
+/**
+ * Free attach: which anchors stay. A plain traversal ring or hook (it only gave the hook somewhere to bite, and any surface does
+ * that now) is retired; an anchor that DOES something stays: one the data names (an objective's ring, a mover's carried ring,
+ * a fork's effect hook), a frayed one (it breaks under load), an objective-tagged one, a moving one. Returns the Set of kept anchors.
+ */
+function retireTraversal(anchors, data) {
+  const named = referencedAnchorIds(data);
+  const keep = new Set();
+  for (const a of anchors) {
+    if (named.has(a.id) || a.kind === 'fragile' || a.tag === 'objective' || a.dynamic || a.mount === 'mover') keep.add(a);
+  }
+  return keep;
+}
+
 /**
  * A Y-bucketed index. Each item occupies every bucket its [lo, hi] span
  * touches; a per-query stamp de-duplicates without allocating.
@@ -166,11 +201,17 @@ export class Level3D {
   /**
    * @param {object} [data]    level description (defaults to LEVEL_DATA_3D)
    * @param {string} [variant] 'normal' | 'nightmare' | 'abyss' (Sandbox uses 'normal')
+   * @param {{freeAttach?: boolean}} [opts]  freeAttach: the hook bites any surface (TetherSystem.findTarget -> surfaceTarget) and the
+   *   plain traversal rings / hooks are retired (`retiredAnchors`, out of `anchors`: no mount, no glow, no aim target). The anchors that
+   *   do something stay: those an objective, a mover or the data names, the frayed ones and the objective rings (see retireTraversal).
+   *   Default false: the authored ring-only level, which the route bots and the verify harness play.
    */
-  constructor(data = LEVEL_DATA_3D, variant = 'normal') {
+  constructor(data = LEVEL_DATA_3D, variant = 'normal', opts = {}) {
     const d = data || {};
     this.data = d;
     this.variant = VARIANTS.indexOf(variant) >= 0 ? variant : 'normal';
+    /** Free attach: any level surface takes the hook (see the constructor doc). */
+    this.freeAttach = !!(opts && opts.freeAttach);
     const v = this.variant;
     this.name = d.name || 'Abyssal Tether';
 
@@ -251,6 +292,13 @@ export class Level3D {
       hidden: false,
       mover: -1,
     }));
+    /** The traversal rings / hooks free attach made redundant (empty unless `freeAttach`). */
+    this.retiredAnchors = [];
+    if (this.freeAttach) {
+      const keep = retireTraversal(this.anchors, d);
+      this.retiredAnchors = this.anchors.filter((a) => !keep.has(a));
+      this.anchors = this.anchors.filter((a) => keep.has(a));
+    }
     // Abyss: the backup lines cannot be trusted. Half of the shortcut / recovery rings (not the escape ones: S8 is a flight, and the bot route through it needs them) (a seeded, id-derived choice, the same on
     // every device) are fragile (fragileTime 0.8 s): the lines you fall back on can fail. The route anchors are never touched.
     if (this.variant === 'abyss') {
@@ -367,6 +415,9 @@ export class Level3D {
     this._climbIndex = new YIndex(this.climb, (c) => c.minY, (c) => c.maxY);
     this._losScratch = [];
     this._rayScratch = [];
+    this._edgeScratch = []; // surfaceTarget: edge holds near the landing point
+    this._pipScratch = []; // surfaceTarget: solids around a candidate biting point
+    this._surfHit = { t: 0, solid: null, x: 0, y: 0, z: 0 };
     // Procedural edge holds (sim/climbEdges.js): every exposed solid edge is a low-grade grip candidate, spatially hashed.
     const eb = buildEdges(this);
     this.edges = eb.edges;
@@ -627,6 +678,128 @@ export class Level3D {
     r.y = oy + uy * t;
     r.z = oz + uz * t;
     return r;
+  }
+
+  /** Is the point strictly inside any active solid (kit dressing, seals and fixtures included)? */
+  pointInSolid(x, y, z) {
+    const list = this.querySolids(x - 0.001, y - 0.001, z - 0.001, x + 0.001, y + 0.001, z + 0.001, this._pipScratch);
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (s.active === false) continue;
+      if (x > s.minX && x < s.maxX && y > s.minY && y < s.maxY && z > s.minZ && z < s.maxZ) return true;
+    }
+    return false;
+  }
+
+  /**
+   * FREE ATTACH: where does a hook shot along the aim ray bite? The first active solid the ray meets (floor, wall, ceiling, the
+   * underside of a ledge, kit dressing that collides). Edges are preferred: a convex, open edge or corner (sim/climbEdges.js) within
+   * `snap` metres of the landing point, in the hand's sight, catches the hook instead, at the nearest point of the edge (a corner when
+   * that is the nearest). The biting point sits `off` metres off the surface (along its normal, or the edge's outward bisector), and
+   * falls back to the landing point itself when that would be buried in another solid.
+   *
+   * Writes { t, x, y, z, nx, ny, nz, solid, edge } into `out` (reused) and returns it, or null when the ray lands on nothing within
+   * maxDist (or starts inside a solid). Allocation-free after the first call.
+   */
+  surfaceTarget(ox, oy, oz, dx, dy, dz, maxDist, snap, off, out) {
+    const hit = this.raycast(ox, oy, oz, dx, dy, dz, maxDist, this._surfHit);
+    if (!hit || hit.t < 0.05) return null; // t ~ 0: the ray starts inside the solid (a clipped hand)
+    const s = hit.solid;
+    // the face the ray landed on: the nearest of the box's six planes
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    let bd = Math.abs(hit.x - s.minX);
+    nx = -1;
+    let d = Math.abs(hit.x - s.maxX);
+    if (d < bd) {
+      bd = d;
+      nx = 1;
+    }
+    d = Math.abs(hit.y - s.minY);
+    if (d < bd) {
+      bd = d;
+      nx = 0;
+      ny = -1;
+    }
+    d = Math.abs(hit.y - s.maxY);
+    if (d < bd) {
+      bd = d;
+      nx = 0;
+      ny = 1;
+    }
+    d = Math.abs(hit.z - s.minZ);
+    if (d < bd) {
+      bd = d;
+      nx = 0;
+      ny = 0;
+      nz = -1;
+    }
+    d = Math.abs(hit.z - s.maxZ);
+    if (d < bd) {
+      nx = 0;
+      ny = 0;
+      nz = 1;
+    }
+    let px = hit.x;
+    let py = hit.y;
+    let pz = hit.z;
+    let edge = false;
+    let bs = s;
+    if (snap > 0) {
+      const list = this.edgeNear(hit.x, hit.y, hit.z, snap, this._edgeScratch);
+      let bestD = snap;
+      let best = null;
+      let bx = 0;
+      let by = 0;
+      let bz = 0;
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (e.src && e.src.active === false) continue; // a crumbled ledge's edge
+        // nearest point of the segment (a degenerate box) to the landing point
+        const cx = hit.x < e.minX ? e.minX : hit.x > e.maxX ? e.maxX : hit.x;
+        const cy = hit.y < e.minY ? e.minY : hit.y > e.maxY ? e.maxY : hit.y;
+        const cz = hit.z < e.minZ ? e.minZ : hit.z > e.maxZ ? e.maxZ : hit.z;
+        const dist = Math.sqrt((cx - hit.x) * (cx - hit.x) + (cy - hit.y) * (cy - hit.y) + (cz - hit.z) * (cz - hit.z));
+        if (dist >= bestD) continue;
+        // the hand must see the edge from its open side
+        if ((ox - cx) * e.ux + (oy - cy) * e.uy + (oz - cz) * e.uz <= 0) continue;
+        if (this.segmentBlocked(ox, oy, oz, cx, cy, cz, 0.12)) continue;
+        best = e;
+        bestD = dist;
+        bx = cx;
+        by = cy;
+        bz = cz;
+      }
+      if (best) {
+        edge = true;
+        px = bx;
+        py = by;
+        pz = bz;
+        nx = best.ux;
+        ny = best.uy;
+        nz = best.uz;
+        if (best.src) bs = best.src;
+      }
+    }
+    let ax = px + nx * off;
+    let ay = py + ny * off;
+    let az = pz + nz * off;
+    if (off > 0 && this.pointInSolid(ax, ay, az)) {
+      ax = px;
+      ay = py;
+      az = pz;
+    }
+    out.t = hit.t;
+    out.x = ax;
+    out.y = ay;
+    out.z = az;
+    out.nx = nx;
+    out.ny = ny;
+    out.nz = nz;
+    out.solid = bs;
+    out.edge = edge;
+    return out;
   }
 
   /** Index of the section containing y (clamped to 0..n-1). */

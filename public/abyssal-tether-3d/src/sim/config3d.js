@@ -83,6 +83,13 @@ export const CONFIG = {
     stickiness: 0.18,
     losEndClearance: 0.6,
     minAimLength: 1e-3,
+    // FREE ATTACH (Level3D opts.freeAttach): the hook bites wherever the aim ray lands on level geometry (floors, walls, ceilings,
+    // ledge undersides), not only on the authored rings. The few puzzle anchors (haul, winch, breach ring, pendulum cage, frayed
+    // rings) stay targetable with the usual aim assist and win over a surface behind them.
+    freeAttach: true, // master switch (a level built without opts.freeAttach keeps the ring-only behaviour whatever this says)
+    surfaceSnap: 0.55, // m: a convex edge / corner this close to where the ray lands catches the hook instead (edges preferred)
+    surfaceOffset: 0.04, // m: the biting point sits this far off the surface, along its normal (never buried in the solid)
+    surfaceMinDist: 0.5, // m: nearer than this to the player a surface does not take the hook (it would be a hook in your own face)
   },
 
   // Health and fall damage (sim/health3d.js). hp is 0..1 (100 hp). Per-difficulty values live in
