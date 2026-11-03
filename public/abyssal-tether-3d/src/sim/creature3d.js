@@ -107,6 +107,19 @@ export const CREATURE_TUNING = {
   bodyTurn: 3.4,
   bodyTurnTail: 2.0,
   bodyUpTurn: 3.0,
+  // Joint limits (the body is a column of blocks on joints, not a ribbon): a link may bend at most `bodyBend` rad from the one before it
+  // (shoulders .. tail) and a block may roll at most `bodyTwist` rad about the spine from the block before it. Before: 12 % of joints bent
+  // over 35 degrees (up to 179, the body folded back on itself) and neighbouring blocks rolled up to 180 degrees apart.
+  // bodyBendFinal: hold the bend limit on the final positions. OFF by default: measured with it on, the tail clips masonry more (a body that
+  // cannot bend tightly cannot wrap wall corners: tight limits 2-3 % of block-frames inside masonry against 1.3 %) and a relocation (the body
+  // re-laid in one frame, out of sight) shows as a 3500+ deg/s block tangent spike against 730 with only the torsion limit. The torsion limit
+  // is what stops the block-by-block twist and is always on.
+  bodyBendFinal: false,
+  bodyBend: 1.2, // rad (~69 degrees): only the extreme folds; tighter limits cannot wrap wall corners (more clipping, kinked trails)
+  bodyBendTail: 1.4,
+  bodyBendRate: 3, // rad/s: how fast a bend already past its limit is let down
+  bodyTwist: 0.26,
+  bodyTwistTail: 0.38,
   trailCap: 360, // breadcrumbs kept (≈ 108 m ≥ 4× the body)
   speed: { recover: 6.5, observe: 1.1 },
   steerRate: 3.2, // 1/s — velocity eases toward the desired velocity (no instant turns)
@@ -614,6 +627,7 @@ export class Creature3D {
     this._bdir = new Float32Array(SEG * 3); // each link's direction last frame (the locked body axes)
     this._bup = new Float32Array(SEG * 3); // each block's up last frame
     this._bReady = false;
+    this._bendPrev = new Float32Array(SEG); // each joint's bend last frame (bodyBendRate)
     this._bsrc = new Float32Array(SEG * 3); // the spine as the trail laid it (the lock reads the links from here)
     this._bpush = new Float32Array(SEG * 3); // eased push-out of each block (m)
     this._surfTmp = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
@@ -3483,6 +3497,8 @@ export class Creature3D {
     this._lockBody(this._bodyDt || 1 / 60);
     this._conformBody(this._bodyDt || 1 / 60);
     this._lockUps(this._bodyDt || 1 / 60);
+    if (T.bodyBendFinal) this._limitBend();
+    if (T.bodyTwist < 3) this._limitTwist();
     // The column arches off the wall mid-length and slowly heaves (breathing masonry).
     const heave = 1 + 0.18 * Math.sin(this._t * 0.9 + this.seed);
     for (let i = 1; i < SEG; i++) {
@@ -3576,6 +3592,136 @@ export class Creature3D {
       sp[i * 3] = sp[i * 3 - 3] + nx * l;
       sp[i * 3 + 1] = sp[i * 3 - 2] + ny * l;
       sp[i * 3 + 2] = sp[i * 3 - 1] + nz * l;
+    }
+  }
+
+  /**
+   * Joint bend on the FINAL positions (the wall fit and the minimum-link fix move blocks after _lockBody and put kinks back): head to
+   * tail, a block that sits more than the joint's limit away from the line of the two blocks before it is swung about the previous
+   * block, keeping its distance, to exactly the limit.
+   */
+  _limitBend() {
+    const sp = this.body.spine;
+    for (let i = 2; i < SEG; i++) {
+      let qx = sp[i * 3 - 3] - sp[i * 3 - 6];
+      let qy = sp[i * 3 - 2] - sp[i * 3 - 5];
+      let qz = sp[i * 3 - 1] - sp[i * 3 - 4];
+      const ql = len3(qx, qy, qz);
+      let nx = sp[i * 3] - sp[i * 3 - 3];
+      let ny = sp[i * 3 + 1] - sp[i * 3 - 2];
+      let nz = sp[i * 3 + 2] - sp[i * 3 - 1];
+      const nl = len3(nx, ny, nz);
+      if (ql < 1e-6 || nl < 1e-6) continue;
+      qx /= ql;
+      qy /= ql;
+      qz /= ql;
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      const bend = Math.acos(U.clamp(qx * nx + qy * ny + qz * nz, -1, 1));
+      const bp = this._bendPrev;
+      // the limit; a bend that was already past it (the body re-laid by a relocation or an entry) is let down at `bodyBendRate` rad/s, not snapped
+      const lim0 = U.lerp(T.bodyBend, T.bodyBendTail, (i - 2) / (SEG - 3));
+      const lim = this._bReady && bp[i] > lim0 ? Math.max(lim0, bp[i] - T.bodyBendRate * this._bodyDt) : lim0;
+      if (bend <= lim) {
+        bp[i] = bend;
+        continue;
+      }
+      bp[i] = lim;
+      let ax = qy * nz - qz * ny;
+      let ay = qz * nx - qx * nz;
+      let az = qx * ny - qy * nx;
+      let al = len3(ax, ay, az);
+      if (al < 1e-3) {
+        ax = this.body.up[i * 3];
+        ay = this.body.up[i * 3 + 1];
+        az = this.body.up[i * 3 + 2];
+        const dd = ax * qx + ay * qy + az * qz;
+        ax -= qx * dd;
+        ay -= qy * dd;
+        az -= qz * dd;
+        al = len3(ax, ay, az) || 1;
+      }
+      ax /= al;
+      ay /= al;
+      az /= al;
+      const c = Math.cos(lim);
+      const sn = Math.sin(lim);
+      const dot = ax * qx + ay * qy + az * qz;
+      let rx = qx * c + (ay * qz - az * qy) * sn + ax * dot * (1 - c);
+      let ry = qy * c + (az * qx - ax * qz) * sn + ay * dot * (1 - c);
+      let rz = qz * c + (ax * qy - ay * qx) * sn + az * dot * (1 - c);
+      const rl = len3(rx, ry, rz) || 1;
+      rx /= rl;
+      ry /= rl;
+      rz /= rl;
+      sp[i * 3] = sp[i * 3 - 3] + rx * nl;
+      sp[i * 3 + 1] = sp[i * 3 - 2] + ry * nl;
+      sp[i * 3 + 2] = sp[i * 3 - 1] + rz * nl;
+    }
+  }
+
+  /**
+   * Torsion: each block's up may differ from the block before it only by `bodyTwist` rad of roll about the spine (head to tail, each
+   * measured against the already limited neighbour), so the column cannot twist block by block as the surfaces under it change.
+   */
+  _limitTwist() {
+    const sp = this.body.spine;
+    const up = this.body.up;
+    const u0 = this._bup;
+    for (let i = 1; i < SEG; i++) {
+      let ax = sp[i * 3] - sp[i * 3 - 3];
+      let ay = sp[i * 3 + 1] - sp[i * 3 - 2];
+      let az = sp[i * 3 + 2] - sp[i * 3 - 1];
+      const al = len3(ax, ay, az);
+      if (al < 1e-6) continue;
+      ax /= al;
+      ay /= al;
+      az /= al;
+      // the neighbour's up and this block's up, both flattened onto the plane across the joint
+      let rx = up[i * 3 - 3];
+      let ry = up[i * 3 - 2];
+      let rz = up[i * 3 - 1];
+      const rd = rx * ax + ry * ay + rz * az;
+      rx -= ax * rd;
+      ry -= ay * rd;
+      rz -= az * rd;
+      const rl = len3(rx, ry, rz);
+      const cx = up[i * 3];
+      const cy = up[i * 3 + 1];
+      const cz = up[i * 3 + 2];
+      const cd = cx * ax + cy * ay + cz * az;
+      let ux = cx - ax * cd;
+      let uy = cy - ay * cd;
+      let uz = cz - az * cd;
+      const ul = len3(ux, uy, uz);
+      if (rl < 1e-3 || ul < 1e-3) continue;
+      rx /= rl;
+      ry /= rl;
+      rz /= rl;
+      ux /= ul;
+      uy /= ul;
+      uz /= ul;
+      const ang = Math.acos(U.clamp(rx * ux + ry * uy + rz * uz, -1, 1));
+      const lim = U.lerp(T.bodyTwist, T.bodyTwistTail, (i - 1) / (SEG - 2));
+      if (ang <= lim) continue;
+      // turn the neighbour's up toward this block's by `lim` about the spine
+      const sg = (ry * uz - rz * uy) * ax + (rz * ux - rx * uz) * ay + (rx * uy - ry * ux) * az >= 0 ? 1 : -1;
+      const c = Math.cos(lim);
+      const s = Math.sin(lim) * sg;
+      let nx = rx * c + (ay * rz - az * ry) * s + ax * cd;
+      let ny = ry * c + (az * rx - ax * rz) * s + ay * cd;
+      let nz = rz * c + (ax * ry - ay * rx) * s + az * cd;
+      const nl = len3(nx, ny, nz) || 1;
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      up[i * 3] = nx;
+      up[i * 3 + 1] = ny;
+      up[i * 3 + 2] = nz;
+      u0[i * 3] = nx; // the rate lock of the next frame starts from the limited up
+      u0[i * 3 + 1] = ny;
+      u0[i * 3 + 2] = nz;
     }
   }
 
