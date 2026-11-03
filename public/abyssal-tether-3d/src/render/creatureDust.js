@@ -33,6 +33,18 @@ function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/**
+ * The chase boost of the dust a creature's legs throw (1 = as ever .. MAX_BOOST): the nearer it is to the camera and the faster it goes, the
+ * bigger the cloud at each planted foot, so a creature COMING AT YOU kicks up a billowing cloud and a distant or crawling one the old haze.
+ * camD: metres from the camera to the creature; speed: its speed (m/s); size: its leg scale (1 = the Mason).
+ */
+export const MAX_BOOST = 2.8;
+export function boostOf(camD, speed, size = 1) {
+  const near = 1 - clamp((camD - 10) / 32, 0, 1); // 1 within 10 m, 0 beyond 42 m
+  const fast = clamp(speed / (5 * Math.max(size, 0.3) ** 0.5), 0.3, 1);
+  return 1 + (MAX_BOOST - 1) * near * near * (3 - 2 * near) * fast; // smoothstep of proximity, scaled by speed
+}
+
 export class CreatureDust {
   /**
    * @param {THREE.Scene} scene
@@ -229,9 +241,10 @@ export class CreatureDust {
    * A foot lands: a small ring of puffs thrown outward along the surface. size = the creature's leg scale in metres (Mason ~ 1,
    * skitterling ~ 0.45), strength 0..1.
    */
-  foot(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz) {
+  foot(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz, boost = 1) {
     if (!this._near(x, y, z, 55 * Math.max(0.5, size))) return;
-    const n = this._count((0.4 + strength * 1.4) * (size < 0.6 ? 0.6 : 1));
+    const bo = boost > 1 ? boost - 1 : 0; // the chase boost (see boostOf): more, larger, denser puffs
+    const n = this._count((0.4 + strength * 1.4) * (size < 0.6 ? 0.6 : 1) * boost);
     if (n <= 0) return;
     const B = this._b || (this._b = new Float32Array(6));
     this._basis(nx, ny, nz, B);
@@ -242,7 +255,7 @@ export class CreatureDust {
       const s = Math.sin(th);
       const sp = (0.5 + r() * 1.2) * (0.5 + strength) * size;
       const lift = (0.1 + r() * 0.4) * size;
-      const sz = size * (0.35 + r() * 0.4) * (0.7 + 0.5 * strength);
+      const sz = size * (0.35 + r() * 0.4) * (0.7 + 0.5 * strength) * (1 + 0.3 * bo);
       const cx = B[0] * c + B[3] * s;
       const cy = B[1] * c + B[4] * s;
       const cz = B[2] * c + B[5] * s;
@@ -257,8 +270,8 @@ export class CreatureDust {
         cy * sp + wvy * 0.25,
         cz * sp + wvz * 0.25,
         sz,
-        (0.13 + 0.12 * strength) * (1 - 0.3 * wet),
-        (0.8 + r() * 0.6) * (1 + 0.6 * wet),
+        Math.min(0.42, (0.13 + 0.12 * strength) * (1 - 0.3 * wet) * (1 + 0.35 * bo)),
+        (0.8 + r() * 0.6) * (1 + 0.6 * wet) * (1 + 0.25 * bo),
         wet,
         0.6,
         1.1 + 0.8 * wet,
@@ -298,13 +311,14 @@ export class CreatureDust {
    * Brown dirt smoke kicked up by a leg while the creature moves: a fat puff at the foot that rises off the surface and trails back
    * with the wake (call a few times a second per creature, one leg at a time). size = the creature's leg scale (Mason ~ 1).
    */
-  smoke(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz) {
+  smoke(x, y, z, nx, ny, nz, size, strength, wet, wvx, wvy, wvz, boost = 1) {
     if (!this._near(x, y, z, 50 * Math.max(0.5, size))) return;
-    const n = this._count(1.6);
+    const bo = boost > 1 ? boost - 1 : 0; // the chase boost (see boostOf)
+    const n = this._count(1.6 * boost);
     const r = this.rng;
     for (let k = 0; k < n; k++) {
-      const sz = size * (0.9 + r() * 0.9) * (0.75 + 0.5 * strength);
-      const up = (0.35 + r() * 0.55) * size;
+      const sz = size * (0.9 + r() * 0.9) * (0.75 + 0.5 * strength) * (1 + 0.3 * bo);
+      const up = (0.35 + r() * 0.55) * size * (1 + 0.25 * bo);
       this._spawn(
         x + (r() - 0.5) * size * 0.5 + nx * sz * 0.5,
         y + (r() - 0.5) * size * 0.5 + ny * sz * 0.5,
@@ -316,8 +330,8 @@ export class CreatureDust {
         wvy * 0.3 + (r() - 0.5) * 0.7 * size + ny * up,
         wvz * 0.3 + (r() - 0.5) * 0.7 * size + nz * up,
         sz,
-        (0.16 + 0.12 * strength) * (1 - 0.25 * wet),
-        1.5 + r() * 1.1,
+        Math.min(0.45, (0.16 + 0.12 * strength) * (1 - 0.25 * wet) * (1 + 0.35 * bo)),
+        (1.5 + r() * 1.1) * (1 + 0.3 * bo),
         wet,
         0.85,
         1.5,

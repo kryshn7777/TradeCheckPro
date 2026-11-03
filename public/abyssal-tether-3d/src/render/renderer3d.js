@@ -46,7 +46,7 @@
  */
 
 import * as THREE from 'three';
-import { KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
+import { FOG_START_FRAC, KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
 import { LevelView, glowTexture } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
@@ -789,8 +789,13 @@ export class Renderer3D {
     if (lum < lumFloor) fog.color.multiplyScalar(lumFloor / Math.max(lum, 1e-4));
     fog.color.multiplyScalar(1 - tk * 0.22);
     if (nvK > 0.001) fog.color.lerp(NV_FOG, 0.85 * nvK); // through the goggles the haze is a pale phosphor green
-    fog.near = Math.max(2, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS); // the haze starts 2 m out at the earliest: nothing close to the eyes is fogged
-    fog.far = Math.max(fog.near + 4, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
+    // Fog is for what is far: the far distance is the section's own (the level culls geometry there, so it still closes the view off), the haze
+    // STARTS at FOG_START_FRAC of it (never before the section's near / 2 m), and the curve (materials.js) is a smoothstep, so mid-range
+    // masonry, ledges and the creature read crisp and only the distance fades.
+    const farD = Math.max(8, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
+    const nearCull = Math.max(2, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS); // the section's own near: what the geometry cull is measured from
+    fog.near = Math.max(nearCull, farD * FOG_START_FRAC);
+    fog.far = Math.max(fog.near + 4, farD);
     this.scene.background.copy(fog.color);
     if (this.sky) this.sky.position.copy(head);
 
@@ -827,7 +832,7 @@ export class Renderer3D {
     this._updateEnvLights(d, head);
     this._game = game || this._game;
     this.lighting.update(d, game, th, tgt, this._lampFlick);
-    this._fogInfo.near = fog.near;
+    this._fogInfo.near = nearCull; // (the cull distance of levelView is fog.near + t x (far - near): unchanged by where the haze starts, so the Quest budgets hold)
     // Settings › Display › Blood writing (off by default): built / removed live; a fresh build compiles and uploads now
     const gs = this._game && this._game.settings;
     if (gs && this.levelView.setBlood(gs.bloodWriting === true)) this.precompile();

@@ -23,7 +23,7 @@ import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/maso
 import { HeadFit, headExtents } from './mason/masonFit.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
-import { sectionWet } from './creatureDust.js';
+import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
@@ -775,7 +775,7 @@ export class MasonRigView {
     const u = this._gu;
     const v = this._gv;
     const size = this.opts.size;
-    d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2]);
+    d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2], boostOf(this._camD, this._speed, size));
   }
 
   /** Brown dirt smoke at the feet while it moves: one leg at a time, round robin, more the faster it goes. */
@@ -788,7 +788,8 @@ export class MasonRigView {
     if (mv < 0.1) return;
     const list = this.legs.legs;
     if (!list.length) return;
-    this._smokeAcc += dt * (2 + sp * 1.1) * (this.opts.variant ? 0.8 : 1);
+    const boost = boostOf(this._camD, sp, size); // coming at you: more legs kick up more cloud
+    this._smokeAcc += dt * (2 + sp * 1.1) * (this.opts.variant ? 0.8 : 1) * (1 + 0.7 * (boost - 1));
     const u = this._gu;
     const v = this._gv;
     let guard = 0;
@@ -809,7 +810,7 @@ export class MasonRigView {
         y = L.fy;
         z = L.fz;
       }
-      d.smoke(x, y, z, u[0], u[1], u[2], size * (L.kind === 'lead' ? 1.1 : 0.8), clamp(mv, 0.25, 1), this._wet, v[0] * 0.5, v[1] * 0.5, v[2] * 0.5);
+      d.smoke(x, y, z, u[0], u[1], u[2], size * (L.kind === 'lead' ? 1.1 : 0.8), clamp(mv, 0.25, 1), this._wet, v[0] * 0.5, v[1] * 0.5, v[2] * 0.5, boost);
     }
   }
 

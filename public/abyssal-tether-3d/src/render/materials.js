@@ -1764,9 +1764,11 @@ ${
  * Fog for VR, installed globally (ShaderChunk) so every module's materials agree:
  *  - radial (distance) fog instead of view depth: rotation-invariant, so
  *    looking around in the headset never changes what fog hides
- *  - a front-loaded curve between fogNear and fogFar (1 − (1 − t)^2.5): mid
- *    distances turn to haze quickly (silhouettes, depth), and the far value
- *    still reaches exactly 1 so distance culling at fogFar is invisible
+ *  - a smoothstep between fogNear and fogFar (fog is for what is FAR: the
+ *    renderer starts it at FOG_START_FRAC of the far distance; it was a
+ *    front-loaded 1 − (1 − t)^2.5 that hazed everything past arm's length),
+ *    and the far value still reaches exactly 1 so distance culling at fogFar
+ *    is invisible
  *  - a vertical gradient on the fog colour by view direction (per fragment):
  *    the haze above (where you came from) holds a little light, the abyss below
  *    swallows it. `fogColor` is redefined to the graded colour after the
@@ -1795,8 +1797,7 @@ export function installRadialFog() {
 		return 1.0 - exp( - fogDensity * fogDensity * d * d );
 	#else
 		float t = clamp( ( d - fogNear ) / max( fogFar - fogNear, 1e-3 ), 0.0, 1.0 );
-		float u = 1.0 - t;
-		return 1.0 - u * u * sqrt( u );
+		return t * t * ( 3.0 - 2.0 * t );
 	#endif
 	}
 	vec3 atFogColor() {
@@ -1818,11 +1819,19 @@ export function installRadialFog() {
   installDither();
 }
 
-/** JS twin of the shader fog curve (0..1) for CPU-side fades. */
+/**
+ * Where the distance fog starts, as a share of its far distance (renderer3d: fog.near = far x this, never below the section's own near).
+ * The far distance is untouched: the level culls geometry there (the Quest triangle / draw-call budget), so the fog still closes it off.
+ */
+export const FOG_START_FRAC = 0.4;
+
+/**
+ * JS twin of the shader fog curve (0..1) for CPU-side fades. The curve is a smoothstep: clear at the start, thickening only toward the
+ * far limit. (It was 1 - u^2.5 with u = 1 - t: 43 % fogged a fifth of the way in, 82 % halfway, which hazed everything past arm's length.)
+ */
 export function fogFactor(d, near, far) {
   const t = Math.min(1, Math.max(0, (d - near) / Math.max(far - near, 1e-3)));
-  const u = 1 - t;
-  return 1 - u * u * Math.sqrt(u);
+  return t * t * (3 - 2 * t);
 }
 
 // -----------------------------------------------------------------------------
