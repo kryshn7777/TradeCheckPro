@@ -31,6 +31,7 @@ import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js'
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
 import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
+import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 const DEFAULTS = {
   lodDistance: 38, // nearest spine point -> camera: beyond this the LOD1 mesh shows
@@ -240,6 +241,23 @@ export class MasonRigView {
         }
       }
     }
+    this._buildOutline();
+  }
+
+  /**
+   * The ink outline (outline.js): ONE hull draw call for the whole creature, built from the cheap LOD1 geometry (the extruded back faces only
+   * need the silhouette; 63 k triangles of LOD0 twice over would not fit the Quest budget), shown with either LOD. The emissive eye meshes are
+   * left out (they are glow, not body).
+   */
+  _buildOutline() {
+    const isBody = (m) => !(Array.isArray(m.material) ? m.material : [m.material]).includes(this.emissive);
+    const far = this.meshes[1] !== this.meshes[0] ? this.meshes[1] : this.meshes[0];
+    const hullFrom = far.filter(isBody);
+    const sources = [...this.meshes[0], ...(far !== this.meshes[0] ? far : [])].filter(isBody);
+    if (!hullFrom.length || !sources.length) return;
+    const geo = mergedHullGeometry(hullFrom);
+    if (!geo) return;
+    this._hull = addOutline(sources, { geometry: geo });
   }
 
   _buildRig(meta) {
@@ -328,7 +346,7 @@ export class MasonRigView {
     }
     this.info.lod = lod;
     this._baseCalls = calls;
-    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0);
+    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0) + (this._hull && this._hull.visible ? 1 : 0);
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -484,7 +502,7 @@ export class MasonRigView {
       this.maw.update(dt, this.mandibles.open, show);
       this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
       this.stinger.update(show);
-      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0);
+      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0) + (this._hull && this._hull.visible ? 1 : 0) + (show ? this.mandibles.hullCalls() + this.stinger.hullCalls() : 0);
     }
     this._poseLegs(dt, B, F, S, level, g, lodFar);
     if (this.dust) this._wake(dt, C, B, F, size);
@@ -1031,6 +1049,10 @@ export class MasonRigView {
 
   dispose() {
     if (this.root.parent) this.root.parent.remove(this.root);
+    if (this._hull) {
+      this._hull.geometry.dispose();
+      removeOutline(this._hull);
+    }
     if (this.mandibles) this.mandibles.dispose();
     for (const k of ['eyes', 'maw', 'stinger']) if (this[k]) this[k].dispose();
     const seen = new Set();

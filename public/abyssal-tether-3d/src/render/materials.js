@@ -125,6 +125,9 @@ export const LOOK = {
   uToonK: { value: new THREE.Vector4(0, 5, 1.2, 0.55) },
   // Shadow side of the cel: rgb = the tint the albedo takes in the darkest band (a cool violet, never black), a = how much of it is added.
   uToonShade: { value: new THREE.Vector4(0.58, 0.66, 1.0, 0.15) },
+  // Ink outlines: x strength of the line on the masonry's box edges (the bevel band darkened to the ink colour; 0 = off), yzw unused.
+  // (The silhouette outlines of the hero meshes are inverted hulls: render/outline.js.)
+  uInkK: { value: new THREE.Vector4(0, 0, 0, 0) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
@@ -1400,7 +1403,21 @@ export function toonBand(lit, bands = LOOK.uToonK.value.y, gain = LOOK.uToonK.va
   return (b * b) / gain + Math.max(lit - 1 / gain, 0);
 }
 
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\n' + TOON_DECL;
+/**
+ * Ink on the masonry's box edges (the stylised look's line art for the level, no extra pass): the bevel band (BEVEL_FRAG: atBev is 1 on the
+ * edge and falls off to 0 across the 3.5 cm bevel, already faded out when it is narrower than a pixel and beyond uBevelK.z metres) is
+ * darkened toward black in its inner part, so every block carries a thin dark line along its edges, the way a drawn background has. Only the
+ * materials that have the bevel (masonry, rock, metal, crumbling blocks) get it. JS twin: inkEdge().
+ */
+const INK_EDGE_FRAG = '    if ( uInkK.x > 0.001 ) atC *= 1.0 - 0.94 * uInkK.x * smoothstep( 0.26, 0.5, atBev );\n';
+
+/** JS twin of the edge ink: the multiplier on the colour for a bevel-band value `bev` (0..1) at ink strength `k` (0..1). */
+export function inkEdge(bev, k = 1) {
+  const t = Math.min(1, Math.max(0, (bev - 0.26) / (0.5 - 0.26)));
+  return 1 - 0.94 * k * (t * t * (3 - 2 * t));
+}
+
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\nuniform vec4 uInkK;\n' + TOON_DECL;
 /**
  * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
  * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
@@ -1414,6 +1431,7 @@ const GRADE_FRAG = `  {
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
     atC = atC * uGradeTint + uBlack;
     if ( uToonK.x > 0.001 ) atC = atToon( atC, diffuseColor.rgb );
+/*AT_INK*/
     if ( uHorrorK.z > 0.001 ) {
       // the horror look: shadows go cold and green-grey and crush toward a soft toe, the lit parts stay a sickly warm, a vignette
       // from the view axis and a luminance-weighted grain that dies in the blacks (no raised noise floor in a dark headset)
@@ -1777,7 +1795,7 @@ ${
 
     if (grade) {
       fDecl += GRADE_DECL;
-      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG);
+      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG.replace('/*AT_INK*/', bevel ? INK_EDGE_FRAG : ''));
     }
 
     if (shade) {

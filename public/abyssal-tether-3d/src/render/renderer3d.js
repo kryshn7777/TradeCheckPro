@@ -56,6 +56,7 @@ import { createGLTFLoader, setKTX2Renderer } from './glbLoad.js';
 import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
+import { setOutlineLook, syncOutlines } from './outline.js';
 import { maxPixelRatio } from '../platform/deviceProfile.js';
 import { LevelCache } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
 import { depthDarknessAt, foldDarkness } from '../sim/nightVision3d.js';
@@ -168,6 +169,8 @@ const LOOK_PRESETS = {
     exposure: 1.4, contrast: -0.1, sat: 0.4, lift: 1.6, grain: 0, vignette: 0, tone: 0,
     toon: 1, bands: 5, soft: 1.2, gain: 0.55, shade: [0.58, 0.66, 1.0], shadeAmt: 0.15,
     detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7,
+    // ink outlines: hulls on the hero meshes (outline.js), a line on the masonry's box edges (materials.js); the width is an angle (rad)
+    ink: 1, inkWidth: 0.0026, inkEdge: 0.9, inkColor: [0.012, 0.008, 0.02],
   },
   horror: { exposure: 1.0, contrast: 0.16, sat: -0.14, lift: 0.5, grain: 0.04, vignette: 0.4, tone: 1.0 },
   classic: { exposure: 1.25, contrast: 0, sat: 0, lift: 1, grain: 0, vignette: 0, tone: 0 },
@@ -184,6 +187,17 @@ function lookPreset(settings) {
 }
 
 const _tmpC = new THREE.Color();
+const _tmpInk = new THREE.Color();
+/** `?ink=off` (or settings.ink === false) turns the outlines off, whatever the look. */
+function inkDisabled(settings) {
+  try {
+    const m = /[?&]ink=([a-z0-9]+)/i.exec((typeof location !== 'undefined' && location.search) || '');
+    if (m && /^(off|0|false|no)$/i.test(m[1])) return true;
+  } catch {
+    /* no location */
+  }
+  return !!(settings && settings.ink === false);
+}
 
 function num(v, fb) {
   return typeof v === 'number' && isFinite(v) ? v : fb;
@@ -935,6 +949,15 @@ export class Renderer3D {
     const lk = this.look;
     LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, lk.depthDesat == null ? 0.22 : lk.depthDesat, 0);
     LOOK.uToonK.value.set(lk.toon || 0, lk.bands || 5, lk.soft || 1.2, lk.gain || 3);
+    {
+      // ink outlines: the hulls (a draw call each: off in the `low` tier / reduced effects) and the line on the masonry's box edges (free)
+      const lowFx0 = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
+      const off = inkDisabled(this.settings);
+      const ink = lk.ink && !off ? 1 : 0;
+      const col = lk.inkColor || [0.012, 0.008, 0.02];
+      setOutlineLook(ink > 0 && !lowFx0, lk.inkWidth || 0.0026, _tmpInk.setRGB(col[0], col[1], col[2]));
+      LOOK.uInkK.value.set(ink * (lk.inkEdge || 0), 0, 0, 0);
+    }
     if (lk.shade) LOOK.uToonShade.value.set(lk.shade[0], lk.shade[1], lk.shade[2], lk.shadeAmt || 0);
     const lowFx = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
     LOOK.uHorrorK.value.set(lowFx ? 0 : lk.grain, lk.vignette, lk.tone, (this.time || 0) % 100);
@@ -1028,6 +1051,7 @@ export class Renderer3D {
         if (typeof console !== 'undefined') console.warn('[AT3D] lantern shadow disabled', err);
       }
     }
+    syncOutlines(); // the hulls follow their meshes' visibility (LOD switches), after every view has updated
     r.render(this.scene, this.camera);
     this.stats.shadowCalls = shCalls;
     this.stats.calls = info.render.calls;

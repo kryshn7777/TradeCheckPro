@@ -16,6 +16,7 @@
  *     the crown's aim (the rig's bones are not in the scene graph); shown with the full LOD only.
  */
 import * as THREE from 'three';
+import { OUTLINE, addOutline, removeOutline } from '../outline.js';
 
 export const MANDIBLE = {
   length: 6.0, // m at kit scale: big pincers on the sides of a ~7 m crown (the first, 4.6 m, were small; 9 m tusks were far too big)
@@ -283,6 +284,7 @@ export class Mandibles {
     this.group.name = 'Mandibles';
     this.pivots = [];
     this.meshes = [];
+    this.hulls = [];
     this.open = MANDIBLE.yaw + 0.3;
     this.vel = 0;
     for (const s of [1, -1]) {
@@ -293,6 +295,7 @@ export class Mandibles {
       mesh.frustumCulled = false; // it rides a skinned head whose bounds the mesh does not know
       mesh.scale.x = s; // the left one is the mirror
       pivot.add(mesh);
+      this.hulls.push(addOutline(mesh)); // the ink outline (outline.js): the tusks are the big silhouettes of the face
       this.group.add(pivot);
       this.pivots.push(pivot);
       this.meshes.push(mesh);
@@ -385,7 +388,13 @@ export class Mandibles {
     this._apply(this.open);
   }
 
+  /** Draw calls of the outline hulls while they show (the tusks' two). */
+  hullCalls() {
+    return OUTLINE.on && this.group.visible ? this.hulls.length : 0;
+  }
+
   dispose() {
+    for (const h of this.hulls) removeOutline(h);
     this.geometry.dispose();
     this.material.dispose();
     if (this.group.parent) this.group.parent.remove(this.group);

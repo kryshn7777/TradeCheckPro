@@ -30,6 +30,7 @@
 import { BufferAttribute, Quaternion, Vector3 } from 'three';
 import { loadGLB } from './glbLoad.js';
 import { createGaugeGlass } from './gearSurface.js';
+import { addOutline } from './outline.js';
 
 export const GEAR_URL = new URL('../../assets/models/player_arms.glb', import.meta.url).href;
 
@@ -221,6 +222,9 @@ export class HandGear {
         this.meshes.push(o);
       }
     });
+    // ink outlines (outline.js): a hull on every skinned mesh of the side (the glove, the sleeve, the launcher), in the hands' queue; the hull
+    // shares the arm geometry, so the hidden sleeve (setCoverVisible) is hidden on it too
+    this.outlines = this.meshes.filter((m) => m.isSkinnedMesh).map((m) => addOutline(m, { transparent: true }));
     this.armMesh = root.getObjectByName(`Arm_${sfx}_Mesh`) || null;
     // the wrist (Hand bone) and the arm's direction (toward the Forearm bone's head, the elbow end) in the side root's frame: the glove's leather
     // tube past a short cuff is hidden with the sleeve (see splitArmCover)

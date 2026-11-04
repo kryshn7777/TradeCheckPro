@@ -9,6 +9,7 @@
  *     along +z (away from the head) and curls toward +y (up, off the wall the creature clings to).
  */
 import * as THREE from 'three';
+import { OUTLINE, addOutline, removeOutline } from '../outline.js';
 
 export const STINGER = {
   length: 10.0, // m at kit scale (the tail bone is scaled ~0.4-0.6 by the taper, so ~4-6 m in the world)
@@ -156,6 +157,7 @@ export class Stinger {
     this.group = new THREE.Group();
     this.group.name = 'StingerMount';
     this.group.add(this.mesh);
+    this.hull = addOutline(this.mesh); // the ink outline (outline.js)
   }
 
   /** Mounts on `parent` (the view root) with a driven matrix; see the file header for why not on the bone. */
@@ -178,7 +180,13 @@ export class Stinger {
     this.group.visible = !!show;
   }
 
+  /** Draw calls of the outline hull while it shows. */
+  hullCalls() {
+    return OUTLINE.on && this.group.visible ? 1 : 0;
+  }
+
   dispose() {
+    removeOutline(this.hull);
     this.geometry.dispose();
     this.material.dispose();
     if (this.group.parent) this.group.parent.remove(this.group);
