@@ -324,10 +324,12 @@ async function partDesktop(browser, base) {
   let wDown = true;
   let released = false;
   let reeling = false;
-  for (let i = 0; i < 420 && !onSill; i++) {
+  const swingTrace = []; // every half second: [frame, y, z, vy, grounded, tethered] (what a failed swing looked like)
+  for (let i = 0; i < 900 && !onSill; i++) {
     s = await step(page, 1 / 60, { render: false });
     const p = s.player;
     maxSpeed = Math.max(maxSpeed, p.speed);
+    if (i % 30 === 0) swingTrace.push([i, +p.y.toFixed(1), +p.z.toFixed(1), +p.vy.toFixed(1), p.grounded ? 1 : 0, p.tethered ? 1 : 0]);
     if (wDown && !p.grounded && p.y < -0.5) {
       await page.keyboard.up('KeyW');
       wDown = false;
@@ -366,7 +368,7 @@ async function partDesktop(browser, base) {
     const p = window.AT3D.game.player;
     return p.groundSolid ? p.groundSolid.id : null;
   });
-  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player });
+  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player, swingTrace });
   check('releasing LMB lets go of the tether', s.hands.right.anchor === null && !s.player.tethered, s.hands.right);
   return P;
 }
