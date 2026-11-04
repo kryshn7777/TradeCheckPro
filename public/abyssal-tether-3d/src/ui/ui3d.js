@@ -127,13 +127,15 @@ const DEATH_COPY = {
 const pct = fmtPct;
 const mul = fmtMul;
 const mTxt = (v) => `${v.toFixed(2)} m`;
+const secTxt = (v) => (v <= 0.001 ? 'No wait' : `${+v.toFixed(2)} s`);
 const cm = (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`;
 /** Settings tabs (VR: one tab per page of rows; desktop: one heading per tab). */
 const TABS = [
   { id: 'comfort', label: 'Comfort', title: 'Comfort and movement' },
   { id: 'display', label: 'Display', title: 'Display' },
   { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
-  { id: 'access', label: 'Access', title: 'Accessibility and hands' },
+  { id: 'access', label: 'Access', title: 'Accessibility' },
+  { id: 'rope', label: 'Rope', title: 'Rope and hands' },
   { id: 'touch', label: 'Touch', title: 'Touch controls (phone and tablet)', desktopOnly: true },
 ];
 /** The VR panel has no touch page. */
@@ -188,7 +190,8 @@ const SETTINGS_SCHEMA = [
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
-  { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
+  { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },
@@ -197,7 +200,7 @@ const SETTINGS_SCHEMA = [
   { key: 'touchRopeMode', tab: 'touch', type: 'choice', label: 'Rope behaviour', desc: 'Hold to stay attached, or tap to attach and tap again to let go.', options: [['hold', 'Hold'], ['latch', 'Tap to toggle']], desktop: true },
   { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
   { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
-  { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
+  { key: 'dominantHand', tab: 'rope', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white

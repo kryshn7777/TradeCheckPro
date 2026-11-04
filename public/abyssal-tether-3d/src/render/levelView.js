@@ -43,6 +43,7 @@ import * as THREE from 'three';
 import { decorColliders } from '../sim/decorColliders.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { PALETTE } from './materials.js';
+import { FallCue, fallCueDisabled } from './fallCue.js';
 import { SealView } from './objectivesView.js';
 import { BloodWriting } from './bloodWriting.js';
 import { BoardWriting, drawBoardCell } from './boardWriting.js';
@@ -4549,6 +4550,9 @@ export class LevelView {
     this._detailScale = 1;
     this._lodNear = true; // the rich level of the kit parts is built (not on the low detail scale: setKit)
     this._cullT = 0.78;
+    // "Ground ahead" (render/fallCue.js): the blocks below a falling player, drawn through the haze (one draw call, only while falling fast).
+    // On the scene, not the level's root: it is not part of the cached level.
+    this._fallCue = new FallCue(scene);
   }
 
   _makeHighlight(hand, color) {
@@ -6697,6 +6701,7 @@ export class LevelView {
     if (this._sealView) this._sealView.update(dt, game ? game.objectives : null, head, vd, game ? game.time : 0);
     this._updateGate(dt, game, head, vd);
     this._updateHazards(dt, head, vd);
+    this._fallCue.update(dt, this.level, game ? game.player : null, head, game ? game.diff : null, !fallCueDisabled(game ? game.settings : null));
     this._updateAnchors(game, head, t);
     this._updateHighlights(game, head, t);
     this._updateGlows(t);
@@ -6985,6 +6990,7 @@ export class LevelView {
       hl.mesh.geometry.dispose();
       hl.mat.dispose();
     }
+    this._fallCue.dispose();
     this._unitBox.dispose();
     this._glyphGeo.dispose();
     for (const g of this._mountGeos) g.dispose();

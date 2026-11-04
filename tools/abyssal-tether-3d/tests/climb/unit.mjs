@@ -431,8 +431,13 @@ const SYN = {
   ok(r.hover, 'a palm near a pillar edge hovers');
   ok(!r.hoverIn, 'beyond the 0.24 m grab reach it only hovers');
   setHand(w, 'right', -0.1, 0.3, 0.7, false); // (6.5, 8.3, 5.9): mid-face, 0.5 from either corner line
+  const sv = K.surface;
+  K.surface = false; // the surface holds off (CONFIG.climb.surface): the original rule
   w.cl.probe(w.p, w.c);
-  ok(!w.cl.hands.right.hover, 'a palm mid-face (0.5 m from either corner) does not hover: plain faces are not holds');
+  ok(!w.cl.hands.right.hover, 'a palm mid-face (0.5 m from either corner) does not hover with surface holds off: plain faces are not holds');
+  K.surface = sv;
+  w.cl.probe(w.p, w.c);
+  ok(w.cl.hands.right.hover && w.cl.hands.right.hoverIn && K.surface === true, 'with surface holds on (the default) the same palm, 0.1 m off the face, hovers and can grab: any surface is a hold');
   setHand(w, 'right', -0.4, 0.3, 0.7, false); // (6.2, 8.3, 5.9): 0.22 from the corner line (6, 6) -> in reach
   w.cl.probe(w.p, w.c);
   const q = w.cl.hands.right;

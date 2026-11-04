@@ -57,7 +57,11 @@ const MODE_VR = 1;
 const MODE_DESK = 2;
 
 function makeHand() {
-  return { needRelease: false, gripping: false, pinned: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null };
+  return {
+    needRelease: false, gripping: false, pinned: false, hover: false, hoverIn: false, hx: 0, hy: 0, hz: 0, ax: 0, ay: 0, az: 0, zone: null, hzone: null,
+    ropeZone: { id: 'rope', kind: 'chain', rope: true, ropeOf: 'left', edge: false, wet: false, ax: -3, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, nx: 0, ny: 0, nz: 0, face: 0, src: null },
+    surfZone: { id: 'surf', kind: 'masonry', surface: true, edge: false, wet: false, ax: -4, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, nx: 0, ny: 0, nz: 0, face: 0, src: null },
+  };
 }
 
 /** Closest point of a zone box to (x, y, z) and the distance, written into out. */
@@ -94,6 +98,11 @@ export class Climb3D {
     this._elist = [];
     this._near = { zone: null, x: 0, y: 0, z: 0, d: 0 };
     this._tmp = { x: 0, y: 0, z: 0, d: 0 };
+    this.tethers = null; // the TetherSystem (set by Physics3D.step / the Game): the lines that can be climbed, and which hands have one
+    this._p = null; // the player and the climb intent of the current probe / step (the rope holds need the hand poses)
+    this._ci = null;
+    this._slist = []; // scratch for surface holds
+    this._surf = { id: 'surf', kind: 'masonry', surface: true, edge: false, wet: false, ax: -4, minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0, nx: 0, ny: 0, nz: 0, face: 0, src: null };
     this.sv = { x: 0, y: 0, z: 0 }; // low-passed pull velocity (what a release inherits)
     this.reset();
   }
@@ -189,7 +198,7 @@ export class Climb3D {
   }
 
   /** Nearest hold to a point within r (fills this._near); returns the zone or null. Authored zones win over procedural edges. */
-  _nearest(x, y, z, r) {
+  _nearest(x, y, z, r, hand) {
     const lv = this.level;
     const list = lv && typeof lv.climbNear === 'function' ? lv.climbNear(x, y, z, r, this._list) : this._list;
     let best = null;
@@ -224,8 +233,119 @@ export class Climb3D {
         }
       }
     }
+    // FREE CLIMB (VR, a hand that has no line of its own: its grip would be the yank): the other hand's line, then any solid surface
+    if (!best && hand && this._canFree(hand)) {
+      best = this._ropeNear(x, y, z, r < K.ropeReach ? r : K.ropeReach, hand);
+      if (!best && K.surface) best = this._surfaceNear(x, y, z, r, hand);
+    }
     nr.zone = best;
     return best;
+  }
+
+  /** May this hand take a rope / surface hold? Not while it has a line out or a hook in the air (its grip is the yank). */
+  _canFree(hand) {
+    const th = this.tethers;
+    if (!th || !th.hands) return !!this._ci && !!this._ci.vr;
+    const st = th.hands[hand];
+    return !st.rope.attached && !st.flying;
+  }
+
+  /** The line out on the OTHER hand, from its anchor to that hand: the nearest point of it to (x, y, z) within r, or null. */
+  _ropeNear(x, y, z, r, hand) {
+    const th = this.tethers;
+    const p = this._p;
+    const ci = this._ci;
+    if (!th || !th.hands || !p || !ci || !ci.hands) return null;
+    const other = hand === 'left' ? 'right' : 'left';
+    const rope = th.hands[other].rope;
+    const hi = ci.hands[other];
+    if (!rope.attached || !rope.anchor || !hi || !hi.ok || rope.anchor.haul === true) return null;
+    const ax = rope.anchor.x;
+    const ay = rope.anchor.y;
+    const az = rope.anchor.z;
+    const bx = p.x + hi.rx;
+    const by = p.y + hi.ry;
+    const bz = p.z + hi.rz;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const dz = bz - az;
+    const l2 = dx * dx + dy * dy + dz * dz;
+    if (l2 < 0.04) return null; // a line shorter than 0.2 m between the anchor and the hand: nothing to hold
+    let t = ((x - ax) * dx + (y - ay) * dy + (z - az) * dz) / l2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const cx = ax + dx * t;
+    const cy = ay + dy * t;
+    const cz = az + dz * t;
+    const d = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz));
+    if (d > r) return null;
+    const nr = this._near;
+    nr.x = cx;
+    nr.y = cy;
+    nr.z = cz;
+    nr.d = d;
+    const z0 = this.hands[hand].ropeZone;
+    z0.ropeOf = other;
+    z0.minX = z0.maxX = cx;
+    z0.minY = z0.maxY = cy;
+    z0.minZ = z0.maxZ = cz;
+    return z0;
+  }
+
+  /** The nearest point on any active solid's surface to (x, y, z) within r, or null. The zone is the solid's box: closest() lands on its face. */
+  _surfaceNear(x, y, z, r, hand) {
+    const lv = this.level;
+    if (!lv || typeof lv.querySolids !== 'function') return null;
+    const list = lv.querySolids(x - r, y - r, z - r, x + r, y + r, z + r, this._slist);
+    let best = null;
+    let bd = r;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      if (s.active === false || s.kind === 'breach') continue;
+      const cx = x < s.minX ? s.minX : x > s.maxX ? s.maxX : x;
+      const cy = y < s.minY ? s.minY : y > s.maxY ? s.maxY : y;
+      const cz = z < s.minZ ? s.minZ : z > s.maxZ ? s.maxZ : z;
+      const dx = x - cx;
+      const dy = y - cy;
+      const dz = z - cz;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d > bd || (d === 0 && x > s.minX && x < s.maxX && y > s.minY && y < s.maxY && z > s.minZ && z < s.maxZ)) continue; // (a palm inside a solid: a clipped hand)
+      bd = d;
+      best = s;
+      bx = cx;
+      by = cy;
+      bz = cz;
+    }
+    if (!best) return null;
+    const nr = this._near;
+    nr.x = bx;
+    nr.y = by;
+    nr.z = bz;
+    nr.d = bd;
+    const sz = this.hands[hand].surfZone;
+    sz.minX = best.minX;
+    sz.minY = best.minY;
+    sz.minZ = best.minZ;
+    sz.maxX = best.maxX;
+    sz.maxY = best.maxY;
+    sz.maxZ = best.maxZ;
+    sz.src = best;
+    sz.wet = false;
+    return sz;
+  }
+
+  _ropeAlive(z) {
+    const th = this.tethers;
+    return !th || !th.hands || th.hands[z.ropeOf].rope.attached;
+  }
+
+  /** True while a hand grips the line out on `ropeHand`: Physics3D takes the slack in behind the climber (the line never goes loose below you). */
+  ropeHeld(ropeHand) {
+    const L = this.hands.left;
+    const R = this.hands.right;
+    return (L.gripping && L.zone !== null && L.zone.rope === true && L.zone.ropeOf === ropeHand) || (R.gripping && R.zone !== null && R.zone.rope === true && R.zone.ropeOf === ropeHand);
   }
 
   _emit(type, payload) {
@@ -237,6 +357,8 @@ export class Climb3D {
   // the grip is a climb grab or the rope yank. Idempotent.
   // ---------------------------------------------------------------------------------------------------------------
   probe(p, ci) {
+    this._p = p;
+    this._ci = ci;
     this.canGrip = this.lock <= 0 && this.hopLock <= 0 && !this.exhausted && this.stamina >= K.minStart;
     const L = this.hands.left;
     const R = this.hands.right;
@@ -254,7 +376,7 @@ export class Climb3D {
         const hx = p.x + hi.rx;
         const hy = p.y + hi.ry;
         const hz = p.z + hi.rz;
-        const z = this._nearest(hx, hy, hz, K.hoverReachVR);
+        const z = this._nearest(hx, hy, hz, K.hoverReachVR, CLIMB_HANDS[i]);
         if (z) {
           const n = this._near;
           st.hover = true;
@@ -295,6 +417,8 @@ export class Climb3D {
   // impact damage of the contacts it resolves). `intent` is the physics intent (jumpPressed, climb).
   // ---------------------------------------------------------------------------------------------------------------
   step(p, intent, dt) {
+    this._p = p;
+    this._ci = intent ? intent.climb : null;
     this.clock += dt;
     if (this.lock > 0) this.lock -= dt;
     if (this.hopLock > 0) this.hopLock -= dt;
@@ -339,6 +463,8 @@ export class Climb3D {
       if (st.gripping) {
         if (!want) {
           this._letGo(p, h, 'input');
+        } else if (st.zone !== null && st.zone.rope === true && !this._ropeAlive(st.zone)) {
+          this._letGo(p, h, 'zone'); // the line you were climbing came off
         } else if (!st.pinned) {
           const dx = st.ax - hi.rx - p.x;
           const dy = st.ay - hi.ry - p.y;
@@ -352,15 +478,16 @@ export class Climb3D {
         const hx = p.x + hi.rx;
         const hy = p.y + hi.ry;
         const hz = p.z + hi.rz;
-        const z = this._nearest(hx, hy, hz, K.reachVR);
+        const z = this._nearest(hx, hy, hz, K.reachVR, h);
         if (z) {
           const nr = this._near;
           const edge = z.edge === true; // an edge hold: the hand snaps to the closest point of the segment
+          const snap = edge || z.rope === true || z.surface === true; // ... so does a rope and a surface: the hand is ON it
           st.gripping = true;
           st.zone = z;
-          st.ax = edge ? nr.x : hx;
-          st.ay = edge ? nr.y : hy;
-          st.az = edge ? nr.z : hz;
+          st.ax = snap ? nr.x : hx;
+          st.ay = snap ? nr.y : hy;
+          st.az = snap ? nr.z : hz;
           if (!this.holding) {
             this.holding = true;
             this.mode = MODE_VR;
@@ -823,7 +950,12 @@ export class Climb3D {
       // edge-only grip (no authored hold under either hand) is the low grade: faster drain, no two-hand discount
       const eh = (!L.gripping || (L.zone !== null && L.zone.edge === true)) && (!R.gripping || (R.zone !== null && R.zone.edge === true));
       this.edgeHold = eh;
-      if (eh) d *= K.edgeMul;
+      // the line you hang on is carried by the harness (cheap); a bare surface is the lowest grade
+      const rh = (L.gripping && L.zone !== null && L.zone.rope === true) || (R.gripping && R.zone !== null && R.zone.rope === true);
+      const sh = (L.gripping && L.zone !== null && L.zone.surface === true) || (R.gripping && R.zone !== null && R.zone.surface === true);
+      if (rh) d *= K.ropeMul;
+      else if (sh) d *= K.surfaceMul;
+      else if (eh) d *= K.edgeMul;
       else if (this.gripCount > 1) d *= K.twoHand;
       if (this.wet) d *= K.wetMul;
       st -= d * this.drainMul * dt;

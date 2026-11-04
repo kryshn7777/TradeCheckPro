@@ -369,7 +369,11 @@ export class GodRays {
     this.params = {
       gain: 0.1, // 1/m: optical depth per metre of the densest part of a beam
       g: 0.6, // Henyey-Greenstein anisotropy
-      lantern: 0.16, // strength of the lantern cone relative to a shaft
+      // The lantern's CONE is OFF (0): looking at a wall it was a flat, mottled sheet of haze lying on the stone ("remove this fog sheet": hiding
+      // that one instance took 61 of 145 brightness units out of the circled wall in the same frame; nothing else in the layer mattered).
+      // The lantern keeps its glow (the halo, instance kind 3), the window beams and the shafts. Set > 0 (about 0.16) to bring the cone back:
+      // it is one more instance of the same draw call.
+      lantern: 0, // strength of the lantern cone relative to a shaft
       lanternHalf: 0.62, // rad
       lanternLen: 14,
       streak: 0.75,
@@ -593,7 +597,7 @@ export class GodRays {
       if (lanternLevel > 0.001) n = this._writeHalo(n);
       this.halo.mesh.visible = false;
     }
-    if (lanternLevel > 0.001) n = this._writeLantern(n, lanternLevel, camera, dt);
+    if (lanternLevel > 0.001 && this.params.lantern > 0) n = this._writeLantern(n, lanternLevel, camera, dt);
     // window beams in range
     let nw = 0;
     for (const i of this._winIdx) {

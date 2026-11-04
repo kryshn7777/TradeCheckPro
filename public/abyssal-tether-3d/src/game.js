@@ -27,6 +27,7 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -1087,7 +1088,8 @@ export class Game3D {
     this._override = null;
     this._ovIntent = blankIntent();
     this._blank = blankIntent();
-    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } }, climb: blankClimb() };
+    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0, pull: 0 }, right: { yank: 0, pull: 0 } }, climb: blankClimb() };
+    this._ropePull = new RopePull();
     this._threatCtx = { player: null, creature: null, tethers: null, diff: null, level: null };
     this._uiFallback = false;
     this._uiMode = null;
@@ -2681,6 +2683,7 @@ export class Game3D {
     }
     s.volume = U.clamp(finiteOr(s.volume, D.volume), 0, 1);
     s.aimAssist = U.clamp(finiteOr(s.aimAssist, D.aimAssist), 0.6, 1.4);
+    s.ropeCooldown = U.clamp(finiteOr(s.ropeCooldown, D.ropeCooldown), 0, 6);
     s.turnSpeed = U.clamp(finiteOr(s.turnSpeed, D.turnSpeed), 0.5, 2);
     s.mouseSensitivity = U.clamp(finiteOr(s.mouseSensitivity, D.mouseSensitivity), 0.3, 3);
     if (s.dominantHand !== 'left' && s.dominantHand !== 'right') s.dominantHand = D.dominantHand;
@@ -3317,7 +3320,7 @@ export class Game3D {
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
-    this._prepareClimb(intent, si);
+    this._prepareClimb(intent, si, dt);
     if (this.objectives) this._lanternProbe();
     this._acc += dt;
     let steps = 0;
@@ -3402,7 +3405,7 @@ export class Game3D {
    * moves this frame), lets the model probe which hands are in reach of a hold, and gives a grip that is a grab to the climb
    * (no rope yank on it; on the desktop Space is the hop, not the reel).
    */
-  _prepareClimb(intent, si) {
+  _prepareClimb(intent, si, dt) {
     const climb = this.physics ? this.physics.climb : null;
     const sc = si.climb;
     const ic = intent.climb;
@@ -3414,6 +3417,8 @@ export class Game3D {
       sc.grab.right = false;
       sc.hands.left.ok = false;
       sc.hands.right.ok = false;
+      si.hands.left.pull = si.hands.right.pull = 0;
+      this._ropePull.reset();
       climb.probe(p, null);
       return;
     }
@@ -3436,6 +3441,7 @@ export class Game3D {
         b.rz = a.z - p.rz;
       }
     }
+    climb.tethers = this.tethers; // rope holds (the other hand's line) and surface holds need the lines
     climb.probe(p, sc);
     // THE HOLDFAST reads the raw frame (before the climb mutes the yank / the desktop reel): the rope out-pulling it, the desktop tear
     const hf = this._hfIn;
@@ -3448,6 +3454,39 @@ export class Game3D {
     hf.grabR = sc.grab.right;
     for (let k = 0; k < 2; k++) if (climb.suppressYank(HANDS[k])) si.hands[HANDS[k]].yank = 0;
     if (climb.holding && !sc.vr) si.reel = 0;
+    this._prepareRopePull(si, sc, climb, dt);
+  }
+
+  /**
+   * VR hand pull (sim/ropePull.js), once per frame: for each hand with a line out, how fast the hand is drawn back from the anchor
+   * (relative to the body) becomes `si.hands[h].pull` (m/s of line to reel in); Physics3D.step feeds it to the winch.
+   */
+  _prepareRopePull(si, sc, climb, dt) {
+    const rp = this._ropePull;
+    const th = this.tethers;
+    const p = this.player;
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      const rope = th && th.hands ? th.hands[h].rope : null;
+      const b = sc.hands[h];
+      let on = !!(sc.vr && rope && rope.attached && rope.anchor && b.ok && !climb.hands[h].gripping);
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      if (on) {
+        nx = p.x - rope.anchor.x;
+        ny = p.y - rope.anchor.y;
+        nz = p.z - rope.anchor.z;
+        const d = Math.hypot(nx, ny, nz);
+        if (d < 0.3) on = false;
+        else {
+          nx /= d;
+          ny /= d;
+          nz /= d;
+        }
+      }
+      si.hands[h].pull = rp.step(k, on, b.rx, b.ry, b.rz, nx, ny, nz, dt);
+    }
   }
 
   _updateProgress(dt) {

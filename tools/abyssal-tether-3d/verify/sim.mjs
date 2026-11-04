@@ -286,7 +286,8 @@ export class Sim {
     this.diffKey = diffKey;
     this.diff = DIFFICULTY[diffKey];
     this.bus = new EventBus();
-    this.settings = Object.assign({}, SETTINGS_DEFAULTS, opts.settings || {});
+    // The bots solve the LEVEL (what the geometry, the reach and the rope allow), not the launcher's recharge: no rope cooldown unless asked (opts.settings.ropeCooldown)
+    this.settings = Object.assign({}, SETTINGS_DEFAULTS, { ropeCooldown: 0 }, opts.settings || {});
     this.player = new Player3D(0, 0, 0);
     this.tethers = new TetherSystem(level, this.diff, this.bus, this.settings);
     this.physics = new Physics3D(level, this.diff, this.bus);

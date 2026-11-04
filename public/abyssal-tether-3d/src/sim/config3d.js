@@ -62,6 +62,14 @@ export const CONFIG = {
     reelInSpeed: 9.5,
     reelOutSpeed: 11,
     yankSpeed: 17, // grip on a tethered hand: hard pull
+    // HAND PULL (VR, sim/ropePull.js): with a line out, drawing the hand AWAY from the anchor (back toward and past the body) reels the line in
+    // by that stroke, so the body is pulled forward along it ("the rope is pulling him"): hand-over-hand without a stick.
+    handPull: {
+      deadzone: 0.35, // m/s of hand retraction along the line that is not a pull (a hand resting, a swinging arm)
+      gain: 1.5, // reel speed per m/s of retraction beyond the deadzone
+      max: 12, // m/s: the fastest reel a pull can make (the yank is 17)
+      smooth: 0.06, // s: low-pass of the measured retraction rate (the hand pose is sampled once a frame)
+    },
     pumpAccel: 9.5,
     reelSpinCap: 1.02,
     releaseBoost: 1.04,
@@ -136,6 +144,12 @@ export const CONFIG = {
     moveRef: 1.4,
     twoHand: 0.62, // x the drain with both hands on holds (authored holds only: two hands on edges are no steadier)
     edgeMul: 1.5, // x the drain on a procedural EDGE hold (any exposed solid edge): low-grade; authored zones keep their rate
+    // FREE CLIMB (VR): any solid surface within reach of a palm that has no line of its own can be gripped (surface holds), and a line out on the
+    // OTHER hand can be climbed (rope holds: grip it, draw the hand down along it, the line takes in the slack behind you).
+    surface: true, // master switch for surface holds
+    surfaceMul: 1.8, // x the drain on a plain surface hold (smooth stone: the lowest grade; edges are 1.5, authored holds 1)
+    ropeMul: 0.5, // x the drain hanging on your own line (the harness carries you; the hand only steadies it)
+    ropeReach: 0.3, // m from the palm to the line that can be gripped
     edgeLink: 0.7, // m: two edge holds this close are one continuous run (the verifier's 'max continuous edge climb')
     mantleBelow: 0.6, // m: a lip mantle starts when the body centre is within this below the lip (VR: and pulled up)
     mantleVy: 0.5, // m/s: VR pull speed (low-passed) that counts as pulling over the lip
@@ -277,6 +291,7 @@ export const DIFFICULTY_ORDER = ['normal', 'nightmare', 'abyss'];
 export const SETTINGS_DEFAULTS = {
   volume: 0.8,
   aimAssist: 1.0, // 0.6..1.4 scales cone + ray assist
+  ropeCooldown: 1.5, // s a hand's rope launcher takes to recharge after a shot (0 = no cooldown); shown on the wrist screen (sim/physics3d.js TetherSystem)
   turnSpeed: 1.0, // smooth-turn rate multiplier (0.5..2)
   mouseSensitivity: 1.0, // desktop look (0.3..3)
   dominantHand: 'right',
