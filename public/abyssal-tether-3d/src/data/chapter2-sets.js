@@ -220,6 +220,22 @@ export function addSnuffing(ctx) {
     ctx.objectives.push({ id: `obj-c2-12-clap${key}`, section: 'c2-12', verb: 'haul', sealId: `seal-c2-12-clap${key}`, ids: [`clap-c2-12-${key}`], need: 1 });
   }
 
+  // the pawl bell: a bell fixture on gate G (struck by the body at 3.5 m/s or more: the pawl breaks; the Doorman's blow breaks it too), and the cage's lever: a haul ring
+  // on the tower's landing wall (one notch: the departure gong). Each rides a buried dummy seal (the objective machinery wants one).
+  const dummy = (key, off) => {
+    ctx.solids.push({ id: `seal-c2-12-${key}-plate`, minX: 40 + off, maxX: 41 + off, minY: Y(10), maxY: Y(9), minZ: 40, maxZ: 41, kind: 'stone', seal: `seal-c2-12-${key}` });
+    ctx.seals.push({ id: `seal-c2-12-${key}`, section: 'c2-12', ids: [`seal-c2-12-${key}-plate`], open: 'slide' });
+  };
+  const pawl = P(18.4, 0);
+  dummy('pawl', 0);
+  ctx.fixtures.push({ id: 'bell-c2-12-pawl', kind: 'bell', x: pawl.x, y: Y(dSill - 3), z: pawl.z, r: 1.1, minSpeed: 3.5, by: { nightmare: { minSpeed: 3.5 }, abyss: { minSpeed: 3.5 } } });
+  ctx.objectives.push({ id: 'obj-c2-12-pawl', section: 'c2-12', verb: 'bell', sealId: 'seal-c2-12-pawl', ids: ['bell-c2-12-pawl'], need: 1 });
+  dummy('lever', 4);
+  const lever = { x: r2(lc.x + (lc.x > 0 ? 3.6 : -3.6)), y: r2(Y(landingD) + 1.6), z: r2(lc.z) };
+  ctx.anchors.push({ id: 'c2-12-lever', x: lever.x, y: lever.y, z: lever.z, kind: 'ring', tag: 'objective', normal: { x: lc.x > 0 ? -1 : 1, y: 0, z: 0 }, mount: 'wall' });
+  ctx.fixtures.push({ id: 'lever-c2-12', kind: 'haul', anchorId: 'c2-12-lever', time: 1.0, notches: 1 });
+  ctx.objectives.push({ id: 'obj-c2-12-lever', section: 'c2-12', verb: 'haul', sealId: 'seal-c2-12-lever', ids: ['lever-c2-12'], need: 1 });
+
   // ---- the pulpit (the Head Usher's pier across the Well) and the stalls under it
   const pulp = P(16, 8);
   box(ctx, 'c2-12-pulpit', pulp.x - 2, pulp.x + 2, Y(120), Y(92), pulp.z - 2, pulp.z + 2, 'stone');
@@ -229,7 +245,6 @@ export function addSnuffing(ctx) {
     const col = k % 8;
     const c = P(-8 + col * 2.3, 8 + row * 2.4);
     stallLamps.push({ x: c.x, y: Y(122 + row * 0), z: c.z });
-    ctx.decor.push({ type: 'lamp', x: c.x, y: Y(122), z: c.z, sx: 0.4, sy: 0.8, sz: 0.4, yaw: 0, lit: true, flicker: 0.3, id: `c2-12-stall${k}` });
   }
   // a floor of the Well (the stalls' floor): death below the rim, so a fall is the Well
   box(ctx, 'c2-12-well-floor', -26, 26, Y(125), Y(124), -26, 26, 'stone');
@@ -244,6 +259,16 @@ export function addSnuffing(ctx) {
     rim: { x: P(-20, 0).x, y: rimTop, z: P(-20, 0).z, d: dRim },
     gallery: { x: ctx.ledges.find((l) => l.section === 'c2-12').x, y: ctx.ledges.find((l) => l.section === 'c2-12').y, z: ctx.ledges.find((l) => l.section === 'c2-12').z },
     clusters,
+    // the Round's walk: three ledges of the stair above the gallery, then the clusters in order (the Ushers of the Round never leave it)
+    roundPath: [...ctx.ledges.filter((l) => l.section === 'c2-11').slice(-3).map((l) => ({ x: l.x, y: l.y, z: l.z })), ...clusters.map((c) => ({ x: c.x, y: c.y, z: c.z }))],
+    // the arena's waking lamps (L2-16 is the beat's own checkpoint): where you wake in each phase
+    lamps: [
+      { id: 'L2-17', label: 'Well Rim', phase: 'B', x: P(-20, 3).x, y: r2(rimTop + 0.4), z: P(-20, 3).z, yaw: 0 },
+      { id: 'L2-18', label: 'Span Head', phase: 'C1', x: plates[0].x, y: r2(plates[0].y + 0.4), z: plates[0].z, yaw: 0 },
+      { id: 'L2-19', label: 'Lift Tower', phase: 'C2', x: r2(lc.x), y: r2(Y(landingD) + 0.4), z: r2(lc.z - 2.5 * Math.sign(lc.z || 1)), yaw: 0 },
+    ],
+    pawlFixture: 'bell-c2-12-pawl',
+    leverFixture: 'lever-c2-12',
     pulpit: { x: pulp.x, y: Y(92), z: pulp.z },
     greatBell: { moverId: 'mov-c2-12-great', ringId: 'c2-12-great-ring', apexE: P(12, 0), apexW: P(-12, 0), period: 12 },
     gate: { solidId: 'c2-12-gate', pawl: { x: P(18.4, 0).x, y: Y(dSill - 3), z: P(18.4, 0).z }, bellN: { x: clapN.x, y: r2(rimTop + 4), z: clapN.z } },
@@ -292,7 +317,7 @@ export function addSootThroat(ctx) {
     const ws = ctx.solids.find((q) => q.id === `c2-13-${w}`);
     if (ws) ws.minY = wallsEndY;
   }
-  ctx.movers.push({ id: 'mov-c2-13-chain', kind: 'lift', section: 'c2-13', x: cx, y: lipY, z: cz, to: { x: cx, y: r2(lipY - drop), z: cz }, travel: 36, dwell: 1e5, ramp: 0.08, once: true, parts: 'lift', size: half * 2, carry: { anchors: [], decor: [] }, scripted: true });
+  ctx.movers.push({ id: 'mov-c2-13-chain', kind: 'lift', section: 'c2-13', x: cx, y: lipY, z: cz, to: { x: cx, y: r2(lipY - drop), z: cz }, travel: 36, dwell: 1e5, ramp: 0.08, once: true, parts: 'lift', size: half * 2, carrier: half, carry: { anchors: [], decor: [] }, scripted: true });
   // the water: a plate that catches a fall (invisible; the director arms it)
   ctx.solids.push({ id: 'c2-13-water', minX: -60, maxX: 60, minY: r2(waterY - 1), maxY: waterY, minZ: -60, maxZ: 60, kind: 'stone', fixture: 'water-c2-13' });
   ctx.lights.push({ x: lastL.x, y: r2(lipY + 2.2), z: lastL.z, color: '#c08040', intensity: 1.0, range: 14, flicker: 0.2 });

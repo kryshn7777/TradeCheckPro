@@ -684,6 +684,7 @@ export class Renderer3D {
         range: Math.max(2, num(l.range, 12)),
         flicker: l.flicker ? (typeof l.flicker === 'number' ? l.flicker : 0.5) : 0,
         seed: i * 1.731,
+        ref: l, // `ref.gain` (0..1, default 1): CHAPTER II's Evening puts lamps out (sim/lampholdDirector.js)
       });
     }
     for (const e of this.envLights) {
@@ -708,6 +709,7 @@ export class Renderer3D {
         const d = hyp(s.x - head.x, s.y - head.y, s.z - head.z);
         const score = d - s.range * 0.6;
         if (d > s.range * 1.3 + 8) continue;
+        if (s.ref && s.ref.gain !== undefined && s.ref.gain < 0.02) continue; // a lamp that has been put out lights nothing
         s._score = score;
         if (best.length < ENV_LIGHTS) best.push(s);
         else {
@@ -750,7 +752,8 @@ export class Renderer3D {
         f = 1 - e.src.flicker * 0.45 * (0.5 + 0.5 * Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1.3));
         if (Math.sin(t * 0.73) > 0.985) f *= 0.4;
       }
-      e.light.intensity = e.src.candela * e.level * f * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
+      const gain = e.src.ref && e.src.ref.gain !== undefined ? e.src.ref.gain : 1;
+      e.light.intensity = e.src.candela * e.level * f * gain * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
       if (f < flickMin) flickMin = f;
     }
     this._lampFlick += (flickMin - this._lampFlick) * 0.2;

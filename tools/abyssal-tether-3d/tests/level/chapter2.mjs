@@ -77,7 +77,7 @@ const D = LEVEL_DATA_CH2;
     minOverlap = Math.min(minOverlap, ox, oz);
     minHead = Math.min(minHead, a.minY - b.maxY);
   }
-  for (const s of D.solids) if (s.kind === 'stone' && s.id.includes('-l') && (Math.abs(s.minX) > 26 || Math.abs(s.maxX) > 26 || Math.abs(s.minZ) > 26 || Math.abs(s.maxZ) > 26)) inside = false;
+  for (const s of D.solids) if (s.kind === 'stone' && /-l\d+$/.test(s.id) && (Math.abs(s.minX) > 26 || Math.abs(s.maxX) > 26 || Math.abs(s.minZ) > 26 || Math.abs(s.maxZ) > 26)) inside = false;
   ok(D.ledges.length > 180 && D.ledges.length < 215, `${D.ledges.length} ledges down the whole chapter (the stair is cut for the arena: a ${gap.toFixed(1)} m gap)`);
   ok(gap > 80 && gap < 100, 'exactly one cut in the stair: the Snuffing arena (the Span and the lift carry you over it)');
   ok(maxStep > 0 && maxStep <= 6.0001, `each ledge is at most ${maxStep.toFixed(2)} m below the one before (across the beat seams too)`);

@@ -150,7 +150,7 @@ export function buildChapter2() {
     const z = r2(23.4 * Math.sin(a));
     const y0 = r2(L.y + 0.2);
     ring('c2-2-lift-ring', x, y0 + 3.5, z);
-    movers.push({ id: 'mov-c2-2-lift', kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: y0 - 30, z }, travel: 14, dwell: 4, ramp: 0.5, parts: 'lift', carry: { anchors: ['c2-2-lift-ring'], decor: [] } });
+    movers.push({ id: 'mov-c2-2-lift', kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: y0 - 30, z }, travel: 14, dwell: 4, ramp: 0.5, parts: 'lift', carrier: 1.4, carry: { anchors: ['c2-2-lift-ring'], decor: [] } });
   }
   // II-5 THE STONE YARDS: two crane hooks on loops round the yards (4.5 and 6 m/s) and a monorail trolley across the pit (5 m/s, there and back)
   {
@@ -177,7 +177,7 @@ export function buildChapter2() {
       const z = -23.5;
       const id = `c2-7-exp${k}`;
       ring(`${id}-ring`, x, y0 + 3.5, z);
-      movers.push({ id: `mov-${id}`, kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: r2(y0 - 80), z }, travel: 9, dwell: 5, ramp: 0.317, phase: k / 3, parts: 'lift', carry: { anchors: [`${id}-ring`], decor: [] } });
+      movers.push({ id: `mov-${id}`, kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: r2(y0 - 80), z }, travel: 9, dwell: 5, ramp: 0.317, phase: k / 3, parts: 'lift', carrier: 1.4, carry: { anchors: [`${id}-ring`], decor: [] } });
     });
   }
   // II-8 THE HUNG QUARTER: the governor, three arms whirling rings in a flat orbit (R 8 m, T 6 s: 8.4 m/s) against the north wall
