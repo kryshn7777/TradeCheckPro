@@ -4,7 +4,7 @@
 > It direct-plans the owner's Level 2 ([CHAPTER_II_PLAN.md](CHAPTER_II_PLAN.md): Chapter II, 1,250 m, 13 beats, 60-70 minutes, ends on a hook, the villain is the Usher)
 > on top of the canon ([CHAPTERS.md](../CHAPTERS.md) §0-§4, §6), the voice ([DARK_STORY_BIBLE.md](DARK_STORY_BIBLE.md)), the villain ([USHER.md](USHER.md)) and what the
 > engine already has (`src/sim/movers3d.js`, `objectives3d.js`, `creature3d.js`, `dresser3d.js`, `holdfast3d.js`, `health3d.js`, `data/chapter2-data.js`).
-> Contracts it cites: ENGINE_EXTENSIONS E10-E19, E25, E26, E28.
+> Engine contracts are cited inline by number (ENGINE_EXTENSIONS E03-E28).
 >
 > **Legend.** `PROPOSAL` = not in any existing doc, the owner may accept or change it. `NEW-SIM` = new simulation code (Node-testable). `NEW-VIEW` = new render, audio or
 > asset work. `DATA-ONLY` = level data on systems that exist today. Depths are the readout (600 -> 1,850 m); chapter-local y = -(depth - 600). Distances are metres.
@@ -33,7 +33,7 @@
 4. **"Seen, never fought."** CHAPTER_II_PLAN §3 proposed the Usher only as a sighting; this brief asks for a boss. Resolved: the Usher is the exam's antagonist; it is still **never fought** (no damage is dealt, ever).
 5. **The Span.** Bible 140 m "across a 110 m pit"; the plan says 150 m "up from 100". Resolved: **150 m along a spiral truss that hugs the pit wall** (it fits a 110 m pit; arc length, not chord).
 6. **Voice.** CHAPTERS §3.2 rule 5 / ART_AUDIO §5.3 say "no voice-over"; the shipped radio (COMMS.md) is allowed. Resolved: the radio stays (and is tied to the lamps, §1.8); **the Usher never speaks** (it knocks, breathes, hums).
-7. **Text budget.** CHAPTERS §11 (about 860 words) was already passed by the +51 boards of DARK_STORY_BIBLE. Chapter II adds about 200 words (22 lines, §1.6). PROPOSAL: the budget becomes per chapter (about 250 words).
+7. **Text budget.** CHAPTERS §11 (about 860 words) was already passed by the +51 boards of DARK_STORY_BIBLE. Chapter II adds about 190 words (19 new lines, §1.6). PROPOSAL: the budget becomes per chapter (about 250 words).
 8. **Creatures.** Chapter II inherits the Mason (hurt-gated), the Dresser (whole-gated), the Holdfast (grip) from Chapter I. PROPOSAL: Holdfast in II-2, Dresser in II-6 (its home), **no skitterlings** (they are the Underspire's kin; the Usher is Lamphold's), the Usher from II-9.
 
 ### 0.3 The direction in ten lines
@@ -46,7 +46,7 @@
 6. **The boss.** The **Head Usher** (the Doorman): the same silhouette at 1.8x on a pulpit, whose collar comes undone so that **the throat goes on** (16 -> 24 -> 32 m). Three phases: the Round (II-12 A), the Well (B), the Span and the Lift (C).
 7. **The win.** You cannot kill it. You make it open the door for you (it strikes the pawl you toll), you cross while it recoils, and you ride the cage down while it snuffs the last lamp. The Evening ends; the Doorman sits.
 8. **The loss.** The player leaves in the dark with the only light left in Lamphold, and every bed is creaking.
-9. **The hook (II-13).** The Soot Throat lowers you over the Mere. Under the black water, ranks of Ushers, collars off, throats unbound. They turn to your lamp, rise to the surface and **bow**: an aisle of arching throats leading across the water. *III · THE MERE.* **Who is the seat at the end of the aisle for?**
+9. **The hook (II-13).** The Soot Throat lowers you over the Mere. Under the black water, ranks of Ushers, collars off, throats unbound. They turn to the chain's clicks, rise to the surface and **bow**: an aisle of arching throats leading across the water. *III · THE MERE.* **Who is the seat at the end of the aisle for?**
 10. **The ask.** Chapters III-V, one calm button, no countdown.
 
 ---
@@ -56,12 +56,12 @@
 ### 1.1 What Lamphold was (the team truth; never printed on a wall)
 
 1. **The Lampholders** (CHAPTERS §2.2: "Live beside your dead; name them. They lit lamps below the Mark in defiance (*KNOCK, AND BE KNOWN.*)") settled the pit below the Mark. They refused the Keepers' law *BELOW THIS MARK NO LAMPS* and kindled 3,000 lamps from the Still Flame, because (rule 3) "one lamp holds one of them".
-2. **The name is literal.** When a Lampholder's last waking came, they were not dressed into a block and built into a wall (that was the Keepers' and the Dressing Yards' rough trade, *DRESS THE OLD STONE WITH CARE. IT WAS SOMEONE.*); they were **set in a niche above their own bed with one arm raised, holding their own lamp**. A *lamp-holder*. The lamp holds the sleeper still; the sleeper holds the lamp up. Closed loop. That is why 3,000 lamps burn (rule 1: a lamp kindled from the Flame never burns down) and why "every lamp has its own small niche, and every niche is full" (DARK_STORY_BIBLE §2.4).
+2. **The name is literal.** When a Lampholder's last waking came, they were not dressed into anonymous blocks and built into a wall (the Keepers' trade, *IT WEARS OUR WORK*); they were dressed with care (the Dressing Yards: *DRESS THE OLD STONE WITH CARE. IT WAS SOMEONE.*) into a figure **set in a niche above their own bed with one arm raised, holding their own lamp**. A *lamp-holder*. The lamp holds the sleeper still; the sleeper holds the lamp up. Closed loop. That is why 3,000 lamps burn (rule 1: a lamp kindled from the Flame never burns down) and why "every lamp has its own small niche, and every niche is full" (DARK_STORY_BIBLE §2.4).
 3. **The roll.** A named kept lies down (ending C: "name the dead, and they lie down"). Names wear off, so the Lampholders called the roll **every morning**: the tally plate at each bed is a name in notches (*EVERY LAMP A BED. EVERY BED A MORNING.*).
-4. **The day.** Morning: the **Lamplighters** carry the master flame down from the Gallery and light the tiers; the **engine** (the Winding Floor) knocks every door at dawn; the **Ushers** walk the beds, knock each tally plate and say each name. Evening: the Ushers put the town to bed, tier by tier, snuffing the lamps so the lamp-holders may lower their arms for the night; the Lamplighters light them again before the stone remembers it can walk.
-5. **Why only Ushers can snuff.** A lamp kindled from the Flame cannot be blown out (rule 4: the Flame's light holds everything still). The Lampholders found one thing it cannot burn against: **an empty place the exact shape of a face**. So they made the office: a man gives his head to the roll (*THE USHER GAVE HIS HEAD TO THE ROLL*); the throat that grows out of the collar is his speaking-tube, and the ring where the face was is the empty place. Put the ring over a lamp and the lamp goes out; the ring keeps the light, cold. (Rhymes with Chapter I: the Fitting is a place cut to fit a person; an Usher is a person with a place cut in him.)
+4. **The day.** Morning: the **Lamplighters** carry the master flame down from the Gallery and light the tiers; the **engine** (the Winding Floor) knocks every door at dawn; the **Ushers** walk the beds, ring the small bell at each tally plate and say each name through the throat. Evening: the Ushers put the town to bed, tier by tier, snuffing the lamps so the lamp-holders may lower their arms for the night; the Lamplighters light them again before the stone remembers it can walk.
+5. **Why only Ushers can snuff.** A lamp kindled from the Flame cannot be blown out (rule 4: the Flame's light holds everything still). The Lampholders found one thing it cannot burn against: **an empty place the exact shape of a face**. So they made the office: a man gives his head to the roll (*THE USHER GAVE HIS HEAD TO THE ROLL*: a team phrase, never printed); the throat that grows out of the collar is his speaking-tube, and the ring where the face was is the empty place. Put the ring over a lamp and the lamp goes out; the ring keeps the light, cold. (Rhymes with Chapter I: the Fitting is a place cut to fit a person; an Usher is a person with a place cut in him.)
 6. **Why the Morning never came.** The Lamplighters sat down in the Assembly at the Bell Well to wait for the last Evening to end, forty of them, lanterns in their laps, and did not stand up. The lamps stayed lit for five hundred years because nobody put them out; the Ushers stood at their stations and waited for the engine's knock.
-7. **Why now.** The engine is the town's clock. The Stopping (II-10) jams it; the runaway restart runs the day at 1.6x; Evening arrives early. The Ushers wake to the knock and begin the oldest rite in the town. It needs a Morning to finish. There is no Lamplighter. Then a pilgrim arrives with the brightest lamp in the world in her hand.
+7. **Why now.** The engine is the town's clock. The Stopping (II-10) jams it; the runaway restart runs the day at 1.6x; Evening arrives early. The Ushers wake to the knock and begin the oldest rite in the town. It needs a Morning to finish. There is no Lamplighter. Then a pilgrim arrives with the brightest lamp in the world in their hand.
 
 ### 1.2 Why 3,000 lamps burn (the line the player can reach)
 
@@ -72,12 +72,12 @@ Because each one is held. The Waking Hall (II-4) shows it three ways: the lamp, 
 | Question | Answer (PROPOSAL, all of it) |
 |---|---|
 | What is an Usher? | An **office**. A man in the town's formal dress (long dark coat, white collar, black tie) whose head was given to the roll. USHER.md's model is exactly this. |
-| What is the white collar? | The **leash**. A collared Usher's throat stays short (3.75 m). When a collar comes undone the throat "goes on". The Head Usher's collar falls at the betrayal (§3.12); the Ushers of the Mere (§4) have none. |
+| What is the white collar? | The **leash**. A collared Usher's throat stays short (3.75 m). When a collar comes undone the throat "goes on". The Head Usher's collar falls at the betrayal (§3.6, Phase B); the Ushers of the Mere (§4) have none. |
 | What is the ring? | The empty place. Its cold membrane is the light of every lamp it has put out, kept without warmth. It is the only light an Usher has, and it is also its **torch**: it lights the spot it will strike. |
-| What does it hear? | **Bells.** It was built to answer the morning knock, the Evening bell, the pawl, the cage gong. It ignores footsteps, landings, yanks, breath and the Mason (which it cannot reach and cannot stop answering). |
+| What does it hear? | **Bells.** It was built to answer the morning knock, the Evening bell, the pawl, the cage gong. It ignores footsteps, landings, yanks, breath, knocks (those are for the dead) and the Mason. |
 | What does it want? | To **finish the roll**: to answer every toll, and when a toll is a person, to show them to their seat. Its second, darker reading: a ring is an empty place, and it has been waiting a long time for something to fill it. |
 | How does it kill? | It strikes the place the bell rang, after a visible warning. A struck player is *seated*: the death line is **"ANSWERED. YOU WERE SHOWN TO YOUR SEAT."**; the remnant is a stone figure sitting, head bowed, hands in lap. No gore. |
-| Relation to the Mason | The Mason is the roll's failures knocking to be named; the Ushers are the roll's keepers answering. They never reach each other (one lives in the walls, the other on the floors), which is the saddest fact in the game. The Mason follows the dark the Ushers leave: **the Snuffing is how it grows** (22 -> 24 segments for Chapter III). |
+| Relation to the Mason | The Mason is the roll's failures knocking to be named; the Ushers are the roll's keepers, who call the roll with bells and so never hear a knock. The one who would name them cannot hear them (one lives in the walls, the other on the floors): the saddest fact in the game. The Mason follows the dark the Ushers leave: **the Snuffing is how it grows** (22 -> 24 segments for Chapter III). |
 | Relation to the Dresser, Holdfast | The Dresser dressed the old into lamp-holders; the Holdfast is a lamp-holder reaching for a hand; the Usher tucks them in. One family of "what the town does with its dead". |
 | Relation to Chapter III and the endings | The Unkindled slept under the Mere and **their** ushers stand over them (the hook). The Ushers want the last lamp out (ending A's instrument, the way the Mason is ending B's). The Mark Lamp is the last lamp. The player carries what both hunt. |
 
@@ -107,14 +107,14 @@ The Mason's canon ("made of everyone the light left behind") is shown by contras
 | Margery's lowered hand | II-4 | optional |
 | Everything ends: in the dark behind you the lamp-holders' arms **come down** (a sound, not a sight) | II-12 end | yes |
 
-### 1.6 The in-world text (22 new lines + the 4 canon lines)
+### 1.6 The in-world text (19 new lines + the 4 canon lines)
 
 Voice (DARK_STORY_BIBLE §1): the Lampholders are **domestic and kind**, a town's notices written in chalk (the shipped text style, TEXT_IN_THE_WORLD "written by a hand"); they never explain the mechanism; every line asks one question; no cheap shock words (never *death, dead, kill, doom, horror*); the gaps do the work. Plaques are canon-style (<= 12 words); boards are the board channel (<= 18 words).
 
 | # | Beat | Text | Style | The question it plants | Second reading |
 |---|---|---|---|---|---|
-| T1 | II-1 roof | THERE IS ALWAYS A LAMP LEFT ON FOR THE LATE. | plaque | who is late, and who left it? | it is for you; Chapter I's *THE LATE ARE USED SOONER* |
-| T2 | II-2 | **KNOCK, AND BE KNOWN.** (canon) | plaque | known by whom? | the Ushers answer knocks |
+| T1 | II-1 roof | THERE IS ALWAYS A LAMP LEFT ON FOR THE LATE. | plaque | who is late, and who left it? | it is for you; Chapter I's *THE LATE ARE NOT PUNISHED. THEY ARE USED SOONER.* |
+| T2 | II-2 | **KNOCK, AND BE KNOWN.** (canon) | plaque | known by whom? | the dead answer knocks; the Ushers answer bells |
 | T3 | II-2 | WE KNOCK TWICE. THE HOUSE KNOCKS BACK. WE ARE GLAD OF IT. | board | glad? | Chapter I: *HALLAM KNOCKED TWICE FOR LUCK. THE WALL KNOCKED THREE.* |
 | T4 | II-3 | THE CHANDELIERS KEEP THE HOURS. THE HOURS KEEP THE TOWN. | board | whose hours? | the engine is a clock |
 | T5 | II-4 | **EVERY LAMP A BED. EVERY BED A MORNING.** (canon) | plaque | a morning for whom? | the roll |
@@ -178,6 +178,8 @@ Voice (DARK_STORY_BIBLE §1): the Lampholders are **domestic and kind**, a town'
 
 ## 2. THE THIRTEEN BEATS
 
+**Status.** The nine bible beats (II-1..II-4, II-6, II-8, II-10, II-12, II-13) keep their canon READ / CHOICE / COMMIT; everything marked here beyond CHAPTERS §6.1 (geometry numbers, lines, the four new beats II-5, II-7, II-9, II-11, the Usher's traces, the Holdfast and Dresser sites) is a PROPOSAL.
+
 Format: the bible's READ / CHOICE / COMMIT / RISK / RECOVERY / REWARD / ESCALATION, then **Build** with every item marked NEW-SIM / NEW-VIEW / DATA-ONLY. Times are first-time, Normal, deaths included
 (sum 60.0 min; the plan's own table). The pit rules of CHAPTERS §3 apply: teach, then test, then twist; >= 2 min of low intensity before the exam; a safe line and a fast line in every beat; no camera motion.
 
@@ -227,7 +229,7 @@ Format: the bible's READ / CHOICE / COMMIT / RISK / RECOVERY / REWARD / ESCALATI
 - **RISK:** releasing on the downswing throws you short into a 90 m drop (lethal).
 - **RECOVERY:** static recovery rings under the two longest transfers (N 2, NM 1, AB 0); a lift shaft along the wall whose cage roof catches a fall gently (relative-velocity impact, E16); lamp L2-3 on the second balcony.
 - **REWARD:** the fast line (two chandeliers chained, no balcony) saves ~25 s; N2-3 HEDDA on a 1 m ledge reachable only by releasing at the third chandelier's maximum amplitude. Trial *Clockwork* starts at the first chandelier.
-- **ESCALATION:** the chandeliers end at the Waking Hall's door. Below, saws whine.
+- **ESCALATION:** the chandeliers end at the Waking Hall's door. Far below, chains and rails: the yards.
 - **Build:** pendulums L 20/24/30/36/30, T 8.0-11.0, amp 0.35-0.55 (8.5-11.5 m/s, cap 12): speed cap raise + E16 relative impact NEW-SIM (C2-1a); rails, glints, apex ticks NEW-VIEW; geometry DATA-ONLY.
 
 #### II-4 · THE WAKING HALL · 830-890 m · REST / TRUTH 2 · Int. 1 · 3 min [cuttable: shrink to 1.5 min]
@@ -283,15 +285,15 @@ Format: the bible's READ / CHOICE / COMMIT / RISK / RECOVERY / REWARD / ESCALATI
 
 #### II-9 · THE TOLLING GALLERY (new) · 1,360-1,460 m · REST / TRUTH 3 · Int. 1-2 · 4 min
 *The Usher's first sighting. It teaches the rule and the torch in complete safety.*
-- **READ:** a covered nave 64 m long hung on iron beams between two towers; **nine bells** (1-4 m) hang from the roof beams in a line, rope rings along the beams. T12, T13. No machinery runs here: the quietest place in the chapter.
-- **CHOICE:** ring the Morning Peal (any five of nine), or sit and listen.
+- **READ:** a covered nave 64 m long hung on iron beams between two towers; **eight bells** (1-3 m) hang from the roof beams in a line, rope rings along the beams; a ninth, the **Tenor** (4 m), hangs from a cantilever 12 m below the nave's end and is not part of the peal. T12, T13. No machinery runs here: the quietest place in the chapter.
+- **CHOICE:** ring the Morning Peal (any five of the eight), or sit and listen.
 - **COMMIT:** swing into a bell with your body (>= 2.5 / 3.0 / 3.5 m/s; the shipped `bell` verb: it bounces you, every strike is a loud toll). Five open the way down (the tower hoist).
-- **THE ANSWER (scripted, deterministic, non-lethal):** toll 1: three light raps from far below. Toll 2: a pale ring turns in the dark 100 m under you. Toll 3: it climbs one tier. Toll 4: it reaches the **Tenor's landing**, 12 m below the nave's end, where the ninth bell (4 m, the Tenor) hangs from a cantilever. It stands under it, ring turned up, and its **torch** lights the bell: a cold sphere of light 2.6 m wide. The hum rises for 2 s. The throat whips and **strikes the Tenor**: BONG. It does not stop; it keeps striking the bell it just rang (it is *parked*, §3.7). After the third blow the iron stand snaps and the Tenor falls 60 m: a long clang, a crash far below; the Usher turns and **walks away down the stairs toward the crash**.
+- **THE ANSWER (scripted, deterministic, non-lethal):** toll 1: three light raps from far below. Toll 2: a pale ring turns in the dark 100 m under you. Toll 3: it climbs one tier. Toll 4: it reaches the **Tenor's landing**, 12 m below the nave's end, where the Tenor hangs from its cantilever. It stands under it, ring turned up, and its **torch** lights the bell: a cold sphere of light 2.6 m wide. The hum rises for 2 s. The throat whips and **strikes the Tenor**: BONG. It does not stop; it keeps striking the bell it just rang (it is *parked*, §3.7). After the third blow the iron stand snaps and the Tenor falls 60 m: a long clang, a crash far below; the Usher turns and **walks away down the stairs toward the crash**.
 - **RISK:** none, by geometry: the Usher can reach only the Tenor's landing, never the nave (a raised gate leaf); the bot checks that every point the Usher can stand on is >= reach + 3 m from every point the player can stand on.
 - **RECOVERY:** n/a. Lamp L2-12 at the nave's start; the rest is not betrayed (CHAPTERS §3.1 rule 2).
 - **REWARD:** truth 3 (the roll) and a close, safe look at the villain: the coat, the breath through the throat, the ring, the sphere, the way it turns gold, the recoil. You learn five facts: it answers bells; the torch marks the spot; the blow breaks what it hits; a bell can park it; it walks, it does not climb.
 - **ESCALATION:** the hoist drops you past the empty Tenor landing, 12 m from where it stood.
-- **Lines:** fast = five bells on three shared rope rings (30 s); safe = one bell at a time from the beams (80 s).
+- **Lines:** fast = five of the eight bells on three shared rope rings (30 s); safe = one bell at a time from the beams (80 s).
 - **Build:** `bell` verb DATA-ONLY (exists); scripted `UsherSight` actor and the Tenor's `blow` fixture NEW-SIM (C2-3d); the Usher in game, the nine bells' modal tones NEW-VIEW (C2-3b).
 
 #### II-10 · THE WINDING FLOOR / THE STOPPING · 1,460-1,560 m · CREATURE BEAT · Int. 4 · 5.5 min (bible II-7, stretched from 60 to 100 m)
@@ -319,7 +321,7 @@ Format: the bible's READ / CHOICE / COMMIT / RISK / RECOVERY / REWARD / ESCALATI
 Specified in full in **§3** (it is the boss). One line each: **Quiet (2 min)** the Lamplighters' Gallery, lit, T17 T18, the Round far above, the stalls and the pulpit in the dark below; **A, the Round (~110 s)** descend five tiers ahead of the front; **B, the Well (~90 s)** the betrayal and the crossing; **C, the Span and the Lift (~100 s)** the 150 m truss and the cage.
 
 #### II-13 · THE SOOT THROAT · 1,790-1,850 m · RECOVERY, then THE HOOK · Int. 1 · 3 min
-Specified in full in **§4**. The true rest (never betrayed) for the first 40 seconds; then the chain.
+Specified in full in **§4**. The true rest (never betrayed) for the first 60 seconds; then the chain.
 
 ### 2.1 Where the creatures are (beat summary)
 
@@ -379,6 +381,8 @@ A Phase B or C lamp is **kindled on arrival** and cannot be snuffed by an Usher 
 
 ## 3. THE BOSS: THE HEAD USHER (and the Round that leads to him)
 
+> **PROPOSAL (the whole section).** Nothing in the existing docs designs this boss; every number below is a first tuning for the bots and the headset to confirm. The existing sims it reuses are named; the new ones are marked.
+
 ### 3.1 The decision, and why
 
 | Option | For | Against | Verdict |
@@ -411,8 +415,7 @@ Why it fits the pillars. (1) The rope is the game: it is beaten only by live anc
 | Great Bell stroke | `evening:stroke` | 1.0 | whole Well | the bell at its apex | NEW-SIM |
 | **Brass ring bite** (anchor flag `toll`: a small bell hangs from its rim) | `grapple:attach` | 0.35 | 18 m | the ring | NEW-SIM (flag) |
 | Collapse crash (debris landing) | `front:crash` | 0.6 | 36 m | the crash | NEW-SIM |
-| Player knock | `player:knock` | 0.5 | 30 m | the hand | needs E10 |
-| **Not tolls** | footsteps, landings, wall hits, rope jolts, yanks on non-machine anchors, reel, breath, radio, the Mason | 0 | | | |
+| **Not tolls** | footsteps, landings, wall hits, rope jolts, yanks on non-machine anchors, reel, breath, **knocks on doors and walls (the Names: knocks are for the dead)**, radio, the Mason | 0 | | | |
 
 Brass rings **chime** from II-1 on, as a harmless joy (the first sound of the chapter). In II-12 the same chime is dread. *The player learned to love the sound that calls it.* Iron rings are silent. Shape-code (a small bell on the rim) and a phosphor flare on bite; the caption is "[Ring chimes]".
 **Masking.** A louder event within 10 m of a quieter toll hides it for 1.0 s (a crash hides a chime). The Head Usher hears 1.5x the listed ranges (it is the big ear).
@@ -459,15 +462,15 @@ Intensity 1. The Lamplighters' Gallery is lit. T17, T18. Far above, a ring of la
 - **Lines:** *fast* the chandelier chain (T1 -> T5; brass rings near the galleries chime, which matters only if the front has caught you; the centre rings are iron); *safe* the lifts (silent, each its own moving `safeLight`, a 12 s ride, 8 s headway); *slow* the stairs (a hidden alcove on T3: the one place a staller is not snuffed).
 - **The clapper (the first remote toll):** every tier has a **clapper ring** on a chain (a pull-anchor: aim and yank 1.2 s) whose **bell-wire runs up to the bell on the tier above**, where the lowest working Usher is. Yank it and that bell tolls: the Usher walks to it and **strikes it** (it is *parked*: it keeps striking the bell, a cycle of 7.85 s on Normal, for 3 strikes, NM 2, AB 1, then resumes the Round). Parking the lowest working Usher **holds the front** for about 24 / 13 / 6 s after it reaches the bell (plus its walk). The tool for a player who is behind; the cost is a hand and a rope.
 - **Recovery:** static iron recovery rings under every chandelier transfer (N 2, NM 1, AB 0); lamp L2-16 (and L2-17 on arrival).
-- **Reward / escalation:** T5, the Well rim, a dark pit full of the sound of a thousand chairs. **The Doorman's collar comes undone.**
+- **Reward / escalation:** T5, the Well rim, the stalls' lamps burning below. **The Doorman's collar comes undone.**
 
 #### PHASE B: THE WELL (~90 s, d 66 -> 96; the betrayal and the crossing)
-- **Start:** you step on the Well rim (L2-17 kindles). **The betrayal:** the lamps **below** you go out. The Doorman unbuttons his brass collar; it falls; the throat **pays out** and sweeps the Well's floor in two arcs at 6 m/s, snuffing the rows of lamps in the stalls from the back forward until the last row; the empty seat's lamp is the last. You see the throat for the first time: 16 m of ribbed tube, a ring at the end, the comet of lamps going out behind it. 12 s. You are out of reach (the rim is 44 m from the pulpit). Then the **Great Bell is released** and begins its stroke.
+- **Start:** you reach the Well's west rim, the T5 landing (L2-17 kindles). **The betrayal:** the lamps **below** you go out. The Doorman unbuttons his brass collar; it falls; the throat **pays out** and sweeps the Well's floor in two arcs at 6 m/s, snuffing the rows of lamps in the stalls from the back forward until the last row; the empty seat's lamp is the last. You see the throat for the first time: 16 m of ribbed tube, a ring at the end, the comet of lamps going out behind it. 12 s. You are out of reach (the rim is 44 m from the pulpit). Then the **Great Bell is released** and begins its stroke.
 - **Goal:** reach the Span head (L2-18) through **gate G**, which is shut. G opens only when its **pawl** is struck.
 - **The exact rule: the pawl breaks under any blow of 3.5 m/s or more: the Doorman's whip, or your own body.** Both are tolls at G's pawl bell.
 - **The Great Bell's stroke** is a toll every 6 s alternating the west and east apex (Normal timeline in §3.7). The Doorman answers each; his reach (16 m from the pulpit, at x +16) covers the east apex and G but not the west apex: a west stroke draws his torch and his throat extends fully and **sags short**. The east stroke gets a real strike 4.5 s later at the east apex point.
 - **Safe line (the Doorman opens the door; ~80 s):** (1) on the west rim aim at **clapper W**, yank 1.2 s: G's pawl bell tolls by the bell-wire. (2) The Doorman Listens (2.5 s), Coils (2.0 s), **WHIPs the pawl**: the leaf crashes down (a deck now). (3) Recoil 3 s. He is aimed at G. (4) Cross the Well on the **iron** north-rim chandeliers (silent, outside his reach, 3 rings). (5) On Nightmare and Abyss the leaf's crash is a toll at G, so he is aimed at G again: before the last 14 m, toll **clapper N**; the north bell draws his torch and his throat away (a decoy window of 7.9 s: Listen + Coil + Whip + Recoil, as long as nothing newer rings; the Great Bell's east stroke strikes the east apex, 13 m from G, not G). On Normal the crash is silent and this step is optional insurance. (6) Cross G; step onto the Span; L2-18.
-- **Fast line (the player opens the door; ~35 s):** attach to the Great Bell's crown ring as it passes the west apex; ride the swing east (6 s); release at the east apex (the stroke is at the same instant: the Doorman starts to Listen) and fly 13 m to **G's pawl bell**, striking it with your body at >= 3.5 m/s: the pawl breaks, the leaf falls, you bounce onto it, run 12 m to the Span. The whip lands on the east apex (behind you) at +4.5 s, and on Nightmare / Abyss the leaf's crash is a toll at G that re-aims him to the leaf. You are 7 m past it. The speed-run line and a trailer shot.
+- **Fast line (the player opens the door; ~35 s):** attach to the Great Bell's crown ring as it passes the west apex; ride the swing east (6 s); release at the east apex (the stroke is at the same instant: the Doorman starts to Listen) and fly 13 m to **G's pawl bell**, striking it with your body at >= 3.5 m/s: the pawl breaks, the leaf falls, you bounce onto it, run 12 m to the Span. Your strike is a fresh toll at G, so he re-aims (the Listen is cut to 0.6 s more) and his whip lands on G about 4.1 s after the stroke, **14 m behind you**, and takes the leaf with it: the Span's first truss falls away behind you and the C1 front begins. On Nightmare and Abyss the leaf's crash is a further toll at G; you are already past it. The speed-run line and a trailer shot.
 - **Counters:** iron rings; decoy tolls; riding the bell; Recoil windows; the sag-short sign that you are beyond reach.
 - **Recovery:** iron recovery rings under the crossing (N 3, NM 1, AB 0); lamp L2-17 on the rim.
 - **Fairness:** no strike within 3 s of respawn; the leaf's crash is not a toll on Normal.
@@ -483,9 +486,9 @@ Intensity 1. The Lamplighters' Gallery is lit. T17, T18. Far above, a ring of la
 #### PHASE C2: THE LIFT AND THE LAST LAMP (~30 s, d 120 -> 150)
 - **Start:** the tower top landing (L2-19), the cage waiting. The Doorman stands at the gate 6 m away, ring turned to you; his throat has paid out to 32 m. **No tolls from you = no strike.** Departure: one yank on the cage's lever ring (a `haul` ring on the cage's outside face, one 1.0 s notch: a toll at the cage); the gong sounds at the end of the notch, and that is t = 0.
 - **Goal:** ride the Lamplighter's Lift 30 m (15 s) and get through the Soot Throat's door before it shuts.
-- **The cage is the bait.** It carries the master lamp (the last lit lamp in Lamphold, a moving `safeLight`). Departure gong at t = 0; a **gong plate every 5 m** on the shaft wall tolls as the cage passes. The Doorman leads the cage: **whip 1 lands at 4.5 s** (NM 3.9, AB 3.5) on the cage's predicted position; **whip 2 at 12.35 s** (NM 10.6, AB 9.25; AB also at 15.0), the last one at the bottom. The sphere (Head: 2.6 m) covers the whole cage. **Do not be in the cage.** Hang from the cage's outside rings on a rope 3.3 m or longer (the cage's side faces the 4 m gap to the shaft wall) or from the shaft's guide rings: the cage is a moving anchor and you ride its speed.
-- **The last lamp:** whip 2 hits the cage and **snuffs the master lamp**. The last lit lamp in Lamphold is out. (The Mark Lamp in your hand is not touched: the Usher's rule is to answer the toll, not to chase the lamp.)
-- **The door:** the lamp's death starts the **shutter** on the Soot Throat's mouth: a chain ratchet 1.5 s before it moves, then it closes in 5.0 s (NM 4.0, AB 3.0) from the lamp's death. Jump from the cage's outside ring to the Throat's lip (3 m) or reel in.
+- **The cage is the bait.** It carries the master lamp (the last lit lamp in Lamphold, a moving `safeLight`). Departure gong at t = 0; a **gong plate** every 5 m on the shaft wall tolls as the cage's shoe strikes it (the toll is the cage's own, at the cage). The Doorman leads the cage: **whip 1 lands at 4.5 s** (NM 3.9, AB 3.5) on the cage's predicted position; **whip 2 at 12.35 s** (NM 10.6), the last one, 2.5 m above the bottom; on Abyss the whips land at 3.5, 9.25 and 15.0 s (the last at the bottom). The sphere (Head: 2.6 m) covers the whole cage. **Do not be in the cage.** Hang from the cage's outside rings on a rope 3.3 m or longer (the cage's side faces the 4 m gap to the shaft wall) or from the shaft's guide rings: the cage is a moving anchor and you ride its speed.
+- **The last lamp:** the last whip (the 2nd; the 3rd on Abyss) hits the cage and **snuffs the master lamp**. The last lit lamp in Lamphold is out. (The Mark Lamp in your hand is not touched: the Usher's rule is to answer the toll, not to chase the lamp.)
+- **The door:** the lamp's death starts the **shutter** on the Soot Throat's mouth: a chain ratchet 1.5 s before it moves, then it is closed 6.0 s (NM 5.0, AB 3.75) after the lamp's death. Jump from the cage's outside ring to the Throat's lip (3 m) or reel in.
 - **Recovery:** lamp L2-19 (N, NM). If the shutter beats you, or a whip lands, you wake at L2-19 with the cage back at the landing (E03 snapshot).
 
 ### 3.7 State machines (to implement from)
@@ -516,7 +519,7 @@ Pure sim, `src/sim/usher3d.js` (`Usher3D`, `USHER_TUNING`, `USHER_DIFF`, `tollHe
 | COLLAR | the Well rim trigger | 3.0 s -> SWEEP | the brass collar unbuttons and falls (a prop with a 1.2 s fall and a ring); `stretch` 1 -> 2.4 |
 | SWEEP | collar down | 12 s -> STAND | two scripted arcs over the stalls at 6 m/s tip speed snuffing the rows; the tip is lethal (nobody is in range: the rim is 44 m away); closed-form |
 | RELOCATE | Phase B done (the pawl broken and the player past G) | arrives at the tower gate -> STAND | station 2; only out of sight: the leaf's crash raises a dust cloud that hides the pulpit for 3 s; if he is still seen he waits (the Dresser's relocation rule) |
-| REACH | per phase | | B 16 / 18 / 20 m (from the pulpit collar), C1 24 / 26 / 28 m, C2 32 / 34 / 36 m; `stretch` 2.4 -> 3.7 -> 5 |
+| REACH | per phase | | B 16 / 18 / 20 m (from the pulpit collar), C1 24 / 26 / 28 m, C2 32 / 34 / 36 m; `stretch` = reach / 6.75, at most 5.5 |
 
 **The Evening clock (closed form of the section clock `t`, reset on respawn to the phase lamp's snapshot).** Phase B, Normal, t = 0 at the Well rim: COLLAR 0-3 s; SWEEP 3-15 s; the Great Bell released at 15 s, strokes at 15 (W), 21 (E), 27 (W), 33 (E) ...; the Doorman's whip on each E stroke at stroke + 4.5 s (25.5, 37.5, 49.5 ...); W strokes are out of reach (sag-short, no whip). The Round: cluster k of tier j is snuffed at `t0_j + 6 k`; `t0_j` is the front's arrival at tier j (E19 rubber band). The Span: E19 `collapse`. The Lift: the cage `s(t) = 30 · smoothstep(t / 15)`, peak 3.0 m/s.
 
@@ -593,7 +596,9 @@ Music (diegetic first; CHAPTERS §6.3 `cue.ch2.*`): `cue.ch2.snuffing` (A, ~110 
 |---|---|
 | Common Usher | `usher.glb` as is (28.7 k triangles, 6 draws, 34 bones). **COIL / WHIP / RECOIL are the existing `Lunge` clip, scrubbed**: 0 -> 0.525 s (draw-back, eased over the telegraph, held), 0.525 -> 0.78 s (the whip), 0.78 -> 1.5 s (the settle, slowed to the Recoil timer). `Idle`, `Walk`, `Listen` as named. No new clip for the combat. |
 | New clips (small, same builder `build_usher.py`) | `Snuff` (1.2 s: the neck curls down over a lamp), `Bow` (2.5 s: the throat arcs forward in a long low curve; the hook), `Sit` (3 s: the Evening's end). 3 clips, +~20 KB. |
-| Head Usher | the same GLB at **1.8x**; the throat "goes on" by **scaling Neck01..14 along their length** (`stretch` 1 -> 5: 6.75 m -> 33 m); the `Maw` ring scale as today. **Spike (half a day):** if stretched ribs look like an accordion, fall back to a procedural **throat ribbon** (an `InstancedMesh` of rib segments along a spline from the collar to a detached ring mesh), one extra draw. |
+| Head Usher | the same GLB at **1.8x**; the throat "goes on" by **scaling Neck01..14 along their length** (`stretch` 1 -> 5.5: 6.75 m -> 37 m); the `Maw` ring scale as today. **Spike (half a day):** if stretched ribs look like an accordion, fall back to a procedural **throat ribbon** (an `InstancedMesh` of rib segments along a spline from the collar to a detached ring mesh), one extra draw. |
+| Bones | none added: the 34-joint contract stays (`test-glb-usher.mjs` checks "and nothing else"); the collar, keys and torch are separate meshes, the throat stretch is bone scale on existing bones. |
+| Remnant pose | E08 gets a `seated` pose (sitting, head bowed, hands in lap; the figure kit) and a death cause `usher` with its line and sting (E27, E26). NEW-VIEW. |
 | Collar | a separate small mesh (a brass band) that detaches and falls at COLLAR; the common Ushers wear the white band as modelled; the Mere's have none. +1 call. |
 | Keys | a small instanced ring of keys at the Head Usher's belt (jingle audio). +1 call. |
 | Torch | an additive cone and a fresnel sphere shell (480 triangles), no real light; +2 calls. |
@@ -602,11 +607,13 @@ Music (diegetic first; CHAPTERS §6.3 `cue.ch2.*`): `cue.ch2.snuffing` (A, ~110 
 
 ### 3.12 The escape, and what comes after
 
-At the top of the shaft the Doorman's ring is level with the empty cage. Whip 2 lands. The master lamp, hanging from the cage's roof, goes out with a pop and a tiny cold chime; the ring flares once, brightest it has ever been. In one wave, from the tower outward and upward through the town, **every remaining light in Lamphold goes out**: the Round's rings, the last cluster, the stalls' lamps. The Evening is complete. The Doorman's throat withdraws up the shaft with a long dry rasp, and, small and clear from 30 m above, **a chair is drawn out and someone sits down**. The shutter is already moving: you swing through the Throat's mouth and it closes behind you. In the dark, with only the Mark Lamp's flame (it leans down), you hear what you did: far above, across the whole pit, a sound like a library of cards being set down, then thousands of small creaks like a house settling. **Everyone is awake.** The wrist bars read NO SIGNAL. The chapter's time keeps running into II-13, where the first 60 seconds are silent.
+At the top of the shaft the Doorman's ring is level with the empty cage. The last whip lands. The master lamp, hanging from the cage's roof, goes out with a pop and a tiny cold chime; the ring flares once, brightest it has ever been. In one wave, from the tower outward and upward through the town, **every remaining light in Lamphold goes out**: the Round's rings, the last cluster, the stalls' lamps. The Evening is complete. The Doorman's throat withdraws up the shaft with a long dry rasp, and, small and clear from 30 m above, **a chair is drawn out and someone sits down**. The shutter is already moving: you swing through the Throat's mouth and it closes behind you. In the dark, with only the Mark Lamp's flame (it leans down), you hear what you did: far above, across the whole pit, a sound like a library of cards being set down, then thousands of small creaks like a house settling. **Everyone is awake.** The wrist bars read NO SIGNAL. The chapter's time keeps running into II-13, where the first 60 seconds are silent.
 
 ---
 
 ## 4. THE HOOK (II-13 THE SOOT THROAT, 1,790 -> 1,850 m, 3 min) for the full version
+
+> **PROPOSAL.** It refines CHAPTER_II_PLAN §3 (the owner's own proposal); the plan's version remains the fallback.
 
 ### 4.1 What changes from CHAPTER_II_PLAN §3, and why
 
@@ -616,8 +623,9 @@ The plan's hook is right: a silent, safe throat; a chain; black water; rings und
 2. **They bow.** The near Usher rears to your eye level, ring open, **the torch on you, and it never goes gold**: the first time in the chapter you stand in the light and nothing happens. Then it **bows**, and every Usher in the Mere rises and bows, throats arching over the water into an **aisle of arches** lit from within: a cathedral nave made of listening. Not a threat; an invitation, which is worse.
 3. **The throats are free.** No collars. A Lamphold Usher's throat is 3.75 m; the Doorman's reached 32 m; the Mere's rise 33 m from the lake floor. "The throat goes on."
 4. **A seat, not just a wait.** The card line gains a second sentence, *THE SEAT IS KEPT*, and far down the aisle, at the limit of the fog, there is one small warm light and, under it, something the size of a chair. Chapter I ended on a place cut to your shape; Chapter II ends on an aisle to a seat. **The question left open: whose seat is at the end of the aisle?**
+5. **Continuity with CHAPTERS III-1.** The water under the platform is the Spillway pool "lit from below" (the Ushers' rings are what light it), the Mere opens beyond its lip, and the aisle runs from the pool across the lip into the lake. The chain stops 6 m above the water instead of III-1's 25 m (III-1's step, *let go: the first fall that does not kill*, is unchanged and is what a jump here is). The Mere is about 25 m deep at the centre.
 
-### 4.2 The last three minutes, second by second (Normal; the player keeps control throughout)
+### 4.2 The last three minutes, second by second (Normal; the player keeps control throughout; 0:00-1:00 is the true rest, 1:00-3:00 is the hook, the last two minutes)
 
 | t | The player sees | Hears | Does |
 |---|---|---|---|
@@ -682,8 +690,8 @@ About 32 person-weeks; with 3-4 people in parallel, 9-11 calendar weeks to a con
 
 1. **Data checks (V1, `verify/boss.mjs`, no play):** every `toll` ring in II-12 has an iron alternative on the same transfer; every id in the Evening data resolves (G, pawl, clappers, bell-wires, the cage, the shutter); the sphere of every **scheduled** strike (the Great Bell's east stroke, the cage whips) never contains a waking lamp, a recovery ring or a landing; the Usher node graph never comes within reach + 3 m of a player-reachable point in II-9; the cage and the shaft leave >= 3.3 m of outside-ring room; no `safeLight` overlaps a crush zone.
 2. **Telegraph audit (every run, every variant):** for each `usher:coil` / `usher:whip` pair: `whip.t - coil.t >= 1.5 s`; the sphere centre at `usher:commit` equals the centre at `usher:whip`; a whip that misses stops >= 1.2 m from the head; Recoil >= 2.0 s with no `usher:coil`; no strike within the grace (3 s / 2 s) of a wake; **a strike's cause is always a recorded `toll:emit` or a recorded SNUFF sphere** (the "a player who makes no toll is never struck" rule is a trace assertion).
-3. **Line bots:** the safe and the fast line of each phase, from **6 start phases of the Evening clock**, at **75 %, 100 % and 125 %** of the optimal speed, on Normal / Nightmare / Abyss: all pass (survive, every landing < 0.85 of lethal). A **stall bot** (stops 3 s in the open at fixed points) must die at the next SNUFF or whip on Normal and Nightmare in A and C1, and on Normal must still be recoverable on a ring ahead in B and C2 (CHAPTERS §3.1 rule 10). A **toll-spam bot** dies; a **silent bot** (iron rings only, no clapper) completes A, C1, C2 on Normal and dies in B only at the Well's east half if it tolls there.
-4. **Pacing sims (`tests/creature/usher-pacing.mjs`, scripted players, like `pacing.mjs`):** 1,000 random landings, yanks, wall hits, jolts and reels produce **zero** Usher reactions (it hears bells only); the hearing ranges per source; masking (a chime inside a crash is not heard); aim = source + velocity x (Listen + Coil) for the cage and the chandeliers; the reach clamp and the sag-short; PARKED loops exactly N strikes; the `blow` breaks the Tenor stand and the pawl, and snuffs the lamps in the sphere; determinism (same toll log, same events) and V13 (an intent-log replay reproduces the Usher events hash).
+3. **Line bots:** the safe and the fast line of each phase, from **6 start phases of the Evening clock**, at **75 %, 100 % and 125 %** of the optimal speed, on Normal / Nightmare / Abyss: all pass (survive, every landing < 0.85 of lethal). A **stall bot** (stops 3 s in the open at fixed points) must die at the next SNUFF or whip on Normal and Nightmare in A and C1, and on Normal must still be recoverable on a ring ahead in B and C2 (CHAPTERS §3.1 rule 10). A **toll-spam bot** dies; a **silent bot** (iron rings only, no body strike, no clapper) completes A, C1 and C2 on Normal and **cannot pass B** (G stays shut): that is the puzzle, and the check proves B has no skip.
+4. **Pacing sims (`tests/creature/usher-pacing.mjs`, scripted players, like `pacing.mjs`):** 1,000 random landings, yanks, wall hits, jolts, reels and knocks produce **zero** Usher reactions (it hears bells only); the hearing ranges per source; masking (a chime inside a crash is not heard); aim = source + velocity x (Listen + Coil) for the cage and the chandeliers; the reach clamp and the sag-short; PARKED loops exactly N strikes; the `blow` breaks the Tenor stand and the pawl, and snuffs the lamps in the sphere; determinism (same toll log, same events) and V13 (an intent-log replay reproduces the Usher events hash).
 5. **Budget:** `npm run budget:at3d` with the Round at LOD1 and the Doorman at LOD0 in the worst Phase A and Phase B views; the sim p99 <= 2.5 ms.
 6. **Human gate (CHAPTERS §13):** after II-9, >= 70 % of testers can say what the Usher answers; <= 3 median deaths in each of A, B, C; nobody cites the sphere as unreadable; the Usher on screen <= 12 % outside II-12 and <= 35 % inside it (its telegraph must be seen).
 
