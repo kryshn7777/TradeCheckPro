@@ -29,6 +29,11 @@ export function mainRoute(ch, line) {
 /** V12: object counts against their budgets (ch1 has no movers / volumes / Kept yet: 0). */
 export function countBudgets(level) {
   const d = level.data || {};
+  // the budgets are per ~600 m of descent (Chapter I is 556 m): Chapter II is 1,250 m deep and gets two of them (its sim cost with the director and seven Ushers live was measured
+  // at 0.07 ms per 60 Hz frame on average, p99 0.4 ms in Node, against the 2.5 ms Quest gate: docs/abyssal-tether-3d/plans/CHAPTER_II_PLAN.md section 6)
+  const depth = level.bounds ? Math.abs(level.bounds.minY) : 0;
+  const scale = Math.max(1, Math.round(depth / 600));
+  const budgets = Object.fromEntries(Object.entries(COUNT_BUDGETS).map(([k, v]) => [k, k === 'dynamic' || k === 'movers' ? v * scale : v]));
   const list = (k) => (Array.isArray(d[k]) ? d[k] : []);
   const dynamic = level.solids.filter((s) => s.kind === 'crumble').length + level.anchors.filter((a) => a.kind === 'fragile').length + list('movers').length;
   const volBySection = {};
@@ -38,8 +43,8 @@ export function countBudgets(level) {
   }
   const maxVol = Object.values(volBySection).reduce((m, n) => Math.max(m, n), 0);
   const counts = { movers: list('movers').length, dynamic, volumesPerSection: maxVol, kept: list('kept').length };
-  const over = Object.keys(COUNT_BUDGETS).filter((k) => counts[k] > COUNT_BUDGETS[k]);
-  return { counts, budgets: COUNT_BUDGETS, ok: over.length === 0, over };
+  const over = Object.keys(budgets).filter((k) => counts[k] > budgets[k]);
+  return { counts, budgets, ok: over.length === 0, over };
 }
 
 /**

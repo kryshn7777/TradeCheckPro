@@ -1,6 +1,6 @@
-# Abyssal Tether: Meta Horizon Store listing pack (free release, Chapter I)
+# Abyssal Tether: Meta Horizon Store listing pack (free release, Chapters I and II)
 
-Everything the owner pastes into the Developer Dashboard for the **free Chapter I release**. Limits are Meta's
+Everything the owner pastes into the Developer Dashboard for the **free release: Chapters I and II**. Limits are Meta's
 (RELEASE.md section 13): name 30 characters, short description 150, long description 4000. Character counts below
 were measured with `node tools/abyssal-tether-3d/release/check-listing.mjs` (it re-checks them from this file).
 
@@ -37,7 +37,7 @@ written; edit this file, not the Dashboard, and re-run the checker):
 ## Short description (max 150)
 
 ```
-Descend a buried cathedral-machine on two grappling tethers while something vast hunts you from above. Chapter I is free.
+Descend a buried cathedral-machine, then a town of lamps, on two grappling tethers while something hunts you. Chapters I and II are free.
 ```
 
 ## Long description (max 4000)
@@ -55,6 +55,7 @@ HOW YOU MOVE
 
 THE DESCENT
 - Chapter I is a complete descent in eight sections, from the Threshold to the Last Throat. Each one teaches a new idea and then asks you to use it under pressure.
+- Chapter II is Lamphold: a town of three thousand lamps, each one a sleeper's, hung in a pit more than a kilometre deep. Chandeliers, lifts and express cages swing and move around you. Something there answers bells, and the only way down is past it.
 - Checkpoints keep a bad fall from costing you everything. Your best times, deepest descent and fewest deaths are kept for each difficulty.
 - Four difficulties. Normal is the intended descent. Nightmare gives you a faster hunter, tighter aim and fewer recovery anchors. Abyss has no checkpoints and almost no help, for speedrunners. Sandbox removes the hunter and the lethal falls so you can practise the tethers at your own pace.
 
@@ -73,7 +74,7 @@ CONTENT
 Horror atmosphere, sudden loud sounds and peril. No blood, no gore.
 The radio voices in this version are AI-generated (text-to-speech) placeholders, not human actors.
 
-Chapter I is free and ends on a hook. The descent continues in future updates.
+Chapters I and II are free, and Chapter II ends on a hook. The descent continues in future updates.
 ```
 
 ## Comfort rating: Intense
@@ -88,7 +89,7 @@ Mandatory self-certification (Teens and Adults / Mixed Ages / Children). Horror 
 
 ## IARC questionnaire: draft answers (Dashboard > Submission Info > Content Ratings)
 
-Answer against the final build; these are written for the free Chapter I build as it is today.
+Answer against the final build; these are written for the free Chapters I-II build as it is today.
 
 | Topic | Draft answer |
 |---|---|
@@ -129,7 +130,7 @@ two-handed tether controls are required (documented deviation from Accessibility
 ## Release notes (1.0.0)
 
 ```
-First release. Chapter I: a complete descent in eight sections, four difficulties (Normal, Nightmare, Abyss, Sandbox),
+First release. Chapters I and II: two complete descents (eight sections, then thirteen beats and a boss), four difficulties (Normal, Nightmare, Abyss, Sandbox),
 checkpoints, best-time records. Plays offline after the first launch.
 ```
 

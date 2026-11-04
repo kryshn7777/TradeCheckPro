@@ -125,7 +125,6 @@ export function addSnuffing(ctx) {
   Bx('c2-12-sill', 14, 26, dSill, dSill + 1, -7, 7, 'stone');
   Bx('c2-12-gate', 19, 21, dSill - 11, dSill, -8, 8, 'crumble', { tag: 'gate', life: 1e9 }); // the door: a leaf across the sill (solid until the pawl breaks; drawn as a crumble)
   // behind the door the Span head (a 6 m plate), then the Span
-  const spanD0 = dSill; // the first plate is level with the sill, then it steps down
   const plates = [];
   {
     // the Span: 25 plates of 6 m along the pit wall, starting beside the sill (canonical east wall, going south), then west along the south wall, north along

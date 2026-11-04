@@ -188,5 +188,39 @@ const D = LEVEL_DATA_CH2;
   ok(L.movers.every((e) => e.anchors.every((a) => a.dynamic === true)), 'Level3D marks every carried ring dynamic');
 }
 
+// 5. The data is a valid level description: unique ids in every list and every reference resolves (what verify.mjs checks for Chapter I).
+{
+  const lists = ['solids', 'hazards', 'anchors', 'seals', 'fixtures', 'objectives', 'nooks', 'lanes', 'movers'];
+  const dup = [];
+  for (const k of lists) {
+    const seen = new Set();
+    for (const o of D[k] || []) {
+      if (seen.has(o.id)) dup.push(`${k}:${o.id}`);
+      seen.add(o.id);
+    }
+  }
+  ok(dup.length === 0, `unique ids in every list (${dup.slice(0, 4).join(', ')})`);
+  const ids = (k) => new Set((D[k] || []).map((o) => o.id));
+  const anchors = ids('anchors');
+  const solids = ids('solids');
+  const fixtures = ids('fixtures');
+  const seals = ids('seals');
+  const bad = [];
+  for (const m of D.movers) for (const a of m.carry.anchors) if (!anchors.has(a)) bad.push(`mover ${m.id} -> anchor ${a}`);
+  for (const f of D.fixtures) if (f.anchorId && !anchors.has(f.anchorId)) bad.push(`fixture ${f.id} -> anchor ${f.anchorId}`);
+  for (const o of D.objectives) {
+    if (!seals.has(o.sealId)) bad.push(`objective ${o.id} -> seal ${o.sealId}`);
+    for (const f of o.ids) if (!fixtures.has(f)) bad.push(`objective ${o.id} -> fixture ${f}`);
+  }
+  for (const sl of D.seals) for (const id of sl.ids) if (!solids.has(id)) bad.push(`seal ${sl.id} -> solid ${id}`);
+  const secIds = new Set(D.sections.map((q) => q.id));
+  for (const k of ['lanes', 'nooks', 'fixtures', 'movers', 'objectives', 'seals']) for (const o of D[k] || []) if (o.section && !secIds.has(o.section)) bad.push(`${k} ${o.id} -> section ${o.section}`);
+  ok(bad.length === 0, `every reference resolves (${bad.slice(0, 4).join('; ')})`);
+  const L = new Level3D(D, 'normal', { freeAttach: true });
+  ok(L.sections.every((q, i) => q.checkpoint && Math.abs(q.checkpoint.x) <= 26 && Math.abs(q.checkpoint.z) <= 26), 'every beat has a checkpoint inside the pit');
+  const inPit = D.anchors.filter((a) => Math.abs(a.x) > 26.5 || Math.abs(a.z) > 26.5);
+  ok(inPit.length === 0, `no anchor outside the pit (${inPit.map((a) => a.id).slice(0, 3).join(', ')})`);
+}
+
 console.log(fails ? `FAILED: ${fails}` : 'ALL CHAPTER II GRAYBOX CHECKS PASS');
 process.exit(fails ? 1 : 0);

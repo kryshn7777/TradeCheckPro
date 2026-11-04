@@ -245,7 +245,7 @@ export const LAMPHOLD_SFX = {
     this._commit(v);
   },
 
-  _onC2Grind(p) {
+  _onC2Grind() {
     const v = this._begin('c2Grind', 3, 4, 4.6, this.busPlayer, 0.8, 0, 0.4, 0, null, 'far');
     if (!v) return;
     const t = v.t0;

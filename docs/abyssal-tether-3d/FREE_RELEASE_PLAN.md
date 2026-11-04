@@ -1,3 +1,6 @@
+> **2026-11-04 update:** the free release now includes **Chapter II · Lamphold** (`FREE_CHAPTER = 2` in `platform/entitlement.js`); Chapter II's end card carries the single "Continue the descent"
+> button for Chapters III-V (the store's own price; outside a store install it only says where the game is). The rest of this plan describes the Chapter I release and still holds for it.
+
 # Free release (Chapter I demo): autopilot plan and state
 
 Owner instruction (2026-10-20): "Fully run without manual intervention till you finish all the work needed for the free

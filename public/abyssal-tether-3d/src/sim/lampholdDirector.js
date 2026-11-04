@@ -49,9 +49,6 @@ export const DIRECTOR = {
   grace: 3, // s after a respawn in which nothing here can kill you
 };
 
-const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-const inBox = (p, b) => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY && p.z >= b.minZ && p.z <= b.maxZ;
-
 export class LampholdDirector {
   constructor({ level, objectives, bus, diff, text, kill, victory } = {}) {
     this.level = level;
