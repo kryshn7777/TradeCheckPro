@@ -135,3 +135,16 @@ lamp you cannot keep (II-11); the Round's five tier galleries, their bells and c
 from outrigger rings); the Lamphold art kit and its lightmaps (Chapter I's baked lighting does not apply); the in-world chain at the end of Chapter I (the end card's button starts Lamphold).
 **Nothing has been played on a headset.** The numbers (the Round's pace, the Span's gap, the whips' lead, the cage rings' distance from the sphere, the hammers' damage) are closed-form-checked and
 tuned for Normal; the boss has not been beaten by a bot on a rope route, only its pieces checked (CHAPTER_II_DIRECTION.md section 5.2 asks for the bot proof).
+
+**Budgets (measured 2026-11-04, headless software GL with the Quest quality tier, doubled for stereo).** Sixteen places across the chapter (the Gallery looking at the Doorman, the Round with five Ushers, the Well rim, the
+Span, the Lift tower, the Tolling Gallery, one in every other beat, the Mere at its fullest): **at most 86 draw calls and 207 k triangles in stereo** against the Quest gate of 150 calls and 350 k triangles. The sim
+(physics, the objectives with 30 movers and 12 lanes, the director with seven Ushers) costs **0.07 ms per 60 Hz frame on average, 0.4 ms at p99** in Node against the 2.5 ms gate (a Quest 3 is several times slower than Node:
+measure it once on the headset). Chapter I's verify bots (`npm run verify:at3d -- --chapter ch1 --variant all`) still pass; the V12 object-count budgets scale with depth (Chapter II is 1,250 m: 30 movers of 80, 87 dynamic of 128).
+
+**Flows checked headless** (`respawn` in the arena restores the phase of the lamp you woke at with 3 s of grace; Continue switches to the saved chapter and beat; pause / resume; the end card's replay; back to Chapter I disposes the
+director, the views and puts Chapter I's radio back; the full-version button shows the store's price and goes once the descent is owned) with no console errors.
+
+**Cut on purpose (not forgotten).** The Mason's scripted breach (II-6), its hidden path in the shaft walls (II-7) and noise masking in the din (II-10) need new creature behaviour (the shipped Mason already sights you in
+II-6 / II-8 and hunts you in II-10 when you are hurt); the Holdfast handshake (II-2) needs climb zones, which Chapter II does not author (every surface is a hold); "the lamp you cannot keep" (II-11) is marked optional in the
+direction; the Round's tier galleries were replaced by the stair (the front still walks down it); a standable floor for the Doorman's cage contradicts his rule (do not be in the cage); Lamphold's own art and lightmaps need
+the bake pipeline and an art pass (the chapter is lit by the 2,600-lamp field, the lights and the dressing).
