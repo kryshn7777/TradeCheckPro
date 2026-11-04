@@ -1,6 +1,7 @@
 // The Mason's mandibles (render/mason/masonMandibles.js), Node, no GPU: the geometry is a closed, tapering, serrated horn within a
 // small triangle budget; the opening angle follows the creature's state (idles slightly open, clicks while listening, flares through the
 // wind-up, snaps shut crossing its tips on the strike, reopens through the recoil); the spring never overshoots wildly; no allocation per frame.
+// The geometry is a pair of crescents that hang from the corners of the mouth and curl in under it (the shape the owner drew), not tusks over the face.
 //   node test-mandibles.mjs
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -44,10 +45,15 @@ const ok = (c, msg) => {
   ok(finite && inRange, 'every number is finite and every index in range');
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox;
-  ok(bb.max.z > MANDIBLE.length * 0.5 && bb.min.z > -1.2, `it runs about ${bb.max.z.toFixed(1)} m forward of its root`);
-  ok(MANDIBLE.length >= 5 && MANDIBLE.length <= 7.5 && bb.max.y < MANDIBLE.length * 0.4 && bb.max.y > MANDIBLE.length * 0.2 && bb.min.y > -MANDIBLE.length * 0.16, /* the tube radius reaches ~0.7 m below the centre line */ `big but not huge: ${MANDIBLE.length} m long with ${bb.max.y.toFixed(1)} m of rise (visible head-on, beside the face rather than over it, never sinking toward the wall the creature clings to)`);
-  ok(bb.max.x > MANDIBLE.length * 0.2, `it bows out to the side (${bb.max.x.toFixed(1)} m)`);
-  ok(tip[0] < 0 && tip[2] > MANDIBLE.length * 0.9, `the tip hooks back in past its own root line (x ${tip[0].toFixed(1)}) and well forward (z ${tip[2].toFixed(1)}): a pincer`);
+  const Lm = MANDIBLE.length;
+  ok(Lm >= 5 && Lm <= 7.5, `big but not huge: ${Lm} m of horn`);
+  ok(bb.max.x > Lm * 0.2 && bb.max.x < Lm * 0.5, `it bows out to the side of the mouth (${bb.max.x.toFixed(1)} m)`);
+  ok(bb.min.y < -Lm * 0.55 && bb.max.y < Lm * 0.15, `it hangs down from the corner of the mouth (${bb.min.y.toFixed(1)} m below the root, ${bb.max.y.toFixed(1)} m above: a "(" around the mouth, nothing over the face)`);
+  ok(tip[0] < 0 && tip[1] < -Lm * 0.5 && tip[2] < -Lm * 0.15, `the point curls back in past its own root line (x ${tip[0].toFixed(1)}), well below (y ${tip[1].toFixed(1)}) and in front (z ${tip[2].toFixed(1)}; the face looks down -z): forceps under the mouth`);
+  // seen head-on the whole crescent is in the picture: the face-on (x, y) extent is bigger than the depth
+  ok(bb.max.x - bb.min.x > (bb.max.z - bb.min.z) * 1.1 && bb.max.y - bb.min.y > (bb.max.z - bb.min.z) * 1.5, `seen face-on it is a full crescent, not an edge-on bar (${(bb.max.x - bb.min.x).toFixed(1)} x ${(bb.max.y - bb.min.y).toFixed(1)} m across, ${(bb.max.z - bb.min.z).toFixed(1)} m deep)`);
+  // the two roots sit at the corners of the mouth
+  ok(MANDIBLE.root.x >= 1.55 && MANDIBLE.root.x <= 2.4 && MANDIBLE.root.z < 0, `the roots sit just outside the corners of the mouth (x +-${MANDIBLE.root.x})`);
   // taper: the radius near the root is far larger than near the tip
   const sides = MANDIBLE.sides;
   const ringRadius = (i) => {
@@ -149,7 +155,7 @@ const ok = (c, msg) => {
     if (m.open < 0 && framesToShut < 0) framesToShut = f;
   }
   ok(framesToShut >= 0 && framesToShut <= 8, `the strike closes the jaws within ${framesToShut} frames (${((framesToShut / 60) * 1000).toFixed(0)} ms)`);
-  ok(Math.abs(m.pivots[0].rotation.y - (Math.PI + m.open)) < 1e-9 && Math.abs(m.pivots[1].rotation.y - (Math.PI - m.open)) < 1e-9, 'the two horns open by equal and opposite angles');
+  ok(Math.abs(m.pivots[0].rotation.z - m.open * MANDIBLE.swing) < 1e-9 && Math.abs(m.pivots[1].rotation.z + m.open * MANDIBLE.swing) < 1e-9 && m.pivots[0].rotation.y === 0, 'the two horns swing about the forward axis by equal and opposite angles (out when open, in when shut)');
   m.update(1 / 60, snap, 0, false);
   ok(m.group.visible === false, 'hidden when the creature is not at full detail');
   // no allocation per frame (the update only writes numbers)

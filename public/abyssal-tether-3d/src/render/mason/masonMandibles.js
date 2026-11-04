@@ -1,10 +1,13 @@
 /* ABYSSAL TETHER 3D — render/mason/masonMandibles.js
- * Big mandibles for the Mason (and, smaller, the skitterlings): two curved, serrated pincers on the SIDES of the face that open and snap, so a
- * creature that is coming for you has jaws.
+ * Big mandibles for the Mason (and, smaller, the skitterlings): two crescent pincers that hang from the corners of the mouth, bow out to the
+ * sides and curl down and inward under the mouth like a pair of forceps, and swing open and snap shut, so a creature that is coming for you has
+ * jaws. (The first versions were modelled bowing INWARD, so they crossed over the face in an X; the shape drawn by the owner is a "( )" frame
+ * around the mouth.)
  *
- *   - mandibleGeometry(): ONE indexed BufferGeometry per mandible, built from code (no asset): a tube along a long, nearly flat,
- *     inward-hooking centre line, thick at the root (a bulge), tapering to a point, a ten-sided section, plus a row of serrations on the inner
- *     edge. ~550 triangles, vertex colours dark bone at the root to pale bone at the tip with faint growth rings, so no texture.
+ *   - mandibleGeometry(): ONE indexed BufferGeometry per mandible, built from code (no asset), in the head's frame (x right, y up, z back: the
+ *     face looks down -z): a tube along a crescent centre line, thick at the root (a bulge), tapering to a point, a ten-sided section, plus a
+ *     row of serrations on the inner edge. ~550 triangles, vertex colours dark bone at the root to pale bone at the tip with faint growth
+ *     rings, so no texture.
  *   - mandibleOpen(snap, t, seed, prev): the opening angle (rad) as a pure function of the clip graph's snapshot: it idles slightly open and
  *     clicks while it listens, spreads as it hunts, flares wide through the attack's wind-up, SNAPS shut on the strike (the tips meet),
  *     and eases back open through the recoil.
@@ -15,13 +18,15 @@ import * as THREE from 'three';
 
 export const MANDIBLE = {
   length: 6.0, // m at kit scale: big pincers on the sides of a ~7 m crown (the first, 4.6 m, were small; 9 m tusks were far too big)
-  baseRadius: 0.62,
+  baseRadius: 0.55,
   sides: 10,
   rings: 24,
   teeth: 6, // serrations along the inner edge
-  // where the roots sit, on the SIDES of the face, in the neck bone's frame at kit scale (x right, y up, z back: the face looks down -z). Tuned against renders.
-  root: { x: 2.3, y: -0.7, z: -2.0 },
-  yaw: 0, // rest toe-in (rad) of each horn about the vertical
+  // where the roots sit, at the CORNERS of the mouth (the maw is +-1.55 wide), in the neck bone's frame at kit scale (x right, y up, z back: the
+  // face looks down -z). Tuned against renders.
+  root: { x: 1.9, y: -0.7, z: -2.0 },
+  yaw: 0, // rest offset (rad) added to the opening angle
+  swing: 0.5, // rad of swing about the forward axis per rad of "opening": a hanging crescent swings out when it opens and in when it snaps shut
 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -42,8 +47,9 @@ function bez(P, t, out) {
 }
 
 /**
- * The right-hand mandible (the root at the origin, the horn running along +z, bowing out to +x then hooking back in to -x, drooping a
- * little in -y); the left one is this mirrored (scale.x = -1). Returns { geometry, tip, triangles }.
+ * The right-hand mandible in the head's frame (the root at the origin; x right, y up, z back, so forward is -z): it leaves the mouth corner
+ * going out (+x), bows to the side, falls (-y) and curls back in (-x) and forward (-z) so the point ends under the mouth, in front of the chin;
+ * the left one is this mirrored (scale.x = -1). Returns { geometry, tip, triangles }.
  */
 export function mandibleGeometry(opts = {}) {
   const L = opts.length || MANDIBLE.length;
@@ -51,14 +57,14 @@ export function mandibleGeometry(opts = {}) {
   const sides = opts.sides || MANDIBLE.sides;
   const rings = opts.rings || MANDIBLE.rings;
   const nTeeth = opts.teeth == null ? MANDIBLE.teeth : opts.teeth;
-  // the centre line, a pincer on the side of the face: out from the root, then forward in a long curve with a moderate rise (about a third of its
-  // length: seen head-on at eye height a perfectly flat horn is an edge-on bar) and a hook inward at the tip. It rises, never droops: the creature
-  // clings to a wall, so nothing may sink into the masonry, and it stays beside the face rather than over it
+  // the centre line, a crescent seen head-on as one side of a "( )" around the mouth: out from the corner of the mouth, bowed out to the side
+  // (about a quarter of its length), then down (about 0.6 L below the root) and curling in so the point ends below the mouth, a little in front
+  // of it. Seen face-on the whole curve is in the picture (it is not edge-on), and it frames the maw
   const P = [
     [0, 0, 0],
-    [0.36 * L, 0.02 * L, 0.22 * L],
-    [0.46 * L, 0.22 * L, 0.62 * L],
-    [-0.06 * L, 0.32 * L, 0.92 * L],
+    [0.34 * L, 0.02 * L, -0.06 * L],
+    [0.4 * L, -0.45 * L, -0.12 * L],
+    [-0.18 * L, -0.62 * L, -0.3 * L],
   ];
   const pos = [];
   const col = [];
@@ -149,7 +155,7 @@ export function mandibleGeometry(opts = {}) {
   nrm.push(-tans[0][0], -tans[0][1], -tans[0][2]);
   col.push(root[0], root[1], root[2]);
   for (let s = 0; s < sides; s++) idx.push(rc, s, (s + 1) % sides);
-  // teeth along the INNER edge (the side facing the other horn: -x at the hook), pointing forward and inward
+  // teeth along the INNER edge (the side facing the mouth and the other horn: -x), pointing forward and inward
   for (let k = 0; k < nTeeth; k++) {
     const t = 0.3 + (0.58 * k) / Math.max(1, nTeeth - 1);
     const i = Math.round(t * rings);
@@ -205,7 +211,8 @@ export function mandibleGeometry(opts = {}) {
 }
 
 /**
- * The opening angle of each horn (rad, 0 = parallel, positive = spread apart, negative = crossed), as a pure function of the clip graph's
+ * The opening angle of each horn (rad, 0 = hanging straight, positive = swung apart, negative = swung in and crossed under the mouth; the
+ * swing about the forward axis is MANDIBLE.swing times this), as a pure function of the clip graph's
  * snapshot `snap` { state, phase, atkT, atkWindup, listening, creeping, jitter, distance, sighting } and the time t (s). `seed` varies the
  * idle twitch between creatures. Eased by the caller (Mandibles.update).
  */
@@ -306,8 +313,9 @@ export class Mandibles {
   }
 
   _apply(a) {
-    // the horn runs along +z in its own frame; the face looks down -z, so turn it half way round, then spread by the opening angle
-    for (let i = 0; i < 2; i++) this.pivots[i].rotation.set(0, Math.PI + this.sign[i] * a, 0);
+    // the crescents hang from the mouth corners: opening swings the points out about the forward axis (+z on the right horn: a vector
+    // pointing down turns toward +x), the left horn the other way
+    for (let i = 0; i < 2; i++) this.pivots[i].rotation.set(0, 0, this.sign[i] * a * MANDIBLE.swing);
   }
 
   /**
