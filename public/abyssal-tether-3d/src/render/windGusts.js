@@ -18,7 +18,7 @@ import { FX_LIGHT_GLSL } from './atmosphere.js';
 import { LOOK } from './materials.js';
 import { windAngle, windGust, windSquall } from './wind.js';
 
-const WISPS = 340;
+const WISPS = 150; // ash wisps riding the draught (was 340): far fewer fog-like streaks across the view
 const TRAIL = 5; // samples per wisp (head + 4 fading behind it)
 const HALF = 10; // metres: half-size of the wrapped cube around the head
 const FRACTION = [0.15, 0.3, 1]; // share of the wisps drawn per fx tier (low, quest, desktop); reducedEffects draws none

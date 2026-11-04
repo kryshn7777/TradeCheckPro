@@ -33,6 +33,8 @@ import { CONFIG } from '../sim/config3d.js';
 import { buildGearEnvironment } from './handsView.js';
 import { loadGLB } from './glbLoad.js';
 import { patchGearSurface } from './gearSurface.js';
+import { injectToon } from './materials.js';
+import { addOutline, removeOutline } from './outline.js';
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -184,6 +186,7 @@ export class BodyView {
     this.bones = bones;
     this.mesh = mesh;
     mesh.frustumCulled = false; // bind-pose bounds are wrong for a posed skin
+    this._hull = addOutline(mesh); // the ink outline (outline.js)
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -209,6 +212,7 @@ export class BodyView {
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uBodyLight;')
           .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uBodyLight;\n\treflectedLight.directSpecular *= uBodyLight;');
+        injectToon(shader);
       };
       m.customProgramCacheKey = () => 'at3d-body-light';
       patchGearSurface(m); // cloth weave + sheen, leather pores, dust (gearSurface.js)
@@ -297,6 +301,7 @@ export class BodyView {
 
   dispose() {
     this._disposed = true;
+    removeOutline(this._hull);
     if (this.root.parent) this.root.parent.remove(this.root);
     if (this._ownEnv && this._ownEnv.dispose) this._ownEnv.dispose();
     if (this.mesh) {

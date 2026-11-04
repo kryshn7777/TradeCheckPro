@@ -307,6 +307,37 @@ export class Rope3D {
   }
 }
 
+/**
+ * A free-attach biting point, shaped like a level anchor (every consumer of `rope.anchor` / `hand.target` reads x, y, z, normal,
+ * kind, broken, hidden, load, life) but not part of the level: `free` marks it (the Dresser saws rings, never surfaces).
+ */
+function makeSurfaceAnchor(hand) {
+  return {
+    id: `surf-${hand}`,
+    free: true,
+    kind: 'surface',
+    x: 0,
+    y: 0,
+    z: 0,
+    normal: { x: 0, y: -1, z: 0 },
+    mount: 'solid',
+    section: 0,
+    tag: 'surface',
+    solid: null,
+    edge: false,
+    broken: false,
+    cut: false,
+    load: 0,
+    life: 1,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    dynamic: false,
+    hidden: false,
+    mover: -1,
+  };
+}
+
 // =============================================================================
 // TetherSystem — targeting, firing, flight, attach/release for both hands.
 //
@@ -332,6 +363,11 @@ export class TetherSystem {
     this.settings = settings || {};
     this._scratch = [];
     this._found = { anchor: null, score: 0 }; // reused result (callers read it immediately)
+    // FREE ATTACH: the highlighted surface point of each hand's aim (one reused anchor-shaped object per hand, rewritten every frame;
+    // launch() bakes a copy for the shot) and the scratch the level fills.
+    this._surf = { left: makeSurfaceAnchor('left'), right: makeSurfaceAnchor('right'), none: makeSurfaceAnchor('none') };
+    this._surfOut = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, solid: null, edge: false };
+    this._shots = 0;
     // aimRangeAt cache: the per-section ranges of (level, diff), and the y band of the last section asked about
     this._reach = { level: null, diff: null, ranges: null, lo: 0, hi: -1, range: 0 };
     this.hands = {};
@@ -469,10 +505,62 @@ export class TetherSystem {
       best = an;
       bestScore = score;
     }
-    if (!best) return null;
+    if (!best) {
+      // No ring to aim-assist onto: free attach bites the surface the aim ray lands on.
+      const surf = this._free() ? this._surfaceTarget(player, aim, hand, dx, dy, dz, range) : null;
+      if (!surf) return null;
+      this._found.anchor = surf;
+      this._found.score = 0;
+      return this._found;
+    }
     this._found.anchor = best;
     this._found.score = bestScore;
     return this._found;
+  }
+
+  /** Does this level take the hook anywhere (Level3D opts.freeAttach, CONFIG.targeting.freeAttach)? */
+  _free() {
+    return this.level.freeAttach === true && C.targeting.freeAttach !== false && typeof this.level.surfaceTarget === 'function';
+  }
+
+  /**
+   * FREE ATTACH: the surface point a shot along the aim bites (edges preferred, Level3D.surfaceTarget), as this hand's reused
+   * anchor-shaped object, or null: nothing within the section's reach, nearer than surfaceMinDist, or out of the rope's length.
+   */
+  _surfaceTarget(player, aim, hand, dx, dy, dz, range) {
+    const T = C.targeting;
+    // the muzzle is up to ~1.5 m from the body, so the ray is cast a little beyond the range and the body distance decides
+    const s = this.level.surfaceTarget(aim.ox, aim.oy, aim.oz, dx, dy, dz, range + 1.5, T.surfaceSnap, T.surfaceOffset, this._surfOut);
+    if (!s) return null;
+    const pd = len3(s.x - player.x, s.y - player.y, s.z - player.z);
+    if (pd > range || pd < T.surfaceMinDist) return null;
+    const a = this._surf[hand || 'none'];
+    a.x = s.x;
+    a.y = s.y;
+    a.z = s.z;
+    a.normal.x = s.nx;
+    a.normal.y = s.ny;
+    a.normal.z = s.nz;
+    a.solid = s.solid;
+    a.edge = s.edge;
+    a.section = this.level.sectionIndexAt(s.y);
+    // a crumbling ledge is a frayed hold: the line breaks under load like a frayed ring (step())
+    const crumble = s.solid && s.solid.kind === 'crumble';
+    a.kind = crumble ? 'fragile' : 'surface';
+    a.life = crumble ? s.solid.life || 1 : 1;
+    a.load = 0;
+    a.broken = false;
+    return a;
+  }
+
+  /** The shot's own copy of a surface target (the hand's highlight object is rewritten every frame). */
+  _bake(a) {
+    return Object.assign({}, a, { id: `surf${++this._shots}`, normal: { x: a.normal.x, y: a.normal.y, z: a.normal.z } });
+  }
+
+  /** A surface hold whose solid is gone (a crumbled ledge) no longer holds. */
+  _gone(an) {
+    return an.free === true && an.solid != null && an.solid.active === false;
   }
 
   /** Refresh each hand's highlight from its aim (once per frame). */
@@ -543,6 +631,7 @@ export class TetherSystem {
   launch(player, hand, anchor, buffered) {
     const R = C.rope;
     const st = this.hands[hand];
+    if (anchor.free) anchor = this._bake(anchor); // free attach: the shot keeps its own point while the highlight follows the aim
     if (st.flying) this._endFlight(st);
     if (st.rope.attached) this.release(player, hand, 'refire'); // a new shot lets go of the old line first
     const d = len3(player.x - anchor.x, player.y - anchor.y, player.z - anchor.z);
@@ -593,7 +682,7 @@ export class TetherSystem {
     const an = st.flightObj.target;
     this._endFlight(st);
     const d = len3(player.x - an.x, player.y - an.y, player.z - an.z);
-    if (an.broken || an.hidden || d > this.maxRopeLength()) {
+    if (an.broken || an.hidden || this._gone(an) || d > this.maxRopeLength()) {
       // Crumbled while the hook was in the air, or the body moved out of reach: the hook falls off.
       const l = d || 1;
       st.miss = { x: player.x, y: player.y, z: player.z, dx: (an.x - player.x) / l, dy: (an.y - player.y) / l, dz: (an.z - player.z) / l, len: d, t: C.rope.missTime * 0.45 };
@@ -664,6 +753,13 @@ export class TetherSystem {
       if (an.hidden) {
         // a winch ring turning into its gear's housing (LEVEL_FUN_PLAN item 7): the hook is pulled off it
         this.release(player, h, 'housing');
+        continue;
+      }
+      if (this._gone(an)) {
+        // the ledge the hook bit crumbled away: the line comes off with it
+        an.broken = true;
+        this.bus.emit('grapple:break', { hand: h, anchor: an, x: an.x, y: an.y, z: an.z });
+        this.release(player, h, 'break');
         continue;
       }
       if (an.kind === 'fragile') {

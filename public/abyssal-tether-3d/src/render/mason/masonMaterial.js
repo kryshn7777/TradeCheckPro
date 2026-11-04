@@ -11,6 +11,7 @@
  * `reduced` (settings.reducedEffects) drops the wet film.
  */
 import * as THREE from 'three';
+import { injectToon } from '../materials.js';
 
 export function makeMasonUniforms() {
   return {
@@ -93,6 +94,7 @@ vec3 mPreFog = gl_FragColor.rgb;
 }
 #endif`,
       );
+    injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
   };
-  mat.customProgramCacheKey = () => 'mason-rig-v2' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
+  mat.customProgramCacheKey = () => 'mason-rig-v3' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

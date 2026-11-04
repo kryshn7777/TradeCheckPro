@@ -58,6 +58,7 @@
  */
 
 import { U } from './config3d.js';
+import { surfaceNavFor } from './creatureNav.js';
 
 const TAU = Math.PI * 2;
 const FAR = 99999;
@@ -106,6 +107,19 @@ export const CREATURE_TUNING = {
   bodyTurn: 3.4,
   bodyTurnTail: 2.0,
   bodyUpTurn: 3.0,
+  // Joint limits (the body is a column of blocks on joints, not a ribbon): a link may bend at most `bodyBend` rad from the one before it
+  // (shoulders .. tail) and a block may roll at most `bodyTwist` rad about the spine from the block before it. Before: 12 % of joints bent
+  // over 35 degrees (up to 179, the body folded back on itself) and neighbouring blocks rolled up to 180 degrees apart.
+  // bodyBendFinal: hold the bend limit on the final positions. OFF by default: measured with it on, the tail clips masonry more (a body that
+  // cannot bend tightly cannot wrap wall corners: tight limits 2-3 % of block-frames inside masonry against 1.3 %) and a relocation (the body
+  // re-laid in one frame, out of sight) shows as a 3500+ deg/s block tangent spike against 730 with only the torsion limit. The torsion limit
+  // is what stops the block-by-block twist and is always on.
+  bodyBendFinal: false,
+  bodyBend: 1.2, // rad (~69 degrees): only the extreme folds; tighter limits cannot wrap wall corners (more clipping, kinked trails)
+  bodyBendTail: 1.4,
+  bodyBendRate: 3, // rad/s: how fast a bend already past its limit is let down
+  bodyTwist: 0.26,
+  bodyTwistTail: 0.38,
   trailCap: 360, // breadcrumbs kept (≈ 108 m ≥ 4× the body)
   speed: { recover: 6.5, observe: 1.1 },
   steerRate: 3.2, // 1/s — velocity eases toward the desired velocity (no instant turns)
@@ -174,6 +188,29 @@ export const CREATURE_TUNING = {
   huntHold: 14,
   withdrawFar: 60,
   withdrawMax: 9,
+  // SURFACE NAVIGATION (sim/creatureNav.js): the creature moves ON the masonry, never through open air. While hunting it follows an A*
+  // path over a mesh of the level's crawlable faces to the node nearest you (not straight at you through the shaft), and a leash pulls
+  // the head back to a surface when it strays more than `slack` m beyond its hug height. Only the telegraphed strike leaves the surface
+  // (by at most the lunge's own reach + `strikeSlack`). enabled: false restores the free-flying head (tests that pin the old pacing).
+  nav: {
+    enabled: true,
+    replan: 0.4, // s between path re-plans (and whenever the path runs out)
+    ahead: 6, // m of path the head looks ahead along (string-pulled)
+    arrive: 2.2, // m: a path node this close counts as reached
+    startRange: 14, // m: the head's own node is looked for this far round it
+    goalRange: 60, // m: the node nearest the player is looked for this far round the player
+    corridor: 0.6, // m: each solid is inflated this much when a link / a straight run between path nodes is tested (the head's girth)
+    goalKeep: 2, // m: a new goal node replaces the old one only when it is this much nearer the player
+    burstExtend: 2.6, // x: a committed surge may run this much longer than its timer while it has not reached striking range
+    stretch: 3.5, // m: the lunge may begin this much farther out than with free flight (it can only attack from the masonry)
+    slack: 0.6, // m beyond the hug height the head may hover off a surface
+    strikeSlack: 2.6, // m beyond the lunge's reach during a strike (the strike is the one thing that leaves the surface)
+    leashRate: 20, // m/s: the most the leash hauls a straying head back
+    leashEase: 9, // 1/s: it closes this share of the head's excess distance per second (an eased pull, no kinks in the trail)
+    snapRange: 90, // m: a teleport that would land off the masonry moves to the nearest navigation node within this
+    lead: 0.35, // s of your velocity the goal leads by (the Mason only), at most `leadMax`
+    aimRate: 5, // 1/s: how fast the aim point glides to the next waypoint (smooths the turns at path corners)
+  },
 };
 const T = CREATURE_TUNING;
 
@@ -590,10 +627,24 @@ export class Creature3D {
     this._bdir = new Float32Array(SEG * 3); // each link's direction last frame (the locked body axes)
     this._bup = new Float32Array(SEG * 3); // each block's up last frame
     this._bReady = false;
+    this._bendPrev = new Float32Array(SEG); // each joint's bend last frame (bodyBendRate)
     this._bsrc = new Float32Array(SEG * 3); // the spine as the trail laid it (the lock reads the links from here)
     this._bpush = new Float32Array(SEG * 3); // eased push-out of each block (m)
     this._surfTmp = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
     this._hit = { t: 0, az: 0 };
+    // surface navigation (see CREATURE_TUNING.nav): the mesh is built on first use and cached per level data
+    this._nav = null;
+    this._navTried = false;
+    this._navPath = new Int32Array(768);
+    this._navLen = 0;
+    this._navIdx = 0;
+    this._navGoal = -1;
+    this._navT = 0;
+    this._navFresh = true;
+    this._ntx = 0;
+    this._nty = 0;
+    this._ntz = 0;
+    this.navStats = { replans: 0, noPath: 0, leashes: 0, snaps: 0 };
 
     if (!this.v) linkBus(this.bus, this); // variants ignore the sighting / call triggers
     this._gate = false; // setHuntGate: the Mason hunts only while the player is hurt (off = the sim as ever: the tests and the route bots)
@@ -739,6 +790,10 @@ export class Creature3D {
     this._hugY = 0;
     this._hugZ = 0;
     this._hugOK = false;
+    this._navLen = 0;
+    this._navIdx = 0;
+    this._navGoal = -1;
+    this._navT = 0;
     this._hugPX = NaN;
     this._hugPY = NaN;
     this._hugPZ = NaN;
@@ -1151,10 +1206,17 @@ export class Creature3D {
     }
 
     // Hard rubber band: never let it fall hopelessly far behind (it is out of sight there).
-    if (below > K.maxGap) this._shift(0, K.maxGap - below, 0);
-    else if (-below > K.maxGap) this._shift(0, -below - K.maxGap, 0);
+    if (below > K.maxGap) {
+      this._shift(0, K.maxGap - below, 0);
+      this._snapToNav(T.nav.snapRange);
+    } else if (-below > K.maxGap) {
+      this._shift(0, -below - K.maxGap, 0);
+      this._snapToNav(T.nav.snapRange);
+    }
 
-    const engage = this.cfg.killRadius * T.engageMul;
+    // A surface-bound hunter reaches you only from the masonry, so its telegraphed lunge may begin `nav.stretch` m farther out than a free-flying
+    // one's (the wind-up still closes part of the gap; the strike's own reach is unchanged).
+    const engage = this.cfg.killRadius * T.engageMul + (T.nav.enabled && this._nav ? T.nav.stretch : 0);
     // LEVEL_FUN_PLAN P5: in a Masons' rest no attack starts (the lure niche keeps them on: the keystone takes the blow)
     const hidden = this.refuge === 1;
     const canAttack = this.lethal && alive && this.grace <= 0 && !hidden;
@@ -1215,6 +1277,9 @@ export class Creature3D {
             }
             if (!canAttack && dist < engage * 1.6) end = true;
           } else if (dist <= this._menace() * 0.9) end = true; // pressure surge stops short
+          // A committed surge runs along the masonry, which is longer than the straight line it used to take through the air: it
+          // keeps going (up to nav.burstExtend x its time, while it has the stamina) until it is in range to strike.
+          if (end && this.burstCommit && canAttack && this._nav && T.nav.enabled && this.stateTime < this.stateDur * T.nav.burstExtend && this.stamina > 0.08) end = false;
           if (end) {
             if (this.burstCommit) this._lungeFails++; // never got in reach (see _watchdog)
             if (this.stamina <= 0) this._setState(S.RECOVERING);
@@ -1382,6 +1447,7 @@ export class Creature3D {
         this._clampToBounds();
       }
     }
+    this._snapToNav(T.nav.snapRange);
     this.vx = 0;
     this.vy = -4;
     this.vz = 0;
@@ -1534,6 +1600,8 @@ export class Creature3D {
   _steerHunt(dt, player, dist, below) {
     const K = this.k;
     this._scanHugIfNeeded(dt, player);
+    const navOn = this._navUpdate(dt, player);
+    let gaveGround = false;
     const swing = 1 - U.smoothstep(T.swingNear, T.swingFar, dist);
     let tx = U.lerp(this._hugX, player.x, swing);
     let ty = U.lerp(this._hugY, player.y, swing);
@@ -1582,6 +1650,7 @@ export class Creature3D {
               tz = this.z - ((player.z - this.z) / dl) * 5;
               speed = Math.min(K.pursue, (m * 0.75 - dist) * 2 + 1.6);
               stick = 1;
+              gaveGround = true;
             }
           }
         }
@@ -1638,7 +1707,14 @@ export class Creature3D {
       default:
         speed = 0;
     }
-    if (!this.v && this.lethal && !this.creeping) {
+    if (navOn && !gaveGround && this.state !== S.RECOVERING && this.state !== S.OBSERVING) {
+      // Navigation: the way to you runs over the masonry, to the surface point nearest you (the lunge does the rest), not through the air.
+      tx = this._ntx;
+      ty = this._nty;
+      tz = this._ntz;
+      stick = 1;
+    }
+    if (!navOn && !this.v && this.lethal && !this.creeping) {
       // It aims where you will be: a swing across the shaft does not shake it off.
       const w = this.state === S.BURST ? Math.max(swing, this.burstCommit ? 0.85 : 0.55) : this.state === S.PURSUING || this.state === S.APPROACHING ? swing : 0;
       if (w > 0.05) {
@@ -1658,7 +1734,7 @@ export class Creature3D {
         tz += lz * w;
       }
     }
-    if (speed > 0.5 && this._detour(tx, ty, tz)) {
+    if (!navOn && speed > 0.5 && this._detour(tx, ty, tz)) {
       tx = this._dtx;
       ty = this._dty;
       tz = this._dtz;
@@ -1667,6 +1743,180 @@ export class Creature3D {
     this._weaveStep(dt, stick);
     this._moveToward(tx, ty, tz, speed, rate, dt, stick);
     this._surfaceStep(dt, stick);
+  }
+
+  /** The level's surface navigation mesh (built on first use, cached per level data), or null: none, or navigation switched off. */
+  _navMesh() {
+    if (!this._navTried) {
+      this._navTried = true;
+      this._nav = this.level && T.nav.enabled ? surfaceNavFor(this.level, { structural: isStructural, hug: T.hug, clear: T.minClear, cell: 3, corridor: T.nav.corridor }) : null;
+    }
+    return T.nav.enabled ? this._nav : null;
+  }
+
+  /**
+   * A teleport (entry from above or below, the rubber band, the stuck guard's relocation) must land ON the masonry, not in the air or
+   * in a block: when the head is not within hug + slack of a crawlable surface it moves, with its whole body, to the nearest
+   * navigation node within `range` m. Returns whether it moved.
+   */
+  _snapToNav(range) {
+    const nav = this._navMesh();
+    if (!nav) return false;
+    if (this._findSurface(this.x, this.y, this.z, this._hug + T.nav.slack, this._surf2) < Infinity && this._clearAt(this.x, this.y, this.z)) return false;
+    const j = nav.nearest(this.x, this.y, this.z, range);
+    if (j < 0) return false;
+    this._shift(nav.px[j] - this.x, nav.py[j] - this.y, nav.pz[j] - this.z);
+    this.navStats.snaps++;
+    this._navLen = 0;
+    return true;
+  }
+
+  /**
+   * Surface navigation (sim/creatureNav.js). Keeps a path over the level's crawlable faces from the head's node to the node nearest
+   * the player (re-planned every `nav.replan` s, kept while the goal holds), advances along it and leaves the point to aim at in
+   * _ntx/_nty/_ntz (the farthest path node it can reach in a straight head-wide corridor, `nav.ahead` m on). Returns false when there
+   * is no mesh, no node round the head or the player, or no path (the old free steering then applies for that frame).
+   */
+  _navUpdate(dt, player) {
+    const N = T.nav;
+    if (!N.enabled) return false;
+    const nav = this._navMesh();
+    if (!nav) return false;
+    this._navT -= dt;
+    if (this._navT <= 0 || this._navLen === 0 || this._navIdx >= this._navLen) {
+      this._navT = N.replan;
+      const start = nav.nearest(this.x, this.y, this.z, N.startRange);
+      if (start < 0) {
+        this._navLen = 0;
+        this.navStats.noPath++;
+        return false;
+      }
+      let gx = player.x;
+      let gy = player.y;
+      let gz = player.z;
+      if (!this.v && this.lethal) {
+        // the Mason aims where you are going: your velocity for a moment, capped
+        let lx = this._pvx * N.lead;
+        let ly = this._pvy * N.lead;
+        let lz = this._pvz * N.lead;
+        const ll = len3(lx, ly, lz);
+        if (ll > T.leadMax) {
+          const f = T.leadMax / ll;
+          lx *= f;
+          ly *= f;
+          lz *= f;
+        }
+        gx += lx;
+        gy += ly;
+        gz += lz;
+      }
+      const region = nav.region[start];
+      let goal = nav.goalNear(gx, gy, gz, N.goalRange, region, this.level);
+      if (goal < 0) {
+        this._navLen = 0;
+        this.navStats.noPath++;
+        return false;
+      }
+      const old = this._navGoal;
+      if (old >= 0 && old !== goal && nav.region[old] === region) {
+        // hold the old goal unless the new one is clearly nearer you (no flip-flopping between two cells)
+        const dOld = len3(nav.px[old] - gx, nav.py[old] - gy, nav.pz[old] - gz);
+        const dNew = len3(nav.px[goal] - gx, nav.py[goal] - gy, nav.pz[goal] - gz);
+        if (dOld - dNew < N.goalKeep) goal = old;
+      }
+      const n = nav.findPath(start, goal, this._navPath);
+      this.navStats.replans++;
+      if (n === 0) {
+        this._navLen = 0;
+        this._navGoal = -1;
+        this.navStats.noPath++;
+        return false;
+      }
+      if (this._navLen === 0) this._navFresh = true;
+      this._navLen = n;
+      this._navIdx = 0;
+      this._navGoal = goal;
+    }
+    const path = this._navPath;
+    const len = this._navLen;
+    // nodes already reached are behind us
+    while (this._navIdx < len - 1) {
+      const j = path[this._navIdx];
+      if (len3(nav.px[j] - this.x, nav.py[j] - this.y, nav.pz[j] - this.z) >= N.arrive) break;
+      this._navIdx++;
+    }
+    const k = nav.waypoint(path, len, this._navIdx, this.x, this.y, this.z, N.ahead, this.level);
+    const j = path[k];
+    if (this._navFresh) {
+      // first point of a new path (or after a teleport): start on it
+      this._ntx = nav.px[j];
+      this._nty = nav.py[j];
+      this._ntz = nav.pz[j];
+      this._navFresh = false;
+    } else {
+      // the aim point glides to the next waypoint: the head's facing never snaps round a corner of the path
+      const f = Math.min(1, N.aimRate * dt);
+      this._ntx += (nav.px[j] - this._ntx) * f;
+      this._nty += (nav.py[j] - this._nty) * f;
+      this._ntz += (nav.pz[j] - this._ntz) * f;
+    }
+    return true;
+  }
+
+  /**
+   * The leash: the head never hovers more than `nav.slack` m (the strike: `strikeSlack` beyond its reach) beyond its hug height off a
+   * crawlable surface. `d` = the distance to the nearest one (Infinity: none within the search radius, then the nearest navigation
+   * node is the way back). A straying head is hauled back at `nav.leashRate` m/s with its outward speed removed.
+   */
+  _leash(dt, d) {
+    const nav = this._nav;
+    if (!nav || !T.nav.enabled) return;
+    const a = this.attack;
+    const striking = this.state === S.ATTACK && a.phase !== null;
+    const slack = striking ? this.cfg.killRadius * T.strikeMul + 1.6 + T.nav.stretch + T.nav.strikeSlack : T.nav.slack;
+    const lim = this._hug + slack;
+    let hx;
+    let hy;
+    let hz;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    if (d === Infinity) {
+      const j = nav.nearest(this.x, this.y, this.z, 90);
+      if (j < 0) return;
+      hx = nav.px[j];
+      hy = nav.py[j];
+      hz = nav.pz[j];
+      nx = nav.nx[j];
+      ny = nav.ny[j];
+      nz = nav.nz[j];
+    } else if (d > lim) {
+      const sf = this._surf;
+      hx = sf.x + sf.nx * this._hug;
+      hy = sf.y + sf.ny * this._hug;
+      hz = sf.z + sf.nz * this._hug;
+      nx = sf.nx;
+      ny = sf.ny;
+      nz = sf.nz;
+    } else return;
+    const dx = hx - this.x;
+    const dy = hy - this.y;
+    const dz = hz - this.z;
+    const dl = len3(dx, dy, dz);
+    if (dl < 1e-4) return;
+    // eased: a head just past its slack is nudged, a far one is hauled (capped), so the trail the body follows has no kinks
+    const excess = d === Infinity ? dl : d - lim;
+    const step = Math.min(dl, Math.max(excess, 0) * Math.min(1, T.nav.leashEase * dt), T.nav.leashRate * dt);
+    this.x += (dx / dl) * step;
+    this.y += (dy / dl) * step;
+    this.z += (dz / dl) * step;
+    const vn = this.vx * nx + this.vy * ny + this.vz * nz;
+    if (vn > 0) {
+      this.vx -= nx * vn;
+      this.vy -= ny * vn;
+      this.vz -= nz * vn;
+    }
+    this.navStats.leashes++;
   }
 
   /**
@@ -1958,7 +2208,8 @@ export class Creature3D {
     const dz = player.z - this.z;
     const d = len3(dx, dy, dz) || 1;
     // A stall lunge has had all the time it needed to study you: it reaches further.
-    const reach = this.cfg.killRadius * T.strikeMul * (this.burstReason === 'stall' ? 1.25 : 1);
+    // (surface-bound: the lunge stretches `nav.stretch` m farther than a free-flying one's, the one thing that leaves the masonry)
+    const reach = this.cfg.killRadius * T.strikeMul * (this.burstReason === 'stall' ? 1.25 : 1) + (T.nav.enabled && this._nav ? T.nav.stretch : 0);
     // LEVEL_FUN_PLAN P5 safety rules: a strike never hits through an active solid on the line head -> player (the last 0.35 m
     // at the body is its own clearance), nor a player in a refuge (a rest, or the keystone niche: the stone takes it).
     const occ = this._occlusion(dx, dy, dz, d, d);
@@ -2391,6 +2642,7 @@ export class Creature3D {
       this.z = pz;
     }
     this._clampToBounds();
+    this._snapToNav(T.nav.snapRange); // no wall found along that azimuth (a wide nave): land on the nearest masonry instead of the air
     this.vx = 0;
     this.vy = -6 * this._belowSign;
     this.vz = 0;
@@ -2551,6 +2803,7 @@ export class Creature3D {
         this.vz -= sf.nz * vn * kv;
       }
     }
+    if (this._nav) this._leash(dt, d);
     this._keepClear();
     this._clampToBounds();
   }
@@ -3244,6 +3497,8 @@ export class Creature3D {
     this._lockBody(this._bodyDt || 1 / 60);
     this._conformBody(this._bodyDt || 1 / 60);
     this._lockUps(this._bodyDt || 1 / 60);
+    if (T.bodyBendFinal) this._limitBend();
+    if (T.bodyTwist < 3) this._limitTwist();
     // The column arches off the wall mid-length and slowly heaves (breathing masonry).
     const heave = 1 + 0.18 * Math.sin(this._t * 0.9 + this.seed);
     for (let i = 1; i < SEG; i++) {
@@ -3337,6 +3592,136 @@ export class Creature3D {
       sp[i * 3] = sp[i * 3 - 3] + nx * l;
       sp[i * 3 + 1] = sp[i * 3 - 2] + ny * l;
       sp[i * 3 + 2] = sp[i * 3 - 1] + nz * l;
+    }
+  }
+
+  /**
+   * Joint bend on the FINAL positions (the wall fit and the minimum-link fix move blocks after _lockBody and put kinks back): head to
+   * tail, a block that sits more than the joint's limit away from the line of the two blocks before it is swung about the previous
+   * block, keeping its distance, to exactly the limit.
+   */
+  _limitBend() {
+    const sp = this.body.spine;
+    for (let i = 2; i < SEG; i++) {
+      let qx = sp[i * 3 - 3] - sp[i * 3 - 6];
+      let qy = sp[i * 3 - 2] - sp[i * 3 - 5];
+      let qz = sp[i * 3 - 1] - sp[i * 3 - 4];
+      const ql = len3(qx, qy, qz);
+      let nx = sp[i * 3] - sp[i * 3 - 3];
+      let ny = sp[i * 3 + 1] - sp[i * 3 - 2];
+      let nz = sp[i * 3 + 2] - sp[i * 3 - 1];
+      const nl = len3(nx, ny, nz);
+      if (ql < 1e-6 || nl < 1e-6) continue;
+      qx /= ql;
+      qy /= ql;
+      qz /= ql;
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      const bend = Math.acos(U.clamp(qx * nx + qy * ny + qz * nz, -1, 1));
+      const bp = this._bendPrev;
+      // the limit; a bend that was already past it (the body re-laid by a relocation or an entry) is let down at `bodyBendRate` rad/s, not snapped
+      const lim0 = U.lerp(T.bodyBend, T.bodyBendTail, (i - 2) / (SEG - 3));
+      const lim = this._bReady && bp[i] > lim0 ? Math.max(lim0, bp[i] - T.bodyBendRate * this._bodyDt) : lim0;
+      if (bend <= lim) {
+        bp[i] = bend;
+        continue;
+      }
+      bp[i] = lim;
+      let ax = qy * nz - qz * ny;
+      let ay = qz * nx - qx * nz;
+      let az = qx * ny - qy * nx;
+      let al = len3(ax, ay, az);
+      if (al < 1e-3) {
+        ax = this.body.up[i * 3];
+        ay = this.body.up[i * 3 + 1];
+        az = this.body.up[i * 3 + 2];
+        const dd = ax * qx + ay * qy + az * qz;
+        ax -= qx * dd;
+        ay -= qy * dd;
+        az -= qz * dd;
+        al = len3(ax, ay, az) || 1;
+      }
+      ax /= al;
+      ay /= al;
+      az /= al;
+      const c = Math.cos(lim);
+      const sn = Math.sin(lim);
+      const dot = ax * qx + ay * qy + az * qz;
+      let rx = qx * c + (ay * qz - az * qy) * sn + ax * dot * (1 - c);
+      let ry = qy * c + (az * qx - ax * qz) * sn + ay * dot * (1 - c);
+      let rz = qz * c + (ax * qy - ay * qx) * sn + az * dot * (1 - c);
+      const rl = len3(rx, ry, rz) || 1;
+      rx /= rl;
+      ry /= rl;
+      rz /= rl;
+      sp[i * 3] = sp[i * 3 - 3] + rx * nl;
+      sp[i * 3 + 1] = sp[i * 3 - 2] + ry * nl;
+      sp[i * 3 + 2] = sp[i * 3 - 1] + rz * nl;
+    }
+  }
+
+  /**
+   * Torsion: each block's up may differ from the block before it only by `bodyTwist` rad of roll about the spine (head to tail, each
+   * measured against the already limited neighbour), so the column cannot twist block by block as the surfaces under it change.
+   */
+  _limitTwist() {
+    const sp = this.body.spine;
+    const up = this.body.up;
+    const u0 = this._bup;
+    for (let i = 1; i < SEG; i++) {
+      let ax = sp[i * 3] - sp[i * 3 - 3];
+      let ay = sp[i * 3 + 1] - sp[i * 3 - 2];
+      let az = sp[i * 3 + 2] - sp[i * 3 - 1];
+      const al = len3(ax, ay, az);
+      if (al < 1e-6) continue;
+      ax /= al;
+      ay /= al;
+      az /= al;
+      // the neighbour's up and this block's up, both flattened onto the plane across the joint
+      let rx = up[i * 3 - 3];
+      let ry = up[i * 3 - 2];
+      let rz = up[i * 3 - 1];
+      const rd = rx * ax + ry * ay + rz * az;
+      rx -= ax * rd;
+      ry -= ay * rd;
+      rz -= az * rd;
+      const rl = len3(rx, ry, rz);
+      const cx = up[i * 3];
+      const cy = up[i * 3 + 1];
+      const cz = up[i * 3 + 2];
+      const cd = cx * ax + cy * ay + cz * az;
+      let ux = cx - ax * cd;
+      let uy = cy - ay * cd;
+      let uz = cz - az * cd;
+      const ul = len3(ux, uy, uz);
+      if (rl < 1e-3 || ul < 1e-3) continue;
+      rx /= rl;
+      ry /= rl;
+      rz /= rl;
+      ux /= ul;
+      uy /= ul;
+      uz /= ul;
+      const ang = Math.acos(U.clamp(rx * ux + ry * uy + rz * uz, -1, 1));
+      const lim = U.lerp(T.bodyTwist, T.bodyTwistTail, (i - 1) / (SEG - 2));
+      if (ang <= lim) continue;
+      // turn the neighbour's up toward this block's by `lim` about the spine
+      const sg = (ry * uz - rz * uy) * ax + (rz * ux - rx * uz) * ay + (rx * uy - ry * ux) * az >= 0 ? 1 : -1;
+      const c = Math.cos(lim);
+      const s = Math.sin(lim) * sg;
+      let nx = rx * c + (ay * rz - az * ry) * s + ax * cd;
+      let ny = ry * c + (az * rx - ax * rz) * s + ay * cd;
+      let nz = rz * c + (ax * ry - ay * rx) * s + az * cd;
+      const nl = len3(nx, ny, nz) || 1;
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      up[i * 3] = nx;
+      up[i * 3 + 1] = ny;
+      up[i * 3 + 2] = nz;
+      u0[i * 3] = nx; // the rate lock of the next frame starts from the limited up
+      u0[i * 3 + 1] = ny;
+      u0[i * 3 + 2] = nz;
     }
   }
 

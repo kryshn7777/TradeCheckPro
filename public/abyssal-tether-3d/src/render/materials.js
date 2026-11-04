@@ -120,6 +120,14 @@ export const LOOK = {
   // The horror look (renderer3d.js LOOK_PRESETS): x film grain, y vignette (from the view axis, so both eyes agree), z split toning
   // (cold crushed shadows, sickly warm lights), w time (s, wrapped) for the grain. All zero = the classic grade.
   uHorrorK: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // The stylised ("3D anime") look (renderer3d.js LOOK_PRESETS.anime; GLSL atToon below): x strength (0 = off, the realistic grade),
+  // y number of light bands, z edge softness in pixels (anti-aliased band edges), w gain applied to the lighting before it is banded.
+  uToonK: { value: new THREE.Vector4(0, 5, 1.2, 0.55) },
+  // Shadow side of the cel: rgb = the tint the albedo takes in the darkest band (a cool violet, never black), a = how much of it is added.
+  uToonShade: { value: new THREE.Vector4(0.58, 0.66, 1.0, 0.15) },
+  // Ink outlines: x strength of the line on the masonry's box edges (the bevel band darkened to the ink colour; 0 = off), yzw unused.
+  // (The silhouette outlines of the hero meshes are inverted hulls: render/outline.js.)
+  uInkK: { value: new THREE.Vector4(0, 0, 0, 0) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
@@ -1342,7 +1350,74 @@ const SPEC_AA = `  {
   }
 `;
 
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\n';
+/**
+ * Cel shading, the shared GLSL (lit surfaces: the grade below; the creature, hands, body and props: injectToon). The LIGHTING is
+ * banded, not the picture: the lit colour is divided by the surface's own albedo luminance (so the stone's texture and the paint on
+ * the gear stay intact), the ratio goes through a few soft-edged steps in a perceptual (square-root) space, and the colour is rebuilt
+ * with the albedo again; the colour keeps its hue (the gain is uniform over rgb). Above the top band the light stays continuous (a
+ * lantern flare or a glow is still HDR), and the darkest band is lifted to a cool tint of the albedo (an anime shadow is violet, not
+ * black). Band edges are one pixel wide (fwidth of the banded value), so they never crawl or alias; uToonK.x = 0 skips it all.
+ * JS twin: toonBand().
+ */
+const TOON_DECL = `uniform vec4 uToonK;
+uniform vec4 uToonShade;
+vec3 atToon( vec3 c, vec3 albedo ) {
+  float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+  float a = max( dot( albedo, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.03 );
+  float lit = l / a;
+  float x = sqrt( max( lit * uToonK.w, 0.0 ) ) * uToonK.y;
+  float xc = min( x, uToonK.y );
+  float f = floor( xc );
+  float w = clamp( fwidth( xc ) * uToonK.z, 0.02, 0.45 );
+  float q = f + smoothstep( 0.5 - w, 0.5 + w, xc - f );
+  float b = q / uToonK.y;
+  float band = b * b / uToonK.w + max( lit - 1.0 / uToonK.w, 0.0 );
+  vec3 t = c * ( min( band * a / max( l, 0.002 ), 10.0 ) );
+  t += albedo * uToonShade.rgb * uToonShade.a;
+  return mix( c, t, uToonK.x );
+}
+`;
+const TOON_FRAG = '  if ( uToonK.x > 0.001 ) gl_FragColor.rgb = atToon( max( gl_FragColor.rgb, vec3( 0.0 ) ), diffuseColor.rgb );\n';
+
+/**
+ * Adds the toon step to a shader that is being patched elsewhere (call from onBeforeCompile, after the material's own patch):
+ * binds the shared uniforms, declares atToon and bands the lit colour right where the lit colour is final, before tone mapping and fog.
+ */
+export function injectToon(shader) {
+  shader.uniforms.uToonK = LOOK.uToonK;
+  shader.uniforms.uToonShade = LOOK.uToonShade;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\n' + TOON_DECL)
+    .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + TOON_FRAG);
+  return shader;
+}
+
+/** JS twin of atToon's band curve on a lighting value (lit / albedo luminance): `w` is the edge half-width in band units (the shader's fwidth term). */
+export function toonBand(lit, bands = LOOK.uToonK.value.y, gain = LOOK.uToonK.value.w, w = 0.02) {
+  const x = Math.sqrt(Math.max(lit * gain, 0)) * bands;
+  const xc = Math.min(x, bands);
+  const f = Math.floor(xc);
+  const e = Math.min(1, Math.max(0, (xc - f - (0.5 - w)) / (2 * w)));
+  const q = f + e * e * (3 - 2 * e);
+  const b = q / bands;
+  return (b * b) / gain + Math.max(lit - 1 / gain, 0);
+}
+
+/**
+ * Ink on the masonry's box edges (the stylised look's line art for the level, no extra pass): the bevel band (BEVEL_FRAG: atBev is 1 on the
+ * edge and falls off to 0 across the 3.5 cm bevel, already faded out when it is narrower than a pixel and beyond uBevelK.z metres) is
+ * darkened toward black in its inner part, so every block carries a thin dark line along its edges, the way a drawn background has. Only the
+ * materials that have the bevel (masonry, rock, metal, crumbling blocks) get it. JS twin: inkEdge().
+ */
+const INK_EDGE_FRAG = '    if ( uInkK.x > 0.001 ) atC *= 1.0 - 0.94 * uInkK.x * smoothstep( 0.26, 0.5, atBev );\n';
+
+/** JS twin of the edge ink: the multiplier on the colour for a bevel-band value `bev` (0..1) at ink strength `k` (0..1). */
+export function inkEdge(bev, k = 1) {
+  const t = Math.min(1, Math.max(0, (bev - 0.26) / (0.5 - 0.26)));
+  return 1 - 0.94 * k * (t * t * (3 - 2 * t));
+}
+
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\nuniform vec4 uInkK;\n' + TOON_DECL;
 /**
  * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
  * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
@@ -1355,6 +1430,8 @@ const GRADE_FRAG = `  {
     atC = mix( vec3( atL ), atC, atSat );
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
     atC = atC * uGradeTint + uBlack;
+    if ( uToonK.x > 0.001 ) atC = atToon( atC, diffuseColor.rgb );
+/*AT_INK*/
     if ( uHorrorK.z > 0.001 ) {
       // the horror look: shadows go cold and green-grey and crush toward a soft toe, the lit parts stay a sickly warm, a vignette
       // from the view axis and a luminance-weighted grain that dies in the blacks (no raised noise floor in a dark headset)
@@ -1718,7 +1795,7 @@ ${
 
     if (grade) {
       fDecl += GRADE_DECL;
-      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG);
+      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG.replace('/*AT_INK*/', bevel ? INK_EDGE_FRAG : ''));
     }
 
     if (shade) {
@@ -1764,9 +1841,11 @@ ${
  * Fog for VR, installed globally (ShaderChunk) so every module's materials agree:
  *  - radial (distance) fog instead of view depth: rotation-invariant, so
  *    looking around in the headset never changes what fog hides
- *  - a front-loaded curve between fogNear and fogFar (1 − (1 − t)^2.5): mid
- *    distances turn to haze quickly (silhouettes, depth), and the far value
- *    still reaches exactly 1 so distance culling at fogFar is invisible
+ *  - a smoothstep between fogNear and fogFar (fog is for what is FAR: the
+ *    renderer starts it at FOG_START_FRAC of the far distance; it was a
+ *    front-loaded 1 − (1 − t)^2.5 that hazed everything past arm's length),
+ *    and the far value still reaches exactly 1 so distance culling at fogFar
+ *    is invisible
  *  - a vertical gradient on the fog colour by view direction (per fragment):
  *    the haze above (where you came from) holds a little light, the abyss below
  *    swallows it. `fogColor` is redefined to the graded colour after the
@@ -1795,8 +1874,7 @@ export function installRadialFog() {
 		return 1.0 - exp( - fogDensity * fogDensity * d * d );
 	#else
 		float t = clamp( ( d - fogNear ) / max( fogFar - fogNear, 1e-3 ), 0.0, 1.0 );
-		float u = 1.0 - t;
-		return 1.0 - u * u * sqrt( u );
+		return t * t * ( 3.0 - 2.0 * t );
 	#endif
 	}
 	vec3 atFogColor() {
@@ -1818,11 +1896,19 @@ export function installRadialFog() {
   installDither();
 }
 
-/** JS twin of the shader fog curve (0..1) for CPU-side fades. */
+/**
+ * Where the distance fog starts, as a share of its far distance (renderer3d: fog.near = far x this, never below the section's own near).
+ * The far distance is untouched: the level culls geometry there (the Quest triangle / draw-call budget), so the fog still closes it off.
+ */
+export const FOG_START_FRAC = 0.4;
+
+/**
+ * JS twin of the shader fog curve (0..1) for CPU-side fades. The curve is a smoothstep: clear at the start, thickening only toward the
+ * far limit. (It was 1 - u^2.5 with u = 1 - t: 43 % fogged a fifth of the way in, 82 % halfway, which hazed everything past arm's length.)
+ */
 export function fogFactor(d, near, far) {
   const t = Math.min(1, Math.max(0, (d - near) / Math.max(far - near, 1e-3)));
-  const u = 1 - t;
-  return 1 - u * u * Math.sqrt(u);
+  return t * t * (3 - 2 * t);
 }
 
 // -----------------------------------------------------------------------------

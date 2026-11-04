@@ -21,13 +21,17 @@
 import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
 import { HeadFit, headExtents } from './mason/masonFit.js';
+import { Mandibles } from './mason/masonMandibles.js';
+import { Eyes, Maw } from './mason/masonFace.js';
+import { Stinger } from './mason/masonStinger.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
-import { sectionWet } from './creatureDust.js';
+import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
 import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
+import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 const DEFAULTS = {
   lodDistance: 38, // nearest spine point -> camera: beyond this the LOD1 mesh shows
@@ -50,6 +54,8 @@ const SEG = 20;
 const CLIP_LISTS = [BASE_CLIPS, ADDITIVE_CLIPS];
 const LIFT_FALLOFF = [1, 0.6, 0.3, 0.12];
 const _v0 = new THREE.Vector3();
+const _v1 = new THREE.Vector3();
+const _m4aim = new THREE.Matrix4();
 const _m3a = new Float64Array(9);
 const _m3b = new Float64Array(9);
 const _m3c = new Float64Array(9);
@@ -101,6 +107,14 @@ export class MasonRigView {
     this._wet = 0;
     this._camD = 0;
     this.fit = new HeadFit(headExtents(meta.headBounds));
+    // giant mandibles on the head bone: they follow the head fit and the crown's aim; opening / snapping is driven by the clip graph's state
+    this.mandibles = new Mandibles({ variant: !!this.opts.variant, seed: (this.opts.variant ? 0.37 : 0.11) });
+    this.mandibles.mount(this.root); // (the bones are detached from the scene: the horns follow the neck's world matrix each frame)
+    // the face (red slit eyes, a maw that opens with the jaw) and a big stinger on the tail: all mounted on the root, driven from bone world matrices
+    this.eyes = new Eyes({ variant: !!this.opts.variant, seed: this.opts.variant ? 0.61 : 0.23 }).mount(this.root);
+    this.maw = new Maw({ variant: !!this.opts.variant }).mount(this.root);
+    this.stinger = new Stinger({ variant: !!this.opts.variant }).mount(this.root);
+    this._baseCalls = 0;
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
     this.S = new Float32Array(SEG);
@@ -221,10 +235,29 @@ export class MasonRigView {
           if (/Emissive/i.test(mat.name)) {
             this.emissive = mat;
             this._emBase = mat.emissiveIntensity || 1;
+            // the sensory pits are the eyes: glowing RED, not the amber they were baked as (the factor is [1, 0.26, 0.05])
+            if (mat.emissive && mat.emissive.setRGB) mat.emissive.setRGB(1, 0.025, 0.015);
           }
         }
       }
     }
+    this._buildOutline();
+  }
+
+  /**
+   * The ink outline (outline.js): ONE hull draw call for the whole creature, built from the cheap LOD1 geometry (the extruded back faces only
+   * need the silhouette; 63 k triangles of LOD0 twice over would not fit the Quest budget), shown with either LOD. The emissive eye meshes are
+   * left out (they are glow, not body).
+   */
+  _buildOutline() {
+    const isBody = (m) => !(Array.isArray(m.material) ? m.material : [m.material]).includes(this.emissive);
+    const far = this.meshes[1] !== this.meshes[0] ? this.meshes[1] : this.meshes[0];
+    const hullFrom = far.filter(isBody);
+    const sources = [...this.meshes[0], ...(far !== this.meshes[0] ? far : [])].filter(isBody);
+    if (!hullFrom.length || !sources.length) return;
+    const geo = mergedHullGeometry(hullFrom);
+    if (!geo) return;
+    this._hull = addOutline(sources, { geometry: geo });
   }
 
   _buildRig(meta) {
@@ -312,7 +345,8 @@ export class MasonRigView {
       }
     }
     this.info.lod = lod;
-    this.info.drawCalls = calls;
+    this._baseCalls = calls;
+    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0) + (this._hull && this._hull.visible ? 1 : 0);
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -449,6 +483,27 @@ export class MasonRigView {
     // ---- bones ----
     this._poseSpine(F, S);
     this._poseCrown();
+    if (this.mandibles) {
+      const show = this._lod === 0 && !this._glowOnly;
+      const nw = this.neck.matrixWorld;
+      const rw = this.root.matrixWorld;
+      this.mandibles.follow(nw, rw);
+      if (camera && show) {
+        // where the player's eye is in the head's frame: the tusks toe in so their points look at it
+        _m4aim.copy(nw).invert();
+        camera.getWorldPosition(_v1).applyMatrix4(_m4aim);
+        this.mandibles.setTarget(_v1.x, _v1.y, _v1.z);
+      } else this.mandibles.setTarget(null);
+      this.mandibles.update(dt, this.graph.snapshot, this._time, show);
+      // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
+      this.eyes.follow(nw, rw);
+      this.eyes.update(this.graph.snapshot, this._time, show);
+      this.maw.follow(nw, rw);
+      this.maw.update(dt, this.mandibles.open, show);
+      this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
+      this.stinger.update(show);
+      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0) + (this._hull && this._hull.visible ? 1 : 0) + (show ? this.mandibles.hullCalls() + this.stinger.hullCalls() : 0);
+    }
     this._poseLegs(dt, B, F, S, level, g, lodFar);
     if (this.dust) this._wake(dt, C, B, F, size);
 
@@ -466,7 +521,7 @@ export class MasonRigView {
       const rate = 0.65 + 0.5 * clamp(glow, 0, 1);
       const ph = (this._time * rate) % 1;
       const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
-      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow) * (0.72 + 0.45 * beat);
+      this.emissive.emissiveIntensity = this._emBase * (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat); // (the idle floor was 0.12: the eyes were barely there)
     }
 
     // ---- bounds ----
@@ -775,7 +830,7 @@ export class MasonRigView {
     const u = this._gu;
     const v = this._gv;
     const size = this.opts.size;
-    d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2]);
+    d.foot(x, y, z, u[0], u[1], u[2], size * (lead ? 1.1 : 0.8), clamp(w * (0.35 + this._speed / 9), 0.2, 1), this._wet, v[0], v[1], v[2], boostOf(this._camD, this._speed, size));
   }
 
   /** Brown dirt smoke at the feet while it moves: one leg at a time, round robin, more the faster it goes. */
@@ -788,7 +843,8 @@ export class MasonRigView {
     if (mv < 0.1) return;
     const list = this.legs.legs;
     if (!list.length) return;
-    this._smokeAcc += dt * (2 + sp * 1.1) * (this.opts.variant ? 0.8 : 1);
+    const boost = boostOf(this._camD, sp, size); // coming at you: more legs kick up more cloud
+    this._smokeAcc += dt * (2 + sp * 1.1) * (this.opts.variant ? 0.8 : 1) * (1 + 0.7 * (boost - 1));
     const u = this._gu;
     const v = this._gv;
     let guard = 0;
@@ -809,7 +865,7 @@ export class MasonRigView {
         y = L.fy;
         z = L.fz;
       }
-      d.smoke(x, y, z, u[0], u[1], u[2], size * (L.kind === 'lead' ? 1.1 : 0.8), clamp(mv, 0.25, 1), this._wet, v[0] * 0.5, v[1] * 0.5, v[2] * 0.5);
+      d.smoke(x, y, z, u[0], u[1], u[2], size * (L.kind === 'lead' ? 1.1 : 0.8), clamp(mv, 0.25, 1), this._wet, v[0] * 0.5, v[1] * 0.5, v[2] * 0.5, boost);
     }
   }
 
@@ -993,6 +1049,12 @@ export class MasonRigView {
 
   dispose() {
     if (this.root.parent) this.root.parent.remove(this.root);
+    if (this._hull) {
+      this._hull.geometry.dispose();
+      removeOutline(this._hull);
+    }
+    if (this.mandibles) this.mandibles.dispose();
+    for (const k of ['eyes', 'maw', 'stinger']) if (this[k]) this[k].dispose();
     const seen = new Set();
     for (const l of this.meshes) {
       for (const m of l) {

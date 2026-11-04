@@ -1,0 +1,31 @@
+{
+ "counts": {
+  "sections": 8,
+  "solids": 175,
+  "hazards": 7,
+  "anchors": 81,
+  "decor": 178,
+  "lights": 48,
+  "supplies": 69,
+  "climb": 16,
+  "seals": 7,
+  "fixtures": 10,
+  "objectives": 7,
+  "routes": 14,
+  "movers": 2,
+  "lanes": 1,
+  "nooks": 3,
+  "squalls": 1,
+  "blood": 41,
+  "boards": 51
+ },
+ "physicsDt": 0.004166666666666667,
+ "gravity": 13.5,
+ "runMaxSpeed": 5.5,
+ "difficulties": [
+  "normal",
+  "nightmare",
+  "abyss",
+  "sandbox"
+ ]
+}

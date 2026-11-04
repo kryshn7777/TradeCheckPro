@@ -1241,6 +1241,27 @@ def build_launcher(hi):
     bm = add("LampGlass", "Slide", "lamp")
     lathe(bm, lp + Vector((0, 0, 0.0040)), Vector((0, 0, 1)), [(0, 0.0044), (0.0018, 0.0040), (0.0032, 0.0026), (0.0040, 0.0)], seg(32, 10))
 
+    # ---- sights: a rear aperture (peep) ring and a front blade on the barrel's top line, both on the slide so the sight picture holds as it
+    # slides, at the same height above the barrel so the line through them is the barrel's axis. A hand that aims with the launcher gets a sight picture.
+    ytop = BZ + 0.0128
+    bm = add("SightRear", "Slide", "iron")
+    ys = 0.0375
+    box(bm, (0, ys, ytop + 0.0020), (0.0050, 0.0030, 0.0024), bevel=seg(0.0004, 0.0))  # clamp block on the barrel
+    for sx in (-1, 1):
+        box(bm, (sx * 0.0036, ys, ytop + 0.0072), (0.0009, 0.0018, 0.0040), bevel=seg(0.0003, 0.0))  # two posts
+    torus(bm, (0, ys, ytop + 0.0125), Vector((0, 1, 0)), 0.0036, 0.0010, seg(40, 14), seg(10, 6))  # the peep ring
+    bm = add("SightFront", "Slide", "iron")
+    yf = 0.1385
+    box(bm, (0, yf, ytop + 0.0016), (0.0030, 0.0042, 0.0020), bevel=seg(0.0004, 0.0))  # base block
+    box(bm, (0, yf + 0.0006, ytop + 0.0052), (0.0009, 0.0022, 0.0040), bevel=seg(0.0003, 0.0))  # the blade
+    bm = add("SightBead", "Slide", "brass")
+    lathe(bm, Vector((0, yf + 0.0006, ytop + 0.0098)), Vector((0, 0, 1)), [(0, 0.0), (0.0006, 0.0013), (0.0016, 0.0013), (0.0022, 0.0006), (0.0024, 0.0)], seg(24, 8))  # brass bead tip
+    # ---- glow rings: two thin bands of lamp glass set into the barrel between the bands (the same phosphor as the pilot lamp, tinted per hand
+    # at run time like the lamp and the gauge: the launcher's "energy" reads from across a shaft)
+    bm = add("GlowRings", "Slide", "lamp")
+    for yr in (0.0925, 0.1015):
+        tube(bm, (0, yr - 0.0015, BZ), (0, yr + 0.0015, BZ), 0.0137, 0.0122, seg(64, 18), chamfer=seg(0.0003, 0.0))
+
     # ---- grapple head (seated in the muzzle) ----------------------------------
     bm = add("HeadShaft", "Head", "forged")
     cylinder(bm, (0, 0.110, BZ), (0, 0.178, BZ), 0.0072, seg(32, 10), chamfer=seg(0.0005, 0.0))

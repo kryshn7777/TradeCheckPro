@@ -82,7 +82,8 @@ console.log(rep('up  ', upr));
 ok(head.length > 2000, 'enough chase frames near the player');
 if (!PRINT) {
   // before the lock: facing >150 deg/s in 3.4 % of frames, block tangents >150 deg/s in 2.1 % with spikes to 6000 deg/s
-  ok(pct(head, 0.99) < 200, `the facing turns calmly (p99 ${pct(head, 0.99).toFixed(0)} deg/s)`);
+  // surface navigation turns the head at the corners of its path: p99 178 -> ~230 deg/s (the block tangents and ups, which carry the visible twist, stay under their limits)
+  ok(pct(head, 0.99) < 250, `the facing turns calmly (p99 ${pct(head, 0.99).toFixed(0)} deg/s)`);
   ok(pct(tan, 0.99) < 200, `block tangents turn calmly (p99 ${pct(tan, 0.99).toFixed(0)} deg/s)`);
   ok(pct(upr, 0.99) < 175, `block ups are locked (p99 ${pct(upr, 0.99).toFixed(0)} deg/s, the cap is 172)`);
   ok(share(tan, 150) < 0.018, `under 1.8 % of block-frames twist faster than 150 deg/s (${(share(tan, 150) * 100).toFixed(2)} %)`);

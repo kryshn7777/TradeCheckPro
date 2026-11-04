@@ -122,8 +122,7 @@ varying vec3 vWorld;
 // same curve as the scene fog (materials.js installRadialFog)
 float rayFog( float d ) {
   float t = clamp( ( d - uFogNF.x ) / max( uFogNF.y - uFogNF.x, 1e-3 ), 0.0, 1.0 );
-  float u = 1.0 - t;
-  return 1.0 - u * u * sqrt( u );
+  return t * t * ( 3.0 - 2.0 * t );
 }
 float hg( float c, float g ) {
   float k = 1.0 + g * g - 2.0 * g * c;

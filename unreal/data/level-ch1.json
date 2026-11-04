@@ -1,0 +1,9266 @@
+{
+ "name": "The Underspire",
+ "spawn": {
+  "x": -4,
+  "y": 0.4,
+  "z": 8.5,
+  "yaw": 0
+ },
+ "goal": {
+  "minX": -9,
+  "maxX": 3,
+  "minY": -556,
+  "maxY": -550,
+  "minZ": 12,
+  "maxZ": 27
+ },
+ "gate": {
+  "minX": -6,
+  "maxX": 2,
+  "minY": -556,
+  "maxY": -548,
+  "minZ": 10,
+  "maxZ": 10.5
+ },
+ "stillLamp": {
+  "x": -3,
+  "y": -551.5,
+  "z": 26.5
+ },
+ "sections": [
+  {
+   "id": "s1",
+   "name": "The Threshold",
+   "subtitle": "Where the descent begins. Again.",
+   "yTop": 40,
+   "yBottom": -8,
+   "shaft": {
+    "minX": -11,
+    "maxX": 11,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "checkpoint": {
+    "x": -4,
+    "y": 0.4,
+    "z": 8.5,
+    "yaw": 0
+   },
+   "theme": {
+    "fog": "#2f414d",
+    "light": "#7fb6cc",
+    "accent": "#e8a458",
+    "fogNear": 10,
+    "fogFar": 110,
+    "ambient": 0.38,
+    "rim": 0.8
+   },
+   "creature": {
+    "mode": "dormant",
+    "lethal": false,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 260
+   },
+   "hints": [
+    {
+     "y": 2,
+     "duration": 9,
+     "text": "Point at the glowing ring and hold the TRIGGER to fire your tether. Let go of the trigger to release.",
+     "desktop": "Aim at the glowing ring and hold the LEFT MOUSE BUTTON to fire your tether. Release to let go."
+    },
+    {
+     "y": -0.2,
+     "duration": 7,
+     "text": "Push the LEFT STICK the way you want to swing. Let go near the top of the arc to fly.",
+     "desktop": "W A S D pumps the swing. Release near the top of the arc to fly."
+    },
+    {
+     "y": -1,
+     "duration": 7,
+     "text": "Swing into the bell. Its toll opens the way down. Only down.",
+     "desktop": "Swing into the bell. Its toll opens the way down. Only down."
+    },
+    {
+     "y": -7.5,
+     "duration": 9,
+     "text": "Studded stone can be climbed. Reach a hand to it, hold GRIP and pull: your hand stays, you move. Let go to launch.",
+     "desktop": "Studded stone can be climbed: stand close, hold F, then W A S D to climb. SPACE hops off."
+    },
+    {
+     "y": -6.5,
+     "duration": 8,
+     "text": "Hanging? Pull the RIGHT STICK back to let out rope and lower yourself. Push it forward to reel in.",
+     "desktop": "Hanging? SHIFT lets out rope to lower yourself. SPACE reels you in."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -6.5,
+     "name": "rumble",
+     "data": {
+      "intensity": 0.15
+     }
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "name": "The Long Swing",
+   "subtitle": "Every fall here is kept. So is the count.",
+   "yTop": -8,
+   "yBottom": -58,
+   "shaft": {
+    "minX": -34,
+    "maxX": 11,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "checkpoint": {
+    "x": 8,
+    "y": -21.6,
+    "z": -6,
+    "yaw": 1.5707963267948966
+   },
+   "theme": {
+    "fog": "#293a49",
+    "light": "#7fb0c8",
+    "accent": "#e8a458",
+    "fogNear": 8,
+    "fogFar": 100,
+    "ambient": 0.34,
+    "rim": 0.75
+   },
+   "creature": {
+    "mode": "dormant",
+    "lethal": false,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 260,
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s2-east",
+       "zone": "c-s2-east",
+       "at": 3.4,
+       "y": -30.2
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -21,
+     "duration": 8,
+     "text": "Two hands, two tethers. Run, fire at the hook under the floor above, and let go on the upswing.",
+     "desktop": "LEFT and RIGHT MOUSE fire two tethers. Run, fire at the hook, and release on the upswing."
+    },
+    {
+     "y": -28.5,
+     "duration": 6,
+     "text": "Falling? Fire again — any anchor will catch you. The rope forgives; the floor keeps.",
+     "desktop": "Falling? Fire again — any anchor will catch you. The rope forgives; the floor keeps."
+    },
+    {
+     "y": -24.5,
+     "duration": 8,
+     "text": "Hook the counterweight. Squeeze GRIP to haul it. It is heavier than stone should be.",
+     "desktop": "Hook the counterweight. Hold F to haul it. It is heavier than stone should be."
+    },
+    {
+     "y": -44.5,
+     "duration": 7,
+     "text": "Squeeze the GRIP on a tethered hand for a hard yank toward its anchor.",
+     "desktop": "F yanks your tethers: a hard pull toward the anchors."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -30,
+     "name": "rumble",
+     "data": {
+      "intensity": 0.25
+     }
+    }
+   ]
+  },
+  {
+   "id": "s3",
+   "name": "Broken Gallery",
+   "subtitle": "Closed from this side. Measured from the other.",
+   "yTop": -58,
+   "yBottom": -98,
+   "shaft": {
+    "minX": -34,
+    "maxX": 11,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "checkpoint": {
+    "x": 7,
+    "y": -65.6,
+    "z": 0,
+    "yaw": 1.5707963267948966
+   },
+   "theme": {
+    "fog": "#25322f",
+    "light": "#86aeaa",
+    "accent": "#4fa08e",
+    "fogNear": 7,
+    "fogFar": 90,
+    "ambient": 0.31,
+    "rim": 0.7
+   },
+   "creature": {
+    "mode": "dormant",
+    "lethal": false,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 240,
+    "dresser": {
+     "active": true,
+     "walkMul": 0.85,
+     "measureRange": 14,
+     "by": {
+      "nightmare": {
+       "walkMul": 1,
+       "measureRange": 16
+      },
+      "abyss": {
+       "walkMul": 1,
+       "measureRange": 16
+      }
+     }
+    },
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s3-shelf",
+       "zone": "c-s3-shelf",
+       "at": -6.2,
+       "y": -88.8
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -67,
+     "duration": 6,
+     "text": "Missed a landing? Don't wait — fire at a lower ring.",
+     "desktop": "Missed a landing? Don't wait — fire at a lower ring."
+    },
+    {
+     "y": -73,
+     "duration": 6,
+     "text": "Dust falls before the stones. Wait for the gap. Do not look at what falls.",
+     "desktop": "Dust falls before the stones. Wait for the gap. Do not look at what falls."
+    },
+    {
+     "y": -76.5,
+     "duration": 7,
+     "text": "Hook the ring on the turning gear and hold on. Something inside is turning it.",
+     "desktop": "Hook the ring on the turning gear and hold on. Something inside is turning it."
+    },
+    {
+     "y": -85,
+     "duration": 8,
+     "text": "Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it.",
+     "desktop": "Ticking on the walls: it measures the whole. Chain a second rope, break its sight, or hook it."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -68,
+     "name": "debris",
+     "data": {
+      "x": -14,
+      "y": -59,
+      "z": 0,
+      "intensity": 0.35
+     }
+    },
+    {
+     "y": -90,
+     "name": "call",
+     "data": {
+      "x": -20,
+      "y": -10,
+      "z": -5,
+      "intensity": 0.3
+     }
+    }
+   ]
+  },
+  {
+   "id": "s4",
+   "name": "The Listening Vault",
+   "subtitle": "Something answered the knock. It knew the rhythm.",
+   "yTop": -98,
+   "yBottom": -150,
+   "shaft": {
+    "minX": -34,
+    "maxX": 11,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "reach": {
+    "normal": 30,
+    "nightmare": 28,
+    "abyss": 26
+   },
+   "checkpoint": {
+    "x": 5,
+    "y": -99.6,
+    "z": 6,
+    "yaw": 0
+   },
+   "theme": {
+    "fog": "#254650",
+    "light": "#6aa4b4",
+    "accent": "#b8f0e0",
+    "fogNear": 10,
+    "fogFar": 190,
+    "ambient": 0.3,
+    "rim": 0.8
+   },
+   "creature": {
+    "mode": "sighting",
+    "lethal": false,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 220,
+    "by": {
+     "nightmare": {
+      "mode": "stalk",
+      "lethal": true,
+      "spawnOffsetY": 130
+     },
+     "abyss": {
+      "mode": "stalk",
+      "lethal": true,
+      "spawnOffsetY": 130
+     }
+    },
+    "dresser": {
+     "active": true
+    },
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s4-answer",
+       "zone": "c-s4-shelf",
+       "at": -6.4,
+       "y": -112.4,
+       "mode": "answer"
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -104.3,
+     "duration": 8,
+     "text": "Hold your lantern to the cold lamps. Light them before the walls notice.",
+     "desktop": "Walk up to each cold lamp and look at it. Light them before the walls notice."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -104.5,
+     "name": "sighting",
+     "data": {
+      "x": -14,
+      "y": -112,
+      "z": -158.5,
+      "dx": 1,
+      "dy": 0,
+      "dz": 0,
+      "span": 172,
+      "duration": 10
+     }
+    },
+    {
+     "y": -127,
+     "name": "call",
+     "data": {
+      "x": -40,
+      "y": -150,
+      "z": -140,
+      "intensity": 0.5
+     }
+    }
+   ]
+  },
+  {
+   "id": "s5",
+   "name": "The Gullet Stair",
+   "subtitle": "It has your scent. It had theirs.",
+   "yTop": -150,
+   "yBottom": -204,
+   "shaft": {
+    "minX": -21,
+    "maxX": -3,
+    "minZ": -9,
+    "maxZ": 9
+   },
+   "reach": {
+    "normal": 29,
+    "nightmare": 27,
+    "abyss": 25
+   },
+   "checkpoint": {
+    "x": -6,
+    "y": -151.6,
+    "z": 0,
+    "yaw": 1.5707963267948966
+   },
+   "theme": {
+    "fog": "#38211a",
+    "light": "#a8683c",
+    "accent": "#c4602a",
+    "fogNear": 5,
+    "fogFar": 70,
+    "ambient": 0.27,
+    "rim": 0.7
+   },
+   "creature": {
+    "mode": "stalk",
+    "lethal": true,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 130,
+    "skitter": {
+     "normal": 0,
+     "nightmare": 0,
+     "abyss": 1
+    },
+    "dresser": {
+     "active": true,
+     "walkMul": 0.9,
+     "measureRange": 14,
+     "by": {
+      "nightmare": {
+       "walkMul": 1,
+       "measureRange": 16
+      },
+      "abyss": {
+       "walkMul": 1,
+       "measureRange": 16
+      }
+     }
+    },
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s5-sinew",
+       "zone": "c-s5-east",
+       "at": 1.5,
+       "y": -180.2
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -151,
+     "duration": 6,
+     "text": "Something made of the lost is coming down after you. Keep moving.",
+     "desktop": "Something made of the lost is coming down after you. Keep moving."
+    },
+    {
+     "y": -159,
+     "duration": 8,
+     "text": "Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load.",
+     "desktop": "Below: two ways down, marked by plaques. THE LONG STAIR: slow and certain. THE THROAT: quick and thin — its frayed rings snap under load."
+    },
+    {
+     "y": -193,
+     "duration": 8,
+     "text": "Hide behind the keystone and let it knock. Or haul its ring.",
+     "desktop": "Hide behind the keystone and let it knock. Or haul its ring."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -152.5,
+     "name": "rumble",
+     "data": {
+      "intensity": 0.6
+     }
+    },
+    {
+     "y": -153,
+     "name": "call",
+     "data": {
+      "intensity": 0.7
+     }
+    },
+    {
+     "y": -170,
+     "name": "debris",
+     "data": {
+      "x": -12,
+      "y": -151,
+      "z": 0,
+      "intensity": 0.6
+     }
+    },
+    {
+     "y": -190,
+     "name": "call",
+     "data": {
+      "intensity": 0.8
+     }
+    }
+   ]
+  },
+  {
+   "id": "s6",
+   "name": "The Two Descents",
+   "subtitle": "Slow and certain, or quick and carried. Never up.",
+   "yTop": -204,
+   "yBottom": -284,
+   "shaft": {
+    "minX": -34,
+    "maxX": 10,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "reach": {
+    "normal": 28,
+    "nightmare": 27,
+    "abyss": 25
+   },
+   "checkpoint": {
+    "x": -12,
+    "y": -207.6,
+    "z": 0,
+    "yaw": 0
+   },
+   "theme": {
+    "fog": "#2e2420",
+    "light": "#6a98a2",
+    "accent": "#c0602e",
+    "fogNear": 6,
+    "fogFar": 85,
+    "ambient": 0.25,
+    "rim": 0.75
+   },
+   "creature": {
+    "mode": "hunt",
+    "lethal": true,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 120,
+    "skitter": {
+     "normal": 1,
+     "nightmare": 1,
+     "abyss": 1
+    },
+    "dresser": {
+     "active": true,
+     "walkMul": 1.1
+    }
+   },
+   "hints": [
+    {
+     "y": -208.5,
+     "duration": 6,
+     "text": "The deep rings are rusted. Get closer. Nobody has come back up to oil them.",
+     "desktop": "The deep rings are rusted. Get closer. Nobody has come back up to oil them."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -209,
+     "name": "call",
+     "data": {
+      "intensity": 0.9
+     }
+    },
+    {
+     "y": -240,
+     "name": "debris",
+     "data": {
+      "x": 0,
+      "y": -212,
+      "z": 0,
+      "intensity": 0.7
+     }
+    }
+   ]
+  },
+  {
+   "id": "s7",
+   "name": "The Hollow Nave",
+   "subtitle": "Nothing to stand on. Nothing to bury.",
+   "yTop": -284,
+   "yBottom": -420,
+   "shaft": {
+    "minX": -52,
+    "maxX": 28,
+    "minZ": -40,
+    "maxZ": 40
+   },
+   "reach": {
+    "normal": 26,
+    "nightmare": 25,
+    "abyss": 24
+   },
+   "checkpoint": {
+    "x": -12,
+    "y": -287.6,
+    "z": 0,
+    "yaw": 0
+   },
+   "theme": {
+    "fog": "#1d3541",
+    "light": "#5f9aaa",
+    "accent": "#b8f0e0",
+    "fogNear": 12,
+    "fogFar": 150,
+    "ambient": 0.24,
+    "rim": 0.8
+   },
+   "creature": {
+    "mode": "frenzy",
+    "lethal": true,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 110,
+    "skitter": {
+     "normal": 1,
+     "nightmare": 2,
+     "abyss": 2
+    },
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s7-spire",
+       "zone": "c-s7-spire-s",
+       "at": -11.4,
+       "y": -346.8
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -287,
+     "duration": 7,
+     "text": "Chain the rings: fire your other hand at the next ring before you let go of this one.",
+     "desktop": "Chain the rings: fire the other mouse button at the next ring before you let go of this one."
+    },
+    {
+     "y": -296,
+     "duration": 7,
+     "text": "Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes.",
+     "desktop": "Hang on in the nave. The floor unbolts while you hold. Do not watch where it goes."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -290,
+     "name": "rumble",
+     "data": {
+      "intensity": 0.8
+     }
+    },
+    {
+     "y": -340,
+     "name": "debris",
+     "data": {
+      "x": -12,
+      "y": -300,
+      "z": 0,
+      "intensity": 0.8
+     }
+    },
+    {
+     "y": -380,
+     "name": "call",
+     "data": {
+      "intensity": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "s8",
+   "name": "The Last Throat",
+   "subtitle": "Down. Now. Everything here wants you down.",
+   "yTop": -420,
+   "yBottom": -562,
+   "shaft": {
+    "minX": -22,
+    "maxX": 18,
+    "minZ": -20,
+    "maxZ": 20
+   },
+   "reach": {
+    "normal": 26,
+    "nightmare": 25,
+    "abyss": 24
+   },
+   "checkpoint": {
+    "x": 8,
+    "y": -427.6,
+    "z": -15,
+    "yaw": 2.356194490192345
+   },
+   "theme": {
+    "fog": "#46301a",
+    "light": "#e0b878",
+    "accent": "#f0a850",
+    "fogNear": 6,
+    "fogFar": 90,
+    "ambient": 0.27,
+    "rim": 0.7
+   },
+   "creature": {
+    "mode": "escape",
+    "lethal": true,
+    "speedMul": 1,
+    "burstRate": 0,
+    "spawnOffsetY": 100,
+    "skitter": {
+     "normal": 1,
+     "nightmare": 1,
+     "abyss": 2
+    },
+    "holdfast": {
+     "sites": [
+      {
+       "id": "hf-s8-wake",
+       "zone": "c-s8-w1",
+       "at": 2.6,
+       "y": -464.6
+      }
+     ]
+    }
+   },
+   "hints": [
+    {
+     "y": -548,
+     "duration": 5,
+     "text": "The grate — run for the light. Do not look at the walls.",
+     "desktop": "The grate — run for the light. Do not look at the walls."
+    }
+   ],
+   "triggers": [
+    {
+     "y": -430,
+     "name": "rumble",
+     "data": {
+      "intensity": 1
+     }
+    },
+    {
+     "y": -480,
+     "name": "debris",
+     "data": {
+      "x": -2,
+      "y": -440,
+      "z": 0,
+      "intensity": 0.9
+     }
+    },
+    {
+     "y": -545,
+     "name": "gate",
+     "data": {
+      "x": -2,
+      "y": -552,
+      "z": 10.25
+     }
+    }
+   ]
+  }
+ ],
+ "solids": [
+  {
+   "minX": -14,
+   "minY": -6,
+   "minZ": -14,
+   "maxX": 14,
+   "maxY": 60,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s1-wall-n"
+  },
+  {
+   "minX": -14,
+   "minY": -6,
+   "minZ": 11,
+   "maxX": 14,
+   "maxY": 60,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s1-wall-s"
+  },
+  {
+   "minX": -14,
+   "minY": -6,
+   "minZ": -11,
+   "maxX": -11,
+   "maxY": 60,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s1-wall-w"
+  },
+  {
+   "minX": 11,
+   "minY": -6,
+   "minZ": -11,
+   "maxX": 14,
+   "maxY": 60,
+   "maxZ": -6,
+   "kind": "wall",
+   "id": "s1-wall-e1"
+  },
+  {
+   "minX": 11,
+   "minY": -6,
+   "minZ": 6,
+   "maxX": 14,
+   "maxY": 60,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s1-wall-e2"
+  },
+  {
+   "minX": 11,
+   "minY": -6,
+   "minZ": -6,
+   "maxX": 14,
+   "maxY": 8,
+   "maxZ": 6,
+   "kind": "wall",
+   "id": "s1-wall-e3"
+  },
+  {
+   "minX": 11,
+   "minY": 30,
+   "minZ": -6,
+   "maxX": 14,
+   "maxY": 60,
+   "maxZ": 6,
+   "kind": "wall",
+   "id": "s1-wall-e4"
+  },
+  {
+   "minX": -11,
+   "minY": -3,
+   "minZ": 4,
+   "maxX": 3,
+   "maxY": 0,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s1-threshold"
+  },
+  {
+   "minX": 3,
+   "minY": 0,
+   "minZ": 4,
+   "maxX": 3.8,
+   "maxY": 1.3,
+   "maxZ": 11,
+   "kind": "stone",
+   "tag": "parapet",
+   "id": "s1-parapet-a"
+  },
+  {
+   "minX": -11,
+   "minY": -11,
+   "minZ": -4,
+   "maxX": 3,
+   "maxY": -8,
+   "maxZ": 4,
+   "kind": "stone",
+   "id": "s1-pocket"
+  },
+  {
+   "minX": 3,
+   "minY": -8,
+   "minZ": -4,
+   "maxX": 3.8,
+   "maxY": -6.7,
+   "maxZ": 4,
+   "kind": "stone",
+   "tag": "parapet",
+   "id": "s1-parapet-b"
+  },
+  {
+   "minX": -11,
+   "minY": -8,
+   "minZ": -11,
+   "maxX": 3,
+   "maxY": -5,
+   "maxZ": -4,
+   "kind": "stone",
+   "id": "s1-sill"
+  },
+  {
+   "minX": -11,
+   "minY": 7,
+   "minZ": -1.4,
+   "maxX": 11,
+   "maxY": 7.8,
+   "maxZ": -0.6,
+   "kind": "metal",
+   "id": "s1-girder"
+  },
+  {
+   "minX": 6.6,
+   "minY": 3,
+   "minZ": -11,
+   "maxX": 7.4,
+   "maxY": 3.8,
+   "maxZ": 11,
+   "kind": "metal",
+   "id": "s1-wellbeam"
+  },
+  {
+   "minX": -37,
+   "minY": -58,
+   "minZ": -14,
+   "maxX": 14,
+   "maxY": -6,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s2-wall-n"
+  },
+  {
+   "minX": -37,
+   "minY": -58,
+   "minZ": 11,
+   "maxX": 14,
+   "maxY": -6,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s2-wall-s"
+  },
+  {
+   "minX": -37,
+   "minY": -58,
+   "minZ": -11,
+   "maxX": -34,
+   "maxY": -6,
+   "maxZ": -7,
+   "kind": "wall",
+   "id": "s2-wall-w1"
+  },
+  {
+   "minX": -37,
+   "minY": -58,
+   "minZ": 7,
+   "maxX": -34,
+   "maxY": -6,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s2-wall-w2"
+  },
+  {
+   "minX": -37,
+   "minY": -58,
+   "minZ": -7,
+   "maxX": -34,
+   "maxY": -23,
+   "maxZ": 7,
+   "kind": "wall",
+   "id": "s2-wall-w3"
+  },
+  {
+   "minX": -37,
+   "minY": -12,
+   "minZ": -7,
+   "maxX": -34,
+   "maxY": -6,
+   "maxZ": 7,
+   "kind": "wall",
+   "id": "s2-wall-w4"
+  },
+  {
+   "minX": 11,
+   "minY": -58,
+   "minZ": -11,
+   "maxX": 14,
+   "maxY": -6,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s2-wall-e"
+  },
+  {
+   "minX": -34,
+   "minY": -11,
+   "minZ": -11,
+   "maxX": -11,
+   "maxY": -8,
+   "maxZ": 11,
+   "kind": "wall",
+   "tag": "ceiling",
+   "id": "s2-ceiling"
+  },
+  {
+   "minX": 3,
+   "minY": -25,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -22,
+   "maxZ": -1,
+   "kind": "stone",
+   "id": "s2-landing"
+  },
+  {
+   "minX": -34,
+   "minY": -28,
+   "minZ": -11,
+   "maxX": -22,
+   "maxY": -25,
+   "maxZ": 1,
+   "kind": "stone",
+   "id": "s2-far"
+  },
+  {
+   "minX": -22,
+   "minY": -38,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -35,
+   "maxZ": 11,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s2-floor-a"
+  },
+  {
+   "minX": -34,
+   "minY": -38,
+   "minZ": -11,
+   "maxX": -22,
+   "maxY": -35,
+   "maxZ": 3,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s2-floor-b"
+  },
+  {
+   "minX": -34,
+   "minY": -17.5,
+   "minZ": 6.4,
+   "maxX": -27,
+   "maxY": -16.5,
+   "maxZ": 7.6,
+   "kind": "metal",
+   "id": "s2-arm"
+  },
+  {
+   "minX": -34,
+   "minY": -47,
+   "minZ": -11,
+   "maxX": -24,
+   "maxY": -44,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s2-low"
+  },
+  {
+   "minX": -18,
+   "minY": -57,
+   "minZ": -3,
+   "maxX": -6,
+   "maxY": -56,
+   "maxZ": 3,
+   "kind": "crumble",
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "life": 2.5,
+   "id": "s2-span"
+  },
+  {
+   "minX": -18,
+   "minY": -57,
+   "minZ": -3,
+   "maxX": -6,
+   "maxY": -56,
+   "maxZ": 3,
+   "kind": "crumble",
+   "onlyIn": [
+    "nightmare"
+   ],
+   "id": "s2-span-nm"
+  },
+  {
+   "minX": 0,
+   "minY": -54,
+   "minZ": -11,
+   "maxX": 4,
+   "maxY": -51,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s2-pier-w"
+  },
+  {
+   "minX": 9,
+   "minY": -54,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -51,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s2-pier-e"
+  },
+  {
+   "minX": 4,
+   "minY": -54,
+   "minZ": -11,
+   "maxX": 9,
+   "maxY": -51,
+   "maxZ": -3,
+   "kind": "stone",
+   "id": "s2-pier-n"
+  },
+  {
+   "minX": 4,
+   "minY": -54,
+   "minZ": 3,
+   "maxX": 9,
+   "maxY": -51,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s2-pier-s"
+  },
+  {
+   "minX": 14,
+   "minY": -83,
+   "minZ": -11,
+   "maxX": 64,
+   "maxY": -80,
+   "maxZ": 50,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "outer-floor-e"
+  },
+  {
+   "minX": -87,
+   "minY": -103,
+   "minZ": -11,
+   "maxX": -37,
+   "maxY": -100,
+   "maxZ": 50,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "outer-floor-w"
+  },
+  {
+   "minX": -37,
+   "minY": -98,
+   "minZ": -14,
+   "maxX": 14,
+   "maxY": -58,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s3-wall-n"
+  },
+  {
+   "minX": -37,
+   "minY": -98,
+   "minZ": 11,
+   "maxX": 14,
+   "maxY": -58,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s3-wall-s"
+  },
+  {
+   "minX": -37,
+   "minY": -98,
+   "minZ": -11,
+   "maxX": -34,
+   "maxY": -58,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s3-wall-w"
+  },
+  {
+   "minX": 11,
+   "minY": -98,
+   "minZ": -11,
+   "maxX": 14,
+   "maxY": -58,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s3-wall-e"
+  },
+  {
+   "minX": 3,
+   "minY": -69,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -66,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s3-landing"
+  },
+  {
+   "minX": -2,
+   "minY": -61,
+   "minZ": -11,
+   "maxX": -0.5,
+   "maxY": -60,
+   "maxZ": 11,
+   "kind": "metal",
+   "id": "s3-g1"
+  },
+  {
+   "minX": -15,
+   "minY": -61,
+   "minZ": -11,
+   "maxX": -13.5,
+   "maxY": -60,
+   "maxZ": 11,
+   "kind": "metal",
+   "id": "s3-g2"
+  },
+  {
+   "minX": -27,
+   "minY": -61,
+   "minZ": -11,
+   "maxX": -25.5,
+   "maxY": -60,
+   "maxZ": 11,
+   "kind": "metal",
+   "id": "s3-g3"
+  },
+  {
+   "minX": -10,
+   "minY": -72.5,
+   "minZ": -3,
+   "maxX": -4,
+   "maxY": -71.5,
+   "maxZ": 3,
+   "kind": "bridge",
+   "omitIn": [
+    "abyss"
+   ],
+   "id": "s3-span1"
+  },
+  {
+   "minX": -10,
+   "minY": -72.5,
+   "minZ": -3,
+   "maxX": -4,
+   "maxY": -71.5,
+   "maxZ": 3,
+   "kind": "crumble",
+   "onlyIn": [
+    "abyss"
+   ],
+   "id": "s3-span1-ab"
+  },
+  {
+   "minX": -23,
+   "minY": -75,
+   "minZ": -3,
+   "maxX": -17,
+   "maxY": -74,
+   "maxZ": 3,
+   "kind": "bridge",
+   "id": "s3-span2"
+  },
+  {
+   "minX": -34,
+   "minY": -76.5,
+   "minZ": -2,
+   "maxX": -31,
+   "maxY": -75.5,
+   "maxZ": 2,
+   "kind": "bridge",
+   "id": "s3-span3"
+  },
+  {
+   "minX": -34,
+   "minY": -73.6,
+   "minZ": -8.6,
+   "maxX": -28.5,
+   "maxY": -72.6,
+   "maxZ": -7.4,
+   "kind": "metal",
+   "id": "s3-arm"
+  },
+  {
+   "minX": -34,
+   "minY": -99,
+   "minZ": -11,
+   "maxX": -26,
+   "maxY": -96,
+   "maxZ": 1,
+   "kind": "stone",
+   "id": "s3-shelf"
+  },
+  {
+   "minX": -21,
+   "minY": -91,
+   "minZ": -11,
+   "maxX": -19.5,
+   "maxY": -90,
+   "maxZ": 11,
+   "kind": "metal",
+   "id": "s3-g5"
+  },
+  {
+   "minX": -37,
+   "minY": -150,
+   "minZ": -14,
+   "maxX": -30,
+   "maxY": -98,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s4-wall-n1"
+  },
+  {
+   "minX": 7,
+   "minY": -150,
+   "minZ": -14,
+   "maxX": 14,
+   "maxY": -98,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s4-wall-n2"
+  },
+  {
+   "minX": -30,
+   "minY": -150,
+   "minZ": -14,
+   "maxX": 7,
+   "maxY": -146,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s4-wall-n3"
+  },
+  {
+   "minX": -30,
+   "minY": -100.5,
+   "minZ": -14,
+   "maxX": 7,
+   "maxY": -98,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s4-wall-n4"
+  },
+  {
+   "minX": -37,
+   "minY": -150,
+   "minZ": 11,
+   "maxX": 14,
+   "maxY": -98,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s4-wall-s"
+  },
+  {
+   "minX": -37,
+   "minY": -150,
+   "minZ": -11,
+   "maxX": -34,
+   "maxY": -98,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s4-wall-w"
+  },
+  {
+   "minX": 11,
+   "minY": -150,
+   "minZ": -11,
+   "maxX": 14,
+   "maxY": -98,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s4-wall-e"
+  },
+  {
+   "minX": -113,
+   "minY": -280,
+   "minZ": -163,
+   "maxX": 83,
+   "maxY": -60,
+   "maxZ": -160,
+   "kind": "wall",
+   "id": "vault-wall-n"
+  },
+  {
+   "minX": -113,
+   "minY": -280,
+   "minZ": -14,
+   "maxX": -40,
+   "maxY": -60,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "vault-wall-s1"
+  },
+  {
+   "minX": 17,
+   "minY": -280,
+   "minZ": -14,
+   "maxX": 83,
+   "maxY": -60,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "vault-wall-s2"
+  },
+  {
+   "minX": -113,
+   "minY": -280,
+   "minZ": -160,
+   "maxX": -110,
+   "maxY": -60,
+   "maxZ": -14,
+   "kind": "wall",
+   "id": "vault-wall-w"
+  },
+  {
+   "minX": 80,
+   "minY": -280,
+   "minZ": -160,
+   "maxX": 83,
+   "maxY": -60,
+   "maxZ": -14,
+   "kind": "wall",
+   "id": "vault-wall-e"
+  },
+  {
+   "minX": -113,
+   "minY": -283,
+   "minZ": -163,
+   "maxX": 83,
+   "maxY": -280,
+   "maxZ": -11,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "vault-floor"
+  },
+  {
+   "minX": -113,
+   "minY": -63,
+   "minZ": -163,
+   "maxX": 83,
+   "maxY": -60,
+   "maxZ": -14,
+   "kind": "wall",
+   "tag": "ceiling",
+   "id": "vault-ceiling"
+  },
+  {
+   "minX": -8,
+   "minY": -103,
+   "minZ": 0,
+   "maxX": 11,
+   "maxY": -100,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s4-landing"
+  },
+  {
+   "minX": -14,
+   "minY": -90,
+   "minZ": -3.6,
+   "maxX": 11,
+   "maxY": -89,
+   "maxZ": -2.4,
+   "kind": "metal",
+   "id": "s4-g1"
+  },
+  {
+   "minX": -20,
+   "minY": -106,
+   "minZ": -24,
+   "maxX": -12,
+   "maxY": -105,
+   "maxZ": -6,
+   "kind": "metal",
+   "id": "s4-catwalk"
+  },
+  {
+   "minX": -20,
+   "minY": -105,
+   "minZ": -24,
+   "maxX": -19.7,
+   "maxY": -104,
+   "maxZ": -6,
+   "kind": "metal",
+   "tag": "rail",
+   "id": "s4-rail-w"
+  },
+  {
+   "minX": -12.3,
+   "minY": -105,
+   "minZ": -24,
+   "maxX": -12,
+   "maxY": -104,
+   "maxZ": -6,
+   "kind": "metal",
+   "tag": "rail",
+   "id": "s4-rail-e"
+  },
+  {
+   "minX": -32,
+   "minY": -113,
+   "minZ": -9,
+   "maxX": -24,
+   "maxY": -112,
+   "maxZ": -1,
+   "kind": "metal",
+   "omitIn": [
+    "abyss"
+   ],
+   "id": "s4-cradle"
+  },
+  {
+   "minX": -32,
+   "minY": -113,
+   "minZ": -9,
+   "maxX": -24,
+   "maxY": -112,
+   "maxZ": -1,
+   "kind": "crumble",
+   "onlyIn": [
+    "abyss"
+   ],
+   "id": "s4-cradle-ab"
+  },
+  {
+   "minX": 0,
+   "minY": -122,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -119,
+   "maxZ": -3,
+   "kind": "stone",
+   "id": "s4-shelf"
+  },
+  {
+   "minX": -20,
+   "minY": -129,
+   "minZ": 2,
+   "maxX": -12,
+   "maxY": -126,
+   "maxZ": 10,
+   "kind": "stone",
+   "id": "s4-plinth"
+  },
+  {
+   "minX": -37,
+   "minY": -153,
+   "minZ": -14,
+   "maxX": -21,
+   "maxY": -150,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s5-mouth-w"
+  },
+  {
+   "minX": -3,
+   "minY": -153,
+   "minZ": -14,
+   "maxX": 14,
+   "maxY": -150,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s5-mouth-e"
+  },
+  {
+   "minX": -21,
+   "minY": -153,
+   "minZ": -14,
+   "maxX": -3,
+   "maxY": -150,
+   "maxZ": -9,
+   "kind": "wall",
+   "id": "s5-mouth-n"
+  },
+  {
+   "minX": -21,
+   "minY": -153,
+   "minZ": 9,
+   "maxX": -3,
+   "maxY": -150,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s5-mouth-s"
+  },
+  {
+   "minX": -24,
+   "minY": -204,
+   "minZ": -12,
+   "maxX": 0,
+   "maxY": -153,
+   "maxZ": -9,
+   "kind": "wall",
+   "id": "s5-wall-n"
+  },
+  {
+   "minX": -24,
+   "minY": -204,
+   "minZ": 9,
+   "maxX": 0,
+   "maxY": -153,
+   "maxZ": 12,
+   "kind": "wall",
+   "id": "s5-wall-s"
+  },
+  {
+   "minX": -24,
+   "minY": -204,
+   "minZ": -9,
+   "maxX": -21,
+   "maxY": -153,
+   "maxZ": 9,
+   "kind": "wall",
+   "id": "s5-wall-w"
+  },
+  {
+   "minX": -3,
+   "minY": -204,
+   "minZ": -9,
+   "maxX": 0,
+   "maxY": -153,
+   "maxZ": 9,
+   "kind": "wall",
+   "id": "s5-wall-e"
+  },
+  {
+   "minX": -9,
+   "minY": -155,
+   "minZ": -9,
+   "maxX": -3,
+   "maxY": -152,
+   "maxZ": 9,
+   "kind": "stone",
+   "id": "s5-landing"
+  },
+  {
+   "minX": -12.6,
+   "minY": -151,
+   "minZ": -9,
+   "maxX": -11.4,
+   "maxY": -150,
+   "maxZ": -3,
+   "kind": "metal",
+   "id": "s5-arm1"
+  },
+  {
+   "minX": -21,
+   "minY": -163,
+   "minZ": -9,
+   "maxX": -10,
+   "maxY": -160,
+   "maxZ": -4,
+   "kind": "stone",
+   "id": "s5-step1"
+  },
+  {
+   "minX": -21,
+   "minY": -157,
+   "minZ": -0.6,
+   "maxX": -15,
+   "maxY": -156,
+   "maxZ": 0.6,
+   "kind": "metal",
+   "id": "s5-arm2"
+  },
+  {
+   "minX": -21,
+   "minY": -171,
+   "minZ": -3,
+   "maxX": -16,
+   "maxY": -168,
+   "maxZ": 9,
+   "kind": "stone",
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "id": "s5-step2"
+  },
+  {
+   "minX": -21,
+   "minY": -171,
+   "minZ": -3,
+   "maxX": -16,
+   "maxY": -168,
+   "maxZ": 9,
+   "kind": "crumble",
+   "onlyIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "id": "s5-step2-nm"
+  },
+  {
+   "minX": -12.6,
+   "minY": -165,
+   "minZ": 3,
+   "maxX": -11.4,
+   "maxY": -164,
+   "maxZ": 9,
+   "kind": "metal",
+   "id": "s5-arm3"
+  },
+  {
+   "minX": -14,
+   "minY": -179,
+   "minZ": 4,
+   "maxX": -3,
+   "maxY": -176,
+   "maxZ": 9,
+   "kind": "stone",
+   "id": "s5-step3"
+  },
+  {
+   "minX": -9,
+   "minY": -173,
+   "minZ": -0.6,
+   "maxX": -3,
+   "maxY": -172,
+   "maxZ": 0.6,
+   "kind": "metal",
+   "id": "s5-arm4"
+  },
+  {
+   "minX": -8,
+   "minY": -187,
+   "minZ": -9,
+   "maxX": -3,
+   "maxY": -184,
+   "maxZ": 3,
+   "kind": "stone",
+   "id": "s5-step4"
+  },
+  {
+   "minX": -12.6,
+   "minY": -181,
+   "minZ": -9,
+   "maxX": -11.4,
+   "maxY": -180,
+   "maxZ": -3,
+   "kind": "metal",
+   "id": "s5-arm5"
+  },
+  {
+   "minX": -21,
+   "minY": -195,
+   "minZ": -9,
+   "maxX": -10,
+   "maxY": -192,
+   "maxZ": -4,
+   "kind": "stone",
+   "id": "s5-step5"
+  },
+  {
+   "minX": -21,
+   "minY": -189,
+   "minZ": -0.6,
+   "maxX": -15,
+   "maxY": -188,
+   "maxZ": 0.6,
+   "kind": "metal",
+   "id": "s5-arm6"
+  },
+  {
+   "minX": -21,
+   "minY": -203,
+   "minZ": -3,
+   "maxX": -16,
+   "maxY": -200,
+   "maxZ": 9,
+   "kind": "stone",
+   "id": "s5-step6"
+  },
+  {
+   "minX": -12.6,
+   "minY": -197,
+   "minZ": 3,
+   "maxX": -11.4,
+   "maxY": -196,
+   "maxZ": 9,
+   "kind": "metal",
+   "id": "s5-arm7"
+  },
+  {
+   "minX": -37,
+   "minY": -205,
+   "minZ": -14,
+   "maxX": -21,
+   "maxY": -202,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s6-roof-w"
+  },
+  {
+   "minX": -3,
+   "minY": -205,
+   "minZ": -14,
+   "maxX": 13,
+   "maxY": -202,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s6-roof-e"
+  },
+  {
+   "minX": -21,
+   "minY": -205,
+   "minZ": -14,
+   "maxX": -3,
+   "maxY": -202,
+   "maxZ": -9,
+   "kind": "wall",
+   "id": "s6-roof-n"
+  },
+  {
+   "minX": -21,
+   "minY": -205,
+   "minZ": 9,
+   "maxX": -3,
+   "maxY": -202,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s6-roof-s"
+  },
+  {
+   "minX": -37,
+   "minY": -284,
+   "minZ": -14,
+   "maxX": 13,
+   "maxY": -205,
+   "maxZ": -11,
+   "kind": "wall",
+   "id": "s6-wall-n"
+  },
+  {
+   "minX": -37,
+   "minY": -284,
+   "minZ": 11,
+   "maxX": 13,
+   "maxY": -205,
+   "maxZ": 14,
+   "kind": "wall",
+   "id": "s6-wall-s"
+  },
+  {
+   "minX": -37,
+   "minY": -284,
+   "minZ": -11,
+   "maxX": -34,
+   "maxY": -205,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s6-wall-w"
+  },
+  {
+   "minX": 10,
+   "minY": -284,
+   "minZ": -11,
+   "maxX": 13,
+   "maxY": -205,
+   "maxZ": 11,
+   "kind": "wall",
+   "id": "s6-wall-e"
+  },
+  {
+   "minX": -20,
+   "minY": -211,
+   "minZ": -6,
+   "maxX": -4,
+   "maxY": -208,
+   "maxZ": 6,
+   "kind": "stone",
+   "id": "s6-fork"
+  },
+  {
+   "minX": -13,
+   "minY": -282,
+   "minZ": -11,
+   "maxX": -11,
+   "maxY": -211,
+   "maxZ": 11,
+   "kind": "wall",
+   "tag": "column",
+   "id": "s6-divider"
+  },
+  {
+   "minX": -34,
+   "minY": -221,
+   "minZ": -11,
+   "maxX": -13,
+   "maxY": -218,
+   "maxZ": -2,
+   "kind": "stone",
+   "id": "s6-safe1"
+  },
+  {
+   "minX": -34,
+   "minY": -213,
+   "minZ": 4.4,
+   "maxX": -26,
+   "maxY": -212,
+   "maxZ": 5.6,
+   "kind": "metal",
+   "id": "s6-arm-a"
+  },
+  {
+   "minX": -34,
+   "minY": -233,
+   "minZ": 2,
+   "maxX": -13,
+   "maxY": -230,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s6-safe2"
+  },
+  {
+   "minX": -34,
+   "minY": -225,
+   "minZ": -5.6,
+   "maxX": -26,
+   "maxY": -224,
+   "maxZ": -4.4,
+   "kind": "metal",
+   "id": "s6-arm-b"
+  },
+  {
+   "minX": -34,
+   "minY": -245,
+   "minZ": -11,
+   "maxX": -13,
+   "maxY": -242,
+   "maxZ": -2,
+   "kind": "stone",
+   "id": "s6-safe3"
+  },
+  {
+   "minX": -34,
+   "minY": -237,
+   "minZ": 4.4,
+   "maxX": -26,
+   "maxY": -236,
+   "maxZ": 5.6,
+   "kind": "metal",
+   "id": "s6-arm-c"
+  },
+  {
+   "minX": -34,
+   "minY": -257,
+   "minZ": 2,
+   "maxX": -13,
+   "maxY": -254,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s6-safe4"
+  },
+  {
+   "minX": -34,
+   "minY": -249,
+   "minZ": -5.6,
+   "maxX": -26,
+   "maxY": -248,
+   "maxZ": -4.4,
+   "kind": "metal",
+   "id": "s6-arm-d"
+  },
+  {
+   "minX": -34,
+   "minY": -269,
+   "minZ": -11,
+   "maxX": -13,
+   "maxY": -266,
+   "maxZ": -2,
+   "kind": "stone",
+   "id": "s6-safe5"
+  },
+  {
+   "minX": -34,
+   "minY": -261,
+   "minZ": 4.4,
+   "maxX": -26,
+   "maxY": -260,
+   "maxZ": 5.6,
+   "kind": "metal",
+   "id": "s6-arm-e"
+  },
+  {
+   "minX": 0,
+   "minY": -225.5,
+   "minZ": -9,
+   "maxX": 9,
+   "maxY": -224.5,
+   "maxZ": 1,
+   "kind": "crumble",
+   "id": "s6-ledge"
+  },
+  {
+   "minX": -55,
+   "minY": -287,
+   "minZ": -43,
+   "maxX": -36,
+   "maxY": -284,
+   "maxZ": 43,
+   "kind": "wall",
+   "id": "s7-roof-w"
+  },
+  {
+   "minX": 15,
+   "minY": -287,
+   "minZ": -43,
+   "maxX": 31,
+   "maxY": -284,
+   "maxZ": 43,
+   "kind": "wall",
+   "id": "s7-roof-e"
+  },
+  {
+   "minX": -36,
+   "minY": -287,
+   "minZ": -43,
+   "maxX": 15,
+   "maxY": -284,
+   "maxZ": -13,
+   "kind": "wall",
+   "id": "s7-roof-n"
+  },
+  {
+   "minX": -36,
+   "minY": -287,
+   "minZ": 13,
+   "maxX": 15,
+   "maxY": -284,
+   "maxZ": 43,
+   "kind": "wall",
+   "id": "s7-roof-s"
+  },
+  {
+   "minX": -55,
+   "minY": -424,
+   "minZ": -43,
+   "maxX": 31,
+   "maxY": -287,
+   "maxZ": -40,
+   "kind": "wall",
+   "id": "s7-wall-n"
+  },
+  {
+   "minX": -55,
+   "minY": -424,
+   "minZ": 40,
+   "maxX": 31,
+   "maxY": -287,
+   "maxZ": 43,
+   "kind": "wall",
+   "id": "s7-wall-s"
+  },
+  {
+   "minX": -55,
+   "minY": -424,
+   "minZ": -40,
+   "maxX": -52,
+   "maxY": -287,
+   "maxZ": 40,
+   "kind": "wall",
+   "id": "s7-wall-w"
+  },
+  {
+   "minX": 28,
+   "minY": -424,
+   "minZ": -40,
+   "maxX": 31,
+   "maxY": -287,
+   "maxZ": 40,
+   "kind": "wall",
+   "id": "s7-wall-e"
+  },
+  {
+   "minX": -34,
+   "minY": -291,
+   "minZ": -11,
+   "maxX": 10,
+   "maxY": -288,
+   "maxZ": 11,
+   "kind": "stone",
+   "id": "s7-landing"
+  },
+  {
+   "minX": -15,
+   "minY": -400,
+   "minZ": -3,
+   "maxX": -9,
+   "maxY": -291,
+   "maxZ": 3,
+   "kind": "pillar",
+   "id": "s7-spire"
+  },
+  {
+   "minX": -14,
+   "minY": -412,
+   "minZ": -2,
+   "maxX": -10,
+   "maxY": -400,
+   "maxZ": 2,
+   "kind": "pillar",
+   "id": "s7-spire-tip"
+  },
+  {
+   "minX": -24,
+   "minY": -350,
+   "minZ": 22,
+   "maxX": -16,
+   "maxY": -349,
+   "maxZ": 30,
+   "kind": "metal",
+   "id": "s7-perch"
+  },
+  {
+   "minX": -2,
+   "minY": -431,
+   "minZ": -20,
+   "maxX": 18,
+   "maxY": -428,
+   "maxZ": -10,
+   "kind": "stone",
+   "id": "s8-landing"
+  },
+  {
+   "minX": -25,
+   "minY": -470,
+   "minZ": -23,
+   "maxX": 21,
+   "maxY": -427,
+   "maxZ": -20,
+   "kind": "wall",
+   "id": "s8-wall1-n"
+  },
+  {
+   "minX": -25,
+   "minY": -470,
+   "minZ": 20,
+   "maxX": 21,
+   "maxY": -427,
+   "maxZ": 23,
+   "kind": "wall",
+   "id": "s8-wall1-s"
+  },
+  {
+   "minX": -25,
+   "minY": -470,
+   "minZ": -20,
+   "maxX": -22,
+   "maxY": -427,
+   "maxZ": 20,
+   "kind": "wall",
+   "id": "s8-wall1-w"
+  },
+  {
+   "minX": 18,
+   "minY": -470,
+   "minZ": -20,
+   "maxX": 21,
+   "maxY": -427,
+   "maxZ": 20,
+   "kind": "wall",
+   "id": "s8-wall1-e"
+  },
+  {
+   "minX": -25,
+   "minY": -473,
+   "minZ": -23,
+   "maxX": -17,
+   "maxY": -470,
+   "maxZ": 23,
+   "kind": "wall",
+   "id": "s8-step1-w"
+  },
+  {
+   "minX": 13,
+   "minY": -473,
+   "minZ": -23,
+   "maxX": 21,
+   "maxY": -470,
+   "maxZ": 23,
+   "kind": "wall",
+   "id": "s8-step1-e"
+  },
+  {
+   "minX": -17,
+   "minY": -473,
+   "minZ": -23,
+   "maxX": 13,
+   "maxY": -470,
+   "maxZ": -15,
+   "kind": "wall",
+   "id": "s8-step1-n"
+  },
+  {
+   "minX": -17,
+   "minY": -473,
+   "minZ": 15,
+   "maxX": 13,
+   "maxY": -470,
+   "maxZ": 23,
+   "kind": "wall",
+   "id": "s8-step1-s"
+  },
+  {
+   "minX": -20,
+   "minY": -512,
+   "minZ": -18,
+   "maxX": 16,
+   "maxY": -473,
+   "maxZ": -15,
+   "kind": "wall",
+   "id": "s8-wall2-n"
+  },
+  {
+   "minX": -20,
+   "minY": -512,
+   "minZ": 15,
+   "maxX": 16,
+   "maxY": -473,
+   "maxZ": 18,
+   "kind": "wall",
+   "id": "s8-wall2-s"
+  },
+  {
+   "minX": -20,
+   "minY": -512,
+   "minZ": -15,
+   "maxX": -17,
+   "maxY": -473,
+   "maxZ": 15,
+   "kind": "wall",
+   "id": "s8-wall2-w"
+  },
+  {
+   "minX": 13,
+   "minY": -512,
+   "minZ": -15,
+   "maxX": 16,
+   "maxY": -473,
+   "maxZ": 15,
+   "kind": "wall",
+   "id": "s8-wall2-e"
+  },
+  {
+   "minX": -20,
+   "minY": -515,
+   "minZ": -18,
+   "maxX": -12,
+   "maxY": -512,
+   "maxZ": 18,
+   "kind": "wall",
+   "id": "s8-step2-w"
+  },
+  {
+   "minX": 8,
+   "minY": -515,
+   "minZ": -18,
+   "maxX": 16,
+   "maxY": -512,
+   "maxZ": 18,
+   "kind": "wall",
+   "id": "s8-step2-e"
+  },
+  {
+   "minX": -12,
+   "minY": -515,
+   "minZ": -18,
+   "maxX": 8,
+   "maxY": -512,
+   "maxZ": -10,
+   "kind": "wall",
+   "id": "s8-step2-n"
+  },
+  {
+   "minX": -12,
+   "minY": -515,
+   "minZ": 10,
+   "maxX": 8,
+   "maxY": -512,
+   "maxZ": 18,
+   "kind": "wall",
+   "id": "s8-step2-s"
+  },
+  {
+   "minX": -15,
+   "minY": -562,
+   "minZ": -13,
+   "maxX": 11,
+   "maxY": -515,
+   "maxZ": -10,
+   "kind": "wall",
+   "id": "s8-wall3-n"
+  },
+  {
+   "minX": -15,
+   "minY": -562,
+   "minZ": 10,
+   "maxX": -6,
+   "maxY": -515,
+   "maxZ": 13,
+   "kind": "wall",
+   "id": "s8-wall3-s1"
+  },
+  {
+   "minX": 2,
+   "minY": -562,
+   "minZ": 10,
+   "maxX": 11,
+   "maxY": -515,
+   "maxZ": 13,
+   "kind": "wall",
+   "id": "s8-wall3-s2"
+  },
+  {
+   "minX": -6,
+   "minY": -562,
+   "minZ": 10,
+   "maxX": 2,
+   "maxY": -556,
+   "maxZ": 13,
+   "kind": "wall",
+   "id": "s8-wall3-s3"
+  },
+  {
+   "minX": -6,
+   "minY": -548,
+   "minZ": 10,
+   "maxX": 2,
+   "maxY": -515,
+   "maxZ": 13,
+   "kind": "wall",
+   "id": "s8-wall3-s4"
+  },
+  {
+   "minX": -15,
+   "minY": -562,
+   "minZ": -10,
+   "maxX": -12,
+   "maxY": -515,
+   "maxZ": 10,
+   "kind": "wall",
+   "id": "s8-wall3-w"
+  },
+  {
+   "minX": 8,
+   "minY": -562,
+   "minZ": -10,
+   "maxX": 11,
+   "maxY": -515,
+   "maxZ": 10,
+   "kind": "wall",
+   "id": "s8-wall3-e"
+  },
+  {
+   "minX": -55,
+   "minY": -427,
+   "minZ": -43,
+   "maxX": -22,
+   "maxY": -424,
+   "maxZ": 43,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s7-floor-w"
+  },
+  {
+   "minX": 18,
+   "minY": -427,
+   "minZ": -43,
+   "maxX": 31,
+   "maxY": -424,
+   "maxZ": 43,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s7-floor-e"
+  },
+  {
+   "minX": -22,
+   "minY": -427,
+   "minZ": -43,
+   "maxX": 18,
+   "maxY": -424,
+   "maxZ": -20,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s7-floor-n"
+  },
+  {
+   "minX": -22,
+   "minY": -427,
+   "minZ": 20,
+   "maxX": 18,
+   "maxY": -424,
+   "maxZ": 43,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s7-floor-s"
+  },
+  {
+   "minX": -15,
+   "minY": -562,
+   "minZ": -13,
+   "maxX": 11,
+   "maxY": -556,
+   "maxZ": 13,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s8-floor"
+  },
+  {
+   "minX": -12,
+   "minY": -562,
+   "minZ": 10,
+   "maxX": 6,
+   "maxY": -556,
+   "maxZ": 30,
+   "kind": "wall",
+   "tag": "floor",
+   "id": "s8-chamber-floor"
+  },
+  {
+   "minX": -12,
+   "minY": -556,
+   "minZ": 10,
+   "maxX": -9,
+   "maxY": -546,
+   "maxZ": 30,
+   "kind": "wall",
+   "id": "s8-chamber-w"
+  },
+  {
+   "minX": 3,
+   "minY": -556,
+   "minZ": 10,
+   "maxX": 6,
+   "maxY": -546,
+   "maxZ": 30,
+   "kind": "wall",
+   "id": "s8-chamber-e"
+  },
+  {
+   "minX": -12,
+   "minY": -556,
+   "minZ": 27,
+   "maxX": 6,
+   "maxY": -546,
+   "maxZ": 30,
+   "kind": "wall",
+   "id": "s8-chamber-s"
+  },
+  {
+   "minX": -12,
+   "minY": -548,
+   "minZ": 10,
+   "maxX": 6,
+   "maxY": -545,
+   "maxZ": 30,
+   "kind": "wall",
+   "tag": "ceiling",
+   "id": "s8-chamber-roof"
+  },
+  {
+   "minX": -11,
+   "minY": -9,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -8.5,
+   "maxZ": 11,
+   "kind": "grate",
+   "seal": "seal-s1",
+   "id": "seal-s1-floor"
+  },
+  {
+   "minX": -34,
+   "minY": -36,
+   "minZ": 3,
+   "maxX": -22,
+   "maxY": -35,
+   "maxZ": 11,
+   "kind": "grate",
+   "seal": "seal-s2",
+   "id": "seal-s2-gap"
+  },
+  {
+   "minX": -34,
+   "minY": -98.4,
+   "minZ": -11,
+   "maxX": 11,
+   "maxY": -98,
+   "maxZ": 11,
+   "kind": "grate",
+   "seal": "seal-s3",
+   "id": "seal-s3-floor"
+  },
+  {
+   "minX": -21,
+   "minY": -150.6,
+   "minZ": -9,
+   "maxX": -3,
+   "maxY": -150,
+   "maxZ": 9,
+   "kind": "grate",
+   "seal": "seal-s4",
+   "id": "seal-s4-mouth"
+  },
+  {
+   "minX": -21,
+   "minY": -202.6,
+   "minZ": -9,
+   "maxX": -3,
+   "maxY": -202,
+   "maxZ": 9,
+   "kind": "grate",
+   "seal": "seal-s5",
+   "id": "seal-s5-roof"
+  },
+  {
+   "minX": -37,
+   "minY": -284.6,
+   "minZ": -14,
+   "maxX": 13,
+   "maxY": -284,
+   "maxZ": 14,
+   "kind": "grate",
+   "seal": "seal-s6",
+   "id": "seal-s6-floor"
+  },
+  {
+   "minX": -22,
+   "minY": -424.6,
+   "minZ": -20,
+   "maxX": -2,
+   "maxY": -424,
+   "maxZ": 0,
+   "kind": "grate",
+   "seal": "seal-s7",
+   "id": "seal-s7-nw"
+  },
+  {
+   "minX": -2,
+   "minY": -424.6,
+   "minZ": -20,
+   "maxX": 18,
+   "maxY": -424,
+   "maxZ": 0,
+   "kind": "grate",
+   "seal": "seal-s7",
+   "id": "seal-s7-ne"
+  },
+  {
+   "minX": -22,
+   "minY": -424.6,
+   "minZ": 0,
+   "maxX": -2,
+   "maxY": -424,
+   "maxZ": 20,
+   "kind": "grate",
+   "seal": "seal-s7",
+   "id": "seal-s7-sw"
+  },
+  {
+   "minX": -2,
+   "minY": -424.6,
+   "minZ": 0,
+   "maxX": 18,
+   "maxY": -424,
+   "maxZ": 20,
+   "kind": "grate",
+   "seal": "seal-s7",
+   "id": "seal-s7-se"
+  },
+  {
+   "minX": -19.6,
+   "minY": -200,
+   "minZ": -2.6,
+   "maxX": -19,
+   "maxY": -197.5,
+   "maxZ": -0.2,
+   "kind": "breach",
+   "fixture": "key-s5",
+   "id": "key-s5-stone"
+  }
+ ],
+ "hazards": [
+  {
+   "minX": -34,
+   "minY": -44,
+   "minZ": -11,
+   "maxX": -31.5,
+   "maxY": -43.5,
+   "maxZ": 11,
+   "kind": "spikes",
+   "onlyIn": [
+    "abyss"
+   ],
+   "normal": {
+    "x": 0,
+    "y": 1,
+    "z": 0
+   },
+   "id": "s2-spikes-ab"
+  },
+  {
+   "minX": -14,
+   "minY": -176,
+   "minZ": 4,
+   "maxX": -11.5,
+   "maxY": -175.5,
+   "maxZ": 9,
+   "kind": "spikes",
+   "onlyIn": [
+    "abyss"
+   ],
+   "normal": {
+    "x": 0,
+    "y": 1,
+    "z": 0
+   },
+   "id": "s5-spikes-ab"
+  },
+  {
+   "minX": -3.3,
+   "minY": -170,
+   "minZ": -9,
+   "maxX": -3,
+   "maxY": -160,
+   "maxZ": 9,
+   "kind": "rebar",
+   "onlyIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "normal": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   },
+   "id": "s5-rebar-e"
+  },
+  {
+   "minX": -21,
+   "minY": -192,
+   "minZ": -9,
+   "maxX": -20.7,
+   "maxY": -180,
+   "maxZ": 9,
+   "kind": "rebar",
+   "onlyIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "normal": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   },
+   "id": "s5-rebar-w"
+  },
+  {
+   "minX": 9.7,
+   "minY": -254,
+   "minZ": -11,
+   "maxX": 10,
+   "maxY": -236,
+   "maxZ": 11,
+   "kind": "rebar",
+   "normal": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   },
+   "id": "s6-rebar-e"
+  },
+  {
+   "minX": 5.5,
+   "minY": -227,
+   "minZ": -8.5,
+   "maxX": 8.5,
+   "maxY": -226.5,
+   "maxZ": 0.5,
+   "kind": "rebar",
+   "onlyIn": [
+    "nightmare",
+    "abyss"
+   ],
+   "id": "s6-rebar-nm"
+  },
+  {
+   "minX": 7.4,
+   "minY": -540,
+   "minZ": -10,
+   "maxX": 8,
+   "maxY": -530,
+   "maxZ": 10,
+   "kind": "blades",
+   "onlyIn": [
+    "abyss"
+   ],
+   "normal": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   },
+   "id": "s8-blades-ab"
+  }
+ ],
+ "anchors": [
+  {
+   "id": "t1",
+   "x": -4,
+   "y": 6.75,
+   "z": -1,
+   "kind": "ring",
+   "tag": "tutorial",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "t2",
+   "x": 7,
+   "y": 2.75,
+   "z": -6,
+   "kind": "ring",
+   "tag": "tutorial",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-hook",
+   "x": -4,
+   "y": -11.25,
+   "z": 0,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-catch",
+   "x": -14,
+   "y": -21,
+   "z": -1,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "omitIn": [
+    "abyss"
+   ]
+  },
+  {
+   "id": "s2-cw",
+   "x": -24.5,
+   "y": -19,
+   "z": 2.5,
+   "kind": "ring",
+   "tag": "objective",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s2-lower",
+   "x": -28,
+   "y": -17.75,
+   "z": 7,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-f1",
+   "x": -27,
+   "y": -38.25,
+   "z": 2.4,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-b1",
+   "x": -12,
+   "y": -38.25,
+   "z": 0,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-b2",
+   "x": -2,
+   "y": -38.25,
+   "z": -6,
+   "kind": "ring",
+   "tag": "shortcut",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s2-x",
+   "x": 6.5,
+   "y": -38.25,
+   "z": 0,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-a1",
+   "x": -1.25,
+   "y": -61.25,
+   "z": 0,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-a2",
+   "x": -14.25,
+   "y": -61.25,
+   "z": 0,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-a3",
+   "x": -26.25,
+   "y": -61.25,
+   "z": 0,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-save",
+   "x": -27,
+   "y": -90,
+   "z": -3,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ]
+  },
+  {
+   "id": "s3-save-nm",
+   "x": -27,
+   "y": -90,
+   "z": -3,
+   "kind": "fragile",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "onlyIn": [
+    "nightmare",
+    "abyss"
+   ]
+  },
+  {
+   "id": "s3-lower",
+   "x": -29,
+   "y": -73.85,
+   "z": -8,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-b1",
+   "x": -20.25,
+   "y": -91.25,
+   "z": -6,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s3-cage",
+   "x": -8,
+   "y": -78.75,
+   "z": 7,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "mover"
+  },
+  {
+   "id": "s3-f2",
+   "x": -4,
+   "y": -88.5,
+   "z": 5,
+   "kind": "hook",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s3-winch",
+   "x": -12,
+   "y": -90,
+   "z": -9.4,
+   "kind": "ring",
+   "tag": "objective",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "mover"
+  },
+  {
+   "id": "s4-a1",
+   "x": -9,
+   "y": -90.25,
+   "z": -3,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s4-a2",
+   "x": -28,
+   "y": -101,
+   "z": -5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s4-a3",
+   "x": -13,
+   "y": -104,
+   "z": -3,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s4-a4",
+   "x": -6,
+   "y": -113,
+   "z": 4,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s4-catch",
+   "x": -4,
+   "y": -128,
+   "z": -4,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ]
+  },
+  {
+   "id": "s4-a5",
+   "x": -8,
+   "y": -124,
+   "z": -1,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s4-up",
+   "x": -12,
+   "y": -135,
+   "z": -2,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s5-h1",
+   "x": -12,
+   "y": -151.25,
+   "z": -3.5,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h2",
+   "x": -15.5,
+   "y": -157.25,
+   "z": 0,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h3",
+   "x": -12,
+   "y": -165.25,
+   "z": 3.5,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h4",
+   "x": -8.5,
+   "y": -173.25,
+   "z": 0,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h5",
+   "x": -12,
+   "y": -181.25,
+   "z": -3.5,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h6",
+   "x": -15.5,
+   "y": -189.25,
+   "z": 0,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-h7",
+   "x": -12,
+   "y": -197.25,
+   "z": 3.5,
+   "kind": "hook",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s5-f1",
+   "x": -12,
+   "y": -166,
+   "z": 0,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s5-f2",
+   "x": -12,
+   "y": -180,
+   "z": 0,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s5-f3",
+   "x": -12,
+   "y": -193,
+   "z": 0,
+   "kind": "hook",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s5-catch",
+   "x": -12,
+   "y": -194,
+   "z": 8.75,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": 0,
+    "z": -1
+   },
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ]
+  },
+  {
+   "id": "s6-sa1",
+   "x": -24,
+   "y": -207,
+   "z": -6,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-sa2",
+   "x": -27,
+   "y": -213.25,
+   "z": 5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s6-sa3",
+   "x": -27,
+   "y": -225.25,
+   "z": -5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s6-sa4",
+   "x": -27,
+   "y": -237.25,
+   "z": 5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s6-sa5",
+   "x": -27,
+   "y": -249.25,
+   "z": -5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s6-sa6",
+   "x": -27,
+   "y": -261.25,
+   "z": 5,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "s6-ra1",
+   "x": 1,
+   "y": -206.2,
+   "z": -4,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-ra2",
+   "x": 2,
+   "y": -218,
+   "z": -4,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-ra3",
+   "x": -2.6,
+   "y": -234,
+   "z": -4,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-ra4",
+   "x": 2,
+   "y": -247,
+   "z": 2,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-ra5",
+   "x": -2,
+   "y": -261,
+   "z": -2,
+   "kind": "hook",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s6-up",
+   "x": 2,
+   "y": -266,
+   "z": 6,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-sp1",
+   "x": -14,
+   "y": -341,
+   "z": 3.25,
+   "kind": "ring",
+   "tag": "shortcut",
+   "normal": {
+    "x": 0,
+    "y": 0,
+    "z": 1
+   }
+  },
+  {
+   "id": "s7-sp2",
+   "x": -12,
+   "y": -371,
+   "z": -3.25,
+   "kind": "ring",
+   "tag": "shortcut",
+   "normal": {
+    "x": 0,
+    "y": 0,
+    "z": -1
+   }
+  },
+  {
+   "id": "s7-n1",
+   "x": -6,
+   "y": -291,
+   "z": -22,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n2",
+   "x": 10,
+   "y": -305,
+   "z": -30,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n3",
+   "x": 18,
+   "y": -316,
+   "z": -14,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n4",
+   "x": 14,
+   "y": -326,
+   "z": 6,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n5",
+   "x": 0,
+   "y": -336,
+   "z": 22,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-r1",
+   "x": -9,
+   "y": -353,
+   "z": 18,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "omitIn": [
+    "nightmare",
+    "abyss"
+   ]
+  },
+  {
+   "id": "s7-r2",
+   "x": -13,
+   "y": -386,
+   "z": -27,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain",
+   "omitIn": [
+    "abyss"
+   ]
+  },
+  {
+   "id": "s7-up",
+   "x": 2,
+   "y": -410,
+   "z": 2,
+   "kind": "ring",
+   "tag": "recovery",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n6",
+   "x": -18,
+   "y": -346,
+   "z": 12,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n7",
+   "x": -30,
+   "y": -357,
+   "z": -6,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n8",
+   "x": -22,
+   "y": -368,
+   "z": -24,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n9",
+   "x": -4,
+   "y": -379,
+   "z": -30,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n10",
+   "x": 10,
+   "y": -390,
+   "z": -16,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-n11",
+   "x": 6,
+   "y": -404,
+   "z": -15,
+   "kind": "ring",
+   "tag": "route",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f1",
+   "x": 4.5,
+   "y": -297,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f2",
+   "x": 4.5,
+   "y": -314,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f3",
+   "x": 4.5,
+   "y": -331,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f4",
+   "x": 4.5,
+   "y": -348,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f5",
+   "x": 4.5,
+   "y": -365,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f6",
+   "x": 4.5,
+   "y": -382,
+   "z": -12.5,
+   "kind": "fragile",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s7-f7",
+   "x": 4.5,
+   "y": -399,
+   "z": -12.5,
+   "kind": "hook",
+   "tag": "risk",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e1",
+   "x": -8,
+   "y": -434,
+   "z": -6,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e2",
+   "x": -10,
+   "y": -446,
+   "z": 10,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e3",
+   "x": 4,
+   "y": -460,
+   "z": 4,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e4",
+   "x": -4,
+   "y": -480,
+   "z": -6,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e5",
+   "x": 0,
+   "y": -505,
+   "z": 2,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-e6",
+   "x": -4,
+   "y": -526,
+   "z": -2,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   },
+   "mount": "chain"
+  },
+  {
+   "id": "s8-w1",
+   "x": -11.75,
+   "y": -532,
+   "z": 4,
+   "kind": "ring",
+   "tag": "escape",
+   "normal": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "key-s5-ring",
+   "x": -18.75,
+   "y": -198.6,
+   "z": -1.4,
+   "kind": "ring",
+   "tag": "objective",
+   "normal": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  }
+ ],
+ "decor": [
+  {
+   "type": "chain",
+   "x": -1.5,
+   "y": 1.775,
+   "z": -1,
+   "sx": 0.5,
+   "sy": 10.45,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "arch",
+   "x": -4,
+   "y": 5,
+   "z": 10.5,
+   "sx": 12,
+   "sy": 10,
+   "sz": 1.2,
+   "yaw": 0
+  },
+  {
+   "type": "statue",
+   "x": -9.5,
+   "y": 3.2,
+   "z": 9.5,
+   "sx": 2.2,
+   "sy": 6.4,
+   "sz": 2.2,
+   "yaw": -0.7853981633974483
+  },
+  {
+   "type": "statue",
+   "x": 1.5,
+   "y": 3.2,
+   "z": 9.5,
+   "sx": 2.2,
+   "sy": 6.4,
+   "sz": 2.2,
+   "yaw": 0.7853981633974483
+  },
+  {
+   "type": "plaque",
+   "x": -4,
+   "y": 2.2,
+   "z": 10.85,
+   "sx": 3.6,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 0,
+   "text": "HERE THE DESCENT BEGINS. TRUST THE RING, NOT THE FLOOR. THE FLOOR KEEPS."
+  },
+  {
+   "type": "lamp",
+   "x": -9.9,
+   "y": 1.8,
+   "z": 6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.35
+  },
+  {
+   "type": "chain",
+   "x": 9,
+   "y": 14,
+   "z": 6,
+   "sx": 0.6,
+   "sy": 30,
+   "sz": 0.6,
+   "yaw": 0,
+   "link": 1
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": 22,
+   "z": -9,
+   "sx": 0.6,
+   "sy": 26,
+   "sz": 0.6,
+   "yaw": 0,
+   "link": 1
+  },
+  {
+   "type": "girder",
+   "x": 0,
+   "y": 26,
+   "z": 0,
+   "sx": 22,
+   "sy": 1,
+   "sz": 1,
+   "yaw": 0.7853981633974483
+  },
+  {
+   "type": "glyphs",
+   "x": -10.9,
+   "y": -3.5,
+   "z": -7.5,
+   "sx": 0.1,
+   "sy": 1.2,
+   "sz": 6,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "far-structure",
+   "x": 75,
+   "y": 20,
+   "z": 0,
+   "sx": 24,
+   "sy": 90,
+   "sz": 40,
+   "yaw": 0,
+   "variant": "arch"
+  },
+  {
+   "type": "far-structure",
+   "x": 60,
+   "y": -10,
+   "z": 45,
+   "sx": 14,
+   "sy": 120,
+   "sz": 14,
+   "yaw": 0,
+   "variant": "tower"
+  },
+  {
+   "type": "shaft-light",
+   "x": 2,
+   "y": 25,
+   "z": 2,
+   "sx": 6,
+   "sy": 40,
+   "sz": 6,
+   "yaw": 0,
+   "color": "#6fa3b5"
+  },
+  {
+   "type": "statue",
+   "x": -9,
+   "y": -1.8,
+   "z": -9.5,
+   "sx": 2.2,
+   "sy": 6.4,
+   "sz": 2.2,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "lamp",
+   "x": -2,
+   "y": -3.2,
+   "z": -10.8,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 3.141592653589793,
+   "lit": true,
+   "flicker": 0.2
+  },
+  {
+   "type": "lamp",
+   "x": -8.4,
+   "y": 4.4,
+   "z": 9.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": 0.4,
+   "y": 4.4,
+   "z": 9.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "shaft-light",
+   "x": 7,
+   "y": 14,
+   "z": -3,
+   "sx": 4,
+   "sy": 40,
+   "sz": 4,
+   "yaw": 0,
+   "color": "#7fb4c8"
+  },
+  {
+   "type": "chain",
+   "x": -14,
+   "y": -15.85,
+   "z": -1,
+   "sx": 0.5,
+   "sy": 9.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -24.5,
+   "y": -14.85,
+   "z": 2.5,
+   "sx": 0.5,
+   "sy": 7.699999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "far-structure",
+   "x": -95,
+   "y": -40,
+   "z": 8,
+   "sx": 26,
+   "sy": 110,
+   "sz": 26,
+   "yaw": 0,
+   "variant": "statue"
+  },
+  {
+   "type": "far-structure",
+   "x": -70,
+   "y": -60,
+   "z": -40,
+   "sx": 16,
+   "sy": 90,
+   "sz": 16,
+   "yaw": 0,
+   "variant": "tower"
+  },
+  {
+   "type": "statue",
+   "x": -28,
+   "y": -15.5,
+   "z": -9.5,
+   "sx": 3.5,
+   "sy": 19,
+   "sz": 3.5,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "cables",
+   "x": 10,
+   "y": -12,
+   "z": -10,
+   "sx": 1,
+   "sy": 1,
+   "sz": 1,
+   "yaw": 0,
+   "x2": -33,
+   "y2": -20,
+   "z2": -10
+  },
+  {
+   "type": "plaque",
+   "x": -33.9,
+   "y": -24,
+   "z": -9,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": -1.5707963267948966,
+   "text": "THE LAMP DOES NOT RISE TO MEET US. WE GO DOWN TO IT. IT DOES NOT SEND US BACK."
+  },
+  {
+   "type": "plaque",
+   "x": -16,
+   "y": -33.4,
+   "z": 10.85,
+   "sx": 3.6,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 0,
+   "text": "A YEAR TO LOWER THE FIRST LAMP. THE ROPE CAME BACK WET.",
+   "lore": true
+  },
+  {
+   "type": "arch",
+   "x": -11.5,
+   "y": -20,
+   "z": -10.6,
+   "sx": 16,
+   "sy": 18,
+   "sz": 1.2,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "arch",
+   "x": -11.5,
+   "y": -20,
+   "z": 10.6,
+   "sx": 16,
+   "sy": 18,
+   "sz": 1.2,
+   "yaw": 0
+  },
+  {
+   "type": "chain",
+   "x": -15,
+   "y": -22,
+   "z": 6,
+   "sx": 0.6,
+   "sy": 26,
+   "sz": 0.6,
+   "yaw": 0,
+   "link": 1
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -23.5,
+   "z": -9,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.6
+  },
+  {
+   "type": "machinery",
+   "x": 9,
+   "y": -45,
+   "z": 9,
+   "sx": 3,
+   "sy": 5,
+   "sz": 3,
+   "yaw": 0
+  },
+  {
+   "type": "pipe",
+   "x": -33.4,
+   "y": -26,
+   "z": 9,
+   "sx": 0.8,
+   "sy": 34,
+   "sz": 0.8,
+   "yaw": 0
+  },
+  {
+   "type": "glyphs",
+   "x": 10.9,
+   "y": -42,
+   "z": 0,
+   "sx": 0.1,
+   "sy": 1.5,
+   "sz": 12,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "girder",
+   "x": -19.25,
+   "y": -31,
+   "z": 0,
+   "sx": 1.5,
+   "sy": 1,
+   "sz": 22,
+   "yaw": 0
+  },
+  {
+   "type": "lamp",
+   "x": 10.6,
+   "y": -19.6,
+   "z": -6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -11.5,
+   "y": -26.4,
+   "z": -10.4,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 3.141592653589793,
+   "lit": true,
+   "flicker": 0.4
+  },
+  {
+   "type": "lamp",
+   "x": -11.5,
+   "y": -26.4,
+   "z": 10.4,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.4
+  },
+  {
+   "type": "lamp",
+   "x": -24,
+   "y": -24,
+   "z": 10.4,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "shaft-light",
+   "x": 5.5,
+   "y": -21,
+   "z": 2,
+   "sx": 4,
+   "sy": 30,
+   "sz": 4,
+   "yaw": 0,
+   "color": "#7fb4c8"
+  },
+  {
+   "type": "chain",
+   "x": -27,
+   "y": -75.35,
+   "z": -3,
+   "sx": 0.5,
+   "sy": 28.700000000000003,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -27,
+   "y": -75.35,
+   "z": -3,
+   "sx": 0.5,
+   "sy": 28.700000000000003,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -4,
+   "y": -68.35,
+   "z": 5,
+   "sx": 0.5,
+   "sy": 39.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "ribs",
+   "x": -33.7,
+   "y": -86,
+   "z": 6,
+   "sx": 0.6,
+   "sy": 22,
+   "sz": 10,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "bones",
+   "x": 10,
+   "y": -62,
+   "z": 9,
+   "sx": 3,
+   "sy": 2,
+   "sz": 3,
+   "yaw": 0.4
+  },
+  {
+   "type": "plaque",
+   "x": 10.85,
+   "y": -64.5,
+   "z": -6,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": 1.5707963267948966,
+   "text": "NINTH GALLERY — CLOSED FROM THIS SIDE. THE STONE HAS BEEN LISTENING."
+  },
+  {
+   "type": "plaque",
+   "x": -33.85,
+   "y": -94.4,
+   "z": -1.5,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": -1.5707963267948966,
+   "text": "THE GALLERY FELL TWICE. IT WAS REBUILT WITH THOSE IT FELL ON.",
+   "lore": true
+  },
+  {
+   "type": "cage",
+   "x": -8,
+   "y": -77,
+   "z": 7,
+   "sx": 2,
+   "sy": 3,
+   "sz": 2,
+   "yaw": 0,
+   "id": "cage-s3"
+  },
+  {
+   "type": "chain",
+   "x": -8,
+   "y": -68,
+   "z": 7,
+   "sx": 0.4,
+   "sy": 15,
+   "sz": 0.4,
+   "yaw": 0,
+   "link": 0.7,
+   "id": "cage-s3-chain"
+  },
+  {
+   "type": "glyphs",
+   "x": -33.9,
+   "y": -88,
+   "z": -6,
+   "sx": 0.1,
+   "sy": 2,
+   "sz": 10,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "pipe",
+   "x": 10.6,
+   "y": -80,
+   "z": -10.4,
+   "sx": 0.8,
+   "sy": 40,
+   "sz": 0.8,
+   "yaw": 0
+  },
+  {
+   "type": "arch",
+   "x": -12,
+   "y": -75,
+   "z": 10.6,
+   "sx": 20,
+   "sy": 14,
+   "sz": 1.2,
+   "yaw": 0
+  },
+  {
+   "type": "shaft-light",
+   "x": -16,
+   "y": -78,
+   "z": 0,
+   "sx": 5,
+   "sy": 40,
+   "sz": 5,
+   "yaw": 0,
+   "color": "#7c9a9c"
+  },
+  {
+   "type": "lamp",
+   "x": 10.6,
+   "y": -65.6,
+   "z": 8,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -73.4,
+   "z": -2.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "chain",
+   "x": -28,
+   "y": -99.85,
+   "z": -5,
+   "sx": 0.5,
+   "sy": 1.7000000000000028,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -31.5,
+   "y": -105.5,
+   "z": -5,
+   "sx": 0.4,
+   "sy": 13,
+   "sz": 0.4,
+   "yaw": 0,
+   "link": 0.8
+  },
+  {
+   "type": "chain",
+   "x": -24.5,
+   "y": -105.5,
+   "z": -5,
+   "sx": 0.4,
+   "sy": 13,
+   "sz": 0.4,
+   "yaw": 0,
+   "link": 0.8
+  },
+  {
+   "type": "chain",
+   "x": -13,
+   "y": -96.85,
+   "z": -3,
+   "sx": 0.5,
+   "sy": 13.700000000000003,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -6,
+   "y": -107.85,
+   "z": 4,
+   "sx": 0.5,
+   "sy": 9.700000000000003,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -4,
+   "y": -94.35,
+   "z": -4,
+   "sx": 0.5,
+   "sy": 66.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -8,
+   "y": -98.1,
+   "z": -1,
+   "sx": 0.5,
+   "sy": 51.2,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -12,
+   "y": -97.85,
+   "z": -2,
+   "sx": 0.5,
+   "sy": 73.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "far-structure",
+   "x": -60,
+   "y": -170,
+   "z": -150,
+   "sx": 30,
+   "sy": 220,
+   "sz": 18,
+   "yaw": 0,
+   "variant": "spire"
+  },
+  {
+   "type": "far-structure",
+   "x": 40,
+   "y": -190,
+   "z": -145,
+   "sx": 40,
+   "sy": 180,
+   "sz": 20,
+   "yaw": 0,
+   "variant": "statue"
+  },
+  {
+   "type": "far-structure",
+   "x": -10,
+   "y": -230,
+   "z": -120,
+   "sx": 120,
+   "sy": 14,
+   "sz": 10,
+   "yaw": 0,
+   "variant": "bridge"
+  },
+  {
+   "type": "shaft-light",
+   "x": -30,
+   "y": -180,
+   "z": -110,
+   "sx": 10,
+   "sy": 240,
+   "sz": 10,
+   "yaw": 0,
+   "color": "#b8f0e0"
+  },
+  {
+   "type": "shaft-light",
+   "x": 50,
+   "y": -170,
+   "z": -80,
+   "sx": 8,
+   "sy": 220,
+   "sz": 8,
+   "yaw": 0,
+   "color": "#b8f0e0"
+  },
+  {
+   "type": "plaque",
+   "x": -16,
+   "y": -103.6,
+   "z": -5.5,
+   "sx": 3.6,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 3.141592653589793,
+   "text": "DO NOT ANSWER WHAT KNOCKS FROM INSIDE THE WALL. IT HAS LEARNED OUR KNOCKS."
+  },
+  {
+   "type": "plaque",
+   "x": 9,
+   "y": -117.4,
+   "z": -10.85,
+   "sx": 3.6,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 3.141592653589793,
+   "text": "THE VAULT WAS NOT DUG. IT WAS FOUND FULL, AND LISTENING.",
+   "lore": true
+  },
+  {
+   "type": "ribs",
+   "x": -40,
+   "y": -150,
+   "z": -15,
+   "sx": 30,
+   "sy": 50,
+   "sz": 2,
+   "yaw": 0
+  },
+  {
+   "type": "machinery",
+   "x": 9,
+   "y": -108,
+   "z": -9,
+   "sx": 3,
+   "sy": 6,
+   "sz": 3,
+   "yaw": 0
+  },
+  {
+   "type": "glyphs",
+   "x": 10.9,
+   "y": -112,
+   "z": 4,
+   "sx": 0.1,
+   "sy": 1.5,
+   "sz": 12,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "lamp",
+   "x": 10.6,
+   "y": -98.4,
+   "z": 6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.7
+  },
+  {
+   "type": "lamp",
+   "x": -16,
+   "y": -104.5,
+   "z": -23.4,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": false,
+   "flicker": 0.4,
+   "fixture": "lamp-s4a"
+  },
+  {
+   "type": "lamp",
+   "x": -12.15,
+   "y": -103.6,
+   "z": -15,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": false,
+   "flicker": 0.4,
+   "fixture": "lamp-s4b"
+  },
+  {
+   "type": "lamp",
+   "x": -19.85,
+   "y": -103.6,
+   "z": -15,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": false,
+   "flicker": 0.4,
+   "fixture": "lamp-s4c"
+  },
+  {
+   "type": "lamp",
+   "x": 10.6,
+   "y": -117.6,
+   "z": -8,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.4
+  },
+  {
+   "type": "lamp",
+   "x": -16,
+   "y": -124.6,
+   "z": 10.4,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.4
+  },
+  {
+   "type": "shaft-light",
+   "x": -50,
+   "y": -170,
+   "z": -60,
+   "sx": 14,
+   "sy": 220,
+   "sz": 14,
+   "yaw": 0,
+   "color": "#9fe0d0"
+  },
+  {
+   "type": "shaft-light",
+   "x": 22,
+   "y": -170,
+   "z": -45,
+   "sx": 10,
+   "sy": 220,
+   "sz": 10,
+   "yaw": 0,
+   "color": "#8fd8e8"
+  },
+  {
+   "type": "chain",
+   "x": -12,
+   "y": -155.85,
+   "z": 0,
+   "sx": 0.5,
+   "sy": 19.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -12,
+   "y": -162.85,
+   "z": 0,
+   "sx": 0.5,
+   "sy": 33.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -12,
+   "y": -169.35,
+   "z": 0,
+   "sx": 0.5,
+   "sy": 46.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "ribs",
+   "x": -3.25,
+   "y": -168,
+   "z": -2,
+   "sx": 0.5,
+   "sy": 14,
+   "sz": 12,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "ribs",
+   "x": -20.75,
+   "y": -182,
+   "z": -1,
+   "sx": 0.5,
+   "sy": 12,
+   "sz": 8,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "pipe",
+   "x": -20.4,
+   "y": -178,
+   "z": -8.4,
+   "sx": 0.8,
+   "sy": 50,
+   "sz": 0.8,
+   "yaw": 0
+  },
+  {
+   "type": "pipe",
+   "x": -3.6,
+   "y": -192,
+   "z": 8.4,
+   "sx": 0.8,
+   "sy": 22,
+   "sz": 0.8,
+   "yaw": 0
+  },
+  {
+   "type": "plaque",
+   "x": -3.15,
+   "y": -150.4,
+   "z": 6,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": 1.5707963267948966,
+   "text": "THE MASONS WENT DOWN TO MEND THE DEEP COURSE. THE WALL MENDED ITSELF. THEY WERE NOT RETURNED."
+  },
+  {
+   "type": "plaque",
+   "x": -3.15,
+   "y": -183.3,
+   "z": -7.1,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.2,
+   "yaw": 1.5707963267948966,
+   "text": "A MASON CUT EACH LEDGE. THE LEDGE BELOW WAS CUT FROM HIM.",
+   "lore": true
+  },
+  {
+   "type": "glyphs",
+   "x": -12,
+   "y": -165,
+   "z": -8.9,
+   "sx": 10,
+   "sy": 1.2,
+   "sz": 0.1,
+   "yaw": 0
+  },
+  {
+   "type": "cage",
+   "x": -7,
+   "y": -190,
+   "z": 6,
+   "sx": 2,
+   "sy": 3,
+   "sz": 2,
+   "yaw": 0
+  },
+  {
+   "type": "shaft-light",
+   "x": -12,
+   "y": -180,
+   "z": 0,
+   "sx": 4,
+   "sy": 50,
+   "sz": 4,
+   "yaw": 0,
+   "color": "#7a3b22"
+  },
+  {
+   "type": "lamp",
+   "x": -20.6,
+   "y": -158.6,
+   "z": -6.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "lamp",
+   "x": -3.4,
+   "y": -174.6,
+   "z": 6.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "lamp",
+   "x": -3.4,
+   "y": -182.6,
+   "z": -5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 1.5707963267948966,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "lamp",
+   "x": -20.6,
+   "y": -190.6,
+   "z": -6.5,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.5
+  },
+  {
+   "type": "chain",
+   "x": -24,
+   "y": -205.85,
+   "z": -6,
+   "sx": 0.5,
+   "sy": 1.6999999999999886,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 1,
+   "y": -205.45,
+   "z": -4,
+   "sx": 0.5,
+   "sy": 0.8999999999999773,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 2,
+   "y": -211.35,
+   "z": -4,
+   "sx": 0.5,
+   "sy": 12.699999999999989,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -2.6,
+   "y": -219.35,
+   "z": -4,
+   "sx": 0.5,
+   "sy": 28.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 2,
+   "y": -225.85,
+   "z": 2,
+   "sx": 0.5,
+   "sy": 41.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -2,
+   "y": -232.85,
+   "z": -2,
+   "sx": 0.5,
+   "sy": 55.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 2,
+   "y": -235.35,
+   "z": 6,
+   "sx": 0.5,
+   "sy": 60.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "plaque",
+   "x": -16,
+   "y": -206.4,
+   "z": -5.85,
+   "sx": 3.2,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 3.141592653589793,
+   "text": "THE LONG STAIR — FOR THE PATIENT, WHILE THE LAMPS HOLD."
+  },
+  {
+   "type": "plaque",
+   "x": -8,
+   "y": -206.4,
+   "z": -5.85,
+   "sx": 3.2,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 3.141592653589793,
+   "text": "THE THROAT — FOR THE LATE. IT IS NEVER EMPTY."
+  },
+  {
+   "type": "plaque",
+   "x": -33.85,
+   "y": -265.2,
+   "z": -9,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": -1.5707963267948966,
+   "text": "THE PATIENT REACH THE BOTTOM. THE LATE ARE CARRIED THERE, INSIDE.",
+   "lore": true
+  },
+  {
+   "type": "lamp",
+   "x": -19.6,
+   "y": -207,
+   "z": -5.6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.25
+  },
+  {
+   "type": "lamp",
+   "x": -4.4,
+   "y": -207,
+   "z": -5.6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": 0,
+   "lit": true,
+   "flicker": 0.6
+  },
+  {
+   "type": "glyphs",
+   "x": -13.05,
+   "y": -240,
+   "z": 0,
+   "sx": 0.1,
+   "sy": 26,
+   "sz": 16,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "glyphs",
+   "x": -10.95,
+   "y": -240,
+   "z": 0,
+   "sx": 0.1,
+   "sy": 26,
+   "sz": 16,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "chain",
+   "x": 8.6,
+   "y": -240,
+   "z": -10.4,
+   "sx": 0.5,
+   "sy": 60,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.8
+  },
+  {
+   "type": "cables",
+   "x": 9.5,
+   "y": -230,
+   "z": -10,
+   "sx": 1,
+   "sy": 1,
+   "sz": 1,
+   "yaw": 0,
+   "x2": -10.5,
+   "y2": -238,
+   "z2": 10
+  },
+  {
+   "type": "machinery",
+   "x": -32,
+   "y": -215,
+   "z": 9,
+   "sx": 3,
+   "sy": 5,
+   "sz": 3,
+   "yaw": 0
+  },
+  {
+   "type": "ribs",
+   "x": 9.25,
+   "y": -268,
+   "z": 0,
+   "sx": 1.5,
+   "sy": 26,
+   "sz": 18,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -216,
+   "z": -6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -228,
+   "z": 6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -240,
+   "z": -6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -252,
+   "z": 6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "lamp",
+   "x": -33.6,
+   "y": -264,
+   "z": -6,
+   "sx": 0.4,
+   "sy": 0.8,
+   "sz": 0.4,
+   "yaw": -1.5707963267948966,
+   "lit": true,
+   "flicker": 0.3
+  },
+  {
+   "type": "shaft-light",
+   "x": -24,
+   "y": -240,
+   "z": 0,
+   "sx": 5,
+   "sy": 60,
+   "sz": 5,
+   "yaw": 0,
+   "color": "#c88a3c"
+  },
+  {
+   "type": "shaft-light",
+   "x": 2,
+   "y": -245,
+   "z": 0,
+   "sx": 6,
+   "sy": 70,
+   "sz": 6,
+   "yaw": 0,
+   "color": "#5fb0c0"
+  },
+  {
+   "type": "chain",
+   "x": -6,
+   "y": -288.85,
+   "z": -22,
+   "sx": 0.5,
+   "sy": 3.6999999999999886,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 10,
+   "y": -295.85,
+   "z": -30,
+   "sx": 0.5,
+   "sy": 17.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 18,
+   "y": -301.35,
+   "z": -14,
+   "sx": 0.5,
+   "sy": 28.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 14,
+   "y": -305.85,
+   "z": 6,
+   "sx": 0.5,
+   "sy": 39.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 0,
+   "y": -311.35,
+   "z": 22,
+   "sx": 0.5,
+   "sy": 48.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -9,
+   "y": -319.85,
+   "z": 18,
+   "sx": 0.5,
+   "sy": 65.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -13,
+   "y": -336.35,
+   "z": -27,
+   "sx": 0.5,
+   "sy": 98.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 2,
+   "y": -350.35,
+   "z": 2,
+   "sx": 0.5,
+   "sy": 118.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -23.5,
+   "y": -318,
+   "z": 26,
+   "sx": 0.4,
+   "sy": 62,
+   "sz": 0.4,
+   "yaw": 0,
+   "link": 0.8
+  },
+  {
+   "type": "chain",
+   "x": -16.5,
+   "y": -318,
+   "z": 26,
+   "sx": 0.4,
+   "sy": 62,
+   "sz": 0.4,
+   "yaw": 0,
+   "link": 0.8
+  },
+  {
+   "type": "chain",
+   "x": -18,
+   "y": -315.85,
+   "z": 12,
+   "sx": 0.5,
+   "sy": 59.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -30,
+   "y": -323.85,
+   "z": -6,
+   "sx": 0.5,
+   "sy": 65.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -22,
+   "y": -327.35,
+   "z": -24,
+   "sx": 0.5,
+   "sy": 80.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -4,
+   "y": -332.85,
+   "z": -30,
+   "sx": 0.5,
+   "sy": 91.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 10,
+   "y": -338.35,
+   "z": -16,
+   "sx": 0.5,
+   "sy": 102.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 6,
+   "y": -345.35,
+   "z": -15,
+   "sx": 0.5,
+   "sy": 116.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -290.35,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 12.699999999999989,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -298.85,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 29.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -307.35,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 46.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -315.85,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 63.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -324.35,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 80.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -332.85,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 97.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4.5,
+   "y": -341.35,
+   "z": -12.5,
+   "sx": 0.5,
+   "sy": 114.69999999999999,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "ribs",
+   "x": -51,
+   "y": -350,
+   "z": 0,
+   "sx": 2,
+   "sy": 120,
+   "sz": 70,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "ribs",
+   "x": 27,
+   "y": -350,
+   "z": 0,
+   "sx": 2,
+   "sy": 120,
+   "sz": 70,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "arch",
+   "x": -12,
+   "y": -330,
+   "z": -39.7,
+   "sx": 60,
+   "sy": 70,
+   "sz": 0.6,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "arch",
+   "x": -12,
+   "y": -330,
+   "z": 39.7,
+   "sx": 60,
+   "sy": 70,
+   "sz": 0.6,
+   "yaw": 0
+  },
+  {
+   "type": "statue",
+   "x": -46,
+   "y": -380,
+   "z": -34,
+   "sx": 6,
+   "sy": 34,
+   "sz": 6,
+   "yaw": -2.356194490192345
+  },
+  {
+   "type": "statue",
+   "x": 22,
+   "y": -380,
+   "z": 34,
+   "sx": 6,
+   "sy": 34,
+   "sz": 6,
+   "yaw": 0.7853981633974483
+  },
+  {
+   "type": "bones",
+   "x": 20,
+   "y": -421,
+   "z": -30,
+   "sx": 8,
+   "sy": 4,
+   "sz": 8,
+   "yaw": 0.7
+  },
+  {
+   "type": "cage",
+   "x": 22,
+   "y": -340,
+   "z": -32,
+   "sx": 3,
+   "sy": 4,
+   "sz": 3,
+   "yaw": 0
+  },
+  {
+   "type": "chain",
+   "x": 22,
+   "y": -312,
+   "z": -32,
+   "sx": 0.5,
+   "sy": 52,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "plaque",
+   "x": -51.85,
+   "y": -352,
+   "z": 26,
+   "sx": 0.15,
+   "sy": 0.9,
+   "sz": 3.6,
+   "yaw": -1.5707963267948966,
+   "text": "IT WEARS OUR WORK. NONE OF OUR STONE WAS QUARRIED."
+  },
+  {
+   "type": "shaft-light",
+   "x": 20,
+   "y": -350,
+   "z": -26,
+   "sx": 8,
+   "sy": 120,
+   "sz": 8,
+   "yaw": 0,
+   "color": "#b8f0e0"
+  },
+  {
+   "type": "shaft-light",
+   "x": -30,
+   "y": -340,
+   "z": 20,
+   "sx": 7,
+   "sy": 100,
+   "sz": 7,
+   "yaw": 0,
+   "color": "#9fe0d0"
+  },
+  {
+   "type": "chain",
+   "x": -8,
+   "y": -363.85,
+   "z": -6,
+   "sx": 0.5,
+   "sy": 139.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -10,
+   "y": -369.85,
+   "z": 10,
+   "sx": 0.5,
+   "sy": 151.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 4,
+   "y": -376.85,
+   "z": 4,
+   "sx": 0.5,
+   "sy": 165.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -4,
+   "y": -386.85,
+   "z": -6,
+   "sx": 0.5,
+   "sy": 185.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": 0,
+   "y": -399.35,
+   "z": 2,
+   "sx": 0.5,
+   "sy": 210.7,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "chain",
+   "x": -4,
+   "y": -409.85,
+   "z": -2,
+   "sx": 0.5,
+   "sy": 231.70000000000005,
+   "sz": 0.5,
+   "yaw": 0,
+   "link": 0.9
+  },
+  {
+   "type": "ribs",
+   "x": 17.25,
+   "y": -445,
+   "z": 0,
+   "sx": 1.5,
+   "sy": 30,
+   "sz": 30,
+   "yaw": 1.5707963267948966
+  },
+  {
+   "type": "ribs",
+   "x": -21.25,
+   "y": -450,
+   "z": 0,
+   "sx": 1.5,
+   "sy": 30,
+   "sz": 30,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "glyphs",
+   "x": -2,
+   "y": -540,
+   "z": -9.9,
+   "sx": 14,
+   "sy": 2,
+   "sz": 0.1,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "machinery",
+   "x": 6,
+   "y": -553,
+   "z": -7,
+   "sx": 3,
+   "sy": 5,
+   "sz": 3,
+   "yaw": 0
+  },
+  {
+   "type": "plaque",
+   "x": -2,
+   "y": -546.8,
+   "z": 9.85,
+   "sx": 3.8,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 0,
+   "text": "BELOW THIS MARK NO LAMPS. ONLY THE STILL ONE, AND WHAT IT HOLDS."
+  },
+  {
+   "type": "plaque",
+   "x": -10,
+   "y": -468.4,
+   "z": 19.85,
+   "sx": 3.6,
+   "sy": 0.9,
+   "sz": 0.15,
+   "yaw": 0,
+   "text": "THE LAST LANTERNWRIGHTS RESTED HERE. THE WALLS STILL HAVE THEIR SHAPE.",
+   "lore": true
+  },
+  {
+   "type": "statue",
+   "x": -7,
+   "y": -552,
+   "z": 22,
+   "sx": 2.2,
+   "sy": 8,
+   "sz": 2.2,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "statue",
+   "x": 1,
+   "y": -552,
+   "z": 22,
+   "sx": 2.2,
+   "sy": 8,
+   "sz": 2.2,
+   "yaw": 3.141592653589793
+  },
+  {
+   "type": "still-lamp",
+   "x": -3,
+   "y": -552.5,
+   "z": 26.5,
+   "sx": 1.2,
+   "sy": 2.4,
+   "sz": 1.2,
+   "yaw": 0
+  },
+  {
+   "type": "grate",
+   "x": -2,
+   "y": -552,
+   "z": 10.25,
+   "sx": 8,
+   "sy": 8,
+   "sz": 0.5,
+   "yaw": 0
+  },
+  {
+   "type": "shaft-light",
+   "x": -2,
+   "y": -500,
+   "z": 0,
+   "sx": 8,
+   "sy": 110,
+   "sz": 8,
+   "yaw": 0,
+   "color": "#e0a050"
+  },
+  {
+   "type": "plaque",
+   "x": -18.2,
+   "y": -103.75,
+   "z": -23.88,
+   "sx": 2.6,
+   "sy": 0.55,
+   "sz": 0.15,
+   "yaw": 3.141592653589793,
+   "text": "THE MASONS' REST. IT CANNOT FOLLOW. IT WAITS."
+  },
+  {
+   "type": "plaque",
+   "x": -20.92,
+   "y": -198.4,
+   "z": 1.6,
+   "sx": 0.15,
+   "sy": 0.6,
+   "sz": 1.6,
+   "yaw": -1.5707963267948966,
+   "text": "LET IT KNOCK. DO NOT KNOCK BACK."
+  },
+  {
+   "type": "glyphs",
+   "x": -20.95,
+   "y": -197.6,
+   "z": -1.4,
+   "sx": 0.1,
+   "sy": 0.6,
+   "sz": 1.8,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "glyphs",
+   "x": -33.95,
+   "y": -240.9,
+   "z": -8.6,
+   "sx": 0.1,
+   "sy": 0.7,
+   "sz": 1.8,
+   "yaw": -1.5707963267948966
+  },
+  {
+   "type": "tablet",
+   "x": -12,
+   "y": -287.3,
+   "z": -10.6,
+   "sx": 2.6,
+   "sy": 1.4,
+   "sz": 0.2,
+   "yaw": 3.141592653589793,
+   "text": "THE NAVE OPENS FOR THOSE WHO HANG. MANY STILL DO."
+  }
+ ],
+ "lights": [
+  {
+   "x": -9.6,
+   "y": 1.8,
+   "z": 6,
+   "color": "#e0a050",
+   "intensity": 0.9,
+   "range": 9,
+   "flicker": 0.35
+  },
+  {
+   "x": -2,
+   "y": -3.2,
+   "z": -10.4,
+   "color": "#e0a050",
+   "intensity": 0.7,
+   "range": 10,
+   "flicker": 0.2
+  },
+  {
+   "x": -8.4,
+   "y": 4.4,
+   "z": 9.05,
+   "color": "#e8a458",
+   "intensity": 1.1,
+   "range": 11,
+   "flicker": 0.3
+  },
+  {
+   "x": 0.4,
+   "y": 4.4,
+   "z": 9.05,
+   "color": "#e8a458",
+   "intensity": 1.1,
+   "range": 11,
+   "flicker": 0.3
+  },
+  {
+   "x": 10,
+   "y": 19,
+   "z": 0,
+   "color": "#a8d8ea",
+   "intensity": 2.6,
+   "range": 42,
+   "flicker": 0
+  },
+  {
+   "x": -33,
+   "y": -23.5,
+   "z": -9,
+   "color": "#e0a050",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.6
+  },
+  {
+   "x": -32.5,
+   "y": -17.5,
+   "z": 0,
+   "color": "#a8d0e0",
+   "intensity": 3,
+   "range": 48,
+   "flicker": 0
+  },
+  {
+   "x": 10.15,
+   "y": -19.6,
+   "z": -6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -11.5,
+   "y": -26.4,
+   "z": -9.950000000000001,
+   "color": "#e8a458",
+   "intensity": 0.9,
+   "range": 13,
+   "flicker": 0.4
+  },
+  {
+   "x": -11.5,
+   "y": -26.4,
+   "z": 9.950000000000001,
+   "color": "#e8a458",
+   "intensity": 0.9,
+   "range": 13,
+   "flicker": 0.4
+  },
+  {
+   "x": -24,
+   "y": -24,
+   "z": 9.950000000000001,
+   "color": "#e8a458",
+   "intensity": 0.8,
+   "range": 12,
+   "flicker": 0.5
+  },
+  {
+   "x": -16,
+   "y": -62,
+   "z": 0,
+   "color": "#9cc8c8",
+   "intensity": 2,
+   "range": 32,
+   "flicker": 0
+  },
+  {
+   "x": 10.15,
+   "y": -65.6,
+   "z": 8,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -33.15,
+   "y": -73.4,
+   "z": -2.5,
+   "color": "#e8a458",
+   "intensity": 1.3,
+   "range": 14,
+   "flicker": 0.5
+  },
+  {
+   "x": -33.2,
+   "y": -88,
+   "z": -6,
+   "color": "#3fa090",
+   "intensity": 0.9,
+   "range": 14,
+   "flicker": 0
+  },
+  {
+   "x": 10.4,
+   "y": -98.4,
+   "z": 6,
+   "color": "#e0a050",
+   "intensity": 0.8,
+   "range": 10,
+   "flicker": 0.7
+  },
+  {
+   "x": -30,
+   "y": -150,
+   "z": -120,
+   "color": "#b8f0e0",
+   "intensity": 3.6,
+   "range": 140,
+   "flicker": 0,
+   "far": true
+  },
+  {
+   "x": -16,
+   "y": -104.5,
+   "z": -23.849999999999998,
+   "color": "#e8a458",
+   "intensity": 1.3,
+   "range": 16,
+   "flicker": 0.4
+  },
+  {
+   "x": 10.15,
+   "y": -117.6,
+   "z": -8,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.4
+  },
+  {
+   "x": -16,
+   "y": -124.6,
+   "z": 9.950000000000001,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.4
+  },
+  {
+   "x": -12,
+   "y": -160,
+   "z": 0,
+   "color": "#8a5a3c",
+   "intensity": 0.6,
+   "range": 14,
+   "flicker": 0.2
+  },
+  {
+   "x": -12,
+   "y": -152,
+   "z": 0,
+   "color": "#6fa3b5",
+   "intensity": 1.2,
+   "range": 24,
+   "flicker": 0
+  },
+  {
+   "x": -12,
+   "y": -198,
+   "z": 0,
+   "color": "#d06a30",
+   "intensity": 2.6,
+   "range": 36,
+   "flicker": 0.15
+  },
+  {
+   "x": -20.150000000000002,
+   "y": -158.6,
+   "z": -6.5,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 11,
+   "flicker": 0.5
+  },
+  {
+   "x": -3.85,
+   "y": -174.6,
+   "z": 6.5,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 11,
+   "flicker": 0.5
+  },
+  {
+   "x": -3.85,
+   "y": -182.6,
+   "z": -5,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 11,
+   "flicker": 0.5
+  },
+  {
+   "x": -20.150000000000002,
+   "y": -190.6,
+   "z": -6.5,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 11,
+   "flicker": 0.5
+  },
+  {
+   "x": -19.4,
+   "y": -207,
+   "z": -5.4,
+   "color": "#e0a050",
+   "intensity": 0.8,
+   "range": 10,
+   "flicker": 0.25
+  },
+  {
+   "x": -4.6,
+   "y": -207,
+   "z": -5.4,
+   "color": "#9a4a2a",
+   "intensity": 0.8,
+   "range": 10,
+   "flicker": 0.6
+  },
+  {
+   "x": -33.15,
+   "y": -216,
+   "z": -6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -33.15,
+   "y": -228,
+   "z": 6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -33.15,
+   "y": -240,
+   "z": -6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -33.15,
+   "y": -252,
+   "z": 6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": -33.15,
+   "y": -264,
+   "z": -6,
+   "color": "#e8a458",
+   "intensity": 1,
+   "range": 12,
+   "flicker": 0.3
+  },
+  {
+   "x": 4,
+   "y": -232,
+   "z": 0,
+   "color": "#5fb0b4",
+   "intensity": 1.7,
+   "range": 28,
+   "flicker": 0
+  },
+  {
+   "x": 4,
+   "y": -258,
+   "z": 0,
+   "color": "#5fb0b4",
+   "intensity": 1.7,
+   "range": 28,
+   "flicker": 0
+  },
+  {
+   "x": 4.5,
+   "y": -225,
+   "z": -4,
+   "color": "#c0442a",
+   "intensity": 1.1,
+   "range": 12,
+   "flicker": 0.5
+  },
+  {
+   "x": -12,
+   "y": -414,
+   "z": 0,
+   "color": "#b8f0e0",
+   "intensity": 2.4,
+   "range": 80,
+   "flicker": 0,
+   "far": true
+  },
+  {
+   "x": -12,
+   "y": -293,
+   "z": 0,
+   "color": "#b8f0e0",
+   "intensity": 1.5,
+   "range": 30,
+   "flicker": 0
+  },
+  {
+   "x": -12,
+   "y": -350,
+   "z": 0,
+   "color": "#9fe0d0",
+   "intensity": 1.3,
+   "range": 44,
+   "flicker": 0
+  },
+  {
+   "x": -40,
+   "y": -366,
+   "z": -28,
+   "color": "#e0a050",
+   "intensity": 1.8,
+   "range": 44,
+   "flicker": 0.2
+  },
+  {
+   "x": 16,
+   "y": -366,
+   "z": 28,
+   "color": "#e0a050",
+   "intensity": 1.8,
+   "range": 44,
+   "flicker": 0.2
+  },
+  {
+   "x": -3,
+   "y": -551.5,
+   "z": 26,
+   "color": "#ffd9a0",
+   "intensity": 3.2,
+   "range": 40,
+   "flicker": 0,
+   "still": true
+  },
+  {
+   "x": -2,
+   "y": -520,
+   "z": 0,
+   "color": "#e0a050",
+   "intensity": 1,
+   "range": 40,
+   "flicker": 0.1
+  },
+  {
+   "x": -2,
+   "y": -455,
+   "z": 0,
+   "color": "#e0a050",
+   "intensity": 1.4,
+   "range": 42,
+   "flicker": 0.1
+  },
+  {
+   "x": -2,
+   "y": -490,
+   "z": 0,
+   "color": "#e8a448",
+   "intensity": 1.8,
+   "range": 44,
+   "flicker": 0.1
+  },
+  {
+   "x": -2,
+   "y": -540,
+   "z": 0,
+   "color": "#f0b868",
+   "intensity": 2.2,
+   "range": 44,
+   "flicker": 0.1
+  },
+  {
+   "x": 8,
+   "y": -432,
+   "z": -15,
+   "color": "#6fa3b5",
+   "intensity": 0.9,
+   "range": 20,
+   "flicker": 0
+  }
+ ],
+ "supplies": [
+  {
+   "id": "sup-s1-01",
+   "x": -8,
+   "y": 0.45,
+   "z": 5.2,
+   "tier": "ledge",
+   "on": "s1-threshold",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s1-02",
+   "x": 2,
+   "y": 0.45,
+   "z": 6.5,
+   "tier": "alcove",
+   "on": "s1-threshold",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s1-03",
+   "x": 0.4,
+   "y": -4.55,
+   "z": -9.6,
+   "tier": "alcove",
+   "on": "s1-sill",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s1-04",
+   "x": -6,
+   "y": -4.55,
+   "z": -5.4,
+   "tier": "ledge",
+   "on": "s1-sill",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s1-05",
+   "x": -9.8,
+   "y": -4.55,
+   "z": -5.6,
+   "tier": "alcove",
+   "on": "s1-sill",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s1-06",
+   "x": -9,
+   "y": -7.55,
+   "z": 2,
+   "tier": "risk",
+   "on": "s1-pocket",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s1-07",
+   "x": 6,
+   "y": 8.25,
+   "z": -1,
+   "tier": "risk",
+   "on": "s1-girder",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s2-01",
+   "x": 9.8,
+   "y": -21.55,
+   "z": -9.6,
+   "tier": "alcove",
+   "on": "s2-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s2-02",
+   "x": 5,
+   "y": -21.55,
+   "z": -3.5,
+   "tier": "ledge",
+   "on": "s2-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s2-03",
+   "x": -24.5,
+   "y": -24.55,
+   "z": -9,
+   "tier": "ledge",
+   "on": "s2-far",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s2-04",
+   "x": 9.6,
+   "y": -34.55,
+   "z": 9.6,
+   "tier": "alcove",
+   "on": "s2-floor-a",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s2-05",
+   "x": -8,
+   "y": -34.55,
+   "z": -9.6,
+   "tier": "ledge",
+   "on": "s2-floor-a",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s2-06",
+   "x": -20.4,
+   "y": -34.55,
+   "z": 9.6,
+   "tier": "slow",
+   "on": "s2-floor-a",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s2-07",
+   "x": -29,
+   "y": -43.55,
+   "z": 9,
+   "tier": "slow",
+   "on": "s2-low",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s2-08",
+   "x": -30.5,
+   "y": -16.05,
+   "z": 7,
+   "tier": "risk",
+   "on": "s2-arm",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s2-09",
+   "x": 2,
+   "y": -50.55,
+   "z": 9,
+   "tier": "ledge",
+   "on": "s2-pier-w",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s2-10",
+   "x": 10,
+   "y": -50.55,
+   "z": -8,
+   "tier": "alcove",
+   "on": "s2-pier-e",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s3-01",
+   "x": 9.7,
+   "y": -65.55,
+   "z": 9.7,
+   "tier": "alcove",
+   "on": "s3-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s3-02",
+   "x": 9.7,
+   "y": -65.55,
+   "z": -9.7,
+   "tier": "alcove",
+   "on": "s3-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s3-03",
+   "x": 6,
+   "y": -65.55,
+   "z": 4,
+   "tier": "ledge",
+   "on": "s3-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s3-04",
+   "x": -33,
+   "y": -95.55,
+   "z": -9.7,
+   "tier": "slow",
+   "on": "s3-shelf",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s3-05",
+   "x": -29,
+   "y": -95.55,
+   "z": -3.5,
+   "tier": "slow",
+   "on": "s3-shelf",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s3-06",
+   "x": -14.25,
+   "y": -59.55,
+   "z": 8,
+   "tier": "risk",
+   "on": "s3-g2",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s3-07",
+   "x": -26.25,
+   "y": -59.55,
+   "z": -8,
+   "tier": "risk",
+   "on": "s3-g3",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s3-08",
+   "x": -20.25,
+   "y": -89.55,
+   "z": 8,
+   "tier": "risk",
+   "on": "s3-g5",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s3-09",
+   "x": 5,
+   "y": -88.55,
+   "z": -3,
+   "tier": "risk",
+   "on": "s4-g1",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s4-01",
+   "x": 9.7,
+   "y": -99.55,
+   "z": 9.7,
+   "tier": "alcove",
+   "on": "s4-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s4-02",
+   "x": -6.5,
+   "y": -99.55,
+   "z": 9.7,
+   "tier": "alcove",
+   "on": "s4-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s4-03",
+   "x": 9.5,
+   "y": -99.55,
+   "z": 3,
+   "tier": "ledge",
+   "on": "s4-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s4-04",
+   "x": -16,
+   "y": -104.55,
+   "z": -10,
+   "tier": "ledge",
+   "on": "s4-catwalk",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s4-05",
+   "x": -16,
+   "y": -104.55,
+   "z": -22.5,
+   "tier": "risk",
+   "on": "s4-catwalk",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s4-06",
+   "x": 9.7,
+   "y": -118.55,
+   "z": -9.7,
+   "tier": "slow",
+   "on": "s4-shelf",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s4-07",
+   "x": 4,
+   "y": -118.55,
+   "z": -6,
+   "tier": "ledge",
+   "on": "s4-shelf",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s4-08",
+   "x": -16,
+   "y": -125.55,
+   "z": 6,
+   "tier": "slow",
+   "on": "s4-plinth",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s5-01",
+   "x": -4.2,
+   "y": -151.55,
+   "z": 7.8,
+   "tier": "alcove",
+   "on": "s5-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s5-02",
+   "x": -4.2,
+   "y": -151.55,
+   "z": -7.8,
+   "tier": "alcove",
+   "on": "s5-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s5-03",
+   "x": -19.5,
+   "y": -159.55,
+   "z": -8,
+   "tier": "alcove",
+   "on": "s5-step1",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s5-04",
+   "x": -13,
+   "y": -159.55,
+   "z": -6.5,
+   "tier": "ledge",
+   "on": "s5-step1",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s5-05",
+   "x": -14,
+   "y": -191.55,
+   "z": -6.5,
+   "tier": "slow",
+   "on": "s5-step5",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s5-06",
+   "x": -19,
+   "y": -199.55,
+   "z": 7.8,
+   "tier": "alcove",
+   "on": "s5-step6",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s5-07",
+   "x": -5,
+   "y": -175.55,
+   "z": 7.8,
+   "tier": "alcove",
+   "on": "s5-step3",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s5-08",
+   "x": -4.2,
+   "y": -183.55,
+   "z": -7.8,
+   "tier": "slow",
+   "on": "s5-step4",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s5-09",
+   "x": -19,
+   "y": -155.55,
+   "z": 0,
+   "tier": "risk",
+   "on": "s5-arm2",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s5-10",
+   "x": -6,
+   "y": -171.55,
+   "z": 0,
+   "tier": "risk",
+   "on": "s5-arm4",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s6-01",
+   "x": -18.5,
+   "y": -207.55,
+   "z": 4.8,
+   "tier": "alcove",
+   "on": "s6-fork",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s6-02",
+   "x": -32.5,
+   "y": -217.55,
+   "z": -9.6,
+   "tier": "alcove",
+   "on": "s6-safe1",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s6-03",
+   "x": -22,
+   "y": -217.55,
+   "z": -5,
+   "tier": "ledge",
+   "on": "s6-safe1",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s6-04",
+   "x": -32.5,
+   "y": -229.55,
+   "z": 9.6,
+   "tier": "slow",
+   "on": "s6-safe2",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s6-05",
+   "x": -21,
+   "y": -229.55,
+   "z": 6.5,
+   "tier": "ledge",
+   "on": "s6-safe2",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s6-06",
+   "x": -24,
+   "y": -241.55,
+   "z": -9.5,
+   "tier": "ledge",
+   "on": "s6-safe3",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s6-07",
+   "x": -28,
+   "y": -253.55,
+   "z": 9.5,
+   "tier": "ledge",
+   "on": "s6-safe4",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s6-08",
+   "x": -32,
+   "y": -223.55,
+   "z": -5,
+   "tier": "risk",
+   "on": "s6-arm-b",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s6-09",
+   "x": -32.5,
+   "y": -265.55,
+   "z": -9.6,
+   "tier": "slow",
+   "on": "s6-safe5",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s7-01",
+   "x": 8.7,
+   "y": -287.55,
+   "z": 9.7,
+   "tier": "alcove",
+   "on": "s7-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s7-02",
+   "x": -32.5,
+   "y": -287.55,
+   "z": -9.7,
+   "tier": "alcove",
+   "on": "s7-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s7-03",
+   "x": -22,
+   "y": -287.55,
+   "z": 7,
+   "tier": "ledge",
+   "on": "s7-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s7-04",
+   "x": -4,
+   "y": -287.55,
+   "z": -8.5,
+   "tier": "ledge",
+   "on": "s7-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s7-05",
+   "x": -20,
+   "y": -348.55,
+   "z": 26,
+   "tier": "risk",
+   "on": "s7-perch",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s7-06",
+   "x": -17.5,
+   "y": -348.55,
+   "z": 23.5,
+   "tier": "risk",
+   "on": "s7-perch",
+   "w": [
+    3.5,
+    2,
+    5,
+    2
+   ]
+  },
+  {
+   "id": "sup-s8-01",
+   "x": 16.7,
+   "y": -427.55,
+   "z": -18.7,
+   "tier": "alcove",
+   "on": "s8-landing",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s8-02",
+   "x": 12,
+   "y": -427.55,
+   "z": -12,
+   "tier": "ledge",
+   "on": "s8-landing",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s8-03",
+   "x": -20.5,
+   "y": -469.55,
+   "z": 17,
+   "tier": "alcove",
+   "on": "s8-step1-w",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s8-04",
+   "x": -20.5,
+   "y": -469.55,
+   "z": -17,
+   "tier": "alcove",
+   "on": "s8-step1-w",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s8-05",
+   "x": 15.8,
+   "y": -469.55,
+   "z": 17,
+   "tier": "alcove",
+   "on": "s8-step1-e",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s8-06",
+   "x": -5,
+   "y": -469.55,
+   "z": -19,
+   "tier": "ledge",
+   "on": "s8-step1-n",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s8-07",
+   "x": -14.5,
+   "y": -511.55,
+   "z": 12,
+   "tier": "alcove",
+   "on": "s8-step2-w",
+   "w": [
+    0.6,
+    5,
+    1.5,
+    5
+   ]
+  },
+  {
+   "id": "sup-s8-08",
+   "x": 10.5,
+   "y": -511.55,
+   "z": -12,
+   "tier": "slow",
+   "on": "s8-step2-e",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  },
+  {
+   "id": "sup-s8-09",
+   "x": -2,
+   "y": -511.55,
+   "z": 14,
+   "tier": "ledge",
+   "on": "s8-step2-s",
+   "w": [
+    0.8,
+    5,
+    2,
+    4.5
+   ]
+  },
+  {
+   "id": "sup-s8-10",
+   "x": -13.5,
+   "y": -469.55,
+   "z": 18.2,
+   "tier": "slow",
+   "on": "s8-step1-s",
+   "w": [
+    2.5,
+    4,
+    1,
+    6
+   ]
+  }
+ ],
+ "climb": [
+  {
+   "id": "c-s1-west",
+   "kind": "masonry",
+   "minY": -4.9,
+   "maxY": -0.6,
+   "face": -11,
+   "minX": -11.05,
+   "maxX": -10.6,
+   "minZ": -8,
+   "maxZ": 4.5,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s1-practice",
+   "kind": "masonry",
+   "minY": 0.3,
+   "maxY": 5.2,
+   "face": -11,
+   "minX": -11.05,
+   "maxX": -10.6,
+   "minZ": 6.6,
+   "maxZ": 8.2,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s2-east",
+   "kind": "masonry",
+   "minY": -34.6,
+   "maxY": -21.8,
+   "face": 11,
+   "minX": 10.6,
+   "maxX": 11.05,
+   "minZ": -0.3,
+   "maxZ": 8.5,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s2-shaft",
+   "kind": "masonry",
+   "minY": -42.6,
+   "maxY": -34.6,
+   "face": -34,
+   "minX": -34.05,
+   "maxX": -33.6,
+   "minZ": 3.6,
+   "maxZ": 7.8,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s3-shelf",
+   "kind": "masonry",
+   "minY": -95.4,
+   "maxY": -84,
+   "face": -34,
+   "minX": -34.05,
+   "maxX": -33.6,
+   "minZ": -9.5,
+   "maxZ": -4.5,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s4-shelf",
+   "kind": "masonry",
+   "minY": -118.6,
+   "maxY": -108,
+   "face": 11,
+   "minX": 10.6,
+   "maxX": 11.05,
+   "minZ": -9.5,
+   "maxZ": -3.5,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s4-chain",
+   "kind": "chain",
+   "minX": -31.95,
+   "maxX": -31.05,
+   "minZ": -5.45,
+   "maxZ": -4.55,
+   "minY": -111.6,
+   "maxY": -100.2
+  },
+  {
+   "id": "c-s5-east",
+   "kind": "sinew",
+   "minY": -183.6,
+   "maxY": -176.4,
+   "face": -3,
+   "minX": -3.4,
+   "maxX": -2.95,
+   "minZ": 0,
+   "maxZ": 3,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   },
+   "wet": true
+  },
+  {
+   "id": "c-s5-west",
+   "kind": "masonry",
+   "minY": -199.6,
+   "maxY": -193.4,
+   "face": -21,
+   "minX": -21.05,
+   "maxX": -20.6,
+   "minZ": -4,
+   "maxZ": 2,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s6-div1",
+   "kind": "masonry",
+   "minY": -229.6,
+   "maxY": -218.6,
+   "face": -13,
+   "minX": -13.4,
+   "maxX": -12.95,
+   "minZ": -2.6,
+   "maxZ": 3,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s6-div2",
+   "kind": "masonry",
+   "minY": -253.6,
+   "maxY": -242.6,
+   "face": -13,
+   "minX": -13.4,
+   "maxX": -12.95,
+   "minZ": -2.6,
+   "maxZ": 3,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s7-under",
+   "kind": "ledge",
+   "minX": -33,
+   "maxX": -15.6,
+   "minZ": -6,
+   "maxZ": 6,
+   "minY": -291.4,
+   "maxY": -290.95,
+   "face": -291,
+   "n": {
+    "x": 0,
+    "y": -1,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s7-spire-w",
+   "kind": "sinew",
+   "minY": -301.6,
+   "maxY": -294,
+   "face": -15,
+   "minX": -15.4,
+   "maxX": -14.95,
+   "minZ": -2.8,
+   "maxZ": 2.8,
+   "n": {
+    "x": -1,
+    "y": 0,
+    "z": 0
+   },
+   "wet": true
+  },
+  {
+   "id": "c-s7-spire-s",
+   "kind": "masonry",
+   "minY": -352,
+   "maxY": -342.5,
+   "face": 3,
+   "minZ": 2.95,
+   "maxZ": 3.4,
+   "minX": -13,
+   "maxX": -10,
+   "n": {
+    "x": 0,
+    "y": 0,
+    "z": 1
+   }
+  },
+  {
+   "id": "c-s8-w1",
+   "kind": "masonry",
+   "minY": -469.6,
+   "maxY": -460,
+   "face": -22,
+   "minX": -22.05,
+   "maxX": -21.6,
+   "minZ": -8,
+   "maxZ": 8,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  },
+  {
+   "id": "c-s8-w3",
+   "kind": "masonry",
+   "minY": -546.4,
+   "maxY": -535.2,
+   "face": -12,
+   "minX": -12.05,
+   "maxX": -11.6,
+   "minZ": -8,
+   "maxZ": -1,
+   "n": {
+    "x": 1,
+    "y": 0,
+    "z": 0
+   }
+  }
+ ],
+ "seals": [
+  {
+   "id": "seal-s1",
+   "section": "s1",
+   "ids": [
+    "seal-s1-floor"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s2",
+   "section": "s2",
+   "ids": [
+    "seal-s2-gap"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s3",
+   "section": "s3",
+   "ids": [
+    "seal-s3-floor"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s4",
+   "section": "s4",
+   "ids": [
+    "seal-s4-mouth"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s5",
+   "section": "s5",
+   "ids": [
+    "seal-s5-roof"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s6",
+   "section": "s6",
+   "ids": [
+    "seal-s6-floor"
+   ],
+   "open": "slide"
+  },
+  {
+   "id": "seal-s7",
+   "section": "s7",
+   "ids": [
+    "seal-s7-nw",
+    "seal-s7-ne",
+    "seal-s7-sw",
+    "seal-s7-se"
+   ],
+   "open": "iris"
+  }
+ ],
+ "fixtures": [
+  {
+   "id": "bell-s1",
+   "kind": "bell",
+   "x": -1.5,
+   "y": -4.2,
+   "z": -1,
+   "r": 0.75,
+   "minSpeed": 2.5,
+   "by": {
+    "nightmare": {
+     "minSpeed": 3
+    },
+    "abyss": {
+     "minSpeed": 3.5
+    }
+   }
+  },
+  {
+   "id": "cw-s2",
+   "kind": "haul",
+   "anchorId": "s2-cw",
+   "time": 1.5,
+   "notches": 4,
+   "by": {
+    "nightmare": {
+     "time": 1.8
+    },
+    "abyss": {
+     "time": 2.2
+    }
+   }
+  },
+  {
+   "id": "winch-s3",
+   "kind": "winch",
+   "anchorId": "s3-winch",
+   "time": 0.9,
+   "notches": 3,
+   "by": {
+    "nightmare": {
+     "time": 1.2
+    },
+    "abyss": {
+     "time": 1.5
+    }
+   }
+  },
+  {
+   "id": "lamp-s4a",
+   "kind": "lamp",
+   "x": -16,
+   "y": -104.5,
+   "z": -23.4,
+   "r": 0.9,
+   "time": 1.5,
+   "charge": 0.06,
+   "by": {
+    "nightmare": {
+     "charge": 0.08
+    },
+    "abyss": {
+     "charge": 0.1
+    }
+   }
+  },
+  {
+   "id": "lamp-s4b",
+   "kind": "lamp",
+   "x": -12.15,
+   "y": -103.6,
+   "z": -15,
+   "r": 0.9,
+   "time": 1.5,
+   "charge": 0.06,
+   "by": {
+    "nightmare": {
+     "charge": 0.08
+    },
+    "abyss": {
+     "charge": 0.1
+    }
+   }
+  },
+  {
+   "id": "lamp-s4c",
+   "kind": "lamp",
+   "x": -19.85,
+   "y": -103.6,
+   "z": -15,
+   "r": 0.9,
+   "time": 1.5,
+   "charge": 0.06,
+   "by": {
+    "nightmare": {
+     "charge": 0.08
+    },
+    "abyss": {
+     "charge": 0.1
+    }
+   }
+  },
+  {
+   "id": "key-s5",
+   "kind": "breach",
+   "solidId": "key-s5-stone",
+   "anchorId": "key-s5-ring",
+   "nookId": "nook-s5",
+   "hp": 1,
+   "r": 2.5,
+   "haulTime": 8,
+   "notches": 4,
+   "by": {
+    "nightmare": {
+     "haulTime": 10
+    },
+    "abyss": {
+     "haulTime": 12
+    }
+   }
+  },
+  {
+   "id": "fx-s6-safe",
+   "kind": "hook",
+   "anchorId": "s6-sa3",
+   "hold": 0
+  },
+  {
+   "id": "fx-s6-risk",
+   "kind": "hook",
+   "anchorId": "s6-ra3",
+   "hold": 0
+  },
+  {
+   "id": "arena-s7",
+   "kind": "survive",
+   "box": {
+    "minX": -52,
+    "maxX": 28,
+    "minY": -424,
+    "maxY": -292,
+    "minZ": -40,
+    "maxZ": 40
+   },
+   "pauseOnId": "s7-landing",
+   "time": 45,
+   "stages": 4,
+   "boltOrder": [
+    "seal-s7-sw",
+    "seal-s7-se",
+    "seal-s7-nw",
+    "seal-s7-ne"
+   ],
+   "by": {
+    "nightmare": {
+     "time": 60
+    },
+    "abyss": {
+     "time": 60
+    }
+   }
+  }
+ ],
+ "objectives": [
+  {
+   "id": "obj-s1",
+   "section": "s1",
+   "verb": "bell",
+   "sealId": "seal-s1",
+   "ids": [
+    "bell-s1"
+   ],
+   "need": 1
+  },
+  {
+   "id": "obj-s2",
+   "section": "s2",
+   "verb": "haul",
+   "sealId": "seal-s2",
+   "ids": [
+    "cw-s2"
+   ],
+   "need": 1
+  },
+  {
+   "id": "obj-s3",
+   "section": "s3",
+   "verb": "winch",
+   "sealId": "seal-s3",
+   "ids": [
+    "winch-s3"
+   ],
+   "need": 1
+  },
+  {
+   "id": "obj-s4",
+   "section": "s4",
+   "verb": "lamp",
+   "sealId": "seal-s4",
+   "ids": [
+    "lamp-s4a",
+    "lamp-s4b",
+    "lamp-s4c"
+   ],
+   "need": 3
+  },
+  {
+   "id": "obj-s5",
+   "section": "s5",
+   "verb": "breach",
+   "sealId": "seal-s5",
+   "ids": [
+    "key-s5"
+   ],
+   "need": 1
+  },
+  {
+   "id": "obj-s6",
+   "section": "s6",
+   "verb": "hook",
+   "sealId": "seal-s6",
+   "ids": [
+    "fx-s6-safe",
+    "fx-s6-risk"
+   ],
+   "need": 1
+  },
+  {
+   "id": "obj-s7",
+   "section": "s7",
+   "verb": "survive",
+   "sealId": "seal-s7",
+   "ids": [
+    "arena-s7"
+   ],
+   "need": 1,
+   "after": {
+    "mode": "escape"
+   }
+  }
+ ],
+ "routes": [
+  {
+   "id": "r-s2-fast",
+   "fork": "fork-s2",
+   "section": "s2",
+   "line": "fast",
+   "ids": [
+    "s2-hook",
+    "s2-cw",
+    "s2-f1",
+    "s2-b1",
+    "s2-x"
+   ],
+   "stops": [
+    "s2-far",
+    "s2-pier-w"
+   ]
+  },
+  {
+   "id": "r-s2-safe",
+   "fork": "fork-s2",
+   "section": "s2",
+   "line": "safe",
+   "ids": [
+    "s2-hook",
+    "s2-cw",
+    "s2-lower",
+    "s2-b1",
+    "s2-x"
+   ],
+   "stops": [
+    "s2-floor-a",
+    "s2-low",
+    "s2-pier-w"
+   ]
+  },
+  {
+   "id": "r-s3-fast",
+   "fork": "fork-s3",
+   "section": "s3",
+   "line": "fast",
+   "ids": [
+    "s3-a1",
+    "s3-cage",
+    "s3-f2",
+    "s3-winch"
+   ],
+   "stops": []
+  },
+  {
+   "id": "r-s3-safe",
+   "fork": "fork-s3",
+   "section": "s3",
+   "line": "safe",
+   "ids": [
+    "s3-a1",
+    "s3-a2",
+    "s3-a3",
+    "s3-lower",
+    "s3-winch",
+    "s3-b1"
+   ],
+   "stops": [
+    "s3-span2",
+    "s3-span3",
+    "s3-shelf"
+   ]
+  },
+  {
+   "id": "r-s4-fast",
+   "fork": "fork-s4",
+   "section": "s4",
+   "line": "fast",
+   "ids": [
+    "s4-a1",
+    "s4-a2",
+    "s4-a3",
+    "s4-a4",
+    "s4-a5"
+   ],
+   "stops": [
+    "s4-catwalk"
+   ]
+  },
+  {
+   "id": "r-s4-safe",
+   "fork": "fork-s4",
+   "section": "s4",
+   "line": "safe",
+   "ids": [
+    "s4-a1",
+    "s4-a2",
+    "s4-a3",
+    "s4-a4",
+    "s4-a5"
+   ],
+   "stops": [
+    "s4-catwalk",
+    "s4-shelf",
+    "s4-plinth"
+   ]
+  },
+  {
+   "id": "r-s5-fast",
+   "fork": "fork-s5",
+   "section": "s5",
+   "line": "fast",
+   "ids": [
+    "s5-f1",
+    "s5-f2",
+    "s5-f3",
+    "key-s5-ring"
+   ],
+   "stops": []
+  },
+  {
+   "id": "r-s5-safe",
+   "fork": "fork-s5",
+   "section": "s5",
+   "line": "safe",
+   "ids": [
+    "s5-h1",
+    "s5-h2",
+    "s5-h3",
+    "s5-h4",
+    "s5-h5",
+    "s5-h6",
+    "key-s5-ring",
+    "s5-h7"
+   ],
+   "stops": [
+    "s5-step1",
+    "s5-step3",
+    "s5-step4",
+    "s5-step5",
+    "s5-step6"
+   ]
+  },
+  {
+   "id": "r-s6-fast",
+   "fork": "fork-s6",
+   "section": "s6",
+   "line": "fast",
+   "ids": [
+    "s6-ra1",
+    "s6-ra2",
+    "s6-ra3",
+    "s6-ra4",
+    "s6-ra5"
+   ],
+   "stops": [
+    "s6-ledge"
+   ]
+  },
+  {
+   "id": "r-s6-safe",
+   "fork": "fork-s6",
+   "section": "s6",
+   "line": "safe",
+   "ids": [
+    "s6-sa1",
+    "s6-sa2",
+    "s6-sa3",
+    "s6-sa4",
+    "s6-sa5",
+    "s6-sa6"
+   ],
+   "stops": [
+    "s6-safe1",
+    "s6-safe2",
+    "s6-safe3",
+    "s6-safe4",
+    "s6-safe5"
+   ]
+  },
+  {
+   "id": "r-s7-fast",
+   "fork": "fork-s7",
+   "section": "s7",
+   "line": "fast",
+   "ids": [
+    "s7-f1",
+    "s7-f2",
+    "s7-f3",
+    "s7-f4",
+    "s7-f5",
+    "s7-f6",
+    "s7-f7"
+   ],
+   "stops": []
+  },
+  {
+   "id": "r-s7-safe",
+   "fork": "fork-s7",
+   "section": "s7",
+   "line": "safe",
+   "ids": [
+    "s7-n1",
+    "s7-n2",
+    "s7-n3",
+    "s7-n4",
+    "s7-n5",
+    "s7-n6",
+    "s7-n7",
+    "s7-n8",
+    "s7-n9",
+    "s7-n10",
+    "s7-n11"
+   ],
+   "stops": []
+  },
+  {
+   "id": "r-s8-fast",
+   "fork": "fork-s8",
+   "section": "s8",
+   "line": "fast",
+   "ids": [
+    "s8-e1",
+    "s8-e2",
+    "s8-e3",
+    "s8-e4",
+    "s8-e5",
+    "s8-e6"
+   ],
+   "stops": []
+  },
+  {
+   "id": "r-s8-safe",
+   "fork": "fork-s8",
+   "section": "s8",
+   "line": "safe",
+   "ids": [
+    "s8-e1",
+    "s8-e2",
+    "s8-e3",
+    "s8-e4",
+    "s8-e5",
+    "s8-e6"
+   ],
+   "stops": [
+    "s8-step1-s",
+    "s8-step2-e"
+   ]
+  }
+ ],
+ "movers": [
+  {
+   "id": "mov-s3-cage",
+   "kind": "pendulum",
+   "section": "s3",
+   "x": -8,
+   "y": -60.5,
+   "z": 7,
+   "dir": {
+    "x": 1,
+    "z": 0
+   },
+   "length": 18.25,
+   "amp": 0.08,
+   "period": 8.6,
+   "phase": 0.25,
+   "parts": "cage",
+   "carry": {
+    "anchors": [
+     "s3-cage"
+    ],
+    "decor": [
+     "cage-s3",
+     "cage-s3-chain"
+    ]
+   },
+   "by": {
+    "nightmare": {
+     "period": 7.74
+    },
+    "abyss": {
+     "period": 6.88
+    }
+   }
+  },
+  {
+   "id": "mov-s3-gear",
+   "kind": "orbit",
+   "section": "s3",
+   "x": -12,
+   "y": -90,
+   "z": -11,
+   "u": {
+    "x": 0,
+    "y": 0,
+    "z": 1
+   },
+   "v": {
+    "x": 0,
+    "y": 1,
+    "z": 0
+   },
+   "radius": 1.6,
+   "period": 12,
+   "phase": 0,
+   "spin": -1,
+   "housing": 0.2,
+   "parts": "gear",
+   "carry": {
+    "anchors": [
+     "s3-winch"
+    ]
+   },
+   "by": {
+    "nightmare": {
+     "period": 10.8
+    },
+    "abyss": {
+     "period": 9.6
+    }
+   }
+  }
+ ],
+ "lanes": [
+  {
+   "id": "rock-s3",
+   "section": "s3",
+   "minX": -27.5,
+   "maxX": -25,
+   "minY": -80,
+   "maxY": -63,
+   "minZ": -1.5,
+   "maxZ": 1.5,
+   "period": 7,
+   "on": 1.6,
+   "lead": 1.5,
+   "phase": 0.5,
+   "damage": 0.3,
+   "by": {
+    "nightmare": {
+     "period": 6.25,
+     "damage": 0.4
+    },
+    "abyss": {
+     "period": 5.5,
+     "damage": 0.5
+    }
+   }
+  }
+ ],
+ "nooks": [
+  {
+   "id": "nook-s4",
+   "section": "s4",
+   "box": {
+    "minX": -19.7,
+    "maxX": -12.3,
+    "minY": -105,
+    "maxY": -102,
+    "minZ": -24,
+    "maxZ": -20.5
+   },
+   "block": {
+    "minX": -21,
+    "maxX": -11,
+    "minY": -106.5,
+    "maxY": -100.5,
+    "minZ": -25.5,
+    "maxZ": -19.5
+   },
+   "budget": {
+    "normal": 25,
+    "nightmare": 15,
+    "abyss": 8
+   }
+  },
+  {
+   "id": "nook-s5",
+   "section": "s5",
+   "lure": true,
+   "box": {
+    "minX": -21,
+    "maxX": -19.6,
+    "minY": -200,
+    "maxY": -197.4,
+    "minZ": -2.9,
+    "maxZ": -0.1
+   },
+   "block": {
+    "minX": -21,
+    "maxX": -18.6,
+    "minY": -200.5,
+    "maxY": -196,
+    "minZ": -3.4,
+    "maxZ": 0.6
+   },
+   "budget": {
+    "normal": 25,
+    "nightmare": 15,
+    "abyss": 8
+   }
+  },
+  {
+   "id": "nook-s6",
+   "section": "s6",
+   "box": {
+    "minX": -34,
+    "maxX": -30.5,
+    "minY": -242,
+    "maxY": -239,
+    "minZ": -11,
+    "maxZ": -3
+   },
+   "block": {
+    "minX": -34,
+    "maxX": -29.6,
+    "minY": -243,
+    "maxY": -237.5,
+    "minZ": -11,
+    "maxZ": -2.2
+   },
+   "budget": {
+    "normal": 25,
+    "nightmare": 15,
+    "abyss": 8
+   }
+  }
+ ],
+ "squalls": [
+  {
+   "id": "squall-s6",
+   "section": "s6",
+   "box": {
+    "minX": -11,
+    "maxX": 10,
+    "minY": -284,
+    "maxY": -211,
+    "minZ": -11,
+    "maxZ": 11
+   },
+   "dir": [
+    0,
+    1
+   ],
+   "accel": 1.2,
+   "period": 26,
+   "on": 4,
+   "lead": 2,
+   "phase": 0.35,
+   "by": {
+    "nightmare": {
+     "period": 20,
+     "accel": 1.5
+    },
+    "abyss": {
+     "period": 15,
+     "accel": 1.8
+    }
+   }
+  }
+ ],
+ "blood": [
+  {
+   "id": "bw-s1-crew",
+   "section": "s1",
+   "x": -11,
+   "y": 1.07,
+   "z": 5.18,
+   "yaw": -1.5707963267948966,
+   "w": 1.8,
+   "text": "NINE OF US CAME DOWN\nTO MEND THE DEEP COURSE.\nHOB. DAY ONE."
+  },
+  {
+   "id": "bw-s1-knock",
+   "section": "s1",
+   "x": -5.92,
+   "y": -3.66,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 1.8,
+   "text": "HALLAM KNOCKED TWICE\nFOR LUCK.\nTHE WALL KNOCKED THREE."
+  },
+  {
+   "id": "bw-s1-forty",
+   "section": "s1",
+   "x": -9.55,
+   "y": 0,
+   "z": 5.2,
+   "yaw": 1.5707963267948966,
+   "w": 1.8,
+   "floor": true,
+   "text": "FORTY STROKES BY THE\nLAMP. NONE OF US CUT\nTHEM. HOB SAYS LEAVE IT."
+  },
+  {
+   "id": "bw-s1-rope",
+   "section": "s1",
+   "x": -1,
+   "y": 1.25,
+   "z": 11,
+   "yaw": 0,
+   "w": 1.8,
+   "text": "WE TRIED TO GO BACK UP.\nTHE ROPE WAS TIED OFF\nFROM ABOVE."
+  },
+  {
+   "id": "bw-s1-step",
+   "section": "s1",
+   "x": -4.2,
+   "y": -5,
+   "z": -7.4,
+   "yaw": 0,
+   "w": 1.9,
+   "floor": true,
+   "text": "FIRST NIGHT. SOMETHING\nWALKED THE SILL. IT HAD\nOUR FOREMAN'S STEP."
+  },
+  {
+   "id": "bw-s2-statues",
+   "section": "s2",
+   "x": 5.4,
+   "y": -22,
+   "z": -6,
+   "yaw": 1.5707963267948966,
+   "w": 1.9,
+   "floor": true,
+   "text": "THE STATUES WERE NOT\nCARVED. THEY WERE\nSTOOD UP."
+  },
+  {
+   "id": "bw-s2-mab",
+   "section": "s2",
+   "x": -20.68,
+   "y": -33.56,
+   "z": 11,
+   "yaw": 0,
+   "w": 2,
+   "text": "MAB FELL HERE NINETY\nTIMES. SHE WOKE NINETY.\nTHE FLOOR KEPT THEM ALL."
+  },
+  {
+   "id": "bw-s2-count",
+   "section": "s2",
+   "x": -27,
+   "y": -25,
+   "z": -3.6,
+   "yaw": 0,
+   "w": 1.9,
+   "floor": true,
+   "text": "MAB COUNTED THE STATUES.\nTHIRTEEN. COUNTED AGAIN.\nFOURTEEN."
+  },
+  {
+   "id": "bw-s2-haul",
+   "section": "s2",
+   "x": 5,
+   "y": -22,
+   "z": -2.6,
+   "yaw": 1.5707963267948966,
+   "w": 1.9,
+   "floor": true,
+   "text": "WE HAULED THE WEIGHT\nFOR AN HOUR. SOMETHING\nHAULED BACK."
+  },
+  {
+   "id": "bw-s2-hob",
+   "section": "s2",
+   "x": -12.8,
+   "y": -33,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 1.8,
+   "text": "ONE STATUE HAS HOB'S\nFACE. HOB IS ALIVE.\nI WENT AND CHECKED."
+  },
+  {
+   "id": "bw-s3-wenna",
+   "section": "s3",
+   "x": 11,
+   "y": -64.5,
+   "z": -2.98,
+   "yaw": 1.5707963267948966,
+   "w": 1.9,
+   "text": "I CLOSED IT MYSELF.\nSIX WERE STILL INSIDE.\nWENNA"
+  },
+  {
+   "id": "bw-s3-ten",
+   "section": "s3",
+   "x": -34,
+   "y": -74.79,
+   "z": 0,
+   "yaw": -1.5707963267948966,
+   "w": 1.7,
+   "text": "DAY NINE. HOB SAYS WE\nARE STILL NINE. I COUNT\nTEN SHADOWS AT THE LAMP."
+  },
+  {
+   "id": "bw-s3-order",
+   "section": "s3",
+   "x": -30.4,
+   "y": -94.45,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 1.9,
+   "text": "THEY KNOCK IN THE ORDER\nI BRICKED THEM IN.\nSIX. ALWAYS SIX."
+  },
+  {
+   "id": "bw-s3-tick",
+   "section": "s3",
+   "x": -24,
+   "y": -88.4,
+   "z": 11,
+   "yaw": 0,
+   "w": 1.8,
+   "text": "IT TICKS WHEN I AM\nWELL. IT STOPS WHEN I\nBLEED. SO I BLEED."
+  },
+  {
+   "id": "bw-s3-chalk",
+   "section": "s3",
+   "x": -20,
+   "y": -74,
+   "z": 1.6,
+   "yaw": 1.5707963267948966,
+   "w": 1.9,
+   "floor": true,
+   "text": "IT DREW ME ON THE WALL.\nCHALK. MY OWN SHAPE.\nIT SAID NOT YET."
+  },
+  {
+   "id": "bw-s4-tamsin",
+   "section": "s4",
+   "x": -16,
+   "y": -105,
+   "z": -9.3,
+   "yaw": 0,
+   "w": 2,
+   "floor": true,
+   "text": "I ANSWERED. IT KNOCKED\nBACK IN MY BROTHER'S\nRHYTHM. TAMSIN"
+  },
+  {
+   "id": "bw-s4-lamps",
+   "section": "s4",
+   "x": -16,
+   "y": -105,
+   "z": -20.93,
+   "yaw": 0,
+   "w": 2,
+   "floor": true,
+   "text": "THE LAMPS WERE NEVER FOR\nSEEING. THEY KEEP THE\nDEAD IN THE WALLS STILL."
+  },
+  {
+   "id": "bw-s4-again",
+   "section": "s4",
+   "x": 3.4,
+   "y": -119,
+   "z": -8.1,
+   "yaw": -1.5707963267948966,
+   "w": 2,
+   "floor": true,
+   "text": "TAMSIN WENT BACK TO\nANSWER IT AGAIN.\nWE DID NOT STOP HER."
+  },
+  {
+   "id": "bw-s4-breath",
+   "section": "s4",
+   "x": -14.6,
+   "y": -105,
+   "z": -16.4,
+   "yaw": 0,
+   "w": 1.8,
+   "floor": true,
+   "text": "I RELIT THE LAMP. THE\nWALL BEHIND IT WENT\nQUIET. A HELD BREATH."
+  },
+  {
+   "id": "bw-s4-name",
+   "section": "s4",
+   "x": 8.4,
+   "y": -119,
+   "z": -4.8,
+   "yaw": -1.5707963267948966,
+   "w": 1.9,
+   "floor": true,
+   "text": "I WROTE DOWN THE KNOCKS.\nTHEY SPELL A NAME.\nNOT ONE OF OURS."
+  },
+  {
+   "id": "bw-s5-hands",
+   "section": "s5",
+   "x": -13.76,
+   "y": -158.6,
+   "z": -9,
+   "yaw": 3.141592653589793,
+   "w": 1.8,
+   "text": "IT IS MADE OF US.\nI SAW HALLAM'S HANDS\nIN ITS SIDE. HOB"
+  },
+  {
+   "id": "bw-s5-four",
+   "section": "s5",
+   "x": -11.28,
+   "y": -174.85,
+   "z": 9,
+   "yaw": 0,
+   "w": 2,
+   "text": "WE ARE FOUR. WE STOPPED\nBURYING. THE WALL TAKES\nTHEM BEFORE WE CAN."
+  },
+  {
+   "id": "bw-s5-named",
+   "section": "s5",
+   "x": -21,
+   "y": -198.87,
+   "z": 5.86,
+   "yaw": -1.5707963267948966,
+   "w": 1.9,
+   "text": "I LET IT KNOCK.\nSIX HOURS. IT ONLY\nWANTS TO BE NAMED."
+  },
+  {
+   "id": "bw-s5-coll",
+   "section": "s5",
+   "x": -3,
+   "y": -181.4,
+   "z": -1.6,
+   "yaw": 1.5707963267948966,
+   "w": 1.8,
+   "text": "IT CAME WHEN COLL CUT\nHIS HAND. NOT BEFORE.\nIT CAN SMELL IT."
+  },
+  {
+   "id": "bw-s5-sorry",
+   "section": "s5",
+   "x": -12.96,
+   "y": -189.4,
+   "z": -9,
+   "yaw": 3.141592653589793,
+   "w": 1.9,
+   "text": "WE TRIED TO KILL IT.\nYOU CANNOT KILL A WALL.\nWE APOLOGISED TO IT."
+  },
+  {
+   "id": "bw-s6-coll",
+   "section": "s6",
+   "x": -7.2,
+   "y": -208,
+   "z": -3.5,
+   "yaw": 0,
+   "w": 1.9,
+   "floor": true,
+   "text": "COLL TOOK THE THROAT.\nHE WAS CARRIED.\nWE STILL HEAR HIM."
+  },
+  {
+   "id": "bw-s6-hob",
+   "section": "s6",
+   "x": -31.5,
+   "y": -240.6,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 1.7,
+   "text": "I HAVE SAT UNDER THIS\nLAMP FOUR DAYS. I AM\nNOT GOING ON. HOB"
+  },
+  {
+   "id": "bw-s6-mouth",
+   "section": "s6",
+   "x": -28.4,
+   "y": -264.6,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 1.9,
+   "text": "THE BOTTOM IS NOT A\nPLACE. IT IS A MOUTH,\nAND WE ARE THE TEETH."
+  },
+  {
+   "id": "bw-s6-up",
+   "section": "s6",
+   "x": -34,
+   "y": -221.4,
+   "z": -2.6,
+   "yaw": -1.5707963267948966,
+   "w": 1.8,
+   "text": "THERE IS NO WAY UP.\nWE LOOKED FOR SIX DAYS.\nEVERY STAIR GOES DOWN."
+  },
+  {
+   "id": "bw-s6-white",
+   "section": "s6",
+   "x": -34,
+   "y": -227.6,
+   "z": 8.6,
+   "yaw": -1.5707963267948966,
+   "w": 1.8,
+   "text": "THE WHITE ONE WAITS\nFOR YOU TO HEAL. THE\nOTHER FOR YOU TO BLEED."
+  },
+  {
+   "id": "bw-s7-sister",
+   "section": "s7",
+   "x": -12.5,
+   "y": -288,
+   "z": -5.2,
+   "yaw": 0,
+   "w": 2.2,
+   "floor": true,
+   "text": "OUR WORK WAS OUR DEAD.\nWE CUT THEM SQUARE AND\nBUILT. I CUT MY SISTER."
+  },
+  {
+   "id": "bw-s7-isolde",
+   "section": "s7",
+   "x": -20,
+   "y": -349,
+   "z": 25.4,
+   "yaw": 0,
+   "w": 2,
+   "floor": true,
+   "text": "I CARVED THE SPIRE TO\nPOINT HOME. IT POINTS\nDOWN. ISOLDE"
+  },
+  {
+   "id": "bw-s7-mother",
+   "section": "s7",
+   "x": -22,
+   "y": -288,
+   "z": 8.6,
+   "yaw": 3.141592653589793,
+   "w": 1.9,
+   "floor": true,
+   "text": "I FOUND MY MOTHER IN\nTHE THIRD COLUMN. I\nKNEW HER BY HER RING."
+  },
+  {
+   "id": "bw-s7-hob",
+   "section": "s7",
+   "x": -29.2,
+   "y": -286,
+   "z": -13,
+   "yaw": 3.141592653589793,
+   "w": 1.8,
+   "text": "WE ARE TWO. HOB AND I.\nHOB IS NOT HOB.\nI DO NOT SAY SO."
+  },
+  {
+   "id": "bw-s7-tried",
+   "section": "s7",
+   "x": 12.4,
+   "y": -286,
+   "z": 13,
+   "yaw": 0,
+   "w": 1.8,
+   "text": "WE WERE NOT SENT TO\nMEND. WE WERE SENT TO\nBE TRIED ON."
+  },
+  {
+   "id": "bw-s8-feed",
+   "section": "s8",
+   "x": 4.75,
+   "y": -428,
+   "z": -12.75,
+   "yaw": 2.356194490192345,
+   "w": 2.2,
+   "floor": true,
+   "text": "THERE IS NO DEEP COURSE\nTO MEND. WE WERE SENT\nDOWN TO FEED IT."
+  },
+  {
+   "id": "bw-s8-keeps",
+   "section": "s8",
+   "x": 13,
+   "y": -510.5,
+   "z": -6.4,
+   "yaw": 1.5707963267948966,
+   "w": 2,
+   "text": "THE STILL ONE DOES NOT\nSAVE YOU. IT KEEPS YOU.\nLOOK AT THE WALLS."
+  },
+  {
+   "id": "bw-s8-ten",
+   "section": "s8",
+   "x": 3.8,
+   "y": -554.5,
+   "z": 10,
+   "yaw": 0,
+   "w": 1.8,
+   "text": "WE WERE NINE.\nYOU MADE TEN.\nYOU ALWAYS MAKE TEN."
+  },
+  {
+   "id": "bw-s8-sheep",
+   "section": "s8",
+   "x": -4.4,
+   "y": -467.4,
+   "z": 20,
+   "yaw": 0,
+   "w": 1.8,
+   "text": "IT DROVE US DOWN LIKE\nSHEEP. IT NEVER ONCE\nTRIED TO STOP US."
+  },
+  {
+   "id": "bw-s8-stood",
+   "section": "s8",
+   "x": 3,
+   "y": -554.2,
+   "z": 16.5,
+   "yaw": 1.5707963267948966,
+   "w": 1.8,
+   "text": "WE ALL STOOD IN IT.\nNONE OF US FIT.\nIT IS CUT FOR YOU."
+  },
+  {
+   "id": "bw-s8-closed",
+   "section": "s8",
+   "x": -7.5,
+   "y": -554.3,
+   "z": 13,
+   "yaw": 3.141592653589793,
+   "w": 1.8,
+   "text": "THE GRATE CLOSED\nBEHIND US TOO.\nIT ALWAYS CLOSES."
+  }
+ ],
+ "boards": [
+  {
+   "id": "bd-s1-tally",
+   "section": "s1",
+   "face": "wall",
+   "x": -11,
+   "y": 1.9,
+   "z": 5.2,
+   "yaw": -1.5707963267948966,
+   "w": 1.3,
+   "style": "scratch",
+   "text": "{40}"
+  },
+  {
+   "id": "bd-s1-wake",
+   "section": "s1",
+   "face": "wall",
+   "x": -11,
+   "y": 1.65,
+   "z": 1.75,
+   "yaw": -1.5707963267948966,
+   "w": 2.6,
+   "text": "IF YOU WAKE HERE AND DO NOT REMEMBER THE CLIMB DOWN, THERE WAS NONE."
+  },
+  {
+   "id": "bd-s1-cap",
+   "section": "s1",
+   "face": "wall",
+   "x": 11,
+   "y": 0.6,
+   "z": -5.2,
+   "yaw": 1.5707963267948966,
+   "w": 2.6,
+   "text": "THE CAP WAS SET IN LIME SO THAT NONE WOULD FOLLOW. NONE HAVE COME THROUGH IT."
+  },
+  {
+   "id": "bd-s1-count",
+   "section": "s1",
+   "face": "floor",
+   "x": -4,
+   "y": 0,
+   "z": 6.4,
+   "yaw": 0,
+   "w": 2.4,
+   "style": "cut",
+   "text": "COUNT YOURSELF AT THE LAMP. COUNT AGAIN AT THE BOTTOM."
+  },
+  {
+   "id": "bd-s1-call",
+   "section": "s1",
+   "face": "wall",
+   "x": -0.2,
+   "y": -2.4,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "DO NOT CALL UP THE SHAFT. IT IS FARTHER THAN IT WAS."
+  },
+  {
+   "id": "bd-s2-ledger",
+   "section": "s2",
+   "face": "floor",
+   "x": 8,
+   "y": -22,
+   "z": -8.6,
+   "yaw": 1.5707963267948966,
+   "w": 2.4,
+   "style": "cut",
+   "text": "LAMPS LIT: 4,112.\nLAMPS PAID FOR: 4,111."
+  },
+  {
+   "id": "bd-s2-silence",
+   "section": "s2",
+   "face": "ceil",
+   "x": -10.2,
+   "y": -11,
+   "z": 0,
+   "yaw": 1.5707963267948966,
+   "w": 3.2,
+   "text": "WE TRIED SALT, THEN SONG, THEN SILENCE. SILENCE WAS WORSE."
+  },
+  {
+   "id": "bd-s2-statues",
+   "section": "s2",
+   "face": "wall",
+   "x": -22.5,
+   "y": -22.4,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "THE STATUES FACE THE LAMP. IF ONE DOES NOT, TELL NO ONE WHICH."
+  },
+  {
+   "id": "bd-s2-ropes",
+   "section": "s2",
+   "face": "wall",
+   "x": -5.4,
+   "y": -33,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "ROPES LOWERED: 38. ROPES RETURNED: 38. RETURNED EMPTY: 37."
+  },
+  {
+   "id": "bd-s2-bram",
+   "section": "s2",
+   "face": "floor",
+   "x": -5.5,
+   "y": -35,
+   "z": 1.8,
+   "yaw": 1.5707963267948966,
+   "w": 2.4,
+   "style": "cut",
+   "text": "THIS FLOOR IS BRAM AND HIS BROTHERS. WALK SOFTLY."
+  },
+  {
+   "id": "bd-s2-settle",
+   "section": "s2",
+   "face": "wall",
+   "x": -25.2,
+   "y": -41.4,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.6,
+   "text": "IT TOOK TWO YEARS FOR THIS ONE COURSE TO FINISH SETTLING. DO NOT LEAN ON IT."
+  },
+  {
+   "id": "bd-s3-sealed",
+   "section": "s3",
+   "face": "wall",
+   "x": 6.6,
+   "y": -64,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.6,
+   "text": "THE NINTH WAS SEALED THREE TIMES: WITH LIME, WITH IRON, WITH THE NINE."
+  },
+  {
+   "id": "bd-s3-cage",
+   "section": "s3",
+   "face": "wall",
+   "x": -14.25,
+   "y": -58.6,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "THE CAGE CAME UP FORTY-ONE TIMES. IT WENT DOWN FORTY-TWO."
+  },
+  {
+   "id": "bd-s3-measure",
+   "section": "s3",
+   "face": "wall",
+   "x": -29,
+   "y": -76.5,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.2,
+   "style": "fresh",
+   "text": "MEASURED HERE: FOURTEEN HANDS AND A KNOCK. NOT YET."
+  },
+  {
+   "id": "bd-s3-count",
+   "section": "s3",
+   "face": "wall",
+   "x": -20.25,
+   "y": -88,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.6,
+   "text": "THE GALLERY WAS CLOSED FOR NINE YEARS. WHEN IT WAS OPENED THE COUNT WAS HIGHER."
+  },
+  {
+   "id": "bd-s3-gear",
+   "section": "s3",
+   "face": "wall",
+   "x": -18,
+   "y": -88.2,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "style": "cut",
+   "text": "THE GEAR WAS TURNED BY HAND FOR SIX YEARS. THEN IT WAS TURNED FROM INSIDE."
+  },
+  {
+   "id": "bd-s3-small",
+   "section": "s3",
+   "face": "floor",
+   "x": -29,
+   "y": -96,
+   "z": -4.6,
+   "yaw": 3.141592653589793,
+   "w": 2.2,
+   "style": "cut",
+   "text": "FORGIVE THE SMALL STONES IN THIS COURSE."
+  },
+  {
+   "id": "bd-s4-week",
+   "section": "s4",
+   "face": "wall",
+   "x": -12.3,
+   "y": -104.5,
+   "z": -18.6,
+   "yaw": 1.5707963267948966,
+   "w": 1.8,
+   "style": "cut",
+   "text": "THIS LAMP WENT OUT ONCE. WE DO NOT SPEAK OF THE WEEK THAT FOLLOWED."
+  },
+  {
+   "id": "bd-s4-who",
+   "section": "s4",
+   "face": "wall",
+   "x": -19.7,
+   "y": -104.5,
+   "z": -18.6,
+   "yaw": -1.5707963267948966,
+   "w": 1.8,
+   "style": "cut",
+   "text": "WHO LIT THIS LAMP? WHO IS STILL HOLDING IT?"
+  },
+  {
+   "id": "bd-s4-knock",
+   "section": "s4",
+   "face": "floor",
+   "x": -16,
+   "y": -105,
+   "z": -13.3,
+   "yaw": 0,
+   "w": 2.4,
+   "style": "cut",
+   "text": "KNOCK ONCE: WE ARE HERE. KNOCK TWICE: WE ARE COMING. NEVER KNOCK THREE."
+  },
+  {
+   "id": "bd-s4-vault",
+   "section": "s4",
+   "face": "wall",
+   "x": -3.4,
+   "y": -98.4,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "THE VAULT HOLDS NINE THOUSAND. IT WAS BUILT FOR SIX."
+  },
+  {
+   "id": "bd-s4-eleven",
+   "section": "s4",
+   "face": "wall",
+   "x": -13.4,
+   "y": -123.6,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "WE COUNTED THE KNOCKS FOR ELEVEN YEARS. THEY ADD UP TO A NAME."
+  },
+  {
+   "id": "bd-s4-listen",
+   "section": "s4",
+   "face": "wall",
+   "x": -12,
+   "y": -126.6,
+   "z": 4.2,
+   "yaw": -1.5707963267948966,
+   "w": 2.4,
+   "text": "~DO NOT LISTEN.~ LISTEN. IT IS THE ONLY WARNING YOU WILL GET."
+  },
+  {
+   "id": "bd-s5-gathers",
+   "section": "s5",
+   "face": "wall",
+   "x": -7.1,
+   "y": -150.4,
+   "z": -9,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "IT DOES NOT HUNT THE WOUNDED. IT GATHERS THEM."
+  },
+  {
+   "id": "bd-s5-second",
+   "section": "s5",
+   "face": "wall",
+   "x": -16,
+   "y": -168.75,
+   "z": 3.5,
+   "yaw": -1.5707963267948966,
+   "w": 2.2,
+   "style": "cut",
+   "text": "DO NOT BUILD THE SECOND STAIR AGAIN."
+  },
+  {
+   "id": "bd-s5-ours",
+   "section": "s5",
+   "face": "wall",
+   "x": -8.5,
+   "y": -176.75,
+   "z": 4,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "NINE WENT DOWN. NINE WERE COUNTED IN THE WALL. ONE OF THE NINE WAS NOT OURS."
+  },
+  {
+   "id": "bd-s5-names",
+   "section": "s5",
+   "face": "wall",
+   "x": -15.5,
+   "y": -192.75,
+   "z": -4,
+   "yaw": 3.141592653589793,
+   "w": 2.2,
+   "style": "cut",
+   "text": "WE TRIED TO NAME IT. IT HAS TOO MANY."
+  },
+  {
+   "id": "bd-s5-keystone",
+   "section": "s5",
+   "face": "wall",
+   "x": -16.1,
+   "y": -198.4,
+   "z": 9,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "HE KNOCKED BACK. HE IS THE KEYSTONE NOW."
+  },
+  {
+   "id": "bd-s6-third",
+   "section": "s6",
+   "face": "floor",
+   "x": -12.6,
+   "y": -208,
+   "z": -2.4,
+   "yaw": 0,
+   "w": 2.4,
+   "style": "cut",
+   "text": "THERE WAS A THIRD WAY. IT WENT UP. WE FILLED IT."
+  },
+  {
+   "id": "bd-s6-steps",
+   "section": "s6",
+   "face": "wall",
+   "x": -29.1,
+   "y": -216,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "THE STAIR HAS 1,440 STEPS. COUNT THEM. IF YOU COUNT 1,441, STOP."
+  },
+  {
+   "id": "bd-s6-ticking",
+   "section": "s6",
+   "face": "wall",
+   "x": -34,
+   "y": -221.4,
+   "z": -7.2,
+   "yaw": -1.5707963267948966,
+   "w": 2.2,
+   "style": "cut",
+   "text": "IF YOU HEAR TICKING, YOU ARE WHOLE. BE LESS WHOLE."
+  },
+  {
+   "id": "bd-s6-measured",
+   "section": "s6",
+   "face": "wall",
+   "x": -29.1,
+   "y": -228,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.4,
+   "style": "fresh",
+   "text": "MEASURED AGAIN: FOURTEEN HANDS AND A KNOCK. STILL TOO AFRAID."
+  },
+  {
+   "id": "bd-s6-rest",
+   "section": "s6",
+   "face": "wall",
+   "x": -22.5,
+   "y": -239.4,
+   "z": -11,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "REST UNDER THE LAMP. DO NOT REST LONGER THAN THE LAMP."
+  },
+  {
+   "id": "bd-s6-late",
+   "section": "s6",
+   "face": "wall",
+   "x": -26.5,
+   "y": -251.4,
+   "z": 11,
+   "yaw": 0,
+   "w": 2.4,
+   "text": "THE LATE ARE NOT PUNISHED. THEY ARE USED SOONER."
+  },
+  {
+   "id": "bd-s6-throat",
+   "section": "s6",
+   "face": "wall",
+   "x": -11,
+   "y": -221.5,
+   "z": -3,
+   "yaw": -1.5707963267948966,
+   "w": 3.2,
+   "text": "THE THROAT WAS CUT IN FORTY YEARS. IT FILLED IN THREE DAYS."
+  },
+  {
+   "id": "bd-s7-where",
+   "section": "s7",
+   "face": "wall",
+   "x": -4,
+   "y": -286,
+   "z": -13,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "WHERE DO THE FALLEN GO? WHERE ELSE WOULD WE PUT THEM?"
+  },
+  {
+   "id": "bd-s7-cut",
+   "section": "s7",
+   "face": "wall",
+   "x": -36,
+   "y": -286,
+   "z": -9.7,
+   "yaw": -1.5707963267948966,
+   "w": 2.4,
+   "text": "WHAT WE #DID TO THEM# HERE, WE DID WITH LOVE."
+  },
+  {
+   "id": "bd-s7-left",
+   "section": "s7",
+   "face": "wall",
+   "x": 8.7,
+   "y": -286,
+   "z": 13,
+   "yaw": 0,
+   "w": 2.6,
+   "text": "THE NAVE WAS NOT DESIGNED. IT IS WHAT WAS LEFT WHEN WE STOPPED ADDING."
+  },
+  {
+   "id": "bd-s7-columns",
+   "section": "s7",
+   "face": "wall",
+   "x": -4,
+   "y": -381.6,
+   "z": -40,
+   "yaw": 3.141592653589793,
+   "w": 4,
+   "text": "EACH COLUMN IS A FAMILY. THE TALL ONE IS STILL GROWING."
+  },
+  {
+   "id": "bd-s7-spire",
+   "section": "s7",
+   "face": "floor",
+   "x": -22.6,
+   "y": -349,
+   "z": 28.4,
+   "yaw": 0,
+   "w": 1.6,
+   "style": "scratch",
+   "text": "THE SPIRE POINTS HOME."
+  },
+  {
+   "id": "bd-s8-books",
+   "section": "s8",
+   "face": "wall",
+   "x": 13.6,
+   "y": -426,
+   "z": -20,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "text": "ONE LIGHT UP. ONE STILL ONE DOWN. THE BOOKS MUST BALANCE."
+  },
+  {
+   "id": "bd-s8-fed",
+   "section": "s8",
+   "face": "wall",
+   "x": 0.4,
+   "y": -467.4,
+   "z": 20,
+   "yaw": 0,
+   "w": 2.2,
+   "text": "~WE FED IT.~ NO. WE WERE FED."
+  },
+  {
+   "id": "bd-s8-she",
+   "section": "s8",
+   "face": "wall",
+   "x": 13,
+   "y": -509.4,
+   "z": 2.6,
+   "yaw": 1.5707963267948966,
+   "w": 2.6,
+   "text": "SHE CARRIED IT UP IN THE NIGHT. SHE LEFT THE PLACE EMPTY. BY MORNING THE WALLS WERE WALKING."
+  },
+  {
+   "id": "bd-s8-grate",
+   "section": "s8",
+   "face": "wall",
+   "x": -12,
+   "y": -553,
+   "z": 6.5,
+   "yaw": -1.5707963267948966,
+   "w": 2.2,
+   "style": "cut",
+   "text": "THE GRATE IS NOT TO KEEP IT OUT."
+  },
+  {
+   "id": "bd-s8-short",
+   "section": "s8",
+   "face": "wall",
+   "x": -9.4,
+   "y": -553.4,
+   "z": 10,
+   "yaw": 0,
+   "w": 2.2,
+   "style": "fresh",
+   "text": "TOO SHORT. TOO WIDE. TOO AFRAID. NEXT."
+  },
+  {
+   "id": "bd-s8-arms",
+   "section": "s8",
+   "face": "floor",
+   "x": -2,
+   "y": -556,
+   "z": 6.4,
+   "yaw": 3.141592653589793,
+   "w": 2.4,
+   "style": "cut",
+   "text": "KEEP YOUR ARMS AS THEY ARE. IT IS CUT THAT WAY."
+  },
+  {
+   "id": "bd-ch-figure",
+   "section": "s8",
+   "group": "chamber",
+   "face": "wall",
+   "x": -5.1,
+   "y": -554.9,
+   "z": 27,
+   "yaw": 0,
+   "w": 1.05,
+   "aspect": 0.5,
+   "style": "outline",
+   "text": "XLI",
+   "marks": [
+    [
+     "HOB",
+     0.86
+    ],
+    [
+     "HALLAM",
+     0.95
+    ],
+    [
+     "MAB",
+     0.83
+    ],
+    [
+     "WENNA",
+     0.79
+    ],
+    [
+     "TAMSIN",
+     0.9
+    ],
+    [
+     "COLL",
+     0.97
+    ],
+    [
+     "ISOLDE",
+     0.75
+    ]
+   ]
+  },
+  {
+   "id": "bd-ch-fits",
+   "section": "s8",
+   "group": "chamber",
+   "face": "wall",
+   "x": -2.4,
+   "y": -549.6,
+   "z": 27,
+   "yaw": 0,
+   "w": 3.2,
+   "style": "fresh",
+   "text": "MEASURED FORTY TIMES. CUT ONCE. IT FITS NOW."
+  },
+  {
+   "id": "bd-ch-whole",
+   "section": "s8",
+   "group": "chamber",
+   "face": "floor",
+   "x": -3,
+   "y": -556,
+   "z": 15.6,
+   "yaw": 3.141592653589793,
+   "w": 2.8,
+   "style": "cut",
+   "text": "FOR THE ONE WHO COMES DOWN WHOLE."
+  },
+  {
+   "id": "bd-ch-stair",
+   "section": "s8",
+   "group": "chamber",
+   "face": "ceil",
+   "x": -3,
+   "y": -548,
+   "z": 18.5,
+   "yaw": 3.141592653589793,
+   "w": 3.2,
+   "style": "cut",
+   "text": "THERE IS NO STAIR UP. THERE NEVER NEEDED TO BE."
+  },
+  {
+   "id": "bd-ch-ledger",
+   "section": "s8",
+   "group": "chamber",
+   "face": "wall",
+   "x": -9,
+   "y": -553.4,
+   "z": 19,
+   "yaw": -1.5707963267948966,
+   "w": 2,
+   "style": "cut",
+   "text": "I TO XL: NOT YET.\nXLI:"
+  }
+ ]
+}

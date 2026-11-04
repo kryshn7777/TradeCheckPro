@@ -39,7 +39,7 @@ import { LanternHalo } from './lanternHalo.js';
 import { GodRays } from './godRays.js';
 import { WindGusts } from './windGusts.js';
 
-const DUST_COUNT = 1100;
+const DUST_COUNT = 650; // motes (was 1100): fewer specks in the air in front of the eyes
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
 const BURST_MAX = 360;
 const DEBRIS_MAX = 80; // × 80 triangles (worst case 6.4k, typically < 2k)
@@ -165,7 +165,7 @@ export class FX {
         uOffset: { value: new THREE.Vector3() },
         uHalf: { value: DUST_HALF },
         uTime: { value: 0 },
-        uMoteGain: { value: 1 },
+        uMoteGain: { value: 0.5 }, // dimmer motes: less dirt on the view (was 1)
       },
       this.lighting.uniforms,
     );
@@ -201,7 +201,7 @@ export class FX {
   vec3 transformed = mod( atP - uCenter + uHalf, 2.0 * uHalf ) - uHalf;
   float atR = length( transformed );
   vDustEdge = 1.0 - smoothstep( 0.6, 1.0, atR / uHalf );
-  vDustEdge *= smoothstep( 0.3, 0.95, atR );
+  vDustEdge *= smoothstep( 0.9, 2.2, atR ); // no specks right in front of the eyes (was 0.3..0.95 m)
   transformed += uCenter;
   vec3 atV = normalize( transformed - cameraPosition );
   vec3 atLit = uAmbient * 0.25 + atLantern( transformed, atV, 0.0, 1.6 ) * 0.9 + atEnvLights( transformed, atV, 0.0 ) * 0.8 + atGlow( transformed ) * 0.6;
