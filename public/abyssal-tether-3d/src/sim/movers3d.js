@@ -98,6 +98,8 @@ export function normalizeMover(raw, key) {
     cum: null,
     speed: 0,
     pingpong: false,
+    once: o.once === true, // a lift that makes ONE trip, starting at `startAt` (a scripted lift: the director sets it)
+    startAt: num(o.startAt, 1e9),
   };
   if (k === 2) {
     const to = o.to || {};
@@ -203,7 +205,15 @@ function poseRef(m, t, out) {
     if (c < 0) c += per;
     let f = 0; // 0 at the start end .. 1 at the far end
     let vf = 0; // d f / dt
-    if (c < D) f = 0;
+    if (m.once) {
+      // one trip from `startAt`: waits at the start, rides, stays at the far end
+      const e = t - m.startAt;
+      if (e > 0 && e < T) {
+        const p = profile(e / T, m.ramp);
+        f = p[0];
+        vf = p[1] / T;
+      } else if (e >= T) f = 1;
+    } else if (c < D) f = 0;
     else if (c < D + T) {
       const p = profile((c - D) / T, m.ramp);
       f = p[0];

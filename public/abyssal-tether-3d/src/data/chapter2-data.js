@@ -92,6 +92,7 @@ export function buildChapter2() {
       const topY = tops[kk];
       if (topY > yTop || topY <= yBottom) continue;
       if (b.id === 'c2-12' && topY < yTop - 66) continue; // the stair ends at the Well rim: the arena (data/chapter2-sets.js) takes over
+      if (b.id === 'c2-13' && topY < yBottom + 26) continue; // ... and the Soot Throat's stair ends at its lip: the chain takes you down into the Mere
       const a = kk * TURN;
       const cx = r2(RADIUS * Math.cos(a));
       const cz = r2(RADIUS * Math.sin(a));
@@ -244,17 +245,16 @@ export function buildChapter2() {
     });
   }
 
-  const last = ledges[ledges.length - 1];
-  const bottom = -top;
-  // the end: a wide floor under the last ledge (the black water of the hook is the next chapter), the goal on it
-  solids.push({ id: 'c2-end-floor', minX: -SHAFT, maxX: SHAFT, minY: bottom - 2, maxY: bottom, minZ: -SHAFT, maxZ: SHAFT, kind: 'stone' });
+  // the end: the black water of the Mere under the chain platform (data/chapter2-sets.js addSootThroat); the goal is the splash
+  const water = c2.hook.water.y;
+  const bottom = water;
   const first = ledges[0];
   return {
     name: 'Lamphold',
     chapter: 2,
     depthOffset: CHAPTER2_DEPTH_OFFSET,
     spawn: { x: first.x, y: r2(first.y + 0.4), z: first.z, yaw: 0 },
-    goal: { minX: -8, maxX: 8, minY: bottom, maxY: bottom + 6, minZ: -8, maxZ: 8 },
+    goal: { minX: -60, maxX: 60, minY: water - 2, maxY: water + 1.2, minZ: -60, maxZ: 60 },
     gate: { minX: -3, maxX: 3, minY: bottom, maxY: bottom + 8, minZ: 10, maxZ: 10.5 },
     stillLamp: { x: 0, y: bottom + 2, z: 0 },
     sections,

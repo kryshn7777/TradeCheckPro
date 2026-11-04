@@ -131,12 +131,16 @@ const D = LEVEL_DATA_CH2;
   ok(tried >= 12 && landed === tried, `walking off a ledge in the real physics lands on the next ledge (${landed} of ${tried} sampled, from every beat)`);
 }
 
-// 4. The end.
+// 4. The end: the Mere.
 {
-  const last = D.ledges[D.ledges.length - 1];
-  const floor = D.solids.find((s) => s.id === 'c2-end-floor');
-  ok(floor && floor.maxY === -1250 && last.y - floor.maxY <= 6.0001 && last.y - floor.maxY > 0, `the end floor (y = -1250) is under the last ledge (${(last.y - floor.maxY).toFixed(2)} m)`);
-  ok(D.goal.minY === floor.maxY && D.goal.maxY > floor.maxY, 'the goal is on the end floor');
+  const H = D.c2.hook;
+  const water = D.solids.find((s) => s.id === 'c2-13-water');
+  const lastL = D.ledges[D.ledges.length - 1];
+  ok(water && water.maxY === H.water.y && water.fixture === 'water-c2-13', 'the Mere is an invisible water plate (a fixture solid the director arms)');
+  ok(D.goal.maxY < H.water.y + 2 && D.goal.minY < H.water.y && D.goal.minY > H.water.y - 4, 'the goal is the splash on the water, not the platform above it');
+  ok(lastL.section === 'c2-13' && lastL.id === H.lip.id && lastL.y - H.chain.y < 0.01, `the stair ends at the lip (${lastL.id}); the chain platform starts level with it`);
+  ok(H.chain.y - H.water.y - H.chain.drop === 6, `the chain stops ${H.chain.y - H.chain.drop - H.water.y} m over the water (36 m down)`);
+  ok(Math.abs(H.water.y) > 1250 && Math.abs(H.water.y) < 1275, `the water is at ${H.water.y} m (the chapter's nominal 1,250 m, plus the cavern the walls end over)`);
 }
 
 // 4. The machinery.
@@ -159,7 +163,7 @@ const D = LEVEL_DATA_CH2;
       }
     }
   }
-  ok(kinds.pendulum >= 9 && kinds.lift === 5 && kinds.path === 3 && kinds.orbit === 2, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
+  ok(kinds.pendulum >= 9 && kinds.lift === 6 && kinds.path === 3 && kinds.orbit === 2, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
   ok(worst <= 13.1 && worst >= 12.9, `the fastest carried ring peaks at ${worst.toFixed(1)} m/s (the express cage: the chapter's cap is 13)`);
   ok(inside, 'every carried ring stays inside the pit over its whole cycle');
   const exp = D.movers.find((m) => m.id === 'mov-c2-7-exp0');

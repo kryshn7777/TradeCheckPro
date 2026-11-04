@@ -185,7 +185,7 @@ export function addSnuffing(ctx) {
   const ringIds = ['c2-12-cage-ringA', 'c2-12-cage-ringB'];
   const ringOff = lc.x * lc.x > lc.z * lc.z ? { x: 0, z: 3.4 } : { x: 3.4, z: 0 };
   ringIds.forEach((id, k) => ctx.anchors.push({ id, x: r2(shaftX + (k ? -1 : 1) * ringOff.x), y: r2(cageTop + 2.2), z: r2(shaftZ + (k ? -1 : 1) * ringOff.z), kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' }));
-  ctx.movers.push({ id: 'mov-c2-12-cage', kind: 'lift', section: 'c2-12', x: shaftX, y: cageTop, z: shaftZ, to: { x: shaftX, y: r2(cageTop - drop), z: shaftZ }, travel: 16, dwell: 1e5, ramp: 0.5, parts: 'lift', carry: { anchors: ringIds, decor: [] }, scripted: true });
+  ctx.movers.push({ id: 'mov-c2-12-cage', kind: 'lift', section: 'c2-12', x: shaftX, y: cageTop, z: shaftZ, to: { x: shaftX, y: r2(cageTop - drop), z: shaftZ }, travel: 16, dwell: 1e5, ramp: 0.5, once: true, parts: 'lift', carry: { anchors: ringIds, decor: [] }, scripted: true });
   // the shutter across the foot of the shaft: 2.5 m over the lip, open at first (inactive), closes when the last lamp dies
   ctx.solids.push({ id: 'c2-12-shutter', minX: r2(lc.x - 5), maxX: r2(lc.x + 5), minY: r2(lipTop + 2), maxY: r2(lipTop + 3), minZ: r2(lc.z - 5), maxZ: r2(lc.z + 5), kind: 'crumble', life: 1e9, tag: 'shutter' });
 
@@ -268,17 +268,43 @@ function connect(ctx, id, a, b, top) {
 }
 
 /**
- * II-13 THE SOOT THROAT (c2-13, local y -1190 .. -1250): the true rest, then the hook. A landing at the foot of the shaft with the last waking lamp; a platform
- * at the Throat's lip (the plaque), and the chain. The black water of the Mere is the director's sequence (its own view): data here is only the geometry the
- * player stands on and the point the chain lowers them from.
+ * II-13 THE SOOT THROAT (c2-13, local y -1190 .. -1250): the true rest, then the hook. The stair stops at a lip (its sixth ledge); beside the lip a chain
+ * platform (2.4 x 2.4 m, a lift that makes ONE trip when the director starts it) lowers 36 m past the end of the pit's walls into the Mere's cavern and
+ * stops 6 m over the black water. The water is an invisible plate (a fixture solid the director arms) that catches a jump: the first fall that does not
+ * kill. The Mere itself (water, the lanterns, the Ushers' stems, the aisle) is render/mereView.js and the sequence sim/hook3d.js.
  */
 export function addSootThroat(ctx) {
   const b = ctx.sec('c2-13');
   const gl = ctx.ledges.filter((l) => l.section === 'c2-13');
-  const first = gl[0];
-  const lip = { x: 0, y: r2(b.yBottom + 14), z: 0 };
-  // the platform at the Throat's lip: wide, near the goal's floor
-  box(ctx, 'c2-13-lip', -8, 8, lip.y - 1, lip.y, -8, 8, 'stone');
-  ctx.lights.push({ x: 0, y: r2(lip.y + 2), z: 0, color: '#c08040', intensity: 1.0, range: 14, flicker: 0.2 });
-  ctx.c2.hook = { section: 'c2-13', lip, first: first ? { x: first.x, y: first.y, z: first.z } : null, bottom: b.yBottom };
+  const lastL = gl[gl.length - 1];
+  const lipY = lastL.y;
+  // the chain platform sits just past the lip's edge, toward the pit's centre (along the dominant axis)
+  const sx = Math.abs(lastL.x) >= Math.abs(lastL.z) ? (lastL.x > 0 ? -1 : 1) : 0;
+  const sz = sx === 0 ? (lastL.z > 0 ? -1 : 1) : 0;
+  const half = 1.2;
+  const cx = r2(lastL.x + sx * (5 + half + 0.15));
+  const cz = r2(lastL.z + sz * (5 + half + 0.15));
+  const drop = 36;
+  const waterY = r2(lipY - drop - 6);
+  // the pit's walls end 14 m under the lip: past them the Throat opens into the Mere's cavern
+  const wallsEndY = r2(lipY - 14);
+  for (const w of ['w', 'e', 'n', 's']) {
+    const ws = ctx.solids.find((q) => q.id === `c2-13-${w}`);
+    if (ws) ws.minY = wallsEndY;
+  }
+  ctx.movers.push({ id: 'mov-c2-13-chain', kind: 'lift', section: 'c2-13', x: cx, y: lipY, z: cz, to: { x: cx, y: r2(lipY - drop), z: cz }, travel: 36, dwell: 1e5, ramp: 0.08, once: true, parts: 'lift', size: half * 2, carry: { anchors: [], decor: [] }, scripted: true });
+  // the water: a plate that catches a fall (invisible; the director arms it)
+  ctx.solids.push({ id: 'c2-13-water', minX: -60, maxX: 60, minY: r2(waterY - 1), maxY: waterY, minZ: -60, maxZ: 60, kind: 'stone', fixture: 'water-c2-13' });
+  ctx.lights.push({ x: lastL.x, y: r2(lipY + 2.2), z: lastL.z, color: '#c08040', intensity: 1.0, range: 14, flicker: 0.2 });
+  ctx.c2.hook = {
+    section: 'c2-13',
+    lip: { x: lastL.x, y: lipY, z: lastL.z, id: lastL.id },
+    chain: { moverId: 'mov-c2-13-chain', x: cx, y: lipY, z: cz, half, drop, travel: 36, clickEvery: 3 },
+    water: { y: waterY },
+    wallsEndY,
+    trigger: { x: cx, y: lipY, z: cz, half: half + 0.4 }, // standing on the platform starts it (after the rest)
+    aisle: { x: 1, z: 0 },
+    seat: { dist: 180 },
+    bottom: b.yBottom,
+  };
 }
