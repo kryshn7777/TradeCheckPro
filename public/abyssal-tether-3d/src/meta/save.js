@@ -51,6 +51,7 @@
  */
 
 import { DIFFICULTY } from '../sim/config3d.js';
+import { CHAPTER2_BEATS, CHAPTER2_DEPTH_OFFSET } from '../data/chapter2-data.js';
 
 export const SAVE_SCHEMA = 3;
 export const DB_NAME = 'abyssalTether3d';
@@ -463,6 +464,8 @@ export class SaveStore {
     this.legacyGetItem = legacyGetItem === undefined ? defaultLegacyGetItem() : legacyGetItem;
     this.now = now;
     this.debounceMs = debounceMs;
+    /** The chapter the records, splits and the Continue slot belong to right now ('ch1' = The Underspire, 'ch2' = Lamphold): game.js sets it on a chapter switch. */
+    this.activeChapter = 'ch1';
     this.profile = defaultProfile(now());
     this.loaded = false;
     this.info = { source: 'fresh', migrated: false, repaired: false, newer: false, primaryOk: null, errors: 0 };
@@ -623,15 +626,15 @@ export class SaveStore {
   }
 
   // ---- reads --------------------------------------------------------------------------------------------------
-  chapter(id = 'ch1') {
+  chapter(id = this.activeChapter) {
     return this.profile.chapters[id] || null;
   }
-  records(diff, chapter = 'ch1') {
+  records(diff, chapter = this.activeChapter) {
     const ch = this.chapter(chapter);
     const r = ch && ch.byDiff[diff];
     return r ? Object.assign({}, r, { sections: cleanSections(r.sections) }) : emptyDiffRecord();
   }
-  _diff(diff, chapter = 'ch1') {
+  _diff(diff, chapter = this.activeChapter) {
     const ch = this.profile.chapters[chapter] || (this.profile.chapters[chapter] = emptyChapter());
     return ch.byDiff[diff] || (ch.byDiff[diff] = emptyDiffRecord());
   }
@@ -657,9 +660,9 @@ export class SaveStore {
       const rec = this._diff(difficulty);
       rec.runs++;
       p.totals.runs++;
-      const ch = this.chapter();
+      const ch = this.chapter() || (p.chapters[this.activeChapter] = emptyChapter());
       if (ch) ch.reached = true;
-      p.run = savesRun ? cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time: 0, deaths: 0, deepest: checkpoint.y, savedAt: this.now(), kind: 'start' }) : null;
+      p.run = savesRun ? cleanRun({ chapter: this.activeChapter, difficulty, checkpoint, section, time: 0, deaths: 0, deepest: checkpoint.y, savedAt: this.now(), kind: 'start' }) : null;
       return true;
     }, 'run:start');
   }
@@ -667,7 +670,7 @@ export class SaveStore {
   /** A checkpoint was reached (or progress worth keeping): the Continue point. */
   checkpointReached({ difficulty, checkpoint, section, time, deaths, deepest, objectives }) {
     return this.update((p) => {
-      const run = cleanRun({ chapter: 'ch1', difficulty, checkpoint, section, time, deaths, deepest, objectives, savedAt: this.now(), kind: 'checkpoint' });
+      const run = cleanRun({ chapter: this.activeChapter, difficulty, checkpoint, section, time, deaths, deepest, objectives, savedAt: this.now(), kind: 'checkpoint' });
       if (!run) return false;
       p.run = run;
       return true;
@@ -721,7 +724,7 @@ export class SaveStore {
   }
 
   /** The best splits and medals of one difficulty: { <section id>: { best, medal } } (a copy). */
-  sectionRecords(diff, chapter = 'ch1') {
+  sectionRecords(diff, chapter = this.activeChapter) {
     const ch = this.chapter(chapter);
     const r = ch && ch.byDiff[diff];
     return r && isObj(r.sections) ? cleanSections(r.sections) : {};
@@ -761,7 +764,7 @@ export class SaveStore {
         rec.completions++;
         if (posNum(time) && (rec.best == null || time < rec.best)) rec.best = time;
         if (rec.fewestDeaths == null || deaths < rec.fewestDeaths) rec.fewestDeaths = Math.floor(nonNeg(deaths));
-        const ch = this.chapter();
+        const ch = this.chapter() || (p.chapters[this.activeChapter] = emptyChapter());
         ch.completed = true;
         ch.completions++;
         const t = this.now();
@@ -898,14 +901,21 @@ export class SaveService {
     return this.store.profile.settings;
   }
 
-  records(diff) {
-    return this.store.records(diff);
+  records(diff, chapter) {
+    return this.store.records(diff, chapter);
   }
-  sectionRecords(diff) {
-    return this.store.sectionRecords(diff);
+  sectionRecords(diff, chapter) {
+    return this.store.sectionRecords(diff, chapter);
   }
-  chapter(id = 'ch1') {
+  chapter(id) {
     return this.store.chapter(id);
+  }
+  /** Which chapter the live run, the records and the splits belong to: 'ch1' | 'ch2'. */
+  setActiveChapter(n) {
+    this.store.activeChapter = Number(n) === 2 ? 'ch2' : 'ch1';
+  }
+  get activeChapter() {
+    return this.store.activeChapter;
   }
   get profile() {
     return this.store.profile;
@@ -917,7 +927,7 @@ export class SaveService {
   /** The Continue slot, shaped for the menu; null when there is nothing to continue. */
   continueInfo() {
     const run = this.store.profile.run;
-    if (!run || run.chapter !== 'ch1') return null;
+    if (!run || (run.chapter !== 'ch1' && run.chapter !== 'ch2')) return null;
     if (run.kind === 'start' && !(run.time > 0)) return null; // a run that never left the start has nothing to continue
     const diff = DIFFICULTY[run.difficulty];
     return {
@@ -925,17 +935,22 @@ export class SaveService {
       difficulty: run.difficulty,
       label: (diff && diff.label) || run.difficulty,
       section: run.section,
-      sectionName: this._sectionName(run.section),
+      sectionName: this._sectionName(run.section, run.chapter),
       checkpoint: Object.assign({}, run.checkpoint),
       time: run.time,
       deaths: run.deaths,
-      depthMeters: Math.max(0, Math.round(-run.deepest)),
+      depthMeters: Math.max(0, Math.round(-run.deepest)), // chapter-local (the game's `deepest`); the readout adds depthOffset
+      depthOffset: run.chapter === 'ch2' ? CHAPTER2_DEPTH_OFFSET : 0,
       savedAt: run.savedAt,
       objectives: Array.isArray(run.objectives) ? run.objectives.slice() : [],
     };
   }
 
-  _sectionName(i) {
+  _sectionName(i, chapter = 'ch1') {
+    if (chapter === 'ch2') {
+      const b = CHAPTER2_BEATS[i];
+      return b ? b.name : null;
+    }
     try {
       const lvl = this.game.level;
       const s = lvl && lvl.sections && lvl.sections[i];

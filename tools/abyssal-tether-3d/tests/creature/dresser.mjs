@@ -508,7 +508,7 @@ for (const [diff, gap] of [
     'up: between 50 and 75 (the scent gone) neither hunts',
   );
   ok(upRows[upRows.length - 1].dr && !upRows[upRows.length - 1].ms, 'at full health: the Dresser hunts, the Mason does not');
-  // the regen clock: a single hit to 50 % on Normal, then it can see you again 6 + (75 - 50) / 5 = 11 s later
+  // the regen clock: a single hit to 50 % on Normal, then it can see you again 5 + (75 - 50) / 6 = 9.17 s later (the regen is 6 % a second after 5 s since the durability pass)
   const h2 = new Health3D(D, bus);
   const d2 = new Dresser3D(L, D, bus, { seed: 4 });
   d2.setGate(true);
@@ -523,7 +523,7 @@ for (const [diff, gap] of [
     t2 += 1 / 60;
     if (d2.armed) back = t2;
   }
-  ok(Math.abs(back - 11) < 0.1, `the regen clock: hit to 50 % on Normal, whole again ${back.toFixed(2)} s later (6 + 25 / 5 = 11 s)`);
+  ok(Math.abs(back - (5 + 25 / 6)) < 0.1, `the regen clock: hit to 50 % on Normal, whole again ${back.toFixed(2)} s later (5 + 25 / 6 = 9.17 s)`);
 }
 
 // ---- the view's budget ---------------------------------------------------------------------------------------------------

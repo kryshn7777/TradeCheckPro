@@ -590,6 +590,7 @@ export class Creature3D {
       spine: new Float32Array(SEG * 3),
       up: new Float32Array(SEG * 3),
       scale: new Float32Array(SEG),
+      rest: new Float32Array(SEG), // per spine point: the REST length of the link before it (m; [0] = [1]); the view sizes the blocks from it, not from the live chord
       limbs: LIMBS.map((def, i) => makeLimb(def, i, this._rand, this._scale)),
       size: sc, // 1 = the Mason; the renderer scales the rig by this
       frondOpen: 0.3,
@@ -608,6 +609,8 @@ export class Creature3D {
       if (i > 0) off += this._spacing * 0.5 * (taperAt(i - 1) + taperAt(i));
       this._segOff[i] = off;
     }
+    for (let i = 1; i < SEG; i++) this.body.rest[i] = this._segOff[i] - this._segOff[i - 1];
+    this.body.rest[0] = this.body.rest[1];
     this.bodyLength = off;
     this._trail = new Float64Array(T.trailCap * 3);
     this._trailN = new Float64Array(T.trailCap * 3);

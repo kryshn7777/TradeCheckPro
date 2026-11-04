@@ -26,6 +26,8 @@
  *     while grounded the feet are IK-planted at the clip's foot positions (so a lowered pelvis bends the knees); hanging tilts
  *     the pelvis so the legs trail opposite to the velocity and lean along the rope.
  *   * the pack and the pouches get a damped spring from the body's acceleration.
+ *   * FREE FALL (render/fallPose.js, weight `game.fallPose.w`): the legs trail up and back, the Fall clip kicks faster, the chest is buffeted, the pack and
+ *     the pouches are lifted and flapped by the airstream (and on the desktop the virtual hands flail: FallPose).
  */
 
 import * as THREE from 'three';
@@ -35,6 +37,7 @@ import { loadGLB } from './glbLoad.js';
 import { patchGearSurface } from './gearSurface.js';
 import { injectToon } from './materials.js';
 import { addOutline, removeOutline } from './outline.js';
+import { FALL_POSE, flutter } from './fallPose.js'; // the free-fall pose (the weight comes from game.fallPose)
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -131,6 +134,9 @@ export class BodyView {
     this._stillT = 0;
     this._ikW = 1;
     this._hangW = 0;
+    this._fallW = 0; // the free-fall pose weight and clock (fallPose.js), set in update()
+    this._fallT = 0;
+    this._ex = [0, 0]; // scratch: the extra spring targets
     this._airT = 0;
     this._wasAir = false;
     this._airVy = 0;
@@ -458,6 +464,12 @@ export class BodyView {
       if (a) a.setEffectiveWeight(this.w[n] < 0.001 ? 0 : this.w[n]);
     }
     if (this.actions.Run) this.actions.Run.setEffectiveTimeScale(clamp(speedH / T.runRef, 0.5, 1.9) * this._runDir);
+    const fp = game.fallPose;
+    const fw = fp && air && ropes === 0 ? fp.w : 0; // the free-fall pose weight (0 on a line / a hold / the ground)
+    const ft = fp ? fp.t : 0;
+    this._fallW = fw;
+    this._fallT = ft;
+    if (this.actions.Fall) this.actions.Fall.setEffectiveTimeScale(1 + FALL_POSE.kick * fw);
     this._ikW += ((p.grounded || !air ? 1 : 0) - this._ikW) * Math.min(1, dt * T.ikFade);
     this._hangW += ((air && ropes > 0 ? 1 : 0) - this._hangW) * Math.min(1, dt * 8);
     this.mixer.update(dt);
@@ -507,6 +519,21 @@ export class BodyView {
       worldQuat(pel.parent, _qc).invert();
       pel.quaternion.copy(_qc).multiply(_qa);
     }
+    // free fall: the legs trail up and back (belly to the ground), wavering a little in the airstream
+    if (fw > 0.01) {
+      const bl = FALL_POSE.legTrail * fw;
+      _v.set(0, -1, 0).multiplyScalar(1 - 0.9 * fw).addScaledVector(_bfwd, -0.9 * fw);
+      _v.y += 0.25 * fw;
+      _v.x += flutter(ft, 3, 0.7) * 0.18 * fw;
+      _v.z += flutter(ft, 4, 0.7) * 0.18 * fw;
+      _v.normalize();
+      _qa.setFromUnitVectors(_down, _v);
+      _qb.identity().slerp(_qa, bl);
+      worldQuat(pel, _qa);
+      _qa.premultiply(_qb);
+      worldQuat(pel.parent, _qc).invert();
+      pel.quaternion.copy(_qc).multiply(_qa);
+    }
     pel.position.copy(rs.Pelvis.p);
     pel.updateMatrixWorld(true);
 
@@ -539,6 +566,20 @@ export class BodyView {
     _solve2(_A, _Nt, this.len.spine1 * k, this.len.spine2 * k, _bfwd, _mid, _Tt);
     this._aim(B.Spine1, this.axis.Spine1, _v.subVectors(_mid, _A));
     this._aim(B.Spine2, this.axis.Spine2, _v.subVectors(_Tt, _mid));
+    // free fall: the airstream buffets the chest (before the arms are solved: the sleeves follow it)
+    if (fw > 0.01 && B.Spine2) {
+      const a = FALL_POSE.chestShake * fw;
+      _v.set(Math.cos(this._yaw), 0, -Math.sin(this._yaw)); // right
+      _v2.set(-Math.sin(this._yaw), 0, -Math.cos(this._yaw)); // forward
+      _qa.setFromAxisAngle(_v, flutter(ft, 5, 1.3) * a);
+      _qb.setFromAxisAngle(_v2, flutter(ft, 6, 1.1) * a * 1.2);
+      _qa.multiply(_qb);
+      worldQuat(B.Spine2, _qb);
+      _qb.premultiply(_qa);
+      worldQuat(B.Spine2.parent, _qc).invert();
+      B.Spine2.quaternion.copy(_qc).multiply(_qb);
+      B.Spine2.updateMatrixWorld(true);
+    }
 
     // ---- arms ----
     for (let i = 0; i < 2; i++) this._arm(game, i === 0 ? 'left' : 'right', i === 0 ? 'L' : 'R', k);
@@ -708,18 +749,27 @@ export class BodyView {
     const accF = clamp(ax * -sn + az * -c, -40, 40);
     const accR = clamp(ax * c - az * sn, -40, 40);
     const accU = clamp(ay, -40, 40);
-    const drive = (st, kf, kr, stiff, damp, lim) => {
-      // st = [ax, az, vx, vz]; angle about the body's X (pitch) and Z (roll)
-      const tx = clamp(kf * accF + 0.002 * accU, -lim, lim);
-      const tz = clamp(-kr * accR, -lim, lim);
+    const drive = (st, kf, kr, stiff, damp, lim, ex = 0, ez = 0) => {
+      // st = [ax, az, vx, vz]; angle about the body's X (pitch) and Z (roll); ex / ez: extra targets (the free-fall airstream)
+      const tx = clamp(kf * accF + 0.002 * accU + ex, -lim, lim);
+      const tz = clamp(-kr * accR + ez, -lim, lim);
       st[2] += (stiff * (tx - st[0]) - damp * st[2]) * dt;
       st[3] += (stiff * (tz - st[1]) - damp * st[3]) * dt;
       st[0] += st[2] * dt;
       st[1] += st[3] * dt;
     };
-    drive(this._spr.pack, 0.012, 0.01, 90, 7, 0.22);
-    drive(this._spr.pouchL, 0.02, 0.02, 70, 5, 0.5);
-    drive(this._spr.pouchR, 0.02, 0.02, 70, 5, 0.5);
+    // free fall: the airstream lifts the pack and the pouches (they trail up) and flaps them (turbulence): extra spring targets
+    const fw = this._fallW || 0;
+    const ft = this._fallT || 0;
+    this._ex[0] = fw * (FALL_POSE.packLift + flutter(ft, 7, 1.4) * 0.14);
+    this._ex[1] = fw * flutter(ft, 8, 1.2) * 0.16;
+    drive(this._spr.pack, 0.012, 0.01, 90, 7, 0.22, this._ex[0], this._ex[1]);
+    this._ex[0] = fw * (FALL_POSE.packLift * 1.1 + flutter(ft, 9, 1.8) * 0.22);
+    this._ex[1] = fw * flutter(ft, 10, 1.6) * 0.3;
+    drive(this._spr.pouchL, 0.02, 0.02, 70, 5, 0.5, this._ex[0], this._ex[1]);
+    this._ex[0] = fw * (FALL_POSE.packLift * 1.1 + flutter(ft, 11, 1.8) * 0.22);
+    this._ex[1] = -fw * flutter(ft, 12, 1.6) * 0.3;
+    drive(this._spr.pouchR, 0.02, 0.02, 70, 5, 0.5, this._ex[0], this._ex[1]);
     // fullness: the bag's items fill the pack (a flat empty satchel -> a stuffed one), eased
     const bag = this.game.bag;
     if (bag && bag.counts && B.Pack) {

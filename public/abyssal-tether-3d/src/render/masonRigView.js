@@ -30,7 +30,7 @@ import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
-import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
+import { blockScales, clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
 import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 const DEFAULTS = {
@@ -236,7 +236,7 @@ export class MasonRigView {
             this.emissive = mat;
             this._emBase = mat.emissiveIntensity || 1;
             // the sensory pits are the eyes: glowing RED, not the amber they were baked as (the factor is [1, 0.26, 0.05])
-            if (mat.emissive && mat.emissive.setRGB) mat.emissive.setRGB(1, 0.025, 0.015);
+            if (mat.emissive && mat.emissive.setRGB) mat.emissive.setRGB(1, 0.004, 0.002); // (was 1, 0.025, 0.015: pink once the tone mapper had it)
           }
         }
       }
@@ -466,15 +466,14 @@ export class MasonRigView {
       F[i * 12 + 1] += F[i * 12 + 7] * k;
       F[i * 12 + 2] += F[i * 12 + 8] * k;
     }
-    // per-bone uniform scale from the link lengths (the taper lives in the sim)
+    // per-bone uniform scale from the link lengths (the taper lives in the sim). It follows the REST length of the two links at the block
+    // (B.rest, from the sim's taper), not the live chord: the chords change by ~0.5 m/s per link while it crawls (corners, the wall fit), and
+    // sizing from them made every block swell and shrink by 10-20 % ("the creature's body compresses and expands"). The live chord is the
+    // fallback for a body without `rest` (an older sim, a synthetic one).
     const P0 = this.meta.P0;
     const bs = o.bodyScale / P0;
     S[0] = hs;
-    for (let i = 1; i < SEG; i++) {
-      const a = len3(sp[i * 3] - sp[i * 3 - 3], sp[i * 3 + 1] - sp[i * 3 - 2], sp[i * 3 + 2] - sp[i * 3 - 1]);
-      const b = i < SEG - 1 ? len3(sp[i * 3 + 3] - sp[i * 3], sp[i * 3 + 4] - sp[i * 3 + 1], sp[i * 3 + 5] - sp[i * 3 + 2]) : a;
-      S[i] = clamp((a + b) * 0.5 * bs, size < 1 ? 0.08 : 0.4, 1.6);
-    }
+    blockScales(B, sp, bs, size < 1 ? 0.08 : 0.4, S);
     if (o.twitch > 0) this._twitch(F, S, o.twitch, B);
 
     // ---- crown aim (spring) ----
@@ -484,7 +483,12 @@ export class MasonRigView {
     this._poseSpine(F, S);
     this._poseCrown();
     if (this.mandibles) {
-      const show = this._lod === 0 && !this._glowOnly;
+      // What shows at which level of detail. The EYES are what is seen from afar (two red lights in the dark), so they show at both LODs and
+      // even when only the glow mesh draws (they were LOD0-only: on Quest, where LOD1 starts at 12 m, a Mason seen from further off had no red
+      // eyes at all). The tusks and the stinger are long silhouettes: shown whenever the body is drawn (the small hunters only at LOD0: three of
+      // them at once would cost 5 draw calls each). The maw follows the same rule as the tusks: its open mouth is what says "it is about to eat you".
+      const near = this._lod === 0 && !this._glowOnly;
+      const show = !this._glowOnly && (near || !this.opts.variant);
       const nw = this.neck.matrixWorld;
       const rw = this.root.matrixWorld;
       this.mandibles.follow(nw, rw);
@@ -497,9 +501,9 @@ export class MasonRigView {
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
       // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
       this.eyes.follow(nw, rw);
-      this.eyes.update(this.graph.snapshot, this._time, show);
+      this.eyes.update(this.graph.snapshot, this._time, true);
       this.maw.follow(nw, rw);
-      this.maw.update(dt, this.mandibles.open, show);
+      this.maw.update(dt, this.mandibles.open, show); // (it was LOD0-only: on Quest, beyond 12 m, the open mouth was not drawn at all)
       this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
       this.stinger.update(show);
       this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0) + (this._hull && this._hull.visible ? 1 : 0) + (show ? this.mandibles.hullCalls() + this.stinger.hullCalls() : 0);
@@ -521,7 +525,10 @@ export class MasonRigView {
       const rate = 0.65 + 0.5 * clamp(glow, 0, 1);
       const ph = (this._time * rate) % 1;
       const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
-      this.emissive.emissiveIntensity = this._emBase * (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat); // (the idle floor was 0.12: the eyes were barely there)
+      // CAPPED: the baked pits are a red of 1.6 x emissive; at 1.6 x 2.5 the ACES tone mapper turned it orange-pink (VR: "the eyes are not red enough"),
+      // so the swing is squeezed into 0.24 .. 0.78 of the base (radiance ~0.4 .. 1.25): it stays red, the slit eyes (unlit) and the halo carry the brightness
+      const emK = (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat);
+      this.emissive.emissiveIntensity = this._emBase * Math.min(0.78, 0.14 + 0.28 * emK);
     }
 
     // ---- bounds ----

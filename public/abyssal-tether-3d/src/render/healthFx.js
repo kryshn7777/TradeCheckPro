@@ -478,6 +478,9 @@ export class HealthFx {
     // speaker on air: drawn into this canvas, so the wrist (and the desktop HUD's copy) show it for no extra draw call
     const cm = this.game && this.game.comms;
     if (cm && !idle && !dead) this._drawUplink(ctx, cm, st);
+    // ROPE LAUNCHERS (sim/physics3d.js TetherSystem.charge): one bar per hand under the trace, filling while the launcher recharges
+    const th = this.game && this.game.tethers;
+    if (th && typeof th.charge === 'function' && !idle && !dead && th.cooldownTime() > 0) this._drawRope(ctx, th, st);
 
     // Health bar
     const bx = 8;
@@ -503,6 +506,45 @@ export class HealthFx {
 
     this.ecgFrame++;
     this.ecgTexture.needsUpdate = true;
+  }
+
+  /**
+   * The two launcher bars (L, R) at the foot of the trace area: an outline with the charge filling in amber while a launcher recharges, the
+   * phosphor colour with a READY tick when it can fire, a red flash when a pull was refused. Drawn into this canvas, so the wrist screen (VR)
+   * and the desktop HUD's copy both show it for no extra draw call.
+   */
+  _drawRope(ctx, th, st) {
+    const W = ECG_W;
+    const y = 98;
+    const bh = 8;
+    const half = W / 2;
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '700 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    for (let k = 0; k < 2; k++) {
+      const hand = k === 0 ? 'left' : 'right';
+      const hs = th.hands[hand];
+      const c = th.charge(hand);
+      const x0 = k === 0 ? 8 : half + 4;
+      const lab = k === 0 ? 'L' : 'R';
+      const bx = x0 + 14;
+      const bw = half - 12 - 14 - 4;
+      const dry = hs.dry > 0;
+      const ready = c >= 1;
+      const col = dry ? '#ff5a4a' : ready ? st.solid : '#ffb347';
+      ctx.fillStyle = col;
+      ctx.textAlign = 'left';
+      ctx.fillText(lab, x0, y + bh);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx + 0.5, y + 0.5, bw, bh);
+      if (ready) {
+        ctx.globalAlpha = dry ? 1 : 0.35;
+        ctx.fillRect(bx + 2, y + 2, bw - 3, bh - 3);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillRect(bx + 2, y + 2, Math.max(0, (bw - 3) * c), bh - 3);
+      }
+    }
   }
 
   /** Five signal bars at (54, 40), or NO UPLINK; the on-air speaker's initial in a small box beside them. */

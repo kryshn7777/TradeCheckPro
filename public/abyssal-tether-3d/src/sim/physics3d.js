@@ -32,6 +32,7 @@ import { Climb3D } from './climb3d.js';
 
 const C = CONFIG;
 export const HANDS = ['left', 'right'];
+const RECHARGE_QUEUE = 0.25; // s: a trigger pull this close to the end of the recharge is queued, not dropped
 
 // Math.hypot is variadic and far slower than sqrt in V8's 240 Hz hot paths.
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
@@ -383,6 +384,10 @@ export class TetherSystem {
       buffer: 0,
       extend: 1, // visual extension 0..1 (the hook's flight progress while flying)
       attachTime: 0,
+      queued: false, // a press in the last RECHARGE_QUEUE s of the recharge waits for it (while the trigger is held)
+      dry: 0, // s the wrist bar flashes after a refused pull
+      cool: 0, // s left before this hand's launcher is recharged (0 = ready); set by a trigger pull, see cooldownTime()
+      coolMax: 0, // the recharge time that started it (for the wrist bar)
       miss: null, // { x,y,z, dx,dy,dz, len, t }
       lastAim: null,
       flying: false, // the hook is in flight (flightObj is live)
@@ -563,6 +568,21 @@ export class TetherSystem {
     return an.free === true && an.solid != null && an.solid.active === false;
   }
 
+  /**
+   * ROPE COOLDOWN: the seconds a hand's launcher needs to recharge after a trigger pull (settings.ropeCooldown, 0 = none; tools and
+   * tests that build the system with plain settings have none). Only the player's trigger (handleInput) is gated, not fire() / attach().
+   */
+  cooldownTime() {
+    const c = this.settings ? Number(this.settings.ropeCooldown) : 0;
+    return c > 0 ? Math.min(6, c) : 0;
+  }
+
+  /** 0..1: how charged this hand's launcher is (1 = ready to shoot). Drives the wrist bar. */
+  charge(hand) {
+    const st = this.hands[hand];
+    return st.cool > 0 && st.coolMax > 0 ? U.clamp(1 - st.cool / st.coolMax, 0, 1) : 1;
+  }
+
   /** Refresh each hand's highlight from its aim (once per frame). */
   updateTargets(player, intent) {
     for (const h of HANDS) {
@@ -579,14 +599,40 @@ export class TetherSystem {
    * intent.hands[h] = { aim, pressed, held, released }.
    */
   handleInput(player, intent, dt) {
-    if (!player.alive) return;
+    if (!player.alive) {
+      for (const h of HANDS) this.hands[h].cool = 0; // a fresh life starts with charged launchers
+      return;
+    }
     for (const h of HANDS) {
       const hi = intent.hands ? intent.hands[h] : null;
       if (!hi) continue;
       const st = this.hands[h];
-      if (hi.pressed) {
-        st.held = true;
-        this.fire(player, h, hi.aim);
+      const cd = this.cooldownTime();
+      // a trigger pulled in the last moments of the recharge, and still held when it is done, fires then (a press is not lost to the frame)
+      let go = !!hi.pressed;
+      if (st.queued) {
+        if (!hi.held) st.queued = false;
+        else if (st.cool <= 0 || cd <= 0) {
+          st.queued = false;
+          go = true;
+        }
+      }
+      if (go) {
+        if (cd > 0 && st.cool > 0) {
+          // RECHARGING: the launcher does not fire (no spamming the rope); the wrist bar shows how long is left
+          if (hi.pressed) {
+            st.queued = st.cool <= RECHARGE_QUEUE;
+            st.dry = 0.3;
+            this.bus.emit('rope:dry', { hand: h, left: st.cool, of: st.coolMax });
+          }
+        } else {
+          st.held = true;
+          this.fire(player, h, hi.aim);
+          if (cd > 0) {
+            st.cool = cd;
+            st.coolMax = cd;
+          }
+        }
       }
       if (hi.released || (!hi.held && st.held)) {
         st.held = false;
@@ -736,6 +782,8 @@ export class TetherSystem {
   step(player, dt) {
     for (const h of HANDS) {
       const st = this.hands[h];
+      if (st.cool > 0) st.cool = Math.max(0, st.cool - dt);
+      if (st.dry > 0) st.dry = Math.max(0, st.dry - dt);
       if (st.miss) {
         st.miss.t += dt;
         if (st.miss.t >= C.rope.missTime) st.miss = null;
@@ -871,11 +919,18 @@ export class Physics3D {
     let anyTaut = false;
     let attached = false;
     player._reeling = false;
+    this.climb.tethers = tethers; // the climb model reads the lines (rope holds) and which hands have one (a hand with a line out does not take surface holds)
     for (const h of HANDS) {
       const rope = tethers.hands[h].rope;
       if (!rope.attached) continue;
       attached = true;
-      const taut = rope.measure(player);
+      let taut = rope.measure(player);
+      // CLIMBING YOUR OWN LINE: while a hand grips it (climb3d rope hold) the line takes in the slack behind the climber, so it never hangs loose
+      // below you: let go and it is already taut (you stay where you climbed to; the winch / stick lets line out to come down)
+      if (!taut && this.climb.ropeHeld(h)) {
+        rope.length = Math.max(C.rope.minLength, rope.d);
+        taut = rope.d >= rope.length - C.rope.tautSlack;
+      }
       anyTaut = anyTaut || taut;
       // A haul ring (LEVEL_FUN_PLAN P3, sim/objectives3d.js: `anchor.haul`): the yank and the reel-in haul the counterweight
       // instead of reeling the player toward it (comfort: hauling never moves you); letting rope out still works.
@@ -883,7 +938,11 @@ export class Physics3D {
       if (taut && !haul && (intent.reel > 0.1 || (intent.hands && intent.hands[h] && intent.hands[h].yank > 0.15))) player._reeling = true; // reeling a loaded line (climb3d: grip cost on Nightmare and up)
       // Grip on a tethered hand yanks that rope in hard; otherwise the shared reel axis.
       const yank = intent.hands && intent.hands[h] ? intent.hands[h].yank || 0 : 0;
+      // HAND PULL (VR, sim/ropePull.js): the hand drawn back from the anchor reels the line in at that stroke's speed (m/s)
+      const pull = intent.hands && intent.hands[h] && !haul ? intent.hands[h].pull || 0 : 0;
+      if (pull > 0.01 && taut) player._reeling = true;
       if (yank > 0.15 && !haul) rope.reel(player, 1, R.yankSpeed * sm * yank, dt, tethers.maxRopeLength(), taut);
+      else if (pull > 0.01) rope.reel(player, 1, pull * sm, dt, tethers.maxRopeLength(), taut);
       else rope.reel(player, haul ? Math.min(0, intent.reel || 0) : intent.reel || 0, R.reelInSpeed * sm, dt, tethers.maxRopeLength(), taut);
       if (taut && moving && !player.grounded) rope.pump(player, mx, mz, R.pumpAccel * sm, dt);
       // The line's own pull (elastic catch + slip clutch); both hands act on the same state.

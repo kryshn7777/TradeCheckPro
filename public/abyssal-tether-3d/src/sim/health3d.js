@@ -7,7 +7,7 @@
  *   LANDING (floor-like contact). Driven by the same pre-contact speed the lethality rule used
  *   (Physics3D passes lethalMeasure: the fall speed weighted by how floor-like the contact is).
  *     r = speed / diff.lethalImpact
- *     damage = ((r - t) / (1 - t))^2     for t < r < 1  (t = diff.health.fallThreshold, ~0.35)
+ *     damage = ((r - t) / (1 - t))^2     for t < r < 1  (t = diff.health.fallThreshold, ~0.55: a drop under ~3.3 m is free)
  *     damage = 0 below t, 1 (dead from any hp) at r >= 1
  *   i.e. nothing for a hop, a little for a short drop, a lot for a long one, and the old lethal
  *   fall (speed >= lethalImpact) still kills. Convex, continuous, zero slope at the threshold.

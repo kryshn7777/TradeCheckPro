@@ -56,7 +56,7 @@ const mk = (env, storage = memStorage(), now = () => Date.now()) => new Entitlem
   const e = mk(fakeEnv({ hasStore: false }), cached);
   await e.init();
   ok(e.state === 'demo' && e.source === 'none', 'no store: demo');
-  ok(!e.isChapterPlayable(2) && e.isChapterPlayable(1), 'no store: chapter 2 locked, chapter 1 open');
+  ok(!e.isChapterPlayable(3) && e.isChapterPlayable(1) && e.isChapterPlayable(2), 'no store: chapters 1-2 open (the free game), chapter 3 locked');
 }
 // 2. owned
 {
@@ -65,7 +65,7 @@ const mk = (env, storage = memStorage(), now = () => Date.now()) => new Entitlem
   await e.init();
   ok(e.state === 'full' && e.source === 'store', 'owned: full');
   ok(env.calls.some((c) => c[0] === 'service' && c[1] === BILLING_SERVICE), 'billing service URL');
-  ok(e.isChapterPlayable(2) && e.isChapterPlayable(5), 'owned: later chapters playable');
+  ok(e.isChapterPlayable(3) && e.isChapterPlayable(5), 'owned: later chapters playable');
   await sleep(10);
   ok(e.price === '$9.99', `price label from getDetails (${e.price})`);
 }
@@ -73,7 +73,7 @@ const mk = (env, storage = memStorage(), now = () => Date.now()) => new Entitlem
 {
   const e = mk(fakeEnv());
   await e.init();
-  ok(e.state === 'demo' && e.source === 'store' && !e.isChapterPlayable(2), 'not owned: demo');
+  ok(e.state === 'demo' && e.source === 'store' && !e.isChapterPlayable(3), 'not owned: demo');
 }
 // 4. offline grace: provider down, previously verified owner keeps the unlock; a stranger stays in the demo
 {
@@ -128,15 +128,15 @@ const mk = (env, storage = memStorage(), now = () => Date.now()) => new Entitlem
 {
   const g = mk(fakeEnv({ serviceFails: true }));
   ok(g.state === 'unknown' && g.isChapterPlayable(1) === true, 'before init: chapter 1 playable');
-  ok(!g.isChapterPlayable(0) && !g.isChapterPlayable(NaN) && !g.isChapterPlayable(2), 'invalid / locked chapters');
-  ok(FREE_CHAPTER === 1 && g.canPlayChapter(1), 'draft alias canPlayChapter');
+  ok(!g.isChapterPlayable(0) && !g.isChapterPlayable(NaN) && !g.isChapterPlayable(3), 'invalid / locked chapters');
+  ok(FREE_CHAPTER === 2 && g.canPlayChapter(1) && g.canPlayChapter(2), 'draft alias canPlayChapter');
 }
 // 9. URL mock: dev channel only
 {
   const win = (search) => ({ location: { search }, localStorage: memStorage() });
   const dev = Entitlement.fromUrl({ win: win('?entitlement=owned'), build: { channel: 'dev' } });
   await dev.init();
-  ok(dev.state === 'full' && dev.mock === 'owned' && dev.isChapterPlayable(2), 'dev channel: ?entitlement=owned');
+  ok(dev.state === 'full' && dev.mock === 'owned' && dev.isChapterPlayable(3), 'dev channel: ?entitlement=owned');
   const buy = Entitlement.fromUrl({ win: win('?entitlement=buy'), build: { channel: 'dev' } });
   await buy.init();
   ok(buy.state === 'demo' && (await buy.purchase()) === 'purchased' && buy.state === 'full', 'dev mock buy flow');
@@ -148,7 +148,7 @@ const mk = (env, storage = memStorage(), now = () => Date.now()) => new Entitlem
   ok(err.state === 'demo', 'dev mock error: demo');
   const rel = Entitlement.fromUrl({ win: win('?entitlement=owned'), build: { channel: 'release' } });
   await rel.init();
-  ok(rel.state === 'demo' && rel.mock === null && !rel.isChapterPlayable(2), 'RELEASE channel ignores the mock switch');
+  ok(rel.state === 'demo' && rel.mock === null && !rel.isChapterPlayable(3), 'RELEASE channel ignores the mock switch');
   const junk = Entitlement.fromUrl({ win: win('?entitlement=hack'), build: { channel: 'dev' } });
   await junk.init();
   ok(junk.state === 'demo', 'unknown mock names are ignored');

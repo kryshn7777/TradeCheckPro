@@ -27,6 +27,9 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
+import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
+import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -52,6 +55,7 @@ const _probeD = new THREE.Vector3();
 // Tuning (seconds / metres unless noted)
 // -----------------------------------------------------------------------------
 const DEATH_PANEL_DELAY = 0.6; // death → death panel (and earliest respawn input)
+const FREE_CHAPTER_FALLBACK = 2; // chapters I and II are the free game while the entitlement module is missing (platform/entitlement.js FREE_CHAPTER)
 const VICTORY_DELAY = 2.8; // goal reached → victory panel (the gate slam plays out)
 const HINT_DEFAULT_SECONDS = 6;
 const HINT_GAP = 3.2; // a hint stays at least this long before a queued one replaces it
@@ -112,6 +116,8 @@ const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.
 const MODULES = {
   level: './sim/level3d.js',
   levelData: './data/level-data-3d.js',
+  chapter2Glue: './chapter2Glue.js', // CHAPTER II's director, lamps, Mere and Ushers (render + sim): loaded with the late modules, used only by Chapter II
+  chapter2Data: './data/chapter2-data.js', // CHAPTER II · LAMPHOLD (the graybox, plans/CHAPTER_II_PLAN.md): loaded only for ?chapter=2
   creature: './sim/creature3d.js',
   skitter: './sim/skitter3d.js',
   dresser: './sim/dresser3d.js', // THE DRESSER (hunts only while you are whole; docs/abyssal-tether-3d/plans/DRESSER.md)
@@ -315,6 +321,16 @@ function holsterOff() {
  * `?freeattach=off` brings back the authored ring-only level: every traversal ring and hook, the hook biting only those (the route
  * bots of the e2e descent and the verify harness play that level; also an A/B for the free-attach feel).
  */
+/** `?chapter=2` plays Chapter II · LAMPHOLD (the graybox, data/chapter2-data.js); anything else is Chapter I. */
+export function chapterFromUrl() {
+  try {
+    const m = typeof location !== 'undefined' ? /[?&]chapter=(\d)\b/.exec(location.search || '') : null;
+    return m && Number(m[1]) === 2 ? 2 : 1;
+  } catch {
+    return 1;
+  }
+}
+
 function freeAttachOff() {
   try {
     return typeof location !== 'undefined' && /[?&]freeattach=(off|0)\b/.test(location.search || '');
@@ -1021,6 +1037,11 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.c2 = null; // Chapter2Glue (chapterGlue.js): Chapter II's director and views
+    this._c2views = null;
+    this.chapter = chapterFromUrl(); // 1 = The Underspire (the game), 2 = Lamphold (the graybox, ?chapter=2)
+    this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
+    this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
     this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
     this.prologueView = null; // its page (render/prologueView.js)
     this._introGrace = 0; // s: presses are ignored right after the click that began the run
@@ -1087,7 +1108,8 @@ export class Game3D {
     this._override = null;
     this._ovIntent = blankIntent();
     this._blank = blankIntent();
-    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0 }, right: { yank: 0 } }, climb: blankClimb() };
+    this._stepIntent = { move: { x: 0, z: 0 }, reel: 0, jumpPressed: false, brake: false, hands: { left: { yank: 0, pull: 0 }, right: { yank: 0, pull: 0 } }, climb: blankClimb() };
+    this._ropePull = new RopePull();
     this._threatCtx = { player: null, creature: null, tethers: null, diff: null, level: null };
     this._uiFallback = false;
     this._uiMode = null;
@@ -1260,6 +1282,7 @@ export class Game3D {
       this.ui = nullUI();
     }
     this._uiFallback = !!this.ui.isNull;
+    this._applyChapter(); // the chapter of the URL (?chapter=2) -> the section numerals
     lpMark('views+ui');
     await progress(0.92, 'Almost there');
     // Every mesh that exists now (level, hands, UI panels, fade sphere): compile its
@@ -1317,6 +1340,7 @@ export class Game3D {
       const svc = new M.save.SaveService(this);
       await svc.init();
       this.save = svc;
+      this._applyChapter(); // (the save is ready after the UI on a slow device: the chapter of the URL reaches it here)
       // localStorage wiped but the profile survived (IndexedDB): bring the settings back
       const saved = svc.savedSettings();
       if (saved && Storage.get('settings', null) == null) {
@@ -1351,7 +1375,41 @@ export class Game3D {
 
   /** Chapter gate (E06). Chapter I is always playable. */
   isChapterPlayable(n) {
-    return this.entitlement ? this.entitlement.isChapterPlayable(n) : Number(n) === 1;
+    return this.entitlement ? this.entitlement.isChapterPlayable(n) : Number(n) <= FREE_CHAPTER_FALLBACK && Number(n) >= 1;
+  }
+
+  /**
+   * Chooses the chapter the next run plays: 1 = The Underspire, 2 = Lamphold (data/chapter2-data.js). The level is rebuilt by the next start()
+   * (the level cache is keyed by chapter); the save's records, splits and Continue slot follow the chapter (meta/save.js activeChapter), and
+   * the section cards number their beats for it. Returns false when the chapter is locked or its data did not load.
+   */
+  setChapter(n) {
+    n = Number(n) === 2 ? 2 : 1;
+    if (n === 2 && !(this.modules.chapter2Data && this.modules.chapter2Data.LEVEL_DATA_CH2)) return false;
+    if (!this.isChapterPlayable(n)) return false;
+    this.chapter = n;
+    this._applyChapter();
+    this.bus.emit('chapter:set', { chapter: n });
+    return true;
+  }
+
+  /** Tells the save and the UI which chapter is active (also called once after boot for `?chapter=2`). */
+  _applyChapter() {
+    if (this.save && typeof this.save.setActiveChapter === 'function') this.save.setActiveChapter(this.chapter);
+    this._try('ui', () => this.ui && typeof this.ui.onChapter === 'function' && this.ui.onChapter(this.chapter));
+  }
+
+  /** The chain after Chapter I's end card: starts Chapter II on the same difficulty, without the opening story. */
+  playNextChapter() {
+    if (this.chapter !== 1 || !this.setChapter(2)) return false;
+    const key = DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal';
+    this._leaveVictory();
+    return this.start(key);
+  }
+
+  /** Back to a state `start()` accepts after the end card (the card is a screen over the frozen world). */
+  _leaveVictory() {
+    if (this.state === 'victory') this._setState('menu');
   }
 
   /** The frame while content is still loading: loading scene only, no simulation. */
@@ -1586,7 +1644,7 @@ export class Game3D {
   /** The director's frame: where you are, whether a creature is winding up (no radio then), the skip, the bare-stone gaze. */
   _updateComms(dt, intent) {
     const cm = this.comms;
-    if (!cm || !this.player || !this.level) return;
+    if (!cm || !this.player || !this.level) return; // (in Chapter II `comms` is the chapter's own director: chapter2Glue.js)
     try {
       const x = this._commsCtx;
       const p = this.player;
@@ -2386,7 +2444,7 @@ export class Game3D {
     const key = DIFFICULTY[diffKey] ? diffKey : fallbackKey;
     this._unlockAudio();
     const fromMenu = this.state === 'menu';
-    const intro = !!(opts && opts.intro) && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
+    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
     if (this._runActive()) this._recordDepth();
     try {
       this.difficultyKey = key;
@@ -2400,6 +2458,7 @@ export class Game3D {
     const lvl = this.level;
     const p = this.player;
     this._runCount++;
+    if (this.c2) this._try('chapter2', () => this.c2.onStart());
     this.hidePlayer = false;
     this.time = 0;
     this._runClock = 0;
@@ -2432,7 +2491,7 @@ export class Game3D {
 
     this.settings.lastDifficulty = key;
     Storage.saveSettings(this.settings);
-    this._bumpStat(`runs.${key}`);
+    if (this.chapter === 1) this._bumpStat(`runs.${key}`);
 
     this._setState(intro ? 'intro' : 'playing');
     this._try('ui', () => this.ui.show(null));
@@ -2501,6 +2560,7 @@ export class Game3D {
   continueRun() {
     const info = this.save && this.save.continueInfo ? this.save.continueInfo() : null;
     if (!info || !DIFFICULTY[info.difficulty] || !this.booted) return false;
+    if (!this.setChapter(info.chapter === 'ch2' ? 2 : 1)) return false;
     this._continuing = info;
     let ok = false;
     try {
@@ -2558,6 +2618,7 @@ export class Game3D {
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.c2) this._try('chapter2', () => this.c2.onRespawn()); // CHAPTER II: the phase of the lamp you wake at
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2681,6 +2742,7 @@ export class Game3D {
     }
     s.volume = U.clamp(finiteOr(s.volume, D.volume), 0, 1);
     s.aimAssist = U.clamp(finiteOr(s.aimAssist, D.aimAssist), 0.6, 1.4);
+    s.ropeCooldown = U.clamp(finiteOr(s.ropeCooldown, D.ropeCooldown), 0, 6);
     s.turnSpeed = U.clamp(finiteOr(s.turnSpeed, D.turnSpeed), 0.5, 2);
     s.mouseSensitivity = U.clamp(finiteOr(s.mouseSensitivity, D.mouseSensitivity), 0.3, 3);
     if (s.dominantHand !== 'left' && s.dominantHand !== 'right') s.dominantHand = D.dominantHand;
@@ -2703,12 +2765,15 @@ export class Game3D {
   _buildWorld(diff, attract) {
     const M = this.modules;
     const variant = diff.levelVariant || 'normal';
-    if (this.level && this._levelVariant === variant) this.level.reset();
+    const chapter = this.chapter === 2 && M.chapter2Data && M.chapter2Data.LEVEL_DATA_CH2 ? 2 : 1;
+    const key = `${chapter}:${variant}`;
+    if (this.level && this._levelVariant === key) this.level.reset();
     else {
-      const data = M.levelData && M.levelData.LEVEL_DATA_3D ? M.levelData.LEVEL_DATA_3D : undefined;
+      const data = chapter === 2 ? M.chapter2Data.LEVEL_DATA_CH2 : M.levelData && M.levelData.LEVEL_DATA_3D ? M.levelData.LEVEL_DATA_3D : undefined;
+      U.depthOffset = chapter === 2 ? M.chapter2Data.CHAPTER2_DEPTH_OFFSET : 0; // the depth readout continues Chapter I's
       // Free attach (CONFIG.targeting.freeAttach): the hook bites any surface; the plain traversal rings are retired.
       this.level = new M.level.Level3D(data, variant, { freeAttach: C.targeting.freeAttach !== false && !freeAttachOff() });
-      this._levelVariant = variant;
+      this._levelVariant = key;
     }
     const lvl = this.level;
     const spawn = lvl.spawn || { x: 0, y: 0, z: 0, yaw: 0 };
@@ -2807,6 +2872,26 @@ export class Game3D {
     }
     // Section splits (LEVEL_FUN_PLAN item 12): started by _enterSection, taken at each new section and at the goal.
     this.splits = new SplitClock(lvl.sections.map((s) => s.id));
+    // CHAPTER II: the director (tolls, the Usher, the exam, the hook), its views
+    if (this.c2) {
+      this._try('chapter2', () => this.c2.dispose());
+      this.c2 = null;
+    }
+    if (chapter === 2 && M.chapter2Glue && typeof M.chapter2Glue.Chapter2Glue === 'function') {
+      try {
+        this.c2 = new M.chapter2Glue.Chapter2Glue(this);
+        this._ensureLevelView(); // (the views need the renderer's scene: the level view first)
+        this.c2.build(lvl, this.objectives, this._runBus, Object.assign({}, diff, { key: this.difficultyKey }), attract);
+      } catch (err) {
+        this._fault('chapter2', err);
+        this.c2 = null;
+      }
+    } else if (this._c2views) {
+      this._try('chapter2', () => {
+        for (const k of ['lamp', 'mere', 'usher']) if (this._c2views[k] && this._c2views[k].dispose) this._c2views[k].dispose();
+        this._c2views = null;
+      });
+    }
     this._ensureLevelView();
   }
 
@@ -3317,7 +3402,7 @@ export class Game3D {
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
-    this._prepareClimb(intent, si);
+    this._prepareClimb(intent, si, dt);
     if (this.objectives) this._lanternProbe();
     this._acc += dt;
     let steps = 0;
@@ -3330,6 +3415,7 @@ export class Game3D {
       this._pendingJump = false;
       this.physics.step(p, this.tethers, si, PDT);
       if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
+      if (this.c2) this.c2.step(PDT, p);
       this._acc -= PDT;
       steps++;
       if (!p.alive || this.state !== 'playing') {
@@ -3402,7 +3488,7 @@ export class Game3D {
    * moves this frame), lets the model probe which hands are in reach of a hold, and gives a grip that is a grab to the climb
    * (no rope yank on it; on the desktop Space is the hop, not the reel).
    */
-  _prepareClimb(intent, si) {
+  _prepareClimb(intent, si, dt) {
     const climb = this.physics ? this.physics.climb : null;
     const sc = si.climb;
     const ic = intent.climb;
@@ -3414,6 +3500,8 @@ export class Game3D {
       sc.grab.right = false;
       sc.hands.left.ok = false;
       sc.hands.right.ok = false;
+      si.hands.left.pull = si.hands.right.pull = 0;
+      this._ropePull.reset();
       climb.probe(p, null);
       return;
     }
@@ -3436,6 +3524,7 @@ export class Game3D {
         b.rz = a.z - p.rz;
       }
     }
+    climb.tethers = this.tethers; // rope holds (the other hand's line) and surface holds need the lines
     climb.probe(p, sc);
     // THE HOLDFAST reads the raw frame (before the climb mutes the yank / the desktop reel): the rope out-pulling it, the desktop tear
     const hf = this._hfIn;
@@ -3448,6 +3537,39 @@ export class Game3D {
     hf.grabR = sc.grab.right;
     for (let k = 0; k < 2; k++) if (climb.suppressYank(HANDS[k])) si.hands[HANDS[k]].yank = 0;
     if (climb.holding && !sc.vr) si.reel = 0;
+    this._prepareRopePull(si, sc, climb, dt);
+  }
+
+  /**
+   * VR hand pull (sim/ropePull.js), once per frame: for each hand with a line out, how fast the hand is drawn back from the anchor
+   * (relative to the body) becomes `si.hands[h].pull` (m/s of line to reel in); Physics3D.step feeds it to the winch.
+   */
+  _prepareRopePull(si, sc, climb, dt) {
+    const rp = this._ropePull;
+    const th = this.tethers;
+    const p = this.player;
+    for (let k = 0; k < 2; k++) {
+      const h = HANDS[k];
+      const rope = th && th.hands ? th.hands[h].rope : null;
+      const b = sc.hands[h];
+      let on = !!(sc.vr && rope && rope.attached && rope.anchor && b.ok && !climb.hands[h].gripping);
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      if (on) {
+        nx = p.x - rope.anchor.x;
+        ny = p.y - rope.anchor.y;
+        nz = p.z - rope.anchor.z;
+        const d = Math.hypot(nx, ny, nz);
+        if (d < 0.3) on = false;
+        else {
+          nx /= d;
+          ny /= d;
+          nz /= d;
+        }
+      }
+      si.hands[h].pull = rp.step(k, on, b.rx, b.ry, b.rz, nx, ny, nz, dt);
+    }
   }
 
   _updateProgress(dt) {
@@ -3604,7 +3726,16 @@ export class Game3D {
     let res = { best: null, previous: null, isNew: false };
     const deepestMeters = U.depthMeters(this.deepest);
     try {
-      if (this.diff.recordTimes) {
+      if (this.chapter !== 1) {
+        // Chapter II keeps its records in the save profile (meta/save.js 'ch2'), never in Chapter I's best-time slots
+        const rec = this.save && this.save.records ? this.save.records(key) : null;
+        const prev = rec && rec.best != null ? rec.best : null; // (the save service adds this run on 'game:victory', after this)
+        res.previous = prev;
+        if (this.diff.recordTimes) {
+          res.isNew = prev == null || time < prev;
+          res.best = res.isNew ? time : prev;
+        } else res.best = prev;
+      } else if (this.diff.recordTimes) {
         res = Storage.submitTime(key, time);
         const fewest = Storage.get(`fewestDeaths.${key}`, null);
         if (typeof fewest !== 'number' || this.deaths < fewest) Storage.set(`fewestDeaths.${key}`, this.deaths);
@@ -3612,7 +3743,7 @@ export class Game3D {
       } else {
         res.best = Storage.getBest(key);
       }
-      Storage.recordDepth(key, deepestMeters);
+      if (this.chapter === 1) Storage.recordDepth(key, deepestMeters);
     } catch (err) {
       this._fault('storage', err);
     }
@@ -3629,6 +3760,7 @@ export class Game3D {
       difficultyKey: key,
       label: this.diff.label,
       seals: this.objectives ? this.objectives.doneCount : 0, // seals opened this run (LEVEL_FUN_PLAN P1)
+      names: this.c2 && this.c2.director ? this.c2.director.names.size : null, // CHAPTER II: the Names found (of 5)
     };
     this.lastVictory = info;
     this._try('ui', () => this.ui.show('victory', info));
@@ -4224,6 +4356,11 @@ export class Game3D {
 
   _updateViews(dt) {
     try {
+      this.fallPose.update(dt); // before the hands and the body read it
+    } catch (err) {
+      this._fault('fallPose', err);
+    }
+    try {
       this._updateObjectiveHint(dt);
     } catch (err) {
       this._fault('objectiveHint', err);
@@ -4297,6 +4434,13 @@ export class Game3D {
         this.pickupsView.update(dt, this);
       } catch (err) {
         this._fault('pickupsView', err);
+      }
+    }
+    if (this.c2) {
+      try {
+        this.c2.update(dt);
+      } catch (err) {
+        this._fault('chapter2', err);
       }
     }
     this._updateLantern();
@@ -4378,6 +4522,11 @@ export class Game3D {
       } catch (err) {
         this._fault('handsView', err);
       }
+    }
+    try {
+      this.wristVitals.update(dt);
+    } catch (err) {
+      this._fault('wristVitals', err);
     }
     // The body last: it reads the rig, the hands' elbow anchors and the sim state of this frame.
     const bv = this.bodyView;

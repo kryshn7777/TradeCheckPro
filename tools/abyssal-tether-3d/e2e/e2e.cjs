@@ -151,7 +151,7 @@ async function newPage(browser, { xr = false } = {}) {
 async function boot(page, base) {
   // comms off: the plain death panel, no radio lines in the shots. freeattach=off: the descent below is the route bot's, which hooks
   // the authored rings (the free-attach level has none of them; tools/abyssal-tether-3d/e2e/free-attach.cjs plays that one).
-  await page.goto(base + '/index.html?hunt=always&comms=off&freeattach=off');
+  await page.goto(base + '/index.html?hunt=always&comms=off&freeattach=off&intro=off');
   await page.waitForFunction(() => window.AT3D && window.AT3D.game && window.AT3D.game.booted, null, { timeout: 180000 });
 }
 const st = (page) => page.evaluate(() => window.AT3D.debug.state());
@@ -241,6 +241,8 @@ async function partDesktop(browser, base) {
   const lastF = fadeTrace[fadeTrace.length - 1];
   const fadeOk = fadeTrace.every(([gt, f]) => f <= Math.max(0, 1 - 1.5 * gt) + 0.12);
   check('start fade clears at 1.5/s of game time (fade vs game time)', fadeOk && (lastF[0] < 0.7 || lastF[1] < 0.05), fadeTrace.map((r) => r.slice(0, 2)));
+  // A slow software-GL frame can stall the page for a while: let the poll see the fade clear before freezing the game.
+  await page.waitForFunction(() => window.__fadeClear && window.__fadeClear.at, null, { timeout: 60000 }).catch(() => {});
   await page.evaluate(() => window.AT3D.debug.freeze(true));
   // Run time (game.time) starts at 0 on start() and only advances on simulated frames
   // (realTime also ticks on the frozen presentation frames). `first` is the first playing
@@ -301,9 +303,11 @@ async function partDesktop(browser, base) {
   s = await step(page, 1 / 60);
   check('arrow keys aim the view at the first ring (right-hand target t1)', s.hands.right.target === 't1', s.hands.right);
   let attached = false;
+  // The rope guns start in their holsters (sim/holster3d.js): a press draws the gun (0.14 s) and the shot waits for it, as long as
+  // the button is still held. Hold the button past the draw (a release before it cancels the shot), then read the tether.
   for (let k = 0; k < 4 && !attached; k++) {
     await page.mouse.down({ button: 'left' });
-    s = await step(page, 2 / 60);
+    s = await step(page, 0.3);
     attached = s.hands.right.anchor === 't1';
     if (!attached) {
       await page.mouse.up({ button: 'left' });
@@ -320,17 +324,19 @@ async function partDesktop(browser, base) {
   let wDown = true;
   let released = false;
   let reeling = false;
-  for (let i = 0; i < 420 && !onSill; i++) {
+  const swingTrace = []; // every half second: [frame, y, z, vy, grounded, tethered] (what a failed swing looked like)
+  for (let i = 0; i < 900 && !onSill; i++) {
     s = await step(page, 1 / 60, { render: false });
     const p = s.player;
     maxSpeed = Math.max(maxSpeed, p.speed);
+    if (i % 30 === 0) swingTrace.push([i, +p.y.toFixed(1), +p.z.toFixed(1), +p.vy.toFixed(1), p.grounded ? 1 : 0, p.tethered ? 1 : 0]);
     if (wDown && !p.grounded && p.y < -0.5) {
       await page.keyboard.up('KeyW');
       wDown = false;
     }
     // The rope is a spring with a slip clutch: a free fall onto it is caught, not flung. As in the bot's route,
     // reel in (Space) once the fall is deep so the arc comes up and across over the sill.
-    if (!reeling && !wDown && !p.grounded && p.y < -4) {
+    if (!reeling && !released && !wDown && !p.grounded && p.y < -4) {
       await page.keyboard.down('Space');
       reeling = true;
     }
@@ -357,12 +363,22 @@ async function partDesktop(browser, base) {
   if (wDown) await page.keyboard.up('KeyW');
   if (reeling) await page.keyboard.up('Space');
   if (!released) await page.mouse.up({ button: 'left' });
-  s = await step(page, 0.4);
+  const endFrame = swingTrace.length * 30;
+  const landTrace = []; // the 0.4 s after the loop ends, every 0.07 s: [y, z, vy, vz, grounded, climbing, ground]
+  for (let k = 0; k < 6; k++) {
+    s = await step(page, 0.07, { render: false });
+    landTrace.push(
+      await page.evaluate(() => {
+        const p = window.AT3D.game.player;
+        return [+p.y.toFixed(2), +p.z.toFixed(2), +p.vy.toFixed(2), +p.vz.toFixed(2), p.grounded ? 1 : 0, p.climbing ? 1 : 0, p.groundSolid ? p.groundSolid.id : null];
+      }),
+    );
+  }
   const ground = await page.evaluate(() => {
     const p = window.AT3D.game.player;
     return p.groundSolid ? p.groundSolid.id : null;
   });
-  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player });
+  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player, onSill, endFrame, swingTrace, landTrace });
   check('releasing LMB lets go of the tether', s.hands.right.anchor === null && !s.player.tethered, s.hands.right);
   return P;
 }
@@ -790,7 +806,7 @@ async function partXR(browser, base) {
   check('XR: right controller ray targets t1', s.hands.right.target === 't1', s.hands.right);
   const h0 = await page.evaluate(() => window.__xr.haptics.length);
   await button('right', 0, true);
-  s = await step(page, 2 / 60);
+  s = await step(page, 0.3); // the gun is drawn from the holster first (0.14 s), then the held trigger fires
   const hap = await page.evaluate((n) => window.__xr.haptics.slice(n), h0);
   check('XR: trigger fires the tether (attached to t1, haptic pulse)', s.hands.right.anchor === 't1' && hap.some((h) => h[0] === 'right'), [s.hands.right, hap.slice(0, 3)]);
   // Swing: left stick forward (relative to the head) off the Threshold, stick released

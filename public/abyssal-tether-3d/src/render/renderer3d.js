@@ -131,9 +131,9 @@ const SECTION_RIM = [0.7, 0.7, 0.65, 0.8, 0.6, 0.6, 0.8, 0.55];
 // Surface-detail levers per quality tier (materials.js LOOK.uParallaxK / uDetailK / uCrevK): parallax offset on near faces,
 // the shared detail normal, crack grime / moss. Quest: one parallax tap within 8 m, detail normal within 16 m.
 const SURFACE_TIERS = {
-  low: { parallax: 1, parMax: 5, parFade: 2, steps: 0, stepMax: 0, stepFade: 1, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
-  quest: { parallax: 1, parMax: 8, parFade: 3, steps: 6, stepMax: 3, stepFade: 1.2, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
-  high: { parallax: 1, parMax: 13, parFade: 5, steps: 10, stepMax: 5, stepFade: 1.8, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
+  low: { parallax: 1, parMax: 5, parFade: 2, steps: 0, stepMax: 0, stepFade: 1, wallDepth: 0.8, parScale: 1, detail: 0.5, dNear: 2.5, dFar: 7, crev: 0.6, near: 0, bevel: 0, bevelFar: 14, pud: 0.5 },
+  quest: { parallax: 1, parMax: 8, parFade: 3, steps: 6, stepMax: 3.5, stepFade: 1.4, wallDepth: 1.0, parScale: 1, detail: 0.9, dNear: 5, dFar: 16, crev: 1, near: 1, bevel: 1, bevelFar: 30, pud: 1 },
+  high: { parallax: 1, parMax: 13, parFade: 5, steps: 10, stepMax: 5, stepFade: 1.8, wallDepth: 2, parScale: 1.1, detail: 1, dNear: 8, dFar: 26, crev: 1, near: 1, bevel: 1.15, bevelFar: 44, pud: 1 },
 };
 // Parallax-corrected probe box: the shaft box is inflated a little so the far window overhead and the lancets ring stay beyond the walls.
 const PROBE_BOX_GROW = 1.0;
@@ -168,7 +168,7 @@ const LOOK_PRESETS = {
   anime: {
     exposure: 1.4, contrast: -0.1, sat: 0.4, lift: 1.6, grain: 0, vignette: 0, tone: 0,
     toon: 1, bands: 5, soft: 1.2, gain: 0.55, shade: [0.58, 0.66, 1.0], shadeAmt: 0.15,
-    detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7,
+    detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7, // kept low on purpose: at 0.5 the detail normal turns the cel bands into blotchy camouflage (checked in screenshots); the wall depth comes from the parallax instead
     // ink outlines: hulls on the hero meshes (outline.js), a line on the masonry's box edges (materials.js); the width is an angle (rad)
     ink: 1, inkWidth: 0.0026, inkEdge: 0.9, inkColor: [0.012, 0.008, 0.02],
   },
@@ -187,6 +187,19 @@ function lookPreset(settings) {
 }
 
 const _tmpC = new THREE.Color();
+/** `?walldepth=N` overrides the relief depth of vertical faces (0 = the old flat picture, 1.6 = the Quest default, 3 = deep): an A/B for the headset. */
+function wallDepthOverride() {
+  try {
+    const m = /[?&]walldepth=([0-9.]+)/.exec((typeof location !== 'undefined' && location.search) || '');
+    if (m) {
+      const v = Number(m[1]);
+      if (isFinite(v) && v >= 0 && v <= 6) return v;
+    }
+  } catch {
+    /* no location */
+  }
+  return null;
+}
 const _tmpInk = new THREE.Color();
 /** `?ink=off` (or settings.ink === false) turns the outlines off, whatever the look. */
 function inkDisabled(settings) {
@@ -671,6 +684,7 @@ export class Renderer3D {
         range: Math.max(2, num(l.range, 12)),
         flicker: l.flicker ? (typeof l.flicker === 'number' ? l.flicker : 0.5) : 0,
         seed: i * 1.731,
+        ref: l, // `ref.gain` (0..1, default 1): CHAPTER II's Evening puts lamps out (sim/lampholdDirector.js)
       });
     }
     for (const e of this.envLights) {
@@ -695,6 +709,7 @@ export class Renderer3D {
         const d = hyp(s.x - head.x, s.y - head.y, s.z - head.z);
         const score = d - s.range * 0.6;
         if (d > s.range * 1.3 + 8) continue;
+        if (s.ref && s.ref.gain !== undefined && s.ref.gain < 0.02) continue; // a lamp that has been put out lights nothing
         s._score = score;
         if (best.length < ENV_LIGHTS) best.push(s);
         else {
@@ -737,7 +752,8 @@ export class Renderer3D {
         f = 1 - e.src.flicker * 0.45 * (0.5 + 0.5 * Math.sin(t * 9.1) * Math.sin(t * 3.7 + 1.3));
         if (Math.sin(t * 0.73) > 0.985) f *= 0.4;
       }
-      e.light.intensity = e.src.candela * e.level * f * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
+      const gain = e.src.ref && e.src.ref.gain !== undefined ? e.src.ref.gain : 1;
+      e.light.intensity = e.src.candela * e.level * f * gain * (1 - 0.6 * this._dark); // the level's lamps burn lower on the dark difficulties
       if (f < flickMin) flickMin = f;
     }
     this._lampFlick += (flickMin - this._lampFlick) * 0.2;
@@ -935,7 +951,7 @@ export class Renderer3D {
     const lvl = 0; // the frame governor trades resolution only (platform/governor.js): the surface look follows the tier alone
     const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
-    LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);
+    LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, wallDepthOverride() ?? P.wallDepth);
     LOOK.uDetailK.value.set(P.detail * (this.look.detail == null ? 1 : this.look.detail) * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
     const lcr = this.look.crev == null ? 1 : this.look.crev;
     LOOK.uCrevK.value.set(0.55 * P.crev * lcr, 0.55 * P.crev * lcr, 0.7 * P.crev * lcr, 0);

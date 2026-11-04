@@ -55,6 +55,9 @@ import { PAR_3D } from '../data/par-3d.js';
 const SCREENS = ['menu', 'difficulty', 'controls', 'settings', 'about', 'calibrate', 'records', 'pause', 'death', 'victory'];
 const SUB_SCREENS = { difficulty: true, controls: true, settings: true, about: true, calibrate: true, records: true };
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+/** The chapter on screen (game.setChapter -> ui.onChapter): Chapter II numbers its beats 'II·4' (the bible's II-4), Chapter I keeps its Roman numerals. */
+let UI_CHAPTER = 1;
+const secNum = (i) => (UI_CHAPTER === 2 ? `II·${i + 1}` : ROMAN[i] || String(i + 1));
 const HANDS = ['left', 'right'];
 
 const HUD_INTERVAL = 0.1; // s between DOM HUD text refreshes
@@ -122,18 +125,22 @@ const DEATH_COPY = {
   creature: { kicker: 'Closer than it sounded', message: 'It wears you now.' },
   // THE DRESSER (sim/dresser3d.js): it reached you while you were whole
   dressed: { kicker: 'Measured. Cut. Laid.', message: 'DRESSED. SOMEONE WILL BUILD WITH YOU.' },
+  // CHAPTER II: the Usher answered a toll you made (sim/usher3d.js; data/chapter2-text.js boss.deathKicker / deathLine)
+  usher: { kicker: 'In the cold light', message: 'ANSWERED. YOU WERE SHOWN TO YOUR SEAT.' },
 };
 
 const pct = fmtPct;
 const mul = fmtMul;
 const mTxt = (v) => `${v.toFixed(2)} m`;
+const secTxt = (v) => (v <= 0.001 ? 'No wait' : `${+v.toFixed(2)} s`);
 const cm = (v) => `${v < -1e-6 ? '−' : v > 1e-6 ? '+' : ''}${+(Math.abs(v) * 100).toFixed(1)} cm`;
 /** Settings tabs (VR: one tab per page of rows; desktop: one heading per tab). */
 const TABS = [
   { id: 'comfort', label: 'Comfort', title: 'Comfort and movement' },
   { id: 'display', label: 'Display', title: 'Display' },
   { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
-  { id: 'access', label: 'Access', title: 'Accessibility and hands' },
+  { id: 'access', label: 'Access', title: 'Accessibility' },
+  { id: 'rope', label: 'Rope', title: 'Rope and hands' },
   { id: 'touch', label: 'Touch', title: 'Touch controls (phone and tablet)', desktopOnly: true },
 ];
 /** The VR panel has no touch page. */
@@ -188,7 +195,8 @@ const SETTINGS_SCHEMA = [
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
-  { key: 'aimAssist', tab: 'access', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
+  { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },
@@ -197,7 +205,7 @@ const SETTINGS_SCHEMA = [
   { key: 'touchRopeMode', tab: 'touch', type: 'choice', label: 'Rope behaviour', desc: 'Hold to stay attached, or tap to attach and tap again to let go.', options: [['hold', 'Hold'], ['latch', 'Tap to toggle']], desktop: true },
   { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
   { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
-  { key: 'dominantHand', tab: 'access', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
+  { key: 'dominantHand', tab: 'rope', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -518,7 +526,7 @@ const MARKUP = `
 <section class="screen" data-screen="difficulty" hidden aria-labelledby="at3d-diff-title">
   <div class="panel panel-wide">
     <div class="panel-head">${backBtn()}<h2 id="at3d-diff-title">Choose your descent</h2></div>
-    <div class="panel-body"><div class="diff-grid"></div><p class="panel-note">Best times and deepest points are kept on this device.</p></div>
+    <div class="panel-body"><div class="chapter-row" role="group" aria-label="Chapter"></div><div class="diff-grid"></div><p class="panel-note">Best times and deepest points are kept on this device, for each chapter.</p></div>
   </div>
 </section>
 
@@ -613,8 +621,8 @@ const MARKUP = `
   <div class="panel panel-victory">
     <div class="panel-body">
       <div class="victory-lamp" aria-hidden="true"></div>
-      <p class="kicker">Chapter I · The Underspire</p>
-      <h2 id="at3d-victory-title" class="victory-title">You reached the bottom</h2>
+      <p class="kicker v-kicker">Chapter I · The Underspire</p>
+      <h2 id="at3d-victory-title" class="victory-title v-title">You reached the bottom</h2>
       <div class="victory-time"><span class="victory-time-label">Descent time</span><span class="victory-time-value v-time">0:00.00</span><span class="badge-new v-new" hidden>★ New best</span></div>
       <dl class="stat-grid">
         <div><dt>Falls</dt><dd class="v-deaths">0</dd></div>
@@ -626,13 +634,15 @@ const MARKUP = `
       <p class="panel-note victory-note v-note"></p>
       <div class="v-splits-wrap" hidden><h3 class="group-title">Sections</h3><ol class="v-splits"></ol></div>
       <div class="teaser">
-        <p class="teaser-kicker">Chapters II–V · coming soon</p>
-        <p class="teaser-names"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
-        <p class="teaser-line">Something at the bottom was cut to your measure. It took forty of you to get it right.</p>
-        <p class="teaser-line teaser-uplink">Uplink lost below the Mark. Continuity holding. Expedition 42 on standby.</p>
+        <p class="teaser-kicker v-tk">Chapters II–V · coming soon</p>
+        <p class="teaser-names v-tn"><span>II Lamphold</span><span>III The Mere</span><span>IV The Keeping</span><span>V The Still Flame</span></p>
+        <p class="teaser-line v-t1">Something at the bottom was cut to your measure. It took forty of you to get it right.</p>
+        <p class="teaser-line teaser-uplink v-t2">Uplink lost below the Mark. Continuity holding. Expedition 42 on standby.</p>
       </div>
       <div class="victory-actions">
-        <button class="btn btn-primary" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
+        <button class="btn btn-primary v-next" type="button" data-action="next-chapter" data-autofocus hidden><span class="btn-label">Chapter II · Lamphold</span></button>
+        <button class="btn btn-primary v-buy" type="button" data-action="full-version" hidden><span class="btn-label">Continue the descent</span></button>
+        <button class="btn btn-primary v-again" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
         <button class="btn" type="button" data-action="menu"><span class="btn-label">Menu</span></button>
       </div>
     </div>
@@ -719,6 +729,7 @@ position:fixed;inset:0;z-index:20;pointer-events:none;font-family:var(--fu);font
 .at3d-ui .menu-hint,.at3d-ui .vr-note{margin:0;font-size:.76em;color:var(--ink-3);text-align:center;line-height:1.7}
 .at3d-ui .vr-note{color:#9cbdb4;border:1px solid rgba(106,156,144,.35);border-radius:3px;padding:.45em .8em;background:rgba(14,24,23,.5)}
 .at3d-ui .vr-note b{color:#d6efe8;font-weight:650}
+.at3d-ui .chapter-row{display:flex;gap:.7em;margin:0 0 .8em}.at3d-ui .chapter-row .btn{flex:1;min-width:0}.at3d-ui .chapter-row .btn.is-on{border-color:rgba(224,160,80,.7);box-shadow:inset 0 0 0 1px rgba(224,160,80,.35)}.at3d-ui .chapter-row .btn[hidden]{display:none}
 .at3d-ui .diff-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7em}
 .at3d-ui .diff-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:.45em;min-height:var(--tap);padding:.95em 1em .9em;margin:0;text-align:left;color:var(--ink);background:linear-gradient(180deg,rgba(34,38,40,.92),rgba(18,20,22,.94));border:1px solid var(--line-2);border-radius:3px;cursor:pointer;transition:border-color .16s,transform .08s}
 .at3d-ui .diff-card:active{transform:translateY(1px)}
@@ -1068,6 +1079,7 @@ export class UI3D {
       vrNote: q('.vr-note'),
       bestStrip: q('.best-strip'),
       diffGrid: q('.diff-grid'),
+      chapterRow: q('.chapter-row'),
       ctlQuest: q('.ctl-quest'),
       ctlDesktop: q('.ctl-desktop'),
       ctlTouch: q('.ctl-touch'),
@@ -1088,6 +1100,15 @@ export class UI3D {
       vDeaths: q('.v-deaths'),
       vDiff: q('.v-diff'),
       vNote: q('.v-note'),
+      vKicker: q('.v-kicker'),
+      vTitle: q('.v-title'),
+      vTk: q('.v-tk'),
+      vTn: q('.v-tn'),
+      vT1: q('.v-t1'),
+      vT2: q('.v-t2'),
+      vNext: q('.v-next'),
+      vAgain: q('.v-again'),
+      vBuy: q('.v-buy'),
       vSplitsWrap: q('.v-splits-wrap'),
       vSplits: q('.v-splits'),
       sectionSplit: q('.section-split'),
@@ -1470,7 +1491,7 @@ export class UI3D {
     if (!this.dom) return;
     const key = this._defaultDifficulty();
     const diff = DIFFICULTY[key];
-    const best = Storage.getBest(key);
+    const best = this._best(key);
     const cont = this._continueInfo();
     const d = this.dom;
     // Continue (the saved run) leads when there is one; 'New descent' then opens the difficulty chooser instead of starting at once.
@@ -1500,7 +1521,7 @@ export class UI3D {
     if (this._bestCells) {
       for (const k of DIFFICULTY_ORDER) {
         const dd = this._bestCells[k];
-        const b = Storage.getBest(k);
+        const b = this._best(k);
         dd.textContent = b != null ? fmtTime(b) : '—';
         dd.classList.toggle('is-empty', b == null);
       }
@@ -1528,7 +1549,7 @@ export class UI3D {
 
   _continueLine(info) {
     const sec = info.sectionName ? info.sectionName : `Section ${(info.section | 0) + 1}`;
-    return `${info.label || 'Normal'} · ${sec} · ${fmtTime(num(info.time, 0))}`;
+    return `${info.chapter === 'ch2' ? 'II · Lamphold · ' : ''}${info.label || 'Normal'} · ${sec} · ${fmtTime(num(info.time, 0))}`;
   }
 
   _buildBestStrip() {
@@ -1548,6 +1569,19 @@ export class UI3D {
     const grid = this.dom.diffGrid;
     grid.textContent = '';
     this._diffCards = Object.create(null);
+    const row = this.dom.chapterRow;
+    if (row) {
+      row.textContent = '';
+      this._chapterBtns = [1, 2].map((n) => {
+        const b = make('button', 'btn');
+        b.type = 'button';
+        b.dataset.action = 'set-chapter';
+        b.dataset.chapter = String(n);
+        b.append(make('span', 'btn-label', n === 1 ? 'I · The Underspire' : 'II · Lamphold'), make('span', 'btn-sub', n === 1 ? '556 m · the first descent' : '1,250 m · the town of lamps'));
+        row.appendChild(b);
+        return b;
+      });
+    }
     DIFFICULTY_ORDER.forEach((k, i) => {
       const d = DIFFICULTY[k];
       const b = make('button', 'diff-card');
@@ -1570,11 +1604,19 @@ export class UI3D {
 
   _refreshDifficulty() {
     if (!this._diffCards) return;
+    if (this._chapterBtns) {
+      const g = this.game || {};
+      const playable = typeof g.isChapterPlayable === 'function' ? g.isChapterPlayable(2) : false;
+      this._chapterBtns.forEach((b, i) => {
+        b.classList.toggle('is-on', (g.chapter === 2 ? 2 : 1) === i + 1);
+        b.hidden = i === 1 && !playable;
+      });
+    }
     const last = this._defaultDifficulty();
     for (const k of DIFFICULTY_ORDER) {
       const c = this._diffCards[k];
-      const best = Storage.getBest(k);
-      const deep = num(Storage.get(`deepest.${k}`, 0), 0);
+      const best = this._best(k);
+      const deep = this._deepest(k);
       c.best.textContent = '';
       c.best.append('Best ', make('b', null, best != null ? fmtTime(best) : '—'));
       c.meta.textContent = deep > 0 ? `Deepest ${fmtMeters(deep)}` : 'Not yet descended';
@@ -2199,7 +2241,7 @@ export class UI3D {
           b.type = 'button';
           b.dataset.action = 'warp';
           b.dataset.section = String(i);
-          b.append(make('span', 'warp-num', ROMAN[i] || String(i + 1)), make('span', 'warp-name', s.name || `Section ${i + 1}`));
+          b.append(make('span', 'warp-num', secNum(i)), make('span', 'warp-name', s.name || `Section ${i + 1}`));
           b.setAttribute('aria-label', `Warp to section ${i + 1}: ${s.name || ''}`);
           grid.appendChild(b);
         });
@@ -2257,7 +2299,7 @@ export class UI3D {
     const key = g.difficultyKey || 'normal';
     const diff = DIFFICULTY[key] || DIFFICULTY.normal;
     const time = num(p && p.time, num(g.time, 0));
-    const best = diff.recordTimes ? Storage.getBest(key) : null;
+    const best = diff.recordTimes ? this._best(key) : null;
     return {
       time,
       best,
@@ -2303,7 +2345,69 @@ export class UI3D {
       d.vBest.textContent = fmtTime(i.best != null ? i.best : i.time);
       d.vNote.textContent = '';
     }
+    if (i.names != null) d.vNote.textContent = `${d.vNote.textContent ? `${d.vNote.textContent} ` : ''}Names found ${i.names} of 5.`;
     this._fillVictorySplits();
+    this._fillVictoryChapter();
+  }
+
+  /** The end card's purchase line: { label, enabled } or null when there is nothing to sell (owned, or no entitlement module). Loads the store price once. */
+  _buyLine() {
+    const g = this.game || {};
+    const e = g.chapter === 2 ? g.entitlement : null;
+    if (!e || typeof e.info !== 'function' || e.state === 'full') return null;
+    const info = e.info();
+    if (info.store && !info.price && !this._priceAsked && typeof e.loadPrice === 'function') {
+      this._priceAsked = true;
+      e.loadPrice().then(() => {
+        this._vrDirty = true;
+        if (this.current === 'victory') this._fillVictoryChapter();
+      });
+    }
+    if (!info.store) return { label: 'The full descent is on the Meta Horizon Store', enabled: false };
+    return { label: info.price ? `Continue the descent · ${info.price}` : 'Continue the descent', enabled: true };
+  }
+
+  /** The chapter-specific words of the end card: Chapter I points on to Lamphold (when it is playable), Chapter II points on to the full version. */
+  _fillVictoryChapter() {
+    const d = this.dom;
+    const g = this.game || {};
+    const ch = g.chapter === 2 ? 2 : 1;
+    const next = ch === 1 && typeof g.isChapterPlayable === 'function' && g.isChapterPlayable(2);
+    if (ch === 2) {
+      d.vKicker.textContent = 'Chapter II · Lamphold';
+      d.vTitle.textContent = 'The Evening has ended';
+      d.vTk.textContent = 'Chapters III–V · the full version';
+      d.vTn.textContent = '';
+      for (const n of ['III The Mere', 'IV The Keeping', 'V The Still Flame']) d.vTn.appendChild(make('span', null, n));
+      d.vT1.textContent = 'They have been waiting since the first lamp.';
+      d.vT2.textContent = 'Who is the seat at the end of the aisle for?';
+    } else {
+      d.vKicker.textContent = 'Chapter I · The Underspire';
+      d.vTitle.textContent = 'You reached the bottom';
+      d.vTk.textContent = next ? 'Chapter II · Lamphold · the town below' : 'Chapters II–V · coming soon';
+      d.vTn.textContent = '';
+      for (const n of next ? ['II Lamphold', 'III The Mere', 'IV The Keeping', 'V The Still Flame'] : ['II Lamphold', 'III The Mere', 'IV The Keeping', 'V The Still Flame']) d.vTn.appendChild(make('span', null, n));
+      d.vT1.textContent = 'Something at the bottom was cut to your measure. It took forty of you to get it right.';
+      d.vT2.textContent = 'Uplink lost below the Mark. Continuity holding. Expedition 42 on standby.';
+    }
+    // CHAPTER II's end card sells the full version (platform/entitlement.js): one button, the store's own price; outside a store install it only says where it is
+    const buy = this._buyLine();
+    d.vBuy.hidden = ch !== 2 || !buy;
+    if (buy) {
+      d.vBuy.querySelector('.btn-label').textContent = buy.label;
+      d.vBuy.disabled = !buy.enabled;
+    }
+    d.vAgain.querySelector('.btn-label').textContent = ch === 2 ? 'Replay Chapter II' : 'Descend again';
+    d.vNext.hidden = !next;
+    if (next) {
+      d.vNext.setAttribute('data-autofocus', '');
+      d.vAgain.classList.remove('btn-primary');
+      d.vAgain.removeAttribute('data-autofocus');
+    } else {
+      d.vNext.removeAttribute('data-autofocus');
+      d.vAgain.classList.add('btn-primary');
+      d.vAgain.setAttribute('data-autofocus', '');
+    }
   }
 
   // ------------------------------------------------------------------ section records (LEVEL_FUN_PLAN item 12, P6)
@@ -2398,7 +2502,7 @@ export class UI3D {
     for (const sp of list) {
       const li = make('li');
       const name = (secs[sp.index] && secs[sp.index].name) || `Section ${sp.index + 1}`;
-      li.append(make('b', null, ROMAN[sp.index] || String(sp.index + 1)), make('span', null, name), make('em', null, fmtSplit(sp.time)));
+      li.append(make('b', null, secNum(sp.index)), make('span', null, name), make('em', null, fmtSplit(sp.time)));
       if (sp.medal) {
         const m = make('span', 'medal');
         const dot = make('i');
@@ -2463,7 +2567,7 @@ export class UI3D {
   }
 
   /** Large carved section title card (index from the level when omitted); `split` = the last section's split line (P6). */
-  showSectionTitle(name, subtitle, index, split) {
+  showSectionTitle(name, subtitle, index, split, numeral) {
     if (!name) return;
     if (this._lastTitle.text === name && this._clock - this._lastTitle.t < DEDUPE) return;
     this._lastTitle.text = name;
@@ -2474,7 +2578,7 @@ export class UI3D {
     const t = this._title;
     t.name = String(name);
     t.sub = subtitle ? String(subtitle) : '';
-    t.num = idx >= 0 ? `— ${ROMAN[idx] || idx + 1} —` : '';
+    t.num = numeral ? `— ${numeral} —` : idx >= 0 ? `— ${secNum(idx)} —` : '';
     t.split = split ? String(split) : '';
     t.t = TITLE_TIME;
     t.dirty = true;
@@ -2543,6 +2647,30 @@ export class UI3D {
         break;
       case 'sandbox':
         this._startRun('sandbox', fromVR);
+        break;
+      case 'set-chapter':
+        if (typeof game.setChapter === 'function' && game.setChapter(Number(d.chapter) === 2 ? 2 : 1)) {
+          this.refreshMenu();
+          this._vrDirty = true;
+        }
+        break;
+      case 'full-version': {
+        // the purchase dialog must open synchronously inside the click / the controller's select (platform/entitlement.js purchase())
+        const e = game.entitlement;
+        if (e && typeof e.purchase === 'function') {
+          e.purchase().then((r) => {
+            if (r === 'purchased' || r === 'owned') this.showToast('Thank you. Chapters III to V open as they are released.', 5);
+            else if (r === 'error') this.showToast('The store could not be reached. Nothing was charged.', 4);
+            if (this.current === 'victory' && this.dom) this._fillVictoryChapter(); // (owned: the button goes)
+            this._vrDirty = true;
+          });
+        }
+        break;
+      }
+      case 'next-chapter':
+        this._call('playNextChapter');
+        if ((game.state === 'playing' || game.state === 'intro') && this.current !== null) this.show(null);
+        if (!fromVR) this._lockPointer();
         break;
       case 'difficulty':
       case 'controls':
@@ -2681,6 +2809,39 @@ export class UI3D {
     }
     if (game.state === 'playing' && this.current !== null) this.show(null);
     if (!fromVR) this._lockPointer();
+  }
+
+  /** The best time of a difficulty in the chapter on screen: Chapter I's legacy slots, Chapter II's from the save profile (never mixed). */
+  _best(k) {
+    const g = this.game || {};
+    if (g.chapter === 2) {
+      try {
+        const r = g.save && typeof g.save.records === 'function' ? g.save.records(k) : null;
+        return r && r.best > 0 ? r.best : null;
+      } catch {
+        return null;
+      }
+    }
+    return Storage.getBest(k);
+  }
+
+  _deepest(k) {
+    const g = this.game || {};
+    if (g.chapter === 2) {
+      try {
+        const r = g.save && typeof g.save.records === 'function' ? g.save.records(k) : null;
+        return r && r.deepest > 0 ? r.deepest : 0;
+      } catch {
+        return 0;
+      }
+    }
+    return num(Storage.get(`deepest.${k}`, 0), 0);
+  }
+
+  /** game.setChapter: numbers the section cards 'II·n' in Chapter II. */
+  onChapter(n) {
+    UI_CHAPTER = n === 2 ? 2 : 1;
+    this._vrDirty = true;
   }
 
   _startRun(key, fromVR) {
@@ -3166,7 +3327,7 @@ export class UI3D {
       h.section = si;
       const sec = this._sections() ? this._sections()[si] : null;
       if (sec) {
-        this.dom.hudSection.textContent = `${ROMAN[si] || si + 1} · ${sec.name}`;
+        this.dom.hudSection.textContent = `${secNum(si)} · ${sec.name}`;
         this.dom.hudSection.classList.add('is-on');
         h.sectionT = SECTION_LABEL_TIME;
       }
@@ -3824,7 +3985,7 @@ export class UI3D {
     txt(ctx, 'PERENNIAL · EXPEDITION 41 · DESCENT AUTHORISED', cx, 302, `600 28px ${F_UI}`, COL.verdigris, 'center', 0.08, CW - 80);
 
     const key = this._defaultDifficulty();
-    const best = Storage.getBest(key);
+    const best = this._best(key);
     const sub = best != null ? `${DIFFICULTY[key].label} · best ${fmtTime(best)}` : DIFFICULTY[key].label;
     const cont = this._continueInfo();
     const x0 = 212;
@@ -3849,7 +4010,7 @@ export class UI3D {
     }
     // Records (LEVEL_FUN_PLAN P6): the best times ride on the button that opens the section records.
     const bests = DIFFICULTY_ORDER.map((k) => {
-      const b = Storage.getBest(k);
+      const b = this._best(k);
       return `${DIFFICULTY[k].label} ${b != null ? fmtTime(b) : '—'}`;
     });
     this._btn(ctx, this._region(x0, 634, w, 88, 'records'), 'Records', bests.join('  ·  '), { size: 30 });
@@ -3865,8 +4026,18 @@ export class UI3D {
     const last = this._defaultDifficulty();
     const gap = 20;
     const cw = (CW - 48 - gap * 2) / 3;
-    const y = 122;
-    const h = 568;
+    const g0 = this.game || {};
+    const ch2 = typeof g0.isChapterPlayable === 'function' && g0.isChapterPlayable(2);
+    let y = 122;
+    let h = 568;
+    if (ch2) {
+      // the chapter choice: two wide buttons over the cards (the current one is lit)
+      const bw = (CW - 48 - gap) / 2;
+      this._btn(ctx, this._region(24, 112, bw, 64, 'set-chapter', { chapter: 1 }), 'I · The Underspire', null, { size: 30, current: g0.chapter !== 2 });
+      this._btn(ctx, this._region(24 + bw + gap, 112, bw, 64, 'set-chapter', { chapter: 2 }), 'II · Lamphold', null, { size: 30, current: g0.chapter === 2 });
+      y = 190;
+      h = 500;
+    }
     DIFFICULTY_ORDER.forEach((k, i) => {
       const d = DIFFICULTY[k];
       const x = 24 + i * (cw + gap);
@@ -3910,8 +4081,8 @@ export class UI3D {
       lines.forEach((ln, li) => txt(ctx, ln, x + 22, y + 158 + li * 36, bf, COL.ink2, 'left', 0));
       ctx.fillStyle = COL.line;
       ctx.fillRect(x + 22, y + h - 118, cw - 44, 2);
-      const best = Storage.getBest(k);
-      const deep = num(Storage.get(`deepest.${k}`, 0), 0);
+      const best = this._best(k);
+      const deep = this._deepest(k);
       txt(ctx, 'Best', x + 22, y + h - 70, `500 28px ${F_UI}`, COL.ink3, 'left', 0);
       txt(ctx, best != null ? fmtTime(best) : '—', x + 92, y + h - 70, `650 30px ${F_UI}`, best != null ? COL.ink : COL.ink4, 'left', 0);
       txt(ctx, deep > 0 ? `Deepest ${fmtMeters(deep)}` : 'Not yet descended', x + 22, y + h - 28, `500 28px ${F_UI}`, COL.ink4, 'left', 0);
@@ -4054,7 +4225,7 @@ export class UI3D {
     this._header(ctx, 'About');
     const cx = CW / 2;
     txt(ctx, 'ABYSSAL TETHER', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
-    txt(ctx, 'CHAPTER I · THE UNDERSPIRE · FREE', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
+    txt(ctx, 'CHAPTERS I–II · THE FREE GAME', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
     const lab = `650 28px ${F_UI}`;
     const val = `500 28px ${F_UI}`;
     const row = (y, label, text, color) => {
@@ -4184,7 +4355,7 @@ export class UI3D {
         ctx.strokeStyle = i === cur ? 'rgba(224,160,80,0.6)' : COL.line2;
         ctx.stroke();
         ctx.restore();
-        txt(ctx, ROMAN[i] || String(i + 1), r.x + 18, r.y + 40, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
+        txt(ctx, secNum(i), r.x + 18, r.y + 40, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
         const nf = `500 28px ${F_UI}`;
         txt(ctx, ellipsize(ctx, sec.name || `Section ${i + 1}`, r.w - 36, nf), r.x + 18, r.y + 76, nf, COL.ink2, 'left', 0);
       });
@@ -4234,8 +4405,8 @@ export class UI3D {
     diamond(ctx, cx, 44, 13);
     ctx.fill();
     ctx.restore();
-    txt(ctx, 'CHAPTER I · THE UNDERSPIRE', cx, 100, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.34);
-    txt(ctx, 'You reached the bottom', cx, 154, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
+    txt(ctx, (this.game || {}).chapter === 2 ? 'CHAPTER II · LAMPHOLD' : 'CHAPTER I · THE UNDERSPIRE', cx, 100, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.34);
+    txt(ctx, (this.game || {}).chapter === 2 ? 'The Evening has ended' : 'You reached the bottom', cx, 154, `400 48px ${F_DISPLAY}`, COL.phosphor, 'center', 0.02);
     txt(ctx, 'DESCENT TIME', cx, 200, `650 28px ${F_UI}`, COL.ink3, 'center', 0.2);
     txt(ctx, fmtTime(i.time), cx, 278, `650 78px ${F_UI}`, COL.warm, 'center', 0.02);
     const recorded = i.recorded !== false && i.difficultyKey !== 'sandbox';
@@ -4250,7 +4421,7 @@ export class UI3D {
     const cells = [
       ['FALLS', String(i.falls != null ? i.falls : i.deaths || 0)],
       ['LOWEST HP', pct(U.clamp(num(i.lowestHp, 1), 0, 1))],
-      ['ITEMS USED', String(i.itemsUsed | 0)],
+      i.names != null ? ['NAMES', `${i.names} / 5`] : ['ITEMS USED', String(i.itemsUsed | 0)],
       [recorded ? 'BEST' : i.label ? i.label.toUpperCase() : 'MODE', recorded ? fmtTime(i.best != null ? i.best : i.time) : '—'],
     ];
     const gap = 12;
@@ -4270,11 +4441,13 @@ export class UI3D {
     });
     // This run's section splits (P6): a 4 x 2 grid, the teaser squeezed under it.
     const splits = this._runSplits.filter(Boolean);
+    const g1 = this.game || {};
+    const nextCh = g1.chapter !== 2 && typeof g1.isChapterPlayable === 'function' && g1.isChapterPlayable(2);
+    const kick = g1.chapter === 2 ? 'CHAPTERS III–V · THE FULL VERSION' : nextCh ? 'CHAPTER II · LAMPHOLD · THE TOWN BELOW' : 'CHAPTERS II–V · COMING SOON';
     if (splits.length) {
       this._paintVictorySplits(ctx, splits, 478);
-      txt(ctx, 'CHAPTERS II–V · COMING SOON', cx, 640, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
-      this._btn(ctx, this._region((CW - 680) / 2, 676, 400, 76, 'restart'), 'Descend again', null, { primary: true, size: 32 });
-      this._btn(ctx, this._region((CW - 680) / 2 + 416, 676, 264, 76, 'menu'), 'Menu', null, {});
+      txt(ctx, kick, cx, 640, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+      this._victoryButtons(ctx, 676, 76, nextCh);
       return;
     }
     // The hook.
@@ -4288,15 +4461,40 @@ export class UI3D {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(224,160,80,0.45)';
     ctx.stroke();
-    txt(ctx, 'CHAPTERS II–V · COMING SOON', cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
-    const names = 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
+    txt(ctx, kick, cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+    const names = g1.chapter === 2 ? 'III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME' : 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
     const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
     txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
     txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
+    this._victoryButtons(ctx, 670, 82, nextCh);
+  }
+
+  /** The end card's buttons: [Chapter II] (Chapter I, when Lamphold is playable), Descend again, Menu. */
+  _victoryButtons(ctx, y, h, nextCh) {
+    const buy = this._buyLine();
+    if (buy) {
+      // Chapter II: [Continue the descent · price] [Replay] [Menu]
+      const w = CW - 48;
+      const a = Math.round(w * 0.5);
+      const b = Math.round(w * 0.27);
+      this._btn(ctx, this._region(24, y, a, h, 'full-version'), buy.label, null, { primary: buy.enabled, size: buy.label.length > 30 ? 24 : 30, ghost: !buy.enabled });
+      this._btn(ctx, this._region(24 + a + 12, y, b, h, 'restart'), 'Replay', null, { size: 30 });
+      this._btn(ctx, this._region(24 + a + b + 24, y, w - a - b - 24, h, 'menu'), 'Menu', null, { size: 30 });
+      return;
+    }
+    if (nextCh) {
+      const w = CW - 48;
+      const a = Math.round(w * 0.46);
+      const b = Math.round(w * 0.3);
+      this._btn(ctx, this._region(24, y, a, h, 'next-chapter'), 'Chapter II · Lamphold', null, { primary: true, size: 30 });
+      this._btn(ctx, this._region(24 + a + 12, y, b, h, 'restart'), 'Again', null, { size: 30 });
+      this._btn(ctx, this._region(24 + a + b + 24, y, w - a - b - 24, h, 'menu'), 'Menu', null, { size: 30 });
+      return;
+    }
     const bw = 680;
     const bx = (CW - bw) / 2;
-    this._btn(ctx, this._region(bx, 670, 400, 82, 'restart'), 'Descend again', null, { primary: true, size: 32 });
-    this._btn(ctx, this._region(bx + 416, 670, bw - 416, 82, 'menu'), 'Menu', null, {});
+    this._btn(ctx, this._region(bx, y, 400, h, 'restart'), 'Descend again', null, { primary: true, size: 32 });
+    this._btn(ctx, this._region(bx + 416, y, bw - 416, h, 'menu'), 'Menu', null, {});
   }
 
   /** VR victory: up to 8 section splits in two rows of four cells (numeral, time, medal dot + word). */
@@ -4316,7 +4514,7 @@ export class UI3D {
       ctx.lineWidth = 2;
       ctx.strokeStyle = sp.medal ? 'rgba(224,160,80,0.4)' : COL.line2;
       ctx.stroke();
-      txt(ctx, ROMAN[sp.index] || String(sp.index + 1), x + 14, y + 42, `700 28px ${F_DISPLAY}`, COL.amber, 'left', 0);
+      txt(ctx, secNum(sp.index), x + 14, y + 42, `700 28px ${F_DISPLAY}`, COL.amber, 'left', 0);
       txt(ctx, fmtSplit(sp.time), x + 74, y + 42, `650 28px ${F_UI}`, COL.ink, 'left', 0);
       if (sp.medal) {
         ctx.beginPath();
@@ -4733,7 +4931,7 @@ export class UI3D {
         txt(ctx, name, x + 24, cy + 28, `600 14px ${F_UI}`, COL.ink3, 'left', 0.06);
       });
     } else if (sec) {
-      const label = `${ROMAN[si] || si + 1} · ${sec.name}`;
+      const label = `${secNum(si)} · ${sec.name}`;
       const size = fitSize(ctx, label, c.cw - 24, 22, 16, (px) => `400 ${px}px ${F_DISPLAY}`, 0.04);
       txt(ctx, label, c.cw / 2, 142, `400 ${size}px ${F_DISPLAY}`, COL.amber, 'center', 0.04);
     }

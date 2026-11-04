@@ -518,7 +518,7 @@ export class Objectives3D {
   /** Movers to the clock; each lane's falling flag from the clock (no events: step() emits them). */
   _pose() {
     if (this.movers) this.movers.pose(this.clock);
-    for (let i = 0; i < this.lanes.length; i++) this.laneOn[i] = this._laneU(this.lanes[i], this.clock) < this.lanes[i].on ? 1 : 0;
+    for (let i = 0; i < this.lanes.length; i++) this.laneOn[i] = this._laneU(this.lanes[i], this.clock) < this.lanes[i].on && !this.lanes[i].off ? 1 : 0;
   }
 
   /** Where lane `L` is in its cycle at clock t: 0..period (the stones fall for u < on). */
@@ -818,7 +818,7 @@ export class Objectives3D {
       const u1 = this._laneU(L, t1);
       const k0 = this._laneCycle(L, t0);
       const k1 = this._laneCycle(L, t1);
-      const on = u1 < L.on;
+      const on = u1 < L.on && !L.off;
       this.laneOn[i] = on ? 1 : 0;
       const hear = this.bus && p && this._laneDist(L, p) <= L.hear;
       if (hear) {

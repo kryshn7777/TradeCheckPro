@@ -16,7 +16,7 @@ export const EYES = {
   z: -1.25,
   radii: [0.5, 0.2, 0.3], // a slit: wide, thin, shallow
   tilt: 0.42, // rad: the outer corners rise, an angry brow
-  halo: 3.2, // halo size (m, attenuated with distance)
+  halo: 4.4, // halo size (m, attenuated with distance)
 };
 export const MAW = {
   y: -1.05,
@@ -25,7 +25,7 @@ export const MAW = {
   teeth: 9,
   tooth: 0.5, // tooth height at the middle of a row
   gapClosed: 0.1,
-  gapOpen: 1.7,
+  gapOpen: 2.3, // the jaw drops this far when it is wide open (was 1.7: from 10 m the open mouth read as a slit)
 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -115,7 +115,7 @@ export class Eyes {
   constructor(opts = {}) {
     this.seed = opts.seed || 0;
     this.geometry = eyesGeometry();
-    this.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.03, 0.02), fog: false, toneMapped: false });
+    this.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.2, 0.002, 0.001), fog: false, toneMapped: false });
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.name = 'Eyes';
     this.mesh.frustumCulled = false;
@@ -126,11 +126,12 @@ export class Eyes {
       size: EYES.halo,
       sizeAttenuation: true,
       map: this.haloMap,
-      color: new THREE.Color(1, 0.06, 0.03),
+      color: new THREE.Color(1, 0.004, 0.002),
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       fog: false,
+      toneMapped: false, // the tone mapper washes a bright red toward pink / orange: the eyes are drawn straight
       opacity: 0.6,
     });
     this.halo = new THREE.Points(this.haloGeometry, this.haloMaterial);
@@ -163,9 +164,9 @@ export class Eyes {
     if (!show) return;
     const g = eyeGlow(snap, t, this.seed);
     this.glow = g;
-    // brighter = more red (never white: the green / blue channels stay low), the halo swells and strengthens
-    this.material.color.setRGB(0.55 + 0.55 * g, 0.015 + 0.02 * g, 0.01 + 0.012 * g);
-    this.haloMaterial.opacity = clamp(0.28 + 0.4 * g, 0, 1);
+    // brighter = more red (never pink or white: the green / blue channels are ~0, so the display shows (255, ~5, ~3)), the halo swells and strengthens
+    this.material.color.setRGB(0.6 + 0.55 * g, 0.002, 0.001);
+    this.haloMaterial.opacity = clamp(0.4 + 0.45 * g, 0, 1);
     this.haloMaterial.size = EYES.halo * (0.85 + 0.3 * g);
   }
 
