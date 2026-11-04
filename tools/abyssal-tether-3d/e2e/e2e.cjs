@@ -241,6 +241,8 @@ async function partDesktop(browser, base) {
   const lastF = fadeTrace[fadeTrace.length - 1];
   const fadeOk = fadeTrace.every(([gt, f]) => f <= Math.max(0, 1 - 1.5 * gt) + 0.12);
   check('start fade clears at 1.5/s of game time (fade vs game time)', fadeOk && (lastF[0] < 0.7 || lastF[1] < 0.05), fadeTrace.map((r) => r.slice(0, 2)));
+  // A slow software-GL frame can stall the page for a while: let the poll see the fade clear before freezing the game.
+  await page.waitForFunction(() => window.__fadeClear && window.__fadeClear.at, null, { timeout: 60000 }).catch(() => {});
   await page.evaluate(() => window.AT3D.debug.freeze(true));
   // Run time (game.time) starts at 0 on start() and only advances on simulated frames
   // (realTime also ticks on the frozen presentation frames). `first` is the first playing
@@ -301,9 +303,11 @@ async function partDesktop(browser, base) {
   s = await step(page, 1 / 60);
   check('arrow keys aim the view at the first ring (right-hand target t1)', s.hands.right.target === 't1', s.hands.right);
   let attached = false;
+  // The rope guns start in their holsters (sim/holster3d.js): a press draws the gun (0.14 s) and the shot waits for it, as long as
+  // the button is still held. Hold the button past the draw (a release before it cancels the shot), then read the tether.
   for (let k = 0; k < 4 && !attached; k++) {
     await page.mouse.down({ button: 'left' });
-    s = await step(page, 2 / 60);
+    s = await step(page, 0.3);
     attached = s.hands.right.anchor === 't1';
     if (!attached) {
       await page.mouse.up({ button: 'left' });
@@ -790,7 +794,7 @@ async function partXR(browser, base) {
   check('XR: right controller ray targets t1', s.hands.right.target === 't1', s.hands.right);
   const h0 = await page.evaluate(() => window.__xr.haptics.length);
   await button('right', 0, true);
-  s = await step(page, 2 / 60);
+  s = await step(page, 0.3); // the gun is drawn from the holster first (0.14 s), then the held trigger fires
   const hap = await page.evaluate((n) => window.__xr.haptics.slice(n), h0);
   check('XR: trigger fires the tether (attached to t1, haptic pulse)', s.hands.right.anchor === 't1' && hap.some((h) => h[0] === 'right'), [s.hands.right, hap.slice(0, 3)]);
   // Swing: left stick forward (relative to the head) off the Threshold, stick released
