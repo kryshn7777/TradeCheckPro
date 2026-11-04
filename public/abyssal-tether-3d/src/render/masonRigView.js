@@ -30,7 +30,7 @@ import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
 import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
-import { clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
+import { blockScales, clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
 import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 const DEFAULTS = {
@@ -466,15 +466,14 @@ export class MasonRigView {
       F[i * 12 + 1] += F[i * 12 + 7] * k;
       F[i * 12 + 2] += F[i * 12 + 8] * k;
     }
-    // per-bone uniform scale from the link lengths (the taper lives in the sim)
+    // per-bone uniform scale from the link lengths (the taper lives in the sim). It follows the REST length of the two links at the block
+    // (B.rest, from the sim's taper), not the live chord: the chords change by ~0.5 m/s per link while it crawls (corners, the wall fit), and
+    // sizing from them made every block swell and shrink by 10-20 % ("the creature's body compresses and expands"). The live chord is the
+    // fallback for a body without `rest` (an older sim, a synthetic one).
     const P0 = this.meta.P0;
     const bs = o.bodyScale / P0;
     S[0] = hs;
-    for (let i = 1; i < SEG; i++) {
-      const a = len3(sp[i * 3] - sp[i * 3 - 3], sp[i * 3 + 1] - sp[i * 3 - 2], sp[i * 3 + 2] - sp[i * 3 - 1]);
-      const b = i < SEG - 1 ? len3(sp[i * 3 + 3] - sp[i * 3], sp[i * 3 + 4] - sp[i * 3 + 1], sp[i * 3 + 5] - sp[i * 3 + 2]) : a;
-      S[i] = clamp((a + b) * 0.5 * bs, size < 1 ? 0.08 : 0.4, 1.6);
-    }
+    blockScales(B, sp, bs, size < 1 ? 0.08 : 0.4, S);
     if (o.twitch > 0) this._twitch(F, S, o.twitch, B);
 
     // ---- crown aim (spring) ----

@@ -276,3 +276,28 @@ export function solve2(out, hx, hy, hz, tx, ty, tz, a0, b0, px, py, pz, maxStret
   out[5] = out[1] + (ly / ll) * b;
   out[6] = out[2] + (lz / ll) * b;
 }
+
+/**
+ * The uniform scale of every vertebra bone (S[1..SEG-1]; S[0], the crown, is the caller's) from the LINK LENGTHS: the model's rest pitch is
+ * `P0`, so a block is `bs` (= bodyScale / P0) times the link length it sits on, the mean of the two links at the block. It uses the REST
+ * length of the links (`B.rest`, from the sim's taper), not the live chord: the chords change by ~0.5 m/s per link while the creature crawls
+ * (corners, the wall fit), and sizing from them made every block swell and shrink by 10-20 % ("the creature's body compresses and expands").
+ * The live chord is the fallback for a body without `rest` (an older sim, a synthetic one). `lo` .. 1.6 clamps the result.
+ */
+export function blockScales(B, sp, bs, lo, S) {
+  const rest = B.rest;
+  const n = S.length;
+  for (let i = 1; i < n; i++) {
+    let len;
+    if (rest && rest[i] > 0) {
+      len = (rest[i] + (i < n - 1 ? rest[i + 1] : rest[i])) * 0.5;
+    } else {
+      const a = Math.hypot(sp[i * 3] - sp[i * 3 - 3], sp[i * 3 + 1] - sp[i * 3 - 2], sp[i * 3 + 2] - sp[i * 3 - 1]);
+      const b = i < n - 1 ? Math.hypot(sp[i * 3 + 3] - sp[i * 3], sp[i * 3 + 4] - sp[i * 3 + 1], sp[i * 3 + 5] - sp[i * 3 + 2]) : a;
+      len = (a + b) * 0.5;
+    }
+    const v = len * bs;
+    S[i] = v < lo ? lo : v > 1.6 ? 1.6 : v;
+  }
+  return S;
+}
