@@ -119,12 +119,17 @@ falling behind you: front 7 m/s rubber-banded to a 22 / 16 / 11 m gap, a creak 0
 and the Mere opens (`render/mereView.js`: black water, 1,400 dark lanterns, 103 throats that turn to the clicks, the near one rises to your eye, all bow into an aisle, one warm
 light at 180 m; 4 draw calls); `III · THE MERE` and its line as the chapter card; then Chapter II's end card. A jump into the water plays the card at once (the first fall that does not kill).
 
-**Not built (honest list).** The knock doors, Names N2-1..5 as places and the Holdfast "handshake" (II-2); the Waking Hall's hands and tally plates; the crane crush telegraph and
-the stone yards' stacks; the Mason's breach, the hidden path, `safeLight` rooms, noise masking, the Dresser measurement of II-6, the Stopping and the runaway (II-10); the crushing
-counterweights and the Mason in the shafts (II-7); the rope telegraph (the buzzing hand); driven pendulum houses; the cinder stairs' crumbles and lanes and the lamp you cannot
-keep (II-11); the Round's five tier galleries, their bells and clapper rings (the Round walks the stair instead); the Span's trolleys, brass / iron hangers (the plates are tagged
-but only free-attach bites them) and the stair-step last span; a real moving cage *floor* for the Doorman's lift (by design you hang from outrigger rings); the Lamphold art kit and
-its lightmaps (Chapter I's baked lighting does not apply: Chapter II falls back to the dressing, the lamp field and the lights); the chapter's radio (`radio` in the text file) and its
-comms script; the end card's purchase button (the card names the full version, no store flow); the in-world chain at the end of Chapter I (the end card's button starts Lamphold). **Nothing
-has been played on a headset.** The numbers (the Round's pace, the Span's gap, the whips' lead, the cage rings' distance from the sphere) are closed-form-checked and tuned for Normal;
-the boss has not been beaten by a bot on a rope route, only its pieces checked (docs/.../CHAPTER_II_DIRECTION.md §5.2 asks for the bot proof).
+**Finished after the first push (the cut list).** The five **Names** (N2-1 .. N2-5: slabs with the name carved, on the stair, off it, and where only a release at the third
+chandelier's full swing lands; found by standing at them; "Names n / 5" on the end card); the Span's **trolleys** (two iron rings on the under-rail, 7 and 9 m/s); **lit clusters** in
+the Dressing Yards (three rests the Mason cannot enter, a budget that never runs out); the **hammer floor** and **THE STOPPING** of II-10 (the escapement's last ring: 4 s of
+grinding, then the wheel and the hammers stand still for 14 s and the wheel runs on where it stood: `stopAt` / `stopFor` in `sim/movers3d.js`, `off` on lanes); the **burnt stair** of II-11
+(every third tread crumbles; three lanes of embers); the chapter's **radio** (the writer's six lines on the shipped radio director, `chapter2Glue.js`); the end card's **full-version
+button** (the store's own price through `platform/entitlement.js`; outside a store install it says where the game is and does nothing). Tests: `tests/level/chapter2-beats.mjs`,
+`tests/comms/chapter2-radio.mjs`.
+
+**Still not built (honest list).** The knock doors (II-2) and the Holdfast "handshake"; the Waking Hall's hands and tally plates; the stone yards' crane crush telegraph; the Mason's breach and its hidden path
+in the walls, noise masking in the din, the Dresser's measurement in II-6; the crushing counterweights and the Mason in the shafts (II-7); the rope telegraph (the buzzing hand); driven pendulum houses; the
+lamp you cannot keep (II-11); the Round's five tier galleries, their bells and clapper rings (the Round walks the stair instead); a real moving cage *floor* for the Doorman's lift (by design you hang
+from outrigger rings); the Lamphold art kit and its lightmaps (Chapter I's baked lighting does not apply); the in-world chain at the end of Chapter I (the end card's button starts Lamphold).
+**Nothing has been played on a headset.** The numbers (the Round's pace, the Span's gap, the whips' lead, the cage rings' distance from the sphere, the hammers' damage) are closed-form-checked and
+tuned for Normal; the boss has not been beaten by a bot on a rope route, only its pieces checked (CHAPTER_II_DIRECTION.md section 5.2 asks for the bot proof).

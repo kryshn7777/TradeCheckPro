@@ -2661,6 +2661,7 @@ export class UI3D {
           e.purchase().then((r) => {
             if (r === 'purchased' || r === 'owned') this.showToast('Thank you. Chapters III to V open as they are released.', 5);
             else if (r === 'error') this.showToast('The store could not be reached. Nothing was charged.', 4);
+            if (this.current === 'victory' && this.dom) this._fillVictoryChapter(); // (owned: the button goes)
             this._vrDirty = true;
           });
         }
