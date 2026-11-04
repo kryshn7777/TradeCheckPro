@@ -265,7 +265,7 @@ export function snapshotOf(lv, level, env) {
       if (!decals.attrs) return fail('decals');
     }
   }
-  if (lv._cogs) objs.add(lv._cogs.mesh);
+  if (lv._cogs) for (const m of lv._cogs.meshes || [lv._cogs.mesh]) objs.add(m); // the cog LOD meshes (near / mid / far)
   // every object under the root that the dressing added must be one of the above (a new kind of output: no snapshot, it would be lost)
   for (const o of lv.root.children) {
     if (lv._startSet.has(o) || objs.has(o)) continue;

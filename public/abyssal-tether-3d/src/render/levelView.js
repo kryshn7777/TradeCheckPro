@@ -1333,7 +1333,17 @@ const ORGAN = [0, 1, 2, 3, 2, 2, 3, 2];
 const COG = [0, 2, 2, 3, 2, 2, 4, 3];
 const WET_RAMP = [0.1, 0.15, 0.3, 0.2, 0.5, 0.6, 0.4, 0.7];
 const COG_MAX = 48;
-const COG_DIST = 46; // x detail scale: the great cogs are silhouettes in the haze beyond this
+const COG_DIST = 80; // x detail scale: the great cogs are silhouettes in the haze beyond ~40 m; they used to be dropped at 46 m (a pop); the far level (~240 triangles) is cheap enough to keep them to 80
+/**
+ * Which cog mesh draws an instance: 0 near (~3.6 k triangles), 1 mid (~680), 2 far (~200). `rim` = the distance from the eye to the cog's rim
+ * (m), `r` its radius: by how many radii away it is, since the teeth stay readable for a few radii and then the cog is a silhouette.
+ * `nearOk` false (the low tier) never picks the near one.
+ */
+export function cogLodFor(rim, r, nearOk = true) {
+  const k = rim / Math.max(r, 0.5);
+  if (nearOk && k < 3.5) return 0;
+  return k < 9 ? 1 : 2;
+}
 /** Sections (S1..S8) that get flying-buttress style wall buttresses / emissive cracks / pipe runs / broken stair flights. */
 const BUTT = [1, 1, 1, 0, 1, 0, 0, 0];
 const PIPES = [0, 1, 1, 0, 1, 1, 0, 0];
@@ -1542,37 +1552,57 @@ function glowQuad(cx, cy, cz, w, h) {
 
 
 /**
- * A colossal cog, unit radius, axis +z (back face at z = 0, 0.04 thick, hub to 0.065): trapezoid
- * teeth, a rim, six spokes and a hub boss. Non-indexed position / normal / uv
+ * A colossal cog, unit radius, axis +z (back face at z = 0, ~0.04 thick, hub to ~0.065): trapezoid
+ * teeth, a rim, spokes and a hub boss. Non-indexed position / normal / uv
  * (metres at an 8 m reference radius) / AO colour, for one InstancedMesh.
+ *
+ * Three levels of detail (the colossal cogs were ONE flat 24-tooth mesh at every distance, so up close they were crude flat plates):
+ *   detail 0 (near, ~3.4 k triangles): 32 teeth with chamfered corners, a bevel round the whole outline and every spoke opening (smooth
+ *     12-segment arcs), a raised rim flange, a 20-sided hub with an axle boss and eight hex bolts;
+ *   detail 1 (mid, the original, ~680 triangles): 24 trapezoid teeth, five spokes, a 10-sided hub;
+ *   detail 2 (far, ~200 triangles): 10 teeth, three spokes, no hub: a silhouette in the haze.
  */
-export function gearGeometry(teeth = 24, spokes = 5) {
+export function gearGeometry(teeth = 24, spokes = 5, detail = 1) {
+  const near = detail === 0;
+  const far = detail >= 2;
   const sh = new THREE.Shape();
   const da = (Math.PI * 2) / teeth;
   const R_ROOT = 0.9;
+  // [angle fraction of a tooth pitch, radius]: a trapezoid; the near cog rounds its corners with two more points
+  const profile = near
+    ? [
+        [0.03, R_ROOT],
+        [0.12, 0.965],
+        [0.2, 1],
+        [0.46, 1],
+        [0.54, 0.965],
+        [0.63, R_ROOT],
+      ]
+    : [
+        [0.04, R_ROOT],
+        [0.2, 1],
+        [0.46, 1],
+        [0.62, R_ROOT],
+      ];
   for (let i = 0; i < teeth; i++) {
     const a = i * da;
-    for (const [k, r] of [
-      [0.04, R_ROOT],
-      [0.2, 1],
-      [0.46, 1],
-      [0.62, R_ROOT],
-    ]) {
+    for (const [k, r] of profile) {
       const t = a + k * da;
       const x = Math.cos(t) * r;
       const y = Math.sin(t) * r;
-      if (i === 0 && k === 0.04) sh.moveTo(x, y);
+      if (i === 0 && k === profile[0][0]) sh.moveTo(x, y);
       else sh.lineTo(x, y);
     }
   }
   sh.closePath();
   const sa = (Math.PI * 2) / spokes;
-  const gap = 0.1;
+  const gap = far ? 0.16 : 0.1;
+  const arc = near ? 12 : far ? 2 : 5;
   for (let i = 0; i < spokes; i++) {
     const hole = new THREE.Path();
     const a0 = i * sa + gap;
     const a1 = (i + 1) * sa - gap;
-    const n = 5;
+    const n = arc;
     for (let k = 0; k <= n; k++) {
       const t = a0 + ((a1 - a0) * k) / n;
       const x = Math.cos(t) * 0.76;
@@ -1587,20 +1617,61 @@ export function gearGeometry(teeth = 24, spokes = 5) {
     hole.closePath();
     sh.holes.push(hole);
   }
-  let body = new THREE.ExtrudeGeometry(sh, { depth: 0.04, bevelEnabled: false, curveSegments: 1 });
+  // the near cog is bevelled (the outline and every opening): the teeth catch a light edge instead of being flat cut-outs. The bevel is cut
+  // inward (offset = -size) so the outline stays at unit radius, and the plate is moved so its back face is still at z = 0.
+  const BEV = 0.005;
+  let body = new THREE.ExtrudeGeometry(
+    sh,
+    near
+      ? { depth: 0.04, bevelEnabled: true, bevelThickness: BEV, bevelSize: BEV, bevelOffset: -BEV, bevelSegments: 1, curveSegments: 1 }
+      : { depth: 0.04, bevelEnabled: false, curveSegments: 1 },
+  );
+  if (near) body.translate(0, 0, BEV);
   body = nonIndexed(body);
   keepAttrs(body, ['position', 'normal']);
-  let hub = new THREE.CylinderGeometry(0.2, 0.2, 0.025, 10, 1);
+  const zHub = near ? 0.0575 : 0.0525;
+  let hub = new THREE.CylinderGeometry(0.2, 0.2, 0.025, near ? 20 : far ? 6 : 10, 1);
   hub.rotateX(Math.PI / 2);
-  hub.translate(0, 0, 0.0525);
+  hub.translate(0, 0, zHub);
   hub = nonIndexed(hub);
   keepAttrs(hub, ['position', 'normal']);
-  for (const g of [body, hub]) {
+  const bodyParts = [body];
+  const hubParts = far ? [] : [hub]; // (the far cog has no hub: a few pixels)
+  if (near) {
+    // a raised rim flange on the front face, an axle boss on the hub and eight hex bolts round it
+    const ring = new THREE.Shape();
+    ring.absarc(0, 0, 0.88, 0, Math.PI * 2, false);
+    const inner = new THREE.Path();
+    inner.absarc(0, 0, 0.81, 0, Math.PI * 2, true);
+    ring.holes.push(inner);
+    let flange = new THREE.ExtrudeGeometry(ring, { depth: 0.014, bevelEnabled: false, curveSegments: 40 });
+    flange.translate(0, 0, 0.05);
+    flange = nonIndexed(flange);
+    keepAttrs(flange, ['position', 'normal']);
+    bodyParts.push(flange);
+    let boss = new THREE.CylinderGeometry(0.09, 0.09, 0.022, 16, 1);
+    boss.rotateX(Math.PI / 2);
+    boss.translate(0, 0, zHub + 0.0235);
+    boss = nonIndexed(boss);
+    keepAttrs(boss, ['position', 'normal']);
+    hubParts.push(boss);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      let bolt = new THREE.CylinderGeometry(0.024, 0.024, 0.012, 6, 1);
+      bolt.rotateX(Math.PI / 2);
+      bolt.translate(Math.cos(a) * 0.15, Math.sin(a) * 0.15, zHub + 0.0185);
+      bolt = nonIndexed(bolt);
+      keepAttrs(bolt, ['position', 'normal']);
+      hubParts.push(bolt);
+    }
+  }
+  for (const g of [...bodyParts, ...hubParts]) {
+    const isHub = hubParts.includes(g);
     const n = g.attributes.position.count;
     const col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const v = Math.abs(g.attributes.normal.getZ(i)) > 0.9 ? 1 : 0.62;
-      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = g === hub ? v * 0.9 : v;
+      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = isHub ? v * 0.9 : v;
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const uv = new Float32Array(n * 2);
@@ -1610,9 +1681,9 @@ export function gearGeometry(teeth = 24, spokes = 5) {
     }
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   }
-  const merged = mergeGeometries([body, hub], false);
-  body.dispose();
-  hub.dispose();
+  const parts = [...bodyParts, ...hubParts];
+  const merged = mergeGeometries(parts, false);
+  for (const g of parts) g.dispose();
   return merged;
 }
 
@@ -5557,16 +5628,23 @@ export class LevelView {
    * (instanced) program on the menu; the dressing plan fills it in later.
    */
   _makeCogMesh() {
-    const mesh = new THREE.InstancedMesh(gearGeometry(), this.mats.get('decorMetal'), COG_MAX);
-    mesh.name = 'cogs';
-    mesh.frustumCulled = false;
-    mesh.matrixAutoUpdate = false;
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.setColorAt(0, _c.setRGB(1, 1, 1));
-    mesh.count = 0;
-    mesh.visible = false;
-    this.root.add(mesh);
-    this._cogs = { mesh, items: [] };
+    // three levels of detail, one InstancedMesh each (gearGeometry's doc); `mesh` stays the mid one under its old name 'cogs'
+    const make = (geo, name) => {
+      const mesh = new THREE.InstancedMesh(geo, this.mats.get('decorMetal'), COG_MAX);
+      mesh.name = name;
+      mesh.frustumCulled = false;
+      mesh.matrixAutoUpdate = false;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.setColorAt(0, _c.setRGB(1, 1, 1));
+      mesh.count = 0;
+      mesh.visible = false;
+      this.root.add(mesh);
+      return mesh;
+    };
+    const near = make(gearGeometry(32, 5, 0), 'cogs-near');
+    const mid = make(gearGeometry(), 'cogs');
+    const far = make(gearGeometry(10, 3, 2), 'cogs-far');
+    this._cogs = { mesh: mid, meshes: [near, mid, far], items: [] };
   }
 
   _buildCogs(list) {
@@ -5579,22 +5657,29 @@ export class LevelView {
   _updateCogs(head, t, vd) {
     const C = this._cogs;
     if (!C) return;
-    const mesh = C.mesh;
+    const meshes = C.meshes || [C.mesh];
     const cvd = Math.min(vd, COG_DIST * this._detailScale);
-    let n = 0;
+    const nearOk = this._detailScale >= 0.8; // the `low` tier keeps the mid cog as its best
+    const n = [0, 0, 0];
     for (let i = 0; i < C.items.length; i++) {
       const c = C.items[i];
-      if (c.pos.distanceTo(head) - c.r * 1.1 > cvd) continue;
+      const rim = c.pos.distanceTo(head) - c.r * 1.1;
+      if (rim > cvd) continue;
+      const lod = meshes.length === 3 ? cogLodFor(rim, c.r, nearOk) : 0;
+      const mesh = meshes[lod];
       _m4.makeRotationZ(c.phase + c.spin * t);
       _m4b.multiplyMatrices(c.m, _m4);
-      mesh.setMatrixAt(n, _m4b);
-      mesh.setColorAt(n, _c.setRGB(c.tint[0], c.tint[1], c.tint[2]));
-      n++;
+      mesh.setMatrixAt(n[lod], _m4b);
+      mesh.setColorAt(n[lod], _c.setRGB(c.tint[0], c.tint[1], c.tint[2]));
+      n[lod]++;
     }
-    mesh.count = n;
-    mesh.visible = n > 0;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    for (let l = 0; l < meshes.length; l++) {
+      const mesh = meshes[l];
+      mesh.count = n[l];
+      mesh.visible = n[l] > 0;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   /** Advances the dressing job for about `ms` milliseconds. */
