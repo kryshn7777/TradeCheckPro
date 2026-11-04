@@ -1115,7 +1115,7 @@ def build_belt(lv):
     frame_ring(hwbm(), p0 + n0 * 0.0085, (X, Y, Z), 0.058, 0.044, 0.008, 0.0045, lv)
     box_solid(hwbm(), p0 + n0 * 0.0105, (X, Y, Z), (0.0045, 0.019, 0.0030), 0.0008 if lv.hi else 0)
     # gear loops (leather tabs) around the belt: left/right and back
-    for tt in (0.14, 0.2, 0.30, 0.38, 0.62, 0.70, 0.80, 0.86):
+    for tt in (0.095, 0.14, 0.2, 0.30, 0.38, 0.62, 0.70, 0.80, 0.86, 0.905):
         pc, nc = belt_fn(tt)
         box_solid(bm, pc + nc * 0.0145, (nc.cross(V(0, 0, 1)).normalized(), V(0, 0, 1), nc), (0.0110, 0.0270, 0.0036), 0.0010 if lv.hi else 0)
     return Part("Belt", "leather", "torso", bm)
@@ -1147,6 +1147,12 @@ def build_harness(lv):
     surf_strap(bm, lv, cs_fn, 0.20, 0.026, 0.0035, off=0.0100)
     pc = torso_pt(1.268, math.pi / 2, 0.0150)
     frame_ring(hwbm(), pc, (V(1, 0, 0), V(0, 0, 1), V(0, 1, 0)), 0.040, 0.030, 0.006, 0.004, lv)
+    # quickdraw slings: a flat sewn strap between the two carabiners (a loop through each), a tack row across the middle
+    for tt in QUICKDRAW_T:
+        _top, _bot, sc, T, nc = quickdraw_frame(tt)
+        box_solid(bm, sc, (T, nc, V(0, 0, 1)), (0.0085, 0.0022, QD_SLING * 0.5 + 0.004), 0.0010 if lv.hi else 0)
+        if lv.hi:
+            box_solid(bm, sc + nc * 0.0021, (T, nc, V(0, 0, 1)), (0.0060, 0.0003, 0.0018), 0.0)
     return Part("Harness", "webbing", "torso", bm)
 
 
@@ -1156,6 +1162,44 @@ def mirror_pt(p, sg):
 
 def mirror_vec(v, sg):
     return V(v.x * sg, v.y, v.z)
+
+
+# Quickdraws (two small carabiners joined by a short sewn sling) hanging from the two gear loops either side of the belt buckle: the
+# part of the costume a climber's eye goes to when it looks down, and the silhouette that reads "alpinist" at a glance.
+QUICKDRAW_T = (0.095, 0.905)
+QD_TOP = (0.0125, 0.027)  # top carabiner half width, half height (m)
+QD_BOT = (0.0120, 0.026)
+QD_SLING = 0.066  # sling length between the carabiners
+
+
+def quickdraw_frame(tt):
+    """(top carabiner centre, bottom carabiner centre, sling centre, T = along the belt, nc = belt normal) of the quickdraw on gear loop tt."""
+    pc, nc = belt_fn(tt)
+    T = V(1, 0, 0)  # the carabiners face forward (their plane is across the body), so they read head-on from the first-person look-down
+    top = pc + nc * 0.0345 + V(0, 0, -(0.012 + QD_TOP[1]))
+    sling = top + V(0, 0, -(QD_TOP[1] + QD_SLING * 0.5 - 0.004))
+    bot = top + V(0, 0, -(QD_TOP[1] + QD_SLING - 0.008 + QD_BOT[1]))
+    return top, bot, sling, T, nc
+
+
+def d_carabiner(bm, lv, cc, T, half, tilt=0.0):
+    """A D-shaped carabiner loop (spine on the left, the gate on the right) in the plane (T, Z) around cc, with a gate pin bar at the bottom."""
+    n = 18 if lv.hi else 8
+    path = []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        x = half[0] * math.cos(a)
+        z = half[1] * math.sin(a)
+        if z < 0:
+            x *= 1.0 - 0.30 * (-z / half[1])  # D shape: narrower at the bottom
+        xr = x * math.cos(tilt) - z * math.sin(tilt)
+        zr = x * math.sin(tilt) + z * math.cos(tilt)
+        path.append(cc + T * xr + V(0, 0, zr))
+    sweep_circle(bm, path, 0.0029, 7 if lv.hi else 4, closed=True)
+    # the gate: a thin straight bar across the right side, and a small hinge boss on the top
+    g0 = cc + T * (half[0] * 0.92) + V(0, 0, half[1] * 0.50)
+    g1 = cc + T * (half[0] * 0.80) + V(0, 0, -half[1] * 0.55)
+    sweep_circle(bm, [g0, g1], 0.0020, 5 if lv.hi else 3)
 
 
 def build_metal(lv):
@@ -1182,6 +1226,11 @@ def build_metal(lv):
             path.append(cc + T * x + V(0, 0, z) + nc * 0.0)
         sweep_circle(bm, path, 0.0033, 7 if lv.hi else 4, closed=True)
         sweep_circle(bm, [cc + V(0, 0, -0.04) + T * -0.016, cc + V(0, 0, -0.04) + T * 0.016], 0.0035, 5 if lv.hi else 3)
+    # the quickdraws' carabiners (the slings are in the harness part: webbing)
+    for k, tt in enumerate(QUICKDRAW_T):
+        top, bot, _sl, T, _nc = quickdraw_frame(tt)
+        d_carabiner(bm, lv, top, T, QD_TOP, tilt=0.10 * (1 if k else -1))
+        d_carabiner(bm, lv, bot, T, QD_BOT, tilt=-0.16 * (1 if k else -1))
     return Part("Hardware", "steel", "torso", bm)
 
 
@@ -2530,6 +2579,7 @@ def shape_stage(sc, low, highs_by_cls):
         "back": ((0.4, -3.2, 1.1), (0, 0, 0.95), 40),
         "fp": ((0.0, 0.09, 1.62), (0.0, 0.5, 0.9), -70),
         "fp2": ((0.0, 0.09, 1.62), (0.0, 0.12, 0.6), -70),
+        "belt": ((0.0, 0.62, 1.12), (0.0, 0.0, 0.98), 55),  # the belt from the front, close: the quickdraws, the belay ring, the buckle
     }
     sel = [k for k in cams if (not args.only) or k in args.only.split(",")]
     for k in sel:
