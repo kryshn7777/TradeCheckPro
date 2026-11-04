@@ -4,7 +4,7 @@
 > "Make it 1250 instead of 580." (owner, the depth: the bible's Lamphold is 600 -> 1,180 m = 580 m; it is now **600 -> 1,850 m = 1,250 m**.)
 
 This page connects the owner's request to what is already designed (CHAPTERS.md §6 Chapter II · LAMPHOLD, DARK_STORY_BIBLE.md) and to what exists in
-code today, and says what is left. It is a plan; nothing in it is built yet except the Usher model (USHER.md).
+code today, and says what is left. It is a plan, plus two built pieces: the Usher model (USHER.md) and a **graybox of the whole 1,250 m chapter** (section 6).
 
 ## 1. What the request means here
 
@@ -85,3 +85,20 @@ Decided (by the existing bible and the owner): nine of the thirteen beats, the r
 Proposed here (needs the owner): the four new beats and their rules, free vs paid line (Chapters I-II free), the Usher's role and the hook sequence above, the name "Usher" (a placeholder).
 
 Engine risks of 1,250 m in one `Level3D` (to measure in C2-0): the baked lightmap atlas and light volume (sized for 556 m), the chunk / band culling (`BAND_H`, per-section packs), the save / split tables (8 sections today), the bots' route verification time, and the memory cache (`levelCache`) for the dressed level.
+
+## 6. Status (2026-11-04): what exists
+
+Built and tested (`tests/level/chapter2.mjs`, 20 checks; seen booting in the real game, headless):
+
+* `data/chapter2-data.js`: the 13 beats as sections (the bible's three palettes, a checkpoint on each beat's first ledge, a creature mode, the Lowering's hint),
+  four walls per beat round a 52 m pit, a **spiral stair of 209 overlapping stone ledges** (one every 6 m, 10 x 10 m, turning 0.5 rad each, across the seams too),
+  a lamp on every fourth ledge, 11 swinging ring chandeliers (pendulum movers: the live anchors rule, in beats 1, 3, 8 and 11), the end floor and the goal.
+  Deterministic; 262 solids. A step off any ledge lands on the next (13 of 13 sampled by the real physics, from every beat).
+* The game plays it with **`?chapter=2`** in the URL (`Game.chapter`, `chapterFromUrl`): the level data, the depth readout (starts at 600 m: `U.depthOffset`),
+  the level cache key. Without the flag nothing changes: the game is Chapter I.
+
+Not built yet (everything that makes the beats the beats): a chapter picker in the menu and the chain from the end of Chapter I (C2-0 remainder), per-chapter
+saves / splits / medals (they assume eight sections: a Chapter II run saves into Chapter I's slots today), lifts, cranes, express drops, safeLight rooms, the Winding
+Floor and the Stopping, the Snuffing and the Span (C2-1), the Lamphold art kit and its lighting (the baked lightmaps and light volume are Chapter I's: Chapter II
+falls back to what the dressing and the lantern give), the Usher in the game and the hook sequence (C2-3, C2-4), audio (C2-5), the comms script (its lines are Chapter I's).
+The section card reads "I . The Lowering": the numeral is the beat's position in the chapter, not the chapter.

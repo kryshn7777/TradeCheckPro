@@ -541,7 +541,8 @@ export const U = {
     return `${m}:${sec < 10 ? '0' : ''}${sec.toFixed(2)}`;
   },
   /** Depth in metres below the spawn height (y = 0). */
-  depthMeters: (y) => Math.max(0, Math.round(-y)),
+  depthOffset: 0, // metres added to the depth readout: the chapter's depthOffset (Chapter II: 600), set by the Game when it builds a chapter's world
+  depthMeters: (y) => Math.max(0, Math.round(-y + U.depthOffset)),
 };
 
 /**

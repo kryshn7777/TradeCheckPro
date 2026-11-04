@@ -114,6 +114,7 @@ const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.
 const MODULES = {
   level: './sim/level3d.js',
   levelData: './data/level-data-3d.js',
+  chapter2Data: './data/chapter2-data.js', // CHAPTER II · LAMPHOLD (the graybox, plans/CHAPTER_II_PLAN.md): loaded only for ?chapter=2
   creature: './sim/creature3d.js',
   skitter: './sim/skitter3d.js',
   dresser: './sim/dresser3d.js', // THE DRESSER (hunts only while you are whole; docs/abyssal-tether-3d/plans/DRESSER.md)
@@ -317,6 +318,16 @@ function holsterOff() {
  * `?freeattach=off` brings back the authored ring-only level: every traversal ring and hook, the hook biting only those (the route
  * bots of the e2e descent and the verify harness play that level; also an A/B for the free-attach feel).
  */
+/** `?chapter=2` plays Chapter II · LAMPHOLD (the graybox, data/chapter2-data.js); anything else is Chapter I. */
+export function chapterFromUrl() {
+  try {
+    const m = typeof location !== 'undefined' ? /[?&]chapter=(\d)\b/.exec(location.search || '') : null;
+    return m && Number(m[1]) === 2 ? 2 : 1;
+  } catch {
+    return 1;
+  }
+}
+
 function freeAttachOff() {
   try {
     return typeof location !== 'undefined' && /[?&]freeattach=(off|0)\b/.test(location.search || '');
@@ -1023,6 +1034,7 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.chapter = chapterFromUrl(); // 1 = The Underspire (the game), 2 = Lamphold (the graybox, ?chapter=2)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
     this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
     this.prologueView = null; // its page (render/prologueView.js)
@@ -2708,12 +2720,15 @@ export class Game3D {
   _buildWorld(diff, attract) {
     const M = this.modules;
     const variant = diff.levelVariant || 'normal';
-    if (this.level && this._levelVariant === variant) this.level.reset();
+    const chapter = this.chapter === 2 && M.chapter2Data && M.chapter2Data.LEVEL_DATA_CH2 ? 2 : 1;
+    const key = `${chapter}:${variant}`;
+    if (this.level && this._levelVariant === key) this.level.reset();
     else {
-      const data = M.levelData && M.levelData.LEVEL_DATA_3D ? M.levelData.LEVEL_DATA_3D : undefined;
+      const data = chapter === 2 ? M.chapter2Data.LEVEL_DATA_CH2 : M.levelData && M.levelData.LEVEL_DATA_3D ? M.levelData.LEVEL_DATA_3D : undefined;
+      U.depthOffset = chapter === 2 ? M.chapter2Data.CHAPTER2_DEPTH_OFFSET : 0; // the depth readout continues Chapter I's
       // Free attach (CONFIG.targeting.freeAttach): the hook bites any surface; the plain traversal rings are retired.
       this.level = new M.level.Level3D(data, variant, { freeAttach: C.targeting.freeAttach !== false && !freeAttachOff() });
-      this._levelVariant = variant;
+      this._levelVariant = key;
     }
     const lvl = this.level;
     const spawn = lvl.spawn || { x: 0, y: 0, z: 0, yaw: 0 };
