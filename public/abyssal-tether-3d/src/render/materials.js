@@ -122,9 +122,9 @@ export const LOOK = {
   uHorrorK: { value: new THREE.Vector4(0, 0, 0, 0) },
   // The stylised ("3D anime") look (renderer3d.js LOOK_PRESETS.anime; GLSL atToon below): x strength (0 = off, the realistic grade),
   // y number of light bands, z edge softness in pixels (anti-aliased band edges), w gain applied to the lighting before it is banded.
-  uToonK: { value: new THREE.Vector4(0, 5, 1.2, 3) },
+  uToonK: { value: new THREE.Vector4(0, 5, 1.2, 0.55) },
   // Shadow side of the cel: rgb = the tint the albedo takes in the darkest band (a cool violet, never black), a = how much of it is added.
-  uToonShade: { value: new THREE.Vector4(0.62, 0.7, 1.0, 0.1) },
+  uToonShade: { value: new THREE.Vector4(0.58, 0.66, 1.0, 0.15) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },

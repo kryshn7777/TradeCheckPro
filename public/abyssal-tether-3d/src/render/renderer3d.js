@@ -165,8 +165,8 @@ const BLACK_LIFT_MAX = 0.004;
  */
 const LOOK_PRESETS = {
   anime: {
-    exposure: 1.3, contrast: -0.1, sat: 0.34, lift: 1.6, grain: 0, vignette: 0, tone: 0,
-    toon: 1, bands: 5, soft: 1.2, gain: 3.2, shade: [0.58, 0.66, 1.0], shadeAmt: 0.1,
+    exposure: 1.4, contrast: -0.1, sat: 0.4, lift: 1.6, grain: 0, vignette: 0, tone: 0,
+    toon: 1, bands: 5, soft: 1.2, gain: 0.55, shade: [0.58, 0.66, 1.0], shadeAmt: 0.15,
     detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7,
   },
   horror: { exposure: 1.0, contrast: 0.16, sat: -0.14, lift: 0.5, grain: 0.04, vignette: 0.4, tone: 1.0 },
