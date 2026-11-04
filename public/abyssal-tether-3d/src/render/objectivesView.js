@@ -26,7 +26,7 @@
  * seals in view or their open state changes, and every frame while one is opening.
  */
 import * as THREE from 'three';
-import { moverAngle } from '../sim/movers3d.js';
+import { moverAngle, moverRef } from '../sim/movers3d.js';
 
 export const BAR = Object.freeze({
   gap: 0.5, // m between bar centres
@@ -271,11 +271,35 @@ export function moverParts(level) {
     const e = list[i];
     const m = e && e.m;
     if (!m || !e.raw) continue;
-    const kind = e.raw.parts === 'cage' || e.raw.parts === 'gear' ? e.raw.parts : null;
+    const kind = e.raw.parts === 'cage' || e.raw.parts === 'gear' || e.raw.parts === 'lift' || e.raw.parts === 'hook' ? e.raw.parts : null;
     if (!kind) continue;
     const boxes = [];
     const box = (a, b, c, sa, sb, sc, rot, col) => boxes.push([a, b, c, sa, sb, sc, rot || 0, col[0], col[1], col[2]]);
-    if (kind === 'cage') {
+    if (kind === 'lift' || kind === 'hook') {
+      // CHAPTER II: translating movers (sim/movers3d.js lift / path). Boxes in world metres from the mover's reference point.
+      // 'lift' = a 3 x 3 m open cage on its floor point with a roof ring bar (the carried ring hangs under the roof); 'hook' =
+      // a crane hook block with a short chain up and the ring under it.
+      const ring = e.anchors[0];
+      const ry = ring ? ring.y - m.y : 3.4;
+      const rx = ring ? ring.x - m.x : 0;
+      const rz = ring ? ring.z - m.z : 0;
+      if (kind === 'lift') {
+        const w = Math.max(1.6, e.raw.size || 3);
+        const hgt = Math.max(2.2, ry + 0.3);
+        box(0, 0.06, 0, w, 0.14, w, 0, I); // the floor
+        box(0, 0.16, 0, w * 1.02, 0.05, w * 1.02, 0, N); // its band
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) box((sx * w) / 2, hgt / 2, (sz * w) / 2, 0.1, hgt, 0.1, 0, I); // posts
+        box(0, hgt, 0, w * 1.04, 0.12, w * 1.04, 0, I); // the roof frame
+        box(0, hgt * 0.5, (w / 2) * 1.0, w, 0.06, 0.06, 0, N); // a rail across the open side
+        box(rx, hgt + 0.55, rz, 0.1, 1.0, 0.1, 0, I); // the stem to the ring
+      } else {
+        box(rx, ry + 0.45, rz, 0.5, 0.5, 0.5, Math.PI / 4, I); // the hook block
+        box(rx, ry + 0.95, rz, 0.34, 0.34, 0.34, 0, N);
+        const chainLen = Math.max(1, e.raw.chain || 6);
+        box(rx, ry + 0.95 + chainLen / 2, rz, 0.07, chainLen, 0.07, 0, I); // the chain up to the trolley
+        box(rx, ry + 0.95 + chainLen + 0.25, rz, 1.0, 0.5, 0.8, 0, N); // the trolley on its rail
+      }
+    } else if (kind === 'cage') {
       // the carried decor (a chain over a cage), else a chain to the ring and a 2 x 3 m cage just above it
       const byId = level.byId || {};
       const ids = (e.raw.carry && e.raw.carry.decor) || [];
@@ -347,6 +371,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _zAx = new THREE.Vector3(0, 0, 1);
 const _c = new THREE.Color();
 const _b = new THREE.Box3();
+const _ref = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
 
 const ease = (k) => (k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k));
 
@@ -374,7 +399,8 @@ export class SealView {
     this._mvBasis = this.movers.map((mp) => {
       const m = level.movers[mp.index].m;
       const B = new THREE.Matrix4();
-      if (m.k === 0) B.makeBasis(new THREE.Vector3(m.d.x, 0, m.d.z), new THREE.Vector3(0, 1, 0), new THREE.Vector3(m.c.x, 0, m.c.z));
+      if (m.k > 1) B.identity();
+      else if (m.k === 0) B.makeBasis(new THREE.Vector3(m.d.x, 0, m.d.z), new THREE.Vector3(0, 1, 0), new THREE.Vector3(m.c.x, 0, m.c.z));
       else {
         const u = new THREE.Vector3(m.u.x, m.u.y, m.u.z);
         const v = new THREE.Vector3(m.v.x, m.v.y, m.v.z);
@@ -526,6 +552,19 @@ export class SealView {
       const mp = this.movers[j];
       const e = this.level.movers[mp.index];
       const m = (tuned && tuned[mp.index] && tuned[mp.index].m) || e.m;
+      if (m.k > 1) {
+        // lift / path: the boxes ride the reference point (no turning)
+        moverRef(m, clock, _ref);
+        for (const b of mp.boxes) {
+          _p.set(_ref.x + b[0], _ref.y + b[1], _ref.z + b[2]);
+          _q.setFromAxisAngle(_up, b[6]);
+          _s.set(b[3], b[4], b[5]);
+          mesh.setMatrixAt(n, _m.compose(_p, _q, _s));
+          _c.setRGB(b[7], b[8], b[9]);
+          mesh.setColorAt(n++, _c);
+        }
+        continue;
+      }
       const ang = moverAngle(m, clock);
       const qb = this._mvBasis[j];
       const ca = Math.cos(ang);

@@ -16,6 +16,7 @@
  */
 
 import { CHAPTER2_TEXT } from './chapter2-text.js';
+import { addTollingGallery, addSnuffing, addSootThroat } from './chapter2-sets.js';
 
 export const CHAPTER2_DEPTH_OFFSET = 600; // m: Chapter I ends at ~600 m (the hook of the demo), Chapter II continues the readout
 export const CHAPTER2_DEPTH = 1250; // m (the owner's number; the bible had 580)
@@ -34,7 +35,7 @@ export const CHAPTER2_BEATS = [
   { id: 'c2-9', name: 'The Tolling Gallery', sub: 'Ring it. Something answers.', len: 100, min: 4, theme: 'lit', creature: 'dormant' },
   { id: 'c2-10', name: 'The Winding Floor', sub: 'The din is the room.', len: 100, min: 5.5, theme: 'engine', creature: 'stalk' },
   { id: 'c2-11', name: 'The Cinder Stairs', sub: 'The first lamps are failing.', len: 80, min: 3.5, theme: 'engine', creature: 'sighting' },
-  { id: 'c2-12', name: 'The Snuffing', sub: 'One tier at a time.', len: 150, min: 8, theme: 'snuffed', creature: 'stalk' },
+  { id: 'c2-12', name: 'The Snuffing', sub: 'One tier at a time.', len: 150, min: 8, theme: 'snuffed', creature: 'dormant' },
   { id: 'c2-13', name: 'The Soot Throat', sub: 'The true rest.', len: 60, min: 3, theme: 'snuffed', creature: 'dormant' },
 ];
 
@@ -63,6 +64,10 @@ export function buildChapter2() {
   const lights = [];
   const movers = [];
   const sections = [];
+  const seals = [];
+  const fixtures = [];
+  const objectives = [];
+  const c2 = {}; // what the director reads (the set-pieces' stations, bells, plates)
   const ledges = []; // { id, k, x, y (top), z, section }
 
   // the stair is ONE sequence for the whole chapter (a ledge every STEP metres, the angle turning TURN per ledge), so the step is the same across
@@ -86,6 +91,7 @@ export function buildChapter2() {
     for (let kk = 0; kk < tops.length; kk++) {
       const topY = tops[kk];
       if (topY > yTop || topY <= yBottom) continue;
+      if (b.id === 'c2-12' && topY < yTop - 66) continue; // the stair ends at the Well rim: the arena (data/chapter2-sets.js) takes over
       const a = kk * TURN;
       const cx = r2(RADIUS * Math.cos(a));
       const cz = r2(RADIUS * Math.sin(a));
@@ -96,19 +102,21 @@ export function buildChapter2() {
       if (j % 4 === 0 && b.theme !== 'snuffed') lights.push({ x: cx, y: r2(topY + 1.6), z: cz, color: b.theme === 'engine' ? '#d08a3c' : '#ffcf80', intensity: 1.2, range: 14, flicker: 0.15 });
       j++;
     }
-    // swinging rings (the new rule): a pendulum chandelier over the gap between two ledges, in beats 1, 3, 8 and 11
-    if ([0, 2, 7, 10].includes(i)) {
-      const count = i === 2 ? 5 : 2;
-      for (let c = 0; c < count; c++) {
-        const L = ledges[first + Math.min(ledges.length - first - 1, 1 + c * 2)];
-        const pivotY = r2(L.y + 22);
-        const len = 20 + (c % 3) * 6;
-        const mid = { x: r2(L.x * 0.55), z: r2(L.z * 0.55) };
-        const id = `${sid}-ring${c}`;
-        anchors.push({ id, x: mid.x, y: r2(pivotY - len), z: mid.z, kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
-        movers.push({ id: `mov-${id}`, kind: 'pendulum', section: sid, x: mid.x, y: pivotY, z: mid.z, dir: { x: 1, z: 0 }, length: len, amp: 0.2, period: 9 + c, phase: c * 0.37, carry: { anchors: [id], decor: [] } });
-      }
-    }
+    // swinging rings (the new rule): pendulum chandeliers over the stair's gaps, in beats 1, 3 and 8 (the direction's numbers: II-1 one 36 m
+    // chain at 7.5 m/s; II-3 five at 5.5 .. 10.9 m/s; II-8 the houses, driven, <= 6.3 m/s). Peak speed = length x amp x 2 pi / period.
+    const PENDULA = {
+      0: [{ len: 36, amp: 0.3, period: 9 }, { len: 30, amp: 0.25, period: 10 }],
+      2: [{ len: 20, amp: 0.35, period: 8 }, { len: 24, amp: 0.4, period: 9 }, { len: 30, amp: 0.45, period: 10 }, { len: 36, amp: 0.5, period: 11 }, { len: 30, amp: 0.55, period: 9.5 }],
+      7: [{ len: 24, amp: 0.25, period: 10 }, { len: 24, amp: 0.25, period: 10.5 }],
+    };
+    (PENDULA[i] || []).forEach((pd, c) => {
+      const L = ledges[first + Math.min(ledges.length - first - 1, 1 + c * 2)];
+      const pivotY = r2(L.y + 3 + pd.len); // the ring hangs 3 m over the ledge's top at rest
+      const mid = { x: r2(L.x * 0.55), z: r2(L.z * 0.55) };
+      const id = `${sid}-ring${c}`;
+      anchors.push({ id, x: mid.x, y: r2(pivotY - pd.len), z: mid.z, kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
+      movers.push({ id: `mov-${id}`, kind: 'pendulum', section: sid, x: mid.x, y: pivotY, z: mid.z, dir: { x: 1, z: 0 }, length: pd.len, amp: pd.amp, period: pd.period, phase: r2(c * 0.37), carry: { anchors: [id], decor: [] } });
+    });
     const firstLedge = ledges[first];
     sections.push({
       id: sid,
@@ -126,6 +134,83 @@ export function buildChapter2() {
     });
     top += b.len;
   });
+
+  // ---- the machinery (CHAPTER_II_DIRECTION section 2: the beats' live anchors). Lifts and hooks CARRY RINGS (you hang from them; a cage
+  // floor you can stand on is not built: the stair is the always-open way), all closed forms of the run clock (sim/movers3d.js).
+  const sec = (id) => sections.find((q) => q.id === id);
+  const ledgeNear = (y) => ledges.reduce((a, l) => (Math.abs(l.y - y) < Math.abs(a.y - y) ? l : a), ledges[0]);
+  const ring = (id, x, y, z, tag = 'route') => anchors.push({ id, x: r2(x), y: r2(y), z: r2(z), kind: 'ring', tag, normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
+  // II-2 THE STREET OF DOORS: the counterweight lift down the pit wall beside the street (30 m, 14 s each way, 4 s waiting)
+  {
+    const b = sec('c2-2');
+    const L = ledgeNear(b.yTop - 30);
+    const a = Math.atan2(L.z, L.x);
+    const x = r2(23.4 * Math.cos(a));
+    const z = r2(23.4 * Math.sin(a));
+    const y0 = r2(L.y + 0.2);
+    ring('c2-2-lift-ring', x, y0 + 3.5, z);
+    movers.push({ id: 'mov-c2-2-lift', kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: y0 - 30, z }, travel: 14, dwell: 4, ramp: 0.5, parts: 'lift', carry: { anchors: ['c2-2-lift-ring'], decor: [] } });
+  }
+  // II-5 THE STONE YARDS: two crane hooks on loops round the yards (4.5 and 6 m/s) and a monorail trolley across the pit (5 m/s, there and back)
+  {
+    const b = sec('c2-5');
+    const hex = (R, y) => Array.from({ length: 6 }, (_, k) => ({ x: r2(R * Math.cos((k * Math.PI) / 3)), y, z: r2(R * Math.sin((k * Math.PI) / 3)) }));
+    [
+      { id: 'c2-5-hookA', dy: 22, R: 19, speed: 4.5, phase: 0 },
+      { id: 'c2-5-hookB', dy: 62, R: 19, speed: 6, phase: 0.5 },
+    ].forEach((h) => {
+      const pts = hex(h.R, r2(b.yTop - h.dy));
+      ring(`${h.id}-ring`, pts[0].x, pts[0].y - 3.5, pts[0].z);
+      movers.push({ id: `mov-${h.id}`, kind: 'path', section: b.id, pts, mode: 'loop', speed: h.speed, phase: h.phase, chain: 3.2, parts: 'hook', carry: { anchors: [`${h.id}-ring`], decor: [] } });
+    });
+    const y = r2(b.yTop - 92);
+    const pts = [{ x: -19, y, z: -10 }, { x: 19, y: r2(y - 6), z: 10 }];
+    ring('c2-5-mono-ring', -19, y - 3.5, -10);
+    movers.push({ id: 'mov-c2-5-mono', kind: 'path', section: b.id, pts, mode: 'pingpong', speed: 5, chain: 3.2, parts: 'hook', carry: { anchors: ['c2-5-mono-ring'], decor: [] } });
+  }
+  // II-7 THE COUNTERWEIGHT SHAFTS: three express cages, 80 m in 9 s (peak 13 m/s), a gong's wait between, hanging rings on their roofs
+  {
+    const b = sec('c2-7');
+    [-14, 0, 14].forEach((x, k) => {
+      const y0 = r2(b.yTop - 18);
+      const z = -23.5;
+      const id = `c2-7-exp${k}`;
+      ring(`${id}-ring`, x, y0 + 3.5, z);
+      movers.push({ id: `mov-${id}`, kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: r2(y0 - 80), z }, travel: 9, dwell: 5, ramp: 0.317, phase: k / 3, parts: 'lift', carry: { anchors: [`${id}-ring`], decor: [] } });
+    });
+  }
+  // II-8 THE HUNG QUARTER: the governor, three arms whirling rings in a flat orbit (R 8 m, T 6 s: 8.4 m/s) against the north wall
+  {
+    const b = sec('c2-8');
+    const cy = r2(b.yTop - 50);
+    const R = 8;
+    const ids = [0, 1, 2].map((k) => {
+      const a = (k * 2 * Math.PI) / 3;
+      const id = `c2-8-gov${k}`;
+      ring(id, R * Math.cos(a), cy + R * Math.sin(a), -19);
+      return id;
+    });
+    movers.push({ id: 'mov-c2-8-governor', kind: 'orbit', section: b.id, x: 0, y: cy, z: -19, u: { x: 1, y: 0, z: 0 }, v: { x: 0, y: 1, z: 0 }, radius: R, period: 6, phase: 0, spin: 1, housing: -2, parts: 'gear', carry: { anchors: ids, decor: [] } });
+  }
+  // II-10 THE WINDING FLOOR: the great wheel's rim rings (R 20 m, T 27 s: 4.7 m/s)
+  {
+    const b = sec('c2-10');
+    const cy = r2(b.yTop - 55);
+    const R = 20;
+    const ids = [0, 1, 2, 3].map((k) => {
+      const a = (k * Math.PI) / 2;
+      const id = `c2-10-wheel${k}`;
+      ring(id, R * Math.cos(a), cy + R * Math.sin(a), -22);
+      return id;
+    });
+    movers.push({ id: 'mov-c2-10-wheel', kind: 'orbit', section: b.id, x: 0, y: cy, z: -22, u: { x: 1, y: 0, z: 0 }, v: { x: 0, y: 1, z: 0 }, radius: R, period: 27, phase: 0, spin: -1, housing: -2, parts: 'gear', carry: { anchors: ids, decor: [] } });
+  }
+
+  // ---- the set-pieces (data/chapter2-sets.js): II-9 the Tolling Gallery, II-12 the Snuffing (the Doorman), II-13 the Soot Throat (the hook)
+  const ctx = { solids, anchors, movers, decor, lights, fixtures, objectives, seals, ledges, sections, c2, sec, ledgeNear };
+  addTollingGallery(ctx);
+  addSnuffing(ctx);
+  addSootThroat(ctx);
 
   // the plaques (the story writer's words), carved on the pit wall beside the stair at the depth they belong to; the wall they sit on faces into the pit
   const WALLS = {
@@ -179,6 +264,10 @@ export function buildChapter2() {
     decor,
     lights,
     movers,
+    seals,
+    fixtures,
+    objectives,
+    c2,
     ledges: ledges.map((l) => ({ id: l.id, x: l.x, y: l.y, z: l.z, section: l.section })), // for the tests and the bots (not read by Level3D)
   };
 }

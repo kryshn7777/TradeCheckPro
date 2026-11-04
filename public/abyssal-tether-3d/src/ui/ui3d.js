@@ -2619,7 +2619,7 @@ export class UI3D {
         this._startRun('sandbox', fromVR);
         break;
       case 'set-chapter':
-        if (typeof game.setChapter === 'function' && game.setChapter(num(d.chapter, 1))) {
+        if (typeof game.setChapter === 'function' && game.setChapter(Number(d.chapter) === 2 ? 2 : 1)) {
           this.refreshMenu();
           this._vrDirty = true;
         }
