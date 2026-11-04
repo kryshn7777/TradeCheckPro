@@ -237,7 +237,7 @@ export function addSnuffing(ctx) {
   ctx.objectives.push({ id: 'obj-c2-12-lever', section: 'c2-12', verb: 'haul', sealId: 'seal-c2-12-lever', ids: ['lever-c2-12'], need: 1 });
 
   // ---- the pulpit (the Head Usher's pier across the Well) and the stalls under it
-  const pulp = P(10, 11);
+  const pulp = P(11, 10);
   const dPulpit = r2(dRim); // the Doorman stands at the rim's height, across the Well: the pawl and the east apex of the Great Bell are within his 16 m, the west rim is not
   box(ctx, 'c2-12-pulpit', pulp.x - 2, pulp.x + 2, Y(dPulpit + 32), Y(dPulpit), pulp.z - 2, pulp.z + 2, 'stone');
   const stallLamps = [];

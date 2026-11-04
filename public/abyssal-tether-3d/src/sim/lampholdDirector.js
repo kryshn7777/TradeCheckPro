@@ -33,6 +33,7 @@ import { moverRef } from './movers3d.js';
 import { CONFIG } from './config3d.js';
 
 const EVEN = 6; // s between strokes of the Great Bell
+const COLLAR = 2.9; // m: the Head Usher's `pos` is his collar (his reach is measured from it); his feet are this far below
 
 export const DIRECTOR = {
   quietMax: 150, // s in the Gallery before the Round arrives
@@ -142,7 +143,7 @@ export class LampholdDirector {
         e.usher.setHarmless(j > 0); // the lead snuffs; its four companions only walk with it
       }
       const p = this.Q.pulpit;
-      this._mkUsher('u-head', { head: true, x: p.x, y: p.y, z: p.z });
+      this._mkUsher('u-head', { head: true, x: p.x, y: p.y + COLLAR, z: p.z });
     }
   }
 
@@ -354,7 +355,7 @@ export class LampholdDirector {
       for (const u of round) u.command('leave');
       this._breakPawl('lamp', true);
       head.command('enter');
-      head.command('relocate', { x: Q.doorman.tower.x, y: Q.doorman.tower.y, z: Q.doorman.tower.z, yaw: 0 });
+      head.command('relocate', { x: Q.doorman.tower.x, y: Q.doorman.tower.y + COLLAR, z: Q.doorman.tower.z, yaw: 0 });
       head.command('phase', 'C1');
       this._setPhase('C1');
     } else if (p === 'C2') {
@@ -363,7 +364,7 @@ export class LampholdDirector {
       this._breakPawl('lamp', true);
       for (const pl of Q.span.plates) this._plateDown(pl.id, true);
       head.command('enter');
-      head.setStation(Q.doorman.tower.x, Q.doorman.tower.y, Q.doorman.tower.z, 0);
+      head.setStation(Q.doorman.tower.x, Q.doorman.tower.y + COLLAR, Q.doorman.tower.z, 0);
       head.command('stand');
       head.command('phase', 'C2');
       this._setPhase('C2');

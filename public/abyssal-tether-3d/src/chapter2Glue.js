@@ -197,6 +197,7 @@ export class Chapter2Glue {
         const st = this._states[n++];
         st.id = e.id;
         st.head = e.head;
+        st.collar = e.head; // the sim's position of the Head Usher is his collar, 2.9 m over his feet
         if (u.state === 'OFF') {
           st.visible = false;
           st.sphere = null;

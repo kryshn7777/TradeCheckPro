@@ -536,10 +536,22 @@ const { v, renderer } = await make();
   ok(uni.uI.value / iCommit < 1.3, `the flash steps the light by ${((uni.uI.value / iCommit - 1) * 100).toFixed(0)} % (comfort limit 30 %)`);
   frames(v, list(sph('whip', { r: 1.8 })), 30, 0.016);
   ok(uni.uI.value < iCommit * 1.05, 'and settles');
-  // snuff: the sphere dies
-  frames(v, list(sph('snuff', { r: 1.8 })), 3, 0.016);
-  ok(mesh.visible && uni.uI.value < 0.95 && uni.uI.value > 0.1, 'snuff: it starts to die, not a pop');
-  frames(v, list(sph('snuff', { r: 1.8 })), 40, 0.016);
+  // snuff (sim/usher3d.js: the Round's 2 m sphere on a lamp cluster for ~1.5 s, then the dip): steady and warm, brightening, white-gold while lethal
+  frames(v, list(null), 60, 0.016);
+  frames(v, list(sph('snuff', { r: 2 })), 3, 0.016);
+  const sn0 = uni.uI.value;
+  ok(mesh.visible && hex(v, m.index) === 'ffe2a8' && sn0 < 0.6, `snuff: a warm sphere that starts dim (${sn0.toFixed(2)}), not the dying one`);
+  frames(v, list(sph('snuff', { r: 2 })), 120, 0.016);
+  ok(mesh.visible && uni.uI.value > sn0 + 0.25 && uni.uI.value < 1, `and brightens through the warning (${uni.uI.value.toFixed(2)}) without vanishing`);
+  frames(v, list(sph('snuff', { r: 2, lethal: true })), 1, 0.016);
+  ok(hex(v, m.index) === 'fff1c4' && uni.uI.value > 0.9, 'while it is lethal (the dip) it flashes white-gold');
+  frames(v, list(sph('snuff', { r: 2 })), 4, 0.016);
+  ok(hex(v, m.index) === 'ffe2a8', 'and back to warm when it is not');
+  // the sphere goes away (RECOIL: the sim gives null): it dies where it was
+  const iBefore = uni.uI.value;
+  frames(v, list(null), 3, 0.016);
+  ok(mesh.visible && uni.uI.value < iBefore && uni.uI.value > 0.1, 'a sphere that goes away starts to die, not a pop');
+  frames(v, list(null), 40, 0.016);
   ok(!mesh.visible && !v.stats.sphereShown, 'and is gone within a second');
   // a sphere that simply goes null fades too, where it was
   frames(v, list(sph('commit')), 12, 0.016);

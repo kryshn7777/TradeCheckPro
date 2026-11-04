@@ -86,19 +86,45 @@ Proposed here (needs the owner): the four new beats and their rules, free vs pai
 
 Engine risks of 1,250 m in one `Level3D` (to measure in C2-0): the baked lightmap atlas and light volume (sized for 556 m), the chunk / band culling (`BAND_H`, per-section packs), the save / split tables (8 sections today), the bots' route verification time, and the memory cache (`levelCache`) for the dressed level.
 
-## 6. Status (2026-11-04): what exists
+## 6. Status (2026-11-04, end of the build session): what exists
 
-Built and tested (`tests/level/chapter2.mjs`, 20 checks; seen booting in the real game, headless):
+CHAPTER II is **playable end to end** (menu: *Choose your descent* › **II · Lamphold**, or the **Chapter II · Lamphold** button on Chapter I's end card, or `?chapter=2`).
+It is a **vertical slice of the direction** (CHAPTER_II_DIRECTION.md), not the finished chapter. Tests: `tests/level/chapter2*.mjs`, `tests/render/test-mere.mjs`,
+`tests/creature/usher3d.mjs`, `tests/render/test-usher-view.mjs`, the save / entitlement / captions / audio suites (the whole suite is green).
 
-* `data/chapter2-data.js`: the 13 beats as sections (the bible's three palettes, a checkpoint on each beat's first ledge, a creature mode, the Lowering's hint),
-  four walls per beat round a 52 m pit, a **spiral stair of 209 overlapping stone ledges** (one every 6 m, 10 x 10 m, turning 0.5 rad each, across the seams too),
-  a lamp on every fourth ledge, 11 swinging ring chandeliers (pendulum movers: the live anchors rule, in beats 1, 3, 8 and 11), the end floor and the goal.
-  Deterministic; 262 solids. A step off any ledge lands on the next (13 of 13 sampled by the real physics, from every beat).
-* The game plays it with **`?chapter=2`** in the URL (`Game.chapter`, `chapterFromUrl`): the level data, the depth readout (starts at 600 m: `U.depthOffset`),
-  the level cache key. Without the flag nothing changes: the game is Chapter I.
+**Framework (C2-0, done).** `Game.setChapter / playNextChapter / chapter`; per-chapter saves (`meta/save.js` `activeChapter`: records, splits, the Continue slot are
+`ch1` / `ch2`, never mixed; Continue switches chapter); Chapters I and II are the free game (`FREE_CHAPTER = 2`); section numerals `II·n`; the chapter picker in the flat
+menu and the VR menu; the end card of Chapter I points on to Lamphold, the end card of Chapter II to the full version.
 
-Not built yet (everything that makes the beats the beats): a chapter picker in the menu and the chain from the end of Chapter I (C2-0 remainder), per-chapter
-saves / splits / medals (they assume eight sections: a Chapter II run saves into Chapter I's slots today), lifts, cranes, express drops, safeLight rooms, the Winding
-Floor and the Stopping, the Snuffing and the Span (C2-1), the Lamphold art kit and its lighting (the baked lightmaps and light volume are Chapter I's: Chapter II
-falls back to what the dressing and the lantern give), the Usher in the game and the hook sequence (C2-3, C2-4), audio (C2-5), the comms script (its lines are Chapter I's).
-The section card reads "I . The Lowering": the numeral is the beat's position in the chapter, not the chapter.
+**The chapter (C2-1, done as a skeleton with its machinery).** 13 beats, 1,250 m (+36 m of the hook's chain), a spiral stair (the always-open way) with live anchors on it:
+pendulum chandeliers (II-1 36 m chain at 7.5 m/s; II-3 five at 5.5 .. 10.9 m/s; II-8 two houses), the counterweight lift (II-2), two crane hooks and a monorail trolley
+(II-5, 4.5 .. 6 m/s), three express cages (II-7, 80 m in 9 s, peak 13 m/s), the governor (II-8, 8.4 m/s), the wheel (II-10). New mover kinds `lift` (trapezoid profile, one-trip
+`once` for scripted lifts) and `path` (loop / pingpong) in `sim/movers3d.js`. **Carriers** (`sim/lampholdDirector.js`): a lift flagged `carrier` carries the player who stands
+on it (the floor is not a collision solid: the player's height follows it after the physics step). The story writer's text (`data/chapter2-text.js`): 11 hints, 16 plaques, the
+Names, the lamp labels, the Usher's captions, the boss's and the hook's lines. 2,600 wall lamps + the stalls (`render/lampField.js`, one draw call), put out from the top
+down from the Winding Floor on; lights have a `gain` the Evening sets (`render/renderer3d.js`).
+
+**The Usher (C2-3, done).** `sim/usher3d.js` (the toll bus with masking, the states of §3.7 on three difficulties, 538 checks), `render/usherView.js` (the model, LODs, the long
+throat, the torch spheres), captions and sounds (`audio/lampholdSfx.js`), **II-9 THE TOLLING GALLERY** (eight bells; five open a seal across the pit; the Usher answers from 100 m
+below, climbs a station per toll, strikes the Tenor and breaks its stand, never while you are near: the strike waits).
+
+**The exam (C2-boss, done in a reduced form).** II-12 THE SNUFFING as the Quiet (150 s), **A the Round** (a lead Usher walks the stair behind you snuffing a cluster at a time, torch
+first, 1.6 s; four companions walk with it; a staller is answered), **B the Well** (the Doorman on the pulpit: collar, the sweep over the stalls, the Great Bell's stroke every 6 s,
+the pawl broken by his whip or your body at 3.5 m/s, the clappers W and N as haul rings, the Great Bell held back while his answer is pending), **C1 the Span** (50 plates, 150 m,
+falling behind you: front 7 m/s rubber-banded to a 22 / 16 / 11 m gap, a creak 0.7 s ahead, a crash toll each), **C2 the Lift** (a lever haul ring, the cage 33 m down, a gong every
+5 m, whips led to the cage's predicted position at 4.5 s (NM 3.9, AB 3.5), the last whip snuffs the master lamp, the shutter shuts 6 / 5 / 3.75 s later, he sits). Waking lamps L2-17 / 18
+/ 19 are checkpoints. Nothing hunts you in II-13. 49 director checks, the arena walked end to end in the real physics.
+
+**The hook (C2-4, done).** The Soot Throat's stair ends at a lip; the chain platform (a carrier, one trip) lowers 36 m, a pawl click every 3 m; the pit's walls end 14 m under the lip
+and the Mere opens (`render/mereView.js`: black water, 1,400 dark lanterns, 103 throats that turn to the clicks, the near one rises to your eye, all bow into an aisle, one warm
+light at 180 m; 4 draw calls); `III · THE MERE` and its line as the chapter card; then Chapter II's end card. A jump into the water plays the card at once (the first fall that does not kill).
+
+**Not built (honest list).** The knock doors, Names N2-1..5 as places and the Holdfast "handshake" (II-2); the Waking Hall's hands and tally plates; the crane crush telegraph and
+the stone yards' stacks; the Mason's breach, the hidden path, `safeLight` rooms, noise masking, the Dresser measurement of II-6, the Stopping and the runaway (II-10); the crushing
+counterweights and the Mason in the shafts (II-7); the rope telegraph (the buzzing hand); driven pendulum houses; the cinder stairs' crumbles and lanes and the lamp you cannot
+keep (II-11); the Round's five tier galleries, their bells and clapper rings (the Round walks the stair instead); the Span's trolleys, brass / iron hangers (the plates are tagged
+but only free-attach bites them) and the stair-step last span; a real moving cage *floor* for the Doorman's lift (by design you hang from outrigger rings); the Lamphold art kit and
+its lightmaps (Chapter I's baked lighting does not apply: Chapter II falls back to the dressing, the lamp field and the lights); the chapter's radio (`radio` in the text file) and its
+comms script; the end card's purchase button (the card names the full version, no store flow); the in-world chain at the end of Chapter I (the end card's button starts Lamphold). **Nothing
+has been played on a headset.** The numbers (the Round's pace, the Span's gap, the whips' lead, the cage rings' distance from the sphere) are closed-form-checked and tuned for Normal;
+the boss has not been beaten by a bot on a rope route, only its pieces checked (docs/.../CHAPTER_II_DIRECTION.md §5.2 asks for the bot proof).

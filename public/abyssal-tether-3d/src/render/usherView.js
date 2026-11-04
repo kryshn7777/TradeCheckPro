@@ -18,7 +18,9 @@
  *               clip (Idle, Listen, Walk) wraps t, a once clip (Lunge, Sit) holds its ends: the sim scrubs COIL / WHIP / RECOIL through Lunge
  *       stretch >= 1, the HEAD USHER's throat length factor (1 = the modelled 3.75 m x 1.8, 5.5 = 37 m); ignored on the others
  *       ring    {x,y,z} | null  the torch ring (the throat's tip) in the world; null = read it off the skeleton (the Maw bone)
- *       sphere  {x,y,z,r,stage} | null  stage 'listen' | 'coil' | 'commit' | 'whip' | 'snuff'; a sphere that goes null fades like 'snuff'.
+ *       sphere  {x,y,z,r,stage,lethal?} | null  stage 'listen' | 'coil' | 'commit' | 'whip' | 'snuff' (sim/usher3d.js: the Round's 2 m sphere
+ *               on a lamp cluster, steady and warm, brightening through its warning, flashing white-gold while `lethal` is true: the dip).
+ *               A sphere that goes null (RECOIL) dies in ~0.3 s where it was.
  *               It shows even when `visible` is false (a telegraph is gameplay: the usher may be out of sight, the sphere is not)
  *       visible false = the body is not drawn (the sphere still is)
  *   v.update(dt, camera)                     poses (clips sampled at t, crossfaded 0.2 s on a change, the head's throat stretched), picks the LOD
@@ -41,7 +43,8 @@
  *
  * THE TORCH: one additive fresnel shell per sphere (440 triangles, depth test on, no depth write, no fog, not tone mapped), the colour and
  * brightness by stage: listen pale cyan-white (a slow 0.9 Hz breath), coil tightens (the radius falls) and warms toward gold, commit GOLD
- * and frozen, whip a white-gold flash (+18 %, under the 30 % comfort step), snuff / null dies in ~0.3 s where it was. One batched
+ * and frozen, whip a white-gold flash (+18 %, under the 30 % comfort step), snuff (a lamp cluster) warm and steadily brightening,
+ * a sphere that is gone dies in ~0.3 s where it was. One batched
  * camera-facing ribbon (a constant angular width) draws every line from a ring to its sphere's centre.
  *
  * Levels of detail (the GLB ships one): LOD0 = the model (6 draws), LOD1 / LOD2 = vertex-clustered copies of suit + shirt + skin + shoe
@@ -73,6 +76,7 @@ const LOOPING = { Idle: true, Listen: true, Walk: true };
 const CLIP_FALLBACK = { Sit: 'Idle', Snuff: 'Lunge', Bow: 'Lunge' };
 
 export const STAGE = { none: 0, listen: 1, coil: 2, commit: 3, whip: 4, snuff: 5 };
+const DYING = 6; // (internal: the sphere went away)
 const _stageId = Object.assign(Object.create(null), STAGE);
 
 /** The torch's colours (sRGB, as the spec gives them): listen pale cyan-white, coil warms toward gold, commit GOLD, whip white-gold. */
@@ -80,6 +84,7 @@ const COL_LISTEN = new THREE.Color('#b8e8ff');
 const COL_COIL = new THREE.Color('#ffd98a');
 const COL_COMMIT = new THREE.Color('#ffc24d');
 const COL_WHIP = new THREE.Color('#fff1c4');
+const COL_SNUFF = new THREE.Color('#ffe2a8'); // the colour of the lamps it is about to put out
 const COL_GLINT = new THREE.Color('#c8eaff');
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -473,6 +478,7 @@ class Member {
     this.sz = 0;
     this.sr = 1;
     this.stage = 0;
+    this.lethal = false;
     // pose
     this.fresh = true;
     this.wasPosed = false;
@@ -915,6 +921,7 @@ export class UsherView {
       m.sz = num(sp.z);
       m.sr = Math.max(0.05, num(sp.r));
       m.stage = _stageId[sp.stage] || STAGE.listen;
+      m.lethal = sp.lethal === true;
     } else m.hasSphere = false;
   }
 
@@ -1119,7 +1126,7 @@ export class UsherView {
       const m = P[i];
       const mesh = this.spheres[i];
       // the envelope: what the stage looks like (a sphere that goes away dies like 'snuff', where it was)
-      const stage = m.used && m.hasSphere ? m.stage : m.tI > 0.01 ? STAGE.snuff : STAGE.none;
+      const stage = m.used && m.hasSphere ? (m.stage === STAGE.snuff && m.lethal ? STAGE.whip : m.stage) : m.tI > 0.01 ? DYING : STAGE.none;
       if (stage !== m.tStage) {
         m.tStage = stage;
         m.tT = 0;
@@ -1162,7 +1169,14 @@ export class UsherView {
           pw = 3.8;
           _col.copy(COL_WHIP);
           break;
-        default: // snuff: it dies where it was, in the colour it had
+        case STAGE.snuff: // the Round's sphere on a lamp cluster: steady, warm, brighter as the dip nears (the sim's warn is ~1.5 s)
+          target = 0.4 + 0.5 * clamp(m.tT / 1.5, 0, 1);
+          rate = 8;
+          fill = 0.1;
+          pw = 3.0;
+          _col.copy(COL_SNUFF);
+          break;
+        default: // gone (RECOIL): it dies where it was, in the colour it had
           target = 0;
           rate = 9;
           _col.copy(u.uColor.value);
