@@ -336,7 +336,7 @@ async function partDesktop(browser, base) {
     }
     // The rope is a spring with a slip clutch: a free fall onto it is caught, not flung. As in the bot's route,
     // reel in (Space) once the fall is deep so the arc comes up and across over the sill.
-    if (!reeling && !wDown && !p.grounded && p.y < -4) {
+    if (!reeling && !released && !wDown && !p.grounded && p.y < -4) {
       await page.keyboard.down('Space');
       reeling = true;
     }
