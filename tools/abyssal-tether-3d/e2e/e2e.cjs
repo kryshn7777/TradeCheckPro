@@ -151,7 +151,7 @@ async function newPage(browser, { xr = false } = {}) {
 async function boot(page, base) {
   // comms off: the plain death panel, no radio lines in the shots. freeattach=off: the descent below is the route bot's, which hooks
   // the authored rings (the free-attach level has none of them; tools/abyssal-tether-3d/e2e/free-attach.cjs plays that one).
-  await page.goto(base + '/index.html?hunt=always&comms=off&freeattach=off');
+  await page.goto(base + '/index.html?hunt=always&comms=off&freeattach=off&intro=off');
   await page.waitForFunction(() => window.AT3D && window.AT3D.game && window.AT3D.game.booted, null, { timeout: 180000 });
 }
 const st = (page) => page.evaluate(() => window.AT3D.debug.state());
