@@ -49,6 +49,7 @@ export const GEAR_TUNING = {
   needleZeta: 0.42,
   vibrateStart: 0.55, // normalised load where the frame starts to hum
   vibrateAmp: 0.0007, // m of frame shake at full load
+  cuffKeep: 0.018, // m: with "Show body" off the glove's leather tube is cut this far past the wrist, so only a short cuff stays (not a flat-capped stump)
 };
 
 const _q = new Quaternion();
@@ -101,9 +102,13 @@ class BoneDriver {
  * the sleeve is then hidden for free by shrinking the draw range (no shader change, no extra draw call, the bones and the weights are untouched).
  *
  * Vertices that share a position are welded first (UV seams and hard edges duplicate them), then the pieces are the connected components of the
- * triangles; the glove is the largest one. Returns { glove, total } (index counts, `glove` <= `total`), or null for a single piece.
+ * triangles; the glove is the largest one. The glove itself runs on as a leather tube past the wrist (it is hidden inside the sleeve) that ends
+ * in a flat cap: with `cut` ({ origin, axis, keep }: the wrist, the unit vector toward the elbow, metres) the glove's triangles whose centre is
+ * more than `keep` past the wrist along the axis are the "tail": they sort after the glove proper, so hiding the cover leaves a short cuff, not a
+ * stump (the simplified tube has long thin triangles, so the centre, not the nearest corner, decides). The index order is [glove proper, tail, sleeve]. Returns { glove, total } (index counts: `glove` = what is drawn without the cover,
+ * `glove` <= `total`; `tail` = the glove's tube past the cut), or null for a single piece.
  */
-export function splitArmCover(geometry) {
+export function splitArmCover(geometry, cut = null) {
   const pos = geometry && geometry.attributes && geometry.attributes.position;
   const index = geometry && geometry.index;
   if (!pos || !index) return null;
@@ -149,15 +154,28 @@ export function splitArmCover(geometry) {
       glove = r;
     }
   }
+  // the glove's tube past the cut: the triangle's centre is further than `keep` from the wrist along the arm
+  const along = (vi) => (pos.getX(vi) - cut.origin.x) * cut.axis.x + (pos.getY(vi) - cut.origin.y) * cut.axis.y + (pos.getZ(vi) - cut.origin.z) * cut.axis.z;
+  const beyond = (a, b, c) => (along(a) + along(b) + along(c)) / 3 > cut.keep;
   const out = new arr.constructor(arr.length);
   let w = 0;
+  const tailTris = [];
   for (let t = 0; t < arr.length; t += 3) {
     if (find(rep[arr[t]]) !== glove) continue;
+    if (cut && beyond(arr[t], arr[t + 1], arr[t + 2])) {
+      tailTris.push(t);
+      continue;
+    }
     out[w++] = arr[t];
     out[w++] = arr[t + 1];
     out[w++] = arr[t + 2];
   }
   const gloveCount = w;
+  for (const t of tailTris) {
+    out[w++] = arr[t];
+    out[w++] = arr[t + 1];
+    out[w++] = arr[t + 2];
+  }
   for (let t = 0; t < arr.length; t += 3) {
     if (find(rep[arr[t]]) === glove) continue;
     out[w++] = arr[t];
@@ -165,7 +183,7 @@ export function splitArmCover(geometry) {
     out[w++] = arr[t + 2];
   }
   geometry.setIndex(new BufferAttribute(out, 1));
-  return { glove: gloveCount, total: w };
+  return { glove: gloveCount, tail: tailTris.length * 3, total: w };
 }
 
 /** Everything about one side: finger blending + launcher mechanics. */
@@ -204,7 +222,18 @@ export class HandGear {
       }
     });
     this.armMesh = root.getObjectByName(`Arm_${sfx}_Mesh`) || null;
-    this._cover = this.armMesh ? splitArmCover(this.armMesh.geometry) : null; // glove first, the sleeve after (see splitArmCover)
+    // the wrist (Hand bone) and the arm's direction (toward the Forearm bone's head, the elbow end) in the side root's frame: the glove's leather
+    // tube past a short cuff is hidden with the sleeve (see splitArmCover)
+    let cut = null;
+    const wristNode = root.getObjectByName(`Hand_${sfx}`);
+    const elbowNode = root.getObjectByName(`Forearm_${sfx}`);
+    if (wristNode && elbowNode) {
+      root.updateWorldMatrix(true, true);
+      const wp = root.worldToLocal(wristNode.getWorldPosition(new Vector3()));
+      const ep = root.worldToLocal(elbowNode.getWorldPosition(new Vector3()));
+      if (ep.distanceToSquared(wp) > 1e-6) cut = { origin: wp, axis: ep.sub(wp).normalize(), keep: GEAR_TUNING.cuffKeep };
+    }
+    this._cover = this.armMesh ? splitArmCover(this.armMesh.geometry, cut) : null; // glove first, the sleeve after (see splitArmCover)
     this._coverShown = true;
     this.launcherMesh = root.getObjectByName(`Launcher_${sfx}_Mesh`) || null;
     this.muzzle = root.getObjectByName(`Muzzle_${sfx}`) || null;

@@ -28,7 +28,7 @@ const THREE = await import('three');
 const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
 const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
 await MeshoptDecoder.ready;
-const { splitArmCover, HandGear } = await import(`${SRC}/render/handsGear.js`);
+const { splitArmCover, HandGear, GEAR_TUNING } = await import(`${SRC}/render/handsGear.js`);
 
 let n = 0;
 const ok = (c, msg) => {
@@ -43,6 +43,14 @@ const loadArms = async () => {
   loader.setMeshoptDecoder(MeshoptDecoder);
   loader.pluginCallbacks.unshift(() => ({ name: 'noTex', loadTexture: () => Promise.resolve(null) })); // Node has no image decoding
   return new Promise((res, rej) => loader.parse(g.buf.buffer.slice(g.buf.byteOffset, g.buf.byteOffset + g.buf.byteLength), '', res, rej));
+};
+// the wrist (Hand bone) and the arm direction (toward the Forearm bone's head) in the side root's frame, as HandGear computes them
+const cutOf = (gltf, side) => {
+  const root = gltf.scene.getObjectByName(`Arm_${side}`);
+  root.updateWorldMatrix(true, true);
+  const wp = root.worldToLocal(gltf.scene.getObjectByName(`Hand_${side}`).getWorldPosition(new THREE.Vector3()));
+  const ep = root.worldToLocal(gltf.scene.getObjectByName(`Forearm_${side}`).getWorldPosition(new THREE.Vector3()));
+  return { origin: wp, axis: ep.sub(wp).normalize(), keep: GEAR_TUNING.cuffKeep };
 };
 const triKeys = (geo) => {
   const idx = geo.index.array;
@@ -59,9 +67,10 @@ const triKeys = (geo) => {
     ok(!!mesh && mesh.isSkinnedMesh, `Arm_${side}_Mesh is the skinned arm mesh`);
     const geo = mesh.geometry;
     const before = triKeys(geo);
-    const cover = splitArmCover(geo);
-    ok(!!cover && cover.total === before.length * 3 && cover.glove > 0 && cover.glove < cover.total, `${side}: two pieces (${cover.glove / 3} glove triangles, ${(cover.total - cover.glove) / 3} sleeve triangles)`);
-    ok(cover.glove / 3 > 1500 && (cover.total - cover.glove) / 3 > 300 && (cover.total - cover.glove) / 3 < 1200, `${side}: the glove is the big piece, the sleeve a few hundred triangles`);
+    const cover = splitArmCover(geo, cutOf(gltf, side));
+    const sleeve = (cover.total - cover.glove - cover.tail) / 3;
+    ok(!!cover && cover.total === before.length * 3 && cover.glove > 0 && cover.glove + cover.tail < cover.total, `${side}: three runs of triangles (${cover.glove / 3} glove, ${cover.tail / 3} glove tube past the cuff, ${sleeve} sleeve)`);
+    ok(cover.glove / 3 > 1500 && cover.tail / 3 > 30 && cover.tail / 3 < 700 && sleeve > 300 && sleeve < 1200, `${side}: the glove is the big piece (a short cuff stays), the tube past it and the sleeve are a few hundred triangles`);
     const after = triKeys(geo);
     ok(after.length === before.length && after.every((k, i) => k === before[i]), `${side}: no triangle was lost or changed by the reorder`);
     // the glove is first: its triangles reach the fingertips (the far end along the arm), the sleeve ones the elbow end
@@ -77,7 +86,16 @@ const triKeys = (geo) => {
       for (let i = a; i < b; i++) m = Math.min(m, pos.getZ(idx[i]));
       return m;
     };
-    ok(zMin(0, cover.glove) < zMin(cover.glove, cover.total) - 0.1 && zMax(cover.glove, cover.total) > zMax(0, cover.glove) + 0.1, `${side}: the sleeve runs on past the glove toward the elbow (the glove holds the fingertips)`);
+    ok(zMin(0, cover.glove) < zMin(cover.glove + cover.tail, cover.total) - 0.1 && zMax(cover.glove + cover.tail, cover.total) > zMax(0, cover.glove) + 0.1, `${side}: the sleeve runs on past the glove toward the elbow (the glove holds the fingertips)`);
+    // what stays is a short cuff: nothing of it is more than the keep distance (plus a triangle) past the wrist
+    const cut = cutOf(gltf, side);
+    const v = new THREE.Vector3();
+    let far = -1e9;
+    for (let i = 0; i < cover.glove; i++) {
+      v.fromBufferAttribute(pos, idx[i]).sub(cut.origin);
+      far = Math.max(far, v.dot(cut.axis));
+    }
+    ok(far < cut.keep + 0.045, `${side}: with the cover hidden the glove ends ${(far * 100).toFixed(1)} cm past the wrist (the cut is at ${(cut.keep * 100).toFixed(1)} cm): a short cuff`);
   }
 }
 
@@ -85,7 +103,7 @@ const triKeys = (geo) => {
 {
   const gltf = await loadArms();
   const mesh = gltf.scene.getObjectByName('Arm_L_Mesh');
-  const cover = splitArmCover(mesh.geometry);
+  const cover = splitArmCover(mesh.geometry, cutOf(gltf, 'L'));
   const fake = { _cover: cover, _coverShown: true, armMesh: mesh };
   const total = mesh.geometry.index.count;
   HandGear.prototype.setCoverVisible.call(fake, false);
