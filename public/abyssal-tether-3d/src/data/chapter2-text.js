@@ -45,12 +45,12 @@ export const CHAPTER2_TEXT = {
     'c2-6': [{ at: 0.08, duration: 7, text: 'Stay in the lit circles. What knocks cannot cross the light.', desktop: 'Stay in the lit circles. What knocks cannot cross the light.' }],
     // the elastic catch on the express (E15)
     'c2-7': [{ at: 0.06, duration: 7, text: 'Fire at a fixed ring before the bottom.', desktop: 'Aim at a fixed ring and fire before the bottom.' }],
-    // the driven pendulum (pump a hung house)
-    'c2-8': [{ at: 0.08, duration: 7, text: 'Stand on a house and yank its chain in rhythm.', desktop: 'Stand on a house and press F on its chain in rhythm.' }],
+    // the hung houses are live anchors (six swinging rings); the player-driven pendulum was cut, so the hint teaches what is there: catch one as it comes
+    'c2-8': [{ at: 0.08, duration: 7, text: 'The houses swing on their chains. Catch one as it comes.', desktop: 'The houses swing on their chains. Catch one as it comes.' }],
     // the bell verb, and the Usher's one rule (direction §5.3 risk 5: "Bells call it.")
     'c2-9': [{ at: 0.1, duration: 8, text: 'Swing into the bells. Bells call it.', desktop: 'Swing into the bells. Bells call it.' }],
-    // noise masking in the din (E11): each hammer strike masks you 1.5 s
-    'c2-10': [{ at: 0.1, duration: 7, text: 'Move when the hammers strike. The din hides you.', desktop: 'Move when the hammers strike. The din hides you.' }],
+    // the hammer floor is three timed lanes (noise masking in the din was cut): cross between the strikes
+    'c2-10': [{ at: 0.1, duration: 7, text: 'The hammers fall in time. Cross between the strikes.', desktop: 'The hammers fall in time. Cross between the strikes.' }],
     // RECOVERY with dread: the burnt stair is Chapter I's crumble and lanes
     'c2-11': [],
     // THE EXAM: the torch, the toll, then the pawl puzzle at the Well rim (Phase B starts at d 66 of 150)
