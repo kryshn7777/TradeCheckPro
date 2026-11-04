@@ -43,11 +43,32 @@ default is 0.55.
 All numbers are in `LOOK_PRESETS.anime` and are uniforms (no recompiles): `bands`, `soft` (edge width in pixels), `gain` (how much
 of the lighting range the bands cover), `shade` / `shadeAmt` (shadow tint), `sat`, `contrast`, `rim`, `detail`, `crev`.
 
+## Ink outlines
+
+Two kinds, both inside the existing materials (no post pass):
+
+* **Silhouette outlines on the hero meshes: an inverted hull** (`render/outline.js`). A second, back-face-only copy of the mesh is pushed out
+  along its smoothed normals by `width x view distance` (an ANGLE, so the line is the same few pixels from 1 m to 40 m) and filled with the
+  ink colour, fogged like everything else; the mesh drawn over it leaves only the ring that sticks out. Smoothed normals (averaged over
+  vertices that share a position) keep a hard-edged mesh from cracking open. Hulls: the glove, the sleeve and the launcher (shared skeleton and
+  geometry, so the hidden sleeve applies to them), the body, the tusks and the stinger, and ONE hull for the whole creature, built from its cheap
+  LOD1 geometry (~23 k triangles; the 63 k of LOD0 twice over would not fit the Quest). Cost: one draw call per hull (about +5 with the Mason in
+  view) and one more pass over those triangles.
+* **Edge ink on the masonry** (`materials.js`, `INK_EDGE_FRAG`): the bevel band of the box solids is darkened to near black in its inner part, so the
+  level's solids carry a thin dark line along their edges. Free (a few ALU ops); only the materials that have the bevel.
+
+Numbers (`LOOK_PRESETS.anime`): `ink` (on), `inkWidth` (0.0026 rad, about 2 px), `inkEdge` (0.9), `inkColor`. Off for `?look=horror|classic`, in the
+`low` tier and with reduced effects, and by `?ink=off` / `settings.ink = false` whatever the look. Not on the level's other meshes, the Dresser,
+the Holdfast or the lantern.
+
+Seen only in headless software-GL screenshots so far (the creature shot was framed behind a pillar; the line is thin at 1024 px): the width and the
+ink colour need a look on a headset.
+
 ## Not included (honest limits)
 
-* **No ink outlines.** A real anime picture has line art. The two ways to get it (an inverted-hull back-face pass, or a depth/normal
-  edge-detect post pass) each add a draw call per mesh or a full-screen pass, which the Quest budget (150 draw calls, a fixed
-  fill-rate) cannot spare without a measurement on the device. The bevel on the unit boxes already gives masonry a thin lit edge.
+* **Outlines are partial.** The hero meshes have hull outlines and the masonry's box edges have ink (above), but the level's other meshes and
+  props have no silhouette line: a hull on every mesh, or an edge-detect post pass, would cost draw calls / fill rate the Quest budget (150 draw
+  calls) has not been measured for.
 * The albedo textures themselves are still the photographic stone, wood and leather; they are not repainted. Only the lighting is stylised,
   so the result reads as a *stylised, cel-lit* picture rather than a full anime one. Flattening the textures (a blurred / posterised albedo
   tap) and line art are the two steps that would close that gap.
