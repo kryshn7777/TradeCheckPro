@@ -1337,6 +1337,9 @@ export class HandsView {
     const inRun = state === 'playing' || state === 'paused' || state === 'dead';
     const showHands = this.visible && (xr || inRun);
     const gear = this.gear;
+    // "Show body" off = gloves only: the canvas sleeve (the arm cover) runs up from the wrist as part of the body, so it goes with it
+    const showCover = !(game && game.settings && game.settings.showBody === false);
+    if (gear) for (const h of HANDS) gear[h].setCoverVisible(showCover);
     for (const h of HANDS) {
       const m = this.launchers[h];
       const sock = inp.handSocket(h);

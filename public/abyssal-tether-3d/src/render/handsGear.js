@@ -27,7 +27,7 @@
  * Axes are converted to each bone's parent frame at load, so no bone roll is assumed.
  */
 
-import { Quaternion, Vector3 } from 'three';
+import { BufferAttribute, Quaternion, Vector3 } from 'three';
 import { loadGLB } from './glbLoad.js';
 import { createGaugeGlass } from './gearSurface.js';
 
@@ -95,6 +95,79 @@ class BoneDriver {
   }
 }
 
+/**
+ * The arm mesh is two separate pieces in one skinned mesh: the leather glove and the waxed-canvas sleeve (the "arm cover") that runs up from
+ * the wrist. With "Show body" off only the gloves are wanted, so this reorders the index buffer to [glove triangles, every other piece] once, and
+ * the sleeve is then hidden for free by shrinking the draw range (no shader change, no extra draw call, the bones and the weights are untouched).
+ *
+ * Vertices that share a position are welded first (UV seams and hard edges duplicate them), then the pieces are the connected components of the
+ * triangles; the glove is the largest one. Returns { glove, total } (index counts, `glove` <= `total`), or null for a single piece.
+ */
+export function splitArmCover(geometry) {
+  const pos = geometry && geometry.attributes && geometry.attributes.position;
+  const index = geometry && geometry.index;
+  if (!pos || !index) return null;
+  const n = pos.count;
+  const weld = new Map();
+  const rep = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const k = `${Math.round(pos.getX(i) * 1e4)},${Math.round(pos.getY(i) * 1e4)},${Math.round(pos.getZ(i) * 1e4)}`;
+    const first = weld.get(k);
+    if (first === undefined) {
+      weld.set(k, i);
+      rep[i] = i;
+    } else rep[i] = first;
+  }
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (a) => {
+    while (parent[a] !== a) {
+      parent[a] = parent[parent[a]];
+      a = parent[a];
+    }
+    return a;
+  };
+  const arr = index.array;
+  for (let t = 0; t < arr.length; t += 3) {
+    const a = find(rep[arr[t]]);
+    const b = find(rep[arr[t + 1]]);
+    const c = find(rep[arr[t + 2]]);
+    if (a !== b) parent[a] = b;
+    if (find(a) !== c) parent[find(a)] = c;
+  }
+  const size = new Map();
+  for (let t = 0; t < arr.length; t += 3) {
+    const r = find(rep[arr[t]]);
+    size.set(r, (size.get(r) || 0) + 1);
+  }
+  if (size.size < 2) return null;
+  let glove = -1;
+  let best = -1;
+  for (const [r, c] of size) {
+    if (c > best) {
+      best = c;
+      glove = r;
+    }
+  }
+  const out = new arr.constructor(arr.length);
+  let w = 0;
+  for (let t = 0; t < arr.length; t += 3) {
+    if (find(rep[arr[t]]) !== glove) continue;
+    out[w++] = arr[t];
+    out[w++] = arr[t + 1];
+    out[w++] = arr[t + 2];
+  }
+  const gloveCount = w;
+  for (let t = 0; t < arr.length; t += 3) {
+    if (find(rep[arr[t]]) === glove) continue;
+    out[w++] = arr[t];
+    out[w++] = arr[t + 1];
+    out[w++] = arr[t + 2];
+  }
+  geometry.setIndex(new BufferAttribute(out, 1));
+  return { glove: gloveCount, total: w };
+}
+
 /** Everything about one side: finger blending + launcher mechanics. */
 export class HandGear {
   /**
@@ -131,6 +204,8 @@ export class HandGear {
       }
     });
     this.armMesh = root.getObjectByName(`Arm_${sfx}_Mesh`) || null;
+    this._cover = this.armMesh ? splitArmCover(this.armMesh.geometry) : null; // glove first, the sleeve after (see splitArmCover)
+    this._coverShown = true;
     this.launcherMesh = root.getObjectByName(`Launcher_${sfx}_Mesh`) || null;
     this.muzzle = root.getObjectByName(`Muzzle_${sfx}`) || null;
     this.hook = root.getObjectByName(`LanternHook_${sfx}`) || null;
@@ -182,6 +257,17 @@ export class HandGear {
     this.vibe = 0;
     this._t = Math.random() * 10;
     this.tension = 0; // smoothed m/s² (HandsView sets the input, we animate)
+  }
+
+  /**
+   * Shows or hides the sleeve (the arm cover): with "Show body" off the player has gloves only. Free (a draw range on the reordered index
+   * buffer); a no-op when the mesh is one piece.
+   */
+  setCoverVisible(visible) {
+    visible = !!visible;
+    if (!this._cover || visible === this._coverShown) return;
+    this._coverShown = visible;
+    this.armMesh.geometry.setDrawRange(0, visible ? this._cover.total : this._cover.glove);
   }
 
   /** The head leaves (true) or returns to (false) the muzzle. */
