@@ -104,6 +104,18 @@ const inter = (a, b) => Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 0.
   const gb = D.movers.find((m) => m.id === Q.greatBell.moverId);
   ok(gb && gb.kind === 'pendulum' && Math.abs(gb.length * Math.sin(gb.amp) - 12) < 0.1 && gb.period === 12, 'the Great Bell swings 12 m either side of the Well, a stroke every 6 s');
   ok(D.fixtures.some((f) => f.id === Q.clappers.W.fixtureId && f.kind === 'haul') && D.fixtures.some((f) => f.id === Q.clappers.N.fixtureId && f.kind === 'haul'), 'the two clappers are haul fixtures');
+  // the Well's two crossings by rope: the iron chandeliers (rim -> three rings -> the gate's sill) and the Great Bell (its crown ring to the rim and to the sill),
+  // every shot inside the difficulty's aim range (a necessary condition, not a proof: no bot has crossed it)
+  const A = (id) => D.anchors.find((a) => a.id === id);
+  const d3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  const iron = ['c2-12-iron0', 'c2-12-iron1', 'c2-12-iron2'].map(A);
+  const sillBox = S.get('c2-12-sill');
+  const sillPt = { x: (sillBox.minX + sillBox.maxX) / 2, y: sillBox.maxY, z: (sillBox.minZ + sillBox.maxZ) / 2 };
+  const range = DIFFICULTY.normal.aimRange;
+  const hops = [d3(Q.rim, iron[0]), d3(iron[0], iron[1]), d3(iron[1], iron[2]), d3(iron[2], sillPt)];
+  ok(hops.every((h) => h < range), `the safe line's hops are ${hops.map((h) => h.toFixed(0)).join(', ')} m (aim range ${range} m)`);
+  const great = A(Q.greatBell.ringId);
+  ok(d3(Q.rim, great) < range && d3(great, sillPt) < range + 12, `the Great Bell's crown is ${d3(Q.rim, great).toFixed(0)} m from the rim and ${d3(great, sillPt).toFixed(0)} m from the sill`);
   ok(Q.clusters.length >= 10 && Q.stalls.length === 40, `${Q.clusters.length} lamp clusters for the Round, ${Q.stalls.length} stall lamps under the pulpit`);
 }
 
