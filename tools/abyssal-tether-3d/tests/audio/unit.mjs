@@ -224,6 +224,23 @@ function rig() {
     ['settings:changed', { settings: { volume: 0.5 } }],
     ['game:pause', {}],
     ['game:resume', {}],
+    // CHAPTER II (audio/lampholdSfx.js): the Usher, the Evening, the Mere
+    ['usher:listen', { id: 'u', x: 3, y: -4, z: 2 }],
+    ['usher:coil', { id: 'u', x: 3, y: -4, z: 2, r: 1.8, t: 2 }],
+    ['usher:commit', { id: 'u', x: 3, y: -4, z: 2, r: 1.8 }],
+    ['usher:whip', { id: 'u', x: 3, y: -4, z: 2, r: 1.8, lethal: true }],
+    ['usher:recoil', { id: 'u', x: 3, y: -4, z: 2 }],
+    ['usher:snuff', { id: 'u', x: 3, y: -4, z: 2, r: 2 }],
+    ['lamp:snuff', { x: 3, y: -4, z: 2, r: 2, kind: 'round' }],
+    ['usher:blow', { id: 'u', x: 3, y: -4, z: 2, r: 1.8 }],
+    ['evening:stroke', { x: 3, y: -4, z: 2, side: 'E' }],
+    ['c2:creak', { x: 3, y: -4, z: 2 }],
+    ['c2:crash', { x: 3, y: -4, z: 2, kind: 'plate' }],
+    ['c2:shutter', {}],
+    ['toll:emit', { x: 3, y: -4, z: 2, loud: 0.8, kind: 'gong' }],
+    ['toll:emit', { x: 3, y: -4, z: 2, loud: 0.35, kind: 'ring' }],
+    ['hook:click', { n: 3, y: -9 }],
+    ['hook:bow', {}],
   ];
   let thrown = 0;
   for (const [t, p] of evs) {

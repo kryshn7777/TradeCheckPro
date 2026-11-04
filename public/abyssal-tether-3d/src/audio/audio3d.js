@@ -58,6 +58,7 @@ import { RopeFx } from './ropeFx3d.js';
 import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
+import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -2268,6 +2269,7 @@ export class AudioManager3D {
       'intro:dark': this._onIntroDark,
       'intro:cut': this._onIntroCut,
       'holster:draw': this._onHolsterDraw,
+      ...Object.fromEntries(Object.entries(LAMPHOLD_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:stow': this._onHolsterStow,
       'nv:on': this._onNvOn,
       'nv:off': this._onNvOff,
@@ -5034,3 +5036,5 @@ export class AudioManager3D {
     this._commit(v);
   }
 }
+
+Object.assign(AudioManager3D.prototype, LAMPHOLD_SFX);

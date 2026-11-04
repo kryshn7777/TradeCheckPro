@@ -31,11 +31,18 @@
  * THE LONG THROAT. The chain is rotation-only in the clips and the weights were authored for a fixed length: each throat vertex was
  * owned by ONE bone for the first half of its segment and shared 50/50 with the next after that, a jump that is invisible while the
  * bones only turn but tears the tube open the moment they move apart. So at load the throat's skin weights (skin, vein, glow) are
- * rebuilt as a partition of unity along the chain (a vertex between bone k and k+1 is (1-f, f) of the two, f from its position in the
- * bone's own frame; the ring and its membrane are pure Maw, the Maw scale is compensated), and `stretch` is applied as TRANSLATION:
- * the offsets of Neck02..Neck14 and Maw are multiplied by it, every bone keeps scale 1. The tube is then stretched linearly between
- * joints, with no shear (a non-uniform bone scale under a rotating chain shears every child), and the thickness is unchanged. Ribs
- * stretch with the tube (no accordion at 3 x, a gently swelling pipe at 5 x). No ribbon fallback was needed.
+ * rebuilt as a partition of unity along the chain (a vertex between bone k and k+1 is (1-f, f) of the two, f measured between the
+ * planes that bisect the bends at the two joints; the ring and its membrane are pure Maw and the Maw scale is compensated), and
+ * `stretch` is applied as TRANSLATION: the offsets of Neck02..Neck14 and Maw are multiplied by it, every bone keeps scale 1. The tube
+ * is then stretched linearly between joints, with no shear (a non-uniform bone scale under a rotating chain shears every child) and
+ * the thickness unchanged; the bend ANGLES stay, so the whole coil grows self-similarly (the inside of the tight hook stretches a little
+ * more than the stretch, no edge tears: the test keeps the file's own weights as the control). Ribs stretch with the tube (no
+ * accordion at 3 x, a gently swelling pipe at 5 x). No ribbon fallback was needed.
+ *
+ * THE TORCH: one additive fresnel shell per sphere (440 triangles, depth test on, no depth write, no fog, not tone mapped), the colour and
+ * brightness by stage: listen pale cyan-white (a slow 0.9 Hz breath), coil tightens (the radius falls) and warms toward gold, commit GOLD
+ * and frozen, whip a white-gold flash (+18 %, under the 30 % comfort step), snuff / null dies in ~0.3 s where it was. One batched
+ * camera-facing ribbon (a constant angular width) draws every line from a ring to its sphere's centre.
  *
  * Levels of detail (the GLB ships one): LOD0 = the model (6 draws), LOD1 / LOD2 = vertex-clustered copies of suit + shirt + skin + shoe
  * (the veins are dropped) merged into ONE draw with baked vertex colours, plus the shared glow mesh (2 draws), beyond that ONLY a ring
@@ -637,7 +644,7 @@ export class UsherView {
     const geo1 = clusterSkinned(parts, D, CLUSTER_CELL[1]);
     const geo2 = clusterSkinned(parts, D, CLUSTER_CELL[2]);
     this._owned.push(geo1, geo2);
-    // the ink hulls: near = the real surface without the veins, far = the LOD1 geometry
+    // the ink hulls: near = the real surface without the veins, far = a coarser copy of it
     let hullNearGeo = null;
     const hullSources = ['suit', 'shirt', 'skin', 'shoe'].filter((n) => prim[n]).map((n) => prim[n]);
     try {
