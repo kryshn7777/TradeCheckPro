@@ -154,23 +154,33 @@ const CAMERA_NEAR = 0.08;
 // Cap of the lit surfaces' black-point lift (linear, before the tone mapper; the ACES curve has a slope of ~0.45 there).
 const BLACK_LIFT_MAX = 0.004;
 /**
- * The look of the whole game, one preset (`?look=classic` or settings.look = 'classic' brings the previous picture back):
+ * The look of the whole game, one preset (`?look=horror|classic|anime` or settings.look; the default is `anime`):
+ * anime = a stylised, cel-shaded "3D anime" picture: the lighting is cut into a few flat, soft-edged bands (materials.js atToon: the
+ * albedo keeps its texture, only the light is stepped), shadows are a cool violet tint of the surface instead of black, colour is
+ * vivid and the contrast curve is left flat, the haze rim light is hard and strong, the micro relief (detail normal, crevice grime)
+ * is mostly flattened so the bands stay clean, and there is no grain and no vignette. All in the lit materials' own shader: no post pass.
  * horror = a lower exposure, a steeper contrast curve, drained colour, cold crushed shadows with sickly warm lights, a vignette
  * and fine film grain (all in the lit materials' grade, no post pass), and a lower black lift (the pits go darker).
+ * classic = the first realistic grade.
  */
 const LOOK_PRESETS = {
+  anime: {
+    exposure: 1.3, contrast: -0.1, sat: 0.34, lift: 1.6, grain: 0, vignette: 0, tone: 0,
+    toon: 1, bands: 5, soft: 1.2, gain: 3.2, shade: [0.58, 0.66, 1.0], shadeAmt: 0.1,
+    detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7,
+  },
   horror: { exposure: 1.0, contrast: 0.16, sat: -0.14, lift: 0.5, grain: 0.04, vignette: 0.4, tone: 1.0 },
   classic: { exposure: 1.25, contrast: 0, sat: 0, lift: 1, grain: 0, vignette: 0, tone: 0 },
 };
 function lookPreset(settings) {
-  let n = settings && typeof settings.look === 'string' ? settings.look : 'horror';
+  let n = settings && typeof settings.look === 'string' ? settings.look : 'anime';
   try {
     const m = /[?&]look=([a-z]+)/i.exec((typeof location !== 'undefined' && location.search) || '');
     if (m) n = m[1].toLowerCase();
   } catch {
     /* no location */
   }
-  return LOOK_PRESETS[n] || LOOK_PRESETS.horror;
+  return LOOK_PRESETS[n] || LOOK_PRESETS.anime;
 }
 
 const _tmpC = new THREE.Color();
@@ -813,7 +823,7 @@ export class Renderer3D {
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
     LOOK.uTime.value = this.time;
     LOOK.uWet.value = th.wet;
-    LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3);
+    LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3) * (this.look.rim || 1);
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
     this._driveSurfaceLook(th, tk);
     this._driveProbeBox(d, head);
@@ -912,8 +922,9 @@ export class Renderer3D {
     const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
     LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, 0);
-    LOOK.uDetailK.value.set(P.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
-    LOOK.uCrevK.value.set(0.55 * P.crev, 0.55 * P.crev, 0.7 * P.crev, 0);
+    LOOK.uDetailK.value.set(P.detail * (this.look.detail == null ? 1 : this.look.detail) * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
+    const lcr = this.look.crev == null ? 1 : this.look.crev;
+    LOOK.uCrevK.value.set(0.55 * P.crev * lcr, 0.55 * P.crev * lcr, 0.7 * P.crev * lcr, 0);
     // edge bevel (box solids) and standing water: tier levers; the governor drops the bevel first at level 2 (pure ALU)
     LOOK.uBevelK.value.set(lvl >= 2 ? 0 : P.bevel, 0.035, lvl >= 1 ? P.bevelFar * 0.7 : P.bevelFar, 0);
     LOOK.uPudK.value.x = (lvl >= 3 ? 0.5 : 1) * P.pud;
@@ -922,7 +933,9 @@ export class Renderer3D {
     const m = Math.max(a.r, a.g, a.b, 1e-3);
     LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
     const lk = this.look;
-    LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, 0.22, 0);
+    LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, lk.depthDesat == null ? 0.22 : lk.depthDesat, 0);
+    LOOK.uToonK.value.set(lk.toon || 0, lk.bands || 5, lk.soft || 1.2, lk.gain || 3);
+    if (lk.shade) LOOK.uToonShade.value.set(lk.shade[0], lk.shade[1], lk.shade[2], lk.shadeAmt || 0);
     const lowFx = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
     LOOK.uHorrorK.value.set(lowFx ? 0 : lk.grain, lk.vignette, lk.tone, (this.time || 0) % 100);
     // LCD black point: a Quest 3 panel never reaches OLED black, so crushed pits read as a hole in the picture, not as depth. The

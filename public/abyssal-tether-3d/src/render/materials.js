@@ -120,6 +120,11 @@ export const LOOK = {
   // The horror look (renderer3d.js LOOK_PRESETS): x film grain, y vignette (from the view axis, so both eyes agree), z split toning
   // (cold crushed shadows, sickly warm lights), w time (s, wrapped) for the grain. All zero = the classic grade.
   uHorrorK: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // The stylised ("3D anime") look (renderer3d.js LOOK_PRESETS.anime; GLSL atToon below): x strength (0 = off, the realistic grade),
+  // y number of light bands, z edge softness in pixels (anti-aliased band edges), w gain applied to the lighting before it is banded.
+  uToonK: { value: new THREE.Vector4(0, 5, 1.2, 3) },
+  // Shadow side of the cel: rgb = the tint the albedo takes in the darkest band (a cool violet, never black), a = how much of it is added.
+  uToonShade: { value: new THREE.Vector4(0.62, 0.7, 1.0, 0.1) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
@@ -1342,7 +1347,60 @@ const SPEC_AA = `  {
   }
 `;
 
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\n';
+/**
+ * Cel shading, the shared GLSL (lit surfaces: the grade below; the creature, hands, body and props: injectToon). The LIGHTING is
+ * banded, not the picture: the lit colour is divided by the surface's own albedo luminance (so the stone's texture and the paint on
+ * the gear stay intact), the ratio goes through a few soft-edged steps in a perceptual (square-root) space, and the colour is rebuilt
+ * with the albedo again; the colour keeps its hue (the gain is uniform over rgb). Above the top band the light stays continuous (a
+ * lantern flare or a glow is still HDR), and the darkest band is lifted to a cool tint of the albedo (an anime shadow is violet, not
+ * black). Band edges are one pixel wide (fwidth of the banded value), so they never crawl or alias; uToonK.x = 0 skips it all.
+ * JS twin: toonBand().
+ */
+const TOON_DECL = `uniform vec4 uToonK;
+uniform vec4 uToonShade;
+vec3 atToon( vec3 c, vec3 albedo ) {
+  float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+  float a = max( dot( albedo, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.03 );
+  float lit = l / a;
+  float x = sqrt( max( lit * uToonK.w, 0.0 ) ) * uToonK.y;
+  float xc = min( x, uToonK.y );
+  float f = floor( xc );
+  float w = clamp( fwidth( xc ) * uToonK.z, 0.02, 0.45 );
+  float q = f + smoothstep( 0.5 - w, 0.5 + w, xc - f );
+  float b = q / uToonK.y;
+  float band = b * b / uToonK.w + max( lit - 1.0 / uToonK.w, 0.0 );
+  vec3 t = c * ( min( band * a / max( l, 0.002 ), 10.0 ) );
+  t += albedo * uToonShade.rgb * uToonShade.a;
+  return mix( c, t, uToonK.x );
+}
+`;
+const TOON_FRAG = '  if ( uToonK.x > 0.001 ) gl_FragColor.rgb = atToon( max( gl_FragColor.rgb, vec3( 0.0 ) ), diffuseColor.rgb );\n';
+
+/**
+ * Adds the toon step to a shader that is being patched elsewhere (call from onBeforeCompile, after the material's own patch):
+ * binds the shared uniforms, declares atToon and bands the lit colour right where the lit colour is final, before tone mapping and fog.
+ */
+export function injectToon(shader) {
+  shader.uniforms.uToonK = LOOK.uToonK;
+  shader.uniforms.uToonShade = LOOK.uToonShade;
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\n' + TOON_DECL)
+    .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + TOON_FRAG);
+  return shader;
+}
+
+/** JS twin of atToon's band curve on a lighting value (lit / albedo luminance): `w` is the edge half-width in band units (the shader's fwidth term). */
+export function toonBand(lit, bands = LOOK.uToonK.value.y, gain = LOOK.uToonK.value.w, w = 0.02) {
+  const x = Math.sqrt(Math.max(lit * gain, 0)) * bands;
+  const xc = Math.min(x, bands);
+  const f = Math.floor(xc);
+  const e = Math.min(1, Math.max(0, (xc - f - (0.5 - w)) / (2 * w)));
+  const q = f + e * e * (3 - 2 * e);
+  const b = q / bands;
+  return (b * b) / gain + Math.max(lit - 1 / gain, 0);
+}
+
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\n' + TOON_DECL;
 /**
  * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
  * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
@@ -1355,6 +1413,7 @@ const GRADE_FRAG = `  {
     atC = mix( vec3( atL ), atC, atSat );
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
     atC = atC * uGradeTint + uBlack;
+    if ( uToonK.x > 0.001 ) atC = atToon( atC, diffuseColor.rgb );
     if ( uHorrorK.z > 0.001 ) {
       // the horror look: shadows go cold and green-grey and crush toward a soft toe, the lit parts stay a sickly warm, a vignette
       // from the view axis and a luminance-weighted grain that dies in the blacks (no raised noise floor in a dark headset)
