@@ -88,7 +88,7 @@ const ok = (c, msg) => {
     nearMean += mandibleOpen({ ...base, state: 'PURSUING', distance: 7 }, t, 0) / 80;
     farMean += mandibleOpen({ ...base, state: 'PURSUING', distance: 50 }, t, 0) / 80;
   }
-  ok(nearMean > farMean + 0.1 && near < 0.9 && far < 0.5, `hunting: it spreads as it comes (mean ${farMean.toFixed(2)} rad at 50 m, ${nearMean.toFixed(2)} at 7 m)`);
+  ok(nearMean > farMean + 0.2 && near < 1.1 && far < 0.5, `hunting: it spreads as it comes (mean ${farMean.toFixed(2)} rad at 50 m, ${nearMean.toFixed(2)} at 7 m)`);
   let lo = 9;
   let hi = -9;
   for (let t = 0; t < 3; t += 0.02) {

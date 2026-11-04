@@ -227,10 +227,16 @@ export function mandibleOpen(snap, t, seed = 0) {
     }
     default:
   }
-  if (snap.state === 'BURST') return 0.8 + 0.1 * Math.sin(t * 14 + seed);
+  // a surge CHOMPS: the jaws work open and shut as it runs at you
+  if (snap.state === 'BURST') return 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(t * 20 + seed * 5));
   if (snap.listening) return 0.26 + click(0.12, 5.2);
   if (snap.creeping) return 0.34 + click(0.1, 3.4);
-  if (snap.state === 'PURSUING' || snap.state === 'APPROACHING') return 0.32 + 0.22 * hunt + click(0.07 + 0.06 * hunt, 2.4 + 2 * hunt);
+  if (snap.state === 'PURSUING' || snap.state === 'APPROACHING') {
+    // hunting: still jaws far away, working jaws as it comes (a chew about 2.4 Hz when it is on you)
+    const chew = 0.5 + 0.5 * Math.sin(t * (1.1 + 1.3 * hunt) * 6.2832 + seed * 4.1);
+    const lo = 0.28 + 0.14 * hunt;
+    return lo + 0.62 * hunt * chew;
+  }
   if (snap.state === 'RECOVERING') return 0.22 + 0.04 * Math.sin(t * 2);
   return idle;
 }

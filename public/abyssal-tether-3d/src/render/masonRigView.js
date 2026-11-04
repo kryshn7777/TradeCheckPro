@@ -22,6 +22,8 @@ import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
 import { HeadFit, headExtents } from './mason/masonFit.js';
 import { Mandibles } from './mason/masonMandibles.js';
+import { Eyes, Maw } from './mason/masonFace.js';
+import { Stinger } from './mason/masonStinger.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet, boostOf } from './creatureDust.js';
@@ -105,6 +107,10 @@ export class MasonRigView {
     // giant mandibles on the head bone: they follow the head fit and the crown's aim; opening / snapping is driven by the clip graph's state
     this.mandibles = new Mandibles({ variant: !!this.opts.variant, seed: (this.opts.variant ? 0.37 : 0.11) });
     this.mandibles.mount(this.root); // (the bones are detached from the scene: the horns follow the neck's world matrix each frame)
+    // the face (red slit eyes, a maw that opens with the jaw) and a big stinger on the tail: all mounted on the root, driven from bone world matrices
+    this.eyes = new Eyes({ variant: !!this.opts.variant, seed: this.opts.variant ? 0.61 : 0.23 }).mount(this.root);
+    this.maw = new Maw({ variant: !!this.opts.variant }).mount(this.root);
+    this.stinger = new Stinger({ variant: !!this.opts.variant }).mount(this.root);
     this._baseCalls = 0;
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
@@ -226,6 +232,8 @@ export class MasonRigView {
           if (/Emissive/i.test(mat.name)) {
             this.emissive = mat;
             this._emBase = mat.emissiveIntensity || 1;
+            // the sensory pits are the eyes: glowing RED, not the amber they were baked as (the factor is [1, 0.26, 0.05])
+            if (mat.emissive && mat.emissive.setRGB) mat.emissive.setRGB(1, 0.025, 0.015);
           }
         }
       }
@@ -457,9 +465,18 @@ export class MasonRigView {
     this._poseCrown();
     if (this.mandibles) {
       const show = this._lod === 0 && !this._glowOnly;
-      this.mandibles.follow(this.neck.matrixWorld, this.root.matrixWorld);
+      const nw = this.neck.matrixWorld;
+      const rw = this.root.matrixWorld;
+      this.mandibles.follow(nw, rw);
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
-      this.info.drawCalls = this._baseCalls + (show ? 2 : 0);
+      // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
+      this.eyes.follow(nw, rw);
+      this.eyes.update(this.graph.snapshot, this._time, show);
+      this.maw.follow(nw, rw);
+      this.maw.update(dt, this.mandibles.open, show);
+      this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
+      this.stinger.update(show);
+      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0);
     }
     this._poseLegs(dt, B, F, S, level, g, lodFar);
     if (this.dust) this._wake(dt, C, B, F, size);
@@ -478,7 +495,7 @@ export class MasonRigView {
       const rate = 0.65 + 0.5 * clamp(glow, 0, 1);
       const ph = (this._time * rate) % 1;
       const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
-      this.emissive.emissiveIntensity = this._emBase * (0.12 + 1.05 * glow) * (0.72 + 0.45 * beat);
+      this.emissive.emissiveIntensity = this._emBase * (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat); // (the idle floor was 0.12: the eyes were barely there)
     }
 
     // ---- bounds ----
@@ -1007,6 +1024,7 @@ export class MasonRigView {
   dispose() {
     if (this.root.parent) this.root.parent.remove(this.root);
     if (this.mandibles) this.mandibles.dispose();
+    for (const k of ['eyes', 'maw', 'stinger']) if (this[k]) this[k].dispose();
     const seen = new Set();
     for (const l of this.meshes) {
       for (const m of l) {
