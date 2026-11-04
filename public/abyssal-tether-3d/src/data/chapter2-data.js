@@ -16,7 +16,7 @@
  */
 
 import { CHAPTER2_TEXT } from './chapter2-text.js';
-import { addTollingGallery, addSnuffing, addSootThroat } from './chapter2-sets.js';
+import { addTollingGallery, addSnuffing, addSootThroat, addBeats, setNames } from './chapter2-sets.js';
 
 export const CHAPTER2_DEPTH_OFFSET = 600; // m: Chapter I ends at ~600 m (the hook of the demo), Chapter II continues the readout
 export const CHAPTER2_DEPTH = 1250; // m (the owner's number; the bible had 580)
@@ -67,6 +67,8 @@ export function buildChapter2() {
   const seals = [];
   const fixtures = [];
   const objectives = [];
+  const lanes = [];
+  const nooks = [];
   const c2 = {}; // what the director reads (the set-pieces' stations, bells, plates)
   const ledges = []; // { id, k, x, y (top), z, section }
 
@@ -208,10 +210,12 @@ export function buildChapter2() {
   }
 
   // ---- the set-pieces (data/chapter2-sets.js): II-9 the Tolling Gallery, II-12 the Snuffing (the Doorman), II-13 the Soot Throat (the hook)
-  const ctx = { solids, anchors, movers, decor, lights, fixtures, objectives, seals, ledges, sections, c2, sec, ledgeNear };
+  const ctx = { solids, anchors, movers, decor, lights, fixtures, objectives, seals, ledges, sections, c2, sec, ledgeNear, lanes, nooks };
   addTollingGallery(ctx);
   addSnuffing(ctx);
   addSootThroat(ctx);
+  setNames(CHAPTER2_TEXT.names.map((n) => ({ id: n.id, text: n.text, codex: n.codex, beat: n.beat })));
+  addBeats(ctx);
 
   // the plaques (the story writer's words), carved on the pit wall beside the stair at the depth they belong to; the wall they sit on faces into the pit
   const WALLS = {
@@ -267,6 +271,8 @@ export function buildChapter2() {
     seals,
     fixtures,
     objectives,
+    lanes,
+    nooks,
     c2,
     ledges: ledges.map((l) => ({ id: l.id, x: l.x, y: l.y, z: l.z, section: l.section })), // for the tests and the bots (not read by Level3D)
   };

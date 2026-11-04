@@ -165,6 +165,20 @@ export function addSnuffing(ctx) {
       plates.push({ id, i, x: c.x, y: Y(d), z: c.z, d, leg: path[i] });
     });
   }
+  // the under-rail: two trolleys run along the Span's underside (iron: silent), a moving ring each, 7 and 9 m/s there and back (docs: C1's "trolleys on the under-rail")
+  [
+    { id: 'c2-12-trolleyA', a: 4, b: 20, speed: 7 },
+    { id: 'c2-12-trolleyB', a: 28, b: 44, speed: 9 },
+  ].forEach((t) => {
+    const pa = plates[t.a];
+    const pb = plates[t.b];
+    const pts = [
+      { x: pa.x, y: r2(pa.y - 3.2), z: pa.z },
+      { x: pb.x, y: r2(pb.y - 3.2), z: pb.z },
+    ];
+    ctx.anchors.push({ id: `${t.id}-ring`, x: pts[0].x, y: r2(pts[0].y - 1.1), z: pts[0].z, kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
+    ctx.movers.push({ id: `mov-${t.id}`, kind: 'path', section: 'c2-12', pts, mode: 'pingpong', speed: t.speed, chain: 1.2, parts: 'hook', carry: { anchors: [`${t.id}-ring`], decor: [] } });
+  });
   const lastPlate = plates[plates.length - 1];
 
   // ---- the Lift tower: the top landing at the end of the Span (8 x 8), the cage lowering to the Throat's lip, the shutter just above the lip
@@ -333,4 +347,104 @@ export function addSootThroat(ctx) {
     seat: { dist: 180 },
     bottom: b.yBottom,
   };
+}
+
+/**
+ * The beats' own hazards and finds, once the set-pieces exist (called after addSnuffing): II-2 / II-3 / II-4 / II-5 the five NAMES (a slab with the name carved on it, on the stair,
+ * off it, or where only a release at a chandelier's full swing reaches); II-5 and II-8 the Span's trolleys are in addSnuffing; II-6 three LIT CLUSTERS (the Mason cannot enter: a
+ * nook with a budget that never runs out); II-10 the hammer floor (three lanes that strike every 4 s) and the ESCAPEMENT RING whose bite starts the Stopping; II-11 the burnt stair:
+ * every third tread crumbles and three lanes of falling embers. All data on the shipped machines (Objectives3D lanes / nooks, crumble solids).
+ */
+export function addBeats(ctx) {
+  const dec = (o) => ctx.decor.push(o);
+  const ledgesOf = (sid) => ctx.ledges.filter((l) => l.section === sid);
+  const solidOf = (id) => ctx.solids.find((q) => q.id === id);
+  const yawToCentre = (x, z) => Math.atan2(x, z); // faces the pit's centre: forward = (-sin yaw, -cos yaw) = (-x, -z)/|.|
+  ctx.c2.names = [];
+  const slab = (id, cx, topY, cz) => ctx.solids.push({ id, minX: r2(cx - 1.6), maxX: r2(cx + 1.6), minY: r2(topY - 1), maxY: r2(topY), minZ: r2(cz - 1.6), maxZ: r2(cz + 1.6), kind: 'stone' });
+  const nameAt = (n, cx, topY, cz) => {
+    const sid = `c2-name-${n.id}`;
+    slab(sid, cx, topY, cz);
+    const d = Math.hypot(cx, cz) || 1;
+    const px = cx - (cx / d) * 1.1;
+    const pz = cz - (cz / d) * 1.1;
+    dec({ type: 'plaque', x: r2(px), y: r2(topY + 1.1), z: r2(pz), sx: 1.9, sy: 0.5, sz: 0.14, yaw: yawToCentre(cx, cz), text: n.text, id: `c2-nameplate-${n.id}`, beat: n.beat });
+    ctx.lights.push({ x: r2(cx), y: r2(topY + 2.2), z: r2(cz), color: '#ffcf80', intensity: 0.8, range: 7, flicker: 0.2 });
+    ctx.c2.names.push({ id: n.id, text: n.text, codex: n.codex, beat: n.beat, x: r2(cx), y: r2(topY + 1), z: r2(cz), r: 2.6 });
+  };
+  const outward = (l, m) => {
+    const d = Math.hypot(l.x, l.z) || 1;
+    return { x: l.x + (l.x / d) * m, z: l.z + (l.z / d) * m };
+  };
+  const names = CHAPTER2_NAMES;
+  {
+    // N2-1 OSWIN: on the way, a step off the stair's outside edge (a jump)
+    const l = ledgesOf('c2-2')[3];
+    const o = outward(l, 9);
+    nameAt(names[0], o.x, l.y, o.z);
+    // N2-2 GODRIC: across the pit, off the route (a rope)
+    const l2 = ledgesOf('c2-2')[6];
+    const d = Math.hypot(l2.x, l2.z) || 1;
+    nameAt(names[1], (-l2.x / d) * 21, l2.y + 2, (-l2.z / d) * 21);
+    // N2-3 HEDDA: where a release at the third chandelier's full swing lands (its ring's apex, 2.5 m under it)
+    const m = ctx.movers.find((q) => q.id === 'mov-c2-3-ring2');
+    const ring = ctx.anchors.find((q) => q.id === 'c2-3-ring2');
+    const apex = m.length * Math.sin(m.amp);
+    nameAt(names[2], r2(m.x + apex + 2.6), r2(ring.y + m.length * (1 - Math.cos(m.amp)) - 2.6), m.z);
+    // N2-4 MARGERY: the bed with no lamp, on the outside of the hall's stair
+    const l4 = ledgesOf('c2-4')[2];
+    const o4 = outward(l4, 9);
+    nameAt(names[3], o4.x, l4.y + 0.5, o4.z);
+    // N2-5 BRASK: the crane cab at the end of the monorail
+    const mono = ctx.movers.find((q) => q.id === 'mov-c2-5-mono');
+    const end = mono.pts[mono.pts.length - 1];
+    nameAt(names[4], r2(end.x + 3.2), r2(end.y - 5), r2(end.z + 0.5));
+  }
+  // II-6: lit clusters (the Mason cannot enter) round three ledges of the Dressing Yards
+  {
+    const L = ledgesOf('c2-6');
+    [3, 9, 15].forEach((j, n) => {
+      const l = L[Math.min(L.length - 1, j)];
+      ctx.nooks.push({
+        id: `nook-c2-6-${n}`,
+        section: 'c2-6',
+        box: { minX: r2(l.x - 4), maxX: r2(l.x + 4), minY: l.y, maxY: r2(l.y + 3.2), minZ: r2(l.z - 4), maxZ: r2(l.z + 4) },
+        block: { minX: r2(l.x - 6), maxX: r2(l.x + 6), minY: r2(l.y - 1.5), maxY: r2(l.y + 5), minZ: r2(l.z - 6), maxZ: r2(l.z + 6) },
+        budget: { normal: 9999, nightmare: 9999, abyss: 9999 },
+      });
+      ctx.lights.push({ x: l.x, y: r2(l.y + 2.8), z: l.z, color: '#ffcf80', intensity: 1.9, range: 17, flicker: 0.08 });
+    });
+  }
+  // II-10: the hammer floor and the escapement ring
+  {
+    const L = ledgesOf('c2-10');
+    [2, 6, 10].forEach((j, n) => {
+      const l = L[Math.min(L.length - 1, j)];
+      ctx.lanes.push({ id: `hammer-c2-10-${n}`, section: 'c2-10', minX: r2(l.x - 2.2), maxX: r2(l.x + 2.2), minY: l.y, maxY: r2(l.y + 3.4), minZ: r2(l.z - 2.2), maxZ: r2(l.z + 2.2), period: 4, on: 0.35, lead: 1.0, phase: n * 0.31, damage: 0.35, hammer: true, by: { nightmare: { damage: 0.45 }, abyss: { damage: 0.6 } } });
+    });
+    const le = L[Math.min(L.length - 1, 13)];
+    ctx.anchors.push({ id: 'c2-10-esc', x: le.x, y: r2(le.y + 3.6), z: le.z, kind: 'ring', tag: 'objective', normal: { x: 0, y: -1, z: 0 }, mount: 'wall' });
+    ctx.c2.stopping = { ringId: 'c2-10-esc', section: 'c2-10', telegraph: 4, dur: 14, movers: ['mov-c2-10-wheel'], lanes: [0, 1, 2].map((n) => `hammer-c2-10-${n}`) };
+  }
+  // II-11: the burnt stair: every third tread crumbles; three lanes of falling embers
+  {
+    const L = ledgesOf('c2-11');
+    L.forEach((l, j) => {
+      const sol = solidOf(l.id);
+      if (sol && j % 3 === 1 && j > 0) {
+        sol.kind = 'crumble';
+        sol.life = 1;
+      }
+    });
+    [3, 7, 11].forEach((j, n) => {
+      const l = L[Math.min(L.length - 1, j)];
+      ctx.lanes.push({ id: `embers-c2-11-${n}`, section: 'c2-11', minX: r2(l.x - 1.5), maxX: r2(l.x + 1.5), minY: l.y, maxY: r2(l.y + 15), minZ: r2(l.z - 1.5), maxZ: r2(l.z + 1.5), period: 6.5, on: 1.2, lead: 1.2, phase: 0.2 + n * 0.3, damage: 0.3, by: { nightmare: { damage: 0.4 }, abyss: { damage: 0.5 } } });
+    });
+  }
+}
+
+const CHAPTER2_NAMES = [];
+export function setNames(list) {
+  CHAPTER2_NAMES.length = 0;
+  for (const n of list) CHAPTER2_NAMES.push(n);
 }

@@ -57,6 +57,10 @@ export class Chapter2Glue {
     on('lamp:all', () => v && v.lamp && v.lamp.snuffAll());
     on('c2:lamp', (e) => this._onLamp(e));
     on('hook:card', () => this._onCard());
+    on('c2:name', (e) => {
+      if (e && g._toast) g._toast(`${e.text} · ${e.count} of ${e.of} found`, 4);
+      if (g._hapticBoth) g._hapticBoth(0.25, 160);
+    });
     on('hook:arrive', () => g._hapticBoth && g._hapticBoth(0.35, 240));
     on('usher:whip', (e) => {
       if (e && e.lethal !== false) g._hapticBoth && g._hapticBoth(0.5, 120);

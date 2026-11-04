@@ -88,6 +88,8 @@ export const RULES = Object.freeze({
   crash: R('[Iron crashes down]', 'world', 2, 'crash', 1.5),
   shutter: R('[A shutter slams]', 'world', 2, 'shutter', 5),
   lastLamp: R('[Every lamp goes out]', 'world', 2, 'lastlamp', 10, 6),
+  grind: R('[Stone grinding in the walls]', 'world', 2, 'grind', 8, 5),
+  stopAll: R('[Every machine stops]', 'world', 2, 'stopall', 10, 5),
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
@@ -270,6 +272,10 @@ export function captionForEvent(type, p) {
       return RULES.ratchet;
     case 'c2:shutter':
       return RULES.shutter;
+    case 'c2:grind':
+      return RULES.grind;
+    case 'c2:stop':
+      return RULES.stopAll;
     case 'lamp:all':
       return RULES.lastLamp;
     case 'c2:caption':
@@ -338,6 +344,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'c2:crash',
   'c2:ratchet',
   'c2:shutter',
+  'c2:grind',
+  'c2:stop',
   'lamp:all',
   'c2:caption',
   'creature:clip',

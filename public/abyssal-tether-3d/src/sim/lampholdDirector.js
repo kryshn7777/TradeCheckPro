@@ -211,11 +211,53 @@ export class LampholdDirector {
   _onAttach(e) {
     const a = e && e.anchor;
     if (!a) return;
+    if (this.c2.stopping && a.id === this.c2.stopping.ringId) this._startStopping();
     const brass = a.toll === true || (a.solid && a.solid.tag === 'brass');
     if (a.toll === 'great') return; // the Great Bell's own stroke is the toll
     if (brass) {
       this.toll('ring', e.x, e.y, e.z, { src: 'brass' });
       if (this.bus) this.bus.emit('c2:caption', { text: this._cap('chime'), kind: 'chime' });
+    }
+  }
+
+  /** II-10 THE STOPPING: the escapement's last ring bitten: 4 s of grinding, then every machine of the beat stands still for 14 s (the din drops to nothing), then runs on. */
+  _startStopping() {
+    const st = this._stopping;
+    const S = this.c2.stopping;
+    if (st.started || !S || !this.O || !this.O.movers) return;
+    st.started = true;
+    st.t0 = this.O.clock + S.telegraph;
+    if (this.bus) this.bus.emit('c2:grind', {});
+    for (const id of S.movers) {
+      const e = this.O.movers.byId(id);
+      if (e) {
+        e.m.stopAt = st.t0;
+        e.m.stopFor = S.dur;
+      }
+    }
+  }
+
+  _stoppingStep() {
+    const st = this._stopping;
+    const S = this.c2.stopping;
+    if (!st.started || !S) return;
+    const c = this.O.clock;
+    const now = c > st.t0 && c < st.t0 + S.dur;
+    for (const L of this.O.lanes) if (S.lanes.indexOf(L.id) >= 0) L.off = now;
+    if (now && !st.said) {
+      st.said = true;
+      if (this.bus) this.bus.emit('c2:stop', {});
+    }
+  }
+
+  _namesStep(p) {
+    const list = this.c2.names;
+    if (!list) return;
+    for (const n of list) {
+      if (this.names.has(n.id)) continue;
+      if (Math.hypot(p.x - n.x, p.y - n.y, p.z - n.z) > n.r) continue;
+      this.names.add(n.id);
+      if (this.bus) this.bus.emit('c2:name', { id: n.id, text: n.text, codex: n.codex, count: this.names.size, of: list.length });
     }
   }
 
@@ -297,6 +339,18 @@ export class LampholdDirector {
     this._holdStrokes = 0;
     this._plate = { front: 0, started: false, warned: 0 };
     this.evening = false;
+    this.names = new Set(); // the Names found this run (data/chapter2-text.js names; c2.names the places)
+    this._stopping = { started: false, t0: 0 };
+    if (this.O && this.O.movers && this.c2 && this.c2.stopping) {
+      for (const id of this.c2.stopping.movers) {
+        const e = this.O.movers.byId(id);
+        if (e) {
+          e.m.stopAt = 1e9;
+          e.m.stopFor = 0;
+        }
+      }
+      for (const L of this.O.lanes) L.off = false;
+    }
     this._cage = { started: false, t0: 0, gongs: 0, whips: 0, lampOut: false, shutT: -1, ratchet: false };
     this._doorman = 'pulpit';
     for (const e of this.ushers) {
@@ -782,6 +836,8 @@ export class LampholdDirector {
       if (si === 11 && this.phase === 'off' && this.Q) this._enterPhase('quiet');
     }
     this._sectionT += dt;
+    this._namesStep(p);
+    if (this._stopping.started && this.O) this._stoppingStep();
     // the sections' scripts
     if (si === 8) this._tenorStep(dt, p);
     if (this.Q && this._c2 && si >= 11 && si <= 12 && this.phase !== 'off') this._doormanStep(dt, p);

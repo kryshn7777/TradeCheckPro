@@ -220,6 +220,22 @@ export const LAMPHOLD_SFX = {
   },
 
   /** The Throat's shutter slams. */
+  _onC2Grind(p) {
+    const v = this._begin('c2Grind', 3, 4, 4.6, this.busPlayer, 0.8, 0, 0.4, 0, null, 'far');
+    if (!v) return;
+    const t = v.t0;
+    const n = this._vNoise(v, this._brown, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 120, 5);
+    bp.frequency.setValueAtTime(120, t);
+    bp.frequency.exponentialRampToValueAtTime(52, t + 4);
+    const ng = this._vGain(v, 0);
+    this._swell(ng.gain, t, 0.9, 1.2, 2.0, 0.4);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(v.out);
+    this._commit(v);
+  },
+
   _onC2Shutter(p) {
     const pos = at(this, p);
     const v = this._begin('c2Shutter', 4, 3, 3.2, this.busPlayer, 1.0, 0, 0.5, 0, pos, 'near');
@@ -327,6 +343,8 @@ export const LAMPHOLD_EVENTS = {
   'c2:creak': '_onC2Creak',
   'c2:crash': '_onC2Crash',
   'c2:shutter': '_onC2Shutter',
+  'c2:grind': '_onC2Grind',
+  'c2:stop': '_onC2Shutter',
   'toll:emit': '_onTollEmit',
   'hook:click': '_onHookClick',
   'hook:bow': '_onHookBow',

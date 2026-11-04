@@ -163,7 +163,7 @@ const D = LEVEL_DATA_CH2;
       }
     }
   }
-  ok(kinds.pendulum >= 9 && kinds.lift === 6 && kinds.path === 3 && kinds.orbit === 2, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
+  ok(kinds.pendulum >= 9 && kinds.lift === 6 && kinds.path === 5 && kinds.orbit === 2, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
   ok(worst <= 13.1 && worst >= 12.9, `the fastest carried ring peaks at ${worst.toFixed(1)} m/s (the express cage: the chapter's cap is 13)`);
   ok(inside, 'every carried ring stays inside the pit over its whole cycle');
   const exp = D.movers.find((m) => m.id === 'mov-c2-7-exp0');

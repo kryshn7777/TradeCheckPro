@@ -98,6 +98,8 @@ export function normalizeMover(raw, key) {
     cum: null,
     speed: 0,
     pingpong: false,
+    stopAt: num(o.stopAt, 1e9), // the Stopping (the director sets it): from this clock the mover stands still for `stopFor` s, then runs on where it was
+    stopFor: 0,
     once: o.once === true, // a lift that makes ONE trip, starting at `startAt` (a scripted lift: the director sets it)
     startAt: num(o.startAt, 1e9),
   };
@@ -143,8 +145,16 @@ export function normalizeMover(raw, key) {
 }
 
 /** The mover's angle at time t: θ (pendulum, rad off the plumb line) or α (orbit, rad round the rim from u). */
+/** The mover's own time: the clock minus the seconds it has stood still (a stop from m.stopAt for m.stopFor). */
+function effT(m, t) {
+  if (t <= m.stopAt) return t;
+  return t < m.stopAt + m.stopFor ? m.stopAt : t - m.stopFor;
+}
+const stopped = (m, t) => t > m.stopAt && t < m.stopAt + m.stopFor;
+
 export function moverAngle(m, t) {
   if (m.k > 1) return 0;
+  t = effT(m, t);
   const c = t / m.period + m.phase;
   if (m.k === 0) return m.amp * Math.sin(TAU * c);
   return TAU * m.spin * c;
@@ -152,7 +162,8 @@ export function moverAngle(m, t) {
 
 /** d(angle)/dt at time t. */
 export function moverRate(m, t) {
-  if (m.k > 1) return 0;
+  if (m.k > 1 || stopped(m, t)) return 0;
+  t = effT(m, t);
   if (m.k === 0) return (m.amp * TAU * Math.cos(TAU * (t / m.period + m.phase))) / m.period;
   return (TAU * m.spin) / m.period;
 }
@@ -197,6 +208,15 @@ function profile(u, r) {
 
 /** The reference point of a lift (k 2) or path (k 3) mover at t: out.x/y/z and the velocity out.vx/vy/vz. */
 function poseRef(m, t, out) {
+  if (m.stopAt < 1e8) {
+    const was = stopped(m, t);
+    t = effT(m, t);
+    if (was) {
+      poseRef(Object.assign({}, m, { stopAt: 1e9 }), t, out);
+      out.vx = out.vy = out.vz = 0;
+      return out;
+    }
+  }
   if (m.k === 2) {
     const T = m.travel;
     const D = m.dwell;
