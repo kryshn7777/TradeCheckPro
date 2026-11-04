@@ -218,7 +218,7 @@ export function addSnuffing(ctx) {
       const id = `c2-12-iron${k}`;
       const len = 22 + k * 2;
       ctx.anchors.push({ id, x: c.x, y: r2(rimTop + 4), z: c.z, kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
-      ctx.movers.push({ id: `mov-${id}`, kind: 'pendulum', section: 'c2-12', x: c.x, y: r2(rimTop + 4 + len), z: c.z, dir, length: len, amp: 0.3, period: 9 + k, phase: k * 0.31, carry: { anchors: [id], decor: [] } });
+      ctx.movers.push({ id: `mov-${id}`, kind: 'pendulum', section: 'c2-12', x: c.x, y: r2(rimTop + 4 + len), z: c.z, dir, length: len, amp: 0.3, period: 9 + k, phase: k * 0.31, parts: 'cage', carry: { anchors: [id], decor: [] } });
     });
   }
   // the clappers: pull-anchors on the rims (haul rings): W (west rim) tolls G's pawl bell, N (north rim) tolls the north bell
@@ -357,6 +357,7 @@ export function addSootThroat(ctx) {
  */
 export function addBeats(ctx) {
   const dec = (o) => ctx.decor.push(o);
+  const names = CHAPTER2_NAMES;
   const ledgesOf = (sid) => ctx.ledges.filter((l) => l.section === sid);
   const solidOf = (id) => ctx.solids.find((q) => q.id === id);
   const yawToCentre = (x, z) => Math.atan2(x, z); // faces the pit's centre: forward = (-sin yaw, -cos yaw) = (-x, -z)/|.|
@@ -376,7 +377,6 @@ export function addBeats(ctx) {
     const d = Math.hypot(l.x, l.z) || 1;
     return { x: l.x + (l.x / d) * m, z: l.z + (l.z / d) * m };
   };
-  const names = CHAPTER2_NAMES;
   {
     // N2-1 OSWIN: on the way, a step off the stair's outside edge (a jump)
     const l = ledgesOf('c2-2')[3];
@@ -400,6 +400,55 @@ export function addBeats(ctx) {
     const end = mono.pts[mono.pts.length - 1];
     nameAt(names[4], r2(end.x + 3.2), r2(end.y - 5), r2(end.z + 0.5));
   }
+  // II-2: the doors you knock (hook the knocker ring: a quiet verb, not a toll: knocks are for the dead) beside the first two Names: a Name is found only after its door has been knocked
+  {
+    const sink = (key, off) => {
+      ctx.solids.push({ id: `seal-c2-2-${key}-plate`, minX: 50 + off, maxX: 51 + off, minY: -10, maxY: -9, minZ: 50, maxZ: 51, kind: 'stone', seal: `seal-c2-2-${key}` });
+      ctx.seals.push({ id: `seal-c2-2-${key}`, section: 'c2-2', ids: [`seal-c2-2-${key}-plate`], open: 'slide' });
+    };
+    ctx.c2.doors = [];
+    names.slice(0, 2).forEach((n, k) => {
+      const nm = ctx.c2.names.find((q) => q.id === n.id);
+      const d = Math.hypot(nm.x, nm.z) || 1;
+      const kx = nm.x - (nm.x / d) * 1.9;
+      const kz = nm.z - (nm.z / d) * 1.9;
+      const id = `door-c2-2-${k}`;
+      ctx.anchors.push({ id: `${id}-knocker`, x: r2(kx), y: r2(nm.y + 0.7), z: r2(kz), kind: 'ring', tag: 'objective', normal: { x: -nm.x / d, y: 0, z: -nm.z / d }, mount: 'wall' });
+      sink(`door${k}`, k * 4);
+      ctx.fixtures.push({ id, kind: 'hook', anchorId: `${id}-knocker`, hold: 0 });
+      ctx.objectives.push({ id: `obj-${id}`, section: 'c2-2', verb: 'hook', sealId: `seal-c2-2-door${k}`, ids: [id], need: 1 });
+      dec({ type: 'arch', x: r2(nm.x + (nm.x / d) * 1.2), y: r2(nm.y + 1.2), z: r2(nm.z + (nm.z / d) * 1.2), sx: 2.2, sy: 2.6, sz: 0.5, yaw: yawToCentre(nm.x, nm.z), id: `c2-door-frame-${k}` });
+      nm.needs = id;
+      ctx.c2.doors.push({ id, knocker: `${id}-knocker`, name: n.id });
+    });
+  }
+  // II-4: the lamp-holders: stone hands (lantern raised) from the hall's walls, and the tally plates under them (every sleeper counts the mornings)
+  {
+    const L = ledgesOf('c2-4');
+    L.forEach((l, j) => {
+      if (j % 2) return;
+      const d = Math.hypot(l.x, l.z) || 1;
+      const wx = (l.x / d) * 24.6;
+      const wz = (l.z / d) * 24.6;
+      const snap = Math.abs(wx) > Math.abs(wz) ? { x: Math.sign(wx) * 25.4, z: Math.max(-22, Math.min(22, wz)) } : { x: Math.max(-22, Math.min(22, wx)), z: Math.sign(wz) * 25.4 };
+      dec({ type: 'statue', x: r2(snap.x), y: r2(l.y + 4 + (j % 3)), z: r2(snap.z), sx: 1.3, sy: 2.6, sz: 1.3, yaw: yawToCentre(snap.x, snap.z), id: `c2-4-hand${j}` });
+      ctx.lights.push({ x: r2(snap.x - Math.sign(snap.x) * 1.2 * (Math.abs(snap.x) > 25 ? 1 : 0)), y: r2(l.y + 6.6 + (j % 3)), z: r2(snap.z - Math.sign(snap.z) * 1.2 * (Math.abs(snap.z) > 25 ? 1 : 0)), color: '#ffcf80', intensity: 0.9, range: 9, flicker: 0.25 });
+      if (j % 4 === 0) dec({ type: 'plaque', x: r2(snap.x), y: r2(l.y + 2.2), z: r2(snap.z), sx: Math.abs(snap.x) > 25 ? 0.15 : 2.2, sy: 0.5, sz: Math.abs(snap.x) > 25 ? 2.2 : 0.15, yaw: yawToCentre(snap.x, snap.z), text: 'IIII IIII IIII IIII IIII IIII', id: `c2-4-tally${j}` });
+    });
+  }
+  // II-5 and II-7: the load and the counterweight crush (a lane that strikes with a ratchet's warning: stand clear)
+  {
+    const yards = ledgesOf('c2-5');
+    [4, 10, 16].forEach((j, n) => {
+      const l = yards[Math.min(yards.length - 1, j)];
+      ctx.lanes.push({ id: `load-c2-5-${n}`, section: 'c2-5', minX: r2(l.x - 2.4), maxX: r2(l.x + 2.4), minY: l.y, maxY: r2(l.y + 3.2), minZ: r2(l.z - 2.4), maxZ: r2(l.z + 2.4), period: 8, on: 0.6, lead: 1.5, phase: n * 0.27, damage: 0.5, by: { nightmare: { damage: 0.6 }, abyss: { damage: 0.75 } } });
+    });
+    const sh = ctx.movers.filter((m) => /^mov-c2-7-exp/.test(m.id));
+    sh.forEach((m, n) => {
+      ctx.lanes.push({ id: `weight-c2-7-${n}`, section: 'c2-7', minX: r2(m.x - 2.6), maxX: r2(m.x + 2.6), minY: r2(m.y - 46), maxY: r2(m.y - 40), minZ: r2(m.z - 2.6), maxZ: r2(m.z + 2.6), period: 9, on: 0.8, lead: 1.5, phase: n * 0.33, damage: 0.45, by: { nightmare: { damage: 0.55 }, abyss: { damage: 0.7 } } });
+    });
+  }
+
   // II-6: lit clusters (the Mason cannot enter) round three ledges of the Dressing Yards
   {
     const L = ledgesOf('c2-6');

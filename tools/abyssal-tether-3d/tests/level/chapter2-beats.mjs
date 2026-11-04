@@ -53,6 +53,18 @@ const seconds = (n) => Math.round(n / DT);
   ok(N.every((n) => S.get(`c2-name-${n.id}`) && Math.abs(S.get(`c2-name-${n.id}`).maxY + 1 - n.y) < 1e-6), 'each stands on its own slab');
   ok(N.every((n) => Math.abs(n.x) <= 26 && Math.abs(n.z) <= 26), 'every Name is inside the pit');
   ok(D.decor.filter((x) => /^c2-nameplate-/.test(x.id)).length === 5, 'each is carved on a plate (a decor plaque)');
+  ok(N[0].needs === 'door-c2-2-0' && N[1].needs === 'door-c2-2-1' && N.slice(2).every((n) => !n.needs), 'the first two Names are behind doors (KNOCK, AND BE KNOWN)');
+  // a Name behind a door is not found before the door is knocked; the knock is not a toll
+  w.p.x = N[0].x;
+  w.p.y = N[0].y;
+  w.p.z = N[0].z;
+  w.d.step(DT, w.p);
+  ok(w.d.names.size === 0, 'standing at a Name whose door is shut finds nothing');
+  const tolls0 = w.log.length;
+  w.bus.emit('objective:progress', { id: 'obj-door-c2-2-0', fixture: 'door-c2-2-0', verb: 'hook', k: 1, of: 1, x: 0, y: 0, z: 0, noise: 0 });
+  ok(w.d.knocked.has('door-c2-2-0') && w.d.tollBus._n === 0, 'hooking the knocker knocks (and the Usher hears nothing: knocks are for the dead)');
+  void tolls0;
+  w.bus.emit('objective:progress', { id: 'obj-door-c2-2-1', fixture: 'door-c2-2-1', verb: 'hook', k: 1, of: 1, x: 0, y: 0, z: 0, noise: 0 });
   for (const [i, n] of N.entries()) {
     w.p.x = n.x;
     w.p.y = n.y;
@@ -86,7 +98,7 @@ const seconds = (n) => Math.round(n / DT);
 // ---- the hammer floor and the Stopping
 {
   const w = world();
-  ok(w.O.lanes.length === 6 && w.O.lanes.filter((l) => /^hammer/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^embers/.test(l.id)).length === 3, 'three hammers (II-10) and three lanes of embers (II-11)');
+  ok(w.O.lanes.length === 12 && w.O.lanes.filter((l) => /^hammer/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^embers/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^load/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^weight/.test(l.id)).length === 3, 'three loads (II-5), three counterweights (II-7), three hammers (II-10) and three lanes of embers (II-11)');
   const ham = w.O.lanes.find((l) => /^hammer/.test(l.id));
   ok(ham.period === 4 && ham.lead === 1 && ham.damage === 0.35, 'a hammer every 4 s with a second of warning, 0.35 of your health');
   w.O.clock = 0;

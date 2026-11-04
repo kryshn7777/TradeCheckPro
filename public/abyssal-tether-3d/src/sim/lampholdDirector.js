@@ -205,7 +205,11 @@ export class LampholdDirector {
       this._holdStrokes = 10;
       this.toll('bell', g.x, g.y, g.z, { src: 'clapN' });
     } else if (e.fixture === this.Q.leverFixture && e.k >= e.of) this._depart();
-    else if (e.noise > 0 && e.x !== undefined) this.toll('machine', e.x, e.y, e.z, { src: e.fixture || 'machine' });
+    else if (e.fixture && String(e.fixture).indexOf('door-c2-2-') === 0) {
+      // a knock is not a toll (knocks are for the dead): the Usher does not hear it
+      this.knocked.add(e.fixture);
+      if (this.bus) this.bus.emit('c2:knock', { id: e.fixture, x: e.x, y: e.y, z: e.z });
+    } else if (e.noise > 0 && e.x !== undefined) this.toll('machine', e.x, e.y, e.z, { src: e.fixture || 'machine' });
   }
 
   _onAttach(e) {
@@ -254,7 +258,7 @@ export class LampholdDirector {
     const list = this.c2.names;
     if (!list) return;
     for (const n of list) {
-      if (this.names.has(n.id)) continue;
+      if (this.names.has(n.id) || (n.needs && !this.knocked.has(n.needs))) continue;
       if (Math.hypot(p.x - n.x, p.y - n.y, p.z - n.z) > n.r) continue;
       this.names.add(n.id);
       if (this.bus) this.bus.emit('c2:name', { id: n.id, text: n.text, codex: n.codex, count: this.names.size, of: list.length });
@@ -339,6 +343,7 @@ export class LampholdDirector {
     this._holdStrokes = 0;
     this._plate = { front: 0, started: false, warned: 0 };
     this.evening = false;
+    this.knocked = new Set(); // the doors knocked this run (hook the knocker ring: a Name is found only after its door)
     this.names = new Set(); // the Names found this run (data/chapter2-text.js names; c2.names the places)
     this._stopping = { started: false, t0: 0 };
     if (this.O && this.O.movers && this.c2 && this.c2.stopping) {

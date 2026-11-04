@@ -43,6 +43,8 @@ export class Chapter2Glue {
     this._states = Array.from({ length: MAX_STATES }, () => ({ id: '', head: false, x: 0, y: 0, z: 0, yaw: 0, clip: 'Idle', t: 0, stretch: 1, ring: null, sphere: { x: 0, y: 0, z: 0, r: 0, stage: 'listen' }, _sph: false, visible: false }));
     this._list = [];
     this._hasSphere = false;
+    this._buzzT = 0;
+    this.stats = { buzz: 0 };
   }
 
   build(level, objectives, bus, diff, attract) {
@@ -266,6 +268,29 @@ export class Chapter2Glue {
       }
       v.usher.setStates(list);
       v.usher.update(dt, g.renderer && g.renderer.camera);
+    }
+    if (d) this._buzz(dt);
+  }
+
+  /**
+   * THE ROPE TELEGRAPH (CHAPTER_II_DIRECTION 3.4): the hand whose rope is anchored in or near an Usher's torch sphere buzzes, from LISTEN on and rising through COIL: the player always has the
+   * sphere, the hum and the hand. 10 Hz, only while a rope is out.
+   */
+  _buzz(dt) {
+    const g = this.game;
+    this._buzzT -= dt;
+    if (this._buzzT > 0 || !g.tethers || g.state !== 'playing') return;
+    this._buzzT = 0.1;
+    for (const hand of ['left', 'right']) {
+      const rope = g.tethers.hands[hand] && g.tethers.hands[hand].rope;
+      if (!rope || !rope.attached || !rope.anchor) continue;
+      const a = rope.anchor;
+      let k = 0;
+      for (const e of this.director.ushers) if (e.usher.state !== 'OFF') k = Math.max(k, e.usher.telegraph(a.x, a.y, a.z));
+      if (k > 0.05) {
+        this.stats.buzz++;
+        if (g._haptic) g._haptic(hand, 0.15 + 0.7 * k, 90);
+      }
     }
   }
 

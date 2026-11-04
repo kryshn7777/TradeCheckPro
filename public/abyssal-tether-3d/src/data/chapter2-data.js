@@ -110,7 +110,7 @@ export function buildChapter2() {
     const PENDULA = {
       0: [{ len: 36, amp: 0.3, period: 9 }, { len: 30, amp: 0.25, period: 10 }],
       2: [{ len: 20, amp: 0.35, period: 8 }, { len: 24, amp: 0.4, period: 9 }, { len: 30, amp: 0.45, period: 10 }, { len: 36, amp: 0.5, period: 11 }, { len: 30, amp: 0.55, period: 9.5 }],
-      7: [{ len: 24, amp: 0.25, period: 10 }, { len: 24, amp: 0.25, period: 10.5 }],
+      7: [{ len: 24, amp: 0.25, period: 10 }, { len: 24, amp: 0.25, period: 10.5 }, { len: 24, amp: 0.22, period: 11 }, { len: 24, amp: 0.25, period: 9.5 }, { len: 24, amp: 0.2, period: 12 }, { len: 24, amp: 0.25, period: 10.8 }], // the hung houses (6, a cage each)
     };
     (PENDULA[i] || []).forEach((pd, c) => {
       const L = ledges[first + Math.min(ledges.length - first - 1, 1 + c * 2)];
@@ -118,7 +118,7 @@ export function buildChapter2() {
       const mid = { x: r2(L.x * 0.55), z: r2(L.z * 0.55) };
       const id = `${sid}-ring${c}`;
       anchors.push({ id, x: mid.x, y: r2(pivotY - pd.len), z: mid.z, kind: 'ring', tag: 'route', normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
-      movers.push({ id: `mov-${id}`, kind: 'pendulum', section: sid, x: mid.x, y: pivotY, z: mid.z, dir: { x: 1, z: 0 }, length: pd.len, amp: pd.amp, period: pd.period, phase: r2(c * 0.37), carry: { anchors: [id], decor: [] } });
+      movers.push({ id: `mov-${id}`, kind: 'pendulum', section: sid, x: mid.x, y: pivotY, z: mid.z, dir: { x: 1, z: 0 }, length: pd.len, amp: pd.amp, period: pd.period, phase: r2(c * 0.37), parts: 'cage', carry: { anchors: [id], decor: [] } });
     });
     const firstLedge = ledges[first];
     sections.push({

@@ -220,6 +220,31 @@ export const LAMPHOLD_SFX = {
   },
 
   /** The Throat's shutter slams. */
+  /** Three soft knocks on a door of the Street (wood, not bronze), then a latch. */
+  _onC2Knock(p) {
+    const pos = at(this, p);
+    const v = this._begin('c2Knock', 2, 1.5, 1.6, this.busPlayer, 0.6, 0, 0.3, 0, pos, 'near');
+    if (!v) return;
+    const t = v.t0;
+    for (let i = 0; i < 3; i++) {
+      const tt = t + i * 0.34;
+      const o = this._vOsc(v, 'sine', 140 * rand(0.97, 1.03), tt);
+      o.frequency.setTargetAtTime(95, tt, 0.03);
+      const g = this._vGain(v, 0);
+      this._perc(g.gain, tt, 0.5, 0.002, 0.05);
+      o.connect(g);
+      g.connect(v.out);
+    }
+    const o2 = this._vOsc(v, 'square', 520, t + 1.25);
+    const lp = this._vFilter(v, 'lowpass', 900, 0.7);
+    const g2 = this._vGain(v, 0);
+    this._perc(g2.gain, t + 1.25, 0.12, 0.002, 0.04);
+    o2.connect(lp);
+    lp.connect(g2);
+    g2.connect(v.out);
+    this._commit(v);
+  },
+
   _onC2Grind(p) {
     const v = this._begin('c2Grind', 3, 4, 4.6, this.busPlayer, 0.8, 0, 0.4, 0, null, 'far');
     if (!v) return;
@@ -344,6 +369,7 @@ export const LAMPHOLD_EVENTS = {
   'c2:crash': '_onC2Crash',
   'c2:shutter': '_onC2Shutter',
   'c2:grind': '_onC2Grind',
+  'c2:knock': '_onC2Knock',
   'c2:stop': '_onC2Shutter',
   'toll:emit': '_onTollEmit',
   'hook:click': '_onHookClick',
