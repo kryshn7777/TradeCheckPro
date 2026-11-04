@@ -107,7 +107,7 @@ export const CONFIG = {
     lowExit: 0.5, // ... until hp climbs back to this (hysteresis)
     vignetteStart: 0.6, // the red screen-edge vignette fades in below this hp (full rim at 0)
     fallExp: 2, // landing damage = ((v/vLethal - threshold) / (1 - threshold))^fallExp: 0 at the threshold, 1 (dead) at the lethal speed
-    wallThreshold: 0.5, // side impacts: no damage below this fraction of the lethal speed
+    wallThreshold: 0.6, // side impacts: no damage below this fraction of the lethal speed (0.5 before the "more durable" pass)
     wallMax: 0.45, // ... damage at the lethal speed (the normal-component speed)
     wallExp: 2,
     wallCap: 0.7, // ... and the most a single wall hit can take
@@ -221,7 +221,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
-    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 0.6, wallScale: 1 },
+    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55: a drop under ~3.3 m costs nothing (it was 0.35: ~1.3 m already hurt)
     climb: { drainMul: 1, reelDrain: 0 },
   },
   nightmare: {
@@ -241,7 +241,7 @@ export const DIFFICULTY = {
     checkpoints: 'alternate',
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
-    health: { fallThreshold: 0.33, regenDelay: 9, regenRate: 0.03, hazardDamage: 0.75, wallScale: 1.1 },
+    health: { fallThreshold: 0.5, regenDelay: 8, regenRate: 0.035, hazardDamage: 0.75, wallScale: 1.1 },
     climb: { drainMul: 1.1, reelDrain: 0.03 },
   },
   abyss: {
@@ -261,7 +261,7 @@ export const DIFFICULTY = {
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
-    health: { fallThreshold: 0.3, regenDelay: 12, regenRate: 0.02, hazardDamage: 1, wallScale: 1.25 },
+    health: { fallThreshold: 0.45, regenDelay: 11, regenRate: 0.022, hazardDamage: 1, wallScale: 1.25 },
     climb: { drainMul: 1.25, reelDrain: 0.05 },
   },
   sandbox: {
@@ -281,7 +281,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
-    health: { fallThreshold: 0.35, regenDelay: 6, regenRate: 0.05, hazardDamage: 1, wallScale: 1 },
+    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 1, wallScale: 1 },
     climb: { drainMul: 0.5 },
   },
 };

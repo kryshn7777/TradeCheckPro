@@ -108,8 +108,9 @@ export const LOOK = {
   uDetailK: { value: new THREE.Vector4(0.9, 5, 16, 0) },
   // Parallax offset mapping: x on/off, y max distance (m), z fade length (m), w depth scale. Driven by the quality tier.
   uParallaxK: { value: new THREE.Vector4(1, 8, 3, 1) },
-  // Steep parallax (WP-GFX-PARITY, FLOORS only: surfaces facing up): x max ray-march steps (< 2 = off, the 1-tap above applies),
-  // y max distance (m) beyond which the 1-tap applies, z fade length (m) over which the step count falls to 2, w unused.
+  // Steep parallax (WP-GFX-PARITY; floors, and since the wall-depth pass walls too): x max ray-march steps (< 2 = off, the 1-tap above applies),
+  // y max distance (m) beyond which the 1-tap applies, z fade length (m) over which the step count falls to 2, w extra relief depth of vertical
+  // faces (x (1 + w) at a wall, x 1 at a floor).
   uParallaxS: { value: new THREE.Vector4(6, 3, 1.2, 0) },
   // Height-based blending in cracks and joints: x grime, y moss, z standing water (× wetness).
   uCrevK: { value: new THREE.Vector4(0.55, 0.55, 0.7, 0) },
@@ -1238,9 +1239,11 @@ if ( uHeightM > 0.0 ) {
 		vec2 atVt = vec2( dot( atV, atTbn[ 0 ] ), dot( atV, atTbn[ 1 ] ) );
 		float atVz = max( dot( atV, atTbn[ 2 ] ), 0.3 );
 		// full-depth uv offset of the height field along the view ray (clamped by atVz >= 0.3, faded at grazing angles by atPf)
-		vec2 atOff = atVt / atVz * ( uHeightM * uParallaxK.w * atPf * uTexScale );
-		if ( vAtTop > 0.7 && uParallaxS.x > 1.5 && atDist < uParallaxS.y ) {
-			// FLOORS: steep parallax. The ray enters at the top of the height field (h = 1) and descends N layers; the first layer under
+		// WALL DEPTH (owner, from VR: "the bricks aren't bricks, it looks like a fake flat texture"): the relief of a vertical face is deepened by
+		// uParallaxS.w (the height field's real range is only ~2 cm) and a face that is not a floor gets the steep march too, near the eye
+		vec2 atOff = atVt / atVz * ( uHeightM * uParallaxK.w * ( 1.0 + uParallaxS.w * ( 1.0 - smoothstep( 0.2, 0.7, vAtTop ) ) ) * atPf * uTexScale );
+		if ( uParallaxS.x > 1.5 && atDist < uParallaxS.y && ( vAtTop > 0.7 || uParallaxS.w > 0.0 ) ) {
+			// STEEP parallax (floors, now walls too unless uParallaxS.w = 0: ?walldepth=0 is the old picture). The ray enters at the top of the height field (h = 1) and descends N layers; the first layer under
 			// the surface ends the march and the last two samples are linearly interpolated (the refine, no extra fetch). N falls with
 			// distance (to 2 over uParallaxS.z) and at grazing angles. The height is read from a blurred level (x2 gradients) so the
 			// fine grain of the packed field never makes the layers step noisily. Same sign convention as the 1-tap below: the surface

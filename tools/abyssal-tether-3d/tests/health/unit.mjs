@@ -49,7 +49,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   ok(good, 'fall damage: 0 up to the threshold, convex + monotonic, 1 at the lethal speed (' + rows.join(' | ') + ')');
   const t = DIFFICULTY.normal.health.fallThreshold;
   const L = DIFFICULTY.normal.lethalImpact;
-  ok(t > 0.3 && t < 0.4 && near(fallDamage(0.675 * L, L, t), 0.25, 1e-9), 'normal curve: threshold ~35 % of lethal, a 67.5 % landing costs 25 hp');
+  ok(t > 0.5 && t < 0.6 && near(fallDamage(0.775 * L, L, t), 0.25, 1e-9), 'normal curve: threshold ~55 % of lethal (a drop under ~3.3 m is free), a 77.5 % landing costs 25 hp');
   ok(dropSpeed(0) === 0 && near(dropHeight(dropSpeed(7)), 7, 1e-9), 'drop height <-> speed helpers agree');
 }
 // 2. Wall impacts: gentler than floor impacts, capped, zero below half the lethal speed.
@@ -57,22 +57,22 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const L = 17;
   let gentler = true;
   for (let s = 0; s <= 40; s += 0.5) if (wallDamage(s, L) > fallDamage(s, L, 0.35) + 1e-12 && s < L) gentler = false;
-  ok(gentler && wallDamage(0.49 * L, L) === 0 && wallDamage(L, L) > 0.3 && wallDamage(L, L) < 0.6 && wallDamage(100, L) <= H.wallCap, 'wall damage: below the floor curve, 0 under 50 %, capped (' + wallDamage(L, L).toFixed(2) + ' at lethal, ' + wallDamage(100, L).toFixed(2) + ' max)');
+  ok(gentler && wallDamage(0.59 * L, L) === 0 && wallDamage(L, L) > 0.3 && wallDamage(L, L) < 0.6 && wallDamage(100, L) <= H.wallCap, 'wall damage: below the floor curve, 0 under 60 %, capped (' + wallDamage(L, L).toFixed(2) + ' at lethal, ' + wallDamage(100, L).toFixed(2) + ' max)');
 }
 // 3. Landing events, low / recover hysteresis.
 {
   const { h, ev } = mk();
-  h.landing(dropSpeed(5));
+  h.landing(dropSpeed(6.5));
   const d = ev.find((e) => e[0] === 'health:damage');
   ok(d && d[1].cause === 'fall' && d[1].amount > 0.2 && d[1].amount < 0.3 && near(d[1].hp, 1 - d[1].amount) && !d[1].lethal && d[1].speed > 10, 'landing emits health:damage {amount, hp, cause fall, speed}');
-  ok(!h.low && !ev.some((e) => e[0] === 'health:low'), 'no low state at 75 hp');
+  ok(!h.low && !ev.some((e) => e[0] === 'health:low'), 'no low state at ~74 hp');
   ticks(h, 0.5);
-  h.landing(dropSpeed(6)); // -> ~37 hp
-  const dead = h.landing(dropSpeed(6)); // within cooldown: same landing, no extra
+  h.landing(dropSpeed(7)); // -> ~41 hp
+  const dead = h.landing(dropSpeed(7)); // within cooldown: same landing, no extra
   ok(!dead && !h.low, 'second landing inside the cooldown adds nothing');
   ticks(h, 1);
   const before = h.hp;
-  h.landing(dropSpeed(3));
+  h.landing(dropSpeed(5.5));
   ok(h.hp < before && h.hp <= H.lowEnter && h.low && ev.filter((e) => e[0] === 'health:low').length === 1, 'crossing 35 hp emits health:low once (hp ' + (h.hp * 100).toFixed(0) + ')');
   ticks(h, 6.2 + 0.05); // regen starts after the delay
   ok(h.hp > before - 0.1 && h.low === (h.hp < H.lowExit), 'hysteresis: still low below 50 hp');
@@ -82,16 +82,16 @@ const ticks = (h, secs, dt = 1 / 240) => {
 // 4. Cooldown: one landing counted once; a bigger second hit pays only the excess; after the window it adds up.
 {
   const { h } = mk();
-  h.landing(dropSpeed(5)); // ~26
+  h.landing(dropSpeed(6.5)); // ~26
   const a = 1 - h.hp;
-  h.landing(dropSpeed(5)); // same again inside the window
+  h.landing(dropSpeed(6.5)); // same again inside the window
   ok(near(1 - h.hp, a), 'same landing twice in 0.35 s: damage once');
   h.landing(dropSpeed(7)); // bigger: pays the difference
-  const b = fallDamage(dropSpeed(7), 17, 0.35);
+  const b = fallDamage(dropSpeed(7), 17, DIFFICULTY.normal.health.fallThreshold);
   ok(near(1 - h.hp, b, 1e-9), 'a bigger hit in the window pays the excess only (total = the larger hit)');
   ticks(h, H.hitCooldown + 0.01);
   const hp0 = h.hp;
-  h.landing(dropSpeed(5));
+  h.landing(dropSpeed(6.5));
   ok(near(hp0 - h.hp, a, 1e-9), 'after the cooldown the next landing counts in full');
 }
 // 5. Regeneration: delay, rate, damage resets the delay; Nightmare slower, Abyss slower still; Sandbox takes no fall damage.
@@ -108,13 +108,13 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const m = regenTime('nightmare');
   const a = regenTime('abyss');
   ok(n.still && m.still && a.still, 'no regeneration during the delay');
-  ok(near(n.gained, n.rate * 1.05, 1e-3) && n.delay === 6 && n.rate === 0.05, 'normal: 6 s calm, then 5 hp/s');
+  ok(near(n.gained, n.rate * 1.05, 1e-3) && n.delay === 5 && n.rate === 0.06, 'normal: 5 s calm, then 6 hp/s');
   ok(n.rate > m.rate && m.rate > a.rate && n.delay < m.delay && m.delay < a.delay, 'regen scales with difficulty: slower and later on Nightmare and Abyss');
   const { h } = mk();
   h.damage(0.5, 'fall', 10);
-  ticks(h, 5);
+  ticks(h, 4);
   h.damage(0.05, 'fall', 8);
-  ticks(h, 5);
+  ticks(h, 4);
   ok(h.hp === 0.45, 'damage restarts the calm period');
 }
 // 6. Difficulty scaling of the damage itself: lower lethal speed + lower threshold -> more damage for the same fall.
@@ -235,7 +235,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const small = drop('normal', 0.5);
   const mid = drop('normal', 5);
   const big = drop('normal', 8);
-  ok(small.physics.health.hp === 1 && mid.physics.health.hp < 0.8 && mid.physics.health.hp > 0.6 && big.physics.health.hp < 0.45 && big.p.alive, 'a hop is free, 5 m costs ~25 hp, 8 m costs ~60 hp');
+  ok(small.physics.health.hp === 1 && mid.physics.health.hp < 1 && mid.physics.health.hp > 0.85 && big.physics.health.hp < 0.6 && big.physics.health.hp > 0.4 && big.p.alive, 'a hop is free, 5 m costs ~9 hp, 8 m costs ~50 hp');
   const dead = drop('normal', 14);
   const deathEv = dead.events.find((e) => e[0] === 'player:death');
   ok(!dead.p.alive && deathEv && deathEv[1].cause === 'impact' && dead.physics.health.dead && dead.physics.health.hp === 0, 'a 14 m fall still kills (cause impact)');
@@ -254,7 +254,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   for (let i = 0; i < 480; i++) physics.step(p, tethers, {}, CONFIG.PHYSICS_DT);
   const restY = p.y;
   let drops = 0;
-  while (p.alive && drops < 6) {
+  while (p.alive && drops < 10) {
     p.y = restY + 6;
     p.prevY = p.y;
     p.grounded = false;
@@ -265,7 +265,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
     for (let i = 0; i < 120 && p.alive; i++) physics.step(p, tethers, {}, CONFIG.PHYSICS_DT);
     drops++;
   }
-  ok(!p.alive && drops >= 2 && drops <= 4 && p.deathCause === 'impact', `damage accumulates: dead after ${drops} drops of 6 m`);
+  ok(!p.alive && drops >= 4 && drops <= 7 && p.deathCause === 'impact', `damage accumulates: dead after ${drops} drops of 6 m`);
 }
 // 11. Hazards through Physics3D: heavy damage, then death on the repeat; creature kill flags the death.
 {
