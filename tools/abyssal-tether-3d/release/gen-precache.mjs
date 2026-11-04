@@ -52,7 +52,7 @@ export const DEFAULT_EXCLUDE = [
 // the procedural Dresser stays.
 // assets/audio/voice/** (~0.4 MB, docs/abyssal-tether-3d/plans/VO_SCRIPT.md): the radio voice clips, fetched by audio/radio3d.js after the
 // first gesture, the current section's first; a line whose clip is not cached yet speaks the synthesised babble.
-export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb', 'assets/models/dresser.glb', 'assets/audio/voice/**'];
+export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb', 'assets/models/dresser.glb', 'assets/models/usher.glb', 'assets/audio/voice/**'];
 
 export function globToRegExp(glob) {
   let re = '';
