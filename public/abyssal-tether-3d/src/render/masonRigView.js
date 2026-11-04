@@ -21,6 +21,7 @@
 import * as THREE from 'three';
 import { ADDITIVE_CLIPS, BASE_CLIPS, ClipGraph, PARAM_CLIPS } from './mason/masonClipGraph.js';
 import { HeadFit, headExtents } from './mason/masonFit.js';
+import { Mandibles } from './mason/masonMandibles.js';
 import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet, boostOf } from './creatureDust.js';
@@ -101,6 +102,10 @@ export class MasonRigView {
     this._wet = 0;
     this._camD = 0;
     this.fit = new HeadFit(headExtents(meta.headBounds));
+    // giant mandibles on the head bone: they follow the head fit and the crown's aim; opening / snapping is driven by the clip graph's state
+    this.mandibles = new Mandibles({ variant: !!this.opts.variant, seed: (this.opts.variant ? 0.37 : 0.11) });
+    this.mandibles.mount(this.root); // (the bones are detached from the scene: the horns follow the neck's world matrix each frame)
+    this._baseCalls = 0;
     // per-frame scratch
     this.F = new Float32Array(SEG * 12);
     this.S = new Float32Array(SEG);
@@ -312,7 +317,8 @@ export class MasonRigView {
       }
     }
     this.info.lod = lod;
-    this.info.drawCalls = calls;
+    this._baseCalls = calls;
+    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0);
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -449,6 +455,12 @@ export class MasonRigView {
     // ---- bones ----
     this._poseSpine(F, S);
     this._poseCrown();
+    if (this.mandibles) {
+      const show = this._lod === 0 && !this._glowOnly;
+      this.mandibles.follow(this.neck.matrixWorld, this.root.matrixWorld);
+      this.mandibles.update(dt, this.graph.snapshot, this._time, show);
+      this.info.drawCalls = this._baseCalls + (show ? 2 : 0);
+    }
     this._poseLegs(dt, B, F, S, level, g, lodFar);
     if (this.dust) this._wake(dt, C, B, F, size);
 
@@ -994,6 +1006,7 @@ export class MasonRigView {
 
   dispose() {
     if (this.root.parent) this.root.parent.remove(this.root);
+    if (this.mandibles) this.mandibles.dispose();
     const seen = new Set();
     for (const l of this.meshes) {
       for (const m of l) {
