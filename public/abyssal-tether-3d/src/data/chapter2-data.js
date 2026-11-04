@@ -15,6 +15,8 @@
  * DOM-free, three.js-free: importable from Node.
  */
 
+import { CHAPTER2_TEXT } from './chapter2-text.js';
+
 export const CHAPTER2_DEPTH_OFFSET = 600; // m: Chapter I ends at ~600 m (the hook of the demo), Chapter II continues the readout
 export const CHAPTER2_DEPTH = 1250; // m (the owner's number; the bible had 580)
 
@@ -118,10 +120,44 @@ export function buildChapter2() {
       checkpoint: { x: firstLedge.x, y: r2(firstLedge.y + 0.4), z: firstLedge.z, yaw: 0 },
       theme: THEMES[b.theme],
       creature: { mode: b.creature, lethal: b.creature === 'stalk', speedMul: 1, burstRate: 0, spawnOffsetY: 200 },
-      hints: i === 0 ? [{ y: -2, duration: 8, text: 'Lamphold. Every lamp a bed. Some rings swing: fire as one comes toward you.', desktop: 'Lamphold. Every lamp a bed. Some rings swing: aim at one as it comes toward you.' }] : [],
+      // the hints are the story writer's (data/chapter2-text.js): `at` is the fraction of the beat from its top
+      hints: (CHAPTER2_TEXT.hints[sid] || []).map((h) => ({ y: r2(yTop - h.at * b.len), duration: h.duration, text: h.text, desktop: h.desktop })),
+      lamp: CHAPTER2_TEXT.lamps[sid] || null, // { id: 'L2-n', label } of this beat's waking lamp
     });
     top += b.len;
   });
+
+  // the plaques (the story writer's words), carved on the pit wall beside the stair at the depth they belong to; the wall they sit on faces into the pit
+  const WALLS = {
+    n: { z: -SHAFT + 0.1, yaw: Math.PI, sx: 3.6, sz: 0.15, along: 'x' },
+    s: { z: SHAFT - 0.1, yaw: 0, sx: 3.6, sz: 0.15, along: 'x' },
+    w: { x: -SHAFT + 0.1, yaw: -Math.PI / 2, sx: 0.15, sz: 3.6, along: 'z' },
+    e: { x: SHAFT - 0.1, yaw: Math.PI / 2, sx: 0.15, sz: 3.6, along: 'z' },
+  };
+  for (const pl of CHAPTER2_TEXT.plaques) {
+    const sec = sections.find((q) => q.id === pl.beat);
+    const wall = WALLS[pl.side];
+    if (!sec || !wall) continue;
+    const y = r2(sec.yTop - pl.at * (sec.yTop - sec.yBottom));
+    // beside the ledge nearest this depth, so the player passes it
+    let near = ledges[0];
+    for (const l of ledges) if (Math.abs(l.y - y) < Math.abs(near.y - y)) near = l;
+    const a = Math.max(-17, Math.min(17, near[wall.along]));
+    const lines = pl.text.split('\n').length;
+    decor.push({
+      type: 'plaque',
+      x: wall.x != null ? wall.x : r2(a),
+      y: r2(y + 2.2),
+      z: wall.z != null ? wall.z : r2(a),
+      sx: wall.sx,
+      sy: r2(0.5 + 0.35 * lines),
+      sz: wall.sz,
+      yaw: wall.yaw,
+      text: pl.text.replace(/\n/g, ' '),
+      id: pl.id,
+      beat: pl.beat,
+    });
+  }
 
   const last = ledges[ledges.length - 1];
   const bottom = -top;

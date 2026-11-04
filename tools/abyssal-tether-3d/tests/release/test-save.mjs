@@ -304,5 +304,44 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   svc.dispose();
 }
 
+// ---- Chapter II keeps its own records, splits and Continue slot (C2-0) ---------------------------------------------------------------
+{
+  const bus = new EventBus();
+  const game = {
+    bus, time: 0, deaths: 0, deepest: 0, sectionIndex: 0, difficultyKey: 'normal',
+    diff: { checkpoints: 'all', recordTimes: true, label: 'Normal' },
+    checkpoint: { x: 0, y: 0, z: 0, yaw: 0, index: -1 },
+    level: { sections: [{ name: 'The Sill' }] },
+    _runActive: () => true, _continuing: null,
+  };
+  const store = new S.SaveStore({ primary: new S.MemoryAdapter(), secondary: null, legacyGetItem: null, debounceMs: 5 });
+  const svc = new S.SaveService(game, { store, legacyStorage: memStorage() });
+  await svc.init();
+  // a Chapter I best exists
+  bus.emit('game:start', { difficulty: 'normal' });
+  bus.emit('game:victory', { difficultyKey: 'normal', time: 600, deaths: 1, deepestMeters: 556, recorded: true });
+  ok(store.records('normal').best === 600 && store.records('normal', 'ch2').best == null, 'chapter I best recorded, chapter II empty');
+  // switch to Chapter II
+  svc.setActiveChapter(2);
+  ok(svc.activeChapter === 'ch2' && svc.records('normal').best == null, 'after the switch the records are Chapter II\'s');
+  game.sectionIndex = 4;
+  game.time = 400;
+  game.deepest = -420;
+  game.checkpoint = { x: 3, y: -420, z: 1, yaw: 0, index: 4 };
+  bus.emit('game:start', { difficulty: 'normal' });
+  bus.emit('checkpoint', { index: 4 });
+  const info = svc.continueInfo();
+  ok(info && info.chapter === 'ch2' && info.sectionName === 'The Stone Yards' && info.depthOffset === 600 && info.section === 4, 'the Continue slot knows its chapter, names the beat from Chapter II\'s table and carries the depth offset');
+  bus.emit('split', { index: 1, section: 'c2-2', time: 70, par: null, medal: null, recorded: true, difficulty: 'normal' });
+  ok(svc.sectionRecords('normal')['c2-2'] && !svc.sectionRecords('normal', 'ch1')['c2-2'], 'Chapter II splits stay in Chapter II');
+  bus.emit('game:victory', { difficultyKey: 'normal', time: 3900, deaths: 6, deepestMeters: 1850, recorded: true });
+  ok(svc.records('normal').best === 3900 && store.records('normal', 'ch1').best === 600, 'Chapter II best does not overwrite Chapter I\'s');
+  ok(store.profile.chapters.ch2 && store.profile.chapters.ch2.completed && store.profile.chapters.ch1.completed, 'both chapters completed');
+  // it round-trips through a migration (chapter ids other than ch1 are kept)
+  const again = S.migrateProfile(JSON.parse(JSON.stringify(store.profile)), null);
+  ok(again.profile.chapters.ch2 && again.profile.chapters.ch2.byDiff.normal.best === 3900, 'ch2 survives migrateProfile');
+  svc.dispose();
+}
+
 console.log(`${fail ? 'FAILED' : 'ok'}: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

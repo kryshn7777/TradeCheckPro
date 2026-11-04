@@ -30,7 +30,7 @@ export const FULL_GAME_SKU = 'abyssal_tether_full_game'; // must match the Dashb
 export const BILLING_SERVICE = 'https://quest.meta.com/billing';
 export const CACHE_KEY = 'abyssalTether3d.v1.entitlement'; // same prefix family as Storage in config3d.js
 /** Highest chapter that exists in this build. Later chapters are gated even for an owner (nothing to play yet). */
-export const FREE_CHAPTER = 1;
+export const FREE_CHAPTER = 2; // Chapters I and II are the free game; III-V are the full version (docs/abyssal-tether-3d/plans/CHAPTER_II_PLAN.md section 1)
 
 const CALL_TIMEOUT_MS = 6000;
 const REVOKE_AFTER_MS = 24 * 3600 * 1000; // do not trust a negative answer within 24 h of a grant

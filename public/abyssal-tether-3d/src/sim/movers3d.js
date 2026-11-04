@@ -17,13 +17,21 @@
  * of its Y index (anchorsNear appends them) and poses them at t = 0; Objectives3D owns a Movers3D with the difficulty's
  * knobs and poses them every fixed step with its run clock, before the next physics step. Every anchor has vx / vy / vz
  * (0 when it does not move): Rope3D.pull takes the velocity relative to its anchor.
+ * CHAPTER II (docs/abyssal-tether-3d/plans/CHAPTER_II_DIRECTION.md section 2.3) adds two translating kinds, the same closed
+ * forms of the run clock:
+ *   lift      a reference point that rides from (x, y, z) to `to` {x, y, z} and back: `travel` s each way with a trapezoid
+ *             speed profile (`ramp` = the fraction of the trip spent speeding up and braking each; 0.5 is a smooth
+ *             there-and-back, the express drop is 0.317: 80 m in 9 s, peak 13 m/s), `dwell` s waiting at each end;
+ *             period = 2 (travel + dwell). A carried anchor keeps its rest offset from (x, y, z) and rides with it.
+ *   path      a point that follows `pts` [{x, y, z}] at `speed` m/s, `mode` 'loop' (back to the first point) or 'pingpong'
+ *             (there and back); period = one lap.
  * Pure: no imports (game.js loads it with the core sim modules), no allocation per pose.
  */
 
 const TAU = Math.PI * 2;
 /** CONTRACT rule 5 / LEVEL_FUN_PLAN item 7: no carried anchor moves faster than this (m/s). */
 export const MOVER_MAX_SPEED = 1.5;
-export const MOVER_KINDS = Object.freeze(['pendulum', 'orbit']);
+export const MOVER_KINDS = Object.freeze(['pendulum', 'orbit', 'lift', 'path']);
 
 function num(v, fallback) {
   return typeof v === 'number' && isFinite(v) ? v : fallback;
@@ -82,12 +90,45 @@ export function normalizeMover(raw, key) {
     anchors: o.carry && Array.isArray(o.carry.anchors) ? o.carry.anchors.filter((s) => typeof s === 'string') : [],
     parts: typeof o.parts === 'string' ? o.parts : null,
     length: num(o.length, 0),
+    to: null,
+    travel: 0,
+    dwell: 0,
+    ramp: 0.5,
+    pts: null,
+    cum: null,
+    speed: 0,
+    pingpong: false,
   };
+  if (k === 2) {
+    const to = o.to || {};
+    m.to = { x: num(to.x, m.x), y: num(to.y, m.y), z: num(to.z, m.z) };
+    m.travel = Math.max(0.5, num(o.travel, 8));
+    m.dwell = Math.max(0, num(o.dwell, 2));
+    m.ramp = Math.min(0.5, Math.max(0.05, num(o.ramp, 0.5)));
+    m.period = 2 * (m.travel + m.dwell);
+    m.length = Math.hypot(m.to.x - m.x, m.to.y - m.y, m.to.z - m.z);
+  } else if (k === 3) {
+    const raw = Array.isArray(o.pts) ? o.pts : [];
+    const pts = raw.map((q) => ({ x: num(q && q.x, 0), y: num(q && q.y, 0), z: num(q && q.z, 0) }));
+    if (pts.length < 2) pts.push({ x: m.x, y: m.y, z: m.z }, { x: m.x + 1, y: m.y, z: m.z });
+    m.pingpong = o.mode === 'pingpong';
+    if (!m.pingpong) pts.push(pts[0]); // a loop closes on its first point
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z));
+    m.pts = pts;
+    m.cum = cum;
+    m.speed = Math.max(0.05, num(o.speed, 3));
+    m.length = cum[cum.length - 1];
+    m.x = pts[0].x;
+    m.y = pts[0].y;
+    m.z = pts[0].z;
+    m.period = Math.max(0.5, (m.pingpong ? 2 : 1) * (m.length / m.speed));
+  }
   if (k === 0) {
     const d = unit({ x: o.dir ? o.dir.x : 1, y: 0, z: o.dir ? o.dir.z : 0 }, 1, 0, 0);
     m.d = { x: d.x, z: d.z };
     m.c = { x: -d.z, z: d.x }; // d × up: the horizontal axis the cage turns about
-  } else {
+  } else if (k === 1) {
     const u = unit(o.u, 1, 0, 0);
     let v = unit(o.v, 0, 1, 0);
     // v made perpendicular to u (Gram-Schmidt)
@@ -101,6 +142,7 @@ export function normalizeMover(raw, key) {
 
 /** The mover's angle at time t: θ (pendulum, rad off the plumb line) or α (orbit, rad round the rim from u). */
 export function moverAngle(m, t) {
+  if (m.k > 1) return 0;
   const c = t / m.period + m.phase;
   if (m.k === 0) return m.amp * Math.sin(TAU * c);
   return TAU * m.spin * c;
@@ -108,6 +150,7 @@ export function moverAngle(m, t) {
 
 /** d(angle)/dt at time t. */
 export function moverRate(m, t) {
+  if (m.k > 1) return 0;
   if (m.k === 0) return (m.amp * TAU * Math.cos(TAU * (t / m.period + m.phase))) / m.period;
   return (TAU * m.spin) / m.period;
 }
@@ -120,10 +163,97 @@ export function carryOffset(m, ax, ay, az) {
   const ox = ax - m.x;
   const oy = ay - m.y;
   const oz = az - m.z;
+  if (m.k > 1) return [ox, oy, oz]; // a translating mover: the offset from its reference point, unchanged
   if (m.k === 0) return [ox * m.d.x + oz * m.d.z, oy, ox * m.c.x + oz * m.c.z];
   const pu = ox * m.u.x + oy * m.u.y + oz * m.u.z;
   const pv = ox * m.v.x + oy * m.v.y + oz * m.v.z;
   return [Math.atan2(pv, pu), 0, 0];
+}
+
+/** Position fraction 0..1 and its rate (1/s of travel) at u in [0, 1] of a trapezoid profile with ramp fraction r (out[0], out[1]). */
+const _prof = [0, 0];
+function profile(u, r) {
+  const k = 1 / (2 * r * (1 - r));
+  if (u <= 0) {
+    _prof[0] = 0;
+    _prof[1] = 0;
+  } else if (u >= 1) {
+    _prof[0] = 1;
+    _prof[1] = 0;
+  } else if (u < r) {
+    _prof[0] = u * u * k;
+    _prof[1] = 2 * u * k;
+  } else if (u <= 1 - r) {
+    _prof[0] = (u - r / 2) / (1 - r);
+    _prof[1] = 1 / (1 - r);
+  } else {
+    _prof[0] = 1 - (1 - u) * (1 - u) * k;
+    _prof[1] = 2 * (1 - u) * k;
+  }
+  return _prof;
+}
+
+/** The reference point of a lift (k 2) or path (k 3) mover at t: out.x/y/z and the velocity out.vx/vy/vz. */
+function poseRef(m, t, out) {
+  if (m.k === 2) {
+    const T = m.travel;
+    const D = m.dwell;
+    const per = m.period;
+    let c = (t + m.phase * per) % per;
+    if (c < 0) c += per;
+    let f = 0; // 0 at the start end .. 1 at the far end
+    let vf = 0; // d f / dt
+    if (c < D) f = 0;
+    else if (c < D + T) {
+      const p = profile((c - D) / T, m.ramp);
+      f = p[0];
+      vf = p[1] / T;
+    } else if (c < 2 * D + T) f = 1;
+    else {
+      const p = profile((c - 2 * D - T) / T, m.ramp);
+      f = 1 - p[0];
+      vf = -p[1] / T;
+    }
+    const dx = m.to.x - m.x;
+    const dy = m.to.y - m.y;
+    const dz = m.to.z - m.z;
+    out.x = m.x + dx * f;
+    out.y = m.y + dy * f;
+    out.z = m.z + dz * f;
+    out.vx = dx * vf;
+    out.vy = dy * vf;
+    out.vz = dz * vf;
+    return out;
+  }
+  // path
+  const L = m.length;
+  let d = (t * m.speed + m.phase * (m.pingpong ? 2 * L : L)) % (m.pingpong ? 2 * L : L);
+  if (d < 0) d += m.pingpong ? 2 * L : L;
+  let dir = 1;
+  if (m.pingpong && d > L) {
+    d = 2 * L - d;
+    dir = -1;
+  }
+  const cum = m.cum;
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < d) i++;
+  const a = m.pts[i - 1];
+  const b = m.pts[i];
+  const seg = cum[i] - cum[i - 1] || 1;
+  const u = Math.min(1, Math.max(0, (d - cum[i - 1]) / seg));
+  out.x = a.x + (b.x - a.x) * u;
+  out.y = a.y + (b.y - a.y) * u;
+  out.z = a.z + (b.z - a.z) * u;
+  const k = (dir * m.speed) / seg;
+  out.vx = (b.x - a.x) * k;
+  out.vy = (b.y - a.y) * k;
+  out.vz = (b.z - a.z) * k;
+  return out;
+}
+
+/** The pose of a lift / path mover's reference point at t (for the view's parts and the tests). */
+export function moverRef(m, t, out) {
+  return poseRef(m, t, out);
 }
 
 /**
@@ -131,6 +261,14 @@ export function carryOffset(m, ax, ay, az) {
  * Allocation-free.
  */
 export function posePoint(m, o0, o1, o2, t, out) {
+  if (m.k > 1) {
+    poseRef(m, t, out);
+    out.x += o0;
+    out.y += o1;
+    out.z += o2;
+    out.hidden = false;
+    return out;
+  }
   const a = moverAngle(m, t);
   const w = moverRate(m, t);
   if (m.k === 0) {
@@ -166,6 +304,8 @@ export function posePoint(m, o0, o1, o2, t, out) {
 
 /** The highest speed a carried point (offset o0, o1: its distance from the turning axis) ever reaches (closed form). */
 export function pointMaxSpeed(m, o0, o1) {
+  if (m.k === 2) return m.length / (m.travel * (1 - m.ramp));
+  if (m.k === 3) return m.speed;
   if (m.k === 0) return Math.hypot(o0, o1) * ((m.amp * TAU) / m.period);
   return (m.radius * TAU) / m.period;
 }
@@ -242,7 +382,18 @@ export function buildMovers(list, variant, byId) {
         if (q.z > maxZ) maxZ = q.z;
       }
     }
-    const pad = m.k === 0 ? 1.4 : 0.6;
+    if (m.k > 1) {
+      // the reference point's own swept box (a cage's parts hang around it)
+      for (const q2 of m.k === 2 ? [{ x: m.x, y: m.y, z: m.z }, m.to] : m.pts) {
+        minX = Math.min(minX, q2.x);
+        maxX = Math.max(maxX, q2.x);
+        minY = Math.min(minY, q2.y);
+        maxY = Math.max(maxY, q2.y);
+        minZ = Math.min(minZ, q2.z);
+        maxZ = Math.max(maxZ, q2.z);
+      }
+    }
+    const pad = m.k === 0 ? 1.4 : m.k > 1 ? 2.4 : 0.6;
     const sweep = { minX: minX - pad, minY: minY - (m.k === 0 ? 1.4 : pad), minZ: minZ - pad, maxX: maxX + pad, maxY: maxY + pad, maxZ: maxZ + pad };
     out.push({ id: m.id, raw, m, anchors, offs, sweep });
   }

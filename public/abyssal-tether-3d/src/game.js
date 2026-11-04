@@ -55,6 +55,7 @@ const _probeD = new THREE.Vector3();
 // Tuning (seconds / metres unless noted)
 // -----------------------------------------------------------------------------
 const DEATH_PANEL_DELAY = 0.6; // death → death panel (and earliest respawn input)
+const FREE_CHAPTER_FALLBACK = 2; // chapters I and II are the free game while the entitlement module is missing (platform/entitlement.js FREE_CHAPTER)
 const VICTORY_DELAY = 2.8; // goal reached → victory panel (the gate slam plays out)
 const HINT_DEFAULT_SECONDS = 6;
 const HINT_GAP = 3.2; // a hint stays at least this long before a queued one replaces it
@@ -1278,6 +1279,7 @@ export class Game3D {
       this.ui = nullUI();
     }
     this._uiFallback = !!this.ui.isNull;
+    this._applyChapter(); // the chapter of the URL (?chapter=2) -> the section numerals
     lpMark('views+ui');
     await progress(0.92, 'Almost there');
     // Every mesh that exists now (level, hands, UI panels, fade sphere): compile its
@@ -1335,6 +1337,7 @@ export class Game3D {
       const svc = new M.save.SaveService(this);
       await svc.init();
       this.save = svc;
+      this._applyChapter(); // (the save is ready after the UI on a slow device: the chapter of the URL reaches it here)
       // localStorage wiped but the profile survived (IndexedDB): bring the settings back
       const saved = svc.savedSettings();
       if (saved && Storage.get('settings', null) == null) {
@@ -1369,7 +1372,41 @@ export class Game3D {
 
   /** Chapter gate (E06). Chapter I is always playable. */
   isChapterPlayable(n) {
-    return this.entitlement ? this.entitlement.isChapterPlayable(n) : Number(n) === 1;
+    return this.entitlement ? this.entitlement.isChapterPlayable(n) : Number(n) <= FREE_CHAPTER_FALLBACK && Number(n) >= 1;
+  }
+
+  /**
+   * Chooses the chapter the next run plays: 1 = The Underspire, 2 = Lamphold (data/chapter2-data.js). The level is rebuilt by the next start()
+   * (the level cache is keyed by chapter); the save's records, splits and Continue slot follow the chapter (meta/save.js activeChapter), and
+   * the section cards number their beats for it. Returns false when the chapter is locked or its data did not load.
+   */
+  setChapter(n) {
+    n = Number(n) === 2 ? 2 : 1;
+    if (n === 2 && !(this.modules.chapter2Data && this.modules.chapter2Data.LEVEL_DATA_CH2)) return false;
+    if (!this.isChapterPlayable(n)) return false;
+    this.chapter = n;
+    this._applyChapter();
+    this.bus.emit('chapter:set', { chapter: n });
+    return true;
+  }
+
+  /** Tells the save and the UI which chapter is active (also called once after boot for `?chapter=2`). */
+  _applyChapter() {
+    if (this.save && typeof this.save.setActiveChapter === 'function') this.save.setActiveChapter(this.chapter);
+    this._try('ui', () => this.ui && typeof this.ui.onChapter === 'function' && this.ui.onChapter(this.chapter));
+  }
+
+  /** The chain after Chapter I's end card: starts Chapter II on the same difficulty, without the opening story. */
+  playNextChapter() {
+    if (this.chapter !== 1 || !this.setChapter(2)) return false;
+    const key = DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal';
+    this._leaveVictory();
+    return this.start(key);
+  }
+
+  /** Back to a state `start()` accepts after the end card (the card is a screen over the frozen world). */
+  _leaveVictory() {
+    if (this.state === 'victory') this._setState('menu');
   }
 
   /** The frame while content is still loading: loading scene only, no simulation. */
@@ -2404,7 +2441,7 @@ export class Game3D {
     const key = DIFFICULTY[diffKey] ? diffKey : fallbackKey;
     this._unlockAudio();
     const fromMenu = this.state === 'menu';
-    const intro = !!(opts && opts.intro) && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
+    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
     if (this._runActive()) this._recordDepth();
     try {
       this.difficultyKey = key;
@@ -2450,7 +2487,7 @@ export class Game3D {
 
     this.settings.lastDifficulty = key;
     Storage.saveSettings(this.settings);
-    this._bumpStat(`runs.${key}`);
+    if (this.chapter === 1) this._bumpStat(`runs.${key}`);
 
     this._setState(intro ? 'intro' : 'playing');
     this._try('ui', () => this.ui.show(null));
@@ -2519,6 +2556,7 @@ export class Game3D {
   continueRun() {
     const info = this.save && this.save.continueInfo ? this.save.continueInfo() : null;
     if (!info || !DIFFICULTY[info.difficulty] || !this.booted) return false;
+    if (!this.setChapter(info.chapter === 'ch2' ? 2 : 1)) return false;
     this._continuing = info;
     let ok = false;
     try {
@@ -3662,7 +3700,16 @@ export class Game3D {
     let res = { best: null, previous: null, isNew: false };
     const deepestMeters = U.depthMeters(this.deepest);
     try {
-      if (this.diff.recordTimes) {
+      if (this.chapter !== 1) {
+        // Chapter II keeps its records in the save profile (meta/save.js 'ch2'), never in Chapter I's best-time slots
+        const rec = this.save && this.save.records ? this.save.records(key) : null;
+        const prev = rec && rec.best != null ? rec.best : null; // (the save service adds this run on 'game:victory', after this)
+        res.previous = prev;
+        if (this.diff.recordTimes) {
+          res.isNew = prev == null || time < prev;
+          res.best = res.isNew ? time : prev;
+        } else res.best = prev;
+      } else if (this.diff.recordTimes) {
         res = Storage.submitTime(key, time);
         const fewest = Storage.get(`fewestDeaths.${key}`, null);
         if (typeof fewest !== 'number' || this.deaths < fewest) Storage.set(`fewestDeaths.${key}`, this.deaths);
@@ -3670,7 +3717,7 @@ export class Game3D {
       } else {
         res.best = Storage.getBest(key);
       }
-      Storage.recordDepth(key, deepestMeters);
+      if (this.chapter === 1) Storage.recordDepth(key, deepestMeters);
     } catch (err) {
       this._fault('storage', err);
     }
