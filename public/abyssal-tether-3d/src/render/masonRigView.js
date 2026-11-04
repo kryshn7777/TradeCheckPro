@@ -53,6 +53,8 @@ const SEG = 20;
 const CLIP_LISTS = [BASE_CLIPS, ADDITIVE_CLIPS];
 const LIFT_FALLOFF = [1, 0.6, 0.3, 0.12];
 const _v0 = new THREE.Vector3();
+const _v1 = new THREE.Vector3();
+const _m4aim = new THREE.Matrix4();
 const _m3a = new Float64Array(9);
 const _m3b = new Float64Array(9);
 const _m3c = new Float64Array(9);
@@ -468,6 +470,12 @@ export class MasonRigView {
       const nw = this.neck.matrixWorld;
       const rw = this.root.matrixWorld;
       this.mandibles.follow(nw, rw);
+      if (camera && show) {
+        // where the player's eye is in the head's frame: the tusks toe in so their points look at it
+        _m4aim.copy(nw).invert();
+        camera.getWorldPosition(_v1).applyMatrix4(_m4aim);
+        this.mandibles.setTarget(_v1.x, _v1.y, _v1.z);
+      } else this.mandibles.setTarget(null);
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
       // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
       this.eyes.follow(nw, rw);

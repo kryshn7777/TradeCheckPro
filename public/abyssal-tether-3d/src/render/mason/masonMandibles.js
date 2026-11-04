@@ -1,8 +1,9 @@
 /* ABYSSAL TETHER 3D — render/mason/masonMandibles.js
- * Big mandibles for the Mason (and, smaller, the skitterlings): two crescent pincers that hang from the corners of the mouth, bow out to the
- * sides and curl down and inward under the mouth like a pair of forceps, and swing open and snap shut, so a creature that is coming for you has
- * jaws. (The first versions were modelled bowing INWARD, so they crossed over the face in an X; the shape drawn by the owner is a "( )" frame
- * around the mouth.)
+ * Big mandibles for the Mason (and, smaller, the skitterlings): two tusk-pincers that leave the corners of the mouth, bow out to the sides and
+ * sweep FORWARD, their points aimed at whoever the creature is facing, and swing apart and snap shut like forceps, so a creature that is coming
+ * for you has jaws pointed at you. (The first versions were modelled bowing INWARD, so they crossed over the face in an X; the second hung down
+ * and curled in under the mouth; the owner then asked for the tusks to point at the player.) The points also toe in by a few degrees toward the
+ * player's actual position (setTarget), so they keep aiming when the head's own turn lags behind.
  *
  *   - mandibleGeometry(): ONE indexed BufferGeometry per mandible, built from code (no asset), in the head's frame (x right, y up, z back: the
  *     face looks down -z): a tube along a crescent centre line, thick at the root (a bulge), tapering to a point, a ten-sided section, plus a
@@ -26,7 +27,10 @@ export const MANDIBLE = {
   // face looks down -z). Tuned against renders.
   root: { x: 1.9, y: -0.7, z: -2.0 },
   yaw: 0, // rest offset (rad) added to the opening angle
-  swing: 0.5, // rad of swing about the forward axis per rad of "opening": a hanging crescent swings out when it opens and in when it snaps shut
+  swing: 0.5, // rad of yaw per rad of "opening": the forward-pointing tusks swing apart when it opens and cross in front of the mouth when it snaps shut
+  aimK: 0.75, // fraction of the yaw error toward the player that the tusks take up (the rest is the head's own aim)
+  aimMax: 0.32, // rad: the most the tusks toe in / out toward the player
+  aimRate: 6, // 1/s: how fast the aim eases
 };
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -48,8 +52,8 @@ function bez(P, t, out) {
 
 /**
  * The right-hand mandible in the head's frame (the root at the origin; x right, y up, z back, so forward is -z): it leaves the mouth corner
- * going out (+x), bows to the side, falls (-y) and curls back in (-x) and forward (-z) so the point ends under the mouth, in front of the chin;
- * the left one is this mirrored (scale.x = -1). Returns { geometry, tip, triangles }.
+ * going out (+x), bows to the side, droops a little (-y) and sweeps forward (-z), the last third turning in (-x) so the point looks along the
+ * face's line of sight; the left one is this mirrored (scale.x = -1). Returns { geometry, tip, tipDir, triangles }.
  */
 export function mandibleGeometry(opts = {}) {
   const L = opts.length || MANDIBLE.length;
@@ -57,14 +61,14 @@ export function mandibleGeometry(opts = {}) {
   const sides = opts.sides || MANDIBLE.sides;
   const rings = opts.rings || MANDIBLE.rings;
   const nTeeth = opts.teeth == null ? MANDIBLE.teeth : opts.teeth;
-  // the centre line, a crescent seen head-on as one side of a "( )" around the mouth: out from the corner of the mouth, bowed out to the side
-  // (about a quarter of its length), then down (about 0.6 L below the root) and curling in so the point ends below the mouth, a little in front
-  // of it. Seen face-on the whole curve is in the picture (it is not edge-on), and it frames the maw
+  // the centre line, a tusk seen head-on as one side of a "( )" that frames the face: out from the corner of the mouth, bowed out to the side
+  // (about a third of its length), drooping a little, and sweeping forward (0.8 L in front of the root) so the last stretch runs mostly along
+  // -z with a toe-in of about 30 degrees: the two points converge a few metres in front of the face, where the player is
   const P = [
     [0, 0, 0],
-    [0.34 * L, 0.02 * L, -0.06 * L],
-    [0.4 * L, -0.45 * L, -0.12 * L],
-    [-0.18 * L, -0.62 * L, -0.3 * L],
+    [0.3 * L, 0.02 * L, -0.1 * L],
+    [0.4 * L, -0.2 * L, -0.38 * L],
+    [0.16 * L, -0.3 * L, -0.8 * L],
   ];
   const pos = [];
   const col = [];
@@ -207,7 +211,8 @@ export function mandibleGeometry(opts = {}) {
   geometry.computeBoundingSphere();
   geometry.computeBoundingBox();
   const tip = centres[rings];
-  return { geometry, tip: [tip[0], tip[1], tip[2]], triangles: idx.length / 3 };
+  const td = tans[rings];
+  return { geometry, tip: [tip[0], tip[1], tip[2]], tipDir: [td[0], td[1], td[2]], triangles: idx.length / 3 };
 }
 
 /**
@@ -267,6 +272,12 @@ export class Mandibles {
     this.geometry = built.geometry;
     this.triangles = built.triangles * 2;
     this.tip = built.tip;
+    // the right tusk's point and its heading in the head's frame (the left is the mirror): the yaw the aim steers from
+    this.tipHead = [MANDIBLE.root.x + built.tip[0], MANDIBLE.root.z + built.tip[2]];
+    this.tipRest = Math.atan2(built.tipDir[0], -built.tipDir[2]); // 0 = straight ahead, + toward +x
+    this.target = null; // the player's position in the head's frame (set by the view each frame), or null
+    this.aim = [0, 0]; // eased aim yaw of each tusk (rad, in its own mirrored frame: + turns the point inward)
+    this.hold = null; // debug: hold the opening angle (renders / tests)
     this.material = MAT();
     this.group = new THREE.Group();
     this.group.name = 'Mandibles';
@@ -312,10 +323,39 @@ export class Mandibles {
     return this;
   }
 
+  /**
+   * Where the player is, in the head's frame (x right, y up, z back: forward is -z), or null for "straight ahead". The tusks toe in / out so
+   * their points look at it; the head's own turn does most of the work, this takes up the lag.
+   */
+  setTarget(x, y, z) {
+    if (x == null) {
+      this.target = null;
+      return;
+    }
+    if (!this.target) this.target = [0, 0, 0];
+    this.target[0] = x;
+    this.target[1] = y;
+    this.target[2] = z;
+  }
+
+  /** The yaw tusk `i` needs (rad, its own mirrored frame) to point its tip at the target; 0 with no target, or one behind the face or the point. */
+  _aimWant(i) {
+    const t = this.target;
+    if (!t || t[2] > -1) return 0;
+    const dx = this.sign[i] * t[0] - this.tipHead[0]; // the left tusk is the mirror: the player's x flips with it
+    const dz = this.tipHead[1] - t[2]; // forward distance from the tip to the player (positive when the player is ahead of the tip)
+    if (dz < 0.5) return 0;
+    const want = Math.atan2(dx, dz);
+    return clamp((this.tipRest - want) * MANDIBLE.aimK, -MANDIBLE.aimMax, MANDIBLE.aimMax);
+  }
+
   _apply(a) {
-    // the crescents hang from the mouth corners: opening swings the points out about the forward axis (+z on the right horn: a vector
-    // pointing down turns toward +x), the left horn the other way
-    for (let i = 0; i < 2; i++) this.pivots[i].rotation.set(0, 0, this.sign[i] * a * MANDIBLE.swing);
+    // the tusks leave the mouth corners pointing forward: opening swings the points apart about the vertical (a forward vector turns toward +x
+    // for a negative yaw, so the right tusk takes -a and the left +a), the aim adds the same toe-in to both (mirrored)
+    for (let i = 0; i < 2; i++) {
+      const s = this.sign[i];
+      this.pivots[i].rotation.set(0, s * (this.aim[i] - a * MANDIBLE.swing), 0);
+    }
   }
 
   /**
@@ -327,7 +367,10 @@ export class Mandibles {
   update(dt, snap, t, show) {
     this.group.visible = !!show;
     if (!show || !(dt > 0)) return;
-    const want = mandibleOpen(snap, t, this.seed);
+    const want = this.hold != null ? this.hold : mandibleOpen(snap, t, this.seed);
+    // the aim eases toward where the player is (a first-order lag: no overshoot)
+    const k = 1 - Math.exp(-MANDIBLE.aimRate * dt);
+    for (let i = 0; i < 2; i++) this.aim[i] += (this._aimWant(i) - this.aim[i]) * k;
     // a damped spring; the snap shut is much stiffer than the slow spread
     const closing = want < this.open - 0.05 && snap && snap.phase === 'strike';
     const w0 = closing ? 55 : 11;

@@ -32,7 +32,7 @@ const ok = (c, msg) => {
 
 // 1. The geometry.
 {
-  const { geometry, tip, triangles } = mandibleGeometry();
+  const { geometry, tip, tipDir, triangles } = mandibleGeometry();
   const pos = geometry.getAttribute('position');
   const col = geometry.getAttribute('color');
   const nrm = geometry.getAttribute('normal');
@@ -48,10 +48,14 @@ const ok = (c, msg) => {
   const Lm = MANDIBLE.length;
   ok(Lm >= 5 && Lm <= 7.5, `big but not huge: ${Lm} m of horn`);
   ok(bb.max.x > Lm * 0.2 && bb.max.x < Lm * 0.5, `it bows out to the side of the mouth (${bb.max.x.toFixed(1)} m)`);
-  ok(bb.min.y < -Lm * 0.55 && bb.max.y < Lm * 0.15, `it hangs down from the corner of the mouth (${bb.min.y.toFixed(1)} m below the root, ${bb.max.y.toFixed(1)} m above: a "(" around the mouth, nothing over the face)`);
-  ok(tip[0] < 0 && tip[1] < -Lm * 0.5 && tip[2] < -Lm * 0.15, `the point curls back in past its own root line (x ${tip[0].toFixed(1)}), well below (y ${tip[1].toFixed(1)}) and in front (z ${tip[2].toFixed(1)}; the face looks down -z): forceps under the mouth`);
-  // seen head-on the whole crescent is in the picture: the face-on (x, y) extent is bigger than the depth
-  ok(bb.max.x - bb.min.x > (bb.max.z - bb.min.z) * 1.1 && bb.max.y - bb.min.y > (bb.max.z - bb.min.z) * 1.5, `seen face-on it is a full crescent, not an edge-on bar (${(bb.max.x - bb.min.x).toFixed(1)} x ${(bb.max.y - bb.min.y).toFixed(1)} m across, ${(bb.max.z - bb.min.z).toFixed(1)} m deep)`);
+  ok(bb.min.z < -Lm * 0.7 && bb.max.z < Lm * 0.15, `it sweeps FORWARD, the way the face looks (${(-bb.min.z).toFixed(1)} m in front of its root; the face looks down -z)`);
+  ok(bb.min.y > -Lm * 0.45 && bb.max.y < Lm * 0.15, `it droops only a little (${bb.min.y.toFixed(1)} m) and never rises over the face (${bb.max.y.toFixed(1)} m): nothing sinks into the wall the creature clings to`);
+  // the point looks along the line of sight, toed in by 20-45 degrees so the two points converge in front of the face
+  const [tdx, tdy, tdz] = tipDir;
+  const toe = (Math.atan2(-tdx, -tdz) * 180) / Math.PI;
+  ok(tdz < -0.6 && toe > 20 && toe < 45 && tip[2] < -Lm * 0.7, `the point aims forward (z ${tdz.toFixed(2)}) with ${toe.toFixed(0)} degrees of toe-in, ${(-tip[2]).toFixed(1)} m ahead of its root: it points at whoever the creature faces`);
+  // seen head-on the whole tusk is in the picture
+  ok(bb.max.x - bb.min.x > 1.5 && bb.max.y - bb.min.y > 1.0, `seen face-on it is a full curve (${(bb.max.x - bb.min.x).toFixed(1)} x ${(bb.max.y - bb.min.y).toFixed(1)} m across, ${(bb.max.z - bb.min.z).toFixed(1)} m deep)`);
   // the two roots sit at the corners of the mouth
   ok(MANDIBLE.root.x >= 1.55 && MANDIBLE.root.x <= 2.4 && MANDIBLE.root.z < 0, `the roots sit just outside the corners of the mouth (x +-${MANDIBLE.root.x})`);
   // taper: the radius near the root is far larger than near the tip
@@ -155,7 +159,7 @@ const ok = (c, msg) => {
     if (m.open < 0 && framesToShut < 0) framesToShut = f;
   }
   ok(framesToShut >= 0 && framesToShut <= 8, `the strike closes the jaws within ${framesToShut} frames (${((framesToShut / 60) * 1000).toFixed(0)} ms)`);
-  ok(Math.abs(m.pivots[0].rotation.z - m.open * MANDIBLE.swing) < 1e-9 && Math.abs(m.pivots[1].rotation.z + m.open * MANDIBLE.swing) < 1e-9 && m.pivots[0].rotation.y === 0, 'the two horns swing about the forward axis by equal and opposite angles (out when open, in when shut)');
+  ok(Math.abs(m.pivots[0].rotation.y + m.open * MANDIBLE.swing) < 1e-9 && Math.abs(m.pivots[1].rotation.y - m.open * MANDIBLE.swing) < 1e-9 && m.pivots[0].rotation.z === 0, 'the two horns swing apart about the vertical by equal and opposite angles (out when open, in and crossed when shut)');
   m.update(1 / 60, snap, 0, false);
   ok(m.group.visible === false, 'hidden when the creature is not at full detail');
   // no allocation per frame (the update only writes numbers)
@@ -164,4 +168,41 @@ const ok = (c, msg) => {
   const grew = (process.memoryUsage().heapUsed - before) / 1e6;
   ok(grew < 8, `20000 frames of update leave the heap alone (${grew.toFixed(1)} MB)`);
 }
+// The aim: the points toe in toward where the player is.
+{
+  const m = new Mandibles();
+  const root = new THREE.Group();
+  m.mount(root);
+  const run = (target, secs = 1.5) => {
+    m.hold = 0.3;
+    m.setTarget(...target);
+    for (let i = 0; i < secs * 60; i++) m.update(1 / 60, null, 0, true);
+    return [m.aim[0], m.aim[1], m.pivots[0].rotation.y, m.pivots[1].rotation.y];
+  };
+  const none = run([0, 0, -9]);
+  m.setTarget(null);
+  for (let i = 0; i < 120; i++) m.update(1 / 60, null, 0, true);
+  ok(Math.abs(m.aim[0]) < 1e-3 && Math.abs(m.aim[1]) < 1e-3, 'no target: the tusks keep their modelled toe-in (no aim)');
+  const front = run([0, 0, -9]);
+  ok(front[0] > 0 && front[0] === front[1] && front[0] <= MANDIBLE.aimMax + 1e-9, `a player straight ahead at 9 m: both points turn in by the same ${front[0].toFixed(2)} rad (at most ${MANDIBLE.aimMax})`);
+  const right = run([6, 0, -9]);
+  ok(right[0] < front[0] && right[1] > front[1], `a player off to the right: the right tusk turns in less (${right[0].toFixed(2)} vs ${front[0].toFixed(2)}) and the left more (${right[1].toFixed(2)}): both look at him`);
+  const behind = run([0, 0, 4]);
+  ok(Math.abs(behind[0]) < 1e-3 && Math.abs(behind[1]) < 1e-3, 'a target behind the face leaves the tusks alone');
+  const close = run([0, 0, -3]);
+  ok(Math.abs(close[0]) < 1e-3, 'a player closer than the points: no aim (they would stab through him; the head turns instead)');
+  // eased, no overshoot
+  const m2 = new Mandibles();
+  m2.hold = 0.3;
+  m2.setTarget(0, 0, -9);
+  let prev = 0;
+  let mono = true;
+  for (let i = 0; i < 180; i++) {
+    m2.update(1 / 60, null, 0, true);
+    if (m2.aim[0] < prev - 1e-12) mono = false;
+    prev = m2.aim[0];
+  }
+  ok(mono && prev <= MANDIBLE.aimMax + 1e-9, 'the aim eases in without overshoot');
+}
+
 console.log(`\n${n} checks passed`);
