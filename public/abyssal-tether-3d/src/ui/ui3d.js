@@ -125,6 +125,8 @@ const DEATH_COPY = {
   creature: { kicker: 'Closer than it sounded', message: 'It wears you now.' },
   // THE DRESSER (sim/dresser3d.js): it reached you while you were whole
   dressed: { kicker: 'Measured. Cut. Laid.', message: 'DRESSED. SOMEONE WILL BUILD WITH YOU.' },
+  // CHAPTER II: the Usher answered a toll you made (sim/usher3d.js; data/chapter2-text.js boss.deathKicker / deathLine)
+  usher: { kicker: 'In the cold light', message: 'ANSWERED. YOU WERE SHOWN TO YOUR SEAT.' },
 };
 
 const pct = fmtPct;
@@ -2537,7 +2539,7 @@ export class UI3D {
   }
 
   /** Large carved section title card (index from the level when omitted); `split` = the last section's split line (P6). */
-  showSectionTitle(name, subtitle, index, split) {
+  showSectionTitle(name, subtitle, index, split, numeral) {
     if (!name) return;
     if (this._lastTitle.text === name && this._clock - this._lastTitle.t < DEDUPE) return;
     this._lastTitle.text = name;
@@ -2548,7 +2550,7 @@ export class UI3D {
     const t = this._title;
     t.name = String(name);
     t.sub = subtitle ? String(subtitle) : '';
-    t.num = idx >= 0 ? `— ${secNum(idx)} —` : '';
+    t.num = numeral ? `— ${numeral} —` : idx >= 0 ? `— ${secNum(idx)} —` : '';
     t.split = split ? String(split) : '';
     t.t = TITLE_TIME;
     t.dirty = true;

@@ -199,12 +199,10 @@ export class LampholdDirector {
       const g = this.Q.gate.pawl;
       this._holdStrokes = 16; // the Great Bell waits: the Doorman answers the pawl first
       this.toll('bell', g.x, g.y, g.z, { src: 'clapW' });
-      this._caption('bell');
     } else if (e.fixture === 'clap-c2-12-N' && e.k >= e.of) {
       const g = this.Q.gate.bellN;
       this._holdStrokes = 10;
       this.toll('bell', g.x, g.y, g.z, { src: 'clapN' });
-      this._caption('bell');
     } else if (e.fixture === this.Q.leverFixture && e.k >= e.of) this._depart();
     else if (e.noise > 0 && e.x !== undefined) this.toll('machine', e.x, e.y, e.z, { src: e.fixture || 'machine' });
   }
@@ -235,7 +233,6 @@ export class LampholdDirector {
       const cg = this._cageCenter();
       if (cg && Math.hypot(e.x - cg.x, e.y - cg.y, e.z - cg.z) <= (e.r || 2.6) + 2.0) this._cageHit();
     }
-    this._caption('blow');
   }
 
   _onSnuff(e) {
@@ -298,6 +295,7 @@ export class LampholdDirector {
     this._great = { k: 0, next: 0 };
     this._holdStrokes = 0;
     this._plate = { front: 0, started: false, warned: 0 };
+    this.evening = false;
     this._cage = { started: false, t0: 0, gongs: 0, whips: 0, lampOut: false, shutT: -1, ratchet: false };
     this._doorman = 'pulpit';
     for (const e of this.ushers) {
@@ -339,6 +337,7 @@ export class LampholdDirector {
       head.command('pulpit');
       this._startRound();
       this._setPhase('A');
+      if (this.bus && this.text && this.text.boss) this.bus.emit('c2:caption', { text: this.text.boss.phaseCaptions[0], kind: 'phase' });
     } else if (p === 'B') {
       // the Round is spent: its clusters are dark behind you; the Doorman unbuttons his collar
       this._putOutStair();
@@ -349,7 +348,7 @@ export class LampholdDirector {
       this._bT = 0;
       this._great.k = 0;
       this._setPhase('B');
-      this._caption('blow');
+      if (this.bus && this.text && this.text.boss) this.bus.emit('c2:caption', { text: this.text.boss.phaseCaptions[1], kind: 'phase' });
     } else if (p === 'C1') {
       this._putOutStair();
       for (const u of round) u.command('leave');
@@ -491,7 +490,6 @@ export class LampholdDirector {
     const m = this._mover('mov-c2-12-cage');
     if (m) m.startAt = c.t0;
     this._cageToll('gong', 'gong0');
-    this._caption('bell');
     if (this.bus) this.bus.emit('c2:caption', { text: this.text && this.text.boss ? this.text.boss.phaseCaptions[3] : '', kind: 'phase' });
   }
 
@@ -500,16 +498,15 @@ export class LampholdDirector {
     c.whips++;
     if (c.whips >= DIRECTOR.lastWhip[this.dk] && !c.lampOut) {
       c.lampOut = true;
+      this.evening = true; // the Evening has ended: every lamp in Lamphold is out
       if (this.bus) {
         this.bus.emit('lamp:all', {});
-        this.bus.emit('c2:caption', { text: this.text && this.text.boss ? this.text.boss.lastLampCaption : '', kind: 'lastlamp' });
       }
       c.shutT = DIRECTOR.shutter[this.dk];
       c.ratchet = false;
       // the Evening ends: he withdraws and sits
       const head = this._byId['u-head'].usher;
       head.command('seat');
-      if (this.bus) this.bus.emit('c2:caption', { text: this.text && this.text.boss ? this.text.boss.defeatCaption : '', kind: 'seat' });
     }
   }
 
@@ -546,7 +543,6 @@ export class LampholdDirector {
             const yy = ring ? ring.y : Q.rim.y + 3;
             if (this.bus) this.bus.emit('evening:stroke', { x: ap.x, y: yy, z: ap.z, side: east ? 'E' : 'W' });
             this.toll('great', ap.x, yy, ap.z, { src: 'great' });
-            this._caption('bell');
           }
         }
         // across the Well: the player is past the gate (on the Span)
@@ -732,6 +728,15 @@ export class LampholdDirector {
         c.on = true;
       } else c.on = false;
     }
+  }
+
+  /** The chain platform's height now (the Mere view lifts the near throat to its eye height). */
+  chainY() {
+    if (!this.H || !this.O) return 0;
+    const m = this._mover(this.H.chain.moverId);
+    if (!m) return this.H.chain.y;
+    moverRef(m, this.O.clock, _q);
+    return _q.y;
   }
 
   /** Is the player standing on the carrier `id` (the chain platform)? */

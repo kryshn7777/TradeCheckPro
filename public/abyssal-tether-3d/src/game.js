@@ -116,6 +116,7 @@ const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.
 const MODULES = {
   level: './sim/level3d.js',
   levelData: './data/level-data-3d.js',
+  chapter2Glue: './chapter2Glue.js', // CHAPTER II's director, lamps, Mere and Ushers (render + sim): loaded with the late modules, used only by Chapter II
   chapter2Data: './data/chapter2-data.js', // CHAPTER II · LAMPHOLD (the graybox, plans/CHAPTER_II_PLAN.md): loaded only for ?chapter=2
   creature: './sim/creature3d.js',
   skitter: './sim/skitter3d.js',
@@ -1036,6 +1037,8 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.c2 = null; // Chapter2Glue (chapterGlue.js): Chapter II's director and views
+    this._c2views = null;
     this.chapter = chapterFromUrl(); // 1 = The Underspire (the game), 2 = Lamphold (the graybox, ?chapter=2)
     this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
@@ -1641,7 +1644,7 @@ export class Game3D {
   /** The director's frame: where you are, whether a creature is winding up (no radio then), the skip, the bare-stone gaze. */
   _updateComms(dt, intent) {
     const cm = this.comms;
-    if (!cm || !this.player || !this.level) return;
+    if (!cm || !this.player || !this.level || this.chapter === 2) return; // (Chapter II has its own radio lines in data/chapter2-text.js: not wired yet; Chapter I's must not play down there)
     try {
       const x = this._commsCtx;
       const p = this.player;
@@ -2455,6 +2458,7 @@ export class Game3D {
     const lvl = this.level;
     const p = this.player;
     this._runCount++;
+    if (this.c2) this._try('chapter2', () => this.c2.onStart());
     this.hidePlayer = false;
     this.time = 0;
     this._runClock = 0;
@@ -2614,6 +2618,7 @@ export class Game3D {
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.c2) this._try('chapter2', () => this.c2.onRespawn()); // CHAPTER II: the phase of the lamp you wake at
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2867,6 +2872,26 @@ export class Game3D {
     }
     // Section splits (LEVEL_FUN_PLAN item 12): started by _enterSection, taken at each new section and at the goal.
     this.splits = new SplitClock(lvl.sections.map((s) => s.id));
+    // CHAPTER II: the director (tolls, the Usher, the exam, the hook), its views
+    if (this.c2) {
+      this._try('chapter2', () => this.c2.dispose());
+      this.c2 = null;
+    }
+    if (chapter === 2 && M.chapter2Glue && typeof M.chapter2Glue.Chapter2Glue === 'function') {
+      try {
+        this.c2 = new M.chapter2Glue.Chapter2Glue(this);
+        this._ensureLevelView(); // (the views need the renderer's scene: the level view first)
+        this.c2.build(lvl, this.objectives, this._runBus, Object.assign({}, diff, { key: this.difficultyKey }), attract);
+      } catch (err) {
+        this._fault('chapter2', err);
+        this.c2 = null;
+      }
+    } else if (this._c2views) {
+      this._try('chapter2', () => {
+        for (const k of ['lamp', 'mere', 'usher']) if (this._c2views[k] && this._c2views[k].dispose) this._c2views[k].dispose();
+        this._c2views = null;
+      });
+    }
     this._ensureLevelView();
   }
 
@@ -3390,6 +3415,7 @@ export class Game3D {
       this._pendingJump = false;
       this.physics.step(p, this.tethers, si, PDT);
       if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
+      if (this.c2) this.c2.step(PDT, p);
       this._acc -= PDT;
       steps++;
       if (!p.alive || this.state !== 'playing') {
@@ -4407,6 +4433,13 @@ export class Game3D {
         this.pickupsView.update(dt, this);
       } catch (err) {
         this._fault('pickupsView', err);
+      }
+    }
+    if (this.c2) {
+      try {
+        this.c2.update(dt);
+      } catch (err) {
+        this._fault('chapter2', err);
       }
     }
     this._updateLantern();

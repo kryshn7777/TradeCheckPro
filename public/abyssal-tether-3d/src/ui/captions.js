@@ -20,6 +20,18 @@ const TTL = 3.2;
 const MAX_LINES = 3;
 const DIR_REFRESH = 0.15;
 
+/** A caption whose words come from the data (CHAPTER II's director: the phase lines, the sighting): one frozen rule per distinct text. */
+const _dyn = new Map();
+function dynRule(text, kind) {
+  if (typeof text !== 'string' || !text) return null;
+  let r = _dyn.get(text);
+  if (!r) {
+    r = R(text, kind === 'sighting' ? 'creature' : 'world', kind === 'chime' ? 0 : 1, `c2-${kind || 'x'}`, kind === 'chime' ? 2 : 6, kind === 'phase' ? 5 : TTL);
+    _dyn.set(text, r);
+  }
+  return r;
+}
+
 /** Caption kinds → the shape drawn next to the line. */
 export const KIND_SHAPE = { creature: 'diamond', world: 'square', player: 'circle', status: 'triangle' };
 
@@ -62,6 +74,20 @@ export const RULES = Object.freeze({
   hfTear: R('[Something tears out of the wall]', 'creature', 2, 'hftear', 2),
   hfCrush: R('[Bones grinding in your glove]', 'creature', 2, 'hftear', 2),
   hfKnock: R('[Three knocks inside the wall]', 'creature', 1, 'hfknock', 4),
+  // CHAPTER II: the Usher (sim/usher3d.js) and the Evening (sim/lampholdDirector.js); the wording is data/chapter2-text.js usher.captions
+  uListen: R('[Breath through a pipe]', 'creature', 1, 'ulisten', 3),
+  uCoil: R('[Hum rising]', 'creature', 2, 'ucoil', 2),
+  uCommit: R('[Hum jumps]', 'creature', 2, 'ucoil', 1),
+  uWhip: R('[Throat whips]', 'creature', 2, 'uwhip', 1.2),
+  uRecoil: R('[A long breath out]', 'creature', 0, 'urecoil', 3),
+  uSnuff: R('[A lamp goes out]', 'world', 1, 'usnuff', 2.5),
+  uBlow: R('[Iron breaks]', 'world', 2, 'ublow', 1.5),
+  uSeat: R('[A chair is drawn. Someone sits]', 'creature', 2, 'useat', 10, 6),
+  uGreatBell: R('[A great bell tolls]', 'world', 2, 'ugreat', 4),
+  creak: R('[Iron groans]', 'world', 1, 'creak', 1),
+  crash: R('[Iron crashes down]', 'world', 2, 'crash', 1.5),
+  shutter: R('[A shutter slams]', 'world', 2, 'shutter', 5),
+  lastLamp: R('[Every lamp goes out]', 'world', 2, 'lastlamp', 10, 6),
   crumble: R('[Stone crumbling]', 'world', 1, 'crumble', 1.2),
   rumble: R('[Deep rumble]', 'world', 1, 'rumble', 4),
   debris: R('[Rubble falling]', 'world', 1, 'debris', 3),
@@ -218,6 +244,36 @@ export function captionForEvent(type, p) {
       return RULES.sealLocked;
     case 'bell:ring':
       return RULES.bell;
+    case 'usher:listen':
+      return RULES.uListen;
+    case 'usher:coil':
+      return RULES.uCoil;
+    case 'usher:commit':
+      return RULES.uCommit;
+    case 'usher:whip':
+      return e.lethal === false ? null : RULES.uWhip;
+    case 'usher:recoil':
+      return RULES.uRecoil;
+    case 'usher:snuff':
+      return RULES.uSnuff;
+    case 'usher:blow':
+      return RULES.uBlow;
+    case 'usher:seat':
+      return RULES.uSeat;
+    case 'evening:stroke':
+      return RULES.uGreatBell;
+    case 'c2:creak':
+      return RULES.creak;
+    case 'c2:crash':
+      return RULES.crash;
+    case 'c2:ratchet':
+      return RULES.ratchet;
+    case 'c2:shutter':
+      return RULES.shutter;
+    case 'lamp:all':
+      return RULES.lastLamp;
+    case 'c2:caption':
+      return dynRule(e.text, e.kind);
     case 'objective:progress':
       if (e.verb === 'breach') return e.k < e.of ? RULES.ratchet : null; // the last one is the break (breach:break)
       return e.verb === 'haul' || e.verb === 'winch' ? RULES.ratchet : e.verb === 'lamp' ? RULES.lampCatch : e.verb === 'survive' ? RULES.bolt : null;
@@ -269,6 +325,21 @@ export function statusForEvent(type, p) {
 
 /** Every bus event the tracker listens to. */
 export const CAPTION_EVENTS = Object.freeze([
+  'usher:listen',
+  'usher:coil',
+  'usher:commit',
+  'usher:whip',
+  'usher:recoil',
+  'usher:snuff',
+  'usher:blow',
+  'usher:seat',
+  'evening:stroke',
+  'c2:creak',
+  'c2:crash',
+  'c2:ratchet',
+  'c2:shutter',
+  'lamp:all',
+  'c2:caption',
   'creature:clip',
   'creature:attack',
   'creature:burst',
