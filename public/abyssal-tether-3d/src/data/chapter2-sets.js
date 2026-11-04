@@ -361,7 +361,6 @@ export function addBeats(ctx) {
   const dec = (o) => ctx.decor.push(o);
   const names = CHAPTER2_NAMES;
   const ledgesOf = (sid) => ctx.ledges.filter((l) => l.section === sid);
-  const solidOf = (id) => ctx.solids.find((q) => q.id === id);
   const yawToCentre = (x, z) => Math.atan2(x, z); // faces the pit's centre: forward = (-sin yaw, -cos yaw) = (-x, -z)/|.|
   ctx.c2.names = [];
   const slab = (id, cx, topY, cz) => ctx.solids.push({ id, minX: r2(cx - 1.6), maxX: r2(cx + 1.6), minY: r2(topY - 1), maxY: r2(topY), minZ: r2(cz - 1.6), maxZ: r2(cz + 1.6), kind: 'stone' });

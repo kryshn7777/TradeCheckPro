@@ -75,7 +75,7 @@ export function buildChapter2() {
   const tops = [];
   for (let kk = 0; -0.6 - kk * STEP - 1 >= -total; kk++) tops.push(r2(-0.6 - kk * STEP));
   let top = 0;
-  CHAPTER2_BEATS.forEach((b, i) => {
+  CHAPTER2_BEATS.forEach((b) => {
     const yTop = -top;
     const yBottom = -(top + b.len);
     const sid = b.id;
