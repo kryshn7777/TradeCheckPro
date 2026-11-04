@@ -484,7 +484,12 @@ export class MasonRigView {
     this._poseSpine(F, S);
     this._poseCrown();
     if (this.mandibles) {
-      const show = this._lod === 0 && !this._glowOnly;
+      // What shows at which level of detail. The EYES are what is seen from afar (two red lights in the dark), so they show at both LODs and
+      // even when only the glow mesh draws (they were LOD0-only: on Quest, where LOD1 starts at 12 m, a Mason seen from further off had no red
+      // eyes at all). The tusks and the stinger are long silhouettes: shown whenever the body is drawn (the small hunters only at LOD0: three of
+      // them at once would cost 5 draw calls each). The maw's teeth are small: LOD0 only.
+      const near = this._lod === 0 && !this._glowOnly;
+      const show = !this._glowOnly && (near || !this.opts.variant);
       const nw = this.neck.matrixWorld;
       const rw = this.root.matrixWorld;
       this.mandibles.follow(nw, rw);
@@ -497,9 +502,9 @@ export class MasonRigView {
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
       // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
       this.eyes.follow(nw, rw);
-      this.eyes.update(this.graph.snapshot, this._time, show);
+      this.eyes.update(this.graph.snapshot, this._time, true);
       this.maw.follow(nw, rw);
-      this.maw.update(dt, this.mandibles.open, show);
+      this.maw.update(dt, this.mandibles.open, near);
       this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
       this.stinger.update(show);
       this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0) + (this._hull && this._hull.visible ? 1 : 0) + (show ? this.mandibles.hullCalls() + this.stinger.hullCalls() : 0);

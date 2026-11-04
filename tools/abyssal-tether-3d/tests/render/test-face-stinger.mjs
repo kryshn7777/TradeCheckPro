@@ -7,6 +7,7 @@
 //   - all mounted on a root with driven matrices (the rig's bones are not in the scene graph), few draw calls, nothing allocated per frame.
 //   node test-face-stinger.mjs
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { register as reg } from 'node:module';
@@ -142,5 +143,13 @@ const ok = (c, msg) => {
   const before = process.memoryUsage().heapUsed;
   for (let f = 0; f < 20000; f++) m.update(1 / 60, 0.5 + 0.5 * Math.sin(f / 9), true);
   ok((process.memoryUsage().heapUsed - before) / 1e6 < 8, 'no allocation per frame');
+}
+// Which level of detail shows what (render/masonRigView.js). The eyes are what is seen from afar, so they show at LOD1 and with only the glow
+// mesh drawn; on Quest (LOD1 from 12 m) a Mason seen from further off had NO red eyes while they were LOD0-only.
+{
+  const src = fs.readFileSync(path.resolve(HERE, '../../../../public/abyssal-tether-3d/src/render/masonRigView.js'), 'utf8');
+  ok(/this\.eyes\.update\(this\.graph\.snapshot, this\._time, true\)/.test(src), 'the eyes are shown at every level of detail (and when only the glow mesh draws): red lights in the dark from afar');
+  ok(/const near = this\._lod === 0 && !this\._glowOnly;/.test(src) && /this\.maw\.update\(dt, this\.mandibles\.open, near\)/.test(src), 'the maw\'s small teeth stay LOD0-only');
+  ok(/const show = !this\._glowOnly && \(near \|\| !this\.opts\.variant\);/.test(src) && /this\.mandibles\.update\([^)]*show\)/.test(src) && /this\.stinger\.update\(show\)/.test(src), 'the tusks and the stinger show whenever the Mason\'s body is drawn (the small hunters only at LOD0)');
 }
 console.log(`\n${n} checks passed`);
