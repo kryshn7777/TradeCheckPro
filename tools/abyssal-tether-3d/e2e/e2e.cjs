@@ -363,12 +363,22 @@ async function partDesktop(browser, base) {
   if (wDown) await page.keyboard.up('KeyW');
   if (reeling) await page.keyboard.up('Space');
   if (!released) await page.mouse.up({ button: 'left' });
-  s = await step(page, 0.4);
+  const endFrame = swingTrace.length * 30;
+  const landTrace = []; // the 0.4 s after the loop ends, every 0.07 s: [y, z, vy, vz, grounded, climbing, ground]
+  for (let k = 0; k < 6; k++) {
+    s = await step(page, 0.07, { render: false });
+    landTrace.push(
+      await page.evaluate(() => {
+        const p = window.AT3D.game.player;
+        return [+p.y.toFixed(2), +p.z.toFixed(2), +p.vy.toFixed(2), +p.vz.toFixed(2), p.grounded ? 1 : 0, p.climbing ? 1 : 0, p.groundSolid ? p.groundSolid.id : null];
+      }),
+    );
+  }
   const ground = await page.evaluate(() => {
     const p = window.AT3D.game.player;
     return p.groundSolid ? p.groundSolid.id : null;
   });
-  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player, swingTrace });
+  check('W swings on the rope and the arc lands on the sill', onSill && s.player.alive && ground === 's1-sill', { maxSpeed: +maxSpeed.toFixed(1), ground, player: s.player, onSill, endFrame, swingTrace, landTrace });
   check('releasing LMB lets go of the tether', s.hands.right.anchor === null && !s.player.tethered, s.hands.right);
   return P;
 }
