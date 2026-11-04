@@ -641,6 +641,7 @@ const MARKUP = `
       </div>
       <div class="victory-actions">
         <button class="btn btn-primary v-next" type="button" data-action="next-chapter" data-autofocus hidden><span class="btn-label">Chapter II · Lamphold</span></button>
+        <button class="btn btn-primary v-buy" type="button" data-action="full-version" hidden><span class="btn-label">Continue the descent</span></button>
         <button class="btn btn-primary v-again" type="button" data-action="restart" data-autofocus><span class="btn-label">Descend again</span></button>
         <button class="btn" type="button" data-action="menu"><span class="btn-label">Menu</span></button>
       </div>
@@ -1107,6 +1108,7 @@ export class UI3D {
       vT2: q('.v-t2'),
       vNext: q('.v-next'),
       vAgain: q('.v-again'),
+      vBuy: q('.v-buy'),
       vSplitsWrap: q('.v-splits-wrap'),
       vSplits: q('.v-splits'),
       sectionSplit: q('.section-split'),
@@ -2343,8 +2345,26 @@ export class UI3D {
       d.vBest.textContent = fmtTime(i.best != null ? i.best : i.time);
       d.vNote.textContent = '';
     }
+    if (i.names != null) d.vNote.textContent = `${d.vNote.textContent ? `${d.vNote.textContent} ` : ''}Names found ${i.names} of 5.`;
     this._fillVictorySplits();
     this._fillVictoryChapter();
+  }
+
+  /** The end card's purchase line: { label, enabled } or null when there is nothing to sell (owned, or no entitlement module). Loads the store price once. */
+  _buyLine() {
+    const g = this.game || {};
+    const e = g.chapter === 2 ? g.entitlement : null;
+    if (!e || typeof e.info !== 'function' || e.state === 'full') return null;
+    const info = e.info();
+    if (info.store && !info.price && !this._priceAsked && typeof e.loadPrice === 'function') {
+      this._priceAsked = true;
+      e.loadPrice().then(() => {
+        this._vrDirty = true;
+        if (this.current === 'victory') this._fillVictoryChapter();
+      });
+    }
+    if (!info.store) return { label: 'The full descent is on the Meta Horizon Store', enabled: false };
+    return { label: info.price ? `Continue the descent · ${info.price}` : 'Continue the descent', enabled: true };
   }
 
   /** The chapter-specific words of the end card: Chapter I points on to Lamphold (when it is playable), Chapter II points on to the full version. */
@@ -2370,6 +2390,14 @@ export class UI3D {
       d.vT1.textContent = 'Something at the bottom was cut to your measure. It took forty of you to get it right.';
       d.vT2.textContent = 'Uplink lost below the Mark. Continuity holding. Expedition 42 on standby.';
     }
+    // CHAPTER II's end card sells the full version (platform/entitlement.js): one button, the store's own price; outside a store install it only says where it is
+    const buy = this._buyLine();
+    d.vBuy.hidden = ch !== 2 || !buy;
+    if (buy) {
+      d.vBuy.querySelector('.btn-label').textContent = buy.label;
+      d.vBuy.disabled = !buy.enabled;
+    }
+    d.vAgain.querySelector('.btn-label').textContent = ch === 2 ? 'Replay Chapter II' : 'Descend again';
     d.vNext.hidden = !next;
     if (next) {
       d.vNext.setAttribute('data-autofocus', '');
@@ -2626,6 +2654,18 @@ export class UI3D {
           this._vrDirty = true;
         }
         break;
+      case 'full-version': {
+        // the purchase dialog must open synchronously inside the click / the controller's select (platform/entitlement.js purchase())
+        const e = game.entitlement;
+        if (e && typeof e.purchase === 'function') {
+          e.purchase().then((r) => {
+            if (r === 'purchased' || r === 'owned') this.showToast('Thank you. Chapters III to V open as they are released.', 5);
+            else if (r === 'error') this.showToast('The store could not be reached. Nothing was charged.', 4);
+            this._vrDirty = true;
+          });
+        }
+        break;
+      }
       case 'next-chapter':
         this._call('playNextChapter');
         if ((game.state === 'playing' || game.state === 'intro') && this.current !== null) this.show(null);
@@ -4380,7 +4420,7 @@ export class UI3D {
     const cells = [
       ['FALLS', String(i.falls != null ? i.falls : i.deaths || 0)],
       ['LOWEST HP', pct(U.clamp(num(i.lowestHp, 1), 0, 1))],
-      ['ITEMS USED', String(i.itemsUsed | 0)],
+      i.names != null ? ['NAMES', `${i.names} / 5`] : ['ITEMS USED', String(i.itemsUsed | 0)],
       [recorded ? 'BEST' : i.label ? i.label.toUpperCase() : 'MODE', recorded ? fmtTime(i.best != null ? i.best : i.time) : '—'],
     ];
     const gap = 12;
@@ -4430,6 +4470,17 @@ export class UI3D {
 
   /** The end card's buttons: [Chapter II] (Chapter I, when Lamphold is playable), Descend again, Menu. */
   _victoryButtons(ctx, y, h, nextCh) {
+    const buy = this._buyLine();
+    if (buy) {
+      // Chapter II: [Continue the descent · price] [Replay] [Menu]
+      const w = CW - 48;
+      const a = Math.round(w * 0.5);
+      const b = Math.round(w * 0.27);
+      this._btn(ctx, this._region(24, y, a, h, 'full-version'), buy.label, null, { primary: buy.enabled, size: buy.label.length > 30 ? 24 : 30, ghost: !buy.enabled });
+      this._btn(ctx, this._region(24 + a + 12, y, b, h, 'restart'), 'Replay', null, { size: 30 });
+      this._btn(ctx, this._region(24 + a + b + 24, y, w - a - b - 24, h, 'menu'), 'Menu', null, { size: 30 });
+      return;
+    }
     if (nextCh) {
       const w = CW - 48;
       const a = Math.round(w * 0.46);

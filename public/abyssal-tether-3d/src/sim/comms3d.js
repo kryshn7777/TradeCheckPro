@@ -52,6 +52,8 @@ function wordCount(text) {
   return n;
 }
 export { wordCount };
+/** CHAPTER II builds its own script (chapter2Glue.js) with the same line builder. */
+export { L as commsLine };
 
 /** Seconds a line stays on the panel: max(2.5, words / 2.6 + 1) (FUTURE_STORY_PLAN §2.2), capped at 5.5. */
 export function holdTime(text) {

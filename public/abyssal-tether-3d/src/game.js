@@ -1644,7 +1644,7 @@ export class Game3D {
   /** The director's frame: where you are, whether a creature is winding up (no radio then), the skip, the bare-stone gaze. */
   _updateComms(dt, intent) {
     const cm = this.comms;
-    if (!cm || !this.player || !this.level || this.chapter === 2) return; // (Chapter II has its own radio lines in data/chapter2-text.js: not wired yet; Chapter I's must not play down there)
+    if (!cm || !this.player || !this.level) return; // (in Chapter II `comms` is the chapter's own director: chapter2Glue.js)
     try {
       const x = this._commsCtx;
       const p = this.player;
@@ -3760,6 +3760,7 @@ export class Game3D {
       difficultyKey: key,
       label: this.diff.label,
       seals: this.objectives ? this.objectives.doneCount : 0, // seals opened this run (LEVEL_FUN_PLAN P1)
+      names: this.c2 && this.c2.director ? this.c2.director.names.size : null, // CHAPTER II: the Names found (of 5)
     };
     this.lastVictory = info;
     this._try('ui', () => this.ui.show('victory', info));

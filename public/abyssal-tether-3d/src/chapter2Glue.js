@@ -16,8 +16,23 @@ import { LampField } from './render/lampField.js';
 import { MereView } from './render/mereView.js';
 import { UsherView } from './render/usherView.js';
 import { CHAPTER2_TEXT } from './data/chapter2-text.js';
+import { CommsDirector, DIRECTOR_EVENTS, commsLine } from './sim/comms3d.js';
 
 const MAX_STATES = 8;
+
+/** Chapter II's radio (the story writer's six lines, data/chapter2-text.js radio) on the shipped radio director: where each is said (section = the beat's index). */
+export function radioScript() {
+  const R = Object.fromEntries(CHAPTER2_TEXT.radio.map((r) => [r.id, r]));
+  const L = (id, section, when, o) => commsLine(id, R[id].speaker, R[id].text, Object.assign({ section, when }, o));
+  return [
+    L('c2-open', 0, { enter: true, after: 2.5 }, { prio: 3, glitch: 'none', beat: 'the lamps carry the signal' }),
+    L('c2-breach', 5, { depth: 1060 }, { prio: 2 }),
+    L('c2-bell', 8, { ev: 'c2:answer', match: { stage: 2 } }, { prio: 3, beat: 'it answered' }),
+    L('c2-rule', 8, { chain: 'c2-bell', gap: 1.0 }, { prio: 3 }),
+    L('c2-bars', 10, { enter: true, after: 3 }, { prio: 2, beat: 'the bars drop' }),
+    L('c2-orderly', 11, { ev: 'c2:phase', match: { phase: 'A' } }, { prio: 3 }),
+  ];
+}
 
 export class Chapter2Glue {
   constructor(game) {
@@ -52,6 +67,7 @@ export class Chapter2Glue {
       const off = g.bus.on(type, fn);
       this._offs.push(off);
     };
+    this._radio(on);
     const v = g._c2views;
     on('lamp:snuff', (e) => this._onSnuff(e));
     on('lamp:all', () => v && v.lamp && v.lamp.snuffAll());
@@ -67,6 +83,24 @@ export class Chapter2Glue {
     });
     on('c2:crash', () => g._hapticBoth && g._hapticBoth(0.4, 140));
     on('evening:stroke', () => g._hapticBoth && g._hapticBoth(0.3, 220));
+  }
+
+  /** The chapter's own radio director replaces Chapter I's as `game.comms` for the run (Chapter I's stays inert and is put back on dispose). */
+  _radio(on) {
+    const g = this.game;
+    if (!g.comms) return; // comms off (?comms=off): nothing to replace
+    try {
+      const cm1 = g._comms1 || g.comms;
+      const cm = new CommsDirector({ seed: 0x7a31, script: radioScript() });
+      cm.onStart = (tx) => g.bus.emit('comms:line', tx);
+      cm.onEnd = (tx) => g.bus.emit('comms:end', tx);
+      cm.voice = cm1.voice;
+      for (const type of [...DIRECTOR_EVENTS, 'c2:answer', 'c2:phase']) on(type, (p) => g._try('comms', () => cm.onEvent(type, p)));
+      g._comms1 = cm1;
+      g.comms = cm;
+    } catch (err) {
+      g._fault('comms2', err);
+    }
   }
 
   _ensureViews(level) {
@@ -236,6 +270,11 @@ export class Chapter2Glue {
   }
 
   dispose() {
+    const g = this.game;
+    if (g._comms1) {
+      g.comms = g._comms1;
+      g._comms1 = null;
+    }
     for (const off of this._offs.splice(0)) {
       try {
         off();
