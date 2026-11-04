@@ -130,7 +130,7 @@ export function buildChapter2() {
       shaft: { minX: -SHAFT, maxX: SHAFT, minZ: -SHAFT, maxZ: SHAFT },
       checkpoint: { x: firstLedge.x, y: r2(firstLedge.y + 0.4), z: firstLedge.z, yaw: 0 },
       theme: THEMES[b.theme],
-      creature: { mode: b.creature, lethal: b.creature === 'stalk', speedMul: 1, burstRate: 0, spawnOffsetY: 200 },
+      creature: Object.assign({ mode: b.creature, lethal: b.creature === 'stalk', speedMul: 1, burstRate: 0, spawnOffsetY: 200 }, b.id === 'c2-6' ? { dresser: { active: true, walkMul: 0.9, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } } } : null), // II-6: the Dresser measures a whole player (the corridor lesson again, in a lit town)
       // the hints are the story writer's (data/chapter2-text.js): `at` is the fraction of the beat from its top
       hints: (CHAPTER2_TEXT.hints[sid] || []).map((h) => ({ y: r2(yTop - h.at * b.len), duration: h.duration, text: h.text, desktop: h.desktop })),
       lamp: CHAPTER2_TEXT.lamps[sid] || null, // { id: 'L2-n', label } of this beat's waking lamp

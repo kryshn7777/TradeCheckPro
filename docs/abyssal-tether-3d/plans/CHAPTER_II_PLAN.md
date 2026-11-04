@@ -127,8 +127,10 @@ grinding, then the wheel and the hammers stand still for 14 s and the wheel runs
 button** (the store's own price through `platform/entitlement.js`; outside a store install it says where the game is and does nothing). Tests: `tests/level/chapter2-beats.mjs`,
 `tests/comms/chapter2-radio.mjs`.
 
+The **Dresser** hunts a whole player in II-6 (the shipped sim, switched on in the beat's data).
+
 **Still not built (honest list).** The knock doors (II-2) and the Holdfast "handshake"; the Waking Hall's hands and tally plates; the stone yards' crane crush telegraph; the Mason's breach and its hidden path
-in the walls, noise masking in the din, the Dresser's measurement in II-6; the crushing counterweights and the Mason in the shafts (II-7); the rope telegraph (the buzzing hand); driven pendulum houses; the
+in the walls, noise masking in the din; the crushing counterweights and the Mason in the shafts (II-7); the rope telegraph (the buzzing hand); driven pendulum houses; the
 lamp you cannot keep (II-11); the Round's five tier galleries, their bells and clapper rings (the Round walks the stair instead); a real moving cage *floor* for the Doorman's lift (by design you hang
 from outrigger rings); the Lamphold art kit and its lightmaps (Chapter I's baked lighting does not apply); the in-world chain at the end of Chapter I (the end card's button starts Lamphold).
 **Nothing has been played on a headset.** The numbers (the Round's pace, the Span's gap, the whips' lead, the cage rings' distance from the sphere, the hammers' damage) are closed-form-checked and

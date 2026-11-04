@@ -173,5 +173,44 @@ const seconds = (n) => Math.round(n / DT);
   }
   ok(w.ph.health.hp < hp0, `standing in the embers' lane costs health (${(hp0 - w.ph.health.hp).toFixed(2)})`);
 }
+// ---- II-6: the Dresser measures a whole player (the shipped Dresser, switched on in this beat's data)
+{
+  const { register } = await import('node:module');
+  const { VENDOR_THREE_URL } = await import('../../verify/root.mjs');
+  register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) { if (s === 'three') return { url: '${VENDOR_THREE_URL}three.module.min.js', shortCircuit: true }; if (s.startsWith('three/addons/')) return { url: '${VENDOR_THREE_URL}addons/' + s.slice(13), shortCircuit: true }; return next(s, c); }`));
+  globalThis.self = globalThis;
+  const { Dresser3D } = await import(srcUrl('sim/dresser3d.js'));
+  const diff = DIFFICULTY.normal;
+  const L = new Level3D(D, 'normal', { freeAttach: true });
+  const bus = new EventBus();
+  const th = new TetherSystem(L, diff, bus, {});
+  const ph = new Physics3D(L, diff, bus);
+  const d = new Dresser3D(L, diff, bus, { seed: 5, tethers: th });
+  d.setGate(false);
+  const six = L.sections.findIndex((s) => s.id === 'c2-6');
+  const led = D.ledges.filter((l) => l.section === 'c2-6')[8];
+  const p = new Player3D(led.x, led.y + R + 0.05, led.z);
+  const evs = [];
+  for (const t of ['dresser:appear', 'dresser:measure', 'dresser:saw']) bus.on(t, () => evs.push(t));
+  d.setSection(six, L.sections[six], p);
+  ok(d.cfg.active === true && d.cfg.measureRange === 14, 'the Dressing Yards switch the Dresser on (measure range 14 m on Normal)');
+  d.setSection(0, L.sections[0], p);
+  ok(d.cfg.active !== true, 'and no other beat does');
+  d.setSection(six, L.sections[six], p);
+  let errs = 0;
+  for (let i = 0; i < 60 * 70 && evs.length < 2; i++) {
+    try {
+      th.step(p, DT);
+      ph.step(p, th, {}, DT);
+      d.setHp(1);
+      d.update(DT, p, 0);
+    } catch (e) {
+      errs++;
+      if (errs === 1) console.log('   dresser error:', e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e);
+      break;
+    }
+  }
+  ok(errs === 0 && evs.includes('dresser:appear'), `on the Chapter II level it comes into play out of sight (${evs.join(', ') || 'nothing'}) with no error`);
+}
 console.log(fails ? `FAILED: ${fails}` : 'ALL CHAPTER II BEAT CHECKS PASS');
 process.exit(fails ? 1 : 0);
