@@ -149,7 +149,28 @@ const ok = (c, msg) => {
 {
   const src = fs.readFileSync(path.resolve(HERE, '../../../../public/abyssal-tether-3d/src/render/masonRigView.js'), 'utf8');
   ok(/this\.eyes\.update\(this\.graph\.snapshot, this\._time, true\)/.test(src), 'the eyes are shown at every level of detail (and when only the glow mesh draws): red lights in the dark from afar');
-  ok(/const near = this\._lod === 0 && !this\._glowOnly;/.test(src) && /this\.maw\.update\(dt, this\.mandibles\.open, near\)/.test(src), 'the maw\'s small teeth stay LOD0-only');
+  ok(/this\.maw\.update\(dt, this\.mandibles\.open, show\)/.test(src), 'the maw shows with the tusks (it was LOD0-only: beyond 12 m on Quest the open mouth was not drawn at all)');
+  ok(/mat\.emissive\.setRGB\(1, 0\.004, 0\.002\)/.test(src) && /Math\.min\(0\.78, 0\.14 \+ 0\.28 \* emK\)/.test(src), 'the baked eye pits are a pure red and their intensity is capped so the tone mapper cannot wash them to pink');
   ok(/const show = !this\._glowOnly && \(near \|\| !this\.opts\.variant\);/.test(src) && /this\.mandibles\.update\([^)]*show\)/.test(src) && /this\.stinger\.update\(show\)/.test(src), 'the tusks and the stinger show whenever the Mason\'s body is drawn (the small hunters only at LOD0)');
+}
+// The eyes are RED on the display: the colour the display shows is the linear colour through the sRGB curve (the slit eyes and the halo are unlit and
+// not tone mapped, so nothing washes them toward pink / orange).
+{
+  const srgb = (c) => Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(Math.min(c, 1), 1 / 2.4) - 0.055));
+  const e = new Eyes();
+  let worstG = 0;
+  let worstB = 0;
+  let minR = 999;
+  for (const snap of [null, { phase: 'windup', atkT: 0.5, atkWindup: 0.75, distance: 8 }, { phase: 'strike', distance: 4 }, { state: 'PURSUING', distance: 20 }, { listening: true, distance: 30 }]) {
+    for (let t = 0; t < 3; t += 0.37) {
+      e.update(snap, t, true);
+      const c = e.material.color;
+      worstG = Math.max(worstG, srgb(c.g));
+      worstB = Math.max(worstB, srgb(c.b));
+      minR = Math.min(minR, srgb(c.r));
+    }
+  }
+  ok(minR >= 200 && worstG <= 12 && worstB <= 10, `the slit eyes show as (>= ${minR}, <= ${worstG}, <= ${worstB}) on the display: red, never pink or white`);
+  ok(e.haloMaterial.toneMapped === false && e.haloMaterial.color.g < 0.01 && e.haloMaterial.color.b < 0.01 && EYES.halo >= 4, 'the halo is pure red, drawn untoned, and big enough to see from afar');
 }
 console.log(`\n${n} checks passed`);
