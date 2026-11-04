@@ -27,7 +27,7 @@ void main() {
   float on = aLit * fall;
   float flick = 0.85 + 0.15 * sin(uTime * 2.3 + aSeed * 31.0) * sin(uTime * 0.9 + aSeed * 7.0);
   vA = on * flick;
-  gl_PointSize = uSize * (0.55 + 0.45 * on) * clamp(220.0 / max(-mv.z, 1.0), 0.6, 6.0);
+  gl_PointSize = uSize * (0.55 + 0.45 * on) * clamp(70.0 / max(-mv.z, 1.0), 0.4, 1.4); // small lamps: a sleeper's, not a sun (near ones stay under ~30 px)
   gl_Position = projectionMatrix * mv;
 }`;
 const FRAG = `
@@ -36,7 +36,7 @@ void main() {
   vec2 d = gl_PointCoord - 0.5;
   float r = dot(d, d) * 4.0;
   float g = clamp(1.0 - r, 0.0, 1.0);
-  float a = g * g * vA;
+  float a = g * g * vA * 0.7;
   if (a < 0.01) discard;
   gl_FragColor = vec4(vec3(1.0, 0.72, 0.38) * (0.6 + 0.8 * g), a);
 }`;
@@ -62,7 +62,7 @@ export class LampField {
     this._firstStall = 0;
     this._firstCluster = 0;
     this._pos = null;
-    this.uniforms = { uTime: { value: 0 }, uSize: { value: 26 }, uSnuffY: { value: 1e9 }, uFade: { value: 12 } };
+    this.uniforms = { uTime: { value: 0 }, uSize: { value: 22 }, uSnuffY: { value: 1e9 }, uFade: { value: 12 } };
   }
 
   build(o) {
