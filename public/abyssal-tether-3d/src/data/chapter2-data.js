@@ -100,7 +100,7 @@ export function buildChapter2() {
       solids.push({ id, minX: r2(cx - LEDGE / 2), maxX: r2(cx + LEDGE / 2), minY: r2(topY - 1), maxY: topY, minZ: r2(cz - LEDGE / 2), maxZ: r2(cz + LEDGE / 2), kind: 'stone' });
       ledges.push({ id, k: kk, x: cx, y: topY, z: cz, section: sid });
       // a lamp on every fourth ledge (the town is lit)
-      if (j % 4 === 0 && b.theme !== 'snuffed') lights.push({ x: cx, y: r2(topY + 1.6), z: cz, color: b.theme === 'engine' ? '#d08a3c' : '#ffcf80', intensity: 1.2, range: 14, flicker: 0.15 });
+      if ((j % 4 === 0 && b.theme !== 'snuffed') || b.id === 'c2-12') lights.push({ x: cx, y: r2(topY + 1.6), z: cz, color: b.theme === 'engine' ? '#d08a3c' : '#ffcf80', intensity: 1.2, range: 14, flicker: 0.15 });
       j++;
     }
     // swinging rings (the new rule): pendulum chandeliers over the stair's gaps, in beats 1, 3 and 8 (the direction's numbers: II-1 one 36 m

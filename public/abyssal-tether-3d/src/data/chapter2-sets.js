@@ -62,7 +62,7 @@ export function addTollingGallery(ctx) {
       { x: 0, y: r2(deckY - 100), z: -6 },
       { x: 4, y: r2(deckY - 74), z: 4 },
       { x: -3, y: r2(deckY - 44), z: -3 },
-      { x: r2(tx - 6), y: ty, z: -2 },
+      { x: r2(tx + 2), y: ty, z: -1 },
     ],
   };
   ctx.lights.push({ x: 0, y: r2(deckY + 3), z: 0, color: '#ffcf80', intensity: 1.4, range: 22, flicker: 0.12 });
@@ -237,8 +237,9 @@ export function addSnuffing(ctx) {
   ctx.objectives.push({ id: 'obj-c2-12-lever', section: 'c2-12', verb: 'haul', sealId: 'seal-c2-12-lever', ids: ['lever-c2-12'], need: 1 });
 
   // ---- the pulpit (the Head Usher's pier across the Well) and the stalls under it
-  const pulp = P(16, 8);
-  box(ctx, 'c2-12-pulpit', pulp.x - 2, pulp.x + 2, Y(120), Y(92), pulp.z - 2, pulp.z + 2, 'stone');
+  const pulp = P(10, 11);
+  const dPulpit = r2(dRim); // the Doorman stands at the rim's height, across the Well: the pawl and the east apex of the Great Bell are within his 16 m, the west rim is not
+  box(ctx, 'c2-12-pulpit', pulp.x - 2, pulp.x + 2, Y(dPulpit + 32), Y(dPulpit), pulp.z - 2, pulp.z + 2, 'stone');
   const stallLamps = [];
   for (let k = 0; k < 40; k++) {
     const row = Math.floor(k / 8);
@@ -269,14 +270,14 @@ export function addSnuffing(ctx) {
     ],
     pawlFixture: 'bell-c2-12-pawl',
     leverFixture: 'lever-c2-12',
-    pulpit: { x: pulp.x, y: Y(92), z: pulp.z },
+    pulpit: { x: pulp.x, y: Y(dPulpit), z: pulp.z },
     greatBell: { moverId: 'mov-c2-12-great', ringId: 'c2-12-great-ring', apexE: P(12, 0), apexW: P(-12, 0), period: 12 },
     gate: { solidId: 'c2-12-gate', pawl: { x: P(18.4, 0).x, y: Y(dSill - 3), z: P(18.4, 0).z }, bellN: { x: clapN.x, y: r2(rimTop + 4), z: clapN.z } },
     clappers: { W: { fixtureId: 'clap-c2-12-W', anchorId: 'c2-12-clapW' }, N: { fixtureId: 'clap-c2-12-N', anchorId: 'c2-12-clapN' } },
     span: { plates, front: { base: 7, gap: 22 } },
     tower: { landing: { x: lc.x, y: Y(landingD), z: lc.z }, cage: { moverId: 'mov-c2-12-cage', ringIds, x: shaftX, y: cageTop, z: shaftZ, drop, travel: 16 }, shutterId: 'c2-12-shutter', throat: { x: lc.x, y: lipTop, z: lc.z } },
     stalls: stallLamps,
-    doorman: { pulpit: { x: pulp.x, y: Y(92), z: pulp.z }, tower: { x: r2(lc.x + (lc.x > 0 ? -5 : 5)), y: Y(landingD), z: lc.z } },
+    doorman: { pulpit: { x: pulp.x, y: Y(dPulpit), z: pulp.z }, tower: { x: r2(lc.x + (lc.x > 0 ? -5 : 5)), y: Y(landingD), z: lc.z } },
   };
 }
 

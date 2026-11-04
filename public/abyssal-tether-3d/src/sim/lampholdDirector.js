@@ -27,9 +27,10 @@
  * c2:pawl {by}, usher:* (the Ushers'), hook:* (the sequence's).
  * DOM-free, three.js-free, deterministic; runs in Node.
  */
-import { Usher3D, TollBus, TOLL_KINDS } from './usher3d.js';
+import { Usher3D, TollBus, TOLL_KINDS, USHER_DIFF } from './usher3d.js';
 import { HookSequence } from './hook3d.js';
 import { moverRef } from './movers3d.js';
+import { CONFIG } from './config3d.js';
 
 const EVEN = 6; // s between strokes of the Great Bell
 
@@ -196,10 +197,12 @@ export class LampholdDirector {
     if (!e) return;
     if (e.fixture === 'clap-c2-12-W' && e.k >= e.of) {
       const g = this.Q.gate.pawl;
+      this._holdStrokes = 16; // the Great Bell waits: the Doorman answers the pawl first
       this.toll('bell', g.x, g.y, g.z, { src: 'clapW' });
       this._caption('bell');
     } else if (e.fixture === 'clap-c2-12-N' && e.k >= e.of) {
       const g = this.Q.gate.bellN;
+      this._holdStrokes = 10;
       this.toll('bell', g.x, g.y, g.z, { src: 'clapN' });
       this._caption('bell');
     } else if (e.fixture === this.Q.leverFixture && e.k >= e.of) this._depart();
@@ -220,7 +223,10 @@ export class LampholdDirector {
   _onBlow(e) {
     if (!e || !this.Q) return;
     const g = this.Q.gate.pawl;
-    if (this._solid['c2-12-gate'] && this._solid['c2-12-gate'].active !== false && Math.hypot(e.x - g.x, e.y - g.y, e.z - g.z) <= (e.r || 2.6) + 1.5) this._breakPawl('whip');
+    if (this._solid['c2-12-gate'] && this._solid['c2-12-gate'].active !== false && Math.hypot(e.x - g.x, e.y - g.y, e.z - g.z) <= (e.r || 2.6) + 1.5) {
+      this._breakPawl('whip');
+      this._holdStrokes = 0;
+    }
     if (this.T && e.id === 'u-tenor') {
       const t = this.T.tenor;
       if (Math.hypot(e.x - t.x, e.y - t.y, e.z - t.z) <= (e.r || 1.8) + 1.5) this._tenorBreaks();
@@ -290,6 +296,7 @@ export class LampholdDirector {
     this._leadBusy = false;
     this._bT = 0;
     this._great = { k: 0, next: 0 };
+    this._holdStrokes = 0;
     this._plate = { front: 0, started: false, warned: 0 };
     this._cage = { started: false, t0: 0, gongs: 0, whips: 0, lampOut: false, shutT: -1, ratchet: false };
     this._doorman = 'pulpit';
@@ -358,6 +365,7 @@ export class LampholdDirector {
       for (const pl of Q.span.plates) this._plateDown(pl.id, true);
       head.command('enter');
       head.setStation(Q.doorman.tower.x, Q.doorman.tower.y, Q.doorman.tower.z, 0);
+      head.command('stand');
       head.command('phase', 'C2');
       this._setPhase('C2');
     }
@@ -456,12 +464,23 @@ export class LampholdDirector {
     }
   }
 
-  _cageCenter() {
+  _cageCenter(ahead = 0) {
     const m = this._mover('mov-c2-12-cage');
     if (!m) return null;
     const q = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
-    moverRef(m, this.O ? this.O.clock : this.t, q);
+    moverRef(m, (this.O ? this.O.clock : this.t) + ahead, q);
     return { x: q.x, y: q.y + 1.5, z: q.z, vx: q.vx, vy: q.vy, vz: q.vz };
+  }
+
+  /** A toll at the cage's centre. The Doorman leads what he hears: he aims at the toll plus its velocity x (Listen + Coil), so the toll carries the velocity that brings
+   *  the cage from where it is now to where it will be when his whip lands (the closed form of the lift: he is old, and so is the machine). */
+  _cageToll(kind, src) {
+    const now = this._cageCenter(0);
+    if (!now) return false;
+    const k = USHER_DIFF[this.dk] || USHER_DIFF.normal;
+    const L = k.listen + k.coil;
+    const then = this._cageCenter(L);
+    return this.toll(kind, now.x, now.y, now.z, { src, vx: (then.x - now.x) / L, vy: (then.y - now.y) / L, vz: (then.z - now.z) / L });
   }
 
   _depart() {
@@ -471,8 +490,7 @@ export class LampholdDirector {
     c.t0 = this.O ? this.O.clock : this.t;
     const m = this._mover('mov-c2-12-cage');
     if (m) m.startAt = c.t0;
-    const cg = this._cageCenter();
-    if (cg) this.toll('gong', cg.x, cg.y, cg.z, { src: 'gong0', vx: cg.vx, vy: cg.vy, vz: cg.vz });
+    this._cageToll('gong', 'gong0');
     this._caption('bell');
     if (this.bus) this.bus.emit('c2:caption', { text: this.text && this.text.boss ? this.text.boss.phaseCaptions[3] : '', kind: 'phase' });
   }
@@ -514,6 +532,7 @@ export class LampholdDirector {
       }
       case 'B': {
         this._bT += dt;
+        if (this._holdStrokes > 0) this._holdStrokes -= dt;
         // the Great Bell is released after the sweep (15 s): a stroke every 6 s, W / E alternating (the pendulum is closed form: the strokes are its apexes)
         if (this._bT >= 15) {
           const k = Math.floor((this._bT - 15) / EVEN);
@@ -523,6 +542,7 @@ export class LampholdDirector {
             const ap = east ? Q.greatBell.apexE : Q.greatBell.apexW;
             const ring = this._ringPos();
             this._great.k++;
+            if (this._holdStrokes > 0) continue; // the pawl's answer is pending
             const yy = ring ? ring.y : Q.rim.y + 3;
             if (this.bus) this.bus.emit('evening:stroke', { x: ap.x, y: yy, z: ap.z, side: east ? 'E' : 'W' });
             this.toll('great', ap.x, yy, ap.z, { src: 'great' });
@@ -660,7 +680,7 @@ export class LampholdDirector {
     const travelled = Math.max(0, Q.tower.landing.y - (cg ? cg.y - 1.5 : Q.tower.landing.y));
     while (c.gongs < Math.floor(travelled / 5) && cg) {
       c.gongs++;
-      this.toll('gong', cg.x, cg.y, cg.z, { src: `gong${c.gongs}`, vx: cg.vx, vy: cg.vy, vz: cg.vz });
+      this._cageToll('gong', `gong${c.gongs}`);
     }
     if (c.shutT >= 0) {
       c.shutT -= dt;
@@ -697,7 +717,7 @@ export class LampholdDirector {
   // ---- carriers -------------------------------------------------------------------------------------------------------------------
   _carry(p) {
     if (!this.O || !this.O.movers) return;
-    const r = (this.level.player && this.level.player.radius) || 0.45;
+    const r = CONFIG.player.radius;
     const clock = this.O.clock;
     for (const c of this._carriers) {
       const m = this._mover(c.id);
