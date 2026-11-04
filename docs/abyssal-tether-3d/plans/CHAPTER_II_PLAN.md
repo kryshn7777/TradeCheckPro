@@ -21,6 +21,10 @@
 > **Also changed:** the Tolling Gallery's Usher stations are measured from the seal plate; the arena's quarter-turn table had north and south swapped (layout 1 never met it, layout 2 does);
 > the waking lamps are L2-1 .. L2-10 (the exam's are L2-7, L2-8 and L2-9); saves carry a `layouts.ch2` stamp and a profile of another layout loses its Chapter II records and run
 > (`meta/save.js`), so an old Continue never lands in the wrong place.
+>
+> **Budget, re-measured for layout 2** (headless software GL at the Quest quality tier, doubled for stereo; twelve places: the Gallery looking at the Doorman, the Round with five Ushers, the Well rim,
+> the Span, the Lift tower, the Tolling Gallery, the stair of II-1 .. II-4, the Throat's lip and the Mere at its fullest): **at most 88 draw calls and 202 k triangles** against the Quest gate of 150 and 350 k.
+> (The figures in section 6 below are layout 1's.)
 
 
 > "The level 2 must be long and end with a hook for the full version." (owner, 2026-11-04; the same message sent the video the Usher is made from)
