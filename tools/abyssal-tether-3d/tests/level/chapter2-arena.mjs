@@ -33,7 +33,7 @@ const inter = (a, b) => Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) > 0.
   const nave = S.get('c2-9-nave');
   ok(nave && nave.maxX - nave.minX >= 48 && T.bells.every((b) => b.x > nave.minX && b.x < nave.maxX && b.y > nave.maxY + 3 && b.y < nave.maxY + 5), 'the bells hang 3-5 m over the nave, along it');
   ok(S.get('c2-9-tenor-landing') && S.get(T.tenor.standId) && T.tenor.landing.y < T.deckY - 11, `the Tenor's landing is ${(T.deckY - T.tenor.landing.y).toFixed(0)} m under the nave`);
-  ok(T.usher.length === 4 && T.usher[0].y < T.deckY - 90, 'the Usher answers from 100 m below and climbs in four stations');
+  ok(T.usher.length === 4 && T.usher[0].y < S.get('seal-c2-9-floor').minY && T.usher[1].y > T.usher[0].y + 15 && T.usher[2].y > T.usher[1].y + 15 && T.usher[3].y > T.usher[2].y + 10, 'the Usher answers from under the seal plate and climbs in four stations (20, 18 and 16 m a station)');
 }
 
 // ---- II-12

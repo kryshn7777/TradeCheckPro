@@ -1,17 +1,17 @@
-// CHAPTER II · LAMPHOLD, the graybox (data/chapter2-data.js), Node. Owner: "make it 1250 instead of 580".
-//   - the beat table: 13 beats, the lengths add up to exactly 1,250 m, contiguous sections from y = 0 down, the depth offset 600 (600 -> 1,850 m), about an hour
-//   - Level3D builds it (free attach, all three variants): 13 sections, unique ids, the movers (live anchors) valid, the spawn on the first ledge
+// CHAPTER II · LAMPHOLD, layout 2 (data/chapter2-data.js), Node. Owner: "make the level just 500 meters" (layout 1 was the 13-beat 1,250 m graybox).
+//   - the beat table: seven beats (II-1 .. II-4, II-9, II-12, II-13), the lengths add up to exactly 500 m, contiguous sections from y = 0 down, the depth offset 600 (600 -> 1,100 m), under half an hour
+//   - Level3D builds it (free attach, all three variants): 7 sections, unique ids, the movers (live anchors) valid, the spawn on the first ledge
 //   - the spiral stair: every ledge is at most 6 m below the one before (across the beat seams too), overlaps it in plan so a step off the edge lands on it,
 //     has headroom, and stays inside the pit; walking off a ledge in the real physics lands on the next one (a sample from every beat)
 //   - the hook beat is the last one, the end floor is under the last ledge, the goal is on it
-//   - the machinery of the beats (lifts, crane hooks, the monorail, the express cages, the governor, the wheel): closed forms of the clock, every carried
-//     ring at or under the cap of the chapter (13.1 m/s), the express cage 80 m in 9 s at a peak of 13 m/s, and each ring always inside the pit
+//   - the machinery of the beats (the chandeliers, the II-2 lift, the Great Bell, the Span's trolleys, the cage, the chain): closed forms of the clock, every carried
+//     ring at or under the cap of the chapter (11 m/s now), the II-2 lift 30 m in 14 s, and each ring always inside the pit
 //   node chapter2.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
 const { CONFIG, DIFFICULTY, EventBus } = await import(srcUrl('sim/config3d.js'));
 const { Player3D, TetherSystem, Physics3D } = await import(srcUrl('sim/physics3d.js'));
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
-const { CHAPTER2_BEATS, CHAPTER2_DEPTH, CHAPTER2_DEPTH_OFFSET, LEVEL_DATA_CH2, buildChapter2 } = await import(srcUrl('data/chapter2-data.js'));
+const { CHAPTER2_BEATS, CHAPTER2_DEPTH, CHAPTER2_DEPTH_OFFSET, CHAPTER2_LAYOUT, LEVEL_DATA_CH2, buildChapter2 } = await import(srcUrl('data/chapter2-data.js'));
 
 const Mv = await import(srcUrl('sim/movers3d.js'));
 let fails = 0;
@@ -24,18 +24,19 @@ const D = LEVEL_DATA_CH2;
 // 1. The beat table.
 {
   const total = CHAPTER2_BEATS.reduce((a, b) => a + b.len, 0);
-  ok(CHAPTER2_BEATS.length === 13 && total === 1250 && CHAPTER2_DEPTH === 1250, `13 beats adding up to ${total} m (the owner's 1,250, not the bible's 580)`);
-  ok(CHAPTER2_DEPTH_OFFSET === 600, 'depth offset 600: the readout runs 600 -> 1,850 m');
+  ok(CHAPTER2_BEATS.length === 7 && total === 500 && CHAPTER2_DEPTH === 500 && CHAPTER2_LAYOUT === 2, `7 beats adding up to ${total} m (the owner's 500: layout 2)`);
+  ok(CHAPTER2_BEATS.map((b) => b.id).join() === 'c2-1,c2-2,c2-3,c2-4,c2-9,c2-12,c2-13', 'the core arc: II-1 .. II-4, the Tolling Gallery, the Snuffing, the Soot Throat (the ids keep their layout-1 numbers)');
+  ok(CHAPTER2_DEPTH_OFFSET === 600, 'depth offset 600: the readout runs 600 -> 1,100 m');
   const mins = CHAPTER2_BEATS.reduce((a, b) => a + b.min, 0);
-  ok(mins >= 55 && mins <= 72, `about an hour for a first-time player on Normal (${mins} min)`);
+  ok(mins >= 22 && mins <= 32, `under half an hour for a first-time player on Normal (${mins} min)`);
   let y = 0;
   let contiguous = true;
   for (const s of D.sections) {
     if (Math.abs(s.yTop - y) > 1e-9) contiguous = false;
     y = s.yBottom;
   }
-  ok(contiguous && y === -1250 && D.sections.length === 13, 'the sections are contiguous from y = 0 down to y = -1250');
-  ok(CHAPTER2_BEATS[12].name === 'The Soot Throat' && CHAPTER2_BEATS[8].name === 'The Tolling Gallery', 'the Tolling Gallery (the Usher\'s first sighting) is beat 9 and the Soot Throat (the hook) is the last');
+  ok(contiguous && y === -500 && D.sections.length === 7, 'the sections are contiguous from y = 0 down to y = -500');
+  ok(CHAPTER2_BEATS[6].name === 'The Soot Throat' && CHAPTER2_BEATS[4].name === 'The Tolling Gallery' && CHAPTER2_BEATS[5].name === 'The Snuffing', 'the Tolling Gallery (the Usher\'s first sighting) is the fifth beat, the Snuffing the sixth and the Soot Throat (the hook) the last');
   const a = JSON.stringify(buildChapter2());
   const b = JSON.stringify(buildChapter2());
   ok(a === b, 'the generator is deterministic');
@@ -46,12 +47,12 @@ const D = LEVEL_DATA_CH2;
   for (const v of ['normal', 'nightmare', 'abyss']) {
     const L = new Level3D(D, v, { freeAttach: true });
     const carried = D.movers.reduce((n, m) => n + m.carry.anchors.length, 0);
-    ok(L.sections.length === 13 && L.movers.length === D.movers.length && L.dynAnchors.length === carried, `${v}: 13 sections, ${L.movers.length} movers carrying ${L.dynAnchors.length} rings`);
+    ok(L.sections.length === 7 && L.movers.length === D.movers.length && L.dynAnchors.length === carried, `${v}: 7 sections, ${L.movers.length} movers carrying ${L.dynAnchors.length} rings`);
   }
   const ids = new Set(D.solids.map((s) => s.id));
   ok(ids.size === D.solids.length, `${D.solids.length} solids with unique ids`);
   const L = new Level3D(D, 'normal', { freeAttach: true });
-  ok(L.sectionIndexAt(-5) === 0 && L.sectionIndexAt(-45) === 1 && L.sectionIndexAt(-1249) === 12, 'sectionIndexAt finds the beats by depth');
+  ok(L.sectionIndexAt(-5) === 0 && L.sectionIndexAt(-45) === 1 && L.sectionIndexAt(-499) === 6, 'sectionIndexAt finds the beats by depth');
   const first = D.ledges[0];
   ok(Math.abs(D.spawn.x - first.x) < 1e-9 && Math.abs(D.spawn.y - (first.y + 0.4)) < 1e-9, 'the spawn is on the first ledge');
 }
@@ -78,7 +79,7 @@ const D = LEVEL_DATA_CH2;
     minHead = Math.min(minHead, a.minY - b.maxY);
   }
   for (const s of D.solids) if (s.kind === 'stone' && /-l\d+$/.test(s.id) && (Math.abs(s.minX) > 26 || Math.abs(s.maxX) > 26 || Math.abs(s.minZ) > 26 || Math.abs(s.maxZ) > 26)) inside = false;
-  ok(D.ledges.length > 180 && D.ledges.length < 215, `${D.ledges.length} ledges down the whole chapter (the stair is cut for the arena: a ${gap.toFixed(1)} m gap)`);
+  ok(D.ledges.length > 55 && D.ledges.length < 80, `${D.ledges.length} ledges down the whole chapter (the stair is cut for the arena: a ${gap.toFixed(1)} m gap)`);
   ok(gap > 80 && gap < 100, 'exactly one cut in the stair: the Snuffing arena (the Span and the lift carry you over it)');
   ok(maxStep > 0 && maxStep <= 6.0001, `each ledge is at most ${maxStep.toFixed(2)} m below the one before (across the beat seams too)`);
   ok(minOverlap >= 2, `consecutive ledges overlap by at least ${minOverlap.toFixed(2)} m in plan: a step off the edge lands on the next one`);
@@ -93,7 +94,7 @@ const D = LEVEL_DATA_CH2;
   const DT = CONFIG.PHYSICS_DT;
   let landed = 0;
   let tried = 0;
-  for (let i = 0; i < D.ledges.length - 1; i += 17) {
+  for (let i = 0; i < D.ledges.length - 1; i += 5) {
     const a = D.ledges[i];
     const b = D.ledges[i + 1];
     const bus = new EventBus();
@@ -140,7 +141,7 @@ const D = LEVEL_DATA_CH2;
   ok(D.goal.maxY < H.water.y + 2 && D.goal.minY < H.water.y && D.goal.minY > H.water.y - 4, 'the goal is the splash on the water, not the platform above it');
   ok(lastL.section === 'c2-13' && lastL.id === H.lip.id && lastL.y - H.chain.y < 0.01, `the stair ends at the lip (${lastL.id}); the chain platform starts level with it`);
   ok(H.chain.y - H.water.y - H.chain.drop === 6, `the chain stops ${H.chain.y - H.chain.drop - H.water.y} m over the water (36 m down)`);
-  ok(Math.abs(H.water.y) > 1250 && Math.abs(H.water.y) < 1275, `the water is at ${H.water.y} m (the chapter's nominal 1,250 m, plus the cavern the walls end over)`);
+  ok(Math.abs(H.water.y) > 500 && Math.abs(H.water.y) < 525, `the water is at ${H.water.y} m (the chapter's nominal 500 m, plus the cavern the walls end over)`);
 }
 
 // 4. The machinery.
@@ -163,26 +164,20 @@ const D = LEVEL_DATA_CH2;
       }
     }
   }
-  ok(kinds.pendulum >= 9 && kinds.lift === 6 && kinds.path === 5 && kinds.orbit === 2, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
-  ok(worst <= 13.1 && worst >= 12.9, `the fastest carried ring peaks at ${worst.toFixed(1)} m/s (the express cage: the chapter's cap is 13)`);
+  ok(kinds.pendulum >= 9 && kinds.lift === 3 && kinds.path === 2 && !kinds.orbit, `the live anchors of the beats: ${JSON.stringify(kinds)}`);
+  ok(worst <= 11.0 && worst >= 10.8, `the fastest carried ring peaks at ${worst.toFixed(1)} m/s (the fifth chandelier of II-3: the chapter's cap is 11)`);
   ok(inside, 'every carried ring stays inside the pit over its whole cycle');
-  const exp = D.movers.find((m) => m.id === 'mov-c2-7-exp0');
-  const em = Mv.normalizeMover(exp, 'normal');
-  let vmax = 0;
+  const lift = D.movers.find((m) => m.id === 'mov-c2-2-lift');
+  const em = Mv.normalizeMover(lift, 'normal');
   Mv.posePoint(em, 0, 0, 0, em.dwell, q);
   const yA = q.y;
   Mv.posePoint(em, 0, 0, 0, em.dwell + em.travel, q);
-  ok(Math.abs(yA - q.y - 80) < 0.01, `the express cage drops ${(yA - q.y).toFixed(1)} m in ${em.travel} s`);
-  for (let t = 0; t < em.period; t += 0.01) {
-    Mv.posePoint(em, 0, 0, 0, t, q);
-    vmax = Math.max(vmax, Math.abs(q.vy));
-  }
-  ok(Math.abs(vmax - 13) < 0.2, `... peak ${vmax.toFixed(2)} m/s, accelerating ${(em.travel * em.ramp).toFixed(2)} s`);
+  ok(Math.abs(yA - q.y - 30) < 0.01, `the counterweight lift of the Street of Doors drops ${(yA - q.y).toFixed(1)} m in ${em.travel} s`);
   // determinism / continuity of the closed forms: a path ring is continuous over the lap seam
-  const hook = Mv.normalizeMover(D.movers.find((m) => m.id === 'mov-c2-5-hookA'), 'normal');
-  const a0 = Mv.posePoint(hook, 0, 0, 0, hook.period - 1e-4, { ...q });
-  const a1 = Mv.posePoint(hook, 0, 0, 0, 1e-4, { ...q });
-  ok(Math.hypot(a0.x - a1.x, a0.y - a1.y, a0.z - a1.z) < 0.01, 'a crane hook is continuous over the lap seam');
+  const trolley = Mv.normalizeMover(D.movers.find((m) => m.id === 'mov-c2-12-trolleyA'), 'normal');
+  const a0 = Mv.posePoint(trolley, 0, 0, 0, trolley.period - 1e-4, { ...q });
+  const a1 = Mv.posePoint(trolley, 0, 0, 0, 1e-4, { ...q });
+  ok(Math.hypot(a0.x - a1.x, a0.y - a1.y, a0.z - a1.z) < 0.01, 'a trolley of the Span is continuous over the lap seam');
   // each lift ring is reachable: within a hook's range of a ledge at some time of its cycle
   const L = new Level3D(D, 'normal', { freeAttach: true });
   ok(L.movers.every((e) => e.anchors.every((a) => a.dynamic === true)), 'Level3D marks every carried ring dynamic');

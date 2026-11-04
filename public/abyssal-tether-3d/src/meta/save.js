@@ -51,7 +51,7 @@
  */
 
 import { DIFFICULTY } from '../sim/config3d.js';
-import { CHAPTER2_BEATS, CHAPTER2_DEPTH_OFFSET } from '../data/chapter2-data.js';
+import { CHAPTER2_BEATS, CHAPTER2_DEPTH_OFFSET, CHAPTER2_LAYOUT } from '../data/chapter2-data.js';
 
 export const SAVE_SCHEMA = 3;
 export const DB_NAME = 'abyssalTether3d';
@@ -126,6 +126,8 @@ export function defaultProfile(now = Date.now()) {
     settings: null,
     run: null,
     chapters: { ch1: emptyChapter() },
+    // the layout of Chapter II's data the profile's ch2 records and run belong to (data/chapter2-data.js CHAPTER2_LAYOUT): a profile of another layout loses them
+    layouts: { ch2: CHAPTER2_LAYOUT },
     totals: { runs: 0, deaths: 0, deathsByCause: {}, playTime: 0, completions: 0 },
   };
 }
@@ -298,6 +300,15 @@ export function migrateProfile(raw, legacy = null, now = Date.now()) {
     if (ch.completions < sumCompletions(ch)) ch.completions = sumCompletions(ch);
   }
   if (!p.chapters.ch1) p.chapters.ch1 = emptyChapter();
+  // Chapter II was re-laid out (layout 1: 13 beats, 1,250 m; layout 2: seven beats, 500 m): the records, splits and a saved run of another layout would point at places
+  // that are not there (a checkpoint in mid-air, a section that does not exist), so they are dropped; Chapter I and the totals are kept
+  const layoutIn = isObj(raw) && isObj(raw.layouts) && isNum(raw.layouts.ch2) ? raw.layouts.ch2 : null;
+  if ((p.chapters.ch2 || (p.run && p.run.chapter === 'ch2')) && layoutIn !== CHAPTER2_LAYOUT) {
+    delete p.chapters.ch2;
+    if (p.run && p.run.chapter === 'ch2') p.run = null;
+    migrated = true;
+  }
+  p.layouts = { ch2: CHAPTER2_LAYOUT };
   p.schema = SAVE_SCHEMA;
   return { profile: p, migrated, repaired, newer: false };
 }

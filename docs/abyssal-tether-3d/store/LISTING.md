@@ -55,7 +55,7 @@ HOW YOU MOVE
 
 THE DESCENT
 - Chapter I is a complete descent in eight sections, from the Threshold to the Last Throat. Each one teaches a new idea and then asks you to use it under pressure.
-- Chapter II is Lamphold: a town of three thousand lamps, each one a sleeper's, hung in a pit more than a kilometre deep. Chandeliers, lifts and express cages swing and move around you. Something there answers bells, and the only way down is past it.
+- Chapter II is Lamphold: a town of three thousand lamps, each one a sleeper's, hung in a pit five hundred metres deep. Chandeliers and lifts swing and move around you. Something there answers bells, and the only way down is past it.
 - Checkpoints keep a bad fall from costing you everything. Your best times, deepest descent and fewest deaths are kept for each difficulty.
 - Four difficulties. Normal is the intended descent. Nightmare gives you a faster hunter, tighter aim and fewer recovery anchors. Abyss has no checkpoints and almost no help, for speedrunners. Sandbox removes the hunter and the lethal falls so you can practise the tethers at your own pace.
 
@@ -130,7 +130,7 @@ two-handed tether controls are required (documented deviation from Accessibility
 ## Release notes (1.0.0)
 
 ```
-First release. Chapters I and II: two complete descents (eight sections, then thirteen beats and a boss), four difficulties (Normal, Nightmare, Abyss, Sandbox),
+First release. Chapters I and II: two complete descents (eight sections, then seven beats and a boss), four difficulties (Normal, Nightmare, Abyss, Sandbox),
 checkpoints, best-time records. Plays offline after the first launch.
 ```
 

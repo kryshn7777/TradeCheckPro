@@ -4,7 +4,7 @@
  * Each function ADDS to the chapter's lists through `ctx` (solids, anchors, movers, decor, lights, fixtures, objectives, seals, c2: the metadata the director
  * reads) and returns nothing. Pure and deterministic; DOM-free, three.js-free.
  *
- * Units: chapter-local metres (the chapter starts at y = 0 and descends to -1250; the pit is 52 m wide, x and z in [-26, 26]). Solids are axis-aligned boxes.
+ * Units: chapter-local metres (the chapter starts at y = 0 and descends to -500; the pit is 52 m wide, x and z in [-26, 26]). Solids are axis-aligned boxes.
  */
 
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -17,9 +17,9 @@ function box(ctx, id, x0, x1, y0, y1, z0, z1, kind = 'stone', extra) {
 }
 
 /**
- * II-9 THE TOLLING GALLERY (c2-9, local y -760 .. -860). A covered nave across the pit with eight bells in a line (any five of them open the way down:
+ * II-9 THE TOLLING GALLERY (c2-9, local y -220 .. -290). A covered nave across the pit with eight bells in a line (any five of them open the way down:
  * a seal across the whole pit), a beam of rope rings over it, the Tenor on a cantilever landing 12 m below the nave's end (not part of the peal), and the
- * Usher's approach nodes (a hundred metres below, climbing one tier per toll: the director's scripted answer). Never lethal: the director aims the Usher's
+ * Usher's approach nodes (the first one under the seal plate, then climbing one station per toll: the director's scripted answer). Never lethal: the director aims the Usher's
  * only blow at the Tenor and holds it while anyone stands within 6 m of the sphere.
  */
 export function addTollingGallery(ctx) {
@@ -58,10 +58,11 @@ export function addTollingGallery(ctx) {
     need: 5,
     tenor: { x: r2(tx + 3.4), y: r2(ty + 3.2), z: 0, landing: { x: tx, y: ty, z: 0 }, standId: 'c2-9-tenor-stand' },
     // the Usher's nodes: far below, then climbing: stage k is where it stands after the k-th toll
+    // (stations are measured from the seal plate so the climb is the same for any length of the beat: under the plate, then 20, 18 and 18 m up to the Tenor)
     usher: [
-      { x: 0, y: r2(deckY - 100), z: -6 },
-      { x: 4, y: r2(deckY - 74), z: 4 },
-      { x: -3, y: r2(deckY - 44), z: -3 },
+      { x: 0, y: r2(bottom - 14), z: -6 },
+      { x: 4, y: r2(bottom + 6), z: 4 },
+      { x: -3, y: r2(bottom + 24), z: -3 },
       { x: r2(tx + 2), y: ty, z: -1 },
     ],
   };
@@ -69,14 +70,14 @@ export function addTollingGallery(ctx) {
 }
 
 /**
- * II-12 THE SNUFFING (c2-12, local y -1040 .. -1190): the exam. The generic stair is cut at the Well rim (its last ledge, d 64.6); the arena is built in a
+ * II-12 THE SNUFFING (c2-12, local y -290 .. -440): the exam. The generic stair is cut at the Well rim (its last ledge, d 64.6); the arena is built in a
  * CANONICAL frame (rim on the west wall, the Well to the east) and turned by a quarter turn about the pit's centre so that it joins the stair's last ledge.
  *
  *   d   0..65  the Round: the stair itself (a ledge every 6 m) with the front behind you; chandeliers (iron: silent) and a lift (a moving light) as the fast lines
  *   d  65      the Well rim R (14 x 14) and the pulpit across the Well (the Head Usher), the Great Bell (a pendulum, a toll every 6 s)
  *   d  70      gate G on the far side: a platform (the sill) and an iron door (the pawl holds it shut)
  *   d  92..120 the Span: 25 deck plates of 6 m round the pit wall, falling 28 m; trolleys under it (path movers); hanger rings
- *   d 120..150 the Lift tower: the cage's shaft, the top landing (L2-19), the shutter at the bottom (d 150, the Soot Throat's mouth)
+ *   d 120..150 the Lift tower: the cage's shaft, the top landing (L2-9), the shutter at the bottom (d 150, the Soot Throat's mouth)
  * Everything the director needs is in `ctx.c2.snuffing`.
  */
 export function addSnuffing(ctx) {
@@ -86,9 +87,9 @@ export function addSnuffing(ctx) {
   // which wall is the last ledge nearest to? that wall is the canonical west wall; q = quarter turns from canonical to the world
   const walls = [
     { q: 0, d: last.x + 26 }, // west
-    { q: 1, d: last.z + 26 }, // north (-z)
+    { q: 1, d: 26 - last.z }, // south (+z): one quarter turn of P() takes the canonical west wall (-x) to +z
     { q: 2, d: 26 - last.x }, // east
-    { q: 3, d: 26 - last.z }, // south
+    { q: 3, d: last.z + 26 }, // north (-z)
   ].sort((a, c) => a.d - c.d);
   const q = walls[0].q;
   // canonical (u east, w south) -> world (x, z): q quarter turns about the vertical
@@ -116,7 +117,7 @@ export function addSnuffing(ctx) {
   // ---- the Well rim R (canonical west wall) and the connector from the last ledge
   Bx('c2-12-rim', -26, -12, dRim, dRim + 1, -7, 7, 'stone');
   connect(ctx, 'c2-12-conn', { x: last.x, z: last.z }, P(-12, 0), rimTop);
-  // the lamp of the rim (L2-17)
+  // the lamp of the rim (L2-7)
   const rimLamp = P(-20, 0);
   ctx.lights.push({ x: rimLamp.x, y: r2(rimTop + 1.8), z: rimLamp.z, color: '#ffcf80', intensity: 1.4, range: 18, flicker: 0.15 });
 
@@ -223,8 +224,8 @@ export function addSnuffing(ctx) {
   // the clappers: pull-anchors on the rims (haul rings): W (west rim) tolls G's pawl bell, N (north rim) tolls the north bell
   const clapW = P(-24, -4);
   const clapN = P(0, -25.4);
-  ctx.anchors.push({ id: 'c2-12-clapW', x: clapW.x, y: r2(rimTop + 2.2), z: clapW.z, kind: 'ring', tag: 'objective', normal: P(1, 0).x === clapW.x ? { x: 1, y: 0, z: 0 } : { x: 1, y: 0, z: 0 }, mount: 'wall' });
-  ctx.anchors.push({ id: 'c2-12-clapN', x: clapN.x, y: r2(rimTop + 2.2), z: clapN.z, kind: 'ring', tag: 'objective', normal: { x: 0, y: 0, z: 1 }, mount: 'wall' });
+  ctx.anchors.push({ id: 'c2-12-clapW', x: clapW.x, y: r2(rimTop + 2.2), z: clapW.z, kind: 'ring', tag: 'objective', normal: { x: P(1, 0).x, y: 0, z: P(1, 0).z }, mount: 'wall' });
+  ctx.anchors.push({ id: 'c2-12-clapN', x: clapN.x, y: r2(rimTop + 2.2), z: clapN.z, kind: 'ring', tag: 'objective', normal: { x: P(0, 1).x, y: 0, z: P(0, 1).z }, mount: 'wall' });
   // the clappers are haul fixtures of two dummy objectives (the objective machinery wants a seal): a 1 m plate buried in the wall that nobody can reach
   for (const [key, anchorId] of [['W', 'c2-12-clapW'], ['N', 'c2-12-clapN']]) {
     ctx.solids.push({ id: `seal-c2-12-clap${key}-plate`, minX: key === 'W' ? 30 : 33, maxX: key === 'W' ? 31 : 34, minY: Y(10), maxY: Y(9), minZ: 30, maxZ: 31, kind: 'stone', seal: `seal-c2-12-clap${key}` });
@@ -265,6 +266,8 @@ export function addSnuffing(ctx) {
 
   // ---- the Round: lamp clusters on the stair (the front snuffs them in order) = the c2-12 ledges above the rim
   const clusters = ctx.ledges.filter((l) => l.section === 'c2-12' && l.y > yT - 66).map((l) => ({ id: l.id, x: l.x, y: l.y, z: l.z }));
+  // the beat before the exam (the Round starts three ledges above the Gallery, on that beat's last ledges)
+  const prevId = (ctx.sections[ctx.sections.findIndex((q) => q.id === 'c2-12') - 1] || {}).id;
 
   ctx.c2.snuffing = {
     section: 'c2-12',
@@ -274,12 +277,12 @@ export function addSnuffing(ctx) {
     gallery: { x: ctx.ledges.find((l) => l.section === 'c2-12').x, y: ctx.ledges.find((l) => l.section === 'c2-12').y, z: ctx.ledges.find((l) => l.section === 'c2-12').z },
     clusters,
     // the Round's walk: three ledges of the stair above the gallery, then the clusters in order (the Ushers of the Round never leave it)
-    roundPath: [...ctx.ledges.filter((l) => l.section === 'c2-11').slice(-3).map((l) => ({ x: l.x, y: l.y, z: l.z })), ...clusters.map((c) => ({ x: c.x, y: c.y, z: c.z }))],
-    // the arena's waking lamps (L2-16 is the beat's own checkpoint): where you wake in each phase
+    roundPath: [...ctx.ledges.filter((l) => l.section === prevId).slice(-3).map((l) => ({ x: l.x, y: l.y, z: l.z })), ...clusters.map((c) => ({ x: c.x, y: c.y, z: c.z }))],
+    // the arena's waking lamps (L2-6 is the beat's own checkpoint): where you wake in each phase
     lamps: [
-      { id: 'L2-17', label: 'Well Rim', phase: 'B', x: P(-20, 3).x, y: r2(rimTop + 0.4), z: P(-20, 3).z, yaw: 0 },
-      { id: 'L2-18', label: 'Span Head', phase: 'C1', x: plates[0].x, y: r2(plates[0].y + 0.4), z: plates[0].z, yaw: 0 },
-      { id: 'L2-19', label: 'Lift Tower', phase: 'C2', x: r2(lc.x), y: r2(Y(landingD) + 0.4), z: r2(lc.z - 2.5 * Math.sign(lc.z || 1)), yaw: 0 },
+      { id: 'L2-7', label: 'Well Rim', phase: 'B', x: P(-20, 3).x, y: r2(rimTop + 0.4), z: P(-20, 3).z, yaw: 0 },
+      { id: 'L2-8', label: 'Span Head', phase: 'C1', x: plates[0].x, y: r2(plates[0].y + 0.4), z: plates[0].z, yaw: 0 },
+      { id: 'L2-9', label: 'Lift Tower', phase: 'C2', x: r2(lc.x), y: r2(Y(landingD) + 0.4), z: r2(lc.z - 2.5 * Math.sign(lc.z || 1)), yaw: 0 },
     ],
     pawlFixture: 'bell-c2-12-pawl',
     leverFixture: 'lever-c2-12',
@@ -307,7 +310,7 @@ function connect(ctx, id, a, b, top) {
 }
 
 /**
- * II-13 THE SOOT THROAT (c2-13, local y -1190 .. -1250): the true rest, then the hook. The stair stops at a lip (its sixth ledge); beside the lip a chain
+ * II-13 THE SOOT THROAT (c2-13, local y -440 .. -500): the true rest, then the hook. The stair stops at a lip (its sixth ledge); beside the lip a chain
  * platform (2.4 x 2.4 m, a lift that makes ONE trip when the director starts it) lowers 36 m past the end of the pit's walls into the Mere's cavern and
  * stops 6 m over the black water. The water is an invisible plate (a fixture solid the director arms) that catches a jump: the first fall that does not
  * kill. The Mere itself (water, the lanterns, the Ushers' stems, the aisle) is render/mereView.js and the sequence sim/hook3d.js.
@@ -349,16 +352,15 @@ export function addSootThroat(ctx) {
 }
 
 /**
- * The beats' own hazards and finds, once the set-pieces exist (called after addSnuffing): II-2 / II-3 / II-4 / II-5 the five NAMES (a slab with the name carved on it, on the stair,
- * off it, or where only a release at a chandelier's full swing reaches); II-5 and II-8 the Span's trolleys are in addSnuffing; II-6 three LIT CLUSTERS (the Mason cannot enter: a
- * nook with a budget that never runs out); II-10 the hammer floor (three lanes that strike every 4 s) and the ESCAPEMENT RING whose bite starts the Stopping; II-11 the burnt stair:
- * every third tread crumbles and three lanes of falling embers. All data on the shipped machines (Objectives3D lanes / nooks, crumble solids).
+ * The beats' own finds, once the set-pieces exist (called after addSnuffing): the five NAMES (a slab with the name carved on it: on the stair, off it, where only
+ * a release at a chandelier's full swing reaches, on the bell-founder's nave) and the two knock DOORS of II-2 (a Name is found only after its door has been knocked), and
+ * II-4's lamp-holders (stone hands with a lantern raised, and the tally plates under them). Layout 1 had more here (the stone yards' loads, the shafts' counterweights, the
+ * lit clusters of the Dressing Yards, the hammer floor and the Stopping, the burnt stair); they went with their beats (see data/chapter2-data.js).
  */
 export function addBeats(ctx) {
   const dec = (o) => ctx.decor.push(o);
   const names = CHAPTER2_NAMES;
   const ledgesOf = (sid) => ctx.ledges.filter((l) => l.section === sid);
-  const solidOf = (id) => ctx.solids.find((q) => q.id === id);
   const yawToCentre = (x, z) => Math.atan2(x, z); // faces the pit's centre: forward = (-sin yaw, -cos yaw) = (-x, -z)/|.|
   ctx.c2.names = [];
   const slab = (id, cx, topY, cz) => ctx.solids.push({ id, minX: r2(cx - 1.6), maxX: r2(cx + 1.6), minY: r2(topY - 1), maxY: r2(topY), minZ: r2(cz - 1.6), maxZ: r2(cz + 1.6), kind: 'stone' });
@@ -394,10 +396,9 @@ export function addBeats(ctx) {
     const l4 = ledgesOf('c2-4')[2];
     const o4 = outward(l4, 9);
     nameAt(names[3], o4.x, l4.y + 0.5, o4.z);
-    // N2-5 BRASK: the crane cab at the end of the monorail
-    const mono = ctx.movers.find((q) => q.id === 'mov-c2-5-mono');
-    const end = mono.pts[mono.pts.length - 1];
-    nameAt(names[4], r2(end.x + 3.2), r2(end.y - 5), r2(end.z + 0.5));
+    // N2-5 BRASK: a slab beside the west end of the Tolling Gallery's nave, a short jump off it (a stone-dresser's name where the bells hang)
+    const T = ctx.c2.tolling;
+    nameAt(names[4], -20, r2(T.deckY), 6);
   }
   // II-2: the doors you knock (hook the knocker ring: a quiet verb, not a toll: knocks are for the dead) beside the first two Names: a Name is found only after its door has been knocked
   {
@@ -433,60 +434,6 @@ export function addBeats(ctx) {
       dec({ type: 'statue', x: r2(snap.x), y: r2(l.y + 4 + (j % 3)), z: r2(snap.z), sx: 1.3, sy: 2.6, sz: 1.3, yaw: yawToCentre(snap.x, snap.z), id: `c2-4-hand${j}` });
       ctx.lights.push({ x: r2(snap.x - Math.sign(snap.x) * 1.2 * (Math.abs(snap.x) > 25 ? 1 : 0)), y: r2(l.y + 6.6 + (j % 3)), z: r2(snap.z - Math.sign(snap.z) * 1.2 * (Math.abs(snap.z) > 25 ? 1 : 0)), color: '#ffcf80', intensity: 0.9, range: 9, flicker: 0.25 });
       if (j % 4 === 0) dec({ type: 'plaque', x: r2(snap.x), y: r2(l.y + 2.2), z: r2(snap.z), sx: Math.abs(snap.x) > 25 ? 0.15 : 2.2, sy: 0.5, sz: Math.abs(snap.x) > 25 ? 2.2 : 0.15, yaw: yawToCentre(snap.x, snap.z), text: 'IIII IIII IIII IIII IIII IIII', id: `c2-4-tally${j}` });
-    });
-  }
-  // II-5 and II-7: the load and the counterweight crush (a lane that strikes with a ratchet's warning: stand clear)
-  {
-    const yards = ledgesOf('c2-5');
-    [4, 10, 16].forEach((j, n) => {
-      const l = yards[Math.min(yards.length - 1, j)];
-      ctx.lanes.push({ id: `load-c2-5-${n}`, section: 'c2-5', minX: r2(l.x - 2.4), maxX: r2(l.x + 2.4), minY: l.y, maxY: r2(l.y + 3.2), minZ: r2(l.z - 2.4), maxZ: r2(l.z + 2.4), period: 8, on: 0.6, lead: 1.5, phase: n * 0.27, damage: 0.5, by: { nightmare: { damage: 0.6 }, abyss: { damage: 0.75 } } });
-    });
-    const sh = ctx.movers.filter((m) => /^mov-c2-7-exp/.test(m.id));
-    sh.forEach((m, n) => {
-      ctx.lanes.push({ id: `weight-c2-7-${n}`, section: 'c2-7', minX: r2(m.x - 2.6), maxX: r2(m.x + 2.6), minY: r2(m.y - 46), maxY: r2(m.y - 40), minZ: r2(m.z - 2.6), maxZ: r2(m.z + 2.6), period: 9, on: 0.8, lead: 1.5, phase: n * 0.33, damage: 0.45, by: { nightmare: { damage: 0.55 }, abyss: { damage: 0.7 } } });
-    });
-  }
-
-  // II-6: lit clusters (the Mason cannot enter) round three ledges of the Dressing Yards
-  {
-    const L = ledgesOf('c2-6');
-    [3, 9, 15].forEach((j, n) => {
-      const l = L[Math.min(L.length - 1, j)];
-      ctx.nooks.push({
-        id: `nook-c2-6-${n}`,
-        section: 'c2-6',
-        box: { minX: r2(l.x - 4), maxX: r2(l.x + 4), minY: l.y, maxY: r2(l.y + 3.2), minZ: r2(l.z - 4), maxZ: r2(l.z + 4) },
-        block: { minX: r2(l.x - 6), maxX: r2(l.x + 6), minY: r2(l.y - 1.5), maxY: r2(l.y + 5), minZ: r2(l.z - 6), maxZ: r2(l.z + 6) },
-        budget: { normal: 9999, nightmare: 9999, abyss: 9999 },
-      });
-      ctx.lights.push({ x: l.x, y: r2(l.y + 2.8), z: l.z, color: '#ffcf80', intensity: 1.9, range: 17, flicker: 0.08 });
-    });
-  }
-  // II-10: the hammer floor and the escapement ring
-  {
-    const L = ledgesOf('c2-10');
-    [2, 6, 10].forEach((j, n) => {
-      const l = L[Math.min(L.length - 1, j)];
-      ctx.lanes.push({ id: `hammer-c2-10-${n}`, section: 'c2-10', minX: r2(l.x - 2.2), maxX: r2(l.x + 2.2), minY: l.y, maxY: r2(l.y + 3.4), minZ: r2(l.z - 2.2), maxZ: r2(l.z + 2.2), period: 4, on: 0.35, lead: 1.0, phase: n * 0.31, damage: 0.35, hammer: true, by: { nightmare: { damage: 0.45 }, abyss: { damage: 0.6 } } });
-    });
-    const le = L[Math.min(L.length - 1, 13)];
-    ctx.anchors.push({ id: 'c2-10-esc', x: le.x, y: r2(le.y + 3.6), z: le.z, kind: 'ring', tag: 'objective', normal: { x: 0, y: -1, z: 0 }, mount: 'wall' });
-    ctx.c2.stopping = { ringId: 'c2-10-esc', section: 'c2-10', telegraph: 4, dur: 14, movers: ['mov-c2-10-wheel'], lanes: [0, 1, 2].map((n) => `hammer-c2-10-${n}`) };
-  }
-  // II-11: the burnt stair: every third tread crumbles; three lanes of falling embers
-  {
-    const L = ledgesOf('c2-11');
-    L.forEach((l, j) => {
-      const sol = solidOf(l.id);
-      if (sol && j % 3 === 1 && j > 0) {
-        sol.kind = 'crumble';
-        sol.life = 1;
-      }
-    });
-    [3, 7, 11].forEach((j, n) => {
-      const l = L[Math.min(L.length - 1, j)];
-      ctx.lanes.push({ id: `embers-c2-11-${n}`, section: 'c2-11', minX: r2(l.x - 1.5), maxX: r2(l.x + 1.5), minY: l.y, maxY: r2(l.y + 15), minZ: r2(l.z - 1.5), maxZ: r2(l.z + 1.5), period: 6.5, on: 1.2, lead: 1.2, phase: 0.2 + n * 0.3, damage: 0.3, by: { nightmare: { damage: 0.4 }, abyss: { damage: 0.5 } } });
     });
   }
 }

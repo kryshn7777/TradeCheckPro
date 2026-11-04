@@ -16,6 +16,7 @@ import { LampField } from './render/lampField.js';
 import { MereView } from './render/mereView.js';
 import { UsherView } from './render/usherView.js';
 import { CHAPTER2_TEXT } from './data/chapter2-text.js';
+import { CHAPTER2_BEATS, CHAPTER2_DEPTH } from './data/chapter2-data.js';
 import { CommsDirector, DIRECTOR_EVENTS, commsLine } from './sim/comms3d.js';
 
 const MAX_STATES = 8;
@@ -24,13 +25,14 @@ const MAX_STATES = 8;
 export function radioScript() {
   const R = Object.fromEntries(CHAPTER2_TEXT.radio.map((r) => [r.id, r]));
   const L = (id, section, when, o) => commsLine(id, R[id].speaker, R[id].text, Object.assign({ section, when }, o));
+  // the section of a line is the index of its beat in the chapter (the beat table's order is the level's section order)
+  const at = (id) => Math.max(0, CHAPTER2_BEATS.findIndex((b) => b.id === R[id].beat));
   return [
-    L('c2-open', 0, { enter: true, after: 2.5 }, { prio: 3, glitch: 'none', beat: 'the lamps carry the signal' }),
-    L('c2-breach', 5, { depth: 1060 }, { prio: 2 }),
-    L('c2-bell', 8, { ev: 'c2:answer', match: { stage: 2 } }, { prio: 3, beat: 'it answered' }),
-    L('c2-rule', 8, { chain: 'c2-bell', gap: 1.0 }, { prio: 3 }),
-    L('c2-bars', 10, { enter: true, after: 3 }, { prio: 2, beat: 'the bars drop' }),
-    L('c2-orderly', 11, { ev: 'c2:phase', match: { phase: 'A' } }, { prio: 3 }),
+    L('c2-open', at('c2-open'), { enter: true, after: 2.5 }, { prio: 3, glitch: 'none', beat: 'the lamps carry the signal' }),
+    L('c2-bell', at('c2-bell'), { ev: 'c2:answer', match: { stage: 2 } }, { prio: 3, beat: 'it answered' }),
+    L('c2-rule', at('c2-rule'), { chain: 'c2-bell', gap: 1.0 }, { prio: 3 }),
+    L('c2-bars', at('c2-bars'), { enter: true, after: 3 }, { prio: 2, beat: 'the bars drop' }),
+    L('c2-orderly', at('c2-orderly'), { ev: 'c2:phase', match: { phase: 'A' } }, { prio: 3 }),
   ];
 }
 
@@ -116,7 +118,8 @@ export class Chapter2Glue {
     const views = { level, lamp: null, mere: null, usher: null };
     try {
       views.lamp = new LampField(r.scene);
-      views.lamp.build({ shaft: 26, yTop: 0, yBottom: -1250, count: 2600, stalls: Q.stalls || [], clusters: Q.clusters || [] });
+      // the wall lamps: 2,600 over layout 1's 1,250 m, the same density over the chapter's depth
+      views.lamp.build({ shaft: 26, yTop: 0, yBottom: -CHAPTER2_DEPTH, count: Math.round((2600 * CHAPTER2_DEPTH) / 1250), stalls: Q.stalls || [], clusters: Q.clusters || [] });
       views.lamp.onPuff = (x, y, z) => {
         if (r.fx && typeof r.fx.burst === 'function') r.fx.burst('puff', x, y, z, { color: 0x1a1612 });
       };
@@ -223,7 +226,11 @@ export class Chapter2Glue {
     // the Evening's front: from the Winding Floor on, the lamps far above you are out (the town is being put to bed from the top)
     let snuffY = 1e9;
     const si = g.sectionIndex;
-    if (p && si >= 9) snuffY = p.y + (si >= 11 ? 40 : 90);
+    // the Evening creeps down from the top once the bell has been answered (the Tolling Gallery on), close behind you in the exam and the Throat
+    const ids = this._beatIds || (this._beatIds = CHAPTER2_BEATS.map((b) => b.id));
+    const tolled = ids.indexOf('c2-9');
+    const exam = ids.indexOf('c2-12');
+    if (p && tolled >= 0 && si >= tolled) snuffY = p.y + (exam >= 0 && si >= exam ? 40 : 90);
     if (d && d.evening) snuffY = -1e9;
     if (v.lamp) v.lamp.update(dt, { snuffY, time: g.time });
     if (v.mere && d) v.mere.update(dt, d.hook, d.chainY());

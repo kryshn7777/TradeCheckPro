@@ -1,6 +1,6 @@
 # ABYSSAL TETHER 3D: status (2026-11-04): Chapters I and II are the free game
 
-**Current (branch `claude/abyssal-tether-game-3zft6o`, PR #23):** Chapter I (The Underspire, 556 m) and **Chapter II (Lamphold, 1,250 m)** are playable end to end; Chapter II ends on the
+**Current (branch `claude/abyssal-tether-game-3zft6o`, PR #23):** Chapter I (The Underspire, 556 m) and **Chapter II (Lamphold, 500 m, seven beats: layout 2, see `plans/CHAPTER_II_PLAN.md`)** are playable end to end; Chapter II ends on the
 hook for the full version (Chapters III-V). The build, the whole suite (`npm run test:at3d`), the sw generator and the store listing check pass. What is built, what is not and what was
 never played on a headset: `plans/CHAPTER_II_PLAN.md` section 6 and the PR description. The player-facing Level Two manual (controls, rules, bestiary with renders, the 13 beats, the exam, Names, release notes) is `LEVEL_TWO_MANUAL.html` in this folder: one self-contained page. The notes below this block are the older (2026-10-19) pause record and are kept for history.
 

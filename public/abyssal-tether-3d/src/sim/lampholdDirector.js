@@ -65,6 +65,9 @@ export class LampholdDirector {
     this.T = this.c2.tolling || null;
     this.Q = this.c2.snuffing || null;
     this.H = this.c2.hook || null;
+    // the sections the director scripts, by id (the beat table's order is the level's section order; layout 2 has seven beats, not thirteen)
+    const secs = (d.sections || []).map((s) => s.id);
+    this._si = { tolling: secs.indexOf('c2-9'), snuffing: secs.indexOf('c2-12'), throat: secs.indexOf('c2-13') };
     this.tollBus = new TollBus();
     this.clock = 0;
     this.t = 0; // s since the run began (this.clock mirrors the objectives' clock when there is one)
@@ -835,15 +838,15 @@ export class LampholdDirector {
     if (si !== this._lastSection) {
       this._lastSection = si;
       this._sectionT = 0;
-      if (si === 11 && this.phase === 'off' && this.Q) this._enterPhase('quiet');
+      if (si === this._si.snuffing && si >= 0 && this.phase === 'off' && this.Q) this._enterPhase('quiet');
     }
     this._sectionT += dt;
     this._namesStep(p);
     if (this._stopping.started && this.O) this._stoppingStep();
     // the sections' scripts
-    if (si === 8) this._tenorStep(dt, p);
-    if (this.Q && this._c2 && si >= 11 && si <= 12 && this.phase !== 'off') this._doormanStep(dt, p);
-    if (si === 12) {
+    if (si >= 0 && si === this._si.tolling) this._tenorStep(dt, p);
+    if (this.Q && this._c2 && si >= 0 && (si === this._si.snuffing || si === this._si.throat) && this.phase !== 'off') this._doormanStep(dt, p);
+    if (si >= 0 && si === this._si.throat) {
       this._hookStep(dt, p);
       const w = this._solid['c2-13-water'];
       if (w && w.active === false) w.active = true;
