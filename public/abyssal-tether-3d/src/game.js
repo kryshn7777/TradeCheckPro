@@ -27,6 +27,7 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
@@ -1022,6 +1023,7 @@ export class Game3D {
     this._restorePrev = '';
     this._commsCtx = { playing: false, section: 0, depth: 0, frac: 0, danger: false, tense: false, skip: false, gaze: false, bloodOn: false };
     this.bodyView = null; // the player's own skinned body (render/bodyView.js; async GLB, optional)
+    this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
     this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
     this.prologueView = null; // its page (render/prologueView.js)
     this._introGrace = 0; // s: presses are ignored right after the click that began the run
@@ -4262,6 +4264,11 @@ export class Game3D {
   }
 
   _updateViews(dt) {
+    try {
+      this.fallPose.update(dt); // before the hands and the body read it
+    } catch (err) {
+      this._fault('fallPose', err);
+    }
     try {
       this._updateObjectiveHint(dt);
     } catch (err) {
