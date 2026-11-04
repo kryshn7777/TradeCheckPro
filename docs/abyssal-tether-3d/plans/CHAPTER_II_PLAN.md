@@ -1,5 +1,28 @@
 # Level 2 (Chapter II, LAMPHOLD): 1,250 m, long, and it ends on a hook for the full version
 
+> **LAYOUT 2 (2026-11-04, the owner): "make the level just 500 meters".** What ships is now **seven beats, 500 m (600 -> 1,100 m), about 25-30 minutes**; the 13-beat, 1,250 m
+> chapter below is **layout 1** (it was merged and deployed once, then replaced). Sections 2 to 6 below describe layout 1; read them with this box.
+>
+> | Kept (layout 2) | Length | Why |
+> |---|---|---|
+> | II-1 The Lowering | 40 m | teaches the live anchors |
+> | II-2 The Street of Doors | 60 m | the yank (the counterweight lift), the knock doors, the first two Names |
+> | II-3 The Chandeliers | 80 m | the test of the live anchors, HEDDA |
+> | II-4 The Waking Hall | 40 m | the rest and the truth (every lamp a bed), MARGERY |
+> | II-9 The Tolling Gallery | 70 m | the Usher's first sighting and its one rule (bells call it), BRASK |
+> | II-12 The Snuffing | 150 m | the Doorman's exam |
+> | II-13 The Soot Throat | 60 m | the true rest and the hook |
+>
+> The section ids keep their layout-1 numbers (`c2-9` is still the Tolling Gallery) so the text, the director and the tests keep their keys; the HUD counts II·1 .. II·7.
+> **Cut with their beats:** the Stone Yards (cranes, the monorail, the loads), the Dressing Yards (the Dresser, the lit clusters), the Counterweight Shafts (the express cages), the Hung Quarter
+> (the houses, the governor), the Winding Floor (the wheel, the hammers, the Stopping), the Cinder Stairs (the burnt stair, the embers). With them go the Mason and the Dresser in this chapter:
+> **nothing hunts you in Lamphold but the Usher**, and the radio's contact line (Vesper at the wall) is cut. Their words are kept in `data/chapter2-text.js` `CHAPTER2_CUT`; the
+> movers, lanes, nooks and the Stopping stay in the engine (`sim/movers3d.js`, `sim/objectives3d.js`, the director) as data-driven features that layout 2 does not use.
+> **Also changed:** the Tolling Gallery's Usher stations are measured from the seal plate; the arena's quarter-turn table had north and south swapped (layout 1 never met it, layout 2 does);
+> the waking lamps are L2-1 .. L2-10 (the exam's are L2-7, L2-8 and L2-9); saves carry a `layouts.ch2` stamp and a profile of another layout loses its Chapter II records and run
+> (`meta/save.js`), so an old Continue never lands in the wrong place.
+
+
 > "The level 2 must be long and end with a hook for the full version." (owner, 2026-11-04; the same message sent the video the Usher is made from)
 > "Make it 1250 instead of 580." (owner, the depth: the bible's Lamphold is 600 -> 1,180 m = 580 m; it is now **600 -> 1,850 m = 1,250 m**.)
 

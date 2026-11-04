@@ -331,7 +331,7 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   bus.emit('game:start', { difficulty: 'normal' });
   bus.emit('checkpoint', { index: 4 });
   const info = svc.continueInfo();
-  ok(info && info.chapter === 'ch2' && info.sectionName === 'The Stone Yards' && info.depthOffset === 600 && info.section === 4, 'the Continue slot knows its chapter, names the beat from Chapter II\'s table and carries the depth offset');
+  ok(info && info.chapter === 'ch2' && info.sectionName === 'The Tolling Gallery' && info.depthOffset === 600 && info.section === 4, 'the Continue slot knows its chapter, names the beat from Chapter II\'s table and carries the depth offset');
   bus.emit('split', { index: 1, section: 'c2-2', time: 70, par: null, medal: null, recorded: true, difficulty: 'normal' });
   ok(svc.sectionRecords('normal')['c2-2'] && !svc.sectionRecords('normal', 'ch1')['c2-2'], 'Chapter II splits stay in Chapter II');
   bus.emit('game:victory', { difficultyKey: 'normal', time: 3900, deaths: 6, deepestMeters: 1850, recorded: true });
@@ -340,6 +340,17 @@ const v1 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [S.V1_PRE
   // it round-trips through a migration (chapter ids other than ch1 are kept)
   const again = S.migrateProfile(JSON.parse(JSON.stringify(store.profile)), null);
   ok(again.profile.chapters.ch2 && again.profile.chapters.ch2.byDiff.normal.best === 3900, 'ch2 survives migrateProfile');
+  // Chapter II was re-laid out (layout 2: 500 m, seven beats): a ch2 record or run written without the layout stamp (layout 1: 13 beats, 1,250 m) is dropped, ch1 and the totals stay
+  const old = JSON.parse(JSON.stringify(store.profile));
+  delete old.layouts;
+  old.run = { chapter: 'ch2', difficulty: 'normal', checkpoint: { x: 1, y: -900, z: 2, yaw: 0, index: 9 }, section: 9, time: 100, deaths: 1, deepest: -900, savedAt: 1, kind: 'checkpoint', objectives: [] };
+  const mig = S.migrateProfile(old, null);
+  ok(!mig.profile.chapters.ch2 && mig.profile.run === null && mig.profile.chapters.ch1.completed && mig.migrated, 'a profile of Chapter II layout 1 (no stamp) loses its ch2 records and its saved run, and keeps Chapter I');
+  ok(mig.profile.layouts && mig.profile.layouts.ch2 === 2 && mig.profile.totals.deaths === old.totals.deaths, 'the migrated profile carries the current layout and keeps the totals');
+  const same = S.migrateProfile(JSON.parse(JSON.stringify(store.profile)), null);
+  ok(same.profile.chapters.ch2 && !same.migrated, 'a profile of the current layout is untouched');
+  const fresh = S.defaultProfile();
+  ok(fresh.layouts && fresh.layouts.ch2 === 2 && !fresh.chapters.ch2, 'a fresh profile is stamped with the current layout');
   svc.dispose();
 }
 

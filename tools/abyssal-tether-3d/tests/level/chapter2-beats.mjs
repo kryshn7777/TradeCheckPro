@@ -1,7 +1,6 @@
 // CHAPTER II · the beats' own hazards and finds (data/chapter2-sets.js addBeats, sim/lampholdDirector.js), Node:
-//   the five Names (found by standing at them; once each; toasted), the Span's trolleys, the lit clusters of II-6 (nooks that never run out), the hammer floor and the
-//   Stopping of II-10 (the escapement's ring: 4 s of grinding, then the wheel and the hammers stand still 14 s and the wheel runs on where it stood), the burnt stair of II-11
-//   (every third tread crumbles under you; three lanes of embers)
+//   the five Names (found by standing at them; once each; toasted; two behind knock doors) and the Span's trolleys. Layout 2 (500 m) dropped the lit clusters, the
+//   hammer floor and the Stopping, the burnt stair and the Dresser with their beats; this test says they are gone.
 //   node chapter2-beats.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
 const { CONFIG, DIFFICULTY, EventBus } = await import(srcUrl('sim/config3d.js'));
@@ -79,7 +78,7 @@ const seconds = (n) => Math.round(n / DT);
   ok(w.d.names.size === 0, 'a new run forgets them');
 }
 
-// ---- the Span's trolleys, the lit clusters
+// ---- the Span's trolleys; the cut beats' machines are not in this layout
 {
   const L = new Level3D(D, 'normal', { freeAttach: true });
   const tr = D.movers.filter((m) => /trolley/.test(m.id));
@@ -91,138 +90,10 @@ const seconds = (n) => Math.round(n / DT);
   });
   ok(sp[0] === 7 && sp[1] === 9, `at ${sp.join(' and ')} m/s`);
   const O = new Objectives3D(L, DIFFICULTY.normal, new EventBus());
-  ok(O.nooks.length === 3 && O.nooks.every((n) => n.budget >= 9000 && n.lure === false), 'three lit clusters in the Dressing Yards: rests whose budget never runs out');
+  ok(O.nooks.length === 0 && O.lanes.length === 0 && !D.c2.stopping, 'layout 2 has no lit clusters, lanes, hammers or Stopping: those beats are cut (CHAPTER2_CUT keeps their words)');
+  ok(!D.sections.some((x) => x.creature && x.creature.dresser) && D.sections.every((x) => x.creature.mode === 'dormant'), 'no creature is hunting in this layout: every beat is dormant (the Usher is the chapter\'s only presence)');
   void q;
 }
 
-// ---- the hammer floor and the Stopping
-{
-  const w = world();
-  ok(w.O.lanes.length === 12 && w.O.lanes.filter((l) => /^hammer/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^embers/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^load/.test(l.id)).length === 3 && w.O.lanes.filter((l) => /^weight/.test(l.id)).length === 3, 'three loads (II-5), three counterweights (II-7), three hammers (II-10) and three lanes of embers (II-11)');
-  const ham = w.O.lanes.find((l) => /^hammer/.test(l.id));
-  ok(ham.period === 4 && ham.lead === 1 && ham.damage === 0.35, 'a hammer every 4 s with a second of warning, 0.35 of your health');
-  w.O.clock = 0;
-  const wheel = w.O.movers.byId('mov-c2-10-wheel');
-  const ring = w.level.byId['c2-10-wheel0'];
-  w.O.step(DT, w.p, w.th, w.si, 0);
-  const pos = () => ({ x: ring.x, y: ring.y, z: ring.z });
-  const same = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < 1e-6;
-  w.O.clock = 20;
-  w.O.movers.pose(20);
-  const before = pos();
-  w.bus.emit('grapple:attach', { hand: 'right', anchor: w.level.byId['c2-10-esc'], x: 0, y: 0, z: 0 });
-  ok(w.d._stopping.started && wheel.m.stopAt === 24 && wheel.m.stopFor === 14, 'biting the escapement\'s last ring starts the Stopping: grinding, then 14 s of stillness (from clock 24)');
-  ok(w.log.filter((e) => e[0] === 'c2:grind').length === 1, 'the grinding is heard first');
-  // run the clock through the stop
-  const frozen = [];
-  for (let c = 24.5; c <= 37.5; c += 1.5) {
-    w.O.clock = c;
-    w.O.movers.pose(c);
-    frozen.push(pos());
-  }
-  ok(frozen.every((f) => same(f, frozen[0])), 'from 24 s to 38 s the wheel\'s ring does not move');
-  ok(Math.hypot(frozen[0].x - 0, frozen[0].y - (ring.y - 0), 0) >= 0, 'it stood where it was at the stop');
-  w.O.clock = 24;
-  w.O.movers.pose(24);
-  const atStop = pos();
-  ok(same(atStop, frozen[0]), 'the pose at the stop is the frozen pose');
-  w.O.clock = 38 + 2.7;
-  w.O.movers.pose(38 + 2.7);
-  const later = pos();
-  // 14 s lost: the wheel at 40.7 is where an unstopped wheel is at 26.7
-  const keep = { at: wheel.m.stopAt, f: wheel.m.stopFor };
-  wheel.m.stopAt = 1e9;
-  wheel.m.stopFor = 0;
-  w.O.clock = 24 + 2.7;
-  w.O.movers.pose(24 + 2.7);
-  const expect = pos();
-  wheel.m.stopAt = keep.at;
-  wheel.m.stopFor = keep.f;
-  ok(same(later, expect), 'it runs on where it stood (14 s lost)');
-  void before;
-  // the hammers stop too
-  w.d.t = 0;
-  w.O.clock = 30;
-  w.d._stoppingStep();
-  ok(w.O.lanes.filter((l) => /^hammer/.test(l.id)).every((l) => l.off === true) && w.log.some((e) => e[0] === 'c2:stop'), 'the hammers are still during the Stopping (and "every machine stops" is said)');
-  w.O.clock = 40;
-  w.d._stoppingStep();
-  ok(w.O.lanes.filter((l) => /^hammer/.test(l.id)).every((l) => l.off === false), 'and strike again after it');
-  w.d.reset(null);
-  ok(wheel.m.stopAt === 1e9 && !w.d._stopping.started, 'a respawn puts the machine back');
-}
-
-// ---- the burnt stair
-{
-  const crumbles = D.solids.filter((s) => s.kind === 'crumble' && /^c2-11-l/.test(s.id));
-  ok(crumbles.length >= 4 && crumbles.length <= 8, `${crumbles.length} of the burnt stair's treads crumble`);
-  const w = world();
-  const sol = w.level.byId[crumbles[0].id];
-  const led = D.ledges.find((l) => l.id === crumbles[0].id);
-  w.p.x = led.x;
-  w.p.y = led.y + R + 0.05;
-  w.p.z = led.z;
-  w.step(seconds(0.3));
-  ok(sol.active !== false, 'a crumbling tread holds a moment');
-  w.step(seconds(2.5));
-  ok(sol.active === false || w.p.y < led.y - 1, 'and goes under you if you stay');
-  // the embers hit a player who stands in the lane
-  const lane = w.O.lanes.find((l) => /^embers/.test(l.id));
-  const p2 = w.p;
-  p2.alive = true;
-  p2.x = lane.x;
-  p2.y = lane.minY + 1;
-  p2.z = lane.z;
-  p2.vx = p2.vy = p2.vz = 0;
-  w.level.reset();
-  const hp0 = w.ph.health.hp;
-  for (let i = 0; i < seconds(14) && w.ph.health.hp >= hp0; i++) {
-    p2.y = lane.minY + 1;
-    p2.vy = 0;
-    p2.x = lane.x;
-    p2.z = lane.z;
-    w.O.step(DT, p2, w.th, w.si, w.O.clock);
-  }
-  ok(w.ph.health.hp < hp0, `standing in the embers' lane costs health (${(hp0 - w.ph.health.hp).toFixed(2)})`);
-}
-// ---- II-6: the Dresser measures a whole player (the shipped Dresser, switched on in this beat's data)
-{
-  const { register } = await import('node:module');
-  const { VENDOR_THREE_URL } = await import('../../verify/root.mjs');
-  register('data:text/javascript,' + encodeURIComponent(`export async function resolve(s, c, next) { if (s === 'three') return { url: '${VENDOR_THREE_URL}three.module.min.js', shortCircuit: true }; if (s.startsWith('three/addons/')) return { url: '${VENDOR_THREE_URL}addons/' + s.slice(13), shortCircuit: true }; return next(s, c); }`));
-  globalThis.self = globalThis;
-  const { Dresser3D } = await import(srcUrl('sim/dresser3d.js'));
-  const diff = DIFFICULTY.normal;
-  const L = new Level3D(D, 'normal', { freeAttach: true });
-  const bus = new EventBus();
-  const th = new TetherSystem(L, diff, bus, {});
-  const ph = new Physics3D(L, diff, bus);
-  const d = new Dresser3D(L, diff, bus, { seed: 5, tethers: th });
-  d.setGate(false);
-  const six = L.sections.findIndex((s) => s.id === 'c2-6');
-  const led = D.ledges.filter((l) => l.section === 'c2-6')[8];
-  const p = new Player3D(led.x, led.y + R + 0.05, led.z);
-  const evs = [];
-  for (const t of ['dresser:appear', 'dresser:measure', 'dresser:saw']) bus.on(t, () => evs.push(t));
-  d.setSection(six, L.sections[six], p);
-  ok(d.cfg.active === true && d.cfg.measureRange === 14, 'the Dressing Yards switch the Dresser on (measure range 14 m on Normal)');
-  d.setSection(0, L.sections[0], p);
-  ok(d.cfg.active !== true, 'and no other beat does');
-  d.setSection(six, L.sections[six], p);
-  let errs = 0;
-  for (let i = 0; i < 60 * 70 && evs.length < 2; i++) {
-    try {
-      th.step(p, DT);
-      ph.step(p, th, {}, DT);
-      d.setHp(1);
-      d.update(DT, p, 0);
-    } catch (e) {
-      errs++;
-      if (errs === 1) console.log('   dresser error:', e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : e);
-      break;
-    }
-  }
-  ok(errs === 0 && evs.includes('dresser:appear'), `on the Chapter II level it comes into play out of sight (${evs.join(', ') || 'nothing'}) with no error`);
-}
 console.log(fails ? `FAILED: ${fails}` : 'ALL CHAPTER II BEAT CHECKS PASS');
 process.exit(fails ? 1 : 0);

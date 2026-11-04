@@ -1577,7 +1577,7 @@ export class UI3D {
         b.type = 'button';
         b.dataset.action = 'set-chapter';
         b.dataset.chapter = String(n);
-        b.append(make('span', 'btn-label', n === 1 ? 'I · The Underspire' : 'II · Lamphold'), make('span', 'btn-sub', n === 1 ? '556 m · the first descent' : '1,250 m · the town of lamps'));
+        b.append(make('span', 'btn-label', n === 1 ? 'I · The Underspire' : 'II · Lamphold'), make('span', 'btn-sub', n === 1 ? '556 m · the first descent' : '500 m · the town of lamps'));
         row.appendChild(b);
         return b;
       });

@@ -1,5 +1,5 @@
 // CHAPTER II · the director (sim/lampholdDirector.js) on the real level, physics and objectives, Node:
-//   carriers (the express cage carries you), the toll bus (brass rings, bells, notches), II-9 (the Usher answers the peal, strikes the Tenor and never near you),
+//   carriers (the Street of Doors' lift carries you), the toll bus (brass rings, bells, notches), II-9 (the Usher answers the peal, strikes the Tenor and never near you),
 //   II-12 (the Quiet, the Round's front, the Doorman's collar, the pawl, the Span's collapse, the lift, the last lamp, the shutter), II-13 (the chain and the hook)
 //   node chapter2-director.mjs [--root DIR]
 import { srcUrl } from '../../verify/root.mjs';
@@ -59,8 +59,8 @@ const seconds = (n) => Math.round(n / DT);
 // ---- carriers
 {
   const w = world();
-  const ex = D.movers.find((m) => m.id === 'mov-c2-7-exp0');
-  // wait until the cage is at the top, step on, ride 9 s down
+  const ex = D.movers.find((m) => m.id === 'mov-c2-2-lift');
+  // wait until the lift is at the top, step on, ride 14 s down
   w.O.clock = 0;
   const tAt = ex.dwell; // the first trip starts after the dwell (phase 0)
   w.step(1);
@@ -73,15 +73,15 @@ const seconds = (n) => Math.round(n / DT);
     w.step(1);
     const e = w.O.movers.byId(ex.id);
     // the floor's current height from the anchor carried on it (ring 3.5 m over the floor)
-    const ring = w.level.byId['c2-7-exp0-ring'];
+    const ring = w.level.byId['c2-2-lift-ring'];
     const floor = ring.y - 3.5;
     const gap = Math.abs(w.p.y - (floor + R));
     maxGap = Math.max(maxGap, gap);
     if (w.O.clock > tAt + 3 && gap > 0.7) onFloor = false;
     void e;
   }
-  ok(w.p.alive && onFloor && maxGap < 1.6, `standing in the express cage you ride it down 80 m and live (largest gap to the floor ${maxGap.toFixed(2)} m)`);
-  ok(w.p.y < y0 - 70, `... and you have gone down ${(y0 - w.p.y).toFixed(0)} m`);
+  ok(w.p.alive && onFloor && maxGap < 1.6, `standing on the Street of Doors' counterweight lift you ride it down 30 m and live (largest gap to the floor ${maxGap.toFixed(2)} m)`);
+  ok(w.p.y < y0 - 25, `... and you have gone down ${(y0 - w.p.y).toFixed(0)} m`);
 }
 
 // ---- tolls
@@ -144,7 +144,7 @@ const seconds = (n) => Math.round(n / DT);
   w.step(1);
   ok(w.d.phase === 'quiet', 'the Quiet: standing in the Gallery');
   const gal = w.level.sectionIndexAt(g.y);
-  ok(gal === 11, 'the gallery is in beat 12');
+  ok(gal === 5 && w.level.sections[gal].id === 'c2-12', 'the gallery is in beat II-12 (the sixth section)');
   // the Round arrives after 150 s even if you stay
   w.step(seconds(DIRECTOR.quietMax + 2));
   ok(w.d.phase === 'A', 'staying is not a mercy: after 150 s the Round starts');

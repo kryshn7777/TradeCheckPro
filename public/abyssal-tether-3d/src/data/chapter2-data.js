@@ -1,17 +1,19 @@
 /* ABYSSAL TETHER 3D — data/chapter2-data.js
- * CHAPTER II · LAMPHOLD: the level description, a GRAYBOX (no art, no machinery beyond a few swinging rings), generated from the beat table below.
+ * CHAPTER II · LAMPHOLD: the level description, generated from the beat table below.
  *
- * Owner, 2026-11-04: "the level 2 must be long and end with a hook for the full version", "make it 1250 instead of 580". The design (13 beats, 1,250 m,
- * 600 -> 1,850 m of depth, about 60-70 minutes, the Usher hook at the end) is docs/abyssal-tether-3d/plans/CHAPTER_II_PLAN.md; the bible's version of the
- * chapter is docs/abyssal-tether-3d/CHAPTERS.md section 6.
+ * LAYOUT 2 (500 m, owner, 2026-11-04: "make the level just 500 meters"): the core arc of seven beats, 600 -> 1,100 m of depth, about 25-30 minutes. It replaced
+ * LAYOUT 1 (13 beats, 1,250 m, the graybox of the plan docs/abyssal-tether-3d/plans/CHAPTER_II_PLAN.md, which the owner had asked for earlier as "make it 1250
+ * instead of 580"). Kept: II-1 The Lowering (live anchors), II-2 The Street of Doors (the yank, the first two Names), II-3 The Chandeliers (the test, HEDDA),
+ * II-4 The Waking Hall (the truth), II-9 The Tolling Gallery (the Usher's first sighting, BRASK), II-12 The Snuffing (the Doorman's exam) and II-13 The Soot
+ * Throat (the hook). The section ids keep their old numbers (`c2-9` is still the Tolling Gallery) so the text, the director and the tests keep their keys; the HUD
+ * numerals count the sections of the chapter (II·1 .. II·7). The cut beats' words are kept in data/chapter2-text.js (CHAPTER2_CUT).
  *
  * WHAT THIS FILE IS: a deterministic generator (no Math.random) of the same data shape as data/level-data-3d.js: per beat a section (theme, checkpoint, creature
  * mode, a hint), four walls round a 52 m shaft, and a SPIRAL STAIR of overlapping stone ledges that steps down 6 m at a time (a drop of 6 m is about 0.6 of the
  * lethal fall: it hurts, it does not kill, and every ledge is also a rope target with free attach). Beats 1, 3, 8 and 11 carry swinging rings (pendulum movers,
- * the new rule: LIVE ANCHORS) that are optional shortcuts across the stair's gaps. It is the SKELETON the beats grow on: no lifts, cranes, express drops,
- * the Stopping or the Snuffing yet (see the plan's work packages C2-1 .. C2-5). It is playable end to end and measurable (tests/level/chapter2.mjs).
+ * the new rule: LIVE ANCHORS) that are optional shortcuts across the stair's gaps. It is the SKELETON the beats grow on. It is playable end to end and measurable (tests/level/chapter2.mjs).
  *
- * Chapter-local coordinates: the spawn is near y = 0 and the chapter descends to y = -1250; the depth readout adds CHAPTER2_DEPTH_OFFSET (600).
+ * Chapter-local coordinates: the spawn is near y = 0 and the chapter descends to y = -500; the depth readout adds CHAPTER2_DEPTH_OFFSET (600).
  * DOM-free, three.js-free: importable from Node.
  */
 
@@ -19,22 +21,17 @@ import { CHAPTER2_TEXT } from './chapter2-text.js';
 import { addTollingGallery, addSnuffing, addSootThroat, addBeats, setNames } from './chapter2-sets.js';
 
 export const CHAPTER2_DEPTH_OFFSET = 600; // m: Chapter I ends at ~600 m (the hook of the demo), Chapter II continues the readout
-export const CHAPTER2_DEPTH = 1250; // m (the owner's number; the bible had 580)
+export const CHAPTER2_DEPTH = 500; // m (the owner's number: layout 2; layout 1 was 1,250)
+export const CHAPTER2_LAYOUT = 2; // the layout of the chapter's data: a saved run / record of another layout is dropped (meta/save.js)
 
 // id, name, subtitle (the card line), length (m), min (first-time minutes, for the doc), theme key, creature mode
-// the lengths add up to 1,250 (tests/level/chapter2.mjs checks it)
+// the lengths add up to 500 (tests/level/chapter2.mjs checks it)
 export const CHAPTER2_BEATS = [
   { id: 'c2-1', name: 'The Lowering', sub: 'The first warm place. It is a lie.', len: 40, min: 2.5, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-2', name: 'The Street of Doors', sub: 'KNOCK, AND BE KNOWN.', len: 80, min: 4.5, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-3', name: 'The Chandeliers', sub: 'Five rings swing across the dark.', len: 110, min: 5, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-4', name: 'The Waking Hall', sub: 'Every lamp a bed.', len: 60, min: 3, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-5', name: 'The Stone Yards', sub: 'The cranes still run.', len: 120, min: 5, theme: 'lit', creature: 'sighting' },
-  { id: 'c2-6', name: 'The Dressing Yards', sub: 'Stay in the light.', len: 120, min: 6, theme: 'lit', creature: 'sighting' },
-  { id: 'c2-7', name: 'The Counterweight Shafts', sub: 'Eighty metres in nine seconds.', len: 130, min: 5.5, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-8', name: 'The Hung Quarter', sub: 'The houses swing.', len: 100, min: 4.5, theme: 'lit', creature: 'sighting' },
-  { id: 'c2-9', name: 'The Tolling Gallery', sub: 'Ring it. Something answers.', len: 100, min: 4, theme: 'lit', creature: 'dormant' },
-  { id: 'c2-10', name: 'The Winding Floor', sub: 'The din is the room.', len: 100, min: 5.5, theme: 'engine', creature: 'stalk' },
-  { id: 'c2-11', name: 'The Cinder Stairs', sub: 'The first lamps are failing.', len: 80, min: 3.5, theme: 'engine', creature: 'sighting' },
+  { id: 'c2-2', name: 'The Street of Doors', sub: 'KNOCK, AND BE KNOWN.', len: 60, min: 3.5, theme: 'lit', creature: 'dormant' },
+  { id: 'c2-3', name: 'The Chandeliers', sub: 'Five rings swing across the dark.', len: 80, min: 4, theme: 'lit', creature: 'dormant' },
+  { id: 'c2-4', name: 'The Waking Hall', sub: 'Every lamp a bed.', len: 40, min: 2, theme: 'lit', creature: 'dormant' },
+  { id: 'c2-9', name: 'The Tolling Gallery', sub: 'Ring it. Something answers.', len: 70, min: 3.5, theme: 'lit', creature: 'dormant' },
   { id: 'c2-12', name: 'The Snuffing', sub: 'One tier at a time.', len: 150, min: 8, theme: 'snuffed', creature: 'dormant' },
   { id: 'c2-13', name: 'The Soot Throat', sub: 'The true rest.', len: 60, min: 3, theme: 'snuffed', creature: 'dormant' },
 ];
@@ -105,14 +102,13 @@ export function buildChapter2() {
       if ((j % 4 === 0 && b.theme !== 'snuffed') || b.id === 'c2-12') lights.push({ x: cx, y: r2(topY + 1.6), z: cz, color: b.theme === 'engine' ? '#d08a3c' : '#ffcf80', intensity: 1.2, range: 14, flicker: 0.15 });
       j++;
     }
-    // swinging rings (the new rule): pendulum chandeliers over the stair's gaps, in beats 1, 3 and 8 (the direction's numbers: II-1 one 36 m
-    // chain at 7.5 m/s; II-3 five at 5.5 .. 10.9 m/s; II-8 the houses, driven, <= 6.3 m/s). Peak speed = length x amp x 2 pi / period.
+    // swinging rings (the new rule): pendulum chandeliers over the stair's gaps, in beats II-1 and II-3 (the direction's numbers: II-1 one 36 m
+    // chain at 7.5 m/s; II-3 five at 5.5 .. 10.9 m/s). Peak speed = length x amp x 2 pi / period.
     const PENDULA = {
-      0: [{ len: 36, amp: 0.3, period: 9 }, { len: 30, amp: 0.25, period: 10 }],
-      2: [{ len: 20, amp: 0.35, period: 8 }, { len: 24, amp: 0.4, period: 9 }, { len: 30, amp: 0.45, period: 10 }, { len: 36, amp: 0.5, period: 11 }, { len: 30, amp: 0.55, period: 9.5 }],
-      7: [{ len: 24, amp: 0.25, period: 10 }, { len: 24, amp: 0.25, period: 10.5 }, { len: 24, amp: 0.22, period: 11 }, { len: 24, amp: 0.25, period: 9.5 }, { len: 24, amp: 0.2, period: 12 }, { len: 24, amp: 0.25, period: 10.8 }], // the hung houses (6, a cage each)
+      'c2-1': [{ len: 36, amp: 0.3, period: 9 }, { len: 30, amp: 0.25, period: 10 }],
+      'c2-3': [{ len: 20, amp: 0.35, period: 8 }, { len: 24, amp: 0.4, period: 9 }, { len: 30, amp: 0.45, period: 10 }, { len: 36, amp: 0.5, period: 11 }, { len: 30, amp: 0.55, period: 9.5 }],
     };
-    (PENDULA[i] || []).forEach((pd, c) => {
+    (PENDULA[b.id] || []).forEach((pd, c) => {
       const L = ledges[first + Math.min(ledges.length - first - 1, 1 + c * 2)];
       const pivotY = r2(L.y + 3 + pd.len); // the ring hangs 3 m over the ledge's top at rest
       const mid = { x: r2(L.x * 0.55), z: r2(L.z * 0.55) };
@@ -130,7 +126,7 @@ export function buildChapter2() {
       shaft: { minX: -SHAFT, maxX: SHAFT, minZ: -SHAFT, maxZ: SHAFT },
       checkpoint: { x: firstLedge.x, y: r2(firstLedge.y + 0.4), z: firstLedge.z, yaw: 0 },
       theme: THEMES[b.theme],
-      creature: Object.assign({ mode: b.creature, lethal: b.creature === 'stalk', speedMul: 1, burstRate: 0, spawnOffsetY: 200 }, b.id === 'c2-6' ? { dresser: { active: true, walkMul: 0.9, measureRange: 14, by: { nightmare: { walkMul: 1, measureRange: 16 }, abyss: { walkMul: 1, measureRange: 16 } } } } : null), // II-6: the Dresser measures a whole player (the corridor lesson again, in a lit town)
+      creature: { mode: b.creature, lethal: b.creature === 'stalk', speedMul: 1, burstRate: 0, spawnOffsetY: 200 },
       // the hints are the story writer's (data/chapter2-text.js): `at` is the fraction of the beat from its top
       hints: (CHAPTER2_TEXT.hints[sid] || []).map((h) => ({ y: r2(yTop - h.at * b.len), duration: h.duration, text: h.text, desktop: h.desktop })),
       lamp: CHAPTER2_TEXT.lamps[sid] || null, // { id: 'L2-n', label } of this beat's waking lamp
@@ -138,8 +134,9 @@ export function buildChapter2() {
     top += b.len;
   });
 
-  // ---- the machinery (CHAPTER_II_DIRECTION section 2: the beats' live anchors). Lifts and hooks CARRY RINGS (you hang from them; a cage
-  // floor you can stand on is not built: the stair is the always-open way), all closed forms of the run clock (sim/movers3d.js).
+  // ---- the machinery (CHAPTER_II_DIRECTION section 2: the beats' live anchors). Lifts CARRY RINGS (you hang from them; a cage floor you can stand
+  // on is not built: the stair is the always-open way), all closed forms of the run clock (sim/movers3d.js). Layout 2 keeps the II-2 lift; the cranes,
+  // the express cages, the governor and the wheel of layout 1 went with their beats.
   const sec = (id) => sections.find((q) => q.id === id);
   const ledgeNear = (y) => ledges.reduce((a, l) => (Math.abs(l.y - y) < Math.abs(a.y - y) ? l : a), ledges[0]);
   const ring = (id, x, y, z, tag = 'route') => anchors.push({ id, x: r2(x), y: r2(y), z: r2(z), kind: 'ring', tag, normal: { x: 0, y: -1, z: 0 }, mount: 'mover' });
@@ -154,62 +151,8 @@ export function buildChapter2() {
     ring('c2-2-lift-ring', x, y0 + 3.5, z);
     movers.push({ id: 'mov-c2-2-lift', kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: y0 - 30, z }, travel: 14, dwell: 4, ramp: 0.5, parts: 'lift', carrier: 1.4, carry: { anchors: ['c2-2-lift-ring'], decor: [] } });
   }
-  // II-5 THE STONE YARDS: two crane hooks on loops round the yards (4.5 and 6 m/s) and a monorail trolley across the pit (5 m/s, there and back)
-  {
-    const b = sec('c2-5');
-    const hex = (R, y) => Array.from({ length: 6 }, (_, k) => ({ x: r2(R * Math.cos((k * Math.PI) / 3)), y, z: r2(R * Math.sin((k * Math.PI) / 3)) }));
-    [
-      { id: 'c2-5-hookA', dy: 22, R: 19, speed: 4.5, phase: 0 },
-      { id: 'c2-5-hookB', dy: 62, R: 19, speed: 6, phase: 0.5 },
-    ].forEach((h) => {
-      const pts = hex(h.R, r2(b.yTop - h.dy));
-      ring(`${h.id}-ring`, pts[0].x, pts[0].y - 3.5, pts[0].z);
-      movers.push({ id: `mov-${h.id}`, kind: 'path', section: b.id, pts, mode: 'loop', speed: h.speed, phase: h.phase, chain: 3.2, parts: 'hook', carry: { anchors: [`${h.id}-ring`], decor: [] } });
-    });
-    const y = r2(b.yTop - 92);
-    const pts = [{ x: -19, y, z: -10 }, { x: 19, y: r2(y - 6), z: 10 }];
-    ring('c2-5-mono-ring', -19, y - 3.5, -10);
-    movers.push({ id: 'mov-c2-5-mono', kind: 'path', section: b.id, pts, mode: 'pingpong', speed: 5, chain: 3.2, parts: 'hook', carry: { anchors: ['c2-5-mono-ring'], decor: [] } });
-  }
-  // II-7 THE COUNTERWEIGHT SHAFTS: three express cages, 80 m in 9 s (peak 13 m/s), a gong's wait between, hanging rings on their roofs
-  {
-    const b = sec('c2-7');
-    [-14, 0, 14].forEach((x, k) => {
-      const y0 = r2(b.yTop - 18);
-      const z = -23.5;
-      const id = `c2-7-exp${k}`;
-      ring(`${id}-ring`, x, y0 + 3.5, z);
-      movers.push({ id: `mov-${id}`, kind: 'lift', section: b.id, x, y: y0, z, to: { x, y: r2(y0 - 80), z }, travel: 9, dwell: 5, ramp: 0.317, phase: k / 3, parts: 'lift', carrier: 1.4, carry: { anchors: [`${id}-ring`], decor: [] } });
-    });
-  }
-  // II-8 THE HUNG QUARTER: the governor, three arms whirling rings in a flat orbit (R 8 m, T 6 s: 8.4 m/s) against the north wall
-  {
-    const b = sec('c2-8');
-    const cy = r2(b.yTop - 50);
-    const R = 8;
-    const ids = [0, 1, 2].map((k) => {
-      const a = (k * 2 * Math.PI) / 3;
-      const id = `c2-8-gov${k}`;
-      ring(id, R * Math.cos(a), cy + R * Math.sin(a), -19);
-      return id;
-    });
-    movers.push({ id: 'mov-c2-8-governor', kind: 'orbit', section: b.id, x: 0, y: cy, z: -19, u: { x: 1, y: 0, z: 0 }, v: { x: 0, y: 1, z: 0 }, radius: R, period: 6, phase: 0, spin: 1, housing: -2, parts: 'gear', carry: { anchors: ids, decor: [] } });
-  }
-  // II-10 THE WINDING FLOOR: the great wheel's rim rings (R 20 m, T 27 s: 4.7 m/s)
-  {
-    const b = sec('c2-10');
-    const cy = r2(b.yTop - 55);
-    const R = 20;
-    const ids = [0, 1, 2, 3].map((k) => {
-      const a = (k * Math.PI) / 2;
-      const id = `c2-10-wheel${k}`;
-      ring(id, R * Math.cos(a), cy + R * Math.sin(a), -22);
-      return id;
-    });
-    movers.push({ id: 'mov-c2-10-wheel', kind: 'orbit', section: b.id, x: 0, y: cy, z: -22, u: { x: 1, y: 0, z: 0 }, v: { x: 0, y: 1, z: 0 }, radius: R, period: 27, phase: 0, spin: -1, housing: -2, parts: 'gear', carry: { anchors: ids, decor: [] } });
-  }
 
-  // ---- the set-pieces (data/chapter2-sets.js): II-9 the Tolling Gallery, II-12 the Snuffing (the Doorman), II-13 the Soot Throat (the hook)
+  // ---- the set-pieces (data/chapter2-sets.js): II-9 the Tolling Gallery, II-12 the Snuffing (the Doorman), II-13 the Soot Throat (the hook), the Names and the doors
   const ctx = { solids, anchors, movers, decor, lights, fixtures, objectives, seals, ledges, sections, c2, sec, ledgeNear, lanes, nooks };
   addTollingGallery(ctx);
   addSnuffing(ctx);
