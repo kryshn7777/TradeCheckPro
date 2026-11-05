@@ -144,7 +144,7 @@ export class ReleaseGuide {
     this._up = new THREE.Vector3(0, 1, 0);
     this._c = new THREE.Color();
     this._body = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, radius: 0 };
-    this.stats = { picks: 0, dots: 0, ring: false, lethal: false, reason: '' };
+    this.stats = { picks: 0, dots: 0, ring: false, lethal: false, reason: '', why: '' };
   }
 
   /**
@@ -152,23 +152,33 @@ export class ReleaseGuide {
    * @returns {boolean}
    */
   wanted(game) {
+    const why = this._why(game);
+    this.stats.why = why;
+    return why === '';
+  }
+
+  /** '' when the guide should show, else why not (a constant string: stats.why, for the tests and the debug API). */
+  _why(game) {
     const p = game && game.player;
     const T = game && game.tethers;
-    if (!p || !T || !T.hands || !game.level || game.state !== 'playing' || p.alive === false || p.climbing) return false;
-    if (releaseGuideDisabled(game.settings)) return false;
+    if (!p || !T || !T.hands || !game.level) return 'no run';
+    if (game.state !== 'playing') return 'state';
+    if (p.alive === false) return 'dead';
+    if (p.climbing) return 'climbing';
+    if (releaseGuideDisabled(game.settings)) return 'setting';
     const r = game.renderer;
     const gov = game.governor;
-    if (r && r.qualityTier === 'low' && gov && gov.level >= 2) return false;
+    if (r && r.qualityTier === 'low' && gov && gov.level >= 2) return 'tier';
     const sq = game.objectives && game.objectives.squallNow;
-    if (sq && (sq.k > 0.01 || sq.rise > 0.01)) return false;
+    if (sq && (sq.k > 0.01 || sq.rise > 0.01)) return 'squall';
     let lines = 0;
     for (let i = 0; i < HANDS.length; i++) {
       const st = T.hands[HANDS[i]];
       if (st && st.rope && st.rope.attached) lines++;
     }
-    if (lines < 1) return false;
+    if (lines < 1) return 'no line';
     const sp = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vy || 0) * (p.vy || 0) + (p.vz || 0) * (p.vz || 0));
-    return sp > RELEASE_GUIDE.minSpeed;
+    return sp > RELEASE_GUIDE.minSpeed ? '' : 'slow';
   }
 
   /** @param {number} dt @param {object} game the Game3D */
