@@ -59,6 +59,7 @@ import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
 import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
+import { NOTICE_ID, NOTICE_RECIPE, noticeRoute } from './masonSightSfx.js'; // MASON_SIGHT.md: the notice beat's designed cue
 import { SfxEngine, SeqRng } from './sfxDesign.js'; // the designed SFX (plans/SFX_DESIGN.md): recipes in sfxBank.js
 import { SFX_BANK } from './sfxBank.js';
 
@@ -455,6 +456,8 @@ export class AudioManager3D {
     this._subscribe();
     this._sfx = new SfxEngine(this, SFX_BANK); // the designed SFX: its own bus routes + the legacy handlers' _sfxTake hooks
     this._sfx.attach(bus);
+    this.registerSfx(NOTICE_ID, NOTICE_RECIPE); // MASON_SIGHT.md: creature:notice (via the extension points, SFX_DESIGN.md §6)
+    this.registerSfxRoute('creature:notice', noticeRoute);
     this._steps = 0; // designed footfalls played
     this._bindDom(W);
   }

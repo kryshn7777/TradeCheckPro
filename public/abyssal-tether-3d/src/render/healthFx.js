@@ -471,9 +471,10 @@ export class HealthFx {
     ctx.fillStyle = st.a75;
     ctx.textAlign = 'left';
     ctx.fillText(dead ? 'FLAT' : 'BPM', W - 46, 34);
-    ctx.fillStyle = st.a60;
-    ctx.font = '600 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-    ctx.fillText(dead ? 'NO SIGNAL' : low ? 'CRITICAL' : hpv < 0.8 ? 'INJURED' : 'STABLE', 52, 14);
+    const noRec = !dead && !!(hp && hp.noRecovery); // MASON_SIGHT.md: the chasing Mason is near, nothing heals
+    ctx.fillStyle = noRec ? '#ff3b30' : st.a60;
+    ctx.font = noRec ? '800 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace' : '600 12px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    ctx.fillText(dead ? 'NO SIGNAL' : noRec ? 'NO RECOVERY' : low ? 'CRITICAL' : hpv < 0.8 ? 'INJURED' : 'STABLE', 52, 14);
     // EXPEDITION (sim/comms3d.js): the uplink's five bars under the status word (NO UPLINK at the Mark) and the initial of the
     // speaker on air: drawn into this canvas, so the wrist (and the desktop HUD's copy) show it for no extra draw call
     const cm = this.game && this.game.comms;

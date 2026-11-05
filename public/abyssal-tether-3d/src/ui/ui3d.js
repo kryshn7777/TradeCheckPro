@@ -197,6 +197,7 @@ const SETTINGS_SCHEMA = [
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'masonSight', tab: 'rope', type: 'choice', label: 'Mason sight', desc: 'On: it sees your lantern and gives chase, and you cannot heal while it is close. Off: it hunts by sound alone.', options: [['on', 'On'], ['off', 'Off']] },
   { key: 'hitStop', tab: 'rope', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },

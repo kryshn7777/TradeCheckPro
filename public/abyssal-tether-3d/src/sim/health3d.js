@@ -37,6 +37,10 @@
  *   'health:recover'{ hp, full }                low ended (hp >= lowExit) or hp back to full
  *   'health:heal'   { amount, hp }              a bag item (heal()) restored health
  *
+ * MASON_SIGHT.md, NO RECOVERY: game.js sets `noRecovery` every frame while the Mason chases you within its lethalNear radius: no
+ * regeneration, the regen clock (sinceHurt) does not run, heal() restores nothing unless `force` (a checkpoint patch-up) and the bag
+ * refuses / cancels heals (inventory3d.js). Damage is unchanged.
+ *
  * Read-only for the presentation: hp, low, dead, heartbeatRate (bpm; 60 calm .. 140 near zero,
  * 0 once dead), adrenaline (0..1 after a hit), sinceHurt (s), lastDamage, totalDamage, hits, minHp.
  */
@@ -100,6 +104,8 @@ export class Health3D {
     this.fallsEnabled = !diff || diff.impactsLethal !== false;
     /** Debug / victory: no damage at all. */
     this.god = false;
+    /** MASON_SIGHT.md: set per frame by the game while the chasing Mason is near: no healing of any kind. */
+    this.noRecovery = false;
     this.lastDamage = { amount: 0, cause: '', speed: 0, t: 0 };
     this.reset();
   }
@@ -109,6 +115,7 @@ export class Health3D {
     this.hp = 1;
     this.low = false;
     this.dead = false;
+    this.noRecovery = false;
     this.wounded = false; // damaged since the last time hp was full
     this.clock = 0;
     this.sinceHurt = 1e9;
@@ -140,7 +147,7 @@ export class Health3D {
   step(dt) {
     if (this.dead) return;
     this.clock += dt;
-    this.sinceHurt += dt;
+    if (!this.noRecovery) this.sinceHurt += dt; // MASON_SIGHT.md: the regen clock is frozen while it is near
     if (this.impactCd > 0) {
       this.impactCd -= dt;
       if (this.impactCd <= 0) {
@@ -150,7 +157,7 @@ export class Health3D {
     }
     if (this.hazardCd > 0) this.hazardCd = Math.max(0, this.hazardCd - dt);
     if (this.adrenaline > 0) this.adrenaline = Math.max(0, this.adrenaline - dt / H.adrenalineTime);
-    if (this.hp < 1 && this.sinceHurt >= this.regenDelay && this.regenRate > 0 && !this.god) {
+    if (this.hp < 1 && this.sinceHurt >= this.regenDelay && this.regenRate > 0 && !this.god && !this.noRecovery) {
       this.hp = Math.min(1, this.hp + this.regenRate * dt);
       this._settle();
     }
@@ -230,8 +237,8 @@ export class Health3D {
    * gained (0 when dead or already full). Emits 'health:heal' { amount, hp } for a real gain unless `silent`
    * ('health:low' ends / 'health:recover' come from _settle as usual).
    */
-  heal(fraction = 1, silent = false) {
-    if (this.dead || !(fraction > 0)) return 0;
+  heal(fraction = 1, silent = false, force = false) {
+    if (this.dead || !(fraction > 0) || (this.noRecovery && !force)) return 0;
     const before = this.hp;
     this.hp = Math.min(1, this.hp + fraction);
     const gained = this.hp - before;

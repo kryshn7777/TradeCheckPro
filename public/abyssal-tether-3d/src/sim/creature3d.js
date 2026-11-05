@@ -59,6 +59,7 @@
 
 import { U } from './config3d.js';
 import { surfaceNavFor } from './creatureNav.js';
+import { MasonSense } from './masonSight.js'; // MASON_SIGHT.md: sight -> chase, the near no-recovery radius, the knocker decoy
 
 const TAU = Math.PI * 2;
 const FAR = 99999;
@@ -650,6 +651,10 @@ export class Creature3D {
     this.navStats = { replans: 0, noPath: 0, leashes: 0, snaps: 0 };
 
     if (!this.v) linkBus(this.bus, this); // variants ignore the sighting / call triggers
+    // MASON_SIGHT.md: sight / near / decoy (Mason only; options.sight === false switches sight off, the decoy still works)
+    this._decoyGo = false;
+    this.sense = new MasonSense(this);
+    if (options && options.sight === false) this.sense.setInput(false, true, false);
     this._gate = false; // setHuntGate: the Mason hunts only while the player is hurt (off = the sim as ever: the tests and the route bots)
     this.reset(null);
   }
@@ -676,7 +681,7 @@ export class Creature3D {
 
   /** Per frame while the gate is on: arms / disarms the hunt (see setHuntGate). */
   _updateGate(dt, player) {
-    if (this._hurt) this._holdT = T.huntHold;
+    if (this._hurt || this.sense.sight.chasing) this._holdT = T.huntHold; // MASON_SIGHT.md: while it chases you, health does not send it away
     else if (this._holdT > 0) this._holdT -= dt;
     const armed = this._override != null || this._holdT > 0;
     if (armed === this._armed) return;
@@ -768,6 +773,7 @@ export class Creature3D {
     this._withdrawT = 0;
     this._armed = !this._gate;
     this._occBy = null; // _occlusion: what stopped the last lunge line
+    if (this.sense) this.sense.reset(); // MASON_SIGHT.md
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
@@ -926,6 +932,25 @@ export class Creature3D {
     this._refBlock = this.refuge && block && isFinite(block.minX) ? block : null;
   }
 
+  /** MASON_SIGHT.md, per frame from game.js: sight on (?sight=off / setting), the lantern lit, the view blocked (not playing, a cutscene). */
+  setSight(on, lit, blocked) {
+    this.sense.setInput(on, lit, blocked);
+  }
+
+  /** MASON_SIGHT.md, the knocker: lure it to (x, y, z) for opts.duration s (strength scales its hearing reach). Returns whether it was accepted. */
+  distract(x, y, z, opts) {
+    return this.sense.distract(x, y, z, opts);
+  }
+
+  /** MASON_SIGHT.md read-outs: the sight state ({chasing, sees, near, nearDist, ...}) and the live decoy. */
+  get sight() {
+    return this.sense.sight;
+  }
+
+  get decoy() {
+    return this.sense.decoy;
+  }
+
   setSection(index, section, player) {
     const lv = this.level;
     if (this._override && index !== this._overrideSec) {
@@ -994,6 +1019,7 @@ export class Creature3D {
     this._introT = 0;
     this._annoyT = -1;
     this._annoyCd = 0;
+    this.sense.reset(); // MASON_SIGHT.md: a respawn forgets the chase and the decoy
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -1141,6 +1167,7 @@ export class Creature3D {
       const si = lv.sectionIndexAt(player.y);
       if (si !== this.sectionIndex) this.setSection(si, lv.sections[si], player);
     }
+    if (!this.victory) this.sense.update(dt, player); // MASON_SIGHT.md: sight first (a chase keeps the gate's scent hold full)
     if (this._gate && !this.victory) this._updateGate(dt, player);
 
     this.stateTime += dt;
@@ -1216,6 +1243,9 @@ export class Creature3D {
       this._shift(0, -below - K.maxGap, 0);
       this._snapToNav(T.nav.snapRange);
     }
+    // MASON_SIGHT.md: a live knocker decoy runs the frame (listen turn, crawl to it, inspect); `chase` = it has seen you
+    if (this.sense.decoyStep(dt)) return;
+    const chase = this.sense.sight.chasing;
 
     // A surface-bound hunter reaches you only from the masonry, so its telegraphed lunge may begin `nav.stretch` m farther out than a free-flying
     // one's (the wind-up still closes part of the gap; the strike's own reach is unchanged).
@@ -1243,6 +1273,7 @@ export class Creature3D {
               break;
             }
           }
+          if (chase) this.creeping = false; // it has seen you: no creeping in on a sound
           if (this.creeping) {
             // Closing on a silent player after listening.
             if (moving) {
@@ -1253,19 +1284,19 @@ export class Creature3D {
             break;
           }
           if (st === S.PURSUING) this._drain(K.drain * dt);
-          if (canAttack && dist < engage && !still) this._startAttack('contact');
+          if (canAttack && dist < engage && (!still || chase)) this._startAttack(chase && still ? 'sight' : 'contact');
           else if (stalled && this.stamina > 0.15 && dist < T.burstMax) this._stallLunge();
           else if (this.stamina <= 0) this._setState(S.RECOVERING);
-          else if (this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
-          else if (still && this.stillTime >= K.listenDelay + K.listenDur && dist <= this._menace() + 3) {
+          else if (!chase && this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
+          else if (!chase && still && this.stillTime >= K.listenDelay + K.listenDur && dist <= this._menace() + 3) {
             // Already listened recently: go straight to creeping in.
             this.creeping = true;
             if (st !== S.APPROACHING) this._setState(S.APPROACHING);
-          } else if (this.burstTimer <= 0 && !still && this.stamina > 0.3) this._tryBurst(dist);
+          } else if (this.burstTimer <= 0 && (!still || chase) && this.stamina > 0.3) this._tryBurst(dist);
           else {
-            if (st === S.APPROACHING && dist < T.pursueRange) {
-              if (!this._tryStare(dist)) this._setState(S.PURSUING);
-            } else if (st === S.PURSUING && dist > T.loseRange) this._setState(S.APPROACHING);
+            if (st === S.APPROACHING && (chase || dist < T.pursueRange)) {
+              if (chase || !this._tryStare(dist)) this._setState(S.PURSUING);
+            } else if (st === S.PURSUING && dist > T.loseRange && !chase) this._setState(S.APPROACHING);
             if (this.routeTimer <= 0) this._maybeChangeRoute(player, below);
             if (this.callTimer <= 0) this._ambientCall(dist);
           }
@@ -1292,7 +1323,10 @@ export class Creature3D {
         }
         case S.OBSERVING:
           this._regen(T.regenObserve * dt);
-          if (this.listening && moving && this.stateTime > 0.25) {
+          if (chase && !this.staring && !hidden) {
+            this.listening = false;
+            this._setState(S.PURSUING); // MASON_SIGHT.md: it sees you: no more waiting
+          } else if (this.listening && moving && this.stateTime > 0.25) {
             this.listening = false;
             this._heard(dist); // it heard you move
           } else if (stalled && !this.listening && this.stamina > 0.15 && dist < T.burstMax) {
@@ -1631,11 +1665,14 @@ export class Creature3D {
           break;
         }
         const base = this.state === S.PURSUING ? K.pursue : K.approach;
-        speed = base * noise * this._hitch * (intro ? T.introSpeed : 1) + catchUp;
+        // MASON_SIGHT.md: a chase runs at pursue x pursueMul and does not hold at the menace distance; a decoy run (_decoyGo) neither
+        const chase = this.sense.sight.chasing;
+        const go = chase || this._decoyGo;
+        speed = (chase ? K.pursue * this.sense.tune.pursueMul : base) * noise * this._hitch * (intro ? T.introSpeed : 1) + catchUp;
         // Stalking distance: it presses to `menace`, not into you, unless it
         // commits to a lunge or has listened to your silence.
         const m = this._menace();
-        if (dist < m + 6) {
+        if (dist < m + 6 && !go) {
           if (still) {
             // Hovers at the edge of the light while deciding whether you are there.
             speed = Math.min(speed, T.speed.observe * (0.5 + 0.5 * noise) + Math.max(0, dist - m) * 0.8);
@@ -1657,7 +1694,7 @@ export class Creature3D {
             }
           }
         }
-        if (!this.lethal) {
+        if (!this.lethal && !this._decoyGo) {
           // Non-lethal hunting (data-driven): it looms but holds off.
           const hold = Math.max(m, this.cfg.killRadius * T.engageMul * 1.6);
           speed *= U.clamp((dist - hold * 0.75) / (hold * 0.25), 0, 1);
@@ -4062,6 +4099,11 @@ export class Creature3D {
       // The snap: the crown flares wide and the pits blaze before it surges.
       glowTarget = 1;
       unfurl = 1.45;
+    }
+    const fl = this.sense.flare; // MASON_SIGHT.md: the notice beat, the red eyes flare
+    if (fl > 0) {
+      glowTarget = Math.max(glowTarget, fl);
+      unfurl = Math.max(unfurl, 1 + 0.4 * fl);
     }
     const k = dt > 0 ? 1 - Math.exp(-6 * dt) : 1;
     this._glow += (glowTarget - this._glow) * k;

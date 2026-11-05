@@ -321,6 +321,7 @@ export const SETTINGS_DEFAULTS = {
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
   hitStop: true, // THE CATCH (sim/catch3d.js): the world holds a beat when the rope saves a near-lethal fall; the head never moves
+  masonSight: 'on', // MASON_SIGHT.md: 'on' | 'off' the Mason sees the lantern-bearer and chases; off = the blind sound hunt (no near no-recovery rule)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
