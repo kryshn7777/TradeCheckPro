@@ -1474,7 +1474,8 @@ export class HandsView {
     L.quaternion.multiplyQuaternions(this._q2, this._q);
     // Flicker the glass a little.
     const t = this._time;
-    const fl = 0.86 + 0.08 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3);
+    const lm = this.r3.lanternMood; // the living flame (lanternMood.js): the glass matches the light
+    const fl = (0.86 + (0.08 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3)) * (lm ? 1 - lm.still : 1)) * (lm ? lm.intensityMul * lm.scale : 1);
     this.lanternMaterial.userData.glow.uGlowB.value = 2.4 * fl;
     if (this._gearMats) this._gearMats.lantern.emissiveIntensity = 1.5 * fl;
   }
