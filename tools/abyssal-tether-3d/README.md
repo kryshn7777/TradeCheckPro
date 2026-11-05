@@ -145,6 +145,18 @@ the held hand with the forearm through the socket's mouth, mirrored for a left h
 
 ## The Dresser v2 (the mason in the hooded apron)
 
+**v3 (2026-11, "more threatening and powerful", "fully detailed ... LOD high")**: same skeleton, same contract, a heavier and spikier
+silhouette (it must read at 15-40 m): a taller swept-back hood peak ringed by a crown of eleven forged chisel points, a deeper cowl and
+a black interior, the head ensemble leaning 5 cm forward and 2 cm down over a hunched back, an iron collar with a throat ring, a broader
+mantle under riveted three-lame iron pauldrons with three spikes each, longer (+20 cm) and heavier chisel arms (blades serrated on the
+inner edge with a hooked beak; the teeth are sampled tip / valley by the rows, LOD2 drops them), a chain and hook down each forearm,
+a broader belt with a saw, a bundle of spikes, a hook chain, a weight chain and three broken porcelain faces on cords, twelve iron
+plumb-weights in the hem, twelve longer rags and ten strips off the mantle. The mask: a lower, knitted brow over deeper sockets,
+narrower slits (cold white rim in ORM.B, deep red core in the albedo, self-lit by the pale light), the crack opened wide and run up
+through the brow, the serene half split too, three iron staples across the seam, nails through the forehead, the mouth sewn into a
+grimace (eight stitches); rust-brown (not blood) at the holes. Paint: chalk tallies on the apron, rust scale / runs / pitting on the
+iron, rust bled into the robe and the leather.
+
 `build_dresser.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 7171) builds THE DRESSER's model (`src/sim/dresser3d.js`,
 `src/render/dresserView.js`, `docs/abyssal-tether-3d/plans/DRESSER.md`) for the view's EXISTING skeleton: the bone table (names, parents,
 bind positions) is parsed from `dresserView.js` `BONES`, the bones are exported vertical with roll 0 (identity glTF rest rotations), so
@@ -163,13 +175,13 @@ chest -> upper arm, the small arms blended at the elbow) -> GLB.
 
 | Output | |
 |---|---|
-| `public/abyssal-tether-3d/assets/models/dresser.glb` (1.8 MB) | `Dresser_LOD0` / `_LOD1` / `_LOD2` (22.5 k / 7.6 k / 2.2 k triangles; skinned, one primitive each; the HIGH they are baked from is ~7 M), the 32-bone `Dresser_Armature`, one material `DresserBody` (albedo, normal, ORM: R AO, G roughness, B the slit glow), COLOR_0 (R the pale self-light mask, B the hood-lip rim mask), extras `dresser` (whiteUV = the atlas's white block for the line and the chalk outline); meshopt + KTX2 (1024 maps) |
-| `previews/dresser_sheet.png` | Cycles contact sheet of the game mesh (idle, 3/4, measuring, back, the face at 1.5 m, serene / wrong, the wrong eye macro, hands, a chisel arm, LOD0 / 1 / 2) |
+| `public/abyssal-tether-3d/assets/models/dresser.glb` (2.3 MB) | `Dresser_LOD0` / `_LOD1` / `_LOD2` (47.7 k / 17.7 k / 6.5 k triangles; skinned, one primitive each; the HIGH they are baked from is ~6.9 M), the 32-bone `Dresser_Armature`, one material `DresserBody` (albedo, normal, ORM: R AO, G roughness, B the slit glow), COLOR_0 (R the pale self-light mask, B the hood-lip rim mask), extras `dresser` (whiteUV = the atlas's white block for the line and the chalk outline); meshopt + KTX2 (1024 maps) |
+| `previews/dresser_sheet.png` | Cycles contact sheet of the game mesh (idle, 3/4, measuring, back, the face at 1.5 m, serene / wrong, the wrong eye macro, hands, a chisel arm, LOD0 / 1 / 2, LOD1 at 14 m, LOD2 at 28 m) |
 
 ```bash
 PY=.../blender-venv/bin/python
 flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_dresser.py --out <dir> --renders <dir> --cache <dir>/cache --bake 2048 --render [--samples 32] [--blend <file>]
-        # ~6 min + ~2 min of previews; --stage shape = clay renders (LOW + the HIGH mask), --stage paint = the analytic maps only,
+        # ~14 min + ~4 min of previews (v3); --stage shape = clay renders (LOW, LOD1 / LOD2 far, the HIGH mask), --stage paint = the maps only,
         # --bake 1024 for a quick look; delete the cache after any geometry change (the bakes are cached per resolution)
 GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out <dir2> --only dresser
 GLTF_TOOLS=$TOOLS KTX2_TOOLS=$KTX node tools/abyssal-tether-3d/compress_glb_textures.mjs --dir <dir2> --out public/abyssal-tether-3d/assets/models --only dresser
