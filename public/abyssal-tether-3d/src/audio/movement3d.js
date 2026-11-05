@@ -11,9 +11,12 @@
  */
 import { SURFACE, surfaceOf, SECTION_BEDS, sectionOfY, smooth } from './dsp3d.js';
 import { CONFIG } from '../sim/config3d.js';
+import { SeqRng } from './sfxDesign.js';
+
+const SEQ = new SeqRng(0x30e5); // seeded jitter, never Math.random (plans/SFX_DESIGN.md section 4)
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const rand = (a, b) => a + Math.random() * (b - a);
+const rand = (a, b) => a + SEQ.next() * (b - a);
 const HANDS = ['left', 'right'];
 
 function hash3(a, b, c) {

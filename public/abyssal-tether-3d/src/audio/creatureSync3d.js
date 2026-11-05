@@ -20,8 +20,11 @@
  * Silence is a signal: while the creature listens / lingers / freezes `silence` → 1, which drops the music, thins the
  * ambience and cuts the creature bed (mgr._silence / mgr._thin).
  */
+import { SeqRng } from './sfxDesign.js';
+
+const SEQ = new SeqRng(0xc5e7); // seeded jitter, never Math.random (plans/SFX_DESIGN.md section 4)
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-const rand = (a, b) => a + Math.random() * (b - a);
+const rand = (a, b) => a + SEQ.next() * (b - a);
 const BASE_CLIPS = { crown_idle: 1, rear_windup: 1, strike: 1, roar_display: 1, linger_breathe: 1, crown_up: 1, coil_grip: 1, take_close: 1, knock_x3: 1, notice_snap: 1 };
 const CATS = ['windup', 'strike', 'roar', 'snap'];
 const PEND_WINDOW = 0.15;

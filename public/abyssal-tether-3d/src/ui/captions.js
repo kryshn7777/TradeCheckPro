@@ -16,6 +16,8 @@
  * within `cd` seconds collapse into one (a rig clip and the sim event that sounds at the same moment are one caption).
  */
 
+import { SFX_CAPTIONS, SFX_CAPTION_EVENTS } from '../audio/sfxBank.js'; // the designed SFX's captions (plans/SFX_DESIGN.md)
+
 const TTL = 3.2;
 const MAX_LINES = 3;
 const DIR_REFRESH = 0.15;
@@ -368,7 +370,7 @@ export function captionForEvent(type, p) {
     case 'lane:on':
       return RULES.debris;
     default:
-      return null;
+      return SFX_CAPTIONS[type] || null;
   }
 }
 
@@ -470,6 +472,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'arena:pause',
   'health:damage',
   'pickup:collect',
+  ...SFX_CAPTION_EVENTS,
 ]);
 
 /** Direction sector names (0 = straight ahead, clockwise). */

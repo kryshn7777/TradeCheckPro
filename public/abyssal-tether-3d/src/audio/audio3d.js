@@ -59,6 +59,11 @@ import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
 import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
+import { SfxEngine, SeqRng } from './sfxDesign.js'; // the designed SFX (plans/SFX_DESIGN.md): recipes in sfxBank.js
+import { SFX_BANK } from './sfxBank.js';
+
+/** Every jitter in this module is drawn from this seeded stream, never Math.random ("no random sounds": SFX_DESIGN.md §4). */
+const SEQ = new SeqRng(0x1a7e);
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -181,7 +186,7 @@ function num(v, fallback) {
   return typeof v === 'number' && isFinite(v) ? v : fallback;
 }
 function rand(a, b) {
-  return a + Math.random() * (b - a);
+  return a + SEQ.next() * (b - a);
 }
 
 /**
@@ -211,7 +216,7 @@ function makeNoise(ctx, seconds, kind) {
   let b2 = 0;
   let last = 0;
   for (let i = 0; i < len; i++) {
-    const w = Math.random() * 2 - 1;
+    const w = SEQ.next() * 2 - 1;
     if (kind === 'pink') {
       // Paul Kellet's economy pink filter.
       b0 = 0.99765 * b0 + w * 0.099046;
@@ -448,6 +453,9 @@ export class AudioManager3D {
 
     if (!this.enabled) return;
     this._subscribe();
+    this._sfx = new SfxEngine(this, SFX_BANK); // the designed SFX: its own bus routes + the legacy handlers' _sfxTake hooks
+    this._sfx.attach(bus);
+    this._steps = 0; // designed footfalls played
     this._bindDom(W);
   }
 
@@ -818,7 +826,7 @@ export class AudioManager3D {
 
     for (let i = 0; i < this._loops.length; i++) {
       const s = this._loops[i];
-      if (s.buffer) s.start(now, Math.random() * (s.buffer.duration - 0.05));
+      if (s.buffer) s.start(now, SEQ.next() * (s.buffer.duration - 0.05));
       else s.start(now);
     }
     this._built = true;
@@ -1350,6 +1358,7 @@ export class AudioManager3D {
     this._state = state;
     this._game = game || null;
     this._hookXR(game);
+    this._sfx.update(dt, game);
     const running = this._live();
 
     // Follow the live settings object (volume slider) without needing an event.
@@ -1682,8 +1691,10 @@ export class AudioManager3D {
       this._stride += hspeed * dtc;
       if (this._stride > STRIDE) {
         this._stride = 0;
-        if (this._mov && !this._mov.broken) this._mov.footstep(U.clamp(hspeed / 5.5, 0.3, 1), game);
-        else this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
+        const stepK = U.clamp(hspeed / 5.5, 0.3, 1);
+        if (this._sfx.takeK('step', stepK)) this._steps++; // the designed footfall by surface (sfxBank.js step.*)
+        else if (this._mov && !this._mov.broken) this._mov.footstep(stepK, game);
+        else this._sfxFootstep(stepK);
       }
     } else {
       this._stride = STRIDE * 0.65; // the first step lands soon after starting to run
@@ -1978,7 +1989,7 @@ export class AudioManager3D {
 
   /** A random point in the space around the listener (ambient decoration) → this._pos. */
   _around(minD, maxD, ySpread) {
-    const a = Math.random() * Math.PI * 2;
+    const a = SEQ.next() * Math.PI * 2;
     const r = rand(minD, maxD);
     const q = this._pos;
     q.x = this._lx + Math.cos(a) * r;
@@ -2195,7 +2206,7 @@ export class AudioManager3D {
     s.buffer = buf;
     s.loop = true;
     if (rate && rate !== 1) s.playbackRate.value = rate;
-    s.start(t, Math.random() * (buf.duration - 0.05));
+    s.start(t, SEQ.next() * (buf.duration - 0.05));
     v.nodes.push(s);
     v.sources.push(s);
     return s;
@@ -2518,8 +2529,23 @@ export class AudioManager3D {
     }
   }
 
-  _onUiClick() {
-    this._sfxClick();
+  _onUiClick(p) {
+    if (!this._sfxTake('ui:click', p)) this._sfxClick();
+  }
+
+  /** The designed recipe for `type` (sfxBank.js HOOKS) plays instead of the legacy synth below; false = play the legacy one. */
+  _sfxTake(type, p) {
+    return !!this._sfx && this._sfx.take(type, p);
+  }
+
+  /** Extension point (SFX_DESIGN.md §6): adds a designed recipe, e.g. registerSfx('roach.skitter', {...}). */
+  registerSfx(id, recipe) {
+    return this._sfx ? this._sfx.registerSfx(id, recipe) : null;
+  }
+
+  /** Extension point: routes one more bus event to the designed SFX (fn(payload, engine) calls engine.play). */
+  registerSfxRoute(type, fn) {
+    if (this._sfx) this._sfx.registerRoute(type, fn);
   }
 
   _onXRStart() {
@@ -2536,8 +2562,8 @@ export class AudioManager3D {
     if (p.first) this._sfxSectionShift();
   }
 
-  _onCheckpoint() {
-    this._sfxCheckpoint();
+  _onCheckpoint(p) {
+    if (!this._sfxTake('checkpoint', p)) this._sfxCheckpoint();
   }
 
   // ---- player (payloads carry z and hand; speeds in m/s, distances in metres) ----------
@@ -2554,12 +2580,12 @@ export class AudioManager3D {
     // chuff already played at the fire; only an attach with no shot before it (the debug API) plays them now.
     if (now - this._lastFireAt > 0.9) this._sfxFire(p);
     this._sfxCatch(p, heavy, 0.012);
-    this._sfxAttach(p, heavy, 0.012);
+    if (!this._sfxTake('grapple:attach', p)) this._sfxAttach(p, heavy, 0.012);
     if (p.previous || p.chained) this._sfxRelease(0.6, p.hand);
   }
 
   _onMiss(p) {
-    this._sfxMiss(p);
+    if (!this._sfxTake('grapple:miss', p)) this._sfxMiss(p);
   }
 
   _onRelease(p) {
@@ -2569,7 +2595,7 @@ export class AudioManager3D {
 
   _onBreak(p) {
     this._exertion = Math.min(1, this._exertion + 0.15);
-    this._sfxBreak(p, 1);
+    if (!this._sfxTake('grapple:break', p)) this._sfxBreak(p, 1);
   }
 
   _onCrumble(p) {
@@ -2578,7 +2604,7 @@ export class AudioManager3D {
 
   _onJolt(p) {
     this._exertion = Math.min(1, this._exertion + 0.12);
-    this._sfxJolt(p);
+    if (!this._sfxTake('rope:jolt', p)) this._sfxJolt(p);
   }
 
   _onJump() {
@@ -2594,7 +2620,7 @@ export class AudioManager3D {
       const lethal = Math.max(5, num(this._game && this._game.diff && this._game.diff.lethalImpact, 17));
       ratio = num(p.impact, 0) / lethal;
     }
-    this._sfxLand(ratio, !!p.hard);
+    if (!this._sfxTake('player:land', p)) this._sfxLand(ratio, !!p.hard);
   }
 
   _onWallHit(p) {
@@ -2606,7 +2632,7 @@ export class AudioManager3D {
 
   _onClimbGrab(p) {
     this._exertion = Math.min(1, this._exertion + 0.025);
-    this._sfxGrip(p);
+    if (!this._sfxTake('climb:grab', p)) this._sfxGrip(p);
   }
 
   _onClimbRelease(p) {
@@ -2638,7 +2664,7 @@ export class AudioManager3D {
   // ---- the bag (WP-BAG): pickup chime, bandage rustle, injector hiss, battery click, first-aid ratchet, low-battery warning ----
 
   _onPickup(p) {
-    this._sfxPickup(num(p.kind, 1));
+    if (!this._sfxTake('pickup:collect', p)) this._sfxPickup(num(p.kind, 1));
   }
 
   _onBagApply(p) {
@@ -2652,7 +2678,7 @@ export class AudioManager3D {
 
   _onBagDone(p) {
     this._stopBagVoice();
-    this._sfxBagDone(num(p.kind, 1));
+    if (!this._sfxTake('bag:done', p)) this._sfxBagDone(num(p.kind, 1));
   }
 
   _onBagRefuse() {
@@ -2663,12 +2689,12 @@ export class AudioManager3D {
     if (p && p.on === false) this._sfxBoostEnd();
   }
 
-  _onLanternLow() {
-    this._sfxLanternWarn(false);
+  _onLanternLow(p) {
+    if (!this._sfxTake('lantern:low', p)) this._sfxLanternWarn(false);
   }
 
-  _onLanternEmpty() {
-    this._sfxLanternWarn(true);
+  _onLanternEmpty(p) {
+    if (!this._sfxTake('lantern:empty', p)) this._sfxLanternWarn(true);
   }
 
   /** The opening story: a soft page turn, a low swell when the record darkens, a burst of static and a drop when it is torn off. */
@@ -2708,7 +2734,7 @@ export class AudioManager3D {
   _onHealthDamage(p) {
     const a = U.clamp(num(p.amount, 0.1), 0, 1);
     this._exertion = Math.min(1, this._exertion + 0.15 + 0.4 * a);
-    this._sfxHurt(a);
+    if (!this._sfxTake('health:damage', p)) this._sfxHurt(a);
     if (a >= 0.25) {
       this._hitT = Math.max(this._hitT, 0.6 + 1.6 * a);
       this._sfxRing(a);
@@ -3352,7 +3378,7 @@ export class AudioManager3D {
     let z = num(data.z, NaN);
     if (!(x === x) || !(y === y) || !(z === z)) {
       // Far above, off to one side (2D: 1400–2200 px up, 300–700 px aside).
-      const a = Math.random() * Math.PI * 2;
+      const a = SEQ.next() * Math.PI * 2;
       const r = rand(15, 35);
       x = this._lx + Math.cos(a) * r;
       z = this._lz + Math.sin(a) * r;
@@ -3444,6 +3470,7 @@ export class AudioManager3D {
       context: this.ctx ? this.ctx.state : 'none',
       sampleRate: this.ctx ? this.ctx.sampleRate : 0,
       tier: this._reduced ? 'reduced' : 'full',
+      sfx: this._sfx ? this._sfx.debug() : null,
       volume: this._volume,
       paused: this._pauseFlag,
       activeVoices: this.activeVoices,
@@ -4078,7 +4105,7 @@ export class AudioManager3D {
   _sfxGrit(stress) {
     const v = this._begin('grit', 0, 0.05, 0.25, this.busPlayer, 0.18 + 0.25 * stress, rand(-0.25, 0.25), 0.1, 0);
     if (!v) return;
-    this._tickTrain(v, v.t0, 2 + Math.floor(Math.random() * 3), 0.12, 0.5, 1500, 4800, 5, 0.008, 0.4);
+    this._tickTrain(v, v.t0, 2 + Math.floor(SEQ.next() * 3), 0.12, 0.5, 1500, 4800, 5, 0.008, 0.4);
     this._commit(v);
   }
 
@@ -4581,7 +4608,7 @@ export class AudioManager3D {
     const pos = this._around(6, 25, 12);
     const v = this._begin('settle', 0, 0.2, 0.7, this.busAmbient, rand(0.05, 0.11) * this._ambientLift(pos), 0, 0.45, 0, pos, 'ambient', true);
     if (!v) return;
-    this._tickTrain(v, v.t0, 1 + Math.floor(Math.random() * 3), 0.3, 0.6, 2800, 5200, 5, 0.01, 0.4);
+    this._tickTrain(v, v.t0, 1 + Math.floor(SEQ.next() * 3), 0.3, 0.6, 2800, 5200, 5, 0.01, 0.4);
     this._commit(v);
   }
 
@@ -4650,7 +4677,7 @@ export class AudioManager3D {
     const v = this._begin('cstep', 0, 0.04, 0.4 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
     if (!v) return;
     const t = v.t0 + sp.delay;
-    this._tickTrain(v, t, 2 + Math.floor(Math.random() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
+    this._tickTrain(v, t, 2 + Math.floor(SEQ.next() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
     const o = this._vOsc(v, 'sine', rand(140, 210), t);
     o.frequency.setTargetAtTime(rand(85, 110), t, 0.03);
     const og = this._vGain(v, 0);
@@ -4754,7 +4781,7 @@ export class AudioManager3D {
     this._perc(og.gain, t, 0.22, 0.0005, 0.012);
     o.connect(og);
     og.connect(v.out);
-    if (Math.random() < 0.55) this._tick(g.gain, t + rand(0.07, 0.12), 0.5, 0.006); // tick-tick
+    if (SEQ.next() < 0.55) this._tick(g.gain, t + rand(0.07, 0.12), 0.5, 0.006); // tick-tick
     this._commit(v);
   }
 
@@ -4823,7 +4850,7 @@ export class AudioManager3D {
       g.gain.linearRampToValueAtTime(rand(0.35, 0.6), tt + 0.03);
       g.gain.setValueAtTime(rand(0.25, 0.5), tt + len - 0.04);
       g.gain.linearRampToValueAtTime(0, tt + len);
-      if (Math.random() < 0.45) {
+      if (SEQ.next() < 0.45) {
         // a squeak of chalk catching on the grain
         const o = this._vOsc(v, 'sine', rand(2300, 2900), tt + len * 0.3);
         o.frequency.linearRampToValueAtTime(rand(2900, 3500), tt + len * 0.3 + 0.08);
@@ -4926,7 +4953,7 @@ export class AudioManager3D {
     const v = this._begin('hfcrack', 2, 0.15, 0.9 + sp.delay, this.busCreature, 1.0 * this._floor('near', sp.d, 0.3), 0, sp.send * 0.5, Math.max(sp.cutoff, 4000), sp.ok ? sp : null, 'near');
     if (!v) return;
     const t0 = v.t0 + sp.delay;
-    const k = 2 + Math.floor(Math.random() * 3);
+    const k = 2 + Math.floor(SEQ.next() * 3);
     const n = this._vNoise(v, this._white, t0, 1);
     const bp = this._vFilter(v, 'bandpass', 2800, 3.5);
     const g = this._vGain(v, 0);
@@ -5194,7 +5221,7 @@ export class AudioManager3D {
     const v = this._begin('cstep', 0, 0.04, dur + 0.3 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff + 900, this._cPos(sp), 'near');
     if (!v) return;
     const t = v.t0 + sp.delay;
-    const n = kind === 'step' ? 4 + Math.floor(Math.random() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
+    const n = kind === 'step' ? 4 + Math.floor(SEQ.next() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
     this._tickTrain(v, t, n, dur * 0.8, 0.55, 3800, 7600, 9, 0.004, 0.35);
     if (kind === 'burst' || kind === 'attack') {
       const nz = this._vNoise(v, this._pink, t, 1);
