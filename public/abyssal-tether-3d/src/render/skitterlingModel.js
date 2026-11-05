@@ -300,8 +300,8 @@ export const HUNTER_LEGS = [
 export function buildHunterGeometry() {
   const { add, idx, geo } = builder();
   const A = 0.5;
-  const Bw = 0.28;
-  const Hh = 0.19;
+  const Bw = 0.25; // narrower and flatter than a beetle: a cockroach (the captures read 0.28 / 0.19 as a ladybird)
+  const Hh = 0.16;
   const N = 12;
   const zc = -0.04;
   // the dome: rings at radius 1, 0.72, 0.38, the apex; the height follows a flattened ellipsoid (roaches are flat)

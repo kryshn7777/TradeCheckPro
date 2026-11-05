@@ -64,7 +64,21 @@ Mason agent to retire (its file is being edited in parallel).
 | Download | **-5.4 MB** (no GLB) | none |
 
 Quest budget 150 calls / 350 k stereo triangles: the hunters went from ~7 calls + ~40 k stereo triangles each (up to ~21 calls / ~120 k for
-three) to at most 2 calls / under 1 k triangles for all three. Measured in the game: see the captures below.
+three) to at most 2 calls / under 1 k triangles for all three. **Measured in the game** (desktop software GL, S3, the group frame below):
+45 calls / 60,087 triangles with 3 hunters at LOD0, 43 / 59,427 without: **+2 calls, +660 triangles** (3 x 156 + the swarm's share of that
+frame's noise). The Quest-tier frame read +5 calls / +343 triangles (2 x 156 + 27) for the same comparison: the view itself is 2 calls (the
+node test counts them); the other 3 are frame-to-frame noise of the renderer's counters in that pair of renders (not verified further).
+
+## Captures (desktop software GL, `?hunt=always`, synthetic hunters placed with `placeSkitter`)
+
+Taken before the last shape pass (the shield was then 0.28 wide x 0.19 high; it is 0.25 x 0.16 now, a little longer and flatter, less beetle).
+
+| | |
+|---|---|
+| ![close](img/skitterling-hunter-close.jpg) | A hunter 1.45 m away under the lantern (46 deg lens): the glossy shield, the wing-case seam, spined legs mid-stride, long antennae. LOD0, 1 call. |
+| ![lunge](img/skitterling-hunter-lunge.jpg) | The attack: left, the wind-up (reared on its hind legs, front legs pawing, antennae up); right, the lunge off the floor. |
+| ![group](img/skitterling-hunter-group.jpg) | Three hunters among 26 swarm skitterlings, for scale (42 deg lens), with the frame's call / triangle line. |
+| ![quest](img/skitterling-hunter-quest.jpg) | The same at the Quest tier, 60 deg lens: 2 at LOD0, the far one at LOD1 (the swarm's 27-triangle model). |
 
 ## Tests
 
