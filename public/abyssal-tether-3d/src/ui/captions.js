@@ -84,6 +84,11 @@ export const RULES = Object.freeze({
   dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
   dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
   dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
+  // the red roaches (sim/roaches.js): low priority, long cooldowns, never push another line off (low: true)
+  roachSkit: Object.freeze({ ...R('[Dry ticking, close]', 'world', 0, 'roachskit', 20), low: true }),
+  roachScatter: Object.freeze({ ...R('[Tiny legs scattering]', 'world', 0, 'roachscat', 10), low: true }),
+  roachSquish: Object.freeze({ ...R('[A wet crunch]', 'world', 0, 'roachsquish', 3), low: true }),
+  roachBurst: Object.freeze({ ...R('[Skittering pours out of the wall]', 'world', 1, 'roachburst', 8), low: true }),
   // the jetpack (sim/jetpack3d.js)
   windWhoosh: R('[Wind whooshing past]', 'world', 0, 'whoosh', 6),
   jetOn: R('[Jetpack roaring]', 'creature', 1, 'jet', 2),
@@ -247,6 +252,14 @@ export function captionForEvent(type, p) {
       return DEATH_BEAT_RULES[e.beat] || null;
     case 'wind:whoosh':
       return e.strength > 0.8 ? RULES.windWhoosh : null;
+    case 'roach:skitter':
+      return finite(e.n) && e.n >= 2 ? RULES.roachSkit : null;
+    case 'roach:scatter':
+      return finite(e.n) && e.n >= 3 ? RULES.roachScatter : null;
+    case 'roach:squish':
+      return RULES.roachSquish;
+    case 'roach:burst':
+      return RULES.roachBurst;
     case 'jetpack:ignite':
       return RULES.jetOn;
     case 'jetpack:cut':
@@ -423,6 +436,10 @@ export const CAPTION_EVENTS = Object.freeze([
   'dresser:step',
   'death:beat',
   'wind:whoosh',
+  'roach:skitter',
+  'roach:scatter',
+  'roach:squish',
+  'roach:burst',
   'jetpack:ignite',
   'jetpack:cut',
   'jetpack:empty',
@@ -550,6 +567,7 @@ export class CaptionTracker {
     let slot = null;
     for (const l of this.lines) if (l.on && l.rule === rule) slot = l;
     if (!slot) for (const l of this.lines) if (!l.on) { slot = l; break; }
+    if (!slot && rule.low) return null; // a low-priority caption (the roaches) never pushes another line off
     if (!slot) {
       let worst = -1;
       for (const l of this.lines) {

@@ -59,6 +59,7 @@ import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
 import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
+import { ROACH_SFX, ROACH_EVENTS } from './roachSfx.js'; // the red roaches (sim/roaches.js): ticks, scatter, squish, the crack burst
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -2298,6 +2299,7 @@ export class AudioManager3D {
       'intro:cut': this._onIntroCut,
       'holster:draw': this._onHolsterDraw,
       ...Object.fromEntries(Object.entries(LAMPHOLD_EVENTS).map(([ev, m]) => [ev, this[m]])),
+      ...Object.fromEntries(Object.entries(ROACH_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:stow': this._onHolsterStow,
       'nv:on': this._onNvOn,
       'nv:off': this._onNvOff,
@@ -5557,3 +5559,4 @@ export class AudioManager3D {
 }
 
 Object.assign(AudioManager3D.prototype, LAMPHOLD_SFX);
+Object.assign(AudioManager3D.prototype, ROACH_SFX);
