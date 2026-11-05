@@ -6,8 +6,10 @@
 //   say    the spoken form when it differs from the subtitle (numbers, a respelt name). One space-separated token per subtitle
 //          word, in order; an underscore joins the words of one token ("seventeen_ninety-one" speaks "1791"), so the word
 //          timings stay aligned with the subtitle's words (the stuck-word glitch repeats a subtitle word)
-//   pace   AI placeholder only: a speed multiplier on the speaker's base pace (1 = the speaker's own)
-//   pitch  AI placeholder only: semitones of pitch drift (small: +-0.5)
+// How the AI placeholder ACTS a line (voice blend, speed, pauses, stress, breaths, phrase by phrase) is voice/performance.json
+// (docs/abyssal-tether-3d/plans/VO_DIRECTION.md); its line speed and pitch fill the ai_pace / ai_pitch columns of lines.csv.
+// CHAPTER II's radio (public/abyssal-tether-3d/src/data/chapter2-text.js `radio`, said by chapter2Glue.js radioScript) is
+// exported too, status 'ch2': its direction is here, keyed by its id, with `trigger` (the chapter's own radio director).
 // SPEC_LINES: radio lines the story bible specifies (DARK_STORY_BIBLE.md §4.3) that are NOT in the game yet (they need new
 // triggers: board gazes by board id, the goal box, a forced five-bar dead zone). They are in the actor package so one session
 // records everything; once comms3d.js adds an id, the line is live and build_voices.py ships it with no other change.
@@ -20,7 +22,7 @@ export const CAST = Object.freeze({
     accent: 'neutral mid-Atlantic or soft Received Pronunciation; educated, unplaceable',
     register: 'warm mid alto; controlled, unhurried, the calmest voice on the channel; calls him "Elias"',
     not: 'never shrill, never panicked, never villain-coded or knowingly sinister; the slips must sound like ordinary speech, not hints',
-    ai: 'Kokoro af_heart (American English, female), base pace 0.95',
+    ai: 'Kokoro blend af_heart 65 / af_nicole 25 / af_kore 10, -0.3 st (performance.json)',
   },
   TICK: {
     who: 'Tomasz "Tick" Ilic, uplink tech (cyan, circle)',
@@ -28,7 +30,7 @@ export const CAST = Object.freeze({
     accent: 'any light regional accent (Central-European roots welcome, not a caricature); casual',
     register: 'younger tenor/baritone; quick, jokey, nervous underneath; calls him "Wren"',
     not: 'never a cartoon nerd, never mugging the jokes; the fear is under the jokes, not instead of them',
-    ai: 'Kokoro am_puck (American English, male), base pace 1.1',
+    ai: 'Kokoro blend am_puck 70 / am_fenrir 30 (performance.json)',
   },
   MAREN: {
     who: 'Dr. Maren Soll, historian of the Lanternwrights (white, triangle)',
@@ -36,7 +38,7 @@ export const CAST = Object.freeze({
     accent: 'British or Northern-European English; precise consonants',
     register: 'dry, exact, low-key; academic understatement; real curiosity under the dryness',
     not: 'never theatrical, never "spooky narrator", never warm in the way Odessa is',
-    ai: 'Kokoro bf_emma (British English, female), base pace 0.92',
+    ai: 'Kokoro blend bf_emma 70 / bf_isabella 30, -0.6 st (performance.json)',
   },
   VESPER: {
     who: 'Vesper, the suit AI (grey, square); in the suit, not on the radio',
@@ -44,7 +46,7 @@ export const CAST = Object.freeze({
     accent: 'neutral, unplaceable',
     register: 'clinical, even, five words or fewer; equal stress; no breath, no emotion',
     not: 'never robotic-funny, never menacing, never glitches (the suit is the one clean voice); no processing on the take',
-    ai: 'Kokoro bm_george (British English, male), base pace 1.0',
+    ai: 'Kokoro blend bm_george 70 / bm_daniel 30 (performance.json)',
   },
   ELIAS: {
     who: 'Elias Wren, the player: your own voice in the suit (pale blue-white, ring)',
@@ -52,7 +54,7 @@ export const CAST = Object.freeze({
     accent: 'neutral American or mid-Atlantic; a working professional, not a hero',
     register: 'low, tired, steady baritone; dry humour when nervous; talks to himself when stuck, like someone who has been alone down a hole before. NOT on the radio: close, dry, a little breath, no radio processing',
     not: 'never a quip-machine, never heroic, never scared out loud: the unease is under the calm. The self-talk lines are muttered, not performed',
-    ai: 'Kokoro am_michael (American English, male), base pace 0.96',
+    ai: 'Kokoro blend am_michael 70 / am_onyx 30, -0.5 st, close (performance.json)',
   },
   UPLINK: {
     who: 'the open channel (no speaker)',
@@ -68,76 +70,82 @@ export const CAST = Object.freeze({
 export const DIRECTION = Object.freeze({
   // S1 THE THRESHOLD
   's1-open-1': { dir: 'In-suit readout as he wakes. Clinical, even, equal stress. He takes it for a lowering check; so does the line.', say: 'Restore complete. Continuity ninety-nine_point_eight_percent.' },
-  's1-open-2': { dir: 'Warm, proud, controlled: a director marking a moment for the record. A small smile. "History." lands a beat later.', pace: 0.95 },
+  's1-open-2': { dir: 'Warm, proud, controlled: a director marking a moment for the record. A small smile. "History." lands a beat later.' },
   's1-open-3': { dir: 'Bright and quick, showing off his kit; a touch too cheerful. Close on a headset mic.' },
   's1-open-4': { dir: 'Dry, precise, quietly thrilled underneath: the historian meeting her subject. Crisp consonants.', say: "Nobody's stood there since seventeen_ninety-one. Read me every board you pass." },
-  's1-open-5': { dir: 'Warm, unhurried. "Take your time" is reassurance that is slightly too practised.', pace: 0.95 },
+  's1-open-5': { dir: 'Warm, unhurried. "Take your time" is reassurance that is slightly too practised.' },
   's1-bell-1': { dir: 'A casual warning. THE SLIP: "louder than last time" must come out natural; she does not notice it. Do not land it.' },
-  's1-bell-2': { dir: 'Genuinely puzzled, half a laugh. Quick.', pitch: 0.3 },
-  's1-bell-3': { dir: 'A smooth correction a fraction too fast: covering. Cool, not angry.', say: 'The probes, Tomash. Focus.', pace: 1.05 },
-  's1-open-2w': { dir: 'A beat after "History." Flat, a half-step too quiet: "First." catches on something; "Right." is him putting it away. Then the professional "Copy, Odessa."', pace: 0.92 },
+  's1-bell-2': { dir: 'Genuinely puzzled, half a laugh. Quick.' },
+  's1-bell-3': { dir: 'A smooth correction a fraction too fast: covering. Cool, not angry.', say: 'The probes, Tomash. Focus.' },
+  's1-open-2w': { dir: 'A beat after "History." Flat, a half-step too quiet: "First." catches on something; "Right." is him putting it away. Then the professional "Copy, Odessa."' },
   's1-open-3w': { dir: 'Practical, a little dry. "Keep them coming" is half a joke and half meant.' },
   's1-open-4w': { dir: 'Patient, the faintest smile. The reassurance of a man who has done this kind of thing before.' },
-  's1-open-5w': { dir: 'Low and quiet, to himself as much as to them. "Going down" is a decision, not a boast.', pace: 0.9 },
-  's1-self': { dir: 'Muttered, thinking aloud; the third sentence rises, finding it. Close to the mic, a little breath.', pace: 0.94 },
+  's1-open-5w': { dir: 'Low and quiet, to himself as much as to them. "Going down" is a decision, not a boast.' },
+  's1-self': { dir: 'Muttered, thinking aloud; the third sentence rises, finding it. Close to the mic, a little breath.' },
   's2-self': { dir: 'Muttered, a little impatient with himself. "Don\'t just stand here" is an order he gives himself.' },
-  's3-self': { dir: 'Working it out as he says it, slow, then decided on "let it carry me".', pace: 0.94 },
-  's4-self': { dir: 'Hushed: the vault is listening. Slow, careful, each word placed.', pace: 0.88 },
-  's5-self': { dir: 'Tight, under his breath; the "Or" is a real choice he has not made yet.', pace: 0.94 },
+  's3-self': { dir: 'Working it out as he says it, slow, then decided on "let it carry me".' },
+  's4-self': { dir: 'Hushed: the vault is listening. Slow, careful, each word placed.' },
+  's5-self': { dir: 'Tight, under his breath; the "Or" is a real choice he has not made yet.' },
   's6-self': { dir: 'Dry, tired, almost amused at his own stalling.' },
-  's7-self': { dir: 'A rhythm he is saying to keep moving: even, a mantra. "Never let go first" is the rule.', pace: 0.96 },
-  's8-self': { dir: 'Out of breath, low, urgent but controlled. Not a shout.', pace: 1.02 },
+  's7-self': { dir: 'A rhythm he is saying to keep moving: even, a mantra. "Never let go first" is the rule.' },
+  's8-self': { dir: 'Out of breath, low, urgent but controlled. Not a shout.' },
   's1-stall': { dir: 'A patient hint; he has been watching you hang there. Coaching, friendly.' },
   // S2 THE LONG SWING
   's2-board': { dir: 'Reads the board aloud flat, as a quotation; then a bone-dry aside.', say: "'It does not send us back.' Cheerful people, the Lantern_wrights." },
   's2-haul': { dir: 'Precise, unsettled underneath. A beat before "Recently." A brisk instruction to finish.', say: "That chain's been oiled. Recently. Write that down, Tomash." },
   's2-stall': { dir: 'A practical hint, plain.' },
   // S3 BROKEN GALLERY
-  's3-enter': { dir: 'Quiet deduction. The second sentence lower and slower.', pace: 0.95 },
+  's3-enter': { dir: 'Quiet deduction. The second sentence lower and slower.' },
   's3-winch': { dir: 'Awed, with a small nervous laugh in it.' },
   's3-stall': { dir: 'A practical hint, plain.' },
   // S4 THE LISTENING VAULT
   's4-enter': { dir: 'A calm status update. "Signal\'s thinning" neutral, deliberately unworried.' },
-  's4-sight': { dir: 'Startled, fast, the fear rising; trying to sound casual and failing.', pace: 1.08, pitch: 0.4 },
-  's4-knock': { dir: 'Low and careful, close to a whisper, as if the thing could hear the radio.', pace: 0.94, pitch: -0.2 },
+  's4-sight': { dir: 'Startled, fast, the fear rising; trying to sound casual and failing.' },
+  's4-knock': { dir: 'Low and careful, close to a whisper, as if the thing could hear the radio.' },
   's4-echo': { dir: 'NO ACTOR. The channel plays the player\'s breathing back two seconds late; the game synthesises it.' },
   's4-stall': { dir: 'A practical hint; patient.' },
   // S5 THE GULLET STAIR
-  's5-enter': { dir: 'Urgent but controlled: the director voice. Clipped. Never shouted.', pace: 1.04 },
+  's5-enter': { dir: 'Urgent but controlled: the director voice. Clipped. Never shouted.' },
   's5-frayed': { dir: 'THE LINE NOBODY SENT. Play it as ordinary, helpful Tick: casual, kind. It must sound exactly like him; the horror comes 40 s later.' },
   's5-mute': { dir: 'Breezy and oblivious, just back at the mic. Light. He has no idea.' },
-  's5-key': { dir: 'Hushed and scared, close to the mic, almost under his breath.', pace: 0.96, pitch: 0.3 },
+  's5-key': { dir: 'Hushed and scared, close to the mic, almost under his breath.' },
   's5-stall': { dir: 'A practical hint, plain.' },
   // S6 THE TWO DESCENTS
   's6-enter': { dir: 'Suit status. Clinical, even.' },
   's6-fork': { dir: 'Dry wit, but real care leaks through on "early".' },
-  's6-skit': { dir: 'Suit alert. Three flat words, evenly spaced. No urgency in the voice; the words carry it.', pace: 0.95 },
+  's6-skit': { dir: 'Suit alert. Three flat words, evenly spaced. No urgency in the voice; the words carry it.' },
   's6-stall': { dir: 'Dry, a little impatient.' },
   // S7 THE HOLLOW NAVE
-  's7-enter': { dir: 'Quiet awe, almost to herself.', pace: 0.94 },
+  's7-enter': { dir: 'Quiet awe, almost to herself.' },
   's7-hang': { dir: 'Tense instruction, trying to steady him. (The game makes one word stick; record it clean.)' },
-  's7-iris': { dir: 'An urgent command: the most force she uses all chapter. Still not shouted.', pace: 1.06 },
+  's7-iris': { dir: 'An urgent command: the most force she uses all chapter. Still not shouted.' },
   's7-stall': { dir: 'A practical hint, quick.' },
   // S8 THE LAST THROAT
-  's8-enter': { dir: 'Very calm, slower, emphatic: she needs him to believe it. "it\'s us" lands.', pace: 0.92, pitch: -0.2 },
+  's8-enter': { dir: 'Very calm, slower, emphatic: she needs him to believe it. "it\'s us" lands.' },
   's8-two': { dir: 'Suit readout. Even; the number is just a number.' },
   's8-probes': { dir: 'Gallows humour; the voice nearly cracks under the joke.' },
-  's8-warm': { dir: 'NOT QUITE ODESSA. Record it as Odessa, but too close, too intimate, too slow, smiling; no radio distance. The game pitches and doubles it at runtime: deliver it clean, no effect.', pace: 0.88, pitch: -0.3 },
+  's8-warm': { dir: 'NOT QUITE ODESSA. Record it as Odessa, but too close, too intimate, too slow, smiling; no radio distance. The game pitches and doubles it at runtime: deliver it clean, no effect.' },
   's8-lost': { dir: 'Suit readout. Two words, flat, final.' },
-  's8-stall': { dir: 'Urgent, controlled.', pace: 1.04 },
+  's8-stall': { dir: 'Urgent, controlled.' },
   // anywhere
   'any-hurt': { dir: 'Wincing sympathy, joking to cover the worry.' },
   'any-low': { dir: 'Procedural and calm, reading a checklist while he is dying. Cold in its calm.' },
   'any-relay': { dir: 'An upbeat tech explanation.' },
   'any-gaze': { dir: 'Puzzled, light, a little uneasy.' },
-  'back-1': { dir: 'The first restore: relief, careful, checking he is really there.', pace: 0.95 },
-  'back-hot-1': { dir: 'OFF MIC: turned away, whispering to Odessa, not meant for Elias. Record about 1 m off-axis, quiet but intelligible.', pace: 0.95, pitch: 0.2 },
-  'back-hot-2': { dir: 'Sharp, quiet, fast. Ice.', say: 'Cut the hot mic, Tomash.', pace: 1.05 },
+  'back-1': { dir: 'The first restore: relief, careful, checking he is really there.' },
+  'back-hot-1': { dir: 'OFF MIC: turned away, whispering to Odessa, not meant for Elias. Record about 1 m off-axis, quiet but intelligible.' },
+  'back-hot-2': { dir: 'Sharp, quiet, fast. Ice.', say: 'Cut the hot mic, Tomash.' },
   'back-impact': { dir: 'A logged note, then a mild instruction; professional warmth.' },
   'back-skitter': { dir: 'Dry, a little shaken.' },
   'back-mason': { dir: 'A clinical observation. "Noted." flat.' },
-  'back-dressed': { dir: 'Shaken, quiet; he does not want to say what he saw.', pace: 0.96 },
-  'back-many': { dir: 'Reassurance; the second "You\'re fine" slightly too firm. She is reassuring herself.', pace: 0.94 },
+  'back-dressed': { dir: 'Shaken, quiet; he does not want to say what he saw.' },
+  'back-many': { dir: 'Reassurance; the second "You\'re fine" slightly too firm. She is reassuring herself.' },
+  // CHAPTER II · LAMPHOLD (data/chapter2-text.js radio; chapter2Glue.js radioScript says when)
+  'c2-open': { trigger: 'entering II-1 (+2.5 s)', dir: 'Relief and a little wonder: five bars, this deep. "Down here." is almost to herself. Warmer than Chapter I, still controlled.' },
+  'c2-bell': { trigger: 'the Usher answers a toll (II-9, the second answer)', dir: 'The jokes are gone. Fast, breath caught; the repeat climbs and stresses "bell". Not a scream.' },
+  'c2-rule': { trigger: '1 s after c2-bell', dir: 'Cold, exact: she has worked out the rule. Three short sentences, a beat between; "The bell." lower and slower.' },
+  'c2-bars': { trigger: 'entering II-12 (+3 s)', dir: 'Calm under pressure: reporting, not alarming. A touch quicker than her usual.' },
+  'c2-orderly': { trigger: 'the Round begins (II-12, phase A)', dir: 'Hushed realisation. A beat before "That\'s orderly."; the word is the chill.' },
 });
 
 /** DARK_STORY_BIBLE.md §4.3: specified, not in the game yet. `section`: 0-based (-1 = the goal box after S8). */

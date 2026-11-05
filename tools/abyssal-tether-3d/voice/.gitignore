@@ -1,2 +1,2 @@
-# the Kokoro model + voices fetched by build_voices.py --fetch (~93 MB): never commit
+# the Kokoro model + voices fetched by build_voices.py --fetch (fp32 model ~326 MB + the voice style tensors): never commit
 .cache/
