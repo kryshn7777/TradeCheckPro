@@ -48,6 +48,8 @@ try {
     p.z = p.prevZ = p.rz = bz + 4.2;
     p.vx = p.vy = p.vz = 0;
     D.step(1.2, { render: false, state: false }); // settle on the floor
+    pf.trigger.reset(0); // a beat may have fired while the body fell into place: start the bell's ratchet afresh
+    pf._stop();
     const awayYaw = Math.atan2(-(p.x - bx), -(p.z - bz)); // looking from the bell through the player: the bell is behind
     G._setLook(awayYaw, 0);
     pf.debugReady();
@@ -55,7 +57,7 @@ try {
     return { bell: { x: bell.x, y: bell.y, z: bell.z }, player: { x: p.x, y: p.y, z: p.z }, yaw0: G.renderer.rig.rotation.y, mode: pf.mode, puzzles: pf.trigger.puzzles.length };
   });
   console.log('setup', JSON.stringify(setup));
-  await page.screenshot({ path: path.join(OUT, 'focus-before.png') });
+  await page.screenshot({ path: path.join(OUT, 'focus-before.png'), timeout: 300000 });
   const after = await page.evaluate(() => {
     const G = window.AT3D.game;
     const D = window.AT3D.debug;
@@ -70,7 +72,7 @@ try {
     const cm = D.comms.state();
     return { st0, st, trace, yaw: G.renderer.rig.rotation.y, pitch: G.renderer.camera.rotation.x, eye: G.renderer.camera.matrixWorld.elements.slice(12, 15), comms: cm, ev: window.__focus, glow: G.puzzleFocus._view ? G.puzzleFocus._view.mesh.visible : false };
   });
-  await page.screenshot({ path: path.join(OUT, 'focus-after.png') });
+  await page.screenshot({ path: path.join(OUT, 'focus-after.png'), timeout: 300000 });
   console.log('trace', JSON.stringify(after.trace.filter((_, i) => i % 4 === 0)));
   console.log('focus', JSON.stringify(after.st));
   const b = setup.bell;
@@ -96,6 +98,15 @@ try {
     const cw = pf.trigger.puzzles.find((p) => p.type === 'haul');
     pf.trigger.aim(cw, 0, 0, 0);
     const p = G.player;
+    // a few metres out from the ring, let the body settle, then start its ratchet afresh
+    p.x = p.prevX = p.rx = cw.x + 3;
+    p.y = p.prevY = p.ry = cw.y;
+    p.z = p.prevZ = p.rz = cw.z + 3;
+    p.vx = p.vy = p.vz = 0;
+    D.step(1.5, { render: false, state: false });
+    pf.trigger.reset(0);
+    pf._stop();
+    D.step(1 / 60, { render: true, state: false });
     const e = G.renderer.camera.matrixWorld.elements;
     const d = Math.hypot(cw.x - e[12], cw.y - e[13], cw.z - e[14]);
     // look the other way, then let the beat start and move the "mouse" 4 frames in
@@ -118,7 +129,7 @@ try {
     D.step(1 / 60, { render: true, state: false });
     return { dist: d, started, yawAtInput, yaw: G.renderer.rig.rotation.y, st: D.focus.state() };
   });
-  await page.screenshot({ path: path.join(OUT, 'focus-s2-cancel.png') });
+  await page.screenshot({ path: path.join(OUT, 'focus-s2-cancel.png'), timeout: 300000 });
   console.log('cancel', JSON.stringify({ dist: cancel.dist, started: cancel.started, yawAtInput: cancel.yawAtInput, yaw: cancel.yaw, cancelled: cancel.st.cancelled, log: cancel.st.log.slice(-2) }));
   check(`S2 counterweight (${cancel.dist.toFixed(1)} m): a beat started`, cancel.started);
   check('look input mid-turn cancels it: the view stays where the player put it', cancel.started && cancel.st.cancelled === 'input' && Math.abs(cancel.yaw - cancel.yawAtInput) < 1e-6);
@@ -143,6 +154,8 @@ try {
     p.z = p.prevZ = p.rz = bell.z + 4.2;
     p.vx = p.vy = p.vz = 0;
     D.step(1.2, { render: false, state: false });
+    pf.trigger.reset(0);
+    pf._stop();
     G._setLook(Math.atan2(-(p.x - bell.x), -(p.z - bell.z)), 0);
     const y0 = G.renderer.rig.rotation.y;
     pf.debugReady();
