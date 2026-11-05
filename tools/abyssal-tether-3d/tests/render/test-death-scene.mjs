@@ -13,7 +13,6 @@
 //   - DeathOverlay: hidden with nothing to show, shows with lids or blood, uniforms follow the snapshot, dispose removes it;
 //   - every beat has a sound (audio3d `case`), a caption (captions.js DEATH_BEAT_RULES, except 'down'), and the game wires it all.
 //   node test-death-scene.mjs
-import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';

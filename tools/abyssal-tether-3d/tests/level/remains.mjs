@@ -52,7 +52,7 @@ ok(all.every((f) => level.anchors.every((a) => Math.hypot(a.x - f.x, a.y - f.y, 
 const onTop = (x, y, z) => level.solids.some((s) => Math.abs(s.maxY - y) < 0.03 && x >= s.minX && x <= s.maxX && z >= s.minZ && z <= s.maxZ);
 ok(sk.filter((s) => s.kind !== 'hanging').every((s) => onTop(s.x, s.y, s.z)), 'skeletons: every one lies on a ledge top');
 const hang = sk.filter((s) => s.kind === 'hanging');
-ok(hang.every((s) => s.hook != null && level.solids.some((o) => Math.abs(o.minY - s.hook) < 0.03 && s.x >= o.minX && s.x <= o.maxX && s.z >= o.minZ && s.z <= o.maxZ) && !level.raycast(s.x, s.hook - 0.05, s.z, 0, -1, 0, 3.2, {})), `skeletons: ${hang.length} hang from the underside of a ledge with a clear 3 m below`);
+ok(hang.every((s) => s.hook != null && level.solids.some((o) => Math.abs(o.minY - s.hook) < 0.03 && s.x >= o.minX && s.x <= o.maxX && s.z >= o.minZ && s.z <= o.maxZ) && !level.raycast(s.x, s.hook - 0.05, s.z, 0, -1, 0, 3.8, {})), `skeletons: ${hang.length} hang from the underside of a ledge with a clear 3.8 m below`);
 let slumpedBad = 0;
 const slumped = sk.filter((s) => s.kind === 'slumped');
 for (const s of slumped) {
@@ -84,8 +84,9 @@ const mkGltf = (names) => {
   const scene = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true });
   for (const n of names) {
-    const g = new THREE.BoxGeometry(0.6, n === 'Bones_Hanging' ? 2.4 : 0.4, 1.7);
-    g.translate(0, n === 'Bones_Hanging' ? 1.2 : 0.2, 0);
+    // (the real model: floor poses stand on y = 0; Bones_Hanging hangs BELOW its origin, the hook)
+    const g = new THREE.BoxGeometry(0.6, n === 'Bones_Hanging' ? 3.3 : 0.4, 1.7);
+    g.translate(0, n === 'Bones_Hanging' ? -1.65 : 0.2, 0);
     const c = new Float32Array(g.getAttribute('position').count * 3).fill(0.8);
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
     const m = new THREE.Mesh(g, mat);
@@ -115,9 +116,11 @@ const atlasTex = () => new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2,
     if (o.isMesh) drawn++;
   });
   ok(drawn === 0, 'view: nothing is drawn until the assets arrive');
-  v.buildFromGLTF(mkGltf(['Bones_Sprawled', 'Bones_Slumped', 'Bones_Hanging', 'Bones_Ribcage']));
+  v.buildFromGLTF(mkGltf(['Bones_LyingA', 'Bones_LyingB', 'Bones_SittingWall', 'Bones_Hanging', 'Bones_Ribcage']));
   const kinds = new Set(sk.map((s) => s.kind));
-  ok(v.byKind.size === kinds.size, `view: one instanced mesh per kind in use (${v.byKind.size}); kinds with no pose in the model fall back to one that exists`);
+  ok(v.byKind.size >= 3 && v.byKind.size <= kinds.size + 2, `view: one instanced mesh per model mesh in use (${v.byKind.size} for ${kinds.size} kinds); kinds with no pose in the model fall back to one that exists`);
+  const tot = [...v.byKind.values()].reduce((a, k) => a + k.items.length, 0);
+  ok(tot === sk.length, 'view: every planned skeleton is in exactly one instanced mesh');
   v.setAtlas(atlasTex(), { cells });
   ok(v.stainMesh && v.stainMesh.count === 0, 'view: the blood is ONE instanced mesh');
   // stand next to the first skeleton
@@ -140,11 +143,11 @@ const atlasTex = () => new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2,
   // the matrices: a hanging one hangs from its hook; the blood stands off the surface the right way
   const h = v.plan.skeletons.find((s) => s.kind === 'hanging');
   if (h) {
-    const k = v.byKind.get('hanging');
+    const k = v.byKind.get('Bones_Hanging');
     const idx = k.items.indexOf(h);
     const mm = new THREE.Matrix4().fromArray(k.mats, idx * 16);
     const p = new THREE.Vector3().setFromMatrixPosition(mm);
-    ok(Math.abs(p.y + k.top - 0.05 - h.hook) < 1e-4, 'view: a hanging skeleton is placed so the top of its model meets the hook');
+    ok(Math.abs(p.y - h.hook) < 1e-4, 'view: a hanging skeleton\'s origin (the hook) is put at the underside of its ledge');
   }
   const wi = st.findIndex((s) => s.ny === 0);
   const wm = new THREE.Matrix4().fromArray(v._stainMats, wi * 16);

@@ -30,18 +30,24 @@ const STAIN_RANGE = 45;
 const REFRESH = 1.5; // m of camera travel between rebuilds of the near lists
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
-/** The plan's kinds -> a mesh of the GLB (by name). */
+/**
+ * The plan's kinds -> the meshes of bones.glb that can stand for it (by node name; a kind with several picks one by the item's id, so two
+ * sprawled ones differ). build_bones.py's nodes: Bones_Crawler, _Hanging (origin at the HOOK), _LyingA, _LyingB, _Reach, _Ribcage, _Scatter,
+ * _SittingWall (origin on the wall plane, the skeleton in +z), _Skull, _SkullJawless, _SkullPile.
+ */
 const NAME = {
-  slumped: /slump/i,
-  hanging: /hang/i,
-  sprawled: /sprawl/i,
-  crumpled: /crumple/i,
-  crawling: /crawl/i,
-  ribcage: /rib/i,
-  loose: /loose/i,
-  skullpile: /pile/i,
-  hand: /hand/i,
+  slumped: [/sitting|slump/i],
+  hanging: [/hang/i],
+  sprawled: [/lyinga|sprawl/i, /lyingb/i],
+  crumpled: [/lyingb|crumple/i],
+  crawling: [/crawl/i],
+  ribcage: [/rib/i],
+  loose: [/scatter|loose/i, /skull$|skulljawless/i],
+  skullpile: [/pile/i],
+  hand: [/reach|hand/i],
 };
+/** Slumped: the model's origin is ON the wall plane, the plan puts the body this far out from it. */
+const SLUMP_OFF = 0.42;
 
 const VERT = /* glsl */ `
 #include <common>
@@ -173,16 +179,23 @@ export class RemainsView {
       if (o.isMesh && o.geometry) found.push(o);
     });
     if (!found.length) throw new Error('bones.glb has no meshes');
-    const pick = (kind) => found.find((o) => NAME[kind].test(o.name)) || null;
-    const fallback = found.find((o) => /sprawl|crumple/i.test(o.name)) || found[0];
-    const need = new Map();
+    const fallback = found.find((o) => /lyinga|sprawl|crumple|lyingb/i.test(o.name)) || found[0];
+    const hashId = (id) => {
+      let h = 0;
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+      return h;
+    };
+    // group the plan's skeletons by the mesh that stands for them
+    const groups = new Map(); // mesh -> { base, kind, items[] }
     for (const s of this.plan.skeletons) {
-      if (!need.has(s.kind)) need.set(s.kind, []);
-      need.get(s.kind).push(s);
+      const cands = (NAME[s.kind] || []).map((re) => found.find((o) => re.test(o.name))).filter(Boolean);
+      const base = cands.length ? cands[hashId(s.id) % cands.length] : fallback;
+      if (!groups.has(base)) groups.set(base, { base, kind: s.kind, items: [] });
+      groups.get(base).items.push(s);
     }
     const mats = new Map();
-    for (const [kind, items] of need) {
-      const base = pick(kind) || fallback;
+    for (const [base, grp] of groups) {
+      const items = grp.items;
       let mat = mats.get(base.material);
       if (!mat) {
         mat = base.material.clone();
@@ -193,23 +206,32 @@ export class RemainsView {
         mats.set(base.material, mat);
       }
       const im = new THREE.InstancedMesh(base.geometry, mat, items.length);
-      im.name = 'remains-' + kind;
+      im.name = 'remains-' + base.name;
       im.frustumCulled = false;
       im.count = 0;
       base.geometry.computeBoundingBox();
       const top = base.geometry.boundingBox.max.y;
       this.scene.add(im);
-      this.byKind.set(kind, { mesh: im, base, items, top, mats: new Float32Array(items.length * 16) });
+      const rec = { mesh: im, base, kind: grp.kind, items, top, mats: new Float32Array(items.length * 16) };
+      this.byKind.set(base.name, rec);
       // the matrices of every item, once
       const m = this._m;
       for (let i = 0; i < items.length; i++) {
         const s = items[i];
-        const y = kind === 'hanging' && s.hook != null ? s.hook - top + 0.05 : s.y;
-        this._p.set(s.x, y, s.z);
+        let x = s.x;
+        let y = s.y;
+        let z = s.z;
+        if (grp.kind === 'hanging' && s.hook != null) y = s.hook; // the model's origin is the hook
+        else if (/sitting|slump/i.test(base.name)) {
+          // the origin is on the wall plane: step back from where the plan put the body (it faces out of the wall along yaw)
+          x -= Math.sin(s.yaw) * SLUMP_OFF;
+          z -= Math.cos(s.yaw) * SLUMP_OFF;
+        }
+        this._p.set(x, y, z);
         this._q.setFromAxisAngle(Y_AXIS, s.yaw);
         this._s.set(1, 1, 1);
         m.compose(this._p, this._q, this._s);
-        m.toArray(this.byKind.get(kind).mats, i * 16);
+        m.toArray(rec.mats, i * 16);
       }
     }
     this.stats.kinds = this.byKind.size;

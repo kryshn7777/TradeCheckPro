@@ -111,10 +111,10 @@ export function planRemains(level, seed = 0x6b0e5) {
         // from the underside of a ledge: find a free column below it
         const p = pickOn(f, REMAINS.edgeClear);
         if (!p) continue;
-        const under = level.raycast(p[0], f.minY - 0.05, p[2], 0, -1, 0, 3.2, hit);
-        if (under) continue; // not clear for 3 m
+        const under = level.raycast(p[0], f.minY - 0.05, p[2], 0, -1, 0, 3.8, hit);
+        if (under) continue; // not clear for 3.8 m (the model hangs about 3.3 m below its hook)
         x = p[0];
-        y = f.minY - 2.6;
+        y = f.minY - 3.5;
         z = p[2];
         if (bad(x, y, z)) continue;
         out.skeletons.push({ kind, x: +x.toFixed(3), y: +y.toFixed(3), z: +z.toFixed(3), yaw: +yaw.toFixed(3), section: si, id: 'rem-' + out.skeletons.length, hook: +f.minY.toFixed(3) });

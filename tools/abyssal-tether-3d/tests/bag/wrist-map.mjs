@@ -34,7 +34,6 @@ const ok = (c, msg) => {
   console.log((c ? 'PASS ' : 'FAIL ') + msg);
   if (!c) fails++;
 };
-const head = { x: 0, y: 1.6, z: 0, fx: 0, fy: 0, fz: -1 };
 const norm = (v) => {
   const l = Math.hypot(v.fx, v.fy, v.fz);
   return Object.assign(v, { fx: v.fx / l, fy: v.fy / l, fz: v.fz / l });
