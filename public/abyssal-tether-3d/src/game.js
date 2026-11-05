@@ -36,6 +36,8 @@ import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from it
 import { RemainsView } from './render/remainsView.js'; // skeletons (bones.glb) and old blood (blood_atlas.png) through Chapter I
 import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
 import { nearestWater } from './sim/waterPlan.js';
+import { Roaches } from './sim/roaches.js'; // RED ROACHES: tiny red cockroaches near you, out of camera (plans/ROACHES.md)
+import { RoachView } from './render/roachView.js'; // ... one InstancedMesh, one draw call
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
@@ -1124,6 +1126,8 @@ export class Game3D {
     this.vista = null; // sim/vistaWind.js
     this.waterView = null; // render/waterView.js (Chapter I)
     this.remainsView = null; // render/remainsView.js (Chapter I)
+    this.roaches = null; // sim/roaches.js (per run; settings.roaches off = none)
+    this.roachView = null; // render/roachView.js
     this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
@@ -2722,6 +2726,7 @@ export class Game3D {
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.roaches) this.roaches.clear(); // a respawn / warp wakes to an empty floor
     if (this.c2) this._try('chapter2', () => this.c2.onRespawn()); // CHAPTER II: the phase of the lamp you wake at
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
@@ -2816,6 +2821,7 @@ export class Game3D {
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.roaches) this.roaches.clear(); // a respawn / warp wakes to an empty floor
     this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._face(cp.yaw);
@@ -2961,6 +2967,9 @@ export class Game3D {
     this.vista = new VistaWind(this._runBus);
     this.vista.enabled = !windOff();
     this.vista.reset(lvl);
+    if (this.roaches) this.roaches.destroy();
+    this.roaches = attract ? null : new Roaches(this._runBus, { seed: (0x2545f491 * (this._runCount + 1)) >>> 0 });
+    if (this.roaches) this.roaches.reset(lvl);
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
@@ -4904,6 +4913,15 @@ export class Game3D {
         this.waterView = null;
       }
     }
+    if (this.roaches || this.roachView) {
+      try {
+        if (!this.roachView && this.renderer) this.roachView = new RoachView(this);
+        this.roachView.update(dt, this);
+      } catch (err) {
+        this._fault('roachView', err);
+        if (this.roaches) this.roaches.enabled = false;
+      }
+    }
     if (this.jetpackView) {
       try {
         this.jetpackView.update(dt, this);
@@ -5737,6 +5755,16 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
+      // RED ROACHES (sim/roaches.js): state() = alive / cap / by state / stats + the view's instances; burst() pours a stream out of the wall
+      // nearest the right hand (or the head); clear() empties the floor
+      roaches: {
+        state: () => (this.roaches ? Object.assign(this.roaches.state(), { view: this.roachView ? { ...this.roachView.stats } : null }) : { enabled: false }),
+        burst: () => {
+          const o = this.handOrigin('right', {});
+          return !!(this.roaches && this.roaches.burstAt(o.x, o.y, o.z, true));
+        },
+        clear: () => (this.roaches ? (this.roaches.clear(), true) : false),
+      },
       // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
       comms: {
