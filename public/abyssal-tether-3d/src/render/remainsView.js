@@ -175,6 +175,9 @@ export class RemainsView {
   /** Builds the instanced skeletons from a loaded glTF: every mesh whose name matches a kind. */
   buildFromGLTF(gltf) {
     const found = [];
+    // bones.glb is quantised (KHR_mesh_quantization): the vertices are normalised int16 and each NODE carries the scale + offset that bring them to
+    // metres, so every instance matrix is (place) x (the node's own matrix), and the extents come from the node-transformed box
+    gltf.scene.updateMatrixWorld(true);
     gltf.scene.traverse((o) => {
       if (o.isMesh && o.geometry) found.push(o);
     });
@@ -209,8 +212,9 @@ export class RemainsView {
       im.name = 'remains-' + base.name;
       im.frustumCulled = false;
       im.count = 0;
-      base.geometry.computeBoundingBox();
-      const top = base.geometry.boundingBox.max.y;
+      const box = new THREE.Box3().setFromObject(base); // metres, in the model's own frame (the node transform applied)
+      const top = box.max.y;
+      const nodeM = base.matrixWorld.clone();
       this.scene.add(im);
       const rec = { mesh: im, base, kind: grp.kind, items, top, mats: new Float32Array(items.length * 16) };
       this.byKind.set(base.name, rec);
@@ -230,7 +234,7 @@ export class RemainsView {
         this._p.set(x, y, z);
         this._q.setFromAxisAngle(Y_AXIS, s.yaw);
         this._s.set(1, 1, 1);
-        m.compose(this._p, this._q, this._s);
+        m.compose(this._p, this._q, this._s).multiply(nodeM);
         m.toArray(rec.mats, i * 16);
       }
     }

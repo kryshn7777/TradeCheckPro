@@ -91,6 +91,11 @@ const mkGltf = (names) => {
     g.setAttribute('color', new THREE.BufferAttribute(c, 3));
     const m = new THREE.Mesh(g, mat);
     m.name = n;
+    if (n === 'Bones_SittingWall') {
+      // like the real quantised file: the node carries the offset + scale that bring the vertices to metres
+      m.position.set(0.0, 0.39, 0.55);
+      m.scale.setScalar(0.55);
+    }
     scene.add(m);
   }
   return { scene };
@@ -148,6 +153,18 @@ const atlasTex = () => new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2,
     const mm = new THREE.Matrix4().fromArray(k.mats, idx * 16);
     const p = new THREE.Vector3().setFromMatrixPosition(mm);
     ok(Math.abs(p.y - h.hook) < 1e-4, 'view: a hanging skeleton\'s origin (the hook) is put at the underside of its ledge');
+  }
+  const sw = [...v.byKind.values()].find((k) => /sitting/i.test(k.base.name));
+  if (sw) {
+    const it = sw.items[0];
+    const mm = new THREE.Matrix4().fromArray(sw.mats, 0);
+    const p0 = new THREE.Vector3(0, 0, 0).applyMatrix4(mm); // the model's local origin ...
+    const nodeM = sw.base.matrixWorld;
+    const want = new THREE.Vector3(0, 0, 0).applyMatrix4(nodeM);
+    // ... is the node's offset carried through the placement: the instance's scale must include the node's 0.55
+    const sc = new THREE.Vector3();
+    mm.decompose(new THREE.Vector3(), new THREE.Quaternion(), sc);
+    ok(Math.abs(sc.x - 0.55) < 1e-6 && Math.abs(p0.y - (it.y + want.y)) < 1e-6, 'view: the node transform (the quantisation scale + offset) is part of every instance matrix');
   }
   const wi = st.findIndex((s) => s.ny === 0);
   const wm = new THREE.Matrix4().fromArray(v._stainMats, wi * 16);
