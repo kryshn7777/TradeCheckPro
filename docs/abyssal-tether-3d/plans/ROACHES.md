@@ -112,6 +112,17 @@ update ranges allocate a record and, because three clears them with `length = 0`
 `smearFade`, `territory`, `obstacles`, `burst` (chance per section, cooldown, n, gap, reach), `skitter` (range, gap), `scatterGap`. A run's sim also has
 `popMul` (x the wanted population) and `enabled`.
 
+**Measured in the game** (desktop software renderer, S3, the burst frame below): 43 calls / 55,042 triangles with 7 roaches out, 42 / 54,853 without:
+**+1 draw call, +189 triangles (7 x 27)**.
+
+## Captures (desktop software GL, narrowed lens: a 3.4 cm insect at 70 deg is a few pixels)
+
+| | |
+|---|---|
+| ![close-up](img/roach-closeup.jpg) | Close-up under the lantern (13 deg lens): the lacquered red carapace with the lantern's glint, mid-stride legs, antennae; a squished one as a flat splat. 6 instances, 1 call. |
+| ![scatter](img/roach-scatter.jpg) | A group on an S3 ledge 0.35 s after the lantern's cone fell on them (34 deg lens): 9 fleeing, 1 darting (the specks). |
+| ![burst](img/roach-burst.jpg) | A crack burst on a wall beside the hand (40 deg lens), with the frame's draw-call / triangle line. |
+
 ## Debug
 
 `AT3D.debug.roaches.state()` (alive, cap, target, section, remains weight, by state, stats, the view's shown / triangles / calls), `.burst()` (a crack burst

@@ -50,6 +50,7 @@ void main() {
     p.y *= 0.04;
     if (part > 2.5) p *= 0.0; // the antennae are gone
     else if (part > 1.5) p.xz *= 0.55; // the legs: a few stubs at the rim
+    else if (part > 0.5) p.xz *= vec2(1.4, 0.72); // the head pressed into it
     else p.xz *= vec2(1.75, 1.35) * (1.0 + 0.22 * sin(p.z * 19.0 + p.x * 11.0 + seed * 30.0)); // an irregular splat
     p.xz *= k;
     n = vec3(0.0, 1.0, 0.0);
