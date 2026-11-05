@@ -117,7 +117,7 @@ const anchorOf = (page, hand) =>
   try {
     // ---- the free-attach level ----------------------------------------------------------------------------------------
     const errors = [];
-    const { ctx, page } = await openGame(browser, base, 'comms=off&intro=off&hints=off&hitstop=off&focus=off', errors);
+    const { ctx, page } = await openGame(browser, base, 'comms=off&intro=off&hints=off&hitstop=off&focus=off&hintwave=off', errors);
     const lv = await page.evaluate(() => {
       const L = window.AT3D.game.level;
       return { free: L.freeAttach, anchors: L.anchors.length, retired: L.retiredAnchors.length, t1: !!L.byId.t1, cw: !!L.byId['s2-cw'], spawn: L.spawn };
@@ -181,7 +181,7 @@ const anchorOf = (page, hand) =>
 
     // ---- ?freeattach=off: the ring-only level ----------------------------------------------------------------------------
     const errors2 = [];
-    const g2 = await openGame(browser, base, 'comms=off&intro=off&hints=off&freeattach=off&hitstop=off&focus=off', errors2);
+    const g2 = await openGame(browser, base, 'comms=off&intro=off&hints=off&freeattach=off&hitstop=off&focus=off&hintwave=off', errors2);
     const lv2 = await g2.page.evaluate(() => {
       const L = window.AT3D.game.level;
       return { free: L.freeAttach, anchors: L.anchors.length, t1: !!L.byId.t1 };

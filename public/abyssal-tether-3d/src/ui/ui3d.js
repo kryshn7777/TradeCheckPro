@@ -199,6 +199,7 @@ const SETTINGS_SCHEMA = [
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
   // GHOST LANTERN (meta/ghost.js): here, not Comfort / Display, because those VR pages already hold their six rows
   { key: 'ghost', tab: 'access', type: 'toggle', label: 'Ghost lantern', desc: 'A pale light drifts down on the pace of your best whole run. Beat it to the bottom to replace it.' },
+  { key: 'hintWave', tab: 'access', type: 'toggle', label: 'Hint wave', desc: 'Stuck a long while? The golden mark sends a soft wave through the walls toward you.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'roaches', tab: 'access', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', vr: true },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },

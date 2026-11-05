@@ -320,6 +320,7 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  hintWave: true, // THE GOLDEN MARK's blip wave when you are stuck long in a section (sim/hintWave.js); off = the 20 s mark only
   hitStop: true, // THE CATCH (sim/catch3d.js): the world holds a beat when the rope saves a near-lethal fall; the head never moves
   // PUZZLE FOCUS (puzzleFocusGlue.js, plans/PUZZLE_FOCUS.md): at a puzzle a line suggests it and the view glances at it. 'auto' (desktop / touch
   // glance + the cues; a headset never turns: cues only) | 'cues' (the line, the glow and the ping; never turns the view) | 'off'. `?focus=` overrides.
@@ -415,6 +416,7 @@ export function sanitizeUxSettings(s) {
   s.openingCinematic = s.openingCinematic !== false; // on unless explicitly off
   s.ghost = s.ghost !== false; // the ghost lantern: on unless switched off
   if (s.puzzleFocus !== 'cues' && s.puzzleFocus !== 'off') s.puzzleFocus = 'auto';
+  s.hintWave = s.hintWave !== false && s.hintWave !== 'off'; // on unless switched off
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
   s.livingFlame = s.livingFlame !== false; // on unless switched off (render/lanternMood.js)
   s.roaches = s.roaches !== false; // on unless switched off

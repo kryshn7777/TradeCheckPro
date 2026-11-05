@@ -14,14 +14,19 @@ const FADE_OUT = 0.5;
 const VERT = /* glsl */ `
 attribute vec2 aCorner;
 attribute float aSeed;
+attribute float aQ;
 uniform float uK;
+uniform vec2 uBoost;
 varying vec2 vC;
 varying float vSeed;
+varying float vBoost;
 void main() {
   vec4 mv = modelViewMatrix * vec4( position, 1.0 );
   float d = max( -mv.z, 1.0 );
   // a constant angular size (0.11 rad), at least 0.7 m across, at most 7 m
   float s = clamp( d * 0.11, 0.7, 7.0 );
+  vBoost = abs( aQ - uBoost.x ) < 0.5 ? uBoost.y : 0.0; // the mark a blip wave is leaving (render/hintWaveView.js)
+  s *= 1.0 + 0.6 * vBoost;
   mv.xy += aCorner * s;
   vC = aCorner;
   vSeed = aSeed;
@@ -31,8 +36,10 @@ const FRAG = /* glsl */ `
 uniform float uTime;
 uniform float uK;
 uniform float uPulse;
+uniform vec2 uBoost;
 varying vec2 vC;
 varying float vSeed;
+varying float vBoost;
 void main() {
   float r = length( vC );
   if ( r > 1.0 ) discard;
@@ -41,7 +48,9 @@ void main() {
   float rim = smoothstep( 0.07, 0.0, abs( r - 0.62 ) ) * 0.55;
   float ph = fract( uTime * 0.55 * uPulse + vSeed );
   float ring = smoothstep( 0.07, 0.0, abs( r - ph * 0.95 ) ) * ( 1.0 - ph ) * uPulse;
-  float a = ( core + rim + ring * 0.9 ) * breathe * uK;
+  // a wave leaving this mark: the core swells and one soft ring opens with it (vBoost 0..1, a slow envelope, never a flash)
+  float flare = vBoost * ( exp( - r * r * 7.0 ) * 0.8 + smoothstep( 0.1, 0.0, abs( r - ( 1.0 - vBoost ) * 0.9 ) ) * 0.6 );
+  float a = ( core + rim + ring * 0.9 + flare ) * breathe * uK;
   vec3 col = vec3( 1.0, 0.76, 0.36 );
   gl_FragColor = vec4( col * a, a );
 }`;
@@ -53,6 +62,7 @@ export class ObjectiveHintView {
     const pos = new Float32Array(MAXQ * 4 * 3);
     const cor = new Float32Array(MAXQ * 4 * 2);
     const seed = new Float32Array(MAXQ * 4);
+    const qi = new Float32Array(MAXQ * 4);
     const idx = [];
     const C = [-1, -1, 1, -1, 1, 1, -1, 1];
     for (let q = 0; q < MAXQ; q++) {
@@ -60,6 +70,7 @@ export class ObjectiveHintView {
         cor[(q * 4 + v) * 2] = C[v * 2];
         cor[(q * 4 + v) * 2 + 1] = C[v * 2 + 1];
         seed[q * 4 + v] = (q * 0.37) % 1;
+        qi[q * 4 + v] = q;
       }
       const b = q * 4;
       idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
@@ -69,11 +80,12 @@ export class ObjectiveHintView {
     this.geometry.setAttribute('position', this._pos);
     this.geometry.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
     this.geometry.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+    this.geometry.setAttribute('aQ', new THREE.BufferAttribute(qi, 1));
     this.geometry.setIndex(idx);
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
-      uniforms: { uTime: { value: 0 }, uK: { value: 0 }, uPulse: { value: 1 } },
+      uniforms: { uTime: { value: 0 }, uK: { value: 0 }, uPulse: { value: 1 }, uBoost: { value: new THREE.Vector2(-1, 0) } },
       transparent: true,
       depthWrite: false,
       depthTest: false, // a hint must show through the floor / wall the trigger is behind (the S1 bell hangs under the grating)
@@ -97,8 +109,10 @@ export class ObjectiveHintView {
    * @param {number} dt seconds
    * @param {import('../sim/objectiveHint.js').ObjectiveHint|null} hint
    * @param {boolean} reduced settings.reducedEffects
+   * @param {number} [boostQ] the mark a blip wave is leaving (sim/hintWave.js wave.origin; -1 none)
+   * @param {number} [boost] 0..1 its flare (render/hintWaveView.js originGlow)
    */
-  update(dt, hint, reduced) {
+  update(dt, hint, reduced, boostQ = -1, boost = 0) {
     const want = hint && hint.on && hint.count > 0 ? 1 : 0;
     const d = Math.min(dt, 0.1);
     this._k = want ? Math.min(1, this._k + d / FADE_IN) : Math.max(0, this._k - d / FADE_OUT);
@@ -129,6 +143,7 @@ export class ObjectiveHintView {
     U.uTime.value = this._t;
     U.uK.value = this._k;
     U.uPulse.value = reduced ? 0 : 1;
+    U.uBoost.value.set(boostQ, reduced ? boost * 0.6 : boost);
     this.mesh.visible = true;
     this.info.drawCalls = 1;
     this.info.shown = n;

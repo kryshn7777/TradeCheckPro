@@ -56,6 +56,10 @@ import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
+import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
+import { applyPing, originGlow } from './render/hintWaveView.js';
+import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
+import { sectorOf } from './ui/captions.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
@@ -1135,6 +1139,8 @@ export class Game3D {
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
     this.puzzleFocus = null; // PUZZLE FOCUS (puzzleFocusGlue.js): built with the bus; `focusBeat` is its camera beat (lookTarget for the lantern)
     this.focusBeat = null;
+    this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
+    this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -1331,6 +1337,11 @@ export class Game3D {
     await progress(0.25, 'Lowering the lantern');
 
     this.audio = this._optional('audio', () => new M.audio.AudioManager3D(this.bus, this.settings), nullAudio, !!(M.audio && M.audio.AudioManager3D));
+    this._try('audio', () => {
+      // THE GOLDEN MARK's blip (audio/hintWaveSfx.js) through the designed-SFX extension points
+      if (typeof this.audio.registerSfx === 'function') this.audio.registerSfx(HINT_BLIP_ID, HINT_BLIP_RECIPE);
+      if (typeof this.audio.registerSfxRoute === 'function') this.audio.registerSfxRoute(HINT_BLIP_EVENT, hintBlipRoute);
+    });
     this.threat = this._optional('threat', () => new M.threat.ThreatSystem3D(this.bus), nullThreat, !!(M.threat && M.threat.ThreatSystem3D));
     await this._saveReadyBounded(); // restored settings (if localStorage was wiped) are in before the UI reads them
     await progress(0.4, 'Lowering the lantern');
@@ -2241,6 +2252,7 @@ export class Game3D {
       const h = this.health;
       if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
       if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
+      if (this.hintWave) this.hintWave.progress(); // a checkpoint is progress: the blip-wave ladder restarts
     });
     // Seals (LEVEL_FUN_PLAN P1): the grating grinds open below when its ring is hooked; standing on a closed one says so
     // through the caption (ui/captions.js) only.
@@ -2908,6 +2920,7 @@ export class Game3D {
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._enterSection(idx, 'warp');
+    this.hintWave.reset();
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
@@ -3076,6 +3089,7 @@ export class Game3D {
       this.physics.wind = this.objectives;
       if (attract) this.objectives.openAll();
       this.objectiveHint = new ObjectiveHint(); // the 20 s trigger highlight (sim/objectiveHint.js)
+      this.hintWave.reset(); // ... and its blip-wave ladder
     } catch (err) {
       this._fault('objectives', err);
       if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
@@ -4943,6 +4957,8 @@ export class Game3D {
     const p = this.player;
     if (!h || !this.objectives || !p || hintsOff() || this.state === 'menu') {
       if (view) view.update(dt, null, false);
+      if (this.hintWave) this.hintWave.clear();
+      applyPing(null);
       return;
     }
     const playing = this.state === 'playing' && p.alive !== false;
@@ -4953,7 +4969,58 @@ export class Game3D {
       const words = { bell: 'Something here answers a strike', hook: 'Something here wants a rope', haul: 'Something here wants hauling', winch: 'Something here wants a rope', lamp: 'A dead lamp: hold your light to it', breach: 'The keystone holds the grating' };
       if (words[h.kind]) this._toast(words[h.kind], 3.2);
     }
-    if (view) view.update(dt, h, !!(this.settings && this.settings.reducedEffects));
+    const reduced = !!(this.settings && this.settings.reducedEffects);
+    const w = this._updateHintWave(dt, h, p, playing, reduced);
+    if (view) view.update(dt, h, reduced, w && w.active ? w.origin : -1, originGlow(w));
+  }
+
+  /**
+   * THE GOLDEN MARK's blip wave (sim/hintWave.js): the ladder above the 20 s mark, stepped with the frame dt; on a launch the bus
+   * hears `hint:wave` {x, y, z, stage} (for a comms line / the puzzle focus beats), when the front reaches the player
+   * `hint:wave:pass` (the blip from the mark: audio/hintWaveSfx.js; the caption: ui/captions.js; a tick on the nearer hand in VR).
+   * Writes the lit shader's PING uniforms (render/hintWaveView.js). Returns the wave.
+   */
+  _updateHintWave(dt, h, p, playing, reduced) {
+    const hw = this.hintWave;
+    if (!hw) return null;
+    const x = this._hintWaveCtx;
+    const c = this.creature;
+    let blocked = !!(c && ((c.attack && c.attack.phase) || c.state === 'BURST' || c.state === 'ATTACK')); // a wind-up / burst
+    const g = this.skitters;
+    if (g && g.slots) for (let i = 0; i < g.slots.length; i++) if (g.slots[i].on && g.slots[i].attack && g.slots[i].attack.phase) blocked = true;
+    if (!p.grounded && !p.tethered && p.vy < -7) blocked = true; // a fall
+    if (this.victoryT >= 0 || (this.deathScene && this.deathScene.active) || (this.catchMoment && this.catchMoment.active)) blocked = true; // a cutscene / the hit-stop
+    x.section = this.sectionIndex;
+    x.px = p.x;
+    x.py = p.y;
+    x.pz = p.z;
+    x.playing = playing;
+    x.dead = p.alive === false || this.state === 'dead';
+    x.blocked = blocked;
+    x.enabled = hintWaveEnabled(this.settings, typeof location !== 'undefined' ? location.search || '' : '');
+    x.scale = ladderScale(this.difficultyKey);
+    x.reduced = reduced;
+    hw.update(dt, h, x);
+    const w = hw.wave;
+    if (hw.launched) this.bus.emit('hint:wave', { x: w.x, y: w.y, z: w.z, stage: w.stage, n: hw.fired });
+    if (hw.passedNow) {
+      const cam = this.renderer && this.renderer.camera;
+      let sector = -1;
+      let vert = 0;
+      let right = 0;
+      if (cam) {
+        const e = cam.matrixWorld.elements;
+        const yaw = Math.atan2(e[8], e[10]);
+        sector = sectorOf(e[12], e[14], yaw, w.x, w.z);
+        const dy = w.y - e[13];
+        vert = dy > 6 ? 1 : dy < -6 ? -1 : 0;
+        right = Math.cos(yaw) * (w.x - e[12]) - Math.sin(yaw) * (w.z - e[14]);
+      }
+      this.bus.emit('hint:wave:pass', { x: w.x, y: w.y, z: w.z, stage: w.stage, sector, vert, distance: w.passDist });
+      if (this.xrActive) this._haptic(right >= 0 ? 'right' : 'left', 0.16, 35); // one tiny tick on the hand nearer the mark
+    }
+    applyPing(w);
+    return w;
   }
 
   _updateViews(dt) {
@@ -5750,6 +5817,42 @@ export class Game3D {
           return { id: it.id, x: it.x, y: it.y, z: it.z };
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
+      },
+      // THE GOLDEN MARK's blip wave (sim/hintWave.js; tests, captures): state() reads the ladder + the wave; fire(o) starts one now at
+      // o = {x, y, z, stage} or a fixture index, else at the shown mark / the section's first pending trigger (manual: outlives a hidden
+      // mark); hold(r) freezes the front at r metres (null = run on); clear() ends it.
+      hintWave: {
+        state: () => (this.hintWave ? this.hintWave.state() : null),
+        fire: (o) => {
+          const hw = this.hintWave;
+          const O = this.objectives;
+          if (!hw) return false;
+          let t = null;
+          if (o && typeof o === 'object') t = o;
+          else if (typeof o === 'number' && O && O.fixtures[o | 0]) t = O.fixtures[o | 0];
+          else if (this.objectiveHint && this.objectiveHint.on) t = this.objectiveHint.targets[0];
+          else if (O) {
+            for (const ob of O.objectives) {
+              if (ob.section !== this.sectionIndex || O.done[ob.index]) continue;
+              for (const fi of ob.fx) if (!O.fixtureDone(fi) && !O.fixtures[fi].hidden) t = t || O.fixtures[fi];
+            }
+          }
+          if (!t) return false;
+          const stage = o && typeof o === 'object' && o.stage >= 3 ? 3 : 2;
+          return hw.fire(+t.x, +t.y, +t.z, stage, !!(this.settings && this.settings.reducedEffects), -1, true, true) ? { x: +t.x, y: +t.y, z: +t.z } : false;
+        },
+        hold: (r) => {
+          if (this.hintWave) this.hintWave.hold = typeof r === 'number' && r >= 0 ? r : -1;
+          return this.hintWave ? this.hintWave.hold : null;
+        },
+        clear: () => {
+          if (this.hintWave) {
+            this.hintWave.hold = -1;
+            this.hintWave.clear();
+          }
+          applyPing(null);
+          return true;
+        },
       },
       // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
       jet: {
