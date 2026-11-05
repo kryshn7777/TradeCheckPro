@@ -165,6 +165,29 @@ export const LSHADOW = {
   uLPPos: { value: new THREE.Vector3() },
 };
 
+/**
+ * THE GOLDEN MARK's blip wave (sim/hintWave.js, driven by render/hintWaveView.js): a world-space golden shell expanding from the
+ * objective mark through the level, added to the lit surfaces' emissive (so the radial fog after it attenuates it like any light).
+ * uPing: xyz origin (world), w front radius (m). uPingK: x band half width (m), y strength (0 = idle: the whole chunk is skipped by
+ * one uniform branch), z wake length (m: the ripples behind the front fade over it), w ripple frequency (rad / m). No sampler.
+ */
+export const PING = {
+  uPing: { value: new THREE.Vector4(0, -1e5, 0, 0) },
+  uPingK: { value: new THREE.Vector4(1, 0, 7, 1.6) },
+};
+const PING_DECL = 'uniform vec4 uPing;\nuniform vec4 uPingK;\n';
+const PING_FRAG = `
+  if ( uPingK.y > 0.0 ) {
+    // the hint blip wave (PING): a thin bright leading edge + a fainter rippled wake, strongest on faces turned to the mark
+    vec3 atPd = vAtW - uPing.xyz;
+    float atPr = length( atPd );
+    float atPx = ( atPr - uPing.w ) / uPingK.x;
+    float atPb = max( uPing.w - atPr, 0.0 );
+    float atPw = step( atPr, uPing.w ) * exp( - atPb / uPingK.z ) * ( 0.5 + 0.5 * cos( atPb * uPingK.w ) );
+    float atPf = 0.35 + 0.65 * clamp( dot( inverseTransformDirection( normal, viewMatrix ), - atPd ) / max( atPr, 0.001 ), 0.0, 1.0 );
+    totalEmissiveRadiance += vec3( 1.0, 0.68, 0.26 ) * ( uPingK.y * atPf * ( exp( - atPx * atPx ) + 0.3 * atPw ) );
+  }`;
+
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
 /** Fallback texture resolution (px) generated at boot, before the baked sets load. */
@@ -1845,6 +1868,10 @@ ${
     totalEmissiveRadiance += uRimColor * ( atPud * 0.1 ); // standing water carries the haze's colour even when it mirrors a dark wall
   }`,
       );
+      // the hint blip wave (PING above, sim/hintWave.js): shared uniforms, one uniform branch when idle
+      Object.assign(shader.uniforms, PING);
+      fDecl += PING_DECL;
+      fs = fs.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + PING_FRAG);
     }
 
     if (grade) {

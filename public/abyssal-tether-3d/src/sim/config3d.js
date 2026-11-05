@@ -320,6 +320,7 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  hintWave: true, // THE GOLDEN MARK's blip wave when you are stuck long in a section (sim/hintWave.js); off = the 20 s mark only
   hitStop: true, // THE CATCH (sim/catch3d.js): the world holds a beat when the rope saves a near-lethal fall; the head never moves
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
@@ -404,6 +405,7 @@ export function sanitizeUxSettings(s) {
   s.reducedEffects = s.reducedEffects === true;
   s.windSqualls = s.windSqualls !== false;
   s.hitStop = s.hitStop !== false;
+  s.hintWave = s.hintWave !== false && s.hintWave !== 'off'; // on unless switched off
   s.storyIntro = s.storyIntro !== false; // on unless explicitly off
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
   s.radioVoices = s.radioVoices !== false; // on unless switched off

@@ -198,6 +198,25 @@ const CLIP_RULES = Object.freeze({
 
 const finite = (v) => typeof v === 'number' && isFinite(v);
 
+// ---- THE GOLDEN MARK's blip wave (sim/hintWave.js): '[A soft golden blip, to your left]', the direction from the head's yaw when the
+// wave reached the player (game.js puts sector / vert in the hint:wave:pass payload). Low priority, one group: never stacks.
+const BLIP_DIR = ['ahead', 'ahead, to your right', 'to your right', 'behind you, to the right', 'behind you', 'behind you, to the left', 'to your left', 'ahead, to your left'];
+const BLIP_SHORT = ['ahead', 'ahead right', 'right', 'behind right', 'behind', 'behind left', 'left', 'ahead left'];
+/** The words of the blip's direction: sector 0..7 (sectorOf; -1 = on top of you), vert 1 above / -1 below / 0 level. Pure. */
+export function hintBlipDirection(sector, vert) {
+  const s = sector >= 0 && sector < 8 ? sector | 0 : -1;
+  if (vert > 0 || vert < 0) return (vert > 0 ? 'above you' : 'below you') + (s >= 0 ? `, ${BLIP_SHORT[s]}` : '');
+  return s >= 0 ? BLIP_DIR[s] : 'all around you';
+}
+const BLIP_RULES = [];
+for (let v = -1; v <= 1; v++) for (let s = -1; s < 8; s++) BLIP_RULES.push(R(`[A soft golden blip, ${hintBlipDirection(s, v)}]`, 'world', 0, 'hintblip', 6, 3));
+/** The frozen caption rule for a blip from `sector` / `vert` (no string built per event). */
+export function hintBlipRule(sector, vert) {
+  const s = sector >= 0 && sector < 8 ? sector | 0 : -1;
+  const v = vert > 0 ? 1 : vert < 0 ? -1 : 0;
+  return BLIP_RULES[(v + 1) * 9 + s + 1];
+}
+
 /**
  * The caption rule for a bus event, or null (not captioned, or below the threshold that makes it audible). Pure.
  * @param {string} type bus event name
@@ -238,6 +257,8 @@ export function captionForEvent(type, p) {
       return RULES.vast;
     case 'creature:retreat':
       return RULES.retreat;
+    case 'hint:wave:pass':
+      return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
     case 'creature:step':
       return finite(e.intensity) && e.intensity > 0.5 && (!finite(e.distance) || e.distance < 38) ? RULES.steps : null;
     case 'dresser:tick':
@@ -472,6 +493,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'arena:pause',
   'health:damage',
   'pickup:collect',
+  'hint:wave:pass',
   ...SFX_CAPTION_EVENTS,
 ]);
 
