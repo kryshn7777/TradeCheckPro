@@ -275,4 +275,17 @@ ok('pose maths: spine frames orthonormal, head fit shrinks in a tight gap and li
   assert.ok(sectionHeadScale({ level: { sections: [{ shaft: { minX: -9, maxX: 9, minZ: -9, maxZ: 9 } }] }, sectionIndex: 0 }) < 0.7);
 });
 
+// the skitterling's head is in proportion to its thin body ("their head is so big ... scale the head down, make it normal")
+await import('node:fs').then((fs) => {
+  const view = fs.readFileSync(path.resolve(HERE, '../../../../public/abyssal-tether-3d/src/render/masonRigView.js'), 'utf8');
+  const m = /export const SKITTER_VIEW = \{[\s\S]*?headK:\s*([0-9.]+)/.exec(view);
+  assert.ok(m, 'SKITTER_VIEW has a headK');
+  const k = parseFloat(m[1]);
+  assert.ok(k >= 0.4 && k <= 0.7, 'the skitterling crown is 40-70 % of the Mason proportion (' + k + ')');
+  assert.ok(/const hs = this\.fit\.scale \* size \* hk;/.test(view) && /const lift = this\.fit\.lift \* size \* hk;/.test(view), 'the crown scale and its lift off the wall both follow headK (the Mason has none: hk = 1)');
+  assert.ok(!/export const DEFAULTS|headK:\s*[0-9.]+,\s*\/\/ [^\n]*Mason's own/.test(view), 'the Mason itself is not scaled');
+});
+n++;
+console.log('skitterling head proportion ok');
+
 console.log(`${n} tests passed`);
