@@ -2301,6 +2301,7 @@ export class AudioManager3D {
       'dresser:saw': this._onDresserSaw,
       'dresser:stagger': this._onDresserStagger,
       'dresser:spoiled': this._onDresserSpoiled,
+      'dresser:step': this._onDresserStep,
       // THE HOLDFAST (sim/holdfast3d.js): knuckle cracks, a wet inhale, the stone grinding as it closes, the hum while it holds you
       'holdfast:inhale': this._onHoldfastInhale,
       'holdfast:breath': this._onHoldfastBreath,
@@ -4639,6 +4640,29 @@ export class AudioManager3D {
     this._perc(og.gain, t, 0.5, 0.002, 0.07);
     o.connect(og);
     og.connect(v.out);
+    this._commit(v);
+  }
+
+  /** Its weight: a slow, heavy footfall (a low thud falling away, a dry crunch of grit) every step it walks. */
+  _onDresserStep(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    if (sp.gain < 0.02 || this._countAlive('dstep') >= 2) return;
+    const v = this._begin('dstep', 1, 0.4, 0.7 + sp.delay, this.busCreature, 1.1 * this._floor('near', sp.d, 0.2), 0, sp.send, Math.max(sp.cutoff, 1200), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sine', 78, t);
+    o.frequency.setTargetAtTime(40, t, 0.05);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.9, 0.003, 0.16);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._white, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 900, 0.8);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.5, 0.002, 0.07);
+    n.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
     this._commit(v);
   }
 

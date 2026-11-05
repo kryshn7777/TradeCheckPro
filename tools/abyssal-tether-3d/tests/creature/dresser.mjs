@@ -603,7 +603,7 @@ for (const [diff, gap] of [
   const THREE = await import('three');
   const { DresserView, GLOW_DIST, LOD_DIST, LOD_DIST_FALLBACK, BONES, pickLod } = await import(srcUrl('render/dresserView.js'));
   const tiersOk = ['low', 'quest', 'high'].every((t) => LOD_DIST[t][0] < LOD_DIST[t][1] && LOD_DIST[t][1] < GLOW_DIST && LOD_DIST_FALLBACK[t] < GLOW_DIST);
-  ok(tiersOk && LOD_DIST.quest[0] === 8 && LOD_DIST.quest[1] === 22, `LOD table: Quest ${LOD_DIST.quest.join(' / ')} m, low ${LOD_DIST.low.join(' / ')}, high ${LOD_DIST.high.join(' / ')}, glints beyond ${GLOW_DIST} m`);
+  ok(tiersOk && LOD_DIST.quest[0] === 14 && LOD_DIST.quest[1] === 40 && GLOW_DIST >= 100, `LOD table: Quest ${LOD_DIST.quest.join(' / ')} m, low ${LOD_DIST.low.join(' / ')}, high ${LOD_DIST.high.join(' / ')}, glints beyond ${GLOW_DIST} m`);
   const q = LOD_DIST.quest;
   ok(
     pickLod(2, 'quest') === 0 && pickLod(q[0] + 0.5, 'quest') === 1 && pickLod(q[1] + 0.5, 'quest') === 2 && pickLod(GLOW_DIST + 1, 'quest') === -1 && pickLod(q[0] + 0.5, 'nope') === 1,
@@ -676,7 +676,7 @@ for (const [diff, gap] of [
     const body = { visible: true, x: 0, y: 0, z: 0, ux: 0, uy: 1, uz: 0, fx: 0, fy: 0, fz: 1, lx: 0, ly: 2.9, lz: 5, walk: 0, speed: 0, measure: 0, cut: 0, stagger: 0, spoiled: 0, glow: 0.6, tick: 0, line: { on: false, x: 0, y: 0, z: 0, taut: 0 }, outline: { on: false, x: 0, y: 0, z: 0, nx: 1, ny: 0, nz: 0, grow: 0, alpha: 0, seed: 0 } };
     const game = { dresser: { isNull: false, body, targetHand: 'right' }, renderer: { scene, camera, qualityTier: 'quest' }, settings: {} };
     const seen = [];
-    for (const dist of [4, 15, 30, GLOW_DIST + 8]) {
+    for (const dist of [4, 25, 60, GLOW_DIST + 8]) {
       camera.position.set(0, 1.8, dist);
       v._qReady = false;
       v.update(1 / 60, game);
@@ -689,7 +689,7 @@ for (const [diff, gap] of [
         }
       });
       seen.push(`${dist} m: LOD${v.lod} ${n} call ${tr}`);
-      if (dist < GLOW_DIST) ok(n === 1 && v.info.drawCalls === 1 && v.lod === [4, 15, 30].indexOf(dist) && tr === v.triangles[v.lod], `Quest at ${dist} m: LOD${v.lod}, one call, ${tr} triangles`);
+      if (dist < GLOW_DIST) ok(n === 1 && v.info.drawCalls === 1 && v.lod === [4, 25, 60].indexOf(dist) && tr === v.triangles[v.lod], `Quest at ${dist} m: LOD${v.lod}, one call, ${tr} triangles`);
       else ok(n <= 1 && tr <= 4, `beyond ${GLOW_DIST} m: the glints only`);
     }
     // the face is there in every LOD (pale self-light on the mask, at the head, facing forward), and the mask follows the head

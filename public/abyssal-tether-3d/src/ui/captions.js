@@ -66,6 +66,7 @@ export const RULES = Object.freeze({
   dTick: R('[Ticking]', 'creature', 1, 'dtick', 6),
   dHum: R('[Humming]', 'creature', 1, 'dhum', 8),
   dScrape: R('[Scraping]', 'creature', 2, 'dscrape', 3),
+  dStep: R('[Heavy footfalls]', 'creature', 1, 'dstep', 7),
   dSaw: R('[Sawing]', 'creature', 2, 'dsaw', 2),
   // THE HOLDFAST (sim/holdfast3d.js): the wall's hand
   hfCrack: R('[Knuckles cracking]', 'creature', 1, 'hfcrack', 3),
@@ -199,6 +200,8 @@ export function captionForEvent(type, p) {
       return e.fast || (finite(e.distance) && e.distance < 24) ? RULES.dTick : null;
     case 'dresser:hum':
       return !finite(e.distance) || e.distance < 36 ? RULES.dHum : null;
+    case 'dresser:step':
+      return finite(e.distance) && e.distance < 22 ? RULES.dStep : null;
     case 'dresser:measure':
       return RULES.dScrape;
     case 'dresser:saw':
@@ -362,6 +365,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:step',
   'dresser:tick',
   'dresser:hum',
+  'dresser:step',
   'dresser:measure',
   'dresser:saw',
   'holdfast:twitch',
