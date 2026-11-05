@@ -51,7 +51,7 @@ export const DEFAULT_EXCLUDE = [
 // assets/models/dresser.glb (~2 MB): THE DRESSER v2 first appears in S3 and loads in the background (render/dresserView.js); without it
 // the procedural Dresser stays.
 // CHAPTER II's director, Usher and Mere (src/chapter2Glue.js and what it imports, ~0.2 MB) are lazy: cached on first fetch, which the game does at boot (a late module).
-// assets/audio/voice/** (~0.4 MB, docs/abyssal-tether-3d/plans/VO_SCRIPT.md): the radio voice clips, fetched by audio/radio3d.js after the
+// assets/audio/voice/** (~0.9 MB, docs/abyssal-tether-3d/plans/VO_SCRIPT.md): the radio voice clips, fetched by audio/radio3d.js after the
 // first gesture, the current section's first; a line whose clip is not cached yet speaks the synthesised babble.
 export const DEFAULT_LAZY = ['assets/chapters/ch2/**', 'assets/chapters/ch3/**', 'assets/chapters/ch4/**', 'assets/chapters/ch5/**', 'assets/video/**', 'assets/models/holdfast.glb', 'assets/models/dresser.glb', 'assets/models/usher.glb', 'assets/audio/voice/**', 'src/chapter2Glue.js', 'src/sim/usher3d.js', 'src/sim/lampholdDirector.js', 'src/sim/hook3d.js', 'src/render/usherView.js', 'src/render/lampField.js', 'src/render/mereView.js', 'src/data/chapter2-sets.js', 'src/data/chapter2-text.js', 'src/audio/lampholdSfx.js'];
 
