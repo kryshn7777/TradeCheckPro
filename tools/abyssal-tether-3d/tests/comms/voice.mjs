@@ -3,7 +3,7 @@
 //     duration within the line's max_s, one ascending word timing per subtitle word inside the clip) or a documented fallback;
 //     no clip for a line that is not in the script; the script text hash matches; lines.csv + VO_SCRIPT.md in sync
 //     (export-lines.mjs --check) and the 11 specified story-bible lines listed as 'spec';
-//   - the size budget: all clips <= 2.5 MB, each <= 48 KB, the manifest <= 32 KB; the folder in the lazy precache tier;
+//   - the size budget: all clips <= 2.5 MB, each <= 48 KB, the manifest <= 48 KB; the folder in the lazy precache tier;
 //   - the disclosure: an AI clip -> the manifest names the engine, licence and disclosure; the About credits (DOM + VR) say so;
 //   - the director: with the voice hook a line is timed by its clip (speak = the clip, the subtitle holds the squelch + the clip +
 //     the tail and ends then), the stuck word stutters inside the clip (+2 repeats), the not-quite voice is slower; no hook, a
@@ -37,6 +37,7 @@ const C = await import(srcUrl('sim/config3d.js'));
 const { COMMS_SCRIPT, CommsDirector, holdTime, speakTime, voiceHold, voiceStuck, VOICE_LEAD, VOICE_TAIL, NOTQUITE_RATE, STUCK_MAX } = CM;
 // Chapter II's radio (data/chapter2-text.js radio, said by chapter2Glue.js radioScript): its clips share the bank, by id
 const C2_RADIO = (await import(srcUrl('data/chapter2-text.js'))).CHAPTER2_TEXT.radio;
+const FOCUS = (await import(srcUrl('data/puzzle-focus-text.js'))).PUZZLE_FOCUS_LINES; // PUZZLE FOCUS (plans/PUZZLE_FOCUS.md)
 const manifest = JSON.parse(fs.readFileSync(path.join(VOICE, 'manifest.json'), 'utf8'));
 const L = manifest.lines;
 const fnv = (s) => {
@@ -74,8 +75,11 @@ const byCsv = Object.fromEntries(csvRows.map((r) => [r.id, r]));
   const ids = new Set(COMMS_SCRIPT.map((l) => l.id));
   const missing = COMMS_SCRIPT.filter((l) => !L[l.id] && !(manifest.fallback && typeof manifest.fallback[l.id] === 'string' && manifest.fallback[l.id].length > 10)).map((l) => l.id);
   ok(!missing.length, `every script line has a clip or a documented fallback (${Object.keys(L).length} clips, ${Object.keys(manifest.fallback || {}).length} fallback: ${Object.keys(manifest.fallback || {}).join(', ')})` + (missing.length ? ': missing ' + missing.join(', ') : ''));
-  const strays = Object.keys(L).filter((id) => !ids.has(id) && !C2_RADIO.some((r) => r.id === id));
-  ok(!strays.length, 'no clip for a line that is not in the script (Chapter I, or Chapter II\'s radio)' + (strays.length ? ': ' + strays.join(', ') : ''));
+  const strays = Object.keys(L).filter((id) => !ids.has(id) && !C2_RADIO.some((r) => r.id === id) && !FOCUS.some((v) => v.id === id));
+  ok(!strays.length, 'no clip for a line that is not in the script (Chapter I, Chapter II\'s radio, or the puzzle focus lines)' + (strays.length ? ': ' + strays.join(', ') : ''));
+  const fMissing = FOCUS.filter((v) => !L[v.id] && !(manifest.fallback && typeof manifest.fallback[v.id] === 'string')).map((v) => v.id);
+  const fStale = FOCUS.filter((v) => L[v.id] && L[v.id].h !== fnv(v.text)).map((v) => v.id);
+  ok(!fMissing.length && !fStale.length, `the puzzle focus lines: ${FOCUS.filter((v) => L[v.id]).length} of ${FOCUS.length} voiced from their current text, the rest a documented fallback` + (fMissing.length ? ': missing ' + fMissing.join(', ') : '') + (fStale.length ? ': stale ' + fStale.join(', ') : ''));
   const c2stale = C2_RADIO.filter((r) => L[r.id] && L[r.id].h !== fnv(r.text)).map((r) => r.id);
   ok(!c2stale.length, `Chapter II's radio clips were made from its current text (${C2_RADIO.filter((r) => L[r.id]).length} of ${C2_RADIO.length} voiced)` + (c2stale.length ? ': stale ' + c2stale.join(', ') : ''));
   const voiced = COMMS_SCRIPT.filter((l) => l.speaker !== 'UPLINK' && l.kind !== 'echo');
@@ -115,7 +119,7 @@ const byCsv = Object.fromEntries(csvRows.map((r) => [r.id, r]));
   const big = Object.entries(L).filter(([, e]) => e.bytes > 48 * 1024);
   ok(total <= 2_500_000 && total === manifest.bytes && !big.length, `size budget: ${(total / 1024).toFixed(0)} KB of 2441 KB for ${Object.keys(L).length} clips, each <= 48 KB`);
   const mb = fs.statSync(path.join(VOICE, 'manifest.json')).size;
-  ok(mb <= 32 * 1024, `the manifest is tiny (${(mb / 1024).toFixed(1)} KB)`);
+  ok(mb <= 48 * 1024, `the manifest is small (${(mb / 1024).toFixed(1)} KB of 48: 32 before the 81 puzzle focus lines)`);
   const onDisk = [];
   for (const d of fs.readdirSync(VOICE)) if (fs.statSync(path.join(VOICE, d)).isDirectory()) for (const f of fs.readdirSync(path.join(VOICE, d))) onDisk.push(`${d}/${f}`);
   const orphan = onDisk.filter((f) => !Object.values(L).some((e) => e.f === f));

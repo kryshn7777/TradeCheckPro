@@ -225,6 +225,92 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 | `c2-bars` | II-S6 | entering II-12 (+3 s) | **ODESSA: Bars are dropping, Elias. Lamps are going out.** | Calm under pressure: reporting, not alarming. A touch quicker than her usual. | 4.6 |  |
 | `c2-orderly` | II-S6 | the Round begins (II-12, phase A) | **MAREN: That isn't the Mason. That's orderly.** | Hushed realisation. A beat before "That's orderly."; the word is the chill. | 3.8 |  |
 
+#### PUZZLE FOCUS (81 lines; data/puzzle-focus-text.js, said by puzzleFocusGlue.js when the player reaches a puzzle: plans/PUZZLE_FOCUS.md)
+
+| Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
+|---|---|---|---|---|---|---|
+| `pf-bell-1a` | S1 | puzzle focus: bell, first sight | **ELIAS: A bell. Why is there a bell down here?** | Half to himself, puzzled more than afraid. A small breath before "Why". | 5 |  |
+| `pf-bell-1b` | S1 | puzzle focus: bell, first sight | **TICK: Wren, your scanner's pinging brass under you. Big. Hollow.** | Reading his screen, curious, quick. "Big. Hollow." as he reads it off. | 5 |  |
+| `pf-bell-2a` | S1 | puzzle focus: bell, 40 s later, still pending | **ODESSA: That bell's hung to be struck, Elias. Swing into it.** | Patient, warm, a teacher who has seen it done. No hurry. | 5.3 |  |
+| `pf-bell-2b` | S1 | puzzle focus: bell, 40 s later, still pending | **ELIAS: Hung to be struck. So strike it. Swing hard.** | Working it out loud; the last two words decided. | 5 |  |
+| `pf-bell-3a` | S1 | puzzle focus: bell, the 20 s highlight comes on | **TICK: Marked the bell for you, Wren. Swing into it hard.** | Helpful, a little pleased with his marker. Quick. | 5.3 |  |
+| `pf-bell-3b` | S1 | puzzle focus: bell, the 20 s highlight comes on | **VESPER: Bell marked. Strike it.** | Suit readout. Flat. | 3 |  |
+| `pf-haul-1a` | S2 | puzzle focus: haul, first sight | **MAREN: A counterweight. Lanternwright work. That chain lowers something.** | Dry, exact, interested: she has read about these and never seen one. | 4.6 |  |
+| `pf-haul-1b` | S2 | puzzle focus: haul, first sight | **ELIAS: A counterweight on a chain. That's my way down.** | Sizing it up. Practical, tired. | 5 |  |
+| `pf-haul-2a` | S2 | puzzle focus: haul, 40 s later, still pending | **TICK: Wren, the counterweight. Hook it and haul. It ratchets.** | Explaining kit he likes. Brisk. | 5 |  |
+| `pf-haul-2b` | S2 | puzzle focus: haul, 40 s later, still pending | **ELIAS: Hook the weight. Haul. One notch at a time.** | Muttered plan, one step per breath. | 5 |  |
+| `pf-haul-3a` | S2 | puzzle focus: haul, the 20 s highlight comes on | **ODESSA: The counterweight's marked, Elias. Hook it and haul.** | Calm instruction, warm. | 4.6 |  |
+| `pf-haul-3b` | S2 | puzzle focus: haul, the 20 s highlight comes on | **VESPER: Counterweight marked. Haul it.** | Suit readout. Flat. | 3 |  |
+| `pf-winch-1a` | S3 | puzzle focus: winch, first sight | **TICK: Something's moving on your scanner, Wren. A gear. Still turning.** | Surprised, a nervous little laugh under it. | 5.3 |  |
+| `pf-winch-1b` | S3 | puzzle focus: winch, first sight | **ELIAS: That gear's still turning. There's a ring on it.** | Low, noticing. A beat between the sentences. | 5 |  |
+| `pf-winch-2a` | S3 | puzzle focus: winch, 40 s later, still pending | **MAREN: Their gears carried people, Elias. Let it carry you.** | Dry, a historian giving a practical tip. | 5 |  |
+| `pf-winch-2b` | S3 | puzzle focus: winch, 40 s later, still pending | **ELIAS: Catch the ring as it comes round. Let it carry me.** | Timing it under his breath. | 5.7 |  |
+| `pf-winch-3a` | S3 | puzzle focus: winch, the 20 s highlight comes on | **TICK: Marked the gear ring. Hook it when it's out, Wren.** | Quick, helpful. | 5.3 |  |
+| `pf-winch-3b` | S3 | puzzle focus: winch, the 20 s highlight comes on | **VESPER: Gear ring marked. Time it.** | Suit readout. Flat. | 3.4 |  |
+| `pf-lamp-1a` | S4 | puzzle focus: lamp, first sight | **MAREN: Cold lamps. They lit them to pass. Hold your light close.** | Hushed: the vault is listening. Exact. | 5.7 |  |
+| `pf-lamp-1b` | S4 | puzzle focus: lamp, first sight | **ELIAS: A dead lamp. Wick's still there. My lantern, then.** | Whispered to himself. | 5 |  |
+| `pf-lamp-2a` | S4 | puzzle focus: lamp, 40 s later, still pending | **ODESSA: Three cold lamps, Elias. Your lantern to each wick.** | Quiet, controlled. | 5 |  |
+| `pf-lamp-2b` | S4 | puzzle focus: lamp, 40 s later, still pending | **ELIAS: Still dark ones. Lantern to the wick. Hold it there.** | Whispered, patient. | 5.3 |  |
+| `pf-lamp-3a` | S4 | puzzle focus: lamp, the 20 s highlight comes on | **TICK: Marked the dark wicks, Wren. Hold your lantern there.** | Hushed for once. | 5 |  |
+| `pf-lamp-3b` | S4 | puzzle focus: lamp, the 20 s highlight comes on | **VESPER: Cold wicks marked.** | Suit readout. Flat. | 3 |  |
+| `pf-rest-1a` | any | puzzle focus: rest, first sight | **MAREN: A Masons' rest. It cannot follow you in. Remember it.** | Low, urgent under the dryness: this one matters. | 5.3 |  |
+| `pf-rest-1b` | any | puzzle focus: rest, first sight | **ELIAS: Lamp-lit corner. Carved glyphs. Somewhere to hide.** | Noting it, breath held. | 4.6 |  |
+| `pf-breach-1a` | S5 | puzzle focus: breach, first sight | **ELIAS: That stone's holding the grating up. A keystone.** | Working it out, quiet: something is above him. | 4.6 |  |
+| `pf-breach-1b` | S5 | puzzle focus: breach, first sight | **TICK: Scanner says one stone's carrying the whole grate. Huh.** | Reading, then the "Huh." of someone who gets it. | 5 |  |
+| `pf-breach-2a` | S5 | puzzle focus: breach, 40 s later, still pending | **MAREN: Let it knock, they wrote. Its blows break stone.** | Cold, exact: the rule as a tool. | 5 |  |
+| `pf-breach-2b` | S5 | puzzle focus: breach, 40 s later, still pending | **ELIAS: Hide in the niche. Let it hit the stone. Or haul.** | Fast, low, a plan made in fear. | 5.7 |  |
+| `pf-breach-3a` | S5 | puzzle focus: breach, the 20 s highlight comes on | **TICK: Keystone marked. Hide and let it knock, or haul the ring.** | Fast, nervous. | 5.7 |  |
+| `pf-breach-3b` | S5 | puzzle focus: breach, the 20 s highlight comes on | **VESPER: Keystone marked. Loud option: haul.** | Suit readout. Flat. | 3.4 |  |
+| `pf-lure-1a` | S5 | puzzle focus: lure, first sight | **MAREN: That niche. 'Let it knock. Do not knock back.' Get in.** | Reading the plaque, then an order she has no right to give. | 5.7 |  |
+| `pf-lure-1b` | S5 | puzzle focus: lure, first sight | **ELIAS: A niche behind the keystone. Small enough to hide in.** | Whispered. | 5.3 |  |
+| `pf-fork-1a` | S6 | puzzle focus: fork, first sight | **MAREN: Two ways down, Elias. The slow stair or the quick rings.** | Through static. Even, a choice laid out. | 5.7 |  |
+| `pf-fork-1b` | S6 | puzzle focus: fork, first sight | **ELIAS: Two ways down. Stairs, or those rings. Choose.** | Tired, weighing it. | 4.6 |  |
+| `pf-fork-2a` | S6 | puzzle focus: fork, 40 s later, still pending | **ELIAS: Pick a way. Hook the last ring on either line.** | Firm with himself. | 5.3 |  |
+| `pf-fork-2b` | S6 | puzzle focus: fork, 40 s later, still pending | **VESPER: Two routes. Either suffices.** | Suit readout. Flat. | 3 |  |
+| `pf-fork-3a` | S6 | puzzle focus: fork, the 20 s highlight comes on | **VESPER: Route rings marked. Hook one.** | Suit readout. Flat. | 3.4 |  |
+| `pf-fork-3b` | S6 | puzzle focus: fork, the 20 s highlight comes on | **TICK: Marked both last rings, Wren. Either one opens it.** | Through static, quick. | 5 |  |
+| `pf-survive-1a` | S7 | puzzle focus: survive, first sight | **ELIAS: The iris. It won't open while I stand on the landing.** | Reading the tablet aloud, then understanding it. Low. | 5.7 |  |
+| `pf-survive-1b` | S7 | puzzle focus: survive, first sight | **VESPER: Iris sealed. Hang below.** | Suit readout. Flat. | 3 |  |
+| `pf-survive-2a` | S7 | puzzle focus: survive, 40 s later, still pending | **ELIAS: Off the landing. Hang in the nave. Hold on.** | Bracing himself. | 5 |  |
+| `pf-survive-2b` | S7 | puzzle focus: survive, 40 s later, still pending | **VESPER: Landing pauses it. Descend.** | Suit readout. Flat. | 3 |  |
+| `pf-survive-3a` | S7 | puzzle focus: survive, the 20 s highlight comes on | **VESPER: Iris marked. Keep hanging.** | Suit readout. Flat. | 3 |  |
+| `pf-survive-3b` | S7 | puzzle focus: survive, the 20 s highlight comes on | **ELIAS: Hang on, Elias. It opens for the ones who hang.** | Through the teeth. | 5.3 |  |
+| `pf-swing-1a` | any | puzzle focus: swing, first sight | **TICK: That ring's swinging, Wren. Catch it on the way in.** | Delighted, five bars again. | 5.3 |  |
+| `pf-swing-1b` | any | puzzle focus: swing, first sight | **ELIAS: A ring on a chain, swinging. Catch it as it comes.** | Watching it, timing it. | 5.7 |  |
+| `pf-lift-1a` | II-S2 | puzzle focus: lift, first sight | **TICK: Lift on the wall, Wren. Ring on top. Free ride.** | Cheerful, the old Tick for a moment. | 5.3 |  |
+| `pf-lift-1b` | II-S2 | puzzle focus: lift, first sight | **ELIAS: A lift on the wall. Counterweighted. Still running.** | Impressed despite himself. | 4.6 |  |
+| `pf-knocker-1a` | II-S2 | puzzle focus: knocker, first sight | **MAREN: A knocker. 'Knock, and be known.' Hook it, Elias.** | Reading the canon plaque with relish. | 5 |  |
+| `pf-knocker-1b` | II-S2 | puzzle focus: knocker, first sight | **ELIAS: A door with a knocker. Somebody's name behind it.** | Gentle: it is someone's house. | 5 |  |
+| `pf-knocker-2a` | II-S2 | puzzle focus: knocker, 40 s later, still pending | **MAREN: Knock first, Elias. Their names are behind the doors.** | Dry, a little insistent. | 5 |  |
+| `pf-knocker-2b` | II-S2 | puzzle focus: knocker, 40 s later, still pending | **ELIAS: Hook the knocker. Knock. Be known.** | Quiet, almost a ritual. | 3.8 |  |
+| `pf-knocker-3a` | II-S2 | puzzle focus: knocker, the 20 s highlight comes on | **TICK: Marked the knocker, Wren. Hook it, that's a knock.** | Quick, a little proud of the joke. | 5 |  |
+| `pf-knocker-3b` | II-S2 | puzzle focus: knocker, the 20 s highlight comes on | **VESPER: Knocker marked. Hook it.** | Suit readout. Flat. | 3 |  |
+| `pf-name-1a` | any | puzzle focus: name, first sight | **MAREN: A name, carved and lit. Read it to me, Elias.** | Soft: this is why she came. | 5.3 |  |
+| `pf-name-1b` | any | puzzle focus: name, first sight | **ELIAS: Someone's name, lit like a grave. Go and read it.** | Quiet respect. | 5.3 |  |
+| `pf-peal-1a` | II-S5 | puzzle focus: peal, first sight | **MAREN: Ring the morning, they wrote. Five bells, Elias. Then listen.** | Reading, then a warning she cannot name. | 5.3 |  |
+| `pf-peal-1b` | II-S5 | puzzle focus: peal, first sight | **ELIAS: Bells. A whole row of them. Swing into them?** | Uneasy: the last bell answered. | 5 |  |
+| `pf-peal-2a` | II-S5 | puzzle focus: peal, 40 s later, still pending | **TICK: That's five bells to open the floor, Wren. Swing through.** | Trying to be light; not quite. | 5.3 |  |
+| `pf-peal-2b` | II-S5 | puzzle focus: peal, 40 s later, still pending | **ELIAS: Five bells. Swing from the beam. One after another.** | Planning, low. | 5 |  |
+| `pf-peal-3a` | II-S5 | puzzle focus: peal, the 20 s highlight comes on | **TICK: Marked the bells you haven't rung. Swing through them.** | Quick, helpful. | 5 |  |
+| `pf-peal-3b` | II-S5 | puzzle focus: peal, the 20 s highlight comes on | **VESPER: Unrung bells marked.** | Suit readout. Flat. | 3 |  |
+| `pf-clapper-1a` | II-S6 | puzzle focus: clapper, first sight | **ELIAS: A clapper ring on the rim. Haul it, a bell speaks.** | Whispered, thinking fast: the Doorman is near. | 5.7 |  |
+| `pf-clapper-1b` | II-S6 | puzzle focus: clapper, first sight | **MAREN: Clapper rings. Haul one and a bell speaks over there.** | Through static, hushed. | 5.3 |  |
+| `pf-clapper-2a` | II-S6 | puzzle focus: clapper, 40 s later, still pending | **ELIAS: Put the bell where I'm not. Haul the clapper.** | The plaque's rule, said as a plan. | 5 |  |
+| `pf-clapper-2b` | II-S6 | puzzle focus: clapper, 40 s later, still pending | **VESPER: Clapper ring. Haul to toll.** | Suit readout. Flat. | 3.4 |  |
+| `pf-clapper-3a` | II-S6 | puzzle focus: clapper, the 20 s highlight comes on | **VESPER: Clapper marked. Haul it.** | Suit readout. Flat. | 3 |  |
+| `pf-clapper-3b` | II-S6 | puzzle focus: clapper, the 20 s highlight comes on | **ELIAS: There. The clapper. Haul it and get clear.** | Tight, fast. | 4.6 |  |
+| `pf-pawl-1a` | II-S6 | puzzle focus: pawl, first sight | **ELIAS: The gate's pawl. Hit it hard enough and it breaks.** | Low, sizing up iron. | 5.3 |  |
+| `pf-pawl-1b` | II-S6 | puzzle focus: pawl, first sight | **MAREN: That pawl holds the gate. Iron breaks to a blow.** | Through static, exact. | 5.3 |  |
+| `pf-pawl-2a` | II-S6 | puzzle focus: pawl, 40 s later, still pending | **ELIAS: Swing into the pawl. Faster. It wants a real blow.** | Breathing hard. | 5.3 |  |
+| `pf-pawl-2b` | II-S6 | puzzle focus: pawl, 40 s later, still pending | **VESPER: Pawl intact. Strike harder.** | Suit readout. Flat. | 3 |  |
+| `pf-pawl-3a` | II-S6 | puzzle focus: pawl, the 20 s highlight comes on | **VESPER: Pawl marked. Strike it.** | Suit readout. Flat. | 3 |  |
+| `pf-pawl-3b` | II-S6 | puzzle focus: pawl, the 20 s highlight comes on | **ELIAS: The pawl. Full swing, Elias. Break it.** | Through the teeth. | 4.2 |  |
+| `pf-lever-1a` | II-S6 | puzzle focus: lever, first sight | **ELIAS: A lever on the landing. The cage goes down on it.** | Fast, hopeful. | 5.7 |  |
+| `pf-lever-1b` | II-S6 | puzzle focus: lever, first sight | **VESPER: Cage lever. Haul once.** | Suit readout. Flat. | 3 |  |
+| `pf-lever-2a` | II-S6 | puzzle focus: lever, 40 s later, still pending | **ELIAS: Haul the lever. Ride the cage down. Go.** | Urgent, low. | 4.6 |  |
+| `pf-lever-3a` | II-S6 | puzzle focus: lever, the 20 s highlight comes on | **VESPER: Lever marked. Haul it.** | Suit readout. Flat. | 3 |  |
+| `pf-lever-3b` | II-S6 | puzzle focus: lever, the 20 s highlight comes on | **ELIAS: The lever. Now, Elias. Haul it.** | Hard, to himself. | 3.8 |  |
+
 #### Specified, not in the game yet (DARK_STORY_BIBLE.md §4.3: 11 lines; record them in the same session)
 
 | Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |

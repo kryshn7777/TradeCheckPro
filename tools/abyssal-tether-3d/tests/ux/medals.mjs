@@ -171,6 +171,9 @@ const glyphs = (p) => p.ctx.texts.every((t) => pxOf(t.font) >= 28);
   ui._vrTab = 1;
   const disp = paint(ui._paintSettings);
   ok(disp.regions.some((r) => r.act === 'set' && r.key === 'bloodWriting') && disp.regions.some((r) => r.act === 'calibrate') && inPanel(disp) && glyphs(disp), 'VR Settings › Display: six rows (Blood writing On / Off) and the Brightness link still fit the panel');
+  ui._vrTab = 4;
+  const rope = paint(ui._paintSettings);
+  ok(rope.regions.some((r) => r.act === 'set' && r.key === 'puzzleFocus') && rope.regions.some((r) => r.act === 'set' && r.key === 'hitStop') && inPanel(rope) && glyphs(rope), 'VR Settings › Rope: Puzzle focus (Glance / Cues / Off) beside Catch pause, inside the panel');
   ui._vrTab = 0;
 }
 

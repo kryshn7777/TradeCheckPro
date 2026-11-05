@@ -234,3 +234,10 @@ not-quite voice from no direction), the restore overlay over the real death fade
 The player character is a speaker now: **ELIAS** (pale blue-white, ring), in the suit like Vesper but not the suit AI: his lines play **dry**, with no radio chain, squelch or chime, close and a little breathy, with no latency or glitch (`SPEAKERS.ELIAS.local`). 12 lines (voiced by the AI placeholder `am_michael`; a human actor replaces them via `voice/recordings/<id>.wav`, see VO_SCRIPT.md):
 - **The opening** (he answers each of the four crew lines, the chain now alternates crew / Elias): *First. Right. Copy, Odessa.* / *Five bars. Keep them coming, Tick.* / *Every board, Doctor Soll. You'll hear all of it.* / *Kindling. Rope by rope. Going down.*
 - **One minute in a puzzle** (`STALL_TIME` = 60 s without progress in a section, once per section, S1-S8): he mutters the puzzle to himself (`sN-self`: the bell, the counterweight, the gear's ring, the cold lamps, the keystone, the fork, the rings, the grate), then the crew's existing stall hint follows.
+
+## Puzzle focus (a new trigger kind)
+When the player reaches a puzzle, someone suggests it and the desktop view glances at it ([PUZZLE_FOCUS.md](PUZZLE_FOCUS.md)). Its 81 lines
+(`src/data/puzzle-focus-text.js`, voiced like the rest: status `focus` in `voice/lines.csv`) reach the radio through
+`CommsDirector.focus(line)`: priority `FOCUS_PRIO` = 1.5 (above the flavour lines, below the story and the beats), a 7 s ttl (stale, never
+late), once per run, never during danger, one transmission at a time like every line. Uplink voices only where the signal carries them
+(>= 0.4); Elias and Vesper everywhere.

@@ -54,7 +54,7 @@ BITRATE = '32k'
 TARGET_LUFS = -23.0
 PEAK_CEIL_DB = -1.0
 BUDGET_BYTES = 2_500_000  # all shipped clips together (tests/comms/voice.mjs holds the same budget)
-LIVE = ('live', 'ch2')  # lines.csv statuses the build voices (ch2: Chapter II's radio)
+LIVE = ('live', 'ch2', 'focus')  # lines.csv statuses the build voices (ch2: Chapter II's radio; focus: the puzzle focus lines)
 
 # ---- the AI placeholder engine (pinned, verified) ----------------------------------------------------------------------------
 # The full-precision export of Kokoro-82M v1.0 (not the q8 quantisation the first placeholders used), pinned to one revision of
