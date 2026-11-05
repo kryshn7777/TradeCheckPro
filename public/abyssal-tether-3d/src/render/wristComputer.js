@@ -278,9 +278,9 @@ export class WristComputer {
       parent = game.renderer.camera;
       if (this.face.parent !== parent) {
         parent.add(this.face);
-        this.face.position.set(0.17, -0.15, -0.5);
+        this.face.position.set(0.215, -0.2, -0.5); // the lower right corner of the view, small (the hands and the radio line are in the middle / left)
         this.face.rotation.set(0, 0, 0);
-        this.face.scale.setScalar(1.7);
+        this.face.scale.setScalar(1.15);
       }
     }
     return !!parent;
