@@ -224,6 +224,7 @@ const CONTROLS_QUEST = [
   [['Y'], 'Tap: night vision goggles on / off (the deeper sections are dark on purpose). Hold: re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Tap: goggles · hold: re-centre'],
   [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
   [['Both triggers'], 'Falling with no rope? Squeeze BOTH triggers together: the jetpack lights for a moment, brakes the fall and settles you down gently. The tank is small (half full at the start); a fuel can on a hard-to-reach ledge adds half. Dying does not refill it. Squeeze both again to cut it early and keep what is left.', 'Falling: both triggers = jetpack'],
+  [['Raise the right wrist'], 'Lift your right wrist toward your face (right gun holstered) and look at the watch: a 3D hologram of the whole descent opens above it: green where you started, amber at the gate you are heading for, white where you are now. The watch face shows your depth and the jetpack fuel.', 'Wrist up: map · depth · fuel'],
   [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
@@ -234,6 +235,7 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
+  [['M'], 'The wrist computer’s map: a 3D hologram of the whole descent (green: where you started, amber: the gate, white: you). Press again to close it.'],
   [['J', 'Space'], 'Falling with no rope: J (or Space in the air) lights the jetpack: a hard brake, then a gentle descent. The tank is small and a fuel can on a hard-to-reach ledge adds half; dying does not refill it. Press again to cut it early.'],
   [['H'], 'Stow / draw both rope guns. They start holstered on your hips; a click draws that hand’s gun, and a gun left alone on the ground goes back after a few seconds. Walking with a gun out is 20 % slower.'],
   [['N'], 'Night vision goggles on / off. The deeper sections are dark on purpose and the lantern fades with depth; the goggles run on a cell that drains while they are on and trickles back while they are off.'],

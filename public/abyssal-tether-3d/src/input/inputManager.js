@@ -104,6 +104,7 @@ export function makeIntent() {
     confirmPressed: false,
     backPressed: false,
     holsterPressed: false, // stow / draw both rope guns (sim/holster3d.js): desktop H, VR right stick click
+    mapPressed: false, // open / close the wrist computer's map (desktop M; in a headset raise the right wrist)
     jetPressed: false, // light the jetpack (sim/jetpack3d.js): desktop J; both triggers together do it too (game.js reads the two presses)
     nvPressed: false, // the night vision goggles (sim/nightVision3d.js): desktop N, VR Y tap (a hold still recenters), touch GOGGLES
     ui: { ray: null, click: false },
@@ -199,7 +200,7 @@ function applyOverride(I, o) {
   }
   if (typeof o.reel === 'number') I.reel = o.reel;
   if (typeof o.turnRate === 'number') I.turnRate = o.turnRate;
-  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'anyPressed']) {
+  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed', 'anyPressed']) {
     if (k in o) I[k] = !!o[k];
   }
   if (o.hands) {
@@ -263,7 +264,7 @@ export class InputManager {
     this.lastError = null;
 
     this.intent = makeIntent();
-    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false };
+    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false };
     this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
     this._bagGesture = makeBagGesture();
@@ -400,6 +401,7 @@ export class InputManager {
     I.nvPressed = E.nv;
     I.holsterPressed = E.holster;
     I.jetPressed = E.jet && !this.uiMode;
+    I.mapPressed = E.map && !this.uiMode;
     I.confirmPressed = E.confirm;
     I.backPressed = E.back;
     I.anyPressed = E.any;
@@ -428,6 +430,7 @@ export class InputManager {
     E.nv = false;
     E.holster = false;
     E.jet = false;
+    E.map = false;
     const BE = this._bagEdges;
     BE.slot = -1;
     BE.use = false;

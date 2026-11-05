@@ -133,8 +133,8 @@ void main() {
   float k = uLids;
   float curv = 0.95 * (1.0 - smoothstep(0.86, 1.0, k));
   float a2 = az * az;
-  float eu = mix(1.5, -0.32, k) + curv * a2;
-  float ed = mix(-1.5, 0.30, k) - curv * a2 * 0.8;
+  float eu = mix(1.05, -0.32, k) + curv * a2;
+  float ed = mix(-1.05, 0.30, k) - curv * a2 * 0.8;
   float s = 0.05 + 0.1 * k;
   float cu = smoothstep(eu - s, eu + s, el);
   float cd = smoothstep(ed + s, ed - s, el);

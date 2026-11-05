@@ -29,6 +29,8 @@ import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from '.
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
 import { DeathScene } from './sim/deathScene.js'; // the death scenes: the collapse + the eyelids, the Mason eating you (render/deathOverlay.js)
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
+import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: raise it (or press M) and a 3D hologram of the descent blooms
+import { WristComputer } from './render/wristComputer.js';
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
@@ -219,13 +221,14 @@ export function blankIntent() {
     nvPressed: false,
     holsterPressed: false,
     jetPressed: false,
+    mapPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     climb: blankClimb(),
   };
 }
 
-const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed'];
+const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed'];
 
 /**
  * A view of the main bus for per-run objects (creature, tethers, physics):
@@ -877,6 +880,7 @@ export class FallbackInput {
     it.nvPressed = !!this._keyEdges.KeyN;
     it.holsterPressed = !!this._keyEdges.KeyH;
     it.jetPressed = !!this._keyEdges.KeyJ;
+    it.mapPressed = !!this._keyEdges.KeyM;
     it.confirmPressed = !!(this._keyEdges.Enter || this._keyEdges.NumpadEnter);
     it.backPressed = !!this._keyEdges.Backspace;
     // Aim ray from the camera centre (both hands).
@@ -1061,6 +1065,8 @@ export class Game3D {
     this.c2 = null; // Chapter2Glue (chapterGlue.js): Chapter II's director and views
     this._c2views = null;
     this.chapter = chapterFromUrl(); // 1 = The Underspire (the game), 2 = Lamphold (the graybox, ?chapter=2)
+    this.wristMap = new WristMap();
+    this.wristComputer = null; // render/wristComputer.js (built with the renderer)
     this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
     this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
@@ -2954,6 +2960,8 @@ export class Game3D {
       this.pickups.reset(seed);
       this.pickups.snapshot();
       // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
+      if (this.wristMap) this.wristMap.reset();
+      if (this.wristComputer) this.wristComputer.reset();
       if (this.jet) this.jet.reset(this.level && this.level.data ? this.level.data.supplies : [], seed, this.level && this.level.sections ? this.level.sections.length : 0);
     }
     this.player.speedMul = 1;
@@ -3030,6 +3038,42 @@ export class Game3D {
         this._hapticBoth(0.1 + 0.12 * (ap.t / ap.dur), 22);
       }
     }
+  }
+
+  /**
+   * The wrist computer's map (sim/wristMap.js): M latches it open on a screen; in a headset raising the right wrist toward the face for a
+   * moment opens it (the right gun must be holstered: a gun lifted to aim is not a look at the watch). Closed in every menu, when dead, when paused.
+   */
+  _updateWristMap(dt, intent, live) {
+    const wm = this.wristMap;
+    if (!wm) return;
+    const r = this.renderer;
+    const xr = !!this.xrActive;
+    let head = null;
+    let hand = null;
+    let ok = false;
+    if (live && xr && r && r.camera && this.input && typeof this.input.handPose === 'function') {
+      const cam = r.camera;
+      cam.updateWorldMatrix(true, false);
+      cam.getWorldPosition(_dcV);
+      cam.getWorldDirection(_dcW);
+      head = this._wmHead || (this._wmHead = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1 });
+      head.x = _dcV.x;
+      head.y = _dcV.y;
+      head.z = _dcV.z;
+      head.fx = _dcW.x;
+      head.fy = _dcW.y;
+      head.fz = _dcW.z;
+      const hp = this.input.handPose('right');
+      hand = this._wmHand || (this._wmHand = { x: 0, y: 0, z: 0 });
+      hand.x = hp.x;
+      hand.y = hp.y;
+      hand.z = hp.z;
+      ok = typeof this.input.handTracked === 'function' ? !!this.input.handTracked('right') : true;
+    }
+    if (live && intent && intent.mapPressed) wm.toggle();
+    const gunOut = !!(this.holster && this.holster.out && this.holster.out[1]);
+    wm.update(dt, { live: !!live && !!this.player && this.player.alive !== false, xr, head, hand, handOk: ok, gunOut });
   }
 
   /**
@@ -3455,6 +3499,7 @@ export class Game3D {
     if (this.state === 'playing' && p.alive) {
       this._updateHolster(dt, intent, true);
       this._updateJetpack(intent);
+      this._updateWristMap(dt, intent, true);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
       this._stepPhysics(dt, intent);
@@ -3910,7 +3955,7 @@ export class Game3D {
       const killer = cause === 'creature' ? (cm && cm.lastHurtCause === 'skitter' && cm.clock - cm.lastHurtAt <= 2 ? 'skitter' : 'mason') : '';
       const r = this.renderer;
       const xr = !!this.xrActive;
-      const eye = xr && r && r.camera ? r.camera.position.y : eyeAboveBody();
+      const eye = xr && r && r.camera ? r.camera.position.y : eyeAboveBody() + C.player.radius; // the eye above the FEET (the body centre is a radius up)
       sc.begin(cause, { killer, xr, eye });
       this.deathLead = Math.max(0, sc.panelAt - DEATH_PANEL_DELAY);
       D.haveFace = false;
@@ -4792,6 +4837,13 @@ export class Game3D {
       this.wristVitals.update(dt);
     } catch (err) {
       this._fault('wristVitals', err);
+    }
+    try {
+      if (!this.wristComputer && this.renderer && this.level) this.wristComputer = new WristComputer(this);
+      if (this.wristComputer) this.wristComputer.update(dt, this);
+    } catch (err) {
+      this._fault('wristComputer', err);
+      this.wristComputer = null;
     }
     // The body last: it reads the rig, the hands' elbow anchors and the sim state of this frame.
     const bv = this.bodyView;

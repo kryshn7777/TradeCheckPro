@@ -412,6 +412,9 @@ export class DesktopInput {
       case 'KeyJ':
         if (!ui && !xr) im._edge('jet'); // the jetpack
         break;
+      case 'KeyM':
+        if (!ui && !xr) im._edge('map'); // the wrist computer's map
+        break;
       case 'Enter':
       case 'NumpadEnter':
         if (!ctlKey) im._edge('confirm');
