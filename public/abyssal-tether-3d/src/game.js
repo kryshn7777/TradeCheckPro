@@ -50,6 +50,8 @@ import { ObjectiveHint } from './sim/objectiveHint.js';
 import { CatchMoment } from './sim/catch3d.js'; // THE CATCH: the hit-stop on a lifesaving rope bite
 import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line transfers in the air
 import { ObjectiveHintView } from './render/objectiveHintView.js';
+import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
+import { GhostView } from './render/ghostView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
@@ -1182,6 +1184,11 @@ export class Game3D {
     this._frameErrors = 0;
     this._renderFaults = 0;
     this._godMode = false;
+    // GHOST LANTERN (meta/ghost.js): this run's recorder, the ghost played ({ key, player }), its sprite, the last save result
+    this._ghostRec = null;
+    this._ghost = null;
+    this._ghostView = null;
+    this._ghostLast = null;
     this._frozen = false;
     this._override = null;
     this._ovIntent = blankIntent();
@@ -2588,6 +2595,7 @@ export class Game3D {
     this._pendingJump = false;
     this._resetProgress();
     this._resetBag();
+    this._ghostStart(key);
 
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
@@ -2806,6 +2814,7 @@ export class Game3D {
     let ok = false;
     try {
       ok = this.start(info.difficulty);
+      if (this._ghostRec) this._ghostRec.invalidate(); // a continued run is not a whole run: its ghost is never saved
       if (ok) ok = this._resumeAt(info);
     } finally {
       this._continuing = null;
@@ -2932,6 +2941,7 @@ export class Game3D {
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
     const cp = lvl.checkpointFor(idx, 'all');
     const p = this.player;
+    if (this._ghostRec) this._ghostRec.invalidate(); // a warped run is not a whole run: no ghost
     // Sandbox warp / Continue: every seal above the section warped to is open (objectives below stay as they are).
     if (this.objectives) this.objectives.markDoneThrough(idx);
     p.reset(cp.x, cp.y, cp.z);
@@ -3793,6 +3803,7 @@ export class Game3D {
 
     this._runClock += dt;
     if (this.victoryT < 0) this.time += dt; // counts while playing or dead
+    if (this._ghostRec && this.victoryT < 0) this._ghostRec.sample(this.time, p.x, p.y, p.z); // GHOST LANTERN: 10 Hz on the run clock
 
     this._updateCreature(dt);
     this._updateThreat(dt);
@@ -4130,11 +4141,20 @@ export class Game3D {
     const key = this.difficultyKey;
     const par = PAR_3D && PAR_3D[key] ? PAR_3D[key][sp.id] || null : null;
     const recorded = !!(this.diff && this.diff.recordTimes) && !this._godMode;
-    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key });
+    // the section's best BEFORE this split: meta/save.js's 'split' listener (bound first) keeps the new one, so the UI's delta reads this
+    let prevBest = null;
+    if (recorded) {
+      this._try('save', () => {
+        const r = this.save && typeof this.save.sectionRecords === 'function' ? this.save.sectionRecords(key)[sp.id] : null;
+        prevBest = r && r.best > 0 ? r.best : null;
+      });
+    }
+    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key, prevBest });
   }
 
   _beginVictory() {
     if (this.splits) this._split(this.splits.goal(this.time)); // the last section's split ends at the goal
+    this._try('ghost', () => this._ghostVictory());
     this.victoryT = 0; // timer stops; deaths are vetoed from here on
     this.gateClosed = true;
     this._hintQueue.length = 0;
@@ -4909,6 +4929,49 @@ export class Game3D {
     }
   }
 
+  // ---- GHOST LANTERN (meta/ghost.js, render/ghostView.js) -------------------------------------------------------------
+  /** A run begins: a fresh recorder (valid only for a whole run that records times: never Sandbox) and this chapter + difficulty's ghost. */
+  _ghostStart(key) {
+    if (!this._ghostRec) this._ghostRec = new GhostRecorder();
+    this._ghostRec.reset();
+    if (!(this.diff && this.diff.recordTimes) || this._continuing) this._ghostRec.invalidate();
+    const k = ghostKey(this.chapter, key);
+    if (!this._ghost || this._ghost.key !== k) this._ghost = { key: k, player: loadGhost(this.chapter, key) };
+  }
+
+  /** The goal: a valid whole run (not in god mode) faster than the saved ghost becomes the ghost. */
+  _ghostVictory() {
+    const r = this._ghostRec;
+    if (!r || !r.valid || this._godMode) return;
+    r.sample(this.time, this.player.x, this.player.y, this.player.z);
+    const res = saveGhost(this.chapter, this.difficultyKey, r, this.time);
+    this._ghostLast = res;
+    if (res === 'saved') this._ghost = null; // reloaded at the next start
+    this.bus.emit('ghost:result', { result: res, time: this.time });
+  }
+
+  /** The ghost's sprite on the run clock (hidden off a run, with the setting off, or without a ghost). */
+  _updateGhost(dt) {
+    const g = this._ghost && this._ghost.player;
+    const on = !!g && !!this.player && !!this.settings && this.settings.ghost !== false && (this.state === 'playing' || this.state === 'dead' || this.state === 'paused');
+    if (!on && !this._ghostView) return;
+    if (!this._ghostView && this.renderer && this.renderer.scene) this._ghostView = new GhostView(this.renderer.scene);
+    if (this._ghostView) this._ghostView.update(dt, on ? g : null, this.time, this.renderer.camera, !!this.settings.reducedEffects);
+  }
+
+  debugGhost() {
+    const r = this._ghostRec;
+    const g = this._ghost && this._ghost.player;
+    const v = this._ghostView;
+    return {
+      key: ghostKey(this.chapter, this.difficultyKey),
+      recording: r ? { valid: r.valid, samples: r.count, seconds: r.duration } : null,
+      ghost: g ? { time: g.time, samples: g.count } : null,
+      sprite: v ? { visible: v.sprite.visible, opacity: v.alpha, x: v.sprite.position.x, y: v.sprite.position.y, z: v.sprite.position.z } : null,
+      last: this._ghostLast || null,
+    };
+  }
+
   /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
   _updateObjectiveHint(dt) {
     let view = this._hintView;
@@ -4940,6 +5003,7 @@ export class Game3D {
     } catch (err) {
       this._fault('objectiveHint', err);
     }
+    this._try('ghostView', () => this._updateGhost(dt));
     const fx = this.healthFx;
     if (fx) {
       try {
@@ -5523,6 +5587,7 @@ export class Game3D {
     // A teleport plays the level as if every objective down to the target's own section were done (its seal open too).
     if (this.objectives && this.level) this.objectives.markDoneThrough(this.level.sectionIndexAt(+y) + 1);
     if (this.splits) this.splits.partial(); // and the section left was not played whole: no split for it
+    if (this._ghostRec) this._ghostRec.invalidate(); // a teleported run never saves a ghost
     p.x = p.prevX = p.rx = +x;
     p.y = p.prevY = p.ry = +y;
     p.z = p.prevZ = p.rz = +z;
@@ -5877,6 +5942,19 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // GHOST LANTERN: state() reads the recorder / the ghost / the sprite; clear() deletes this chapter + difficulty's ghost; load(b64) plays a recorded one
+      ghost: {
+        state: () => this.debugGhost(),
+        clear: () => {
+          this._ghost = null;
+          return clearGhost(this.chapter, this.difficultyKey);
+        },
+        load: (b64) => {
+          const rec = decodeGhost(b64);
+          this._ghost = rec ? { key: ghostKey(this.chapter, this.difficultyKey), player: new GhostPlayer(rec) } : null;
+          return !!rec;
+        },
+      },
       // The lantern probe (LEVEL_FUN_PLAN P3, the e2e bots): { x, y, z } replaces the hand / view probe until probe(null).
       probe: (q) => {
         this._debugProbe = q && isFinite(q.x) && isFinite(q.y) && isFinite(q.z) ? { x: +q.x, y: +q.y, z: +q.z, on: q.on !== false } : null;

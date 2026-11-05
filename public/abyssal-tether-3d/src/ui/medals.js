@@ -95,10 +95,36 @@ export function tallyLine(t) {
   return bits.join(' · ');
 }
 
-/** The section-end line: "I · 1:12.4 · SILVER" (no medal: "I · 1:12.4"; a new best adds " · NEW BEST"). */
-export function splitLine(index, time, medal, isNew) {
+/**
+ * The split against the previous best, in tenths, as a WORD and a sign (never colour alone): "-2.3 vs best" (faster),
+ * "+1.1 vs best" (slower), "±0.0 vs best" (level); null without a previous best (the first time) or a time.
+ */
+export function fmtDelta(time, prevBest) {
+  if (!(typeof time === 'number' && isFinite(time) && time > 0) || !(typeof prevBest === 'number' && isFinite(prevBest) && prevBest > 0)) return null;
+  const diff = time - prevBest;
+  const mag = Math.round(Math.abs(diff) * 10 + 1e-9) / 10;
+  if (mag === 0) return '±0.0 vs best';
+  return `${diff < 0 ? '-' : '+'}${mag.toFixed(1)} vs best`;
+}
+
+/** The tone of a split line for its colour: 'ahead' (green) | 'behind' (amber) | null (no delta in it). */
+export function splitTone(line) {
+  const m = / · ([-+±])\d+\.\d vs best/.exec(String(line || ''));
+  return !m ? null : m[1] === '-' ? 'ahead' : m[1] === '+' ? 'behind' : null;
+}
+
+/** Colour of the 'ahead' tone (the word and the sign carry the meaning; the colour only repeats it). */
+export const AHEAD_COLOR = '#8fd19a';
+
+/**
+ * The section-end line: "I · 1:12.4 · SILVER" (no medal: "I · 1:12.4"; a new best adds " · NEW BEST"). With the previous
+ * best of the section (`prevBest` s) the delta follows the time: "III · 0:41.2 · -2.3 vs best · GOLD".
+ */
+export function splitLine(index, time, medal, isNew, prevBest = null) {
   const n = ROMAN[index] || String((index | 0) + 1);
   let s = `${n} · ${fmtSplit(time)}`;
+  const delta = fmtDelta(time, prevBest);
+  if (delta) s += ` · ${delta}`;
   if (medal && MEDAL_LABEL[medal]) s += ` · ${MEDAL_LABEL[medal].toUpperCase()}`;
   if (isNew) s += ' · NEW BEST';
   return s;

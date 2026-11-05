@@ -46,7 +46,7 @@ import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
 import { ComfortOverlay, applyDisplay } from './comfort.js';
 import { Tutorial } from './tutorial.js';
 import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
-import { MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, tallyLine, targetText } from './medals.js';
+import { AHEAD_COLOR, MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, splitTone, tallyLine, targetText } from './medals.js';
 import { PAR_3D } from '../data/par-3d.js';
 
 // =============================================================================
@@ -195,6 +195,8 @@ const SETTINGS_SCHEMA = [
   { key: 'captions', tab: 'access', type: 'toggle', label: 'Captions', desc: 'Text for the sounds that warn you: where it came from, how close.' },
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
+  // GHOST LANTERN (meta/ghost.js): here, not Comfort / Display, because those VR pages already hold their six rows
+  { key: 'ghost', tab: 'access', type: 'toggle', label: 'Ghost lantern', desc: 'A pale light drifts down on the pace of your best whole run. Beat it to the bottom to replace it.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
@@ -873,6 +875,7 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .section-sub{font:italic 400 1em/1.3 var(--fd);color:var(--ink-2);text-shadow:0 2px 12px rgba(0,0,0,.95)}
 .at3d-ui .section-sub:empty,.at3d-ui .section-num:empty,.at3d-ui .section-split:empty{display:none}
 .at3d-ui .section-split{margin-top:.2em;font:650 .82em var(--fu);letter-spacing:.16em;font-variant-numeric:tabular-nums;color:var(--amber);text-shadow:0 2px 12px rgba(0,0,0,.95)}
+.at3d-ui .section-split[data-tone=ahead]{color:${AHEAD_COLOR}}
 .at3d-ui .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .at3d-ui .rec-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5em;margin-bottom:.8em}
 .at3d-ui .rec-tabs .btn{align-items:center;text-align:center;min-height:max(var(--tap),2.4em)}
@@ -2424,10 +2427,13 @@ export class UI3D {
   _onSplit(p) {
     const index = num(p.index, -1);
     if (index < 0 || !(p.time > 0)) return;
-    const prev = p.recorded ? this._records(p.difficulty)[p.section] : null;
+    // the previous best: game.js reads it into the event BEFORE the save's own 'split' listener keeps the new one (that listener
+    // is bound first at boot, so reading the save here would see this very split); the save read is the fallback
+    const prev = !p.recorded ? null : p.prevBest !== undefined ? { best: num(p.prevBest, 0) } : this._records(p.difficulty)[p.section];
     const isNew = !!p.recorded && (!prev || !(prev.best > 0) || p.time < prev.best - 1e-6);
     const medal = p.recorded ? p.medal || null : null;
-    const line = splitLine(index, p.time, medal, isNew && !!prev);
+    const had = !!prev && prev.best > 0;
+    const line = splitLine(index, p.time, medal, isNew && had, had ? prev.best : null);
     const sp = { index, id: p.section, time: p.time, medal, par: num(p.par, 0) || null, isNew, line };
     this._runSplits[index] = sp;
     const secs = this._sections();
@@ -2593,7 +2599,10 @@ export class UI3D {
       d.sectionNum.textContent = t.num;
       d.sectionName.textContent = t.name;
       d.sectionSub.textContent = t.sub;
-      if (d.sectionSplit) d.sectionSplit.textContent = t.split;
+      if (d.sectionSplit) {
+        d.sectionSplit.textContent = t.split;
+        d.sectionSplit.dataset.tone = splitTone(t.split) || ''; // green ahead of the best, amber behind (the sign + word say it too)
+      }
       d.sectionCard.classList.remove('is-cut');
       restartAnimation(d.sectionCard, 'is-on');
     }
@@ -4809,7 +4818,7 @@ export class UI3D {
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.95)';
       ctx.shadowBlur = 12;
-      txt(ctx, t.split, cx, 262, `650 30px ${F_UI}`, COL.amber, 'center', 0.14, c.cw - 60);
+      txt(ctx, t.split, cx, 262, `650 30px ${F_UI}`, splitTone(t.split) === 'ahead' ? AHEAD_COLOR : COL.amber, 'center', 0.14, c.cw - 60);
       ctx.restore();
     }
     c.tex.needsUpdate = true;
