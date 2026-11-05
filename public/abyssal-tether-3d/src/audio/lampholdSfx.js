@@ -6,9 +6,12 @@
  * the Span and its crash, the shutter, a lamp going out; the chain's pawl in the Throat and the held note of the bow (the Lamp motif's five notes).
  * Every handler is silent without an audio context (the tests, a blocked page) because _begin returns null.
  */
+import { SeqRng } from './sfxDesign.js';
+
+const SEQ = new SeqRng(0x1a3f); // seeded jitter, never Math.random (plans/SFX_DESIGN.md section 4)
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
-const rand = (a, b) => a + Math.random() * (b - a);
+const rand = (a, b) => a + SEQ.next() * (b - a);
 
 function at(self, p) {
   return self._at(num(p && p.x, NaN), num(p && p.y, NaN), num(p && p.z, NaN));

@@ -2622,7 +2622,7 @@ export class UI3D {
       return;
     }
     if (btn.disabled) return;
-    this._emitClick();
+    this._emitClick(btn.dataset.action);
     this._unlockAudio();
     this._action(btn.dataset.action, btn.dataset, false);
   }
@@ -2940,9 +2940,16 @@ export class UI3D {
     }
   }
 
-  _emitClick() {
+  /** `kind`: the button's action ('back', 'tab', 'start' ...): audio/sfxBank.js UI_KIND picks the designed sound from it. */
+  _emitClick(kind) {
     const bus = this.game && this.game.bus;
-    if (bus && typeof bus.emit === 'function') bus.emit('ui:click', {});
+    if (bus && typeof bus.emit === 'function') bus.emit('ui:click', { kind: kind || '' });
+  }
+
+  /** Focus / hover moved to another control (audio: the ui.move tick). */
+  _emitMove() {
+    const bus = this.game && this.game.bus;
+    if (bus && typeof bus.emit === 'function') bus.emit('ui:move', null);
   }
 
   _unlockAudio() {
@@ -3004,7 +3011,7 @@ export class UI3D {
       e.preventDefault();
       e.stopPropagation();
       if (SUB_SCREENS[this.current]) {
-        this._emitClick();
+        this._emitClick('back');
         this._back();
       } else if (this.current === 'pause') {
         this._action('resume', null, false);
@@ -3048,6 +3055,7 @@ export class UI3D {
     if (i < 0) i = dir > 0 ? -1 : 0;
     const next = list[(i + dir + list.length) % list.length];
     if (next) next.focus({ preventScroll: false });
+    if (next && next !== active) this._emitMove();
   }
 
   _focusables(container) {
@@ -3707,7 +3715,7 @@ export class UI3D {
     if (panelUp && this.current !== null) {
       if (backEdge && SUB_SCREENS[this.current]) {
         // (Game3D's B toggles pause only on the 'pause' screen, so this cannot also resume.)
-        this._emitClick();
+        this._emitClick('back');
         this._back();
       } else if (confirmEdge && this._hover && this._hover.act !== 'slide' && this.current !== 'death' && this._clock - this._lastClickAt > CLICK_DEBOUNCE) {
         // (The death panel is excluded: Game3D already rises again on A there.)
@@ -3803,6 +3811,7 @@ export class UI3D {
     this._hover = region;
     this._setHoverFrame(region);
     if (region) {
+      this._emitMove();
       const g = this.game || {};
       const s = this._settings();
       if (g.input && typeof g.input.haptic === 'function' && s.haptics !== false) {
@@ -3818,7 +3827,7 @@ export class UI3D {
   }
 
   _activateRegion(r, px) {
-    this._emitClick();
+    this._emitClick(r.act);
     this._unlockAudio();
     const data = { diff: r.diff, section: r.section, key: r.key, value: r.value };
     if (r.act === 'slide') data.value = (px - r.x) / r.w;
