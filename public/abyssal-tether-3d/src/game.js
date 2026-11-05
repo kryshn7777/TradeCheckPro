@@ -310,7 +310,7 @@ function introOff() {
   }
 }
 
-/** `?hitstop=off` turns THE CATCH's hit-stop off (sim/catch3d.js; the e2e bots); Settings › Comfort › Catch pause (settings.hitStop) does the same for a player. */
+/** `?hitstop=off` turns THE CATCH's hit-stop off (sim/catch3d.js; the e2e bots); Settings › Rope › Catch pause (settings.hitStop) does the same for a player. */
 function hitstopOff() {
   try {
     return typeof location !== 'undefined' && /[?&]hitstop=off/.test(location.search || '');
