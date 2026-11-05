@@ -38,10 +38,10 @@ export const WAVE = Object.freeze({
   speedReduced: 13, // m/s with Reduced effects
   range: 70, // m: then it is gone
   rise: 0.45, // s of the strength ramp at the start (no flash)
-  thick0: 1.1, // m: the band's half width at the mark ...
-  thick1: 3.2, // ... and at the end of its range
+  thick0: 0.7, // m: the band's half width at the mark ...
+  thick1: 2.0, // ... and at the end of its range
   thick3: 1.15, // x the width at stage 3
-  wake: 7, // m: the ripples behind the front fade over this
+  wake: 4.5, // m: the ripples behind the front fade over this
   strength2: 0.8, // stage-2 strength
   strength3: 1.0, // stage-3 strength
   reducedK: 0.5, // x strength with Reduced effects

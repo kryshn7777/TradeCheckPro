@@ -8,9 +8,11 @@ import { PING } from './materials.js';
 import { STRENGTH_CAP } from '../sim/hintWave.js';
 
 /** Linear emissive radiance of the band at strength 1 (tuned on the S1 / deep captures; the grade and the tone mapper follow). */
-export const PING_GAIN = 1.25;
+export const PING_GAIN = 0.9;
 /** Ripple frequency of the wake (rad / m: rings about 4 m apart). */
 export const PING_RIPPLE = 1.6;
+/** Wake length (m): the ripples behind the front fade over this. */
+export const PING_WAKE = 4.5;
 
 /**
  * Writes the wave into the shared uniforms. Allocation-free.
@@ -26,7 +28,7 @@ export function applyPing(w, gain = PING_GAIN) {
   }
   const s = Math.min(STRENGTH_CAP, w.strength) * gain;
   P.set(w.x, w.y, w.z, w.radius);
-  K.set(Math.max(0.3, w.thickness), s, 7, PING_RIPPLE);
+  K.set(Math.max(0.3, w.thickness), s, PING_WAKE, PING_RIPPLE);
   return s;
 }
 

@@ -265,7 +265,7 @@ function sim(secs, o = {}) {
   ok(W.waveStrength(1, 20, 3, false) > W.waveStrength(2.5, 50, 3, false), 'fainter with the distance travelled');
   ok(W.waveStrength(1, 20, 3, false) > W.waveStrength(1, 20, 2, false) && W.waveThickness(20, 3) > W.waveThickness(20, 2), 'stage 3 slightly stronger and thicker');
   ok(W.waveStrength(1, 13, 3, true) < W.waveStrength(1, 13, 3, false) * 0.6, 'Reduced effects: dimmer (and slower)');
-  ok(W.waveThickness(0, 2) >= 1 && W.waveThickness(70, 2) <= 3.5, 'thickness ~1.1 m at the mark .. ~3.2 m at the range');
+  ok(W.waveThickness(0, 2) >= 0.5 && W.waveThickness(70, 2) <= 3.5, 'thickness ~0.7 m at the mark .. ~2 m at the range');
   const r = sim(200);
   ok(r.maxStrength <= W.STRENGTH_CAP && r.maxRise < 0.06, `in play: never above the cap, never jumps (max per-frame rise ${r.maxRise.toFixed(3)} at 72 Hz)`);
   ok(near(W.arrivalTime(40, false), 2) && near(W.arrivalTime(200, false), 3.5), 'arrival time: dist / speed, capped at the range');

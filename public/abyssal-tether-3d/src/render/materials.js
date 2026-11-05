@@ -185,7 +185,7 @@ const PING_FRAG = `
     float atPb = max( uPing.w - atPr, 0.0 );
     float atPw = step( atPr, uPing.w ) * exp( - atPb / uPingK.z ) * ( 0.5 + 0.5 * cos( atPb * uPingK.w ) );
     float atPf = 0.35 + 0.65 * clamp( dot( inverseTransformDirection( normal, viewMatrix ), - atPd ) / max( atPr, 0.001 ), 0.0, 1.0 );
-    totalEmissiveRadiance += vec3( 1.0, 0.68, 0.26 ) * ( uPingK.y * atPf * ( exp( - atPx * atPx ) + 0.3 * atPw ) );
+    totalEmissiveRadiance += vec3( 1.0, 0.68, 0.26 ) * ( uPingK.y * atPf * ( exp( - atPx * atPx ) + 0.15 * atPw ) );
   }`;
 
 /** Default texture tile (metres) when a set does not say. */
