@@ -47,9 +47,11 @@ void main() {
   if (smear > 0.0) {
     // squished: flat, splayed, shrinking away as it dries
     float k = sqrt(smear);
-    p.y *= 0.05;
-    p.xz *= (1.35 + 0.35 * w) * k;
-    if (part > 1.5 && part < 2.5) p.x *= 1.25;
+    p.y *= 0.04;
+    if (part > 2.5) p *= 0.0; // the antennae are gone
+    else if (part > 1.5) p.xz *= 0.55; // the legs: a few stubs at the rim
+    else p.xz *= vec2(1.75, 1.35) * (1.0 + 0.22 * sin(p.z * 19.0 + p.x * 11.0 + seed * 30.0)); // an irregular splat
+    p.xz *= k;
     n = vec3(0.0, 1.0, 0.0);
   } else {
     float ph = aAnim.x;
@@ -180,9 +182,9 @@ export function buildRoachGeometry() {
   // legs: 3 pairs of thin quads, hip -> foot, splayed; the tripod L1 R2 L3 (phase 0) against R1 L2 R3 (phase PI)
   const legs = [
     // z hip, foot dx, foot dz, length scale
-    [0.22, 0.62, 0.5],
-    [0.02, 0.7, 0.05],
-    [-0.2, 0.68, -0.48],
+    [0.24, 0.4, 0.3],
+    [0.04, 0.5, -0.1],
+    [-0.16, 0.48, -0.56],
   ];
   for (let j = 0; j < 3; j++) {
     for (const side of [-1, 1]) {
@@ -207,9 +209,9 @@ export function buildRoachGeometry() {
   }
   // antennae: one long thin triangle each, from the head forward and out, longer than the body
   for (const side of [-1, 1]) {
-    const a = add(side * 0.03, 0.08, 0.6, 0, 1, 0, 3, 0, 0, side);
-    const b = add(side * 0.07, 0.08, 0.58, 0, 1, 0, 3, 0, 0, side);
-    const c = add(side * 0.42, 0.16, 1.45, 0, 1, 0, 3, 1, 0, side);
+    const a = add(side * 0.035, 0.08, 0.62, 0, 1, 0, 3, 0, 0, side);
+    const b = add(side * 0.06, 0.08, 0.6, 0, 1, 0, 3, 0, 0, side);
+    const c = add(side * 0.3, 0.14, 1.3, 0, 1, 0, 3, 1, 0, side);
     if (side > 0) idx.push(a, b, c);
     else idx.push(a, c, b);
   }
