@@ -47,6 +47,8 @@ import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { ObjectiveHint } from './sim/objectiveHint.js';
+import { CatchMoment } from './sim/catch3d.js'; // THE CATCH: the hit-stop on a lifesaving rope bite
+import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line transfers in the air
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
@@ -316,6 +318,15 @@ function holdfastMode() {
 function introOff() {
   try {
     return typeof location !== 'undefined' && /[?&]intro=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?hitstop=off` turns THE CATCH's hit-stop off (sim/catch3d.js; the e2e bots); Settings › Rope › Catch pause (settings.hitStop) does the same for a player. */
+function hitstopOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]hitstop=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1178,6 +1189,7 @@ export class Game3D {
     this._uiFallback = false;
     this._uiMode = null;
     this._hapticT = 0;
+    this.catchMoment = new CatchMoment(); // THE CATCH (sim/catch3d.js): _frame scales the run's dt by it
     this._bagHapticT = 0;
     this._lantern0 = null; // { renderer, base, range }: the lantern as the renderer made it (WP-BAG dims it with the charge)
     this._handA = { x: 0, y: 0, z: 0, grip: 0, ok: false };
@@ -2081,6 +2093,24 @@ export class Game3D {
       if (!this._inRun()) return;
       const k = U.clamp((finiteOr(e.speed, 0) - C.rope.joltFxSpeed) / 20, 0, 1);
       this._hapticTethered(0.35 + 0.5 * k, 60);
+      // THE CATCH: a bite that saved a near-lethal fall holds the world a beat (vy = the speed before the bite, physics3d.js)
+      const vy = finiteOr(e.vy, this.player ? this.player.vy : 0);
+      if (this.state === 'playing' && this.catchMoment.onJolt(finiteOr(e.speed, 0), vy, this.diff && this.diff.lethalImpact, !hitstopOff() && (!this.settings || this.settings.hitStop !== false))) {
+        this._hapticBoth(1, 120);
+        const th = this.threat;
+        if (th && !th.isNull) {
+          th.value = Math.max(finiteOr(th.value, 0), 0.6); // the heart jumps, then settles at the threat's own release rate
+          th.heartRate = Math.max(finiteOr(th.heartRate, 60), 130);
+        }
+        bus.emit('rope:catch', { speed: -vy });
+      }
+    });
+    // SWING CHAINS (sim/flow3d.js): a rising pop per link, a toast when a scored chain of 4+ ends
+    bus.on('flow:link', (e) => {
+      if (this._inRun()) this._haptic(e.hand, 0.2 + 0.08 * Math.min(finiteOr(e.n, 1), 8), 40);
+    });
+    bus.on('flow:end', (e) => {
+      if (this.state === 'playing' && e.scored && e.n >= FLOW.rewardFrom && e.reason !== 'death') this._toast(`Chain x${e.n}`, 1.4);
     });
     // The clutch paying line out: the first bite of a slip (the continuous buzz is in _updateHaptics, same curve as the audio).
     bus.on('rope:slip', (e) => {
@@ -2535,6 +2565,7 @@ export class Game3D {
     this.hidePlayer = false;
     this.time = 0;
     this._runClock = 0;
+    this.catchMoment.reset();
     this.deaths = 0;
     this.victoryT = -1;
     this.gateClosed = false;
@@ -2933,6 +2964,8 @@ export class Game3D {
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
+    this.flow = new Flow3D(this._runBus, this.player); // SWING CHAINS (sim/flow3d.js): bus-driven, rebuilt (= reset) with each world
+    this.flow.lantern = diff.bag === false ? null : this.bag; // the 4+ link charge goes through the bag (none where the bag is off)
     this.objectives = null;
     try {
       this.objectives = new Objectives3D(lvl, diff, this._runBus);
@@ -3276,6 +3309,7 @@ export class Game3D {
     const st = this.state;
     const inRun = !!bag && !this.hidePlayer && (st === 'playing' || st === 'paused' || st === 'dead' || st === 'victory');
     let f = inRun ? bag.lanternFactor * lanternFadeAt(r.depthF || 0) : 1; // the lantern fades with depth (sim/nightVision3d.js)
+    if (inRun && this.flow && this.flow.flare > 0) f *= 1 + 0.5 * this.flow.flare; // a swing-chain link flares it (sim/flow3d.js)
     if (inRun && bag.lanternCharge <= C.bag.lanternLow && st === 'playing') {
       // a low battery stutters (bounded, never a strobe)
       const t = this.realTime;
@@ -3448,9 +3482,13 @@ export class Game3D {
       this._applyTurn(dt, intent);
       switch (this.state) {
         case 'playing':
-        case 'dead':
-          this._updateRun(dt, runIntent);
+        case 'dead': {
+          // THE CATCH: the world (physics, creature, run clock) slows together; the head, views and haptics keep real time
+          const sdt = dt * this.catchMoment.step(dt);
+          this._updateRun(sdt, runIntent);
+          if (this.flow) this.flow.step(sdt);
           break;
+        }
         case 'paused':
           break;
         case 'intro':
@@ -5415,6 +5453,8 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      catches: this.catchMoment.count, // THE CATCH (sim/catch3d.js): lifesaving bites this run (the run highlights read it)
+      flow: this.flow ? { n: this.flow.n, best: this.flow.best, links: this.flow.links, chains: this.flow.chains, flare: r(this.flow.flare) } : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
       objectives: this.objectives
