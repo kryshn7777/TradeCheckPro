@@ -882,6 +882,7 @@ export class Physics3D {
     player.prevY = player.y;
     player.prevZ = player.z;
     player.landedThisStep = false;
+    const vy0 = player.vy; // the vertical speed before this step's rope bite (rope:jolt carries it: THE CATCH, sim/catch3d.js)
     this._health().step(dt);
 
     // ---- 1. timers & control ------------------------------------------------
@@ -1054,7 +1055,7 @@ export class Physics3D {
       }
       if (jolt > R.joltFxSpeed) {
         player.ropeJolt = jolt;
-        this.bus.emit('rope:jolt', { speed: jolt, x: player.x, y: player.y, z: player.z });
+        this.bus.emit('rope:jolt', { speed: jolt, vy: vy0, x: player.x, y: player.y, z: player.z });
       }
     }
 

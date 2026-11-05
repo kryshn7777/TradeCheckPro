@@ -9,7 +9,7 @@
  *   dresser:tick / hum / measure / saw     THE DRESSER (sim/dresser3d.js): [Ticking] [Humming] [Scraping] [Sawing]
  *   holdfast:twitch / inhale / close / tear / crush / knock   THE HOLDFAST (sim/holdfast3d.js): [Knuckles cracking]
  *                                          [A wet breath in the wall] [Stone fingers close on your hand] ...
- *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
+ *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, rope:catch, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
  * a direction (8 sectors around the head plus above / below) and a severity 0..2 for emphasis. Lines of the same `group`
@@ -115,6 +115,7 @@ export const RULES = Object.freeze({
   boltsHold: R('[The bolts below go still]', 'world', 0, 'bolt', 4),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
+  ropeCatch: R('[You gasp]', 'player', 1, 'catch', 2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
   gripWeak: R('[Grip failing]', 'player', 1, 'grip', 3),
   gripLost: R('[Grip lost]', 'player', 2, 'grip', 1.5),
@@ -223,6 +224,8 @@ export function captionForEvent(type, p) {
       return finite(e.intensity) && e.intensity > 0.4 ? RULES.slip : null;
     case 'rope:jolt':
       return finite(e.speed) && e.speed > 8 ? RULES.jolt : null;
+    case 'rope:catch':
+      return RULES.ropeCatch;
     case 'grapple:break':
       return RULES.anchorBreak;
     case 'climb:strain':
@@ -375,6 +378,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'platform:crumble',
   'rope:slip',
   'rope:jolt',
+  'rope:catch',
   'grapple:break',
   'climb:strain',
   'climb:slip',

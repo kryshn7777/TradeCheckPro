@@ -166,6 +166,7 @@ const SETTINGS_SCHEMA = [
     options: [['standing', 'Standing'], ['seated', 'Seated']],
   },
   { key: 'windSqualls', tab: 'comfort', type: 'toggle', label: 'Wind squalls', desc: 'Gusts in the deep shaft push you gently while you swing or hang. Off: still air.' },
+  { key: 'hitStop', tab: 'comfort', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },
   { key: 'heightOffset', tab: 'comfort', type: 'range', label: 'Fine height', desc: 'Raise or lower your eyes a little.', page: 'height', min: -VIEW.offsetMax, max: VIEW.offsetMax, step: VIEW.offsetStep, fmt: cm },
   { type: 'height', tab: 'comfort', page: 'height' },
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
