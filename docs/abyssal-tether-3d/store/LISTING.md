@@ -1,4 +1,4 @@
-# Abyssal Tether: Meta Horizon Store listing pack (free release, Chapters I and II)
+# The Lantern: Meta Horizon Store listing pack (free release, Chapters I and II)
 
 Everything the owner pastes into the Developer Dashboard for the **free release: Chapters I and II**. Limits are Meta's
 (RELEASE.md section 13): name 30 characters, short description 150, long description 4000. Character counts below
@@ -19,7 +19,7 @@ written; edit this file, not the Dashboard, and re-run the checker):
 
 | Field | Value |
 |---|---|
-| Title | `Abyssal Tether` (14 characters; must equal the title on the cover art, VRC.Quest.Asset.2) |
+| Title | `The Lantern` (11 characters; must equal the title on the cover art, VRC.Quest.Asset.2) |
 | Price | Free. No add-ons at launch (the dormant SKU `abyssal_tether_full_game` is NOT created until Chapters II-V exist) |
 | Category / genres | Games: Action, Adventure |
 | Tags | horror, climbing, physics, single player, atmospheric |
@@ -45,7 +45,7 @@ Descend a buried cathedral-machine, then a town of lamps, on two grappling tethe
 ```
 Something is following you down.
 
-Abyssal Tether is a physical VR descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
+The Lantern is a physical VR descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
 
 HOW YOU MOVE
 - Fire a tether with each trigger and swing across the dark. Hold the trigger to stay attached, release to let go.
@@ -68,7 +68,7 @@ BUILT FOR THE HEADSET
 - Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 65 MB).
 
 COMFORT
-Comfort rating: Intense. Abyssal Tether uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
+Comfort rating: Intense. The Lantern uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
 
 CONTENT
 Mature horror: sudden loud sounds, peril, bloodstains, skeletal remains and graphic death scenes (a creature devours you; blood splashes the screen). No sexual content, no real-world violence, the player never attacks anything.

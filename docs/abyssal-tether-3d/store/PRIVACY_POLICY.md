@@ -1,8 +1,8 @@
-# Abyssal Tether: Privacy Policy
+# The Lantern: Privacy Policy
 
 Effective date: {{EFFECTIVE_DATE}}
 
-This is the privacy policy for **Abyssal Tether** ("the game"), a virtual-reality game by {{STUDIO}} for Meta Quest,
+This is the privacy policy for **The Lantern** ("the game"), a virtual-reality game by {{STUDIO}} for Meta Quest,
 also playable in a web browser at https://{{DOMAIN}}{{GAME_PATH}}. It explains what the game stores, why, and how you
 can delete it. We wrote it to be short because the game collects very little.
 
@@ -54,7 +54,7 @@ information from children.
 
 Because the data is only on your device, you control it:
 
-- On your headset: **Settings > Apps > Abyssal Tether > Clear data** (or uninstall the game). This removes your
+- On your headset: **Settings > Apps > The Lantern > Clear data** (or uninstall the game). This removes your
   settings, records, progress and the cached game files.
 - In a web browser: clear the site's data for {{DOMAIN}} in the browser's settings.
 - If you think we hold anything about you, email {{CONTACT_EMAIL}} and we will check and delete it. We do not hold

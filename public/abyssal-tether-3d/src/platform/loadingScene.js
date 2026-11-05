@@ -15,7 +15,7 @@
 const MOTES = 90;
 
 export class LoadingScene {
-  constructor(THREE, r3d, { title = 'ABYSSAL TETHER', label = 'Lowering the lantern' } = {}) {
+  constructor(THREE, r3d, { title = 'THE LANTERN', label = 'Lowering the lantern' } = {}) {
     this.THREE = THREE;
     this.r3d = r3d;
     this.scene = r3d.scene;

@@ -358,7 +358,7 @@ export function createMockStore(mode, { latency = 20 } = {}) {
     },
     async getDetails(ids) {
       await sleep(latency);
-      return ids.map((itemId) => ({ itemId, title: 'Abyssal Tether: The Full Descent', price: { currency: 'USD', value: '9.99' } }));
+      return ids.map((itemId) => ({ itemId, title: 'The Lantern: The Full Descent', price: { currency: 'USD', value: '9.99' } }));
     },
   };
   class PaymentRequest {

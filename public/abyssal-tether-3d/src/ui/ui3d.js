@@ -1996,7 +1996,7 @@ export class UI3D {
   _buildAbout() {
     const d = this.dom;
     d.aboutCredits.textContent =
-      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live. The radio voices are AI-generated placeholders (Kokoro-82M text-to-speech, Apache-2.0 licence), not human actors; recorded performances will replace them. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
+      'Created by the Lantern team. The world, the creature, the score and every sound are original: the sound is synthesised live. The radio voices are AI-generated placeholders (Kokoro-82M text-to-speech, Apache-2.0 licence), not human actors; recorded performances will replace them. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
   }
 
   _versionLine() {
@@ -4228,7 +4228,7 @@ export class UI3D {
     this._frame(ctx);
     this._header(ctx, 'About');
     const cx = CW / 2;
-    txt(ctx, 'ABYSSAL TETHER', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
+    txt(ctx, 'THE LANTERN', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
     txt(ctx, 'CHAPTERS I–II · THE FREE GAME', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
     const lab = `650 28px ${F_UI}`;
     const val = `500 28px ${F_UI}`;
@@ -4246,7 +4246,7 @@ export class UI3D {
     row(410, 'PRIVACY', this._privacyUrl());
     row(458, 'SUPPORT', this._supportUrl());
     txt(ctx, 'No account. Nothing about you leaves this headset.', 44, 514, val, COL.ink2, 'left', 0);
-    const credits = 'Abyssal Tether team. Original world, creature, score; sound synthesised live. Radio voices: AI placeholders (Kokoro TTS), not actors. three.js (MIT), Blender.';
+    const credits = 'The Lantern team. Original world, creature, score; sound synthesised live. Radio voices: AI placeholders (Kokoro TTS), not actors. three.js (MIT), Blender.';
     wrapLines(ctx, credits, CW - 88, `400 28px ${F_UI}`)
       .slice(0, 3)
       .forEach((ln, i) => txt(ctx, ln, 44, 568 + i * 36, `400 28px ${F_UI}`, COL.ink3, 'left', 0));

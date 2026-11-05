@@ -1,4 +1,4 @@
-# ABYSSAL TETHER 3D: status (2026-11-04): Chapters I and II are the free game
+# THE LANTERN (formerly ABYSSAL TETHER 3D): status (2026-11-05): Chapters I and II are the free game
 
 **2026-11-05, the mature update** (death scenes with closing eyelids and the Mason's devouring cutscene, the jetpack, the wrist hologram map, water, vista wind, skeletons and bloodstains, Kokoro voices, a scarier Dresser, smaller skitterling heads, real shadows: the lantern's, a lamp's moving shadows, and the Mason's red glow as a shadowed light): `plans/MATURE_UPDATE.md`. The build is rated for it now (`store/LISTING.md`).
 

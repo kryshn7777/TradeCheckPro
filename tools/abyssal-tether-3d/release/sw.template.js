@@ -47,11 +47,11 @@ const LAZY = new Map(PRECACHE.lazy.map((e) => [abs(e.url), e.rev]));
 const SHELL_URL = abs(PRECACHE.shell || 'index.html');
 
 const OFFLINE_HTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Abyssal Tether</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>The Lantern</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#08090a;color:#e8dcc0;
 font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px}button{margin-top:16px;padding:10px 18px;
 background:#1b1f20;color:#e8dcc0;border:1px solid #3a4244;border-radius:6px;font:inherit}</style></head>
-<body><main><h1>Abyssal Tether</h1><p>An internet connection is needed the first time the game starts,
+<body><main><h1>The Lantern</h1><p>An internet connection is needed the first time the game starts,
 so it can download the descent. After that it plays offline.</p>
 <button onclick="location.reload()">Try again</button></main></body></html>`;
 

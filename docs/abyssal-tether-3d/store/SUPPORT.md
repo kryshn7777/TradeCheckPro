@@ -1,6 +1,6 @@
-# Abyssal Tether: Support
+# The Lantern: Support
 
-Need help with **Abyssal Tether**? Email **{{CONTACT_EMAIL}}** and include:
+Need help with **The Lantern**? Email **{{CONTACT_EMAIL}}** and include:
 
 - your headset (Quest 3 or Quest 3S) and its software version (Settings > System > Software Update),
 - the game version (Settings > About inside the game, or {{VERSION}} for this release),
@@ -17,7 +17,7 @@ plays offline. If it still asks, open it once while online and wait for the load
 itself, and your run is saved at your last checkpoint (use Continue in the main menu). If it does not recover, close
 the game from the Library and start it again.
 
-**I feel sick.** Abyssal Tether has an Intense comfort rating: swinging at speed, long falls and thumbstick turning.
+**I feel sick.** The Lantern has an Intense comfort rating: swinging at speed, long falls and thumbstick turning.
 Stop and rest. Try the Sandbox difficulty first, play seated, take breaks, and keep a fan on. It is fine to put it
 down; the game will keep your checkpoint.
 
@@ -30,7 +30,7 @@ while it is. Close the menu to carry on.
 **My records or progress are gone.** Records and progress live on your headset. They are removed if you clear the
 app's data or uninstall the game.
 
-**How do I reset the game?** Quest Settings > Apps > Abyssal Tether > Clear data.
+**How do I reset the game?** Quest Settings > Apps > The Lantern > Clear data.
 
 **Controls.** Trigger: fire or hold a tether. Grip on a tethered hand: yank the rope. Left stick: move and steer in the
 air. Right stick: turn and reel. A: jump. B: pause. Hold Y: recenter. Touch controllers are required.
