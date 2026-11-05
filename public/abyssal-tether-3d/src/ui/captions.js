@@ -85,6 +85,7 @@ export const RULES = Object.freeze({
   dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
   dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
   // the jetpack (sim/jetpack3d.js)
+  windWhoosh: R('[Wind whooshing past]', 'world', 0, 'whoosh', 6),
   jetOn: R('[Jetpack roaring]', 'creature', 1, 'jet', 2),
   jetDry: R('[The tank coughs and dies]', 'creature', 1, 'jetdry', 2),
   jetEmpty: R('[A dry click: no fuel]', 'creature', 1, 'jetempty', 2),
@@ -244,6 +245,8 @@ export function captionForEvent(type, p) {
       return finite(e.distance) && e.distance < 22 ? RULES.dStep : null;
     case 'death:beat':
       return DEATH_BEAT_RULES[e.beat] || null;
+    case 'wind:whoosh':
+      return e.strength > 0.8 ? RULES.windWhoosh : null;
     case 'jetpack:ignite':
       return RULES.jetOn;
     case 'jetpack:cut':
@@ -419,6 +422,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'dresser:hum',
   'dresser:step',
   'death:beat',
+  'wind:whoosh',
   'jetpack:ignite',
   'jetpack:cut',
   'jetpack:empty',

@@ -33,6 +33,7 @@ import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: r
 import { WristComputer } from './render/wristComputer.js';
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
+import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
@@ -322,6 +323,15 @@ function introOff() {
 function jetOff() {
   try {
     return typeof location !== 'undefined' && /[?&]jet=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?wind=off` leaves the vista wind out. */
+function windOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]wind=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1079,6 +1089,7 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
+    this.vista = null; // sim/vistaWind.js
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
@@ -2891,6 +2902,9 @@ export class Game3D {
     this.holster = new Holster3D(this._runBus);
     this.holster.setEnabled(!holsterOff());
     this.jet = new Jetpack3D(this._runBus);
+    this.vista = new VistaWind(this._runBus);
+    this.vista.enabled = !windOff();
+    this.vista.reset(lvl);
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
@@ -2961,6 +2975,7 @@ export class Game3D {
       this.pickups.snapshot();
       // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
       if (this.wristMap) this.wristMap.reset();
+      if (this.vista) this.vista.reset(this.level);
       if (this.wristComputer) this.wristComputer.reset();
       if (this.jet) this.jet.reset(this.level && this.level.data ? this.level.data.supplies : [], seed, this.level && this.level.sections ? this.level.sections.length : 0);
     }
@@ -3500,6 +3515,7 @@ export class Game3D {
       this._updateHolster(dt, intent, true);
       this._updateJetpack(intent);
       this._updateWristMap(dt, intent, true);
+      if (this.vista) this.vista.update(dt, p);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
       this._stepPhysics(dt, intent);

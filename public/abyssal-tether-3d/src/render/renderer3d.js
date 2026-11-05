@@ -832,7 +832,9 @@ export class Renderer3D {
     // Fog is for what is far: the far distance is the section's own (the level culls geometry there, so it still closes the view off), the haze
     // STARTS at FOG_START_FRAC of it (never before the section's near / 2 m), and the curve (materials.js) is a smoothstep, so mid-range
     // masonry, ledges and the creature read crisp and only the distance fades.
-    const farD = Math.max(8, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
+    // a vista (sim/vistaWind.js: a big open place) holds a little more haze, so what is far reads as far
+    const vistaK = game && game.vista ? game.vista.k : 0;
+    const farD = Math.max(8, (th.fogFar * (1 - tk * 0.18) * (1 - 0.22 * vistaK)) / FOG_THICKNESS);
     const nearCull = Math.max(2, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS); // the section's own near: what the geometry cull is measured from
     fog.near = Math.max(nearCull, farD * FOG_START_FRAC);
     fog.far = Math.max(fog.near + 4, farD);

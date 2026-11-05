@@ -1547,11 +1547,15 @@ export class AudioManager3D {
     // gust itself): the existing bed, no new voice. Objectives3D.squallNow is 0 when the squalls are switched off.
     const sqn = game && game.objectives ? game.objectives.squallNow : null;
     const sq = sqn && playing ? Math.min(1, Math.max(num(sqn.k, 0), 0.6 * num(sqn.rise, 0))) : 0;
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq);
+    // a VISTA (sim/vistaWind.js: a big open place, the S4 catwalk): the bed swells with the place and again with each whoosh that passes
+    const vista = game && game.vista && playing ? game.vista : null;
+    const vk = vista ? vista.k : 0;
+    const vg = vista ? vista.gust : 0;
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq) * (1 + 0.9 * vk + 1.1 * vg);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
-    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq), now, 0.4);
-    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq), now, 0.4);
+    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq + 0.5 * vk + 0.8 * vg), now, 0.4);
+    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq + 0.5 * vk + 0.8 * vg), now, 0.4);
     const wh = U.noise1(c * 0.06, 11);
     this.kWhG.set(Math.max(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, sec.whistle * 2.6 * sq), now, 0.5);
     this.kWhF.set(sec.wFreq * (1 + 0.12 * U.noise1(c * 0.05, 17)), now, 0.6);
@@ -2278,6 +2282,7 @@ export class AudioManager3D {
       'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
       'death:beat': this._onDeathBeat,
+      'wind:whoosh': this._onWindWhoosh,
       // the jetpack (sim/jetpack3d.js)
       'jetpack:ignite': this._onJetIgnite,
       'jetpack:cut': this._onJetCut,
@@ -3002,6 +3007,55 @@ export class AudioManager3D {
       }
       default:
     }
+  }
+
+  /**
+   * A WHOOSH of wind passing (sim/vistaWind.js): a swell of air that rises quickly and falls away slowly, the band sweeping up through the
+   * mids and back, the stereo sliding from one ear to the other. Two layers: the body (pink noise through a sweeping band) and the hiss on
+   * top (white noise through a high band), plus a low push under both.
+   */
+  _onWindWhoosh(p) {
+    const str = U.clamp(num(p && p.strength, 0.6), 0.1, 1);
+    const dur = U.clamp(num(p && p.dur, 3.5), 1.5, 6);
+    const dir = U.clamp(num(p && p.dir, 0), -1, 1);
+    const v = this._begin('whoosh', 1, 1.5, dur + 0.6, this.busAmbient, 0.9 * str, dir * 0.6, 0.55, 0);
+    if (!v) return;
+    const t = v.t0;
+    const peak = t + dur * 0.38;
+    // body
+    const n = this._vNoise(v, this._pink, t, 0.9);
+    const bp = this._vFilter(v, 'bandpass', 260, 0.8);
+    bp.frequency.setValueAtTime(240, t);
+    bp.frequency.exponentialRampToValueAtTime(900, peak);
+    bp.frequency.exponentialRampToValueAtTime(300, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.9, peak);
+    g.gain.setTargetAtTime(0, peak, dur * 0.22);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    // the hiss of air over the edges
+    const w = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'bandpass', 2600, 0.6);
+    hp.frequency.setValueAtTime(1800, t);
+    hp.frequency.exponentialRampToValueAtTime(4200, peak);
+    hp.frequency.exponentialRampToValueAtTime(2200, t + dur);
+    const wg = this._vGain(v, 0);
+    wg.gain.setValueAtTime(0, t);
+    wg.gain.linearRampToValueAtTime(0.28, peak);
+    wg.gain.setTargetAtTime(0, peak, dur * 0.2);
+    w.connect(hp);
+    hp.connect(wg);
+    wg.connect(v.out);
+    // a low push
+    const o = this._vOsc(v, 'sine', 48, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + dur);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t, 0.35, dur * 0.35, dur * 0.2, dur * 0.2);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
   }
 
   // ---- the jetpack (sim/jetpack3d.js): a roar while it burns, a cough when the tank runs dry, a click when it will not light ----

@@ -839,7 +839,18 @@ export class FX {
     this._updateRains(dt);
 
     this._updateDust(dt, head);
-    this.windGusts.update(dt, head, tier, this.reduced, game && game.objectives ? game.objectives.squallNow : null);
+    let sqn = game && game.objectives ? game.objectives.squallNow : null;
+    if (game && game.vista && (game.vista.k > 0.05 || game.vista.gust > 0)) {
+      // a vista's whooshes are visible gusts too: the wisps thicken and stream with them (the same draw call as a squall's)
+      const vs = this._vistaSq || (this._vistaSq = { k: 0, rise: 0, dx: 1, dz: 0 });
+      const own = Math.min(1, game.vista.k * 0.25 + game.vista.gust * 0.85);
+      vs.k = sqn ? Math.max(own, sqn.k || 0) : own;
+      vs.rise = sqn ? sqn.rise || 0 : 0;
+      vs.dx = sqn ? sqn.dx || 0 : 1;
+      vs.dz = sqn ? sqn.dz || 0 : 0;
+      sqn = vs;
+    }
+    this.windGusts.update(dt, head, tier, this.reduced, sqn);
     this._updateBursts(dt);
     // creature dust is not emitted past the haze (fully fogged puffs are invisible but still blended and use the pool)
     const fog = this.scene.fog;
