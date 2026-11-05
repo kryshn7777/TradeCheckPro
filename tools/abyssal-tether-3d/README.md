@@ -25,13 +25,25 @@ ember throat behind it, a hood of carved soot-black drapery, a broken halo of th
 arms with skeletal hands, a victim hanging from the jaw. Emissive (`MasonEmissive`, heartbeat-pulsed by `masonRigView.js`)
 only in the throat and the coals at the back of two orbits.
 
+**THE LANTERN art pass (2026-11): matte, ancient, made of the dead by implication.** `mat_stone` is re-authored as weathered
+stone under centuries of soot (baked stone albedo p50 ~0.13 linear before the joint crush, bone-pale arrises ~0.3, world-up dust,
+soot on the undersides, bitumen / rust runs, nitre weeping from the joints, roughness 0.86-0.97 with only a thin tacky bitumen core
+lower); on the four baked vertebrae (`stamp_blocks`: Segment_0..2 + Tail) block-local chisel drafting (diagonal combing inside a
+drafted margin), bone-ash mortar at the disc rims, chalk numerals / tallies and pressed reliefs (`STAMP_PLAN`: a hand dragged down the
+dorsal face and the hollow of a face on Segment_1 = 4 of the 17 spine blocks, a smaller hand on the tail) from a procedural stamp sheet,
+bake-only (no geometry change). `bake_atlas` crushes the dry stone's albedo by the low mesh's AO (soot pooled in the joints), packs
+the ORM AO as `0.15 + 0.85 ao`, grows every map out of its islands (push-pull, coverage from a margin-0 class bake) before the ORM is
+area-averaged to 512, and only iron-class groups bake metal (`Rope` is class 0 now); Stone / Carved `_MASK.g` = 0. Runtime
+(`masonMaterial.js`): stone roughness floor 0.86, no metal (env reflection ~0.14), wet film / rim on the flesh only, damped dry-stone
+specular, a seam ember on the deepest flesh (`uEmber`, from `masonRigView.js`). `--detail-vi 12` renders `detail.png` on the relief block.
+
 **v1 is kept for the small hunters:** `assets/models/skitter_rig.glb` is the original Mason (do not rebuild it from v2);
 `build_mason_v1.py` + `mason_rig_clips_v1.py` are the frozen v1 sources (`build_mason_rig.py` picks the v1 clips when the
 kit has no head pivots). The byte-exact shipped v1 assets came from `git show 09b6f21:tools/abyssal-tether-3d/build_mason.py`.
 
 | Output | Contents |
 |---|---|
-| `public/abyssal-tether-3d/assets/models/mason_kit.glb` (5.6 MB) | The rig-ready modular kit: 13 modules with LOD0 and `_LOD1` twins, 2 baked 2048 atlases (MasonCrown, MasonBody; base colour, tangent normal, ORM 512) + the flat `MasonEmissive` material |
+| `public/abyssal-tether-3d/assets/models/mason_kit.glb` (5.6 MB) | The rig-ready modular kit: 13 modules with LOD0 and `_LOD1` twins, 2 baked 2048 atlases (MasonCrown, MasonBody; base colour, tangent normal, ORM 512: AO 0.15 + 0.85 ao, roughness, metal) + the flat `MasonEmissive` material |
 | `public/abyssal-tether-3d/assets/models/mason_hero.glb` (5.6 MB) | The assembled, posed creature from the same modules (shared meshes, instanced nodes): root `Mason_Hero_LOD0` (59 k triangles) and `Mason_Hero_LOD1` (25 k). Marketing / cinematic model, not loaded by the runtime |
 | `previews/mason_hero.png`, `mason_full.png`, `mason_approach.png`, `mason_kit.png` | Cycles design renders of the render mesh (hero, whole creature, first-person 18 mm view) and a three.js screenshot of the kit modules |
 | `wip/creature/` | `build_r1/r2/r3.py` (design history), `pack_glb.py`, `check_glb.mjs`, `harness/` (headless three.js + game checks), `export_report.json` |
@@ -59,7 +71,7 @@ posed creature). Rigid parts (stone, iron, bone, teeth) carry one owner; flesh g
 (`MeshStandardMaterial`, no clearcoat/transmission/sheen). Drool, glass and oil are render-only.
 
 Budgets: the rig (what the game draws) is 63.4 k triangles at LOD0 / 23.2 k at LOD1 (v1: 56.7 k / 20.7 k; limit +15 %),
-still 4 draw calls; shipped GLBs (meshopt + KTX2, atlases 1024 / ORM 512): `mason_rig.glb` 5.6 MB, `mason_kit.glb` 4.4 MB,
+still 4 draw calls; shipped GLBs (meshopt + KTX2, atlases 1024 / ORM 512): `mason_rig.glb` 5.7 MB, `mason_kit.glb` 4.5 MB,
 `mason_hero.glb` 4.5 MB. v2 options: `--gamecam x,y,z,lens` + `--lantern W` and the shots `game` (climber's view under the
 lantern) and `profile`; previews `previews/mason_approach.png` (game) and `mason_profile.png`. The other `previews/mason_*`
 images (hero, full, kit, rig clip sheets) still show v1 and were not re-rendered.

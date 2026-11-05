@@ -14,7 +14,6 @@
  * `reduced` (settings.reducedEffects) drops the wet film.
  * SEAM EMBER (matte only): the flesh / sinew between the blocks (_MASK.r) smoulders where it is deepest (baked AO), pulsed by the
  * view's heartbeat and listening (uEmber.rgb = colour x level, kept well under the red eyes; 0 with reducedEffects).
- * The anime look's shadow tint (atToon) is the Mason's own warm-neutral uToonShade (bone-ash), not the shared violet.
  */
 import * as THREE from 'three';
 import { injectToon } from '../materials.js';
@@ -28,10 +27,9 @@ export function makeMasonUniforms() {
     uTint: { value: new THREE.Color(1, 1, 1) },
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
     uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze (flesh seams only, halved)
-    uStone: { value: new THREE.Vector4(1.8, 0.35, 0.86, 0.3) }, // stone: albedo lift, cavity floor (x AO), roughness floor, direct specular kept
+    uStone: { value: new THREE.Vector4(1.15, 0.7, 0.86, 0.3) }, // stone (the re-baked atlas is already lit-stone value; was 1.8 / 0.35 on the black v2 bake): albedo lift, cavity floor (x AO), roughness floor, direct specular kept
     uEmber: { value: new THREE.Color(0, 0, 0) }, // seam ember radiance (masonRigView sets it per frame)
-    uAoLo: { value: 0.4 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
-    uToonShade: { value: new THREE.Vector4(0.7, 0.64, 0.56, 0.12) }, // atToon's shadow lift for the Mason: warm bone-ash, not violet
+    uAoLo: { value: 0.15 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
   };
 }
 
@@ -151,7 +149,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 #endif`,
       );
     injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
-    if (matte) shader.uniforms.uToonShade = U.uToonShade; // the Mason's own shadow tint (warm bone-ash instead of the shared violet)
   };
   mat.customProgramCacheKey = () => (matte ? 'mason-rig-v5' : 'mason-rig-v3') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

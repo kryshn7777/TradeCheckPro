@@ -69,6 +69,7 @@ ap.add_argument("--app-fstop", type=float, default=2.8)
 ap.add_argument("--wall-res", type=float, default=1.0, help="shaft wall grid density (lower = less RAM)")
 ap.add_argument("--detail-cam", type=lambda t: [float(x) for x in t.split(",")], default=[2.0, 3.4, -1.6, 220.0],
                 help="side,dorsal,along offsets from the segment centre and lamp watts for detail.png")
+ap.add_argument("--detail-vi", type=int, default=-1, help="detail.png: this vertebra index (default: the one at s 10.5); 12 = the relief block")
 args = ap.parse_args(argv)
 OUT = args.out
 os.makedirs(OUT, exist_ok=True)
@@ -4253,13 +4254,338 @@ class NT:
             self.set(self.bsdf.inputs[names[k]], v)
 
 
+# =============================================================================
+# THE LANTERN art pass (2026-11): the dressed dead, by implication. The four baked vertebrae (kit modules Segment_0..2 and the
+# Tail) get block-local detail in mat_stone: chisel drafting (diagonal combing inside a smooth drafted margin), bone-ash mortar
+# at the disc rims, nitre weeping from the joints, and a STAMP sheet: pressed reliefs (a hand dragged down a face, the soft
+# hollow of a face and brow under dust, a second hand) and chalk tallies / numerals, projected on the flat flank and dorsal
+# faces. Bake-only (normal, albedo, roughness): the low game mesh is unchanged. Deterministic (own Random stream).
+# =============================================================================
+STAMP_TW, STAMP_TH = 320, 320          # px per tile; tile 0 = -x flank, 1 = +x flank, 2 = dorsal top (one row per baked block)
+STAMP_KINDS = 3
+
+
+def stamp_blocks():
+    """The vertebrae whose hi faces are baked into the Body atlas (kit_specs: Segment_0..2 = vertebrae 6, 12, 18; Tail =
+    the last), with their frames and the flat-face extents of the chamfered block (stone_bm: chamfer 0.28 x min(W, H) on
+    the four long edges)."""
+    nvert = len(VERTS)
+    if nvert < 4:
+        return []
+    out = []
+    for vi in [min(v, nvert - 2) for v in (6, 12, 18)] + [nvert - 1]:
+        v = VERTS[vi]
+        M = v["M"]
+        c = 0.28 * min(v["W"], v["H"])
+        out.append(dict(vi=vi, O=M[:3, 3].copy(), S=M[:3, 0].copy(), T=M[:3, 1].copy(), D=M[:3, 2].copy(),
+                        hx=v["W"] / 2, hy=v["Lb"] / 2, hz=v["H"] / 2, c=c, k=v["k"]))
+    return out
+
+
+def _stamp_extent(b, kind):
+    """(half width along the tile's u axis, half height along v) in metres: flank u = y, v = z; top u = x, v = y."""
+    if kind < 2:
+        return b["hy"], b["hz"] - b["c"]
+    return b["hx"] - b["c"], b["hy"]
+
+
+def _seg_dist_uv(X, Y, a, b_):
+    ax, ay = a
+    bx, by = b_
+    dx, dy = bx - ax, by - ay
+    L2 = dx * dx + dy * dy + 1e-12
+    t = np.clip(((X - ax) * dx + (Y - ay) * dy) / L2, 0.0, 1.0)
+    return np.hypot(X - (ax + t * dx), Y - (ay + t * dy)), t
+
+
+def _groove(X, Y, a, b_, r, d0=1.0, d1=1.0):
+    """Rounded groove along a->b (depth d0 at a, d1 at b), 0 outside."""
+    d, t = _seg_dist_uv(X, Y, a, b_)
+    prof = np.sqrt(np.clip(1.0 - (d / r) ** 2, 0.0, 1.0))
+    return prof * (d0 + (d1 - d0) * t)
+
+
+def _blur(a, s):
+    if s <= 0.3:
+        return a
+    r = int(math.ceil(s * 3))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / s) ** 2)
+    k /= k.sum()
+    a = np.apply_along_axis(lambda m: np.convolve(m, k, mode="same"), 0, a)
+    return np.apply_along_axis(lambda m: np.convolve(m, k, mode="same"), 1, a)
+
+
+def _hand(X, Y, cx, cy, sc, ang, drag, rr):
+    """A flat hand pressed in and dragged `drag` metres down its own -v: palm heel at (cx, cy) where it stopped; the four
+    fingertips leave grooves from where they first pressed. Returns depth 0..1."""
+    ca, sa = math.cos(ang), math.sin(ang)
+
+    def P(u, v):                       # hand frame (u across, v up toward the fingertips), metres
+        u, v = u * sc, v * sc
+        return (cx + ca * u - sa * v, cy + sa * u + ca * v)
+    H = np.zeros_like(X)
+    pc = P(0.0, 0.05)                  # palm: a soft rounded pad
+    du, dv = (X - pc[0]), (Y - pc[1])
+    pu, pv = (ca * du + sa * dv) / (0.045 * sc), (-sa * du + ca * dv) / (0.052 * sc)
+    H = np.maximum(H, 0.8 * np.sqrt(np.clip(1.0 - (pu * pu + pv * pv) ** 1.4, 0.0, 1.0)))
+    fingers = [(-0.030, 0.100, 0.072, 0.0095), (-0.010, 0.106, 0.080, 0.0098), (0.011, 0.103, 0.075, 0.0094),
+               (0.030, 0.094, 0.060, 0.0085)]
+    dvx, dvy = -sa * drag, ca * drag   # 'up' the hand: where the drag started
+    for fu, fv, L, r in fingers:
+        spread = (fu / 0.03) * 0.09 + rr.uniform(-0.04, 0.04)
+        a = P(fu, fv)
+        tip = P(fu + math.sin(spread) * L, fv + math.cos(spread) * L)
+        H = np.maximum(H, _groove(X, Y, a, tip, r * sc, 0.85, 1.0))
+        st = (tip[0] + dvx + rr.uniform(-0.012, 0.012), tip[1] + dvy)
+        mid = ((st[0] + tip[0]) / 2 + rr.uniform(-0.01, 0.01), (st[1] + tip[1]) / 2)
+        H = np.maximum(H, _groove(X, Y, st, mid, r * sc * 0.75, 0.15, 0.4))
+        H = np.maximum(H, _groove(X, Y, mid, tip, r * sc * 0.85, 0.4, 0.8))
+    H = np.maximum(H, _groove(X, Y, P(0.040, 0.030), P(0.070, 0.085), 0.011 * sc, 0.75, 0.85))   # thumb
+    return H
+
+
+def _face(X, Y, cx, cy, sc):
+    """The soft featureless hollow a face leaves pressed into soft mortar: an oval mould, the brow deepest, a nose dimple,
+    the eye hollows shallower (the eyes sat back), the chin; blurred by dust afterwards."""
+    u, v = (X - cx) / (0.085 * sc), (Y - cy) / (0.115 * sc)
+    r2 = u * u + v * v
+    inside = (r2 < 1.0).astype(np.float64)
+    H = 0.55 * np.clip(1.0 - r2, 0.0, 1.0) ** 0.6
+    H += 0.25 * np.exp(-((v - 0.32) / 0.14) ** 2) * np.clip(1.0 - (u / 0.85) ** 2, 0.0, 1.0) * inside   # brow
+    for s_ in (-1, 1):
+        H -= 0.22 * np.exp(-(((u - s_ * 0.36) / 0.2) ** 2 + ((v - 0.12) / 0.13) ** 2)) * inside         # eye hollows
+    H += 0.22 * np.exp(-((u / 0.16) ** 2 + ((v + 0.05) / 0.2) ** 2))                                     # nose
+    H += 0.18 * np.exp(-((u / 0.3) ** 2 + ((v + 0.62) / 0.14) ** 2))                                     # chin
+    return np.clip(H, 0.0, 1.0)
+
+
+_ROMAN = {
+    "I": [((0.5, 0.0), (0.5, 1.0))],
+    "V": [((0.0, 1.0), (0.5, 0.0)), ((0.5, 0.0), (1.0, 1.0))],
+    "X": [((0.0, 1.0), (1.0, 0.0)), ((0.0, 0.0), (1.0, 1.0))],
+}
+
+
+def _chalk(X, Y, strokes, r, rr):
+    """Dry chalk strokes: a rounded line, broken up along its length (the stone took it unevenly)."""
+    C = np.zeros_like(X)
+    for a, b_ in strokes:
+        a = (a[0] + rr.uniform(-0.004, 0.004), a[1] + rr.uniform(-0.004, 0.004))
+        b_ = (b_[0] + rr.uniform(-0.004, 0.004), b_[1] + rr.uniform(-0.004, 0.004))
+        d, t = _seg_dist_uv(X, Y, a, b_)
+        ph = rr.uniform(0, 6.28)
+        brk = 0.55 + 0.45 * np.sin(t * rr.uniform(9, 17) + ph) * np.sin(t * rr.uniform(23, 31) + ph * 1.7)
+        C = np.maximum(C, np.clip(1.0 - d / r, 0.0, 1.0) ** 0.5 * np.clip(brk, 0.15, 1.0))
+    return C
+
+
+def _numeral(text, x0, y0, h, rr, slant=0.08):
+    """Stroke list of a Roman numeral or a tally ('IIII/' = four strokes and the slash), height h (m), left foot at (x0, y0)."""
+    out, x = [], x0
+    for ch in text:
+        if ch == "/":
+            out.append(((x0 - 0.15 * h, y0 + 0.2 * h), (x + 0.05 * h, y0 + 0.8 * h)))
+            x += 0.3 * h
+            x0 = x
+            continue
+        w = (0.12 if ch == "I" else 0.6) * h
+        for (a, b_) in _ROMAN[ch]:
+            ax, ay = x + a[0] * w + slant * a[1] * h, y0 + a[1] * h
+            bx, by = x + b_[0] * w + slant * b_[1] * h, y0 + b_[1] * h
+            out.append(((ax, ay), (bx, by)))
+        x += w + 0.16 * h * rr.uniform(0.8, 1.2)
+    return out
+
+
+# what each baked block carries: (block slot, tile kind) -> marks. Slots: 0 Segment_0 (6 of the 17 spine blocks), 1 Segment_1
+# (4 of 17: the relief block), 2 Segment_2 (7 of 17), 3 Tail. Positions in tile metres from the face centre.
+STAMP_PLAN = {
+    (1, 2): [("hand", -0.14, -0.32, 1.3, 0.35, 0.17)],             # dorsal: a hand pressed in and dragged down the face
+    (1, 1): [("face", 0.2, 0.0, 1.25)],                            # +x flank: the hollow of a face and brow
+    (3, 0): [("hand", 0.05, -0.14, 0.95, -0.25, 0.1)],             # tail, -x flank: a second, smaller hand
+    (0, 1): [("chalk", "XIV", -0.33, 0.04, 0.13)],                 # numerals and tallies: someone counted them
+    (0, 2): [("chalk", "IIII/", 0.3, 0.18, 0.09)],
+    (2, 0): [("chalk", "VII", 0.08, -0.12, 0.11)],
+    (3, 2): [("chalk", "IIII/II", -0.25, -0.3, 0.08)],
+}
+
+
+def make_stamp_image(blocks):
+    """One float RGBA sheet, a row of tiles per block (kind 0..2 across): R = pressed depth 0..1, G = chalk 0..1."""
+    nb = len(blocks)
+    Wp, Hp = STAMP_TW * STAMP_KINDS, STAMP_TH * nb
+    img = np.zeros((Hp, Wp, 4), np.float32)
+    img[..., 3] = 1.0
+    rr = random.Random(SEED * 977 + 5)
+    for bi, b in enumerate(blocks):
+        for kind in range(STAMP_KINDS):
+            hu, hv = _stamp_extent(b, kind)
+            ii = (np.arange(STAMP_TW) + 0.5) / STAMP_TW
+            jj = (np.arange(STAMP_TH) + 0.5) / STAMP_TH
+            X, Y = np.meshgrid((ii - 0.5) * 2 * hu, (jj - 0.5) * 2 * hv)     # rows = v (Blender images are bottom-up)
+            R = np.zeros_like(X)
+            G = np.zeros_like(X)
+            for mk in STAMP_PLAN.get((bi, kind), []):
+                if mk[0] == "hand":
+                    _, u, v, sc, ang, drag = mk
+                    R = np.maximum(R, _hand(X, Y, u, v, sc, ang, drag, rr))
+                elif mk[0] == "face":
+                    _, u, v, sc = mk
+                    R = np.maximum(R, _blur(_face(X, Y, u, v, sc), 0.008 / (2 * hu / STAMP_TW)))
+                elif mk[0] == "chalk":
+                    _, txt, u, v, h = mk
+                    G = np.maximum(G, _chalk(X, Y, _numeral(txt, u, v, h, rr), 0.0065, rr))
+            # dust settled in the pressings: soft edges, the crisp part only in the deepest grooves
+            px_m = 2 * hu / STAMP_TW
+            R = 0.6 * _blur(R, 0.006 / px_m) + 0.4 * _blur(R, 0.0025 / px_m)
+            G = _blur(G, 0.0015 / px_m)
+            bu, bv = int(STAMP_TW * 0.06), int(STAMP_TH * 0.06)
+            for A_ in (R, G):                # an empty border: the linear filter never reads the neighbour tile
+                A_[:bv, :] = 0
+                A_[-bv:, :] = 0
+                A_[:, :bu] = 0
+                A_[:, -bu:] = 0
+            img[bi * STAMP_TH:(bi + 1) * STAMP_TH, kind * STAMP_TW:(kind + 1) * STAMP_TW, 0] = R
+            img[bi * STAMP_TH:(bi + 1) * STAMP_TH, kind * STAMP_TW:(kind + 1) * STAMP_TW, 1] = G
+    im = bpy.data.images.new("MasonStamps", Wp, Hp, alpha=True, float_buffer=True)
+    im.colorspace_settings.name = "Non-Color"
+    im.pixels.foreach_set(img.ravel())
+    im.update()
+    im.pack()
+    return im, nb
+
+
+def _mr(g, v, a, b, c=0.0, d=1.0):
+    """Clamped map range whose bounds may be node sockets."""
+    nd = g.n("ShaderNodeMapRange", clamp=True)
+    g.set(nd.inputs["Value"], v)
+    g.set(nd.inputs["From Min"], a)
+    g.set(nd.inputs["From Max"], b)
+    g.set(nd.inputs["To Min"], c)
+    g.set(nd.inputs["To Max"], d)
+    return nd.outputs["Result"]
+
+
+def block_local_nodes(g, co):
+    """Node outputs of the block-local frame of whichever baked vertebra the shading point lies in (all zero elsewhere):
+    dict(x, y, z, nx, ny, nz (local geometric normal), hx, hy, hz, c, slot, inside)."""
+    blocks = stamp_blocks()
+    if not blocks:
+        return None
+    nw = g.geo("Normal")
+
+    def dot(vec, axis):
+        nd = g.n("ShaderNodeVectorMath", operation="DOT_PRODUCT")
+        g.set(nd.inputs[0], vec)
+        nd.inputs[1].default_value = tuple(float(a) for a in axis)
+        return nd.outputs["Value"]
+
+    acc = {}
+
+    def add(key, val):
+        acc[key] = val if key not in acc else g.math("ADD", acc[key], val)
+
+    for bi, b in enumerate(blocks):
+        sub = g.n("ShaderNodeVectorMath", operation="SUBTRACT")
+        g.set(sub.inputs[0], co)
+        sub.inputs[1].default_value = tuple(float(a) for a in b["O"])
+        d = sub.outputs[0]
+        lx, ly, lz = dot(d, b["S"]), dot(d, b["T"]), dot(d, b["D"])
+        inside = g.math("MULTIPLY", g.math("LESS_THAN", g.math("ABSOLUTE", lx), b["hx"] + 0.25),
+                        g.math("LESS_THAN", g.math("ABSOLUTE", ly), b["hy"] + 0.2))
+        inside = g.math("MULTIPLY", inside, g.math("LESS_THAN", g.math("ABSOLUTE", lz), b["hz"] + 0.25))
+        for key, val in (("x", lx), ("y", ly), ("z", lz), ("nx", dot(nw, b["S"])), ("ny", dot(nw, b["T"])),
+                         ("nz", dot(nw, b["D"]))):
+            add(key, g.math("MULTIPLY", val, inside))
+        for key, val in (("hx", b["hx"]), ("hy", b["hy"]), ("hz", b["hz"]), ("c", b["c"]), ("slot", float(bi))):
+            add(key, g.math("MULTIPLY", inside, val))
+        add("inside", inside)
+    acc["nblocks"] = len(blocks)
+    return acc
+
+
+def stamp_nodes(g, L, image, nb):
+    """(relief depth, chalk) at the shading point: the tile of its block and face (flank -x / +x, dorsal top)."""
+    wf = g.maprange(g.math("ABSOLUTE", L["nx"]), 0.8, 0.92, 0.0, 1.0)      # flat flank faces
+    wt = g.maprange(L["nz"], 0.8, 0.92, 0.0, 1.0)                           # flat dorsal face
+    side = g.math("GREATER_THAN", L["nx"], 0.0)
+    hy2 = g.math("MAXIMUM", g.math("MULTIPLY", L["hy"], 2.0), 0.01)
+    hzc2 = g.math("MAXIMUM", g.math("MULTIPLY", g.math("SUBTRACT", L["hz"], L["c"]), 2.0), 0.01)
+    hxc2 = g.math("MAXIMUM", g.math("MULTIPLY", g.math("SUBTRACT", L["hx"], L["c"]), 2.0), 0.01)
+    uf = g.math("ADD", g.math("DIVIDE", L["y"], hy2), 0.5)
+    vf = g.math("ADD", g.math("DIVIDE", L["z"], hzc2), 0.5)
+    ut = g.math("ADD", g.math("DIVIDE", L["x"], hxc2), 0.5)
+    vt = g.math("ADD", g.math("DIVIDE", L["y"], hy2), 0.5)
+    out = []
+    for u, v, col, w in ((uf, vf, side, wf), (ut, vt, 2.0, wt)):
+        u = g.math("MINIMUM", g.math("MAXIMUM", u, 0.0), 1.0)
+        v = g.math("MINIMUM", g.math("MAXIMUM", v, 0.0), 1.0)
+        U = g.math("DIVIDE", g.math("ADD", u, col), float(STAMP_KINDS))
+        V = g.math("DIVIDE", g.math("ADD", v, L["slot"]), float(nb))
+        cx = g.n("ShaderNodeCombineXYZ")
+        g.set(cx.inputs[0], U)
+        g.set(cx.inputs[1], V)
+        tx = g.n("ShaderNodeTexImage", interpolation="Linear", extension="EXTEND")
+        tx.image = image
+        g.set(tx.inputs["Vector"], cx.outputs[0])
+        sp = g.n("ShaderNodeSeparateColor")
+        g.set(sp.inputs[0], tx.outputs["Color"])
+        w = g.math("MULTIPLY", w, L["inside"])
+        out.append((g.math("MULTIPLY", sp.outputs[0], w), g.math("MULTIPLY", sp.outputs[1], w)))
+    return g.math("MAXIMUM", out[0][0], out[1][0]), g.math("MAXIMUM", out[0][1], out[1][1])
+
+
+def drafting_nodes(g, L, co):
+    """Chisel drafting: diagonal combing on the block faces stopped by a smooth drafted margin ~6 cm in from the arrises of
+    the flat flank / dorsal / ventral faces and the block ends; the disc-rim ring on the end faces (where the mortar sits);
+    the closeness to a joint on the outer faces. Returns (comb, margin, rim, joint), each 0..1."""
+    ay, ax, az = g.math("ABSOLUTE", L["y"]), g.math("ABSOLUTE", L["x"]), g.math("ABSOLUTE", L["z"])
+    my = _mr(g, ay, g.math("SUBTRACT", L["hy"], 0.13), g.math("SUBTRACT", L["hy"], 0.08))
+    hzc = g.math("SUBTRACT", L["hz"], L["c"])
+    hxc = g.math("SUBTRACT", L["hx"], L["c"])
+    mz = _mr(g, az, g.math("SUBTRACT", hzc, 0.1), g.math("SUBTRACT", hzc, 0.05))
+    mx = _mr(g, ax, g.math("SUBTRACT", hxc, 0.1), g.math("SUBTRACT", hxc, 0.05))
+    wf = g.maprange(g.math("ABSOLUTE", L["nx"]), 0.8, 0.92, 0.0, 1.0)
+    wt = g.maprange(g.math("ABSOLUTE", L["nz"]), 0.8, 0.92, 0.0, 1.0)
+    we = g.maprange(g.math("ABSOLUTE", L["ny"]), 0.75, 0.9, 0.0, 1.0)
+    notend = g.math("SUBTRACT", 1.0, we)
+    margin = g.math("MAXIMUM", my, g.math("MAXIMUM", g.math("MULTIPLY", mz, wf), g.math("MULTIPLY", mx, wt)))
+    margin = g.math("MULTIPLY", g.math("MULTIPLY", margin, notend), L["inside"])
+    # combing: narrow parallel grooves across the face diagonal (x + y + z), pitch 6 cm, the line wandering a little
+    wn, _ = g.noise(co, 2.5, 2.0)
+    ph = g.math("ADD", g.math("ADD", L["x"], L["y"]), L["z"])
+    ph = g.math("ADD", ph, g.math("MULTIPLY", wn, 0.03))
+    s_ = g.math("SINE", g.math("MULTIPLY", ph, 2 * math.pi / 0.06))
+    comb = g.math("POWER", g.math("ADD", g.math("MULTIPLY", s_, 0.5), 0.5), 4.0)
+    comb = g.math("MULTIPLY", comb, g.math("MULTIPLY", g.math("SUBTRACT", 1.0, margin), L["inside"]))
+    comb = g.math("MULTIPLY", comb, notend)
+    # the disc collar (a rounded rectangle 0.47 W x 0.47 H, exponent 0.6 -> superellipse p 3.33) meets the end face: a ring
+    rx = g.math("MAXIMUM", g.math("MULTIPLY", L["hx"], 0.94), 0.01)
+    rz = g.math("MAXIMUM", g.math("MULTIPLY", L["hz"], 0.94), 0.01)
+    pr = 3.33
+    rr_ = g.math("ADD", g.math("POWER", g.math("DIVIDE", ax, rx), pr), g.math("POWER", g.math("DIVIDE", az, rz), pr))
+    rr_ = g.math("POWER", rr_, 1.0 / pr)
+    ring = g.math("MULTIPLY", g.maprange(rr_, 0.9, 1.0, 0.0, 1.0), g.maprange(rr_, 1.08, 1.22, 1.0, 0.0))
+    rim = g.math("MULTIPLY", g.math("MULTIPLY", ring, we), L["inside"])
+    joint = _mr(g, ay, g.math("SUBTRACT", L["hy"], 0.3), g.math("SUBTRACT", L["hy"], 0.02))
+    joint = g.math("MULTIPLY", g.math("MULTIPLY", joint, notend), L["inside"])
+    return comb, margin, rim, joint
+
+
+STAMP_IMG = []         # (image, n blocks), made once per run (mat_stone of the creature)
+
+
 EMBER = (1.0, 0.3, 0.06)
 
 
 def mat_stone(name="M_Stone", tint=(1.0, 1.0, 1.0), wet=0.6, value=1.0, carved=False):
-    """Soot-blackened Lanternwright ashlar: large per-block value swings, worn pale arrises, black grime in the
-    crevices, gravity-aligned soot and water streaks (glossy where wet), sparse hairline cracks, fine grit.
-    No dot speckle. `carved`: the attribute m marks wet tooth-tips on the tracery mullions."""
+    """Lanternwright ashlar under centuries of soot (THE LANTERN pass: matte, ancient, made of the dead by implication).
+    Value structure: a mid-dark weathered grey (linear ~0.1-0.17, not lacquer black) with per-block swings, worn bone-pale
+    arrises (~0.3), dust settled on the up-facing faces, soot darkening the undersides (the joints are crushed further from
+    the baked AO in bake_atlas), bitumen and rust runs, nitre crust weeping from the joints, sparse hairline cracks, old blood
+    soaked in where the stone meets flesh. Roughness 0.86-0.97 everywhere except the thin glossy core of a bitumen run.
+    On the creature's baked blocks (block_local_nodes): chisel drafting, bone-ash mortar at the disc rims, chalk tallies and
+    the pressed reliefs (STAMP_PLAN). `carved`: the attribute m marks old gilding on the halo's thorns."""
     m = bpy.data.materials.new(name)
     g = NT(m)
     co = g.coord("Object")
@@ -4269,31 +4595,43 @@ def mat_stone(name="M_Stone", tint=(1.0, 1.0, 1.0), wet=0.6, value=1.0, carved=F
     n2, _ = g.noise(cw, 4.2, 6.0, 0.6)
     n3, _ = g.noise(cw, 15.0, 4.0, 0.55)
     n4, _ = g.noise(co, 85.0, 2.0, 0.5)
-    v = value * 0.72
-    base = g.ramp(n1, [(0.28, (0.016 * v, 0.0155 * v, 0.015 * v)), (0.48, (0.034 * v, 0.032 * v, 0.03 * v)),
-                       (0.66, (0.058 * v, 0.054 * v, 0.049 * v)), (0.84, (0.085 * v, 0.078 * v, 0.07 * v))])
-    base = g.mix(g.maprange(n2, 0.35, 0.7, 0.0, 0.35), base, (0.09 * v, 0.085 * v, 0.078 * v, 1.0))
+    v = value
+    base = g.ramp(n1, [(0.28, (0.052 * v, 0.05 * v, 0.047 * v)), (0.48, (0.088 * v, 0.083 * v, 0.077 * v)),
+                       (0.66, (0.128 * v, 0.12 * v, 0.109 * v)), (0.84, (0.17 * v, 0.159 * v, 0.143 * v))])
+    base = g.mix(g.maprange(n2, 0.35, 0.7, 0.0, 0.35), base, (0.15 * v, 0.142 * v, 0.13 * v, 1.0))
     isl = g.geo("Random Per Island")
-    itint = g.ramp(isl, [(0.0, (0.4, 0.4, 0.42)), (0.3, (0.62, 0.61, 0.6)), (0.65, (0.85, 0.82, 0.78)),
-                         (0.9, (1.15, 1.1, 1.02)), (1.0, (1.35, 1.27, 1.15))])
+    itint = g.ramp(isl, [(0.0, (0.55, 0.55, 0.56)), (0.3, (0.72, 0.71, 0.7)), (0.65, (0.9, 0.87, 0.83)),
+                         (0.9, (1.1, 1.06, 1.0)), (1.0, (1.25, 1.19, 1.1))])
     base = g.mix(1.0, base, itint, "MULTIPLY")
     base = g.mix(1.0, base, (tint[0], tint[1], tint[2], 1.0), "MULTIPLY")
-    # curvature: worn pale arrises, grime-black crevices
+    # world-up dust (pale, warm grey) on the faces that look up, broken by a slow noise; soot on the faces that look down
+    nz = g.n("ShaderNodeSeparateXYZ")
+    g.set(nz.inputs[0], g.geo("Normal"))
+    nzw = nz.outputs["Z"]
+    dn, _ = g.noise(co, 1.7, 4.0, 0.6)
+    dust = g.math("MULTIPLY", g.maprange(nzw, 0.25, 0.85, 0.0, 1.0), g.maprange(dn, 0.35, 0.65, 0.25, 0.75))
+    base = g.mix(dust, base, (0.2 * v, 0.19 * v, 0.168 * v, 1.0))
+    under = g.maprange(nzw, -0.15, -0.8, 0.0, 0.55)
+    base = g.mix(under, base, (0.012, 0.011, 0.01, 1.0))
+    # curvature: worn pale arrises (bone-ash pale), grime-black crevices
     pt = g.geo("Pointiness")
     edge = g.maprange(pt, 0.515, 0.6, 0.0, 1.0)
     cav = g.maprange(pt, 0.42, 0.495, 1.0, 0.0)
     wearn = g.maprange(n3, 0.4, 0.62, 0.3, 1.0)
-    base = g.mix(g.math("MULTIPLY", edge, wearn), base, (0.15 * v, 0.14 * v, 0.125 * v, 1.0))
-    base = g.mix(g.math("MULTIPLY", cav, 0.85), base, (0.004, 0.0035, 0.003, 1.0))
-    # gravity streaks (world Z): soot/water runs (dark, wet) and rare pale mineral efflorescence
+    base = g.mix(g.math("MULTIPLY", edge, wearn), base, (0.3 * v, 0.285 * v, 0.255 * v, 1.0))
+    base = g.mix(g.math("MULTIPLY", cav, 0.85), base, (0.006, 0.0055, 0.005, 1.0))
+    # gravity runs (world Z): bitumen (black, a thin glossy core), rust (brown, rarer), and the pale nitre efflorescence
     st = g.vscale(co, 5.0, 5.0, 0.22)
     sn, _ = g.noise(st, 1.0, 4.0, 0.6)
     streak = g.maprange(sn, 0.52, 0.74, 0.0, 1.0)
-    base = g.mix(g.math("MULTIPLY", streak, 0.7), base, (0.006, 0.0055, 0.005, 1.0))
+    base = g.mix(g.math("MULTIPLY", streak, 0.75), base, (0.008, 0.0072, 0.0065, 1.0))
+    core = g.maprange(sn, 0.7, 0.76, 0.0, 1.0)            # the bitumen still tacky in the middle of the thickest runs
+    srn, _ = g.noise(g.vscale(co, 7.0, 7.0, 0.3), 1.0, 3.0, 0.6)
+    rust = g.math("MULTIPLY", g.maprange(srn, 0.6, 0.76, 0.0, 0.65), g.maprange(n1, 0.45, 0.6, 0.0, 1.0))
+    base = g.mix(rust, base, (0.085, 0.036, 0.016, 1.0))
     st2 = g.vscale(co, 3.0, 3.0, 0.15)
     en, _ = g.noise(st2, 1.3, 3.0, 0.5)
-    eff = g.math("MULTIPLY", g.maprange(en, 0.68, 0.8, 0.0, 0.55), g.maprange(n2, 0.4, 0.6, 0.2, 1.0))
-    base = g.mix(eff, base, (0.16, 0.155, 0.145, 1.0))
+    eff = g.math("MULTIPLY", g.maprange(en, 0.66, 0.8, 0.0, 0.6), g.maprange(n2, 0.4, 0.6, 0.2, 1.0))
     # sparse hairline cracks
     _, wn2 = g.noise(co, 3.0, 3.0)
     cw2 = g.vadd(co, wn2, 0.1)
@@ -4301,32 +4639,61 @@ def mat_stone(name="M_Stone", tint=(1.0, 1.0, 1.0), wet=0.6, value=1.0, carved=F
     crack = g.maprange(vd, 0.0, 0.006, 1.0, 0.0)
     cm, _ = g.noise(co, 0.8, 2.0)
     crack = g.math("MULTIPLY", crack, g.maprange(cm, 0.5, 0.6, 0.0, 1.0))
-    base = g.mix(crack, base, (0.002, 0.002, 0.002, 1.0))
-    # old blood soaked into the porous stone where it meets flesh
+    base = g.mix(crack, base, (0.003, 0.003, 0.003, 1.0))
+    # old blood soaked into the porous stone where it meets flesh (dried brown, not red)
     bn, _ = g.noise(co, 1.6, 5.0, 0.7)
-    blood = g.maprange(bn, 0.63, 0.76, 0.0, 0.7)
-    base = g.mix(blood, base, (0.03, 0.004, 0.003, 1.0))
-    wetf = g.math("MULTIPLY", streak, wet)
-    if carved:
-        tipw = g.attr("m")          # v2: old gilding on the thorns of the halo (worn through to the stone)
-        gn_, _ = g.noise(co, 9.0, 4.0, 0.6)
-        gilt = g.math("MULTIPLY", tipw, g.maprange(gn_, 0.32, 0.55, 0.15, 0.95))
-        base = g.mix(gilt, base, (0.36, 0.24, 0.07, 1.0))
-        wetf = g.math("MAXIMUM", wetf, g.math("MULTIPLY", gilt, 0.6))
-    rough = g.maprange(n2, 0.3, 0.7, 0.72, 0.95)
-    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", wetf, 0.45))
+    blood = g.maprange(bn, 0.63, 0.76, 0.0, 0.6)
+    base = g.mix(blood, base, (0.05, 0.012, 0.008, 1.0))
     pk, _ = g.voronoi(cw, 7.0, "F1")
     pock = g.math("MULTIPLY", g.maprange(pk, 0.0, 0.32, 1.0, 0.0), g.maprange(n2, 0.42, 0.62, 0.0, 1.0))
-    base = g.mix(g.math("MULTIPLY", pock, 0.6), base, (0.008, 0.0075, 0.007, 1.0))
+    base = g.mix(g.math("MULTIPLY", pock, 0.6), base, (0.012, 0.011, 0.01, 1.0))
     h = g.math("ADD", g.math("MULTIPLY", n2, 0.55), g.math("MULTIPLY", n3, 0.3))
     h = g.math("ADD", h, g.math("MULTIPLY", n4, 0.12))
     h = g.math("SUBTRACT", h, g.math("MULTIPLY", crack, 0.9))
     h = g.math("SUBTRACT", h, g.math("MULTIPLY", pock, 0.45))
     h = g.math("ADD", h, g.math("MULTIPLY", n1, 1.2))
+    rough = g.maprange(n2, 0.3, 0.7, 0.86, 0.97)
+    rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", core, 0.3 * wet))
+    # the creature's baked blocks: drafting, mortar, nitre at the joints, chalk, pressed reliefs
+    L = block_local_nodes(g, co) if name in ("M_Stone", "M_StoneCarved") else None
+    nitre = eff
+    if L is not None:
+        comb, margin, rim, joint = drafting_nodes(g, L, co)
+        h = g.math("SUBTRACT", h, g.math("MULTIPLY", comb, 0.07))
+        h = g.math("SUBTRACT", h, g.math("MULTIPLY", g.math("MULTIPLY", margin, n3), 0.15))   # the margin is dressed smoother
+        base = g.mix(g.math("MULTIPLY", margin, 0.3), base, (0.16 * v, 0.152 * v, 0.138 * v, 1.0))
+        # bone-ash / wax mortar at the disc rims: pale grout, grimed (not clean caulk)
+        mg, _ = g.noise(co, 9.0, 4.0, 0.6)
+        mortar = g.math("MULTIPLY", rim, g.maprange(mg, 0.3, 0.6, 0.35, 1.0))
+        mcol = g.mix(g.maprange(mg, 0.45, 0.75, 0.0, 0.7), (0.36, 0.33, 0.28, 1.0), (0.12, 0.105, 0.085, 1.0))
+        base = g.mix(mortar, base, mcol)
+        h = g.math("ADD", h, g.math("MULTIPLY", mortar, 0.25))
+        rough = g.math("MAXIMUM", rough, g.math("MULTIPLY", mortar, 0.95))
+        # nitre / salt crust weeping from the joints down the faces
+        wnz, _ = g.noise(g.vscale(co, 6.0, 6.0, 0.35), 1.0, 4.0, 0.6)
+        weep = g.math("MULTIPLY", joint, g.maprange(wnz, 0.42, 0.68, 0.0, 1.0))
+        nitre = g.math("MAXIMUM", eff, g.math("MULTIPLY", weep, 0.8))
+        # chalk and the pressed reliefs
+        if not STAMP_IMG:
+            STAMP_IMG.append(make_stamp_image(stamp_blocks()))
+        rel, chalk = stamp_nodes(g, L, STAMP_IMG[0][0], STAMP_IMG[0][1])
+        h = g.math("SUBTRACT", h, g.math("MULTIPLY", rel, 0.55))
+        base = g.mix(g.math("MULTIPLY", rel, 0.3), base, (0.19 * v, 0.18 * v, 0.16 * v, 1.0))   # dust filled the hollows
+        cn, _ = g.noise(co, 40.0, 3.0, 0.6)
+        chalk = g.math("MULTIPLY", chalk, g.maprange(cn, 0.3, 0.6, 0.35, 0.9))
+        base = g.mix(chalk, base, (0.5, 0.48, 0.44, 1.0))
+        rough = g.math("MAXIMUM", rough, g.math("MULTIPLY", chalk, 0.97))
+    base = g.mix(nitre, base, (0.34, 0.33, 0.31, 1.0))
+    rough = g.math("MAXIMUM", rough, g.math("MULTIPLY", g.math("MINIMUM", g.math("MULTIPLY", nitre, 3.0), 1.0), 0.95))
+    h = g.math("ADD", h, g.math("MULTIPLY", nitre, 0.12))
+    if carved:
+        tipw = g.attr("m")          # v2: old gilding on the thorns of the halo (worn through to the stone)
+        gn_, _ = g.noise(co, 9.0, 4.0, 0.6)
+        gilt = g.math("MULTIPLY", tipw, g.maprange(gn_, 0.32, 0.55, 0.15, 0.95))
+        base = g.mix(gilt, base, (0.3, 0.21, 0.07, 1.0))
+        rough = g.math("SUBTRACT", rough, g.math("MULTIPLY", gilt, 0.25))
     nrmv = g.bump(h, 1.0, 0.04)
-    _, cnz = g.noise(co, 30.0, 2.0)
-    g.p(base=base, rough=rough, normal=nrmv, coat=g.math("MULTIPLY", wetf, 0.9), coat_rough=0.06,
-        coat_normal=g.bump(n4, 0.2, 0.004), spec=0.45)
+    g.p(base=base, rough=rough, normal=nrmv, spec=0.45)
     return m
 
 
@@ -4433,7 +4800,7 @@ def mat_iron():
     hm = g.maprange(heat, 0.05, 0.25, 0.0, 1.0)
     base = g.mix(g.math("MULTIPLY", hm, g.math("SUBTRACT", 1.0, g.math("MULTIPLY", rust, 0.7))), base, tintc)
     metal = g.math("MULTIPLY", g.math("SUBTRACT", 1.0, rust), 0.85)
-    rough = g.mix(rust, (0.42, 0.42, 0.42, 1.0), (0.9, 0.9, 0.9, 1.0))
+    rough = g.mix(rust, (0.62, 0.62, 0.62, 1.0), (0.92, 0.92, 0.92, 1.0))     # (was 0.42: old iron is dull, not polished)
     h = g.math("ADD", g.math("MULTIPLY", n2, 0.5), g.math("MULTIPLY", flake, 0.4))
     h = g.math("MULTIPLY", h, rust)
     g.p(base=base, metal=metal, rough=rough, normal=g.bump(h, 0.7, 0.008), emc=(1.0, 0.12, 0.02),
@@ -5006,9 +5373,9 @@ KIT_SKIP = ("Mucus", "Oil", "Seam", "Glass")       # drool and glass are render-
 BLEND_G = ("Flesh", "Marrow", "Gum", "Tendon", "Vein", "Membrane", "Mucus", "Oil", "Seam", "Frond", "Skin")
 # (flesh, wet, thickness, class / 3)   class: stone 0, iron 1, flesh 2, bone 3
 GROUP_MASK = {
-    "Stone": (0, 0.3, 0.0, 0.0), "Carved": (0, 0.3, 0.0, 0.0), "Soot": (0, 0.0, 0.0, 0.0),
+    "Stone": (0, 0.0, 0.0, 0.0), "Carved": (0, 0.0, 0.0, 0.0), "Soot": (0, 0.0, 0.0, 0.0),   # THE LANTERN: dry stone (no film)
     "Iron": (0, 0.2, 0.0, 1 / 3), "IronTooth": (0, 0.3, 0.0, 1 / 3), "Bronze": (0, 0.1, 0.0, 1 / 3),
-    "Rope": (0, 0.1, 0.0, 1 / 3), "Glass": (0, 0.6, 0.0, 1 / 3), "Ember": (0, 0, 0, 1 / 3), "Pit": (0, 0.5, 0, 1 / 3),
+    "Rope": (0, 0.1, 0.0, 0.0), "Glass": (0, 0.6, 0.0, 1 / 3), "Ember": (0, 0, 0, 1 / 3), "Pit": (0, 0.5, 0, 1 / 3),
     "Flesh": (1, 1, 0.6, 2 / 3), "Marrow": (1, 1, 0.7, 2 / 3), "Gum": (1, 1, 0.5, 2 / 3), "Tendon": (1, 1, 0.5, 2 / 3),
     "Vein": (1, 1, 0.4, 2 / 3), "Membrane": (0.6, 1, 1.0, 2 / 3), "Mucus": (0, 1, 0.5, 2 / 3), "Oil": (0, 1, 0, 2 / 3),
     "Seam": (0, 0.6, 0, 2 / 3), "Frond": (0.7, 0.8, 0.9, 2 / 3),
@@ -5288,49 +5655,74 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
     finally:
         for h in hi_objs:
             h.hide_render = False
-    # metal class: flat emission masks on the hi groups (iron-class groups = 0.9, everything else 0)
+    # class masks in one flat emission bake, NO margin (it is also the coverage map): R = metal (iron-class groups 0.9),
+    # G = dry stone (Stone, Carved, Soot), B = 1 on every baked texel
     saved = []
     mm = {}
     for h in hi_objs:
         gname = h.name.split("__")[0]
-        val = 0.9 if GROUP_MASK.get(gname, (0, 0, 0, 0))[3] == 1 / 3 else 0.0
+        val = (0.9 if GROUP_MASK.get(gname, (0, 0, 0, 0))[3] == 1 / 3 else 0.0,
+               1.0 if gname in ("Stone", "Carved", "Soot") else 0.0, 1.0)
         if val not in mm:
-            m_ = bpy.data.materials.new("MASK_%g" % val)
+            m_ = bpy.data.materials.new("MASK_%g_%g" % val[:2])
             m_.use_nodes = True
             nt = m_.node_tree
             for n in list(nt.nodes):
                 nt.nodes.remove(n)
             out = nt.nodes.new("ShaderNodeOutputMaterial")
             em = nt.nodes.new("ShaderNodeEmission")
-            em.inputs["Color"].default_value = (val, val, val, 1)
+            em.inputs["Color"].default_value = (*val, 1)
             nt.links.new(em.outputs[0], out.inputs["Surface"])
             mm[val] = m_
         saved.append((h, list(h.data.materials)))
         h.data.materials.clear()
         h.data.materials.append(mm[val])
-    bake("metal", "EMIT")
+    bake("metal", "EMIT", margin=0)
     for h, ml in saved:
         h.data.materials.clear()
         for m_ in ml:
             h.data.materials.append(m_)
-    # pack ORM and save
+
     def px(im):
         a = np.zeros(len(im.pixels), np.float32)
         im.pixels.foreach_get(a)
         return a.reshape(size, size, 4)
 
-    ao, ro, me_ = px(imgs["ao"]), px(imgs["rough"]), px(imgs["metal"])
+    cls = px(imgs["metal"])
+    cover = cls[..., 2] > 0.5
+    stone = cls[..., 1] > 0.5
+    ao, ro = px(imgs["ao"])[..., 0], px(imgs["rough"])[..., 0]
+    alb = px(imgs["albedo"])
+    nrm_px = px(imgs["normal"])
+    # albedo: soot pooled in the joints (THE LANTERN pass) - the dry stone is crushed by the low mesh's own AO (the same
+    # occlusion the game sees), the pale crusts / chalk / arrises less so (they sit on top of the soot)
+    lin = np.where(alb[..., :3] <= 0.04045, alb[..., :3] / 12.92, ((alb[..., :3] + 0.055) / 1.055) ** 2.4)
+    lum = lin @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    crush = 0.25 + 0.75 * np.clip((ao - 0.2) / 0.65, 0.0, 1.0) ** 1.2
+    crush = crush + (1.0 - crush) * 0.55 * np.clip((lum - 0.12) / 0.2, 0.0, 1.0)
+    lin = np.where(stone[..., None], lin * crush[..., None], lin)
+    alb[..., :3] = np.where(lin <= 0.0031308, lin * 12.92, 1.055 * np.power(np.maximum(lin, 0.0), 1 / 2.4) - 0.055)
+    # every map is grown out of its islands into the empty atlas (no black / zero-roughness gutters for the mips and the
+    # downscale to read), then the leftover background gets neutral values (rough 1, AO 1, metal 0)
+    alb = dilate_into(alb, cover)
+    nrm_px = dilate_into(nrm_px, cover, fill=(0.5, 0.5, 1.0, 1.0))
     orm = np.ones((size, size, 4), np.float32)
-    orm[..., 0], orm[..., 1], orm[..., 2] = 0.4 + 0.6 * ao[..., 0], ro[..., 0], me_[..., 0]   # AO lifted: it only dims ambient
+    orm[..., 0], orm[..., 1], orm[..., 2] = 0.15 + 0.85 * ao, ro, cls[..., 0]   # AO 0.15..1: the seams go dark (ambient only)
+    orm = dilate_into(orm, cover, fill=(1.0, 1.0, 0.0, 1.0))
+    imgs["albedo"].pixels.foreach_set(alb.ravel())
+    imgs["albedo"].update()
+    imgs["normal"].pixels.foreach_set(nrm_px.ravel())
+    imgs["normal"].update()
+    ores = size // 4
     paths = {}
-    for mp, q, res in (("albedo", 76, size), ("normal", 78, size), ("orm", 80, size // 4)):
+    for mp, q, res in (("albedo", 76, size), ("normal", 78, size), ("orm", 80, ores)):
         if mp == "orm":
-            im = bpy.data.images.new("Mason_%s_orm" % fam, size, size, alpha=False, float_buffer=False)
+            f = size // res                  # area average (the texels of an island never mix with an empty gutter now)
+            small = orm.reshape(res, f, res, f, 4).mean(axis=(1, 3))
+            im = bpy.data.images.new("Mason_%s_orm" % fam, res, res, alpha=False, float_buffer=False)
             im.colorspace_settings.name = "Non-Color"
-            im.pixels.foreach_set(orm.ravel())
+            im.pixels.foreach_set(small.ravel())
             im.update()
-            if res != size:
-                im.scale(res, res)
         else:
             im = imgs[mp]
         fp = os.path.join(outdir, "Mason_%s_%s.jpg" % (fam, mp))
@@ -5339,7 +5731,52 @@ def bake_atlas(sc, fam, joined, hi_objs, size, outdir, samples_ao=40):
         im.save(quality=q)
         paths[mp] = fp
         imgs[mp + "_final"] = im
+    try:
+        st_ = stone & (lum > 0.0)
+        log("export: %s stone albedo p50 %.3f (linear), rough p50 %.2f, AO p50 %.2f" % (
+            fam, float(np.median(lum[st_])) if st_.any() else -1, float(np.median(ro[cover & stone])) if (cover & stone).any() else -1,
+            float(np.median(ao[cover]))))
+    except Exception as e:
+        log("stats:", e)
     return paths, imgs
+
+
+def dilate_into(img, cover, fill=None, passes=8):
+    """Grows the covered texels of an (H, W, C) image out into the empty atlas: `passes` rings of 4-neighbour means (clean
+    gutters right at the islands), then a push-pull pyramid fills the rest smoothly (what the mips and the downscale read).
+    `fill` is only used when nothing is covered at all."""
+    img = img.copy()
+    have = cover.copy()
+    for _ in range(passes):
+        acc = np.zeros_like(img)
+        cnt = np.zeros(have.shape, np.float32)
+        wimg = img * have[..., None]
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            cnt += np.roll(have, (dy, dx), axis=(0, 1))
+            acc += np.roll(wimg, (dy, dx), axis=(0, 1))
+        grow = (~have) & (cnt > 0)
+        img[grow] = acc[grow] / cnt[grow][:, None]
+        have = have | grow
+    if have.all():
+        return img
+    # push: masked means down to 1x1
+    levels = [(img * have[..., None], have.astype(np.float32))]
+    while levels[-1][1].shape[0] > 1:
+        a, w = levels[-1]
+        n = a.shape[0] // 2
+        a2 = a.reshape(n, 2, n, 2, -1).sum(axis=(1, 3))
+        w2 = w.reshape(n, 2, n, 2).sum(axis=(1, 3))
+        m = w2 > 0
+        a2[m] /= w2[m][:, None]
+        levels.append((a2, m.astype(np.float32)))
+    # pull: every empty texel takes the next coarser level's value
+    val = levels[-1][0]
+    for a, w in reversed(levels[:-1]):
+        up = np.repeat(np.repeat(val, 2, axis=0), 2, axis=1)
+        val = np.where(w[..., None] > 0, a, up)
+    if not cover.any():
+        return np.broadcast_to(np.array(fill if fill is not None else (0, 0, 0, 1), np.float32), img.shape).copy()
+    return np.where(have[..., None], img, val).astype(np.float32)
 
 
 def make_atlas_material(fam, paths):
@@ -6209,7 +6646,7 @@ def main():
     cam_app.data.dof.focus_distance = float(np.linalg.norm(app_loc - near_tip))
     cam_app.data.dof.aperture_fstop = args.app_fstop
     # VR-distance close-up of one vertebra and its leg root (texture/detail validation at 1-3 m)
-    dv_ = min(VERTS, key=lambda v: abs(v["s"] - 10.5))
+    dv_ = VERTS[args.detail_vi] if 0 <= args.detail_vi < len(VERTS) else min(VERTS, key=lambda v: abs(v["s"] - 10.5))
     Od, Td, Dd, Sd = spine_frame(dv_["s"])
     sgd = 1.0 if np.dot(Sd, np.array(fc[0:3]) - Od) >= 0 else -1.0
     det_loc = Od + Sd * sgd * args.detail_cam[0] + Dd * args.detail_cam[1] + Td * args.detail_cam[2]
