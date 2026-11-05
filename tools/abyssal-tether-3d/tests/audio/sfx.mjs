@@ -149,6 +149,13 @@ const SAMPLES = {
   'holdfast:aware': [{ ...P, distance: 4 }],
   'holdfast:outpull': [{ hand: 'left', ...P }],
   'dresser:appear': [{ ...P, distance: 40 }],
+  // THE KNOCKER (audio/knockerSfx.js; physics/knocker.mjs tests it in full)
+  'knocker:throw': [{ ...P, speed: 9 }, { ...P, speed: 18.5 }],
+  'knocker:bounce': [{ ...P, speed: 4, kind: 'stone' }, { ...P, speed: 6, kind: 'metal' }],
+  'knocker:land': [{ ...P }],
+  'knocker:clack': [{ ...P, beat: 0, idx: 0, accent: 1 }, { ...P, beat: 4, idx: 4, accent: 0.65 }],
+  'knocker:end': [{ ...P, reason: 'done' }, { ...P, reason: 'lost' }],
+  'knocker:refuse': [{ reason: 'cooldown' }],
 };
 
 {

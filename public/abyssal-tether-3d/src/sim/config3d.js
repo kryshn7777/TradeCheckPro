@@ -183,9 +183,9 @@ export const CONFIG = {
   // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
   // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
   bag: {
-    caps: [1, 5, 2, 3], // how many of each the bag holds
-    applyTime: [5, 1.5, 0.6, 1], // s a use is channelled (cancelled by damage / death / the cancel input)
-    heal: [1, 0.2, 0.1, 0], // fraction of full health restored when the channel completes
+    caps: [1, 5, 2, 3, 3], // how many of each the bag holds (index 4: the KNOCKER, a thrown gadget: sim/knocker3d.js)
+    applyTime: [5, 1.5, 0.6, 1, 0], // s a use is channelled (cancelled by damage / death / the cancel input); the knocker is thrown, not applied
+    heal: [1, 0.2, 0.1, 0, 0], // fraction of full health restored when the channel completes
     adrenalineTime: 10, // s of the speed boost
     adrenalineMul: 2, // x run / air speed caps, acceleration, reel and pump speed (gravity and fall damage unchanged)
     batteryRestore: 0.5, // lantern charge a battery restores (0..1)
@@ -321,6 +321,7 @@ export const SETTINGS_DEFAULTS = {
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
   hitStop: true, // THE CATCH (sim/catch3d.js): the world holds a beat when the rope saves a near-lethal fall; the head never moves
+  knocker: true, // THE KNOCKER (sim/knocker3d.js): the thrown clockwork decoy that distracts the Mason (off = none carried or found; also ?knocker=off)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
@@ -401,6 +402,7 @@ export function sanitizeUxSettings(s) {
   s.colorSafe = s.colorSafe === true;
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
+  s.knocker = s.knocker !== false;
   s.reducedEffects = s.reducedEffects === true;
   s.windSqualls = s.windSqualls !== false;
   s.hitStop = s.hitStop !== false;

@@ -7,6 +7,7 @@
  *   reel   hanging on a rope for 2.5 s and never reeled         done when the reel input is used (|reel| > 0.4)
  *   grip   a hand near a chalk-studded hold, never grabbed      done on climb:grab
  *   bag    a bag item was picked up, or health is low           done on bag:apply
+ *   knocker  a knocker was picked up, or one is carried in S3+    done on knocker:throw (THE KNOCKER, sim/knocker3d.js)
  *
  * A learned step never returns (persisted in Storage 'tutorial', so it survives restarts); an unlearned one is shown at
  * most twice, at least 25 s apart, never over a level hint, a menu, a death, or while the player is fighting the rope for
@@ -44,7 +45,15 @@ export const STEPS = Object.freeze([
     touch: 'Tap [BAG], then an item to use it.',
     seconds: 7,
   }),
+  Object.freeze({
+    id: 'knocker',
+    text: 'Squeeze the [Grip] at your hip and pull up to take a knocker, then throw it. The Mason answers knocks.',
+    desktop: 'Hold [G] to aim a knocker, release to throw it. The Mason answers knocks.',
+    touch: 'Tap [BAG], then [KNOCK] to throw a knocker. The Mason answers knocks.',
+    seconds: 7,
+  }),
 ]);
+const KNOCK_AFTER = 40; // s of run time, carrying a knocker from S3 down, before the knocker hint (without a pickup)
 
 const MAX_SHOWS = 2;
 const GAP = 25; // s between two tutorial hints
@@ -68,6 +77,7 @@ export class Tutorial {
     this._attachedFor = 0;
     this._hoverFor = 0;
     this._bagPending = -1; // clock time at which to show the bag hint (after a pickup)
+    this._knockPending = -1; // ... and the knocker hint (after a knocker pickup)
     this._pending = null; // the step shown now (to mark learned if the player does it while it is up)
     this._offs = [];
   }
@@ -116,8 +126,11 @@ export class Tutorial {
     on('grapple:attach', () => this.learn('fire'));
     on('climb:grab', () => this.learn('grip'));
     on('bag:apply', () => this.learn('bag'));
-    on('pickup:collect', () => {
-      if (!this.data.done.bag) this._bagPending = this.clock + 1.6;
+    on('knocker:throw', () => this.learn('knocker'));
+    on('pickup:collect', (e) => {
+      if (e && e.kind === 4) {
+        if (!this.data.done.knocker) this._knockPending = this.clock + 3.4; // (after the pickup's own toast)
+      } else if (!this.data.done.bag) this._bagPending = this.clock + 1.6;
     });
     on('game:start', () => this._newRun());
     on('game:restart', () => this._newRun());
@@ -136,6 +149,7 @@ export class Tutorial {
     this._attachedFor = 0;
     this._hoverFor = 0;
     this._bagPending = -1;
+    this._knockPending = -1;
     this._lastShown = this.clock - GAP + 8; // a first hint no sooner than 8 s into a run
   }
 
@@ -200,6 +214,11 @@ export class Tutorial {
       this._show(STEPS[3]);
     } else if (!d.bag && g.health && g.health.hp < 0.45 && g.bag && g.bag.counts && (g.bag.counts[0] > 0 || g.bag.counts[1] > 0)) {
       this._show(STEPS[3]);
+    } else if (!d.knocker && this._knockPending >= 0 && this.clock >= this._knockPending) {
+      this._knockPending = -1;
+      this._show(STEPS[4]);
+    } else if (!d.knocker && g.knocker && g.knocker.enabled !== false && g.bag && g.bag.counts && g.bag.counts[4] > 0 && (g.sectionIndex | 0) >= 2 && (g.time || 0) > KNOCK_AFTER) {
+      this._show(STEPS[4]);
     } else if (!d.reel && this._attachedFor >= HANG_AFTER && (g.time || 0) > 20) {
       this._show(STEPS[1]);
     } else if (!d.fire && (g.time || 0) >= FIRE_AFTER && g.sectionIndex === 0 && !(t && t.attached)) {

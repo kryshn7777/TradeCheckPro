@@ -20,6 +20,11 @@
  * it is ('pickup:full' once per approach). Checkpoint snapshots return items collected after the checkpoint on a
  * respawn.
  *
+ * KNOCKERS (sim/knocker3d.js): pickKnockers adds rare extra knockers (ITEM.KNOCKER) on spots the supplies left free: one in every
+ * second section (sections 1, 3, 5, 7 counted from 1: the jetpack's cans take the others), never on a 'slow' spot, never in a
+ * quiet zone (within 4 m of the spawn or a checkpoint, inside a Masons' rest), alcoves first. Deterministic per seed. A knocker
+ * taken stays taken through a respawn (the bag keeps its knocker count, like the jetpack's fuel).
+ *
  * Bus events: 'pickup:collect' {kind,x,y,z,id,hand}, 'pickup:full' {kind}.
  */
 
@@ -171,6 +176,58 @@ export function pickSupplies(spots, seed, opts = {}) {
   return chosen;
 }
 
+const KNOCK_W = { alcove: 3, risk: 2, ledge: 1 };
+const KNOCK_QUIET = 4; // m around the spawn and the checkpoints
+
+/**
+ * The extra knockers of one run: one spot in every second section (0, 2, 4 ...), never a 'slow' spot, never a spot in `taken`,
+ * never in a quiet zone. `quiet` = [{x,y,z}] points (spawn, checkpoints) and `rests` = [{minX..maxZ}] boxes (the Masons' rests).
+ * @returns {number[]} spot indices, top of the descent first
+ */
+export function pickKnockers(spots, seed, opts = {}) {
+  const rng = U.rng((seed >>> 0) ^ 0x2545f491);
+  const nSec = opts.sections || spots.reduce((m, sp) => Math.max(m, (sp.section | 0) + 1), 0);
+  const every = opts.every || 2;
+  const taken = opts.taken || null;
+  const quiet = opts.quiet || [];
+  const rests = opts.rests || [];
+  const hush = (sp) => {
+    for (const q of quiet) {
+      const dx = q.x - sp.x;
+      const dy = q.y - sp.y;
+      const dz = q.z - sp.z;
+      if (dx * dx + dy * dy + dz * dz < KNOCK_QUIET * KNOCK_QUIET) return true;
+    }
+    for (const b of rests) if (sp.x > b.minX - 1 && sp.x < b.maxX + 1 && sp.y > b.minY - 1 && sp.y < b.maxY + 1 && sp.z > b.minZ - 1 && sp.z < b.maxZ + 1) return true;
+    return false;
+  };
+  const out = [];
+  for (let s = 0; s < nSec; s += every) {
+    const here = [];
+    let total = 0;
+    for (let i = 0; i < spots.length; i++) {
+      const sp = spots[i];
+      if ((sp.section | 0) !== s || sp.tier === 'slow' || (taken && taken[i]) || hush(sp)) continue;
+      here.push(i);
+      total += KNOCK_W[sp.tier] || 1;
+    }
+    const r = rng() * total; // drawn for every section, so one section's spots never shift another's pick
+    if (!here.length) continue;
+    let acc = 0;
+    let pick = here[here.length - 1];
+    for (const i of here) {
+      acc += KNOCK_W[spots[i].tier] || 1;
+      if (r < acc) {
+        pick = i;
+        break;
+      }
+    }
+    out.push(pick);
+  }
+  out.sort((a, b) => spots[b].y - spots[a].y);
+  return out;
+}
+
 /** Does a pick satisfy the fairness rules? Returns a list of problems (empty = fair). For tests and tools. */
 export function checkFairness(spots, picks, nSec) {
   const problems = [];
@@ -201,6 +258,7 @@ export class Pickups3D {
     this.time = 0;
     this.version = 0; // bumps whenever items appear / are taken / return (the view re-syncs)
     this.seed = 0;
+    this.knockers = true; // seed the rare extra knockers (sim/knocker3d.js); false leaves them out
     this._cp = new Uint8Array(0);
     this.setLevel(level);
   }
@@ -225,6 +283,20 @@ export class Pickups3D {
     this.time = 0;
     const nSec = this.level && this.level.sections ? this.level.sections.length : 0;
     const picks = pickSupplies(this.spots, this.seed, { sections: nSec });
+    // the rare extra knockers, on spots the supplies left free (opts: knockers false = none, e.g. ?knocker=off)
+    if (this.knockers !== false) {
+      const taken = new Uint8Array(this.spots.length);
+      for (let i = 0; i < picks.length; i++) taken[picks[i].spot] = 1;
+      const lv = this.level;
+      const quiet = [];
+      if (lv && lv.spawn) quiet.push(lv.spawn);
+      if (lv && lv.sections) for (const sc of lv.sections) if (sc.checkpoint) quiet.push(sc.checkpoint);
+      const rests = [];
+      if (lv && lv.data && Array.isArray(lv.data.nooks)) for (const nk of lv.data.nooks) if (nk.block || nk.box) rests.push(nk.block || nk.box);
+      const ks = pickKnockers(this.spots, this.seed, { sections: nSec, taken, quiet, rests });
+      for (let i = 0; i < ks.length; i++) picks.push({ spot: ks[i], kind: ITEM.KNOCKER });
+      picks.sort((a, b) => this.spots[b.spot].y - this.spots[a.spot].y);
+    }
     this.items.length = 0;
     for (let i = 0; i < picks.length; i++) {
       const sp = this.spots[picks[i].spot];
@@ -310,7 +382,8 @@ export class Pickups3D {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const was = i < this._cp.length ? this._cp[i] === 1 : false;
-      if (it.taken && !was) {
+      if (it.taken && !was && it.kind !== ITEM.KNOCKER) {
+        // (a knocker taken stays taken: the bag keeps its knockers through a respawn)
         it.taken = false;
         it.takenAt = -1e9;
       }

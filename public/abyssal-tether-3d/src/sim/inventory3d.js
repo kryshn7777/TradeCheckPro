@@ -9,6 +9,10 @@
  *   2     ADRENALINE   2   0.6 s   +10 hp and the movement speed x2 for 10 s (run / air speed caps, accelerations,
  *                                  reel and pump speed; gravity and fall damage are unchanged)
  *   3     BATTERY      3   1.0 s   +50 % lantern charge
+ *   4     KNOCKER      3   thrown  not applied: a clockwork rattle thrown with G / pulled from the bag and thrown in VR
+ *                                  (sim/knocker3d.js). It is not a numbered slot (ITEM_COUNT stays 4: keys 1-4, the
+ *                                  radial, the icon cells); take() removes one when it is thrown. A respawn KEEPS the
+ *                                  knocker count (like the jetpack's fuel: a knocker thrown is gone), a new run resets it.
  *
  * Applying is a channel. It starts with use() and completes after `dur` seconds, when the item is consumed and its
  * effect lands. It is CANCELLED, and the item is kept, when the player takes damage (health.hits changes), dies, the
@@ -34,11 +38,14 @@ import { CONFIG, U } from './config3d.js';
 const B = CONFIG.bag;
 
 /** Slot order = the number keys 1..4 = the order of the icons. */
-export const ITEM = Object.freeze({ FIRST_AID: 0, BANDAGE: 1, ADRENALINE: 2, BATTERY: 3 });
+export const ITEM = Object.freeze({ FIRST_AID: 0, BANDAGE: 1, ADRENALINE: 2, BATTERY: 3, KNOCKER: 4 });
+/** The four APPLIED consumables (number keys, radial slots, icon cells). */
 export const ITEM_COUNT = 4;
-export const ITEM_KEYS = Object.freeze(['FIRST_AID', 'BANDAGE', 'ADRENALINE', 'BATTERY']);
-export const ITEM_NAMES = Object.freeze(['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery']);
-export const ITEM_SHORT = Object.freeze(['AID KIT', 'BANDAGE', 'ADRENALINE', 'BATTERY']);
+/** Every kind the bag counts: the four consumables + the knocker (a thrown gadget). counts.length === BAG_KINDS. */
+export const BAG_KINDS = 5;
+export const ITEM_KEYS = Object.freeze(['FIRST_AID', 'BANDAGE', 'ADRENALINE', 'BATTERY', 'KNOCKER']);
+export const ITEM_NAMES = Object.freeze(['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker']);
+export const ITEM_SHORT = Object.freeze(['AID KIT', 'BANDAGE', 'ADRENALINE', 'BATTERY', 'KNOCKER']);
 
 /** Light factor of the lantern for a charge: 1 above lanternDimFrom, falling smoothly to lanternFloor at zero. */
 export function lanternLevel(charge) {
@@ -50,7 +57,7 @@ export class Inventory3D {
   /** @param {EventBus|null} bus */
   constructor(bus) {
     this.bus = bus || null;
-    this.counts = new Int8Array(ITEM_COUNT);
+    this.counts = new Int8Array(BAG_KINDS);
     this.selected = ITEM.BANDAGE;
     this.applying = { active: false, kind: -1, t: 0, dur: 0, hits: 0 };
     this.adrenaline = { active: false, t: 0, dur: B.adrenalineTime };
@@ -60,8 +67,8 @@ export class Inventory3D {
     this.lanternLow = false;
     this.lanternEmpty = false;
     this.lastRefusal = '';
-    this.stats = { picked: new Int16Array(ITEM_COUNT), used: new Int16Array(ITEM_COUNT), cancelled: 0 };
-    this._cp = { counts: new Int8Array(ITEM_COUNT), selected: ITEM.BANDAGE, charge: 1 };
+    this.stats = { picked: new Int16Array(BAG_KINDS), used: new Int16Array(BAG_KINDS), cancelled: 0 };
+    this._cp = { counts: new Int8Array(BAG_KINDS), selected: ITEM.BANDAGE, charge: 1 };
     this.reset();
   }
 
@@ -105,12 +112,12 @@ export class Inventory3D {
 
   /** Room for one more of this item? */
   canAdd(kind) {
-    return kind >= 0 && kind < ITEM_COUNT && this.counts[kind] < B.caps[kind];
+    return kind >= 0 && kind < BAG_KINDS && this.counts[kind] < B.caps[kind];
   }
 
   /** Puts up to n items in the bag (capped). Returns how many went in. */
   add(kind, n = 1) {
-    if (!(kind >= 0 && kind < ITEM_COUNT)) return 0;
+    if (!(kind >= 0 && kind < BAG_KINDS)) return 0;
     const room = B.caps[kind] - this.counts[kind];
     const put = Math.max(0, Math.min(room, n | 0));
     if (put > 0) {
@@ -119,6 +126,23 @@ export class Inventory3D {
       this._emit('bag:change', { kind, count: this.counts[kind] });
     }
     return put;
+  }
+
+  /** Sets a kind's count outright (capped; the run's starting knockers): no pickup statistics, one 'bag:change'. */
+  seed(kind, n) {
+    if (!(kind >= 0 && kind < BAG_KINDS)) return 0;
+    this.counts[kind] = Math.max(0, Math.min(B.caps[kind], n | 0));
+    this._emit('bag:change', { kind, count: this.counts[kind] });
+    return this.counts[kind];
+  }
+
+  /** Takes one item out without applying it (a thrown knocker). Returns false when there is none. */
+  take(kind) {
+    if (!(kind >= 0 && kind < BAG_KINDS) || this.counts[kind] <= 0) return false;
+    this.counts[kind]--;
+    this.stats.used[kind]++;
+    this._emit('bag:change', { kind, count: this.counts[kind] });
+    return true;
   }
 
   select(kind) {
@@ -135,7 +159,7 @@ export class Inventory3D {
 
   /** Why an item cannot be used right now ('' when it can). */
   refusal(kind, health) {
-    if (!(kind >= 0 && kind < ITEM_COUNT)) return 'invalid';
+    if (!(kind >= 0 && kind < ITEM_COUNT)) return kind === ITEM.KNOCKER ? 'thrown' : 'invalid'; // the knocker is thrown (sim/knocker3d.js)
     if (this.applying.active) return 'busy';
     if (this.counts[kind] <= 0) return 'empty';
     if (kind === ITEM.FIRST_AID || kind === ITEM.BANDAGE) {
@@ -309,7 +333,9 @@ export class Inventory3D {
   /** Back to the last snapshot: effects and any channel are gone. */
   restore() {
     const c = this._cp;
+    const knockers = this.counts[ITEM.KNOCKER]; // a respawn keeps the knockers as the death left them (a thrown one is gone)
     this.counts.set(c.counts);
+    this.counts[ITEM.KNOCKER] = knockers;
     this.selected = c.selected;
     this.lanternCharge = c.charge;
     this._clearTransient();
@@ -325,10 +351,10 @@ export class Inventory3D {
     return f;
   }
 
-  /** Total of all items in the bag. */
+  /** Total of all items in the bag (the knockers included). */
   get total() {
     let n = 0;
-    for (let i = 0; i < ITEM_COUNT; i++) n += this.counts[i];
+    for (let i = 0; i < BAG_KINDS; i++) n += this.counts[i];
     return n;
   }
 

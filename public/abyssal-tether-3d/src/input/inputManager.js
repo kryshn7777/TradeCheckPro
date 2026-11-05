@@ -37,7 +37,7 @@
 
 import { Group, Matrix4, Quaternion, Vector3 } from 'three';
 import { CONFIG, U, VIEW } from '../sim/config3d.js';
-import { XRInput, tetherDown } from './xrInput.js';
+import { XRInput, tetherDown, makeHandVel, trackHandVel, handVelOf } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
 import { TouchInput } from './touchInput.js';
 import { makeBagGesture, updateBagGesture } from './bagGesture.js';
@@ -112,6 +112,9 @@ export function makeIntent() {
     // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
     // hip-bag gesture state (bagGesture.js; null on the desktop).
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    // THE KNOCKER (sim/knocker3d.js): desktop G: pressed / released edges and held (the charge); touch KNOCK: tap = pressed +
+    // released. VR throws it with the hand (intent.bag.vr: the bag gesture's draw / throw edges, handVelocity()).
+    knocker: { pressed: false, held: false, released: false },
     // Grip climbing (WP-CLIMB): VR grip per hand + the palm points; desktop F + the view axes (see makeClimbIntent).
     climb: makeClimbIntent(),
     // extras (not in the contract; harmless to ignore)
@@ -213,6 +216,10 @@ function applyOverride(I, o) {
       if ('aim' in src) dst.aim = src.aim;
     }
   }
+  if (o.knocker) {
+    // THE KNOCKER's key (desktop G) for bots / tests / captures: pressed, held, released
+    for (const k of ['pressed', 'held', 'released']) if (k in o.knocker) I.knocker[k] = !!o.knocker[k];
+  }
   if (o.ui) {
     if ('ray' in o.ui) I.ui.ray = o.ui.ray;
     if ('click' in o.ui) I.ui.click = !!o.ui.click;
@@ -266,6 +273,8 @@ export class InputManager {
     this.intent = makeIntent();
     this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false };
     this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
+    this._knock = { down: false, up: false, held: false };
+    this._handVel = [makeHandVel(), makeHandVel()]; // VR: each hand's world velocity (the knocker's throw)
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
     this._bagGesture = makeBagGesture();
     this._bagHands = [
@@ -273,7 +282,8 @@ export class InputManager {
       { ok: false, x: 0, y: 0, z: 0, grip: 0 },
     ];
     this._bagState = { live: false, applying: false, hx: 0, hy: 0, hz: 0, yaw: 0, hands: this._bagHands, counts: null };
-    this._noCounts = new Int8Array(4);
+    this._noCounts = new Int8Array(5);
+    this._bagDt = 0;
     this._ht = { left: makeTrigger(), right: makeTrigger() };
     this._btn = { a: makeButton(), b: makeButton(), x: makeButton(), y: makeButton(), l3: makeButton(), r3: makeButton() };
     this._aim = { left: makeRay(), right: makeRay() };
@@ -382,6 +392,7 @@ export class InputManager {
     const step = isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 0;
     const xr = this.xrActive;
     if ((xr ? 'xr' : 'desktop') !== this.mode) this._setMode(xr ? 'xr' : 'desktop');
+    this._bagDt = step;
     const I = this.intent;
     I.source = this.mode;
     if (xr) this._updateXR(step);
@@ -413,6 +424,11 @@ export class InputManager {
     IB.cycle = BE.cycle;
     IB.cancel = BE.cancel;
     IB.vr = xr ? this._bagGesture : null;
+    const KN = this._knock;
+    const IK = I.knocker;
+    IK.pressed = KN.down && !this.uiMode;
+    IK.released = KN.up;
+    IK.held = KN.held && !this.uiMode && !xr;
     if (this._override) applyOverride(I, this._override);
     return I;
   }
@@ -436,6 +452,8 @@ export class InputManager {
     BE.use = false;
     BE.cycle = 0;
     BE.cancel = false;
+    this._knock.down = false;
+    this._knock.up = false;
     for (const h of HANDS) {
       const ht = this._ht[h];
       ht.pressEdge = false;
@@ -862,6 +880,24 @@ export class InputManager {
     else if (name === 'cycle') B.cycle += value < 0 ? -1 : 1;
   }
 
+  /** The knocker key (desktop G down / up, touch KNOCK tap): edges for this frame + the held state. */
+  _knockEdge(down) {
+    const K = this._knock;
+    if (down) {
+      if (!K.held) K.down = true;
+      K.held = true;
+    } else if (K.held) {
+      K.held = false;
+      K.up = true;
+    }
+  }
+
+  /** VR: a hand's world velocity (m/s) over the last ~70 ms into `out` {x,y,z} (the knocker's release velocity). */
+  handVelocity(hand, out) {
+    const o = out || { x: 0, y: 0, z: 0 };
+    return handVelOf(this._handVel[hand === 'left' ? 0 : 1], o);
+  }
+
   /**
    * Physical tether-button transition for a hand (desktop events call this
    * directly; XR calls it from the per-frame poll with the current state).
@@ -1247,7 +1283,7 @@ export class InputManager {
       let on = this._gripOn[i] ? grip > K.gripOff : grip > K.gripOn;
       if (!readable || this.uiMode) on = false;
       // A grip at the hip belongs to the bag.
-      if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) on = false;
+      if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i]) || g.knocker === i) on = false; // (a hand holding a knocker does not climb)
       this._gripOn[i] = on;
       C.grab[h] = on;
       const hi = C.hands[h];
@@ -1273,6 +1309,8 @@ export class InputManager {
     S.applying = !!(bag && bag.applying && bag.applying.active);
     S.left = !!(this.settings && this.settings.dominantHand === 'left');
     S.counts = bag && bag.counts ? bag.counts : this._noCounts;
+    const kn = this.game ? this.game.knocker : null;
+    S.knocker = !!(kn && kn.drawable); // a knocker may be pulled out of the bag now (the game sets it each frame)
     const hm = this._m3.elements; // the head matrix of this frame (set for the left stick)
     S.hx = hm[12];
     S.hy = hm[13];
@@ -1290,7 +1328,8 @@ export class InputManager {
         o.x = e[12];
         o.y = e[13];
         o.z = e[14];
-      }
+        trackHandVel(this._handVel[i], o.x, o.y, o.z, this._bagDt);
+      } else this._handVel[i].n = 0;
     }
     updateBagGesture(g, S);
     const BE = this._bagEdges;
@@ -1298,7 +1337,8 @@ export class InputManager {
     if (g.cancel) BE.cancel = true;
     if (g.entered) this.haptic(HANDS[g.zone] || 'right', 0.18, 25);
     // A grip at the bag is not a rope yank.
-    for (let i = 0; i < 2; i++) if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) I.hands[HANDS[i]].yank = 0;
+    for (let i = 0; i < 2; i++) if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i]) || g.knocker === i || g.thrown === i) I.hands[HANDS[i]].yank = 0;
+    if (g.drawn >= 0) this.haptic(HANDS[g.drawn], 0.35, 40); // the knocker comes out of the bag into the hand
   }
 
   // ---- desktop frame ----------------------------------------------------------
