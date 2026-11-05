@@ -27,7 +27,7 @@ export function makeMasonUniforms() {
     uTint: { value: new THREE.Color(1, 1, 1) },
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
     uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze (flesh seams only, halved)
-    uStone: { value: new THREE.Vector4(1.15, 0.7, 0.86, 0.3) }, // stone (the re-baked atlas is already lit-stone value; was 1.8 / 0.35 on the black v2 bake): albedo lift, cavity floor (x AO), roughness floor, direct specular kept
+    uStone: { value: new THREE.Vector4(0.95, 0.7, 0.86, 0.3) }, // stone (the re-baked atlas is already lit-stone value; was 1.8 / 0.35 on the black v2 bake): albedo lift, cavity floor (x AO), roughness floor, direct specular kept
     uEmber: { value: new THREE.Color(0, 0, 0) }, // seam ember radiance (masonRigView sets it per frame)
     uAoLo: { value: 0.15 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
   };
