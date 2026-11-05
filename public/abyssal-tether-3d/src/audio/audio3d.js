@@ -1102,6 +1102,21 @@ export class AudioManager3D {
     this.kWindFL = this._knob(wl.frequency, 500, 2, 0.01);
     this.kWindFR = this._knob(wr.frequency, 560, 2, 0.01);
 
+    // WATER (sim/waterPlan.js via game.waterNear): the nearest fall / stream: a hiss of white noise over a rumble of pink, panned toward it
+    const wtf = this._filter('bandpass', 1700, 0.45);
+    const wtl = this._filter('lowpass', 420, 0.7);
+    const wtg = this._gainNode(0);
+    const wtp = this._makePanner(0);
+    whiteA.connect(wtf);
+    wtf.connect(wtg);
+    pinkA.connect(wtl);
+    wtl.connect(wtg);
+    wtg.connect(wtp);
+    wtp.connect(amb);
+    this.kWaterG = this._knob(wtg.gain, 0, 0.003);
+    this.kWaterF = this._knob(wtf.frequency, 1700, 3, 0.01);
+    this.kWaterPan = this._panKnob(wtp, 0);
+
     // Whistle through the masonry: very narrow band of white noise, drifting.
     const wh = this._filter('bandpass', 1100, 16);
     const whg = this._gainNode(0);
@@ -1552,6 +1567,13 @@ export class AudioManager3D {
     const vk = vista ? vista.k : 0;
     const vg = vista ? vista.gust : 0;
     const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq) * (1 + 0.9 * vk + 1.1 * vg);
+    // the water bed: silent unless a fall / stream is near
+    const wn = game && game.waterNear && playing ? game.waterNear : null;
+    if (wn) {
+      this.kWaterG.set(0.34 * wn.k * (0.85 + 0.3 * gustL), now, 0.4);
+      this.kWaterF.set(1100 + 1400 * wn.bright, now, 0.5);
+      this.kWaterPan.set(wn.pan, now, 0.3);
+    } else this.kWaterG.set(0, now, 0.6);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
     this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq + 0.5 * vk + 0.8 * vg), now, 0.4);

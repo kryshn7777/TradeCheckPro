@@ -33,6 +33,8 @@ import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: r
 import { WristComputer } from './render/wristComputer.js';
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
+import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
+import { nearestWater } from './sim/waterPlan.js';
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
@@ -332,6 +334,15 @@ function jetOff() {
 function windOff() {
   try {
     return typeof location !== 'undefined' && /[?&]wind=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?water=off` leaves the falling water out. */
+function waterOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]water=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1090,6 +1101,8 @@ export class Game3D {
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
     this.vista = null; // sim/vistaWind.js
+    this.waterView = null; // render/waterView.js (Chapter I)
+    this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
@@ -1766,6 +1779,7 @@ export class Game3D {
         this.sceneDetail = null;
       }
     }
+    this._syncWater();
     if (!this.jetpackView && M.jetpackView && typeof M.jetpackView.JetpackView === 'function') {
       try {
         this.jetpackView = new M.jetpackView.JetpackView(this);
@@ -3120,6 +3134,48 @@ export class Game3D {
       this._pendingJump = false;
       p.jumpBuffer = 0;
     }
+  }
+
+  /** Chapter I's water: built for the level on the scene (rebuilt when the level changes, gone in Chapter II). `?water=off` leaves it out. */
+  _syncWater() {
+    const want = this.chapter === 1 && this.level && this.renderer && !waterOff() ? this.level : null;
+    const have = this.waterView ? this.waterView.level : null;
+    if (want === have) return;
+    if (this.waterView) {
+      this.waterView.dispose();
+      this.waterView = null;
+    }
+    if (want) this.waterView = new WaterView(this);
+  }
+
+  /** The nearest fall / stream as a sound: a level (distance, size), a pan from where it lies against the view. */
+  _updateWaterSound() {
+    const wv = this.waterView;
+    const p = this.player;
+    const W = this.waterNear;
+    if (!wv || !p || this.state === 'menu') {
+      W.k = 0;
+      return;
+    }
+    const n = nearestWater(wv.list, p.rx, p.ry, p.rz, 60);
+    if (!n) {
+      W.k = 0;
+      return;
+    }
+    const f = n.f;
+    const size = U.clamp(0.35 + (f.w * (f.kind === 'stream' ? Math.min(f.len, 6) : Math.min(f.len, 40))) / 60, 0.35, 1);
+    W.k = (1 - U.smoothstep(5, 60, n.d)) * size * f.flow;
+    const cam = this.renderer && this.renderer.camera;
+    let pan = 0;
+    if (cam) {
+      const e = cam.matrixWorld.elements;
+      const dx = f.x - p.rx;
+      const dz = f.z - p.rz;
+      const l = Math.hypot(dx, dz) || 1;
+      pan = U.clamp(((dx / l) * e[0] + (dz / l) * e[2]) * 0.9, -0.9, 0.9) * U.smoothstep(2, 14, n.d); // up close it fills both ears
+    }
+    W.pan = pan;
+    W.bright = U.clamp(0.35 + f.flow * 0.35 + (f.kind === 'stream' ? -0.2 : 0.1), 0.2, 1);
   }
 
   /** Fuel cans: the body (or a gripping hand in VR) within reach takes one. */
@@ -4753,6 +4809,18 @@ export class Game3D {
         this.pickupsView.update(dt, this);
       } catch (err) {
         this._fault('pickupsView', err);
+      }
+    }
+    if (this.waterView || (this.chapter === 1 && this.level)) {
+      try {
+        this._syncWater();
+        if (this.waterView) {
+          this.waterView.update(dt, this);
+          this._updateWaterSound();
+        }
+      } catch (err) {
+        this._fault('waterView', err);
+        this.waterView = null;
       }
     }
     if (this.jetpackView) {
