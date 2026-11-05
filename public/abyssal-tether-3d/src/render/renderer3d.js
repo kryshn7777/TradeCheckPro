@@ -60,6 +60,7 @@ import { setOutlineLook, syncOutlines } from './outline.js';
 import { maxPixelRatio } from '../platform/deviceProfile.js';
 import { LevelCache } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
 import { depthDarknessAt, foldDarkness } from '../sim/nightVision3d.js';
+import { createLanternMood, lanternMood, lanternMoodInputs, applyLanternHue } from './lanternMood.js'; // the living flame
 
 /** Math.hypot is ~20× slower than sqrt in V8 and allocates; hot paths use this. */
 function hyp(x, y, z = 0) {
@@ -342,6 +343,8 @@ export class Renderer3D {
     this._game = null;
     this._bus = null;
     this._lampFlick = 1;
+    this.lanternMood = createLanternMood(); // the living flame (lanternMood.js): read by handsView for the glass
+    this._moodIn = lanternMoodInputs(null, null);
     this.governor = new RenderGovernor(this);
     this.lighting = new Lighting(this);
     this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1;
@@ -860,14 +863,16 @@ export class Renderer3D {
 
     // Lantern flicker (a living flame, never a strobe).
     const t = this.time;
+    const m = lanternMood(d, lanternMoodInputs(game, this._moodIn), this.lanternMood); // the living flame: danger in the light
     const flick =
-      1 + 0.05 * Math.sin(t * 11.3) * Math.sin(t * 2.9 + 0.7) + 0.035 * Math.sin(t * 23.7 + Math.sin(t * 1.3) * 2) - (Math.sin(t * 0.61) > 0.992 ? 0.18 : 0);
+      (1 + 0.05 * Math.sin(t * 11.3) * Math.sin(t * 2.9 + 0.7) + 0.035 * Math.sin(t * 23.7 + Math.sin(t * 1.3) * 2) - (Math.sin(t * 0.61) > 0.992 ? 0.18 : 0) - 1) * (1 - m.still) + 1;
     const dead = game && game.player && game.player.alive === false;
-    this.lantern.intensity = this.lanternBase * flick * (dead ? 0.35 : 1);
-    this.lanternFlare.material.opacity = 0.26 * flick * (dead ? 0.3 : 1);
-    this.lantern.position.set(Math.sin(t * 7.1) * 0.006, Math.sin(t * 5.3) * 0.006, 0);
+    this.lantern.intensity = this.lanternBase * flick * m.intensityMul * (dead ? 0.35 : 1);
+    this.lanternFlare.material.opacity = 0.26 * flick * m.intensityMul * (dead ? 0.3 : 1);
+    this.lantern.position.set(Math.sin(t * 7.1) * 0.006 * (1 - m.still) + m.jx, Math.sin(t * 5.3) * 0.006 * (1 - m.still) + m.jy, 0);
+    this.lanternBulb.scale.setScalar(m.scale);
     _tmpC.setHex(PALETTE.lantern);
-    this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08);
+    applyLanternHue(this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08), m.hueShift);
 
     this._updateEnvLights(d, head);
     this._game = game || this._game;

@@ -324,6 +324,7 @@ export const SETTINGS_DEFAULTS = {
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
   bloodWriting: false, // opt-in content: the Masons' messages in blood on the walls (data/blood-writing-3d.js, render/bloodWriting.js); off by default
+  livingFlame: true, // the lantern's flame reacts to danger (render/lanternMood.js): gutters in a fall, leans in a squall, shrinks blue-white with the threat, shudders when the Mason commits, still in a rest; off = the plain flicker
   // EXPEDITION (sim/comms3d.js, docs/abyssal-tether-3d/plans/COMMS.md): the team on the radio. radioVoices: the synthesised voices
   // (audio/radio3d.js; off = silent, the subtitles still show every line). signalGlitches: the failing signal's static and flicker on
   // the subtitle panel (off = a plain panel, the radio static lowered). Both on by default.
@@ -404,6 +405,7 @@ export function sanitizeUxSettings(s) {
   s.windSqualls = s.windSqualls !== false;
   s.storyIntro = s.storyIntro !== false; // on unless explicitly off
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
+  s.livingFlame = s.livingFlame !== false; // on unless switched off (render/lanternMood.js)
   s.radioVoices = s.radioVoices !== false; // on unless switched off
   s.signalGlitches = s.signalGlitches !== false;
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;

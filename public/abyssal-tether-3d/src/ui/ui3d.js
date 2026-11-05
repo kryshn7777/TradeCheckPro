@@ -177,6 +177,7 @@ const SETTINGS_SCHEMA = [
   { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
   { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
   { key: 'storyIntro', tab: 'display', type: 'toggle', label: 'Story intro', desc: 'The opening story when a new descent begins. Any key moves it on; Esc skips it.', desktop: true },
+  { key: 'livingFlame', tab: 'display', type: 'toggle', label: 'Living flame', desc: 'The lantern flame reacts to danger: it gutters in a fall, shrinks and pales as the threat rises, and steadies when you are safe.' },
   { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
@@ -4145,7 +4146,8 @@ export class UI3D {
     const tab = VR_TABS[this._vrTab] || VR_TABS[0];
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
     // six rows (Comfort since P6's Wind squalls, Display since Blood writing) still fit above the panel's foot: 80 px a row instead of 88
-    const rowH = rows.filter((d) => d.key).length > 5 ? 80 : 88;
+    const keyed = rows.filter((d) => d.key).length; // seven rows (Display since Living flame): 70 px, still above the panel's foot
+    const rowH = keyed > 6 ? 70 : keyed > 5 ? 80 : 88;
     let y = 190;
     for (const def of rows) {
       if (def.type === 'link') {
@@ -4164,11 +4166,11 @@ export class UI3D {
     const v = def.key in s ? s[def.key] : SETTINGS_DEFAULTS[def.key];
     const tight = rowH < 88;
     const bt = tight ? 8 : 14; // button top within the row
-    const bh = tight ? 64 : 68;
+    const bh = tight ? Math.min(64, rowH - 14) : 68;
     txt(ctx, def.label, 44, y + (tight ? 38 : 42), `600 30px ${F_UI}`, COL.ink, 'left', 0);
     if (def.type === 'range') {
       const val = U.clamp(num(v, def.min), def.min, def.max);
-      txt(ctx, def.fmt(val), 44, y + (tight ? 72 : 78), `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
+      txt(ctx, def.fmt(val), 44, y + (tight ? Math.min(72, rowH - 4) : 78), `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
       this._btn(ctx, this._region(500, y + bt, 68, bh, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
       const tx = 588;
       const tw = 280;

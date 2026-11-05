@@ -170,7 +170,7 @@ const glyphs = (p) => p.ctx.texts.every((t) => pxOf(t.font) >= 28);
   ok(set.regions.some((r) => r.act === 'set' && r.key === 'windSqualls') && set.regions.some((r) => r.act === 'height-page') && inPanel(set) && glyphs(set), 'VR Settings › Comfort: six rows (Wind squalls On / Off) and the Player height link still fit the panel');
   ui._vrTab = 1;
   const disp = paint(ui._paintSettings);
-  ok(disp.regions.some((r) => r.act === 'set' && r.key === 'bloodWriting') && disp.regions.some((r) => r.act === 'calibrate') && inPanel(disp) && glyphs(disp), 'VR Settings › Display: six rows (Blood writing On / Off) and the Brightness link still fit the panel');
+  ok(disp.regions.some((r) => r.act === 'set' && r.key === 'bloodWriting') && disp.regions.some((r) => r.act === 'set' && r.key === 'livingFlame') && disp.regions.some((r) => r.act === 'calibrate') && inPanel(disp) && glyphs(disp), 'VR Settings › Display: seven rows (Blood writing, Living flame On / Off) and the Brightness link still fit the panel');
   ui._vrTab = 0;
 }
 
