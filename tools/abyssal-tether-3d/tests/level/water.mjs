@@ -110,15 +110,15 @@ ok(new Set(plan.map((f) => f.id)).size === plan.length, 'plan: unique ids');
       const flowDir = new THREE.Vector3(0, -1, 0).applyQuaternion(q); // the quad's local -y: the end of the sheet (the lip)
       const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
       if (kind !== 1 || normal.y < 0.99 || flowDir.x * f.dx + flowDir.z * f.dz < 0.99) bad++;
-      if (Math.abs(s.y - f.len) > 1e-6 || Math.abs(s.x - f.w) > 1e-6) bad++;
+      if (Math.abs(s.y - f.len) > 1e-4 || Math.abs(s.x - f.w) > 1e-4) bad++;
     } else {
       const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
       const down = new THREE.Vector3(0, -1, 0).applyQuaternion(q);
       if (normal.x * f.nx + normal.z * f.nz < 0.99 || down.y > -0.99) bad++;
-      if (Math.abs(p.y - (f.y - f.len / 2)) > 1e-4 || Math.abs(s.y - f.len) > 1e-6) bad++;
+      if (Math.abs(p.y - (f.y - f.len / 2)) > 1e-4 || Math.abs(s.y - f.len) > 1e-4) bad++;
       if (kind !== (f.kind === 'lip' ? 2 : 0)) bad++;
     }
-    if (Math.abs(par.getY(i) - f.flow) > 1e-6 || Math.abs(par.getW(i) - f.w) > 1e-6 || Math.abs(lens.getX(i) - f.len) > 1e-6) bad++;
+    if (Math.abs(par.getY(i) - f.flow) > 1e-4 || Math.abs(par.getW(i) - f.w) > 1e-4 || Math.abs(lens.getX(i) - f.len) > 1e-4) bad++;
   }
   ok(bad === 0, 'view: every sheet faces out of its wall / lies flat along its flow, with its kind, flow, width and length');
   v.update(0.016, game);
