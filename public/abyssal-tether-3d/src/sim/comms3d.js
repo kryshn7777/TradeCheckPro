@@ -311,6 +311,8 @@ export const COMMS_SCRIPT = Object.freeze([
   L('back-many', 'ODESSA', "Fidelity holding. You're fine, Elias. You're fine.", { when: { restore: 'many' }, prio: 2, ttl: 15, cd: 1 }),
 ]);
 
+/** The priority of a puzzle-focus line (CommsDirector.focus): above the flavour lines (1), below the story (2) and the beats (3). */
+export const FOCUS_PRIO = 1.5;
 /** No progress (depth or an objective) in a section this long: its voiced hint (once per section). */
 export const STALL_TIME = 60;
 /** Gaze this long at a blood writing (Blood writing ON) for the bare-stone beat. */
@@ -794,6 +796,17 @@ export class CommsDirector {
       for (const line of this.script) if (line.skip && this.said[line.id] === undefined) this.said[line.id] = this.clock;
     }
     return any;
+  }
+
+  /**
+   * PUZZLE FOCUS (sim/puzzleFocus.js, plans/PUZZLE_FOCUS.md): a new trigger kind. `line` (built with commsLine, prio FOCUS_PRIO:
+   * above the flavour lines, below the story and the beats; never during danger like every line) is queued now, once per run (a
+   * second call for the same id is ignored), and goes stale after its short ttl. Returns true when it was queued.
+   */
+  focus(line) {
+    if (!line || !line.id) return false;
+    if (!this.byId[line.id]) this.byId[line.id] = line;
+    return this._trigger(line, 0);
   }
 
   /** Debug / captures: put a line on air now (opts.glitch forces one glitch event of that kind at opts.at s). */

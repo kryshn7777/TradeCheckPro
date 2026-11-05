@@ -52,6 +52,7 @@ import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line tr
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
+import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
@@ -1133,6 +1134,8 @@ export class Game3D {
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
+    this.puzzleFocus = null; // PUZZLE FOCUS (puzzleFocusGlue.js): built with the bus; `focusBeat` is its camera beat (lookTarget for the lantern)
+    this.focusBeat = null;
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -1260,6 +1263,7 @@ export class Game3D {
   async _bootMinimal() {
     this.settings = Storage.loadSettings();
     this.bus = new EventBus();
+    this._setupPuzzleFocus();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -4972,6 +4976,17 @@ export class Game3D {
     };
   }
 
+  /** PUZZLE FOCUS (puzzleFocusGlue.js, plans/PUZZLE_FOCUS.md): the trigger + the beat; a failure leaves the game without it. */
+  _setupPuzzleFocus() {
+    try {
+      this.puzzleFocus = new PuzzleFocusGlue(this);
+      this.focusBeat = this.puzzleFocus.beat;
+    } catch (err) {
+      this._fault('puzzleFocus', err);
+      this.puzzleFocus = null;
+    }
+  }
+
   /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
   _updateObjectiveHint(dt) {
     let view = this._hintView;
@@ -5004,6 +5019,11 @@ export class Game3D {
       this._fault('objectiveHint', err);
     }
     this._try('ghostView', () => this._updateGhost(dt));
+    try {
+      if (this.puzzleFocus) this.puzzleFocus.update(dt); // after the 20 s hint (it escalates on it), before the render (the glance)
+    } catch (err) {
+      this._fault('puzzleFocus', err);
+    }
     const fx = this.healthFx;
     if (fx) {
       try {
@@ -5993,6 +6013,12 @@ export class Game3D {
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
       // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
+      // PUZZLE FOCUS (puzzleFocusGlue.js): state() the beat and its log, puzzles() the ratchet, ready() clears the 25 s cooldown
+      focus: {
+        state: () => (this.puzzleFocus ? this.puzzleFocus.debugState() : null),
+        puzzles: () => (this.puzzleFocus ? this.puzzleFocus.debugPuzzles() : []),
+        ready: () => !!(this.puzzleFocus && this.puzzleFocus.debugReady()),
+      },
       comms: {
         state: () => {
           const cm = this.comms;

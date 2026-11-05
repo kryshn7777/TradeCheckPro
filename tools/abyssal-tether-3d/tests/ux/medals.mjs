@@ -186,6 +186,9 @@ const glyphs = (p) => p.ctx.texts.every((t) => pxOf(t.font) >= 28);
   ui._vrTab = 3;
   const acc = paint(ui._paintSettings);
   ok(acc.regions.some((r) => r.act === 'set' && r.key === 'ghost') && acc.regions.some((r) => r.act === 'reset-settings') && inPanel(acc) && glyphs(acc), 'VR Settings › Access: the Ghost lantern On / Off row and Reset still fit the panel');
+  ui._vrTab = 4;
+  const rope = paint(ui._paintSettings);
+  ok(rope.regions.some((r) => r.act === 'set' && r.key === 'puzzleFocus') && rope.regions.some((r) => r.act === 'set' && r.key === 'hitStop') && inPanel(rope) && glyphs(rope), 'VR Settings › Rope: Puzzle focus (Glance / Cues / Off) beside Catch pause, inside the panel');
   ui._vrTab = 0;
 }
 
