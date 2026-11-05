@@ -50,6 +50,7 @@ export function planRemains(level, seed = 0x6b0e5) {
   const secs = level.sections || [];
   const solids = level.solids || [];
   const hit = {};
+  const staticSet = new Set(solids);
   const out = { skeletons: [], stains: [] };
   const quiet = [];
   if (level.spawn) quiet.push(level.spawn);
@@ -78,14 +79,18 @@ export function planRemains(level, seed = 0x6b0e5) {
   };
   const wallNear = (x, y, z, ang) => {
     const r = level.raycast(x, y, z, Math.cos(ang), 0, Math.sin(ang), REMAINS.wallReach, hit);
-    if (!r || !r.solid) return null;
+    if (!r || !r.solid || !staticSet.has(r.solid)) return null; // never on a lamp housing, a seal plate or a kit prop
     const n = faceNormal(r.solid, r.x, r.y, r.z);
     if (n[1] !== 0) return null;
-    return { x: r.x + n[0] * 0.012, y: r.y, z: r.z + n[2] * 0.012, nx: n[0], nz: n[2] };
+    return { x: r.x + n[0] * 0.012, y: r.y, z: r.z + n[2] * 0.012, nx: n[0], nz: n[2], lo: r.solid.minY + 0.25, hi: r.solid.maxY - 0.25 };
   };
   const stain = (x, y, z, nx, ny, nz, size, si) => {
+    if (bad(x, y, z)) return false;
     out.stains.push({ x: +x.toFixed(3), y: +y.toFixed(3), z: +z.toFixed(3), nx, ny, nz, size: +size.toFixed(2), variant: Math.floor(rng() * REMAINS.variants), rot: +(rng() * Math.PI * 2).toFixed(3), section: si });
+    return true;
   };
+  /** A floor stain near (x, z) on ledge `f`, never off its edge. */
+  const floorStain = (f, x, y, z, size, si) => (x >= f.minX + 0.3 && x <= f.maxX - 0.3 && z >= f.minZ + 0.3 && z <= f.maxZ - 0.3 ? stain(x, y + 0.014, z, 0, 1, 0, size, si) : false);
   for (let si = 0; si < secs.length; si++) {
     const list = bySec[si];
     if (!list.length) continue;
@@ -140,10 +145,10 @@ export function planRemains(level, seed = 0x6b0e5) {
       out.skeletons.push({ kind, x: +x.toFixed(3), y: +y.toFixed(3), z: +z.toFixed(3), yaw: +yaw.toFixed(3), section: si, id: 'rem-' + out.skeletons.length });
       placed++;
       // the blood around it: a pool, a drag mark, and a splatter on the nearest wall
-      stain(x + (rng() - 0.5) * 0.5, y + 0.014, z + (rng() - 0.5) * 0.5, 0, 1, 0, 1.0 + rng() * 1.2, si);
-      if (rng() < 0.7) stain(x + (rng() - 0.5) * 2.2, y + 0.013, z + (rng() - 0.5) * 2.2, 0, 1, 0, 0.5 + rng() * 0.9, si);
+      floorStain(f, x + (rng() - 0.5) * 0.5, y, z + (rng() - 0.5) * 0.5, 1.0 + rng() * 1.2, si);
+      if (rng() < 0.7) floorStain(f, x + (rng() - 0.5) * 2.2, y, z + (rng() - 0.5) * 2.2, 0.5 + rng() * 0.9, si);
       const w = wallNear(x, y + 1.0, z, rng() * Math.PI * 2);
-      if (w && Math.hypot(w.x - x, w.z - z) <= 7) stain(w.x, w.y + (rng() - 0.3) * 0.8, w.z, w.nx, 0, w.nz, 0.9 + rng() * 1.4, si);
+      if (w && Math.hypot(w.x - x, w.z - z) <= 7) stain(w.x, Math.max(w.lo, Math.min(w.hi, w.y + (rng() - 0.3) * 0.8)), w.z, w.nx, 0, w.nz, 0.9 + rng() * 1.4, si);
     }
   }
   // the rest of the blood: here and there along the ledges and walls, more of it deeper
@@ -159,8 +164,7 @@ export function planRemains(level, seed = 0x6b0e5) {
       const p = pickOn(f, 0.5);
       if (!p || bad(p[0], p[1], p[2])) continue;
       if (rng() < 0.5) {
-        stain(p[0], p[1] + 0.013, p[2], 0, 1, 0, 0.5 + rng() * 1.6, si);
-        made++;
+        if (stain(p[0], p[1] + 0.014, p[2], 0, 1, 0, 0.5 + rng() * 1.6, si)) made++;
       } else if (rng() < 0.55) {
         // down the side of the ledge it is on: the drips that ran over the edge
         const face = Math.floor(rng() * 4);
@@ -170,14 +174,10 @@ export function planRemains(level, seed = 0x6b0e5) {
         const fx = nx ? (nx > 0 ? f.maxX : f.minX) + nx * 0.012 : f.minX + 0.5 + u * (f.maxX - f.minX - 1);
         const fz = nz ? (nz > 0 ? f.maxZ : f.minZ) + nz * 0.012 : f.minZ + 0.5 + u * (f.maxZ - f.minZ - 1);
         const fy = Math.max(f.minY + 0.2, f.maxY - 0.2 - rng() * Math.min(1.4, f.maxY - f.minY - 0.3));
-        if (bad(fx, fy, fz)) continue;
-        stain(fx, fy, fz, nx, 0, nz, 0.6 + rng() * 1.2, si);
-        made++;
+        if (stain(fx, fy, fz, nx, 0, nz, 0.6 + rng() * 1.2, si)) made++;
       } else {
         const w = wallNear(p[0], p[1] + 0.6 + rng() * 1.6, p[2], rng() * Math.PI * 2);
-        if (!w || bad(w.x, w.y, w.z)) continue;
-        stain(w.x, w.y, w.z, w.nx, 0, w.nz, 0.7 + rng() * 1.8, si);
-        made++;
+        if (w && stain(w.x, w.y, w.z, w.nx, 0, w.nz, 0.7 + rng() * 1.8, si)) made++;
       }
     }
   }

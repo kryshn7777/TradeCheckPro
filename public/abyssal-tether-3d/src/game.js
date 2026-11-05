@@ -33,6 +33,7 @@ import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: r
 import { WristComputer } from './render/wristComputer.js';
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
+import { RemainsView } from './render/remainsView.js'; // skeletons (bones.glb) and old blood (blood_atlas.png) through Chapter I
 import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
 import { nearestWater } from './sim/waterPlan.js';
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
@@ -343,6 +344,15 @@ function windOff() {
 function waterOff() {
   try {
     return typeof location !== 'undefined' && /[?&]water=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?remains=off` leaves the skeletons and the blood out. */
+function remainsOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]remains=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1102,6 +1112,7 @@ export class Game3D {
     this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
     this.vista = null; // sim/vistaWind.js
     this.waterView = null; // render/waterView.js (Chapter I)
+    this.remainsView = null; // render/remainsView.js (Chapter I)
     this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
@@ -3148,6 +3159,19 @@ export class Game3D {
     if (want) this.waterView = new WaterView(this);
   }
 
+  /** Chapter I's skeletons and blood (planned at once from the level; the assets load behind the run). `?remains=off` leaves them out. */
+  _syncRemains() {
+    const want = this.chapter === 1 && this.level && this.renderer && !remainsOff() ? this.level : null;
+    const have = this.remainsView ? this.remainsView.level : null;
+    if (want === have) return;
+    if (this.remainsView) {
+      this.remainsView.dispose();
+      this.remainsView = null;
+      this._rvCompiled = false;
+    }
+    if (want) this.remainsView = new RemainsView(this);
+  }
+
   /** The nearest fall / stream as a sound: a level (distance, size), a pan from where it lies against the view. */
   _updateWaterSound() {
     const wv = this.waterView;
@@ -4809,6 +4833,25 @@ export class Game3D {
         this.pickupsView.update(dt, this);
       } catch (err) {
         this._fault('pickupsView', err);
+      }
+    }
+    if (this.remainsView || (this.chapter === 1 && this.level)) {
+      try {
+        this._syncRemains();
+        const rv = this.remainsView;
+        if (rv) {
+          // the bones (~1 MB) and the blood atlas load in the background once a run is under way
+          if (!rv.ready && !rv.loading && !rv.failed && this.state === 'playing' && this.modules.gltf) rv.load(() => this._holdfastLoader());
+          rv.update(dt, this);
+          if (rv.ready && !this._rvCompiled) {
+            this._rvCompiled = true;
+            this._precompile();
+          }
+        }
+      } catch (err) {
+        this._fault('remainsView', err);
+        if (this.remainsView) this.remainsView.dispose();
+        this.remainsView = null;
       }
     }
     if (this.waterView || (this.chapter === 1 && this.level)) {
