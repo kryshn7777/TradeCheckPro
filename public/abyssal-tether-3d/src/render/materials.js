@@ -155,6 +155,14 @@ export const LSHADOW = {
   uLSMS: { value: new THREE.Matrix4() },
   uLSMD: { value: new THREE.Matrix4() },
   uLSK: { value: new THREE.Vector4(0, 0.003, 0.006, 14) },
+  // The AUX light (render/auxShadow.js): ONE more shadowed light besides the lantern, either the creature's glow (a pooled-lamp slot taken over,
+  // decay 1.9) or the nearest pooled lamp; its map holds the moving things (and, for the creature, the level's boxes near the lantern).
+  // uLPK: x strength (0 = off), y world size of one texel per metre, z range (m), w mode (0 lamp: multiplies the baked lamp term of lightmapped
+  // fragments and the matching pooled light elsewhere; 1 creature: multiplies the matching pooled light only). uLPPos: the light, world space.
+  uLPMap: { value: null },
+  uLPM: { value: new THREE.Matrix4() },
+  uLPK: { value: new THREE.Vector4(0, 0.006, 12, 0) },
+  uLPPos: { value: new THREE.Vector3() },
 };
 
 /** Default texture tile (metres) when a set does not say. */
@@ -988,6 +996,40 @@ float atLanternShadow( const in vec3 vpos, const in vec3 vnrm, const in vec3 vlp
 	}
 	return mix( 1.0, vis, fr * uLSK.x );
 }
+uniform sampler2DShadow uLPMap;
+uniform highp mat4 uLPM;
+uniform vec4 uLPK;
+uniform vec3 uLPPos;
+// The aux light's visibility (a lamp's moving shadows / the creature's glow): the same normal-offset + slope bias as the lantern's, one cone map, 4 compare taps
+// whose spacing widens with the distance from the light; 1 outside the frustum, beyond the range or at its edge.
+float atAuxShadow( const in vec3 vpos, const in vec3 vnrm, const in vec3 vlp ) {
+	if ( uLPK.x < 0.002 ) return 1.0;
+	vec3 lv = vlp - vpos;
+	float d = length( lv );
+	float nl = dot( vnrm, lv ) / max( d, 1e-3 );
+	if ( nl <= 0.02 ) return 1.0;
+	float fr = 1.0 - smoothstep( 0.55, 1.0, d / uLPK.z );
+	if ( fr <= 0.001 ) return 1.0;
+	vec3 wn = atLsRot( vnrm );
+	vec3 wl = atLsRot( lv ) / max( d, 1e-3 );
+	vec3 wp = atLsRot( vpos ) + cameraPosition;
+	float sinT = sqrt( max( 1.0 - nl * nl, 0.0 ) );
+	float slope = min( sinT / max( nl, 0.15 ), 4.0 );
+	vec4 cs = uLPM * vec4( wp + wn * ( d * uLPK.y * ( 1.0 + 1.5 * sinT ) ) + wl * ( d * uLPK.y * ( 0.5 + 1.1 * slope ) ), 1.0 );
+	float vis = 1.0;
+	if ( cs.w > 0.0 ) {
+		vec3 c = cs.xyz / cs.w;
+		vec2 e = min( c.xy, 1.0 - c.xy );
+		float f = smoothstep( 0.0, 0.08, min( e.x, e.y ) ) * step( c.z, 1.0 );
+		if ( f > 0.001 ) {
+			float t = 1.3 / float( textureSize( uLPMap, 0 ).x ) * mix( 0.9, 2.2, clamp( d / uLPK.z, 0.0, 1.0 ) );
+			float s = texture( uLPMap, vec3( c.xy + vec2( 0.5, 1.4 ) * t, c.z ) ) + texture( uLPMap, vec3( c.xy + vec2( -1.4, 0.5 ) * t, c.z ) )
+				+ texture( uLPMap, vec3( c.xy + vec2( -0.5, -1.4 ) * t, c.z ) ) + texture( uLPMap, vec3( c.xy + vec2( 1.4, -0.5 ) * t, c.z ) );
+			vis = mix( 1.0, s * 0.25, f );
+		}
+	}
+	return mix( 1.0, vis, fr * uLPK.x );
+}
 #endif
 `;
 
@@ -1002,11 +1044,14 @@ function installLanternShadowChunks() {
   const mPoint = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
   if (!SC.lights_pars_begin || !SC.lights_fragment_begin.includes(mPoint)) return false;
   SC.lights_pars_begin = SC.lights_pars_begin + LS_PARS;
+  // the pooled lights (decay > 1.8: the lamps = 2, the creature's glow = 1.9) match the aux light by position: only that one gets the aux visibility
   SC.lights_fragment_begin =
-    'float atLsVis = 1.0;\n' +
+    'float atLsVis = 1.0;\n#ifdef AT_LSHADOW\nvec3 atLpV = ( viewMatrix * vec4( uLPPos, 1.0 ) ).xyz;\n#endif\n' +
     SC.lights_fragment_begin.replace(
       mPoint,
-      mPoint + '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }\n#endif',
+      mPoint +
+        '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }' +
+        '\n\t\telse if ( uLPK.x > 0.002 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 && distance( pointLight.position, atLpV ) < 0.06 ) { directLight.color *= atAuxShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); }\n#endif',
     );
   // a body in the lantern's shadow is dark, not just unlit by the lantern: the fill (baked lightmap / GI / ambient) loses 40 % under a full shadow, so a shadow
   // READS in the dark grade (it only removed the lantern's own share before, which a faint shadow on a baked wall hardly showed)
@@ -1071,7 +1116,8 @@ function buildLightsBeginGI() {
   if (c.includes(mPoint)) {
     c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && pointLight.decay <= 1.8 ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
   }
-  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && pointLight.decay > 1.8 )');
+  // (the creature's glow, decay 1.9, is the one pooled light that is NOT baked: it is evaluated on lightmapped fragments too)
+  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && pointLight.decay > 1.95 )');
   c = skipNext(c, mDir, 'atLmOn < 0.5');
   c = c.replace(
     mTail,
@@ -1099,6 +1145,7 @@ if ( uLMK.x > 0.5 && vLmLayer > - 0.5 ) {
 	vec4 atLm = texture( uLM, vec3( atLu, vLmLayer ) );
 	vec3 atLs = atLm.rgb * atLm.rgb * ${LM_RANGE_STATIC.toFixed(1)};
 	float atLl = atLm.a * atLm.a * ${LM_RANGE_LAMP.toFixed(1)} * uLMK.z;
+${LS_CHUNKS_OK ? '#ifdef AT_LSHADOW\n\t// the aux lamp\'s moving shadows (the body, the rope, the creature) darken the baked lamp term near that lamp\n\tif ( uLPK.x > 0.002 && uLPK.w < 0.5 ) atLl *= atAuxShadow( - vViewPosition, nonPerturbedNormal, ( viewMatrix * vec4( uLPPos, 1.0 ) ).xyz );\n#endif' : ''}
 	atLmE = ( atLs + uLMLamp * atLl ) * uLMK.y + vec3( uLMK.w );
 	// relief under baked light: the flat irradiance is tilted with the perturbed normal's "up" (what the hemisphere fill did)
 	atLmE *= clamp( 1.0 + 0.85 * dot( normal - nonPerturbedNormal, viewMatrix[ 1 ].xyz ), 0.3, 1.8 );

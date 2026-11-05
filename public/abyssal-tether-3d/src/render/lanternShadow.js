@@ -28,10 +28,11 @@
 import * as THREE from 'three';
 import { LSHADOW, attachLanternShadow } from './materials.js';
 import { clusterGeometries } from './lanternShadowProxy.js';
-import { coneFit, dynamicDue, makeStaticCache, markStaticRefreshed, shadowPlan, shadowTierName, smoothAxis, staticNeedsRefresh } from './lanternShadowLogic.js';
+import { SHADOW_LAYER_DYNAMIC, SHADOW_LAYER_STATIC, coneFit, dynamicDue, makeStaticCache, markStaticRefreshed, shadowPlan, shadowTierName, smoothAxis, staticNeedsRefresh } from './lanternShadowLogic.js';
+import { aimShadowCamera, makeTarget, shadowCamera } from './shadowTargets.js';
+import { AuxShadow } from './auxShadow.js';
 
-export const SHADOW_LAYER_STATIC = 5; // layers 1 and 2 belong to the XR eye cameras (three's WebXRManager)
-export const SHADOW_LAYER_DYNAMIC = 6;
+export { SHADOW_LAYER_DYNAMIC, SHADOW_LAYER_STATIC };
 
 const PROXY_MAX = { quest: 640, high: 1400 }; // static box proxies (12 triangles each)
 const DECOR_TRI_BUDGET = { quest: 6000, high: 40000 }; // triangles of flagged decor chunks in the static pass
@@ -44,11 +45,7 @@ const DISCOVER_EVERY = 1; // s
 const PROXY_CELL = { hand: 0.016, body: 0.04, creature: 0.14 }; // weld cell (m) of the low-poly dynamic casters
 const AXIS_RATE = 7; // 1/s: the cone axis follows the head's forward direction
 
-const _bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
 const _v = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _up = new THREE.Vector3();
-const _back = new THREE.Vector3();
 const _fit = {};
 
 function makeDepthMaterial(side, factor, units) {
@@ -64,37 +61,9 @@ function makeDepthMaterial(side, factor, units) {
   return m;
 }
 
-function makeTarget(size) {
-  const depth = new THREE.DepthTexture(size, size, THREE.UnsignedIntType);
-  depth.compareFunction = THREE.LessEqualCompare; // hardware compare: sampler2DShadow, bilinear = free 2x2 PCF
-  depth.minFilter = THREE.LinearFilter;
-  depth.magFilter = THREE.LinearFilter;
-  depth.name = 'lanternShadowDepth';
-  const rt = new THREE.WebGLRenderTarget(size, size, {
-    format: THREE.RedFormat, // the colour attachment only exists because a framebuffer needs one: R8, writes masked
-    type: THREE.UnsignedByteType,
-    minFilter: THREE.NearestFilter,
-    magFilter: THREE.NearestFilter,
-    generateMipmaps: false,
-    depthBuffer: true,
-    stencilBuffer: false,
-    depthTexture: depth,
-  });
-  rt.texture.name = 'lanternShadowColor';
-  return rt;
-}
-
 function triCount(geo) {
   if (!geo) return 0;
   return geo.index ? geo.index.count / 3 : geo.attributes.position ? geo.attributes.position.count / 3 : 0;
-}
-
-function shadowCamera() {
-  const c = new THREE.PerspectiveCamera();
-  c.matrixAutoUpdate = false;
-  c.matrixWorldAutoUpdate = false;
-  c.name = 'LanternShadowCamera';
-  return c;
 }
 
 export class LanternShadow {
@@ -151,12 +120,14 @@ export class LanternShadow {
     // So the uniforms hold a tiny initialised dummy target until the real maps exist (and after they are freed / a context restore).
     this._dummy = null;
     this._ctxLost = false;
+    this.aux = new AuxShadow(this); // the second light: a lamp's moving shadows / the creature's glow (auxShadow.js)
     const cv = r3d.renderer && r3d.renderer.domElement;
     if (cv && typeof cv.addEventListener === 'function') {
       this._onLost = () => {
         this._ctxLost = true;
         this._readyS = this._readyD = false;
         this._cache.valid = false;
+        this.aux.lost();
       };
       this._onRestored = () => {
         this._ctxLost = false;
@@ -165,6 +136,7 @@ export class LanternShadow {
         this._dummy = null; // re-created (its GL objects went with the old context)
         this._rtS = this._rtD = null;
         this._sizeS = this._sizeD = 0;
+        this.aux.lost();
         this._useDummy();
       };
       cv.addEventListener('webglcontextlost', this._onLost);
@@ -173,7 +145,7 @@ export class LanternShadow {
     this._useDummy();
     this.stats = {
       tier: 'low', enabled: false, strength: 0, calls: 0, tris: 0, staticCalls: 0, staticTris: 0, dynCalls: 0, dynTris: 0,
-      staticRefreshes: 0, dynRenders: 0, casters: 0, proxies: 0, decorChunks: 0, decorTris: 0, mapStatic: 0, mapDyn: 0, packs: 0,
+      staticRefreshes: 0, dynRenders: 0, auxCalls: 0, auxTris: 0, casters: 0, proxies: 0, decorChunks: 0, decorTris: 0, mapStatic: 0, mapDyn: 0, packs: 0,
     };
   }
 
@@ -374,6 +346,7 @@ export class LanternShadow {
         this._discover(game);
       }
     }
+    this.aux.update(this._dt, game, Number.isFinite(r3d.governor && r3d.governor.level) ? r3d.governor.level | 0 : 0, settings);
     const st = this.stats;
     st.tier = plan.tier;
     st.enabled = plan.enabled;
@@ -556,6 +529,7 @@ export class LanternShadow {
       r.initRenderTarget(this._dummy); // a no-op once its GL objects exist
       if (!this._readyS) LSHADOW.uLSMapS.value = this._dummy.depthTexture;
       if (!this._readyD) LSHADOW.uLSMapD.value = this._dummy.depthTexture;
+      if (!this.aux || !this.aux.ready) LSHADOW.uLPMap.value = this._dummy.depthTexture;
     } catch {
       /* no dummy: the receivers keep strength 0 and three binds its own empty texture (only a risk on an old GPU) */
     }
@@ -587,6 +561,7 @@ export class LanternShadow {
     this._readyS = this._readyD = false;
     this._cache.valid = false;
     LSHADOW.uLSK.value.x = 0;
+    this.aux.free();
     this._useDummy();
     if (this._proxy) this._proxy.count = 0;
     this._packHash = -1;
@@ -597,26 +572,14 @@ export class LanternShadow {
 
   /** Aims a shadow camera: apex p, unit axis a, square cone (fit), writes the world -> map matrix into `outM`. */
   _aim(cam, px, py, pz, ax, ay, az, fit, outM) {
-    _back.set(-ax, -ay, -az);
-    if (Math.abs(ay) > 0.96) _up.set(1, 0, 0);
-    else _up.set(0, 1, 0);
-    _right.crossVectors(_up, _back).normalize();
-    _up.crossVectors(_back, _right).normalize();
-    cam.matrixWorld.makeBasis(_right, _up, _back).setPosition(px, py, pz);
-    cam.matrixWorldInverse.copy(cam.matrixWorld).invert();
-    const n = fit.near;
-    const t = fit.tanHalf * n;
-    cam.near = n;
-    cam.far = fit.far;
-    cam.projectionMatrix.makePerspective(-t, t, t, -t, n, fit.far);
-    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
-    outM.copy(_bias).multiply(cam.projectionMatrix).multiply(cam.matrixWorldInverse);
+    aimShadowCamera(cam, px, py, pz, ax, ay, az, fit, outM);
   }
 
   // ---------------------------------------------------------------------------
   // The passes
   // ---------------------------------------------------------------------------
-  _pass(rt, cam, mat) {
+  /** One depth pass of the scene (only the objects on the camera's layers) into `rt` with `mat` for everything; `clear` = false adds to what the target holds. */
+  _pass(rt, cam, mat, clear = true) {
     const r = this.r3d.renderer;
     const scene = this.r3d.scene;
     const info = r.info.render;
@@ -630,7 +593,7 @@ export class LanternShadow {
     const prevOv = scene.overrideMaterial;
     const prevMw = scene.matrixWorldAutoUpdate;
     r.xr.enabled = false; // an XR session would otherwise swap in the eye cameras (three.js: a render target pass needs xr off)
-    r.autoClear = true;
+    r.autoClear = clear;
     scene.background = null;
     scene.fog = null;
     scene.overrideMaterial = mat;
@@ -651,6 +614,38 @@ export class LanternShadow {
     this._lastTris = info.triangles - t0;
   }
 
+  /**
+   * The moving casters (hands, body, creature, rope, props) into `rt` from `cam`. The creature's LOD1 stands in for LOD0 inside this pass only.
+   * `skip` = the key of a stand-in left out (the aux pass from the creature's own light must not be blocked by the creature it hangs on).
+   */
+  _dynPass(rt, cam, skip, clear) {
+    const swapped = this._lod;
+    let any = false;
+    if (!skip) {
+      for (let i = 0; i < swapped.length; i++) {
+        const e = swapped[i];
+        e.was = e.show.length ? e.show[0].visible : false;
+        if (e.view.root && e.view.root.visible) {
+          for (const m of e.show) m.visible = true;
+          any = true;
+        }
+      }
+    }
+    for (const [key, rec] of this._proxies) {
+      const on = rec.vis() && key !== skip;
+      for (const p of rec.meshes) p.visible = on;
+    }
+    this._pass(rt, cam, this._matDyn, clear);
+    if (any) for (let i = 0; i < swapped.length; i++) for (const m of swapped[i].show) m.visible = swapped[i].was;
+    if (skip) {
+      const rec = this._proxies.get(skip);
+      if (rec) {
+        const on = rec.vis();
+        for (const p of rec.meshes) p.visible = on;
+      }
+    }
+  }
+
   /** Both passes for this frame (called by Renderer3D.render() before the main render). */
   render() {
     const st = this.stats;
@@ -659,12 +654,14 @@ export class LanternShadow {
     const u = LSHADOW.uLSK.value;
     if (!plan.enabled || !this._level || this.k < 0.004) {
       u.x = 0;
+      this.aux.render(null);
       return;
     }
     const r3d = this.r3d;
     const lantern = r3d.lantern;
     if (!lantern) {
       u.x = 0;
+      this.aux.render(null);
       return;
     }
     const tierKey = plan.tier === 'high' ? 'high' : 'quest';
@@ -716,23 +713,7 @@ export class LanternShadow {
     if (dynamicDue(this._frame, plan) || !this._readyD) {
       coneFit(plan.fovDeg, plan.dynSize, plan.radius, _fit);
       this._aim(this._camD, px, py, pz, A.x, A.y, A.z, _fit, this._matD);
-      // the creature's LOD1 stands in for LOD0 inside this pass only
-      const swapped = this._lod;
-      let any = false;
-      for (let i = 0; i < swapped.length; i++) {
-        const e = swapped[i];
-        e.was = e.show.length ? e.show[0].visible : false;
-        if (e.view.root && e.view.root.visible) {
-          for (const m of e.show) m.visible = true;
-          any = true;
-        }
-      }
-      for (const rec of this._proxies.values()) {
-        const on = rec.vis();
-        for (const p of rec.meshes) p.visible = on;
-      }
-      this._pass(this._rtD, this._camD, this._matDyn);
-      if (any) for (let i = 0; i < swapped.length; i++) for (const m of swapped[i].show) m.visible = swapped[i].was;
+      this._dynPass(this._rtD, this._camD, null, true);
       st.dynCalls = this._lastCalls;
       st.dynTris = this._lastTris;
       st.dynRenders++;
@@ -747,8 +728,17 @@ export class LanternShadow {
     u.y = cache.texel || 0.003;
     u.z = this._dynTexel || 0.006;
     u.w = plan.radius;
-    st.calls = st.staticCalls + st.dynCalls;
-    st.tris = st.staticTris + st.dynTris;
+    try {
+      this.aux.render(this._frame);
+    } catch (err) {
+      this.aux.setEnabled(false); // the second light must never take the lantern shadow (or the frame) down with it
+      LSHADOW.uLPK.value.x = 0;
+      if (typeof console !== 'undefined') console.warn('[AT3D] aux shadow disabled', err);
+    }
+    st.auxCalls = this.aux.stats.calls;
+    st.auxTris = this.aux.stats.tris;
+    st.calls = st.staticCalls + st.dynCalls + st.auxCalls;
+    st.tris = st.staticTris + st.dynTris + st.auxTris;
     this._frame++;
   }
 
@@ -812,6 +802,7 @@ export class LanternShadow {
       cv.removeEventListener('webglcontextrestored', this._onRestored);
     }
     LSHADOW.uLSK.value.x = 0;
+    this.aux.dispose();
     LSHADOW.uLSMapS.value = LSHADOW.uLSMapD.value = null;
     if (this._dummy) this._dummy.dispose();
     this._dummy = null;

@@ -1,6 +1,6 @@
 # ABYSSAL TETHER 3D: status (2026-11-04): Chapters I and II are the free game
 
-**2026-11-05, the mature update** (death scenes with closing eyelids and the Mason's devouring cutscene, the jetpack, the wrist hologram map, water, vista wind, skeletons and bloodstains, Kokoro voices, a scarier Dresser, smaller skitterling heads): `plans/MATURE_UPDATE.md`. The build is rated for it now (`store/LISTING.md`).
+**2026-11-05, the mature update** (death scenes with closing eyelids and the Mason's devouring cutscene, the jetpack, the wrist hologram map, water, vista wind, skeletons and bloodstains, Kokoro voices, a scarier Dresser, smaller skitterling heads, real shadows: the lantern's, a lamp's moving shadows, and the Mason's red glow as a shadowed light): `plans/MATURE_UPDATE.md`. The build is rated for it now (`store/LISTING.md`).
 
 **Current (branch `claude/abyssal-tether-game-3zft6o`, PR #23):** Chapter I (The Underspire, 556 m) and **Chapter II (Lamphold, 500 m, seven beats: layout 2, see `plans/CHAPTER_II_PLAN.md`)** are playable end to end; Chapter II ends on the
 hook for the full version (Chapters III-V). The build, the whole suite (`npm run test:at3d`), the sw generator and the store listing check pass. What is built, what is not and what was

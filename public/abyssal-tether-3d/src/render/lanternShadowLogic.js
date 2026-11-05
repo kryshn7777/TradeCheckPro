@@ -10,6 +10,10 @@
  *     dynEvery-th frame with the current lantern pose.
  */
 
+/** Layers the shadow passes select casters by (layers 1 and 2 belong to the XR eye cameras, three's WebXRManager). Shared by lanternShadow.js and auxShadow.js. */
+export const SHADOW_LAYER_STATIC = 5;
+export const SHADOW_LAYER_DYNAMIC = 6;
+
 /** Tier table. `staticSize` / `dynSize` are map edge lengths in texels; `maxCasterCalls` caps the draw calls of both passes. */
 export const SHADOW_TIERS = Object.freeze({
   low: Object.freeze({ name: 'low', enabled: false, staticSize: 0, dynSize: 0, maxCasterCalls: 0, radius: 0, fovDeg: 0, posThresh: 0, turnDeg: 0, minInterval: 0, dynEvery: 1, taps: 0 }),
