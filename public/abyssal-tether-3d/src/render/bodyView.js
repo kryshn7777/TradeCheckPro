@@ -324,7 +324,7 @@ export class BodyView {
     const s = game.settings;
     if (s && s.showBody === false) return false;
     const st = game.state;
-    if (st !== 'playing' && st !== 'paused' && st !== 'dead' && st !== 'victory') return false;
+    if (st !== 'playing' && st !== 'paused' && st !== 'dead' && st !== 'victory' && !(st === 'intro' && game.openingHands)) return false; // (the opening film's waking)
     return !!game.player;
   }
 

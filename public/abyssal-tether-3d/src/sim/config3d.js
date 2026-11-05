@@ -322,7 +322,7 @@ export const SETTINGS_DEFAULTS = {
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
-  storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
+  openingCinematic: true, // THE LANTERN's opening film when a new descent begins from the menu (Esc skips it; hold to skip); was storyIntro
   bloodWriting: false, // opt-in content: the Masons' messages in blood on the walls (data/blood-writing-3d.js, render/bloodWriting.js); off by default
   // EXPEDITION (sim/comms3d.js, docs/abyssal-tether-3d/plans/COMMS.md): the team on the radio. radioVoices: the synthesised voices
   // (audio/radio3d.js; off = silent, the subtitles still show every line). signalGlitches: the failing signal's static and flicker on
@@ -402,7 +402,7 @@ export function sanitizeUxSettings(s) {
   s.tutorialHints = s.tutorialHints !== false;
   s.reducedEffects = s.reducedEffects === true;
   s.windSqualls = s.windSqualls !== false;
-  s.storyIntro = s.storyIntro !== false; // on unless explicitly off
+  s.openingCinematic = s.openingCinematic !== false; // on unless explicitly off
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
   s.radioVoices = s.radioVoices !== false; // on unless switched off
   s.signalGlitches = s.signalGlitches !== false;
@@ -631,6 +631,7 @@ export const Storage = {
       }
     }
     if (!DIFFICULTY[out.lastDifficulty]) out.lastDifficulty = 'normal';
+    if (saved && typeof saved === 'object' && saved.storyIntro === false && typeof saved.openingCinematic !== 'boolean') out.openingCinematic = false; // the old Story intro setting, switched off, stays off
     sanitizeHeightSettings(out);
     sanitizeUxSettings(out);
     return out;

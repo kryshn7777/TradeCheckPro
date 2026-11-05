@@ -26,7 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
-import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { OpeningCinematic, GRACE as OPENING_GRACE, SKIP_HOLD as OPENING_SKIP_HOLD, WAKE_AT as OPENING_WAKE } from './sim/openingCinematic.js'; // THE LANTERN: the opening cinematic (render/openingView.js, audio/openingSfx.js)
 import { DeathScene } from './sim/deathScene.js'; // the death scenes: the collapse + the eyelids, the Mason eating you (render/deathOverlay.js)
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
 import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: raise it (or press M) and a 3D hologram of the descent blooms
@@ -138,7 +138,7 @@ const MODULES = {
   masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
-  prologueView: './render/prologueView.js', // the opening story's page (one canvas quad)
+  openingView: './render/openingView.js', // the opening cinematic's picture (the hero lantern, the title, the letterbox)
   nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
@@ -312,7 +312,7 @@ function holdfastMode() {
   }
 }
 
-/** `?intro=off` skips the opening story (tests, captures; the setting Story intro does the same for a player). */
+/** `?intro=off` skips the opening cinematic (tests, captures; the setting Opening cinematic does the same for a player). */
 function introOff() {
   try {
     return typeof location !== 'undefined' && /[?&]intro=off/.test(location.search || '');
@@ -1100,9 +1100,12 @@ export class Game3D {
     this.wristComputer = null; // render/wristComputer.js (built with the renderer)
     this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
-    this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
-    this.prologueView = null; // its page (render/prologueView.js)
-    this._introGrace = 0; // s: presses are ignored right after the click that began the run
+    this.opening = null; // THE LANTERN: the opening cinematic while it plays (sim/openingCinematic.js; state 'intro')
+    this.openingView = null; // its picture (render/openingView.js)
+    this.cineDark = null; // 0..1 while it plays: the world's darkness (Renderer3D reads it); null otherwise
+    this.openingHands = false; // the waking: the hands and the body are shown in state 'intro'
+    this._openingHold = null; // debug: hold the film at this time (stills, the trailer)
+    this._openingRig = { skip: 0, hint: 0, lanternBase: 0, lanternRange: 0, light: 'none', fov: 0, exposure: 0 };
     this.holster = null; // the rope guns' holsters (sim/holster3d.js): out[h], k[h] 0..1, walkMul; the hands view reads it
     this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
     this.nvView = null; // their picture (render/nightVisionView.js)
@@ -1328,7 +1331,7 @@ export class Game3D {
     this._setupHandsView();
     this._setupHealthFx();
     this._setupNightVisionView();
-    this._setupPrologueView();
+    this._setupOpeningView();
     this._setupBodyView();
     this._setupBagViews();
     this._setupDresserView();
@@ -1598,15 +1601,15 @@ export class Game3D {
     }
   }
 
-  /** The opening story's page (one canvas quad); optional (a failure skips the story). */
-  _setupPrologueView() {
+  /** The opening cinematic's picture; optional (a failure skips the film). */
+  _setupOpeningView() {
     const M = this.modules;
-    if (this.prologueView || !M.prologueView || typeof M.prologueView.PrologueView !== 'function' || !this.renderer) return;
+    if (this.openingView || !M.openingView || typeof M.openingView.OpeningView !== 'function' || !this.renderer) return;
     try {
-      this.prologueView = new M.prologueView.PrologueView(this.renderer.camera, this.renderer.scene);
+      this.openingView = new M.openingView.OpeningView(this.renderer.scene, this.renderer.camera);
     } catch (err) {
-      this._fault('prologueView', err);
-      this.prologueView = null;
+      this._fault('openingView', err);
+      this.openingView = null;
     }
   }
 
@@ -2506,7 +2509,7 @@ export class Game3D {
    * Starts a fresh run (call from a click handler: unlocks audio).
    * @param {string} diffKey 'normal' | 'nightmare' | 'abyss' | 'sandbox'
    */
-  /** A new descent from the menu: the opening story first (when the setting is on), then the run. */
+  /** A new descent from the menu: THE LANTERN's opening cinematic first (when the setting is on), then the run. */
   startNewGame(diffKey) {
     return this.start(diffKey, { intro: true });
   }
@@ -2517,7 +2520,7 @@ export class Game3D {
     const key = DIFFICULTY[diffKey] ? diffKey : fallbackKey;
     this._unlockAudio();
     const fromMenu = this.state === 'menu';
-    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
+    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.openingCinematic !== false;
     if (this._runActive()) this._recordDepth();
     try {
       this.difficultyKey = key;
@@ -2570,47 +2573,181 @@ export class Game3D {
     this._try('ui', () => this.ui.show(null));
     this._try('audio', () => this.audio.setPaused(false));
     this.bus.emit('game:start', { difficulty: key, diff: this.diff });
-    if (intro) this._beginIntro();
+    if (intro) this._beginOpening();
     else this._enterSection(this.sectionIndex, 'initial');
     return true;
   }
 
-  /** The opening story: the world waits under the black fade, nothing is simulated, the first section is entered when it ends. */
-  _beginIntro() {
-    this.prologue = new Prologue3D((type, arg) => this._onIntroEvent(type, arg));
-    this._introGrace = 0.45;
-    this.fade = 1;
-  }
-
-  _onIntroEvent(type, arg) {
-    if (type === 'page') this.bus.emit('intro:page', { page: arg });
-    else if (type === 'dark') this.bus.emit('intro:dark', {});
-    else if (type === 'cut') this.bus.emit('intro:cut', {});
-    else if (type === 'end') this._endIntro(!!arg);
-  }
-
-  _updateIntro(dt, intent) {
-    const pro = this.prologue;
-    if (!pro || pro.done) {
-      this._endIntro(false);
+  /**
+   * THE LANTERN (sim/openingCinematic.js): the opening cinematic plays in the real Threshold. Nothing is simulated (state 'intro'); the
+   * camera, the world's darkness, the hero lantern (which borrows the game's own lantern light), the Mason and the sound follow the
+   * film; its last frame is the spawn view, so the run starts with no pop. A headset never has its view rotated (two static vantages).
+   */
+  _beginOpening() {
+    const r = this.renderer;
+    if (!r || !this.openingView) {
+      this._enterSection(this.sectionIndex, 'initial'); // no picture: no film
+      this._setState('playing');
       return;
     }
-    this.fade = 1; // the black behind the page
-    if (this._introGrace > 0) this._introGrace -= dt;
-    else if (intent) {
-      if (intent.pausePressed || intent.backPressed) pro.skipAll();
-      else if (intent.confirmPressed || intent.jumpPressed || intent.anyPressed || this._anyHandPressed(intent) || (intent.ui && intent.ui.click)) pro.advance();
-    }
-    if (!pro.done) pro.update(dt);
+    // the hand-off: where the camera is when the run starts (the spawn eye, the spawn yaw)
+    this._placeRig();
+    r.rig.updateMatrixWorld(true);
+    r.camera.getWorldPosition(_dcV);
+    const yaw = r.rig.rotation.y;
+    const op = (this.opening = new OpeningCinematic({ xr: !!this.xrActive, handoff: { x: _dcV.x, y: _dcV.y, z: _dcV.z, yaw } }));
+    const R = this._openingRig;
+    R.skip = 0;
+    R.hint = 0;
+    R.lanternBase = r.lanternBase;
+    R.lanternRange = r.lantern.distance;
+    R.fov = r.baseFov || r.camera.fov;
+    R.light = 'none';
+    R.exposure = r.renderer ? r.renderer.toneMappingExposure : 0;
+    this._openingHold = null;
+    this.openingHands = false;
+    this.cineDark = op.s.dark;
+    this.fade = 1;
+    const hv = this.handsView;
+    if (hv && hv.lantern) this._try('openingView', () => this.openingView.attachModel(hv.lantern));
+    this.openingView.setActive(true);
+    this._openingLight('hero');
+    this.bus.emit('opening:begin', { xr: !!this.xrActive });
   }
 
-  _endIntro(skipped) {
+  /** Who holds the game's lantern light: 'hero' (the film's lantern), 'player' (the gauntlet / the camera, as in play). */
+  _openingLight(who) {
+    const r = this.renderer;
+    const R = this._openingRig;
+    if (!r || R.light === who) return;
+    R.light = who;
+    if (who === 'hero' && this.openingView) {
+      this._try('renderer', () => r.setLanternParent(this.openingView.socket, { x: 0, y: 0, z: 0 }, { bulb: false }));
+      return;
+    }
+    const hv = this.handsView;
+    if (hv && hv.manageLantern) hv._lanternMode = ''; // the hands view re-parents it into the gauntlet (or onto the camera) next frame
+    else this._try('renderer', () => r.setLanternParent(r.camera));
+  }
+
+  _updateOpening(dt, intent) {
+    const op = this.opening;
+    if (!op || op.done) {
+      this._endOpening(false);
+      return;
+    }
+    op.setXR(!!this.xrActive);
+    const R = this._openingRig;
+    if (this._openingHold != null) op.seek(this._openingHold);
+    else {
+      // the skip: Esc / B at once; hold a trigger / a mouse button / Space / Enter (a headset: both triggers) for OPENING_SKIP_HOLD s
+      const live = op.t >= OPENING_GRACE && op.skipping < 0;
+      const h = intent && intent.hands;
+      const lh = !!(h && h.left && h.left.held);
+      const rh = !!(h && h.right && h.right.held);
+      const dk = this.input && this.input.desktop && typeof this.input.desktop.key === 'function' ? this.input.desktop : null;
+      const keys = !this.xrActive && !!dk && (dk.key('Space') || dk.key('Enter'));
+      const held = live && (this.xrActive ? lh && rh : lh || rh || keys);
+      R.skip = held ? R.skip + dt : Math.max(0, R.skip - dt * 3);
+      if (live && intent && (intent.anyPressed || this._anyHandPressed(intent))) R.hint = 2.5;
+      if (live && intent && (intent.pausePressed || intent.backPressed || R.skip >= OPENING_SKIP_HOLD)) {
+        if (op.skip()) this.bus.emit('opening:skip', {});
+        R.skip = 0;
+      }
+      const cues = op.update(dt);
+      for (let i = 0; i < cues.length; i++) {
+        this.bus.emit('opening:cue', { name: cues[i], t: op.t });
+        if (cues[i] === 'titleHit' || cues[i] === 'knock') this._hapticBoth(cues[i] === 'titleHit' ? 0.7 : 0.35, cues[i] === 'titleHit' ? 240 : 90);
+      }
+      for (let i = 0; i < op.voStarted.length; i++) this.bus.emit('opening:vo', { id: op.voStarted[i].id, t: op.t });
+    }
+    R.hint = Math.max(0, R.hint - dt);
+    const s = op.s;
+    this.fade = s.fade;
+    this.cineDark = s.dark;
+    this.openingHands = s.player.hands > 0;
+    if (s.t >= OPENING_WAKE) this._openingLight('player');
+    else this._openingLight('hero');
+    if (op.done) this._endOpening(op.skippedAt >= 0);
+  }
+
+  /**
+   * After the rig is placed (every frame of the film): the camera (desktop: the film's camera; a headset: the vantage, never a
+   * rotation), the lantern's light, the Mason's head.
+   */
+  _applyOpeningCam() {
+    const op = this.opening;
+    const r = this.renderer;
+    if (!op || !r || this.state !== 'intro') return;
+    const s = op.s;
+    const rig = r.rig;
+    const cam = r.camera;
+    if (this.xrActive) {
+      const ho = op.handoff;
+      rig.position.x += s.vr.x - ho.x;
+      rig.position.y += s.vr.y - ho.y;
+      rig.position.z += s.vr.z - ho.z;
+    } else {
+      const c = s.cam;
+      rig.position.set(c.x, c.y, c.z);
+      rig.rotation.y = c.yaw;
+      cam.rotation.set(c.pitch, 0, this.settings && this.settings.reducedEffects ? 0 : c.roll);
+      if (Math.abs(cam.fov - c.fov) > 1e-3) {
+        cam.fov = c.fov;
+        cam.updateProjectionMatrix();
+      }
+    }
+    // the light: the hero lantern's (the film's), then the gauntlet's catching at the waking
+    const R = this._openingRig;
+    const gl = r.renderer;
+    if (gl && R.exposure > 0) gl.toneMappingExposure = R.exposure * (1 - 0.32 * s.dark); // the film's darkness reaches the haze and the glow too
+    if (R.light === 'hero') {
+      r.lanternBase = R.lanternBase * 1.35 * s.lantern.light;
+      r.lantern.distance = s.lantern.range;
+    } else {
+      r.lanternBase = R.lanternBase * s.player.lantern;
+      r.lantern.distance = R.lanternRange;
+    }
+    const cv = this.creatureView;
+    if (cv && typeof cv.cine === 'function') {
+      const m = s.mason;
+      if (m.on) cv.cine({ x: m.x, y: m.y, z: m.z, fx: m.fx, fy: m.fy, fz: m.fz, gape: m.gape, eyes: m.eyes, lunge: m.lunge, bite: false });
+      else if (cv._cine) cv.cine(null);
+    }
+  }
+
+  _endOpening(skipped) {
+    const op = this.opening;
+    const r = this.renderer;
+    this.opening = null;
+    this._openingHold = null;
+    this.cineDark = null;
+    this.openingHands = false;
+    const R = this._openingRig;
+    if (r) {
+      if (R.lanternBase > 0) r.lanternBase = R.lanternBase;
+      if (R.lanternRange > 0) r.lantern.distance = R.lanternRange;
+      if (R.exposure > 0 && r.renderer) r.renderer.toneMappingExposure = R.exposure;
+      R.exposure = 0;
+      if (!this.xrActive) {
+        r.camera.rotation.z = 0;
+        if (R.fov > 0 && Math.abs(r.camera.fov - R.fov) > 1e-3) {
+          r.camera.fov = R.fov;
+          r.camera.updateProjectionMatrix();
+        }
+      }
+    }
+    this._openingLight('player');
+    R.light = 'none';
+    const cv = this.creatureView;
+    if (cv && typeof cv.cine === 'function' && cv._cine) this._try('creatureView', () => cv.cine(null));
+    if (this.openingView) this._try('openingView', () => this.openingView.setActive(false));
     if (this.state !== 'intro') return;
-    this.bus.emit('intro:end', { skipped: !!skipped });
-    this.prologue = null;
+    this.bus.emit('opening:end', { skipped: !!skipped });
+    if (op && !this.xrActive) this._setLook(op.handoff.yaw, 0); // (a headset keeps whatever turn the player made)
     this._acc = 0;
     this._setState('playing');
-    this.fade = 1; // the page's black eases away into the first section
+    this.fade = op ? op.s.fade : 0; // the film's last frame is the spawn view: no fade, no pop
     this._enterSection(this.sectionIndex, 'initial');
   }
 
@@ -3454,7 +3591,7 @@ export class Game3D {
         case 'paused':
           break;
         case 'intro':
-          this._updateIntro(dt, intent);
+          this._updateOpening(dt, intent);
           break;
         case 'victory':
           this._updateVictoryScene(dt);
@@ -4567,6 +4704,7 @@ export class Game3D {
     this._placeRig();
     this._applySwingLag();
     this._applyDeathCam();
+    this._applyOpeningCam();
   }
 
   /**
@@ -4772,20 +4910,28 @@ export class Game3D {
         this._fault('healthFx', err);
       }
     }
-    const prv = this.prologueView;
-    if (prv) {
+    const opv = this.openingView;
+    if (opv && this.opening && this.state === 'intro') {
       try {
-        const cv = this.renderer && this.renderer.renderer ? this.renderer.renderer.domElement : null;
-        prv.update(dt, this.prologue, { xr: !!this.xrActive, reduced: !!(this.settings && this.settings.reducedEffects), aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9 });
+        const r = this.renderer;
+        const cv = r && r.renderer ? r.renderer.domElement : null;
+        const hv = this.handsView;
+        if (hv && hv.lantern && hv.gearState === 'ready') opv.attachModel(hv.lantern);
+        const R = this._openingRig;
+        const op = this.opening;
+        const hint = Math.max(R.hint > 0 ? Math.min(1, R.hint / 0.6) : 0, op.t > 1.2 && op.t < 5.5 ? Math.min(1, (op.t - 1.2) / 0.8, (5.5 - op.t) / 0.8) * 0.7 : 0);
+        opv.update(dt, op.s, {
+          xr: !!this.xrActive,
+          aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9,
+          skip: Math.min(1, R.skip / OPENING_SKIP_HOLD),
+          skipHint: op.skipping >= 0 ? 0 : hint,
+          head: r ? r.headPosition() : null,
+        });
       } catch (err) {
-        this._fault('prologueView', err);
-        this.prologue = null;
-        if (this.state === 'intro') this._endIntro(true);
+        this._fault('openingView', err);
+        if (this.state === 'intro') this._endOpening(true);
       }
-    } else if (this.state === 'intro' && this.prologue && !this._introNoView) {
-      this._introNoView = true; // no view (it failed to load): the story cannot be shown, so it does not hold the run
-      this._endIntro(true);
-    }
+    } else if (this.state === 'intro' && this.opening && !opv) this._endOpening(true); // no picture: the film cannot hold the run
     const nvv = this.nvView;
     if (nvv) {
       try {
@@ -5179,6 +5325,7 @@ export class Game3D {
     const prev = this.state;
     this.state = s;
     if (prev === 'dead' && s !== 'dead') this._endDeathScene();
+    if (prev === 'intro' && this.opening) this._endOpening(true); // left the film another way (the menu, a fault): give everything back
     this._syncUIMode();
     const body = typeof document !== 'undefined' ? document.body : null;
     if (body) {
@@ -5566,6 +5713,35 @@ export class Game3D {
           const sc = this.deathScene;
           const s = sc.s;
           return { active: sc.active, kind: sc.kind, t: sc.t, done: sc.done, lead: this.deathLead, lids: s.lids, black: s.black, blood: s.blood, dark: s.dark, drop: s.camDrop, face: Object.assign({}, s.face), fade: this.fade, deathShown: this._deathShown };
+        },
+      },
+      // THE LANTERN's opening cinematic (tests, stills, tools/abyssal-tether-3d/release/render-opening.mjs): play(diff) begins a new descent
+      // with the film (whatever the setting); hold(t) freezes it at t seconds (null = play on); skip(); state() reads it.
+      opening: {
+        play: (diff) => {
+          if (this.state !== 'menu') this.quitToMenu();
+          const was = this.settings.openingCinematic;
+          this.settings.openingCinematic = true;
+          try {
+            return this.startNewGame(diff || 'normal') && this.state === 'intro';
+          } finally {
+            this.settings.openingCinematic = was;
+          }
+        },
+        hold: (t) => {
+          this._openingHold = t == null ? null : +t;
+          return !!this.opening;
+        },
+        skip: () => {
+          if (!this.opening || !this.opening.skip()) return false;
+          this.bus.emit('opening:skip', {});
+          return true;
+        },
+        state: () => {
+          const op = this.opening;
+          if (!op) return { active: false, state: this.state };
+          const s = op.s;
+          return { active: true, state: this.state, t: op.t, shot: s.shot, fade: s.fade, dark: s.dark, cam: Object.assign({}, s.cam), vr: Object.assign({}, s.vr), lantern: { y: s.lantern.y, light: s.lantern.light }, mason: s.mason.on, title: s.title.a, caption: s.caption.id, skipping: op.skipping, handoff: Object.assign({}, op.handoff) };
         },
       },
       // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing

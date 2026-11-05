@@ -59,6 +59,7 @@ import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
 import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
+import { OPENING_SFX, OPENING_EVENTS } from './openingSfx.js'; // THE LANTERN's opening cinematic: its score, foley and narration, mixed in below
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -2293,9 +2294,7 @@ export class AudioManager3D {
       'bag:effect': this._onBagEffect,
       'lantern:low': this._onLanternLow,
       'lantern:empty': this._onLanternEmpty,
-      'intro:page': this._onIntroPage,
-      'intro:dark': this._onIntroDark,
-      'intro:cut': this._onIntroCut,
+      ...Object.fromEntries(Object.entries(OPENING_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:draw': this._onHolsterDraw,
       ...Object.fromEntries(Object.entries(LAMPHOLD_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:stow': this._onHolsterStow,
@@ -2669,19 +2668,6 @@ export class AudioManager3D {
 
   _onLanternEmpty() {
     this._sfxLanternWarn(true);
-  }
-
-  /** The opening story: a soft page turn, a low swell when the record darkens, a burst of static and a drop when it is torn off. */
-  _onIntroPage() {
-    this._sfxIntroPage();
-  }
-
-  _onIntroDark() {
-    this._sfxRumble();
-  }
-
-  _onIntroCut() {
-    this._sfxIntroCut();
   }
 
   _onHolsterDraw() {
@@ -4376,50 +4362,6 @@ export class AudioManager3D {
     this._commit(v);
   }
 
-  /** A page of the record turns: a dry, quiet paper-and-relay tick. */
-  _sfxIntroPage() {
-    const v = this._begin('introPage', 1, 0.3, 0.4, this.busStinger, 0.22, 0, 0.2, 0);
-    if (!v) return;
-    const t = v.t0;
-    const n = this._vNoise(v, this._pink, t, 1.3);
-    const bp = this._vFilter(v, 'bandpass', 2400, 0.8);
-    const g = this._vGain(v, 0);
-    this._tick(g.gain, t, 0.4, 0.05);
-    n.connect(bp);
-    bp.connect(g);
-    g.connect(v.out);
-    const o = this._vOsc(v, 'sine', 180, t);
-    const og = this._vGain(v, 0);
-    this._swell(og.gain, t, 0.25, 0.01, 0.04, 0.12);
-    o.connect(og);
-    og.connect(v.out);
-    this._commit(v);
-  }
-
-  /** The record is torn: a burst of static, then everything drops away. */
-  _sfxIntroCut() {
-    const v = this._begin('introCut', 3, 1, 1.8, this.busStinger, 0.34, 0, 0.3, 0);
-    if (!v) return;
-    const t = v.t0;
-    const n = this._vNoise(v, this._white, t, 1);
-    const hp = this._vFilter(v, 'highpass', 1800, 0.7);
-    const g = this._vGain(v, 0);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.55, t + 0.02);
-    g.gain.setValueAtTime(0.5, t + 0.7);
-    g.gain.linearRampToValueAtTime(0, t + 1.1);
-    n.connect(hp);
-    hp.connect(g);
-    g.connect(v.out);
-    const o = this._vOsc(v, 'sine', 90, t + 0.05);
-    o.frequency.exponentialRampToValueAtTime(34, t + 1.6);
-    const og = this._vGain(v, 0);
-    this._swell(og.gain, t + 0.05, 0.5, 0.05, 0.5, 0.5);
-    o.connect(og);
-    og.connect(v.out);
-    this._commit(v);
-  }
-
   /** A rope gun leaves / returns to its holster: leather rubbing on the way, a short metal click at the end. */
   _sfxHolster(draw) {
     const v = this._begin('holster', 1, 0.1, 0.5, this.busPlayer, 0.3, 0, 0.1, 0);
@@ -5557,3 +5499,4 @@ export class AudioManager3D {
 }
 
 Object.assign(AudioManager3D.prototype, LAMPHOLD_SFX);
+Object.assign(AudioManager3D.prototype, OPENING_SFX);

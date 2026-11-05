@@ -1,0 +1,90 @@
+{
+  "about": [
+    "THE LANTERN: the opening cinematic's narration (docs/abyssal-tether-3d/plans/OPENING_CINEMATIC.md section 8).",
+    "Same format as performance.json `lines` (take = phrases, pauses in ms, {in} breaths, *stress*); the cast (voice blends) is performance.json's.",
+    "max_s = the line's slot in the timeline (src/sim/openingCinematic.js VO): the take is fitted inside it.",
+    "Rendered by tools/abyssal-tether-3d/voice/build_opening_vo.py to public/abyssal-tether-3d/assets/audio/opening/<id>.ogg, dry (no radio chain: this is the record, not the uplink)."
+  ],
+  "lines": {
+    "op-1": {
+      "speaker": "MAREN",
+      "text": "Seventeen ninety-one. One woman climbed out of this shaft, carrying a flame.",
+      "moment": "shot 1 EMBER: the flame out of black",
+      "emotion": "quiet wonder", "register": "the record, read aloud", "max_s": 6.4,
+      "speed": 0.9, "pitch": -0.2, "fx": ["close"],
+      "take": ["{in:soft}",{"t": "Seventeen ninety-one.", "speed": 0.9, "pitch": -0.2}, 620, "One woman climbed out of this shaft,", 260, {"t": "carrying a *flame*.", "speed": 0.92, "pitch": -0.3, "trail": true}]
+    },
+    "op-2": {
+      "speaker": "MAREN",
+      "text": "It burned nothing. It never went out. Every lamp we have was lit from hers.",
+      "moment": "shot 2: the arc round the lantern, the chain into the dark",
+      "emotion": "reverent, dry", "register": "the record", "max_s": 5.6,
+      "speed": 0.94, "pitch": -0.2, "fx": ["close"],
+      "take": ["It burned nothing.", 360, {"t": "It never went out.", "pitch": -0.2}, 420, {"t": "Every lamp we have was lit from *hers*.", "speed": 0.96, "pitch": -0.35}]
+    },
+    "op-3": {
+      "speaker": "ODESSA",
+      "text": "It is dimming.",
+      "moment": "shot 2: the flame gutters",
+      "emotion": "flat, close, the first time aloud", "register": "close", "max_s": 2.4,
+      "speed": 0.82, "pitch": -0.5, "fx": ["close", "hushed"],
+      "take": ["{in:soft}", {"t": "It is *dimming*.", "speed": 0.86, "pitch": -0.3, "trail": true}]
+    },
+    "op-4": {
+      "speaker": "ODESSA",
+      "text": "Five hundred and fifty-six metres of cut stone. Every probe we lowered went quiet at the bottom.",
+      "moment": "shot 3 THE LOWERING: the lantern sinks into the shaft",
+      "emotion": "the briefing voice, controlled", "register": "calm professional", "max_s": 6.4,
+      "speed": 0.98, "pitch": -0.3, "fx": [],
+      "take": ["Five hundred and fifty-six metres of cut stone.", 440, "Every probe we lowered", 120, {"t": "went *quiet* at the bottom.", "speed": 0.92, "pitch": -0.2}]
+    },
+    "op-5": {
+      "speaker": "ODESSA",
+      "text": "So we are lowering a person.",
+      "moment": "shot 3: the lantern far below, alone on its chain",
+      "emotion": "calm, procedural", "register": "calm professional", "max_s": 2.6,
+      "speed": 0.92, "pitch": -0.3, "fx": [],
+      "take": [{"t": "So we are lowering a *person*.", "speed": 0.94}]
+    },
+    "op-6": {
+      "speaker": "MAREN",
+      "text": "They carved one rule over the door.",
+      "moment": "shot 5 THE THRESHOLD: the statue lit by the passing lantern",
+      "emotion": "dry curiosity", "register": "dry academic", "max_s": 3.0,
+      "speed": 0.94, "pitch": -0.1, "fx": [],
+      "take": [{"t": "They carved *one* rule over the door."}]
+    },
+    "op-7": {
+      "speaker": "MAREN",
+      "text": "Trust the ring, not the floor. The floor keeps.",
+      "moment": "shot 5: the plaque, lit and readable",
+      "emotion": "quoting, then lower", "register": "dry academic, quoting", "max_s": 4.4,
+      "speed": 0.92, "pitch": -0.2, "fx": [],
+      "take": [{"t": "Trust the ring,", "speed": 0.94}, 160, "not the floor.", 520, {"t": "The floor *keeps*.", "speed": 0.82, "pitch": -0.5, "trail": true}]
+    },
+    "op-8": {
+      "speaker": "MAREN",
+      "text": "The record says something was down here before the lamp.",
+      "moment": "shot 6 THE KNOCK: after the third knock, the flame leans",
+      "emotion": "careful, near whisper", "register": "hushed", "max_s": 5.0,
+      "speed": 0.9, "pitch": -0.5, "fx": ["hushed", "close"],
+      "take": ["{in:soft}", {"t": "The record says", "speed": 0.92}, 200, {"t": "something was down here", "pitch": -0.2}, 180, {"t": "before the *lamp*.", "speed": 0.86, "pitch": -0.4}]
+    },
+    "op-9": {
+      "speaker": "MAREN",
+      "text": "Before the first stone was cut. Something we never prepared for.",
+      "moment": "shot 7 BEFORE THE LAMP: eyes in the well",
+      "emotion": "a whisper, dread", "register": "hushed", "max_s": 4.8,
+      "speed": 0.88, "pitch": -0.6, "fx": ["hushed", "close", "breathy"],
+      "take": [{"t": "Before the first stone was cut.", "speed": 0.9}, 480, "{in:quick}", {"t": "Something we never *prepared* for.", "speed": 0.9, "pitch": -0.2, "trail": true}]
+    },
+    "op-10": {
+      "speaker": "MAREN",
+      "text": "We confronted it, but",
+      "moment": "shot 7: the lunge; the game cuts the line with static",
+      "emotion": "steadying, then nothing", "register": "hushed", "max_s": 2.4,
+      "speed": 0.94, "pitch": -0.4, "fx": ["hushed", "close"],
+      "take": ["{in:quick}", {"t": "We confronted it,", "speed": 0.96}, 140, {"t": "but", "speed": 0.9}]
+    }
+  }
+}

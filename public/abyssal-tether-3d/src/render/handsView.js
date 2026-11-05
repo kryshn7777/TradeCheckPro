@@ -1334,7 +1334,7 @@ export class HandsView {
     }
     const xr = inp.xrActive;
     const state = game && game.state ? game.state : 'playing';
-    const inRun = state === 'playing' || state === 'paused' || state === 'dead';
+    const inRun = state === 'playing' || state === 'paused' || state === 'dead' || (state === 'intro' && !!game.openingHands); // (the opening film's waking)
     const showHands = this.visible && (xr || inRun);
     const gear = this.gear;
     // "Show body" off = gloves only: the canvas sleeve (the arm cover) runs up from the wrist as part of the body, so it goes with it

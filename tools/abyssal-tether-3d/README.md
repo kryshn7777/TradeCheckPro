@@ -457,3 +457,20 @@ python3 tools/abyssal-tether-3d/build_blood_atlas.py          # -> assets/textur
 
 Previews: `previews/bones_sheet.png` (Cycles, every mesh + the skull close), `previews/blood_atlas_preview.png` (the atlas over dark stone).
 Not wired into the game yet (no `src/` change); `bones.glb` is not in the service-worker precache list until the integration adds it.
+
+## THE LANTERN: the opening cinematic (`voice/build_opening_vo.py`, `release/render-opening.mjs`)
+
+The opening is a real-time film in the engine (docs/abyssal-tether-3d/plans/OPENING_CINEMATIC.md): `src/sim/openingCinematic.js`
+(the timeline), `src/render/openingView.js` (the picture), `src/audio/openingSfx.js` (the score and foley).
+
+```
+python3 tools/abyssal-tether-3d/build_voices.py --fetch-only            # once: the pinned Kokoro fp32 model + voices
+python3 tools/abyssal-tether-3d/voice/build_opening_vo.py [--only op-3]  # the narration -> assets/audio/opening/*.ogg + manifest.json
+node tools/abyssal-tether-3d/release/render-opening.mjs --stills         # one still per shot + out/opening-contact.png
+node tools/abyssal-tether-3d/release/render-opening.mjs --video --from 28 --to 32   # frames -> out/the-lantern-opening-28-32s.mp4 + the score
+node tools/abyssal-tether-3d/release/render-opening.mjs --video --full   # the whole 84 s film for the store (hours in software GL)
+node tools/abyssal-tether-3d/tests/ux/opening.mjs                       # the timeline, the hand-off, the skip, VR comfort, the sound
+```
+
+The narration's direction is `voice/opening_performance.json` (the radio cast's blends; a recording at `voice/recordings/<id>.wav`
+replaces a line). The clips live in `assets/audio/opening/`, not `assets/audio/voice/` (build_voices.py prunes that folder).

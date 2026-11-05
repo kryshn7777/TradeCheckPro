@@ -857,6 +857,7 @@ export class Renderer3D {
     const inRun = !!game && !game.hidePlayer;
     const wantDark = foldDarkness(num(game && game.diff && game.diff.darkness, 0), inRun ? depthDarknessAt(this.depthF) * this.deepDark : 0);
     this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
+    if (game && typeof game.cineDark === 'number') this._dark = Math.max(wantDark, game.cineDark); // THE LANTERN's opening film holds the world dark itself (already eased)
     const dark = this._dark * (1 - 0.92 * nvK);
     this.lighting.setDarkness(dark);
     this.lighting.setNightVision(nvK);
