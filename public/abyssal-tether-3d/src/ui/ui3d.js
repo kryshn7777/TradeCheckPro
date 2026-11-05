@@ -179,6 +179,8 @@ const SETTINGS_SCHEMA = [
   { key: 'livingFlame', tab: 'display', type: 'toggle', label: 'Living flame', desc: 'The lantern flame reacts to danger: it gutters in a fall, shrinks and pales as the threat rises, and steadies when you are safe.' },
   { key: 'openingCinematic', tab: 'display', type: 'toggle', label: 'Opening cinematic', desc: 'The opening film when a new descent begins. Esc skips it; or hold a button for a second.', desktop: true },
   { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
+  // (the VR Display page is full: in a headset the same switch sits on the Access page, below)
+  { key: 'roaches', tab: 'display', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', desktop: true },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
   { type: 'patches', tab: 'display', page: 'calibrate' },
@@ -198,6 +200,7 @@ const SETTINGS_SCHEMA = [
   // GHOST LANTERN (meta/ghost.js): here, not Comfort / Display, because those VR pages already hold their six rows
   { key: 'ghost', tab: 'access', type: 'toggle', label: 'Ghost lantern', desc: 'A pale light drifts down on the pace of your best whole run. Beat it to the bottom to replace it.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
+  { key: 'roaches', tab: 'access', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', vr: true },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'hitStop', tab: 'rope', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },

@@ -65,6 +65,7 @@ import { SFX_BANK } from './sfxBank.js';
 /** Every jitter in this module is drawn from this seeded stream, never Math.random ("no random sounds": SFX_DESIGN.md §4). */
 const SEQ = new SeqRng(0x1a7e);
 import { OPENING_SFX, OPENING_EVENTS } from './openingSfx.js'; // THE LANTERN's opening cinematic: its score, foley and narration, mixed in below
+import { ROACH_SFX, ROACH_EVENTS } from './roachSfx.js'; // the swarm skitterlings (sim/roaches.js): ticks, scatter, squish, the crack burst
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -2308,6 +2309,7 @@ export class AudioManager3D {
       ...Object.fromEntries(Object.entries(OPENING_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:draw': this._onHolsterDraw,
       ...Object.fromEntries(Object.entries(LAMPHOLD_EVENTS).map(([ev, m]) => [ev, this[m]])),
+      ...Object.fromEntries(Object.entries(ROACH_EVENTS).map(([ev, m]) => [ev, this[m]])),
       'holster:stow': this._onHolsterStow,
       'nv:on': this._onNvOn,
       'nv:off': this._onNvOff,
@@ -5527,3 +5529,4 @@ export class AudioManager3D {
 
 Object.assign(AudioManager3D.prototype, LAMPHOLD_SFX);
 Object.assign(AudioManager3D.prototype, OPENING_SFX);
+Object.assign(AudioManager3D.prototype, ROACH_SFX);

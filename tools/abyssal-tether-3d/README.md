@@ -25,8 +25,8 @@ ember throat behind it, a hood of carved soot-black drapery, a broken halo of th
 arms with skeletal hands, a victim hanging from the jaw. Emissive (`MasonEmissive`, heartbeat-pulsed by `masonRigView.js`)
 only in the throat and the coals at the back of two orbits.
 
-**v1 is kept for the small hunters:** `assets/models/skitter_rig.glb` is the original Mason (do not rebuild it from v2);
-`build_mason_v1.py` + `mason_rig_clips_v1.py` are the frozen v1 sources (`build_mason_rig.py` picks the v1 clips when the
+**v1 sources (frozen):** the small hunters no longer use the v1 model (`skitter_rig.glb` was removed: the hunter skitterlings are
+procedural red cockroaches now, `src/render/skitterlingView.js`, plans/SKITTERLINGS.md); `build_mason_v1.py` + `mason_rig_clips_v1.py` are the frozen v1 sources (`build_mason_rig.py` picks the v1 clips when the
 kit has no head pivots). The byte-exact shipped v1 assets came from `git show 09b6f21:tools/abyssal-tether-3d/build_mason.py`.
 
 | Output | Contents |

@@ -156,7 +156,7 @@ The menu is not judged any more (`platform/governor.js` and the render-side gove
 ## The Mason v2 (2026-10-23)
 
 The big Mason was redesigned (hooded saint face over a split jaw, bone ribs, skeletal-hand feet; `tools/abyssal-tether-3d/README.md`).
-The skitterlings keep the v1 model (`skitter_rig.glb`, 56.7 k / 20.7 k, unchanged).
+The skitterlings kept the v1 model (`skitter_rig.glb`, 56.7 k / 20.7 k) until they became red cockroaches (plans/SKITTERLINGS.md: 156 / 27 triangles, the GLB removed).
 
 | `mason_rig.glb` | v1 | v2 |
 |---|---|---|
@@ -270,4 +270,4 @@ Quest mock-XR harness (stereo, quest tier, the Mason placed at 14 m in view, `HI
 
 `CREATURE_LOD` is now `{ low: 10, quest: 12, high: Infinity }` (game.js): the full 57 k-triangle Mason only within 12 m on Quest; LOD1 (about 23 k) beyond. The skitterlings' LOD0 -> LOD1 switch is now `SKITTER_LOD` `{ low: 2.5, quest: 3.5, high: 6 }`.
 
-Still over budget (not fixed): S6 on Nightmare / Abyss with 2 / 3 skitterlings in one view at 9 m (about 148 calls / 337k and 156 calls / 378k). Each skitterling costs about 7 calls and 40k stereo triangles at LOD1 (its rig has 4 primitives and only a 21 k-triangle LOD1). A real fix is a LOD2 or merged primitives for `skitter_rig.glb` (an asset task).
+Still over budget (not fixed): S6 on Nightmare / Abyss with 2 / 3 skitterlings in one view at 9 m (about 148 calls / 337k and 156 calls / 378k). Each skitterling costs about 7 calls and 40k stereo triangles at LOD1 (its rig has 4 primitives and only a 21 k-triangle LOD1). A real fix is a LOD2 or merged primitives for `skitter_rig.glb` (an asset task). **Fixed by SKITTERLINGS.md:** the hunters are procedural red cockroaches, at most 2 draw calls and 3 x 156 triangles (936 stereo) for all of them, no GLB.
