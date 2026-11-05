@@ -21,8 +21,8 @@
  * skeleton (merged with the procedural measuring line and chalk outline, still ONE draw call) and swapped in; until then, and
  * whenever it is missing or fails (offline, Node tests), the procedural meshes below are the fallback.
  *
- * Budget: procedural near LOD <= 12 k triangles, far LOD <= 4.5 k (LOD_DIST_FALLBACK); the GLB's LOD0 <= 24 k, LOD1 <= 8.5 k, LOD2
- * <= 3.2 k (LOD_DIST); beyond GLOW_DIST only the two eye glints (one tiny additive mesh), hidden when the sim is out of play. The
+ * Budget: procedural near LOD <= 12 k triangles, far LOD <= 4.5 k (LOD_DIST_FALLBACK); the GLB's LOD0 <= 52 k, LOD1 <= 19 k, LOD2
+ * <= 7.2 k (LOD_DIST); beyond GLOW_DIST only the two eye glints (one tiny additive mesh), hidden when the sim is out of play. The
  * chalk outline of you is a quad of the same skinned mesh on its own bone (alpha-dithered from the outline texture), so measuring
  * costs no extra call. The material is the level's lit patch (materials.js patchMaterial: lantern, baked GI, wet film, the horror
  * grade) plus: a cold glow on the slits and the line (piercing the fog), a faint pale self-light on the mask so the face reads in
@@ -32,10 +32,12 @@ import * as THREE from 'three';
 import { patchMaterial } from './materials.js';
 
 export const DRESSER_URL = new URL('../../assets/models/dresser.glb', import.meta.url).href;
-/** The GLB's LOD switches per quality tier: [LOD0 -> LOD1, LOD1 -> LOD2] (m, camera to its chest). v3 (the owner: "so low poly when seen from a
- * bit of distance"): the full sculpt (about 46 k triangles) holds to 14 m on Quest (a shaft's width), the mid LOD (about 17 k) to 40 m, and
- * even LOD2 (about 6.5 k) is a smooth silhouette with the mask, the hood's crown and the shoulder spikes, drawn out to GLOW_DIST. */
-export const LOD_DIST = { low: [8, 24], quest: [14, 40], high: [48, 90] };
+/** The GLB's LOD switches per quality tier: [LOD0 -> LOD1, LOD1 -> LOD2] (m, camera to its chest). v3 (the owner: "so low poly when seen from a bit of
+ * distance"): even LOD2 (about 6.5 k triangles) is a smooth silhouette with the mask, the hood's crown and the shoulder spikes, drawn out to GLOW_DIST. */
+// v3 (dresser.glb: LOD0 47.7 k / LOD1 17.7 k / LOD2 6.5 k triangles): the desktop keeps the full model out to 48 m and the rich one to 90 m (it was a
+// 12 m switch: "so low poly when seen from a bit of distance"). On Quest LOD1 (17.7 k, as rich as the old LOD0) is the working LOD out to 34 m, and
+// the 47.7 k LOD0 only within 3 m (the moment before the cut: 95 k stereo triangles on top of a section's 218-302 k would break the 350 k budget).
+export const LOD_DIST = { low: [5, 18], quest: [3, 34], high: [48, 90] };
 /** The procedural fallback's single switch (near -> far). */
 export const LOD_DIST_FALLBACK = { low: 10, quest: 18, high: 60 };
 /** Beyond this only the two eye glints draw. */
