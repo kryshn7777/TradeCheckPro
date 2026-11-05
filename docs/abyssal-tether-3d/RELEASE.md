@@ -586,9 +586,9 @@ instantaneously" **[S19]**). Draft answers to confirm against the build:
 
 | Topic | Draft answer |
 |---|---|
-| Violence | Fantasy violence: a non-human creature can catch and kill the player character. Death is shown as a fade to black with sound; **no blood, no gore, no dismemberment**; the player never attacks anything. |
+| Violence | **Graphic fantasy violence against the player character**: a non-human creature can catch, bite and devour the player (a death scene with its face in the dark, its jaws closing on the camera, blood on the screen); a fall ends with the eyes closing; skeletons lie through the levels. The player never attacks anything. (Updated for the mature build: store/LISTING.md has the full answers.) |
 | Fear / horror | **Yes**: sustained horror atmosphere, a predator stalks the player, sudden lunges (jump scares). |
-| Blood / gore | None. |
+| Blood / gore | **Yes**: old bloodstains on floors and walls, blood on the screen in the creature death scene, skeletal remains. No exposed organs. |
 | Language | None. |
 | Sexual content / nudity | None. |
 | Drugs, alcohol, tobacco | None. |
