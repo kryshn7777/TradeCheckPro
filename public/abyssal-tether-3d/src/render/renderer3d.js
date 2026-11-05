@@ -56,6 +56,7 @@ import { createGLTFLoader, setKTX2Renderer } from './glbLoad.js';
 import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
+import { creatureLightPlan } from './auxShadowLogic.js';
 import { setOutlineLook, syncOutlines } from './outline.js';
 import { maxPixelRatio } from '../platform/deviceProfile.js';
 import { LevelCache } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
@@ -335,6 +336,10 @@ export class Renderer3D {
     }
     this._envTimer = 0;
     this._envScratch = [];
+    // The creature's glow takes the LAST pooled-lamp slot while it hunts (decay 1.9: lit on baked surfaces too; shadowed by the aux map, auxShadow.js)
+    this._creatureSrc = { creature: true, x: 0, y: 0, z: 0, color: new THREE.Color(1, 0.24, 0.1), candela: 0, range: 11, flicker: 0.35, seed: 7.31, ref: null };
+    this._creatureOn = false;
+    this._crPlan = { visible: true, state: '', dist: 1e9, listen: 0 };
 
     this.materials = new MaterialLibrary(r);
     configureTextureLoading({ renderer: r }); // KTX2 (GPU-compressed) texture sets need the renderer's compressed-format support
@@ -426,7 +431,7 @@ export class Renderer3D {
     const parent = object3D || this.camera;
     parent.add(this.lanternGroup);
     if (offset && isFinite(offset.x)) this.lanternGroup.position.set(offset.x, offset.y || 0, offset.z || 0);
-    else if (parent === this.camera) this.lanternGroup.position.set(-0.3, -0.12, -0.12);
+    else if (parent === this.camera) this.lanternGroup.position.set(-0.32, -0.32, -0.1); // low and to the left, so the shadows fall to the side of what casts them (was -0.12: a shadow right behind its caster)
     else this.lanternGroup.position.set(0, 0.05, 0.02);
     const bulb = options && typeof options.bulb === 'boolean' ? options.bulb : parent !== this.camera;
     this.lanternBulb.visible = bulb;
@@ -689,15 +694,56 @@ export class Renderer3D {
     }
     for (const e of this.envLights) {
       e.src = null;
+      e.want = null;
       e.level = 0;
       e.light.intensity = 0;
+      e.light.decay = 2;
     }
+    this._creatureOn = false;
     this._envTimer = 0;
   }
 
-  _updateEnvLights(dt, head) {
-    const srcs = this._envSources;
-    if (!srcs || !srcs.length) return;
+  /** The creature's glow for this frame: fills `_creatureSrc` and returns whether it is on (needs the aux shadow map, so never on the low tier / past governor 1). */
+  _syncCreatureLight(game, head) {
+    const aux = this.lanternShadow && this.lanternShadow.aux;
+    const cr = game && game.creature;
+    const b = cr && cr.body;
+    const h = b && b.head;
+    if (!aux || !aux.canLight() || !h || !isFinite(h.x + h.y + h.z)) return false;
+    const c = this._crPlan;
+    c.visible = b.visible !== false;
+    c.state = cr.state;
+    c.dist = hyp(h.x - head.x, h.y - head.y, h.z - head.z);
+    c.listen = b.listen || 0;
+    const p = creatureLightPlan(c, aux.plan);
+    if (!p.on) return false;
+    const src = this._creatureSrc;
+    // off the stone it clings to (the crown's dorsal up and its facing): the light hangs in the air in front of the head
+    const ux = num(h.ux, 0);
+    const uy = num(h.uy, 1);
+    const uz = num(h.uz, 0);
+    src.x = h.x + ux * 1.2 + num(h.fx, 0) * 0.7;
+    src.y = h.y + uy * 1.2 + num(h.fy, 0) * 0.7;
+    src.z = h.z + uz * 1.2 + num(h.fz, 0) * 0.7;
+    src.candela = p.candela;
+    src.range = p.range;
+    src.flicker = p.flicker;
+    src.color.setRGB(p.color[0], p.color[1], p.color[2]);
+    return true;
+  }
+
+  _updateEnvLights(dt, head, game) {
+    const srcs = this._envSources || [];
+    const slots = this.envLights;
+    const cOn = this._syncCreatureLight(game, head);
+    const cs = slots[ENV_LIGHTS - 1];
+    const csrc = this._creatureSrc;
+    if (cOn !== this._creatureOn) {
+      this._creatureOn = cOn;
+      this._envTimer = 0; // the lamp pool is re-chosen at once (it shrinks by one while the glow is on, and grows back)
+    }
+    if (!srcs.length && !cOn && !(cs.src && cs.src.creature)) return;
+    const nPool = cOn ? ENV_LIGHTS - 1 : ENV_LIGHTS; // the lamps keep the first slots
     this._envTimer -= dt;
     if (this._envTimer <= 0) {
       this._envTimer = ENV_REASSIGN;
@@ -711,7 +757,7 @@ export class Renderer3D {
         if (d > s.range * 1.3 + 8) continue;
         if (s.ref && s.ref.gain !== undefined && s.ref.gain < 0.02) continue; // a lamp that has been put out lights nothing
         s._score = score;
-        if (best.length < ENV_LIGHTS) best.push(s);
+        if (best.length < nPool) best.push(s);
         else {
           let worst = 0;
           for (let k = 1; k < best.length; k++) if (best[k]._score > best[worst]._score) worst = k;
@@ -719,17 +765,27 @@ export class Renderer3D {
         }
       }
       // keep slots whose source is still wanted; free the rest
-      for (const e of this.envLights) e.want = e.src && best.includes(e.src) ? e.src : null;
+      for (let k = 0; k < nPool; k++) {
+        const e = slots[k];
+        e.want = e.src && best.includes(e.src) ? e.src : null;
+      }
       for (const s of best) {
-        if (this.envLights.some((e) => e.want === s)) continue;
-        const free = this.envLights.find((e) => e.want === null && (e.src === null || e.level <= 0.02));
-        const fading = free || this.envLights.find((e) => e.want === null);
+        let have = false;
+        for (let k = 0; k < nPool; k++) if (slots[k].want === s) have = true;
+        if (have) continue;
+        let free = null;
+        for (let k = 0; k < nPool && !free; k++) if (slots[k].want === null && (slots[k].src === null || slots[k].level <= 0.02)) free = slots[k];
+        let fading = free;
+        for (let k = 0; k < nPool && !fading; k++) if (slots[k].want === null) fading = slots[k];
         if (fading) fading.want = s;
       }
     }
+    // the glow's slot: held for the creature while it is on; handed back (faded out first) when it is not
+    if (cOn) cs.want = csrc;
+    else if (cs.want === csrc || cs.src === csrc) cs.want = null;
     let flickMin = 1;
-    for (let k = 0; k < this.envLights.length; k++) {
-      const e = this.envLights[k];
+    for (let k = 0; k < slots.length; k++) {
+      const e = slots[k];
       if (e.src !== e.want) {
         // fade out the old source before switching
         e.level = Math.max(0, e.level - dt * 3);
@@ -738,12 +794,22 @@ export class Renderer3D {
           if (e.src) {
             e.light.position.set(e.src.x, e.src.y, e.src.z);
             e.light.color.copy(e.src.color);
-            e.light.distance = e.src.range * 1.5;
+            e.light.distance = e.src.range * (e.src.creature ? 1.3 : 1.5);
+            e.light.decay = e.src.creature ? 1.9 : 2; // 1.9 = "evaluated on baked surfaces too" (materials.js), the lamps (2) are baked there
           }
         }
       } else if (e.src) e.level = Math.min(1, e.level + dt * 2);
       if (!e.src) {
         e.light.intensity = 0;
+        continue;
+      }
+      if (e.src.creature) {
+        // the glow follows the creature every frame and throbs a little
+        e.light.position.set(e.src.x, e.src.y, e.src.z);
+        e.light.color.copy(e.src.color);
+        const t = this.time * 5.3;
+        const f = 1 - e.src.flicker * 0.5 * (0.5 + 0.5 * Math.sin(t) * Math.sin(t * 0.37 + 1.1));
+        e.light.intensity = e.src.candela * e.level * f;
         continue;
       }
       let f = 1;
@@ -832,7 +898,9 @@ export class Renderer3D {
     // Fog is for what is far: the far distance is the section's own (the level culls geometry there, so it still closes the view off), the haze
     // STARTS at FOG_START_FRAC of it (never before the section's near / 2 m), and the curve (materials.js) is a smoothstep, so mid-range
     // masonry, ledges and the creature read crisp and only the distance fades.
-    const farD = Math.max(8, (th.fogFar * (1 - tk * 0.18)) / FOG_THICKNESS);
+    // a vista (sim/vistaWind.js: a big open place) holds a little more haze, so what is far reads as far
+    const vistaK = game && game.vista ? game.vista.k : 0;
+    const farD = Math.max(8, (th.fogFar * (1 - tk * 0.18) * (1 - 0.22 * vistaK)) / FOG_THICKNESS);
     const nearCull = Math.max(2, (th.fogNear * (1 - tk * 0.3)) / FOG_THICKNESS); // the section's own near: what the geometry cull is measured from
     fog.near = Math.max(nearCull, farD * FOG_START_FRAC);
     fog.far = Math.max(fog.near + 4, farD);
@@ -869,7 +937,7 @@ export class Renderer3D {
     _tmpC.setHex(PALETTE.lantern);
     this.lantern.color.copy(_tmpC).lerp(th.accent, 0.08);
 
-    this._updateEnvLights(d, head);
+    this._updateEnvLights(d, head, game);
     this._game = game || this._game;
     this.lighting.update(d, game, th, tgt, this._lampFlick);
     this._fogInfo.near = nearCull; // (the cull distance of levelView is fog.near + t x (far - near): unchanged by where the haze starts, so the Quest budgets hold)

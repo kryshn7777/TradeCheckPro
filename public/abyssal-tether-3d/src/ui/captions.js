@@ -9,12 +9,14 @@
  *   dresser:tick / hum / measure / saw     THE DRESSER (sim/dresser3d.js): [Ticking] [Humming] [Scraping] [Sawing]
  *   holdfast:twitch / inhale / close / tear / crush / knock   THE HOLDFAST (sim/holdfast3d.js): [Knuckles cracking]
  *                                          [A wet breath in the wall] [Stone fingers close on your hand] ...
- *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
+ *   platform:crumble / strain, squall:warn / on, rope:slip, rope:jolt, rope:catch, grapple:break, climb:strain / slip, health:low, lantern:low, trigger:rumble / debris
  *
  * A caption is a short bracketed description like a film's "[stone grinding, rising]", with a kind icon (shape, not colour),
  * a direction (8 sectors around the head plus above / below) and a severity 0..2 for emphasis. Lines of the same `group`
  * within `cd` seconds collapse into one (a rig clip and the sim event that sounds at the same moment are one caption).
  */
+
+import { SFX_CAPTIONS, SFX_CAPTION_EVENTS } from '../audio/sfxBank.js'; // the designed SFX's captions (plans/SFX_DESIGN.md)
 
 const TTL = 3.2;
 const MAX_LINES = 3;
@@ -66,7 +68,31 @@ export const RULES = Object.freeze({
   dTick: R('[Ticking]', 'creature', 1, 'dtick', 6),
   dHum: R('[Humming]', 'creature', 1, 'dhum', 8),
   dScrape: R('[Scraping]', 'creature', 2, 'dscrape', 3),
+  dStep: R('[Heavy footfalls]', 'creature', 1, 'dstep', 7),
   dSaw: R('[Sawing]', 'creature', 2, 'dsaw', 2),
+  // the death scenes (sim/deathScene.js): the collapse (a fall) and the devour (the Mason)
+  dthFall: R('[A heavy fall]', 'creature', 2, 'dth', 1),
+  dthRing: R('[Ringing in the ears]', 'creature', 1, 'dthring', 3, 4),
+  dthHeart: R('[A heartbeat, slowing]', 'creature', 1, 'dthheart', 3, 4),
+  dthBreath: R('[A faint breath]', 'creature', 1, 'dthbreath', 3),
+  dthBlow: R('[A crushing blow]', 'creature', 2, 'dth', 1),
+  dthEyes: R('[Something opens its eyes]', 'creature', 2, 'dtheyes', 2),
+  dthBreathe: R('[Slow, wet breathing, very close]', 'creature', 2, 'dthbreathe', 3, 4),
+  dthGape: R('[Jaws stretching wide]', 'creature', 2, 'dthgape', 3),
+  dthLunge: R('[It lunges]', 'creature', 2, 'dthlunge', 1.4),
+  dthBite: R('[A crunch of bone]', 'creature', 2, 'dthbite', 1.4),
+  dthChew: R('[Wet chewing]', 'creature', 2, 'dthchew', 3, 4),
+  dthSwallow: R('[A swallow]', 'creature', 1, 'dthswallow', 3),
+  dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
+  dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
+  dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
+  // the jetpack (sim/jetpack3d.js)
+  windWhoosh: R('[Wind whooshing past]', 'world', 0, 'whoosh', 6),
+  jetOn: R('[Jetpack roaring]', 'creature', 1, 'jet', 2),
+  jetDry: R('[The tank coughs and dies]', 'creature', 1, 'jetdry', 2),
+  jetEmpty: R('[A dry click: no fuel]', 'creature', 1, 'jetempty', 2),
+  jetCan: R('[Fuel sloshing in a can]', 'creature', 0, 'jetcan', 2),
+  jetLow: R('[Two beeps: fuel low]', 'creature', 1, 'jetlow', 4),
   // THE HOLDFAST (sim/holdfast3d.js): the wall's hand
   hfCrack: R('[Knuckles cracking]', 'creature', 1, 'hfcrack', 3),
   hfBreath: R('[A wet breath in the wall]', 'creature', 2, 'hfbreath', 4),
@@ -115,6 +141,7 @@ export const RULES = Object.freeze({
   boltsHold: R('[The bolts below go still]', 'world', 0, 'bolt', 4),
   slip: R('[Rope slipping]', 'player', 1, 'slip', 1.5),
   jolt: R('[Rope snaps taut]', 'player', 1, 'jolt', 1.2),
+  ropeCatch: R('[You gasp]', 'player', 1, 'catch', 2),
   anchorBreak: R('[Anchor breaks]', 'world', 2, 'break', 1),
   gripWeak: R('[Grip failing]', 'player', 1, 'grip', 3),
   gripLost: R('[Grip lost]', 'player', 2, 'grip', 1.5),
@@ -122,6 +149,24 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+});
+
+export const DEATH_BEAT_RULES = Object.freeze({
+  drop: RULES.dthFall,
+  rest: RULES.dthRing,
+  lidsStart: RULES.dthHeart,
+  flutter: RULES.dthBreath,
+  strike: RULES.dthBlow,
+  eyes: RULES.dthEyes,
+  breath: RULES.dthBreathe,
+  gape: RULES.dthGape,
+  lungeStart: RULES.dthLunge,
+  bite: RULES.dthBite,
+  chew: RULES.dthChew,
+  swallow: RULES.dthSwallow,
+  splat: RULES.dthSwarm,
+  lidsShut: RULES.dthSigh,
+  dark: RULES.dthDark,
 });
 
 // ---- colour-safe status cues (settings.colorSafe): a shape and words for what colour alone says elsewhere --------------------
@@ -199,6 +244,22 @@ export function captionForEvent(type, p) {
       return e.fast || (finite(e.distance) && e.distance < 24) ? RULES.dTick : null;
     case 'dresser:hum':
       return !finite(e.distance) || e.distance < 36 ? RULES.dHum : null;
+    case 'dresser:step':
+      return finite(e.distance) && e.distance < 22 ? RULES.dStep : null;
+    case 'death:beat':
+      return DEATH_BEAT_RULES[e.beat] || null;
+    case 'wind:whoosh':
+      return e.strength > 0.8 ? RULES.windWhoosh : null;
+    case 'jetpack:ignite':
+      return RULES.jetOn;
+    case 'jetpack:cut':
+      return e.reason === 'fuel' ? RULES.jetDry : null;
+    case 'jetpack:empty':
+      return RULES.jetEmpty;
+    case 'jetpack:can':
+      return RULES.jetCan;
+    case 'jetpack:low':
+      return RULES.jetLow;
     case 'dresser:measure':
       return RULES.dScrape;
     case 'dresser:saw':
@@ -223,6 +284,8 @@ export function captionForEvent(type, p) {
       return finite(e.intensity) && e.intensity > 0.4 ? RULES.slip : null;
     case 'rope:jolt':
       return finite(e.speed) && e.speed > 8 ? RULES.jolt : null;
+    case 'rope:catch':
+      return RULES.ropeCatch;
     case 'grapple:break':
       return RULES.anchorBreak;
     case 'climb:strain':
@@ -307,7 +370,7 @@ export function captionForEvent(type, p) {
     case 'lane:on':
       return RULES.debris;
     default:
-      return null;
+      return SFX_CAPTIONS[type] || null;
   }
 }
 
@@ -362,6 +425,14 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:step',
   'dresser:tick',
   'dresser:hum',
+  'dresser:step',
+  'death:beat',
+  'wind:whoosh',
+  'jetpack:ignite',
+  'jetpack:cut',
+  'jetpack:empty',
+  'jetpack:can',
+  'jetpack:low',
   'dresser:measure',
   'dresser:saw',
   'holdfast:twitch',
@@ -375,6 +446,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'platform:crumble',
   'rope:slip',
   'rope:jolt',
+  'rope:catch',
   'grapple:break',
   'climb:strain',
   'climb:slip',
@@ -400,6 +472,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'arena:pause',
   'health:damage',
   'pickup:collect',
+  ...SFX_CAPTION_EVENTS,
 ]);
 
 /** Direction sector names (0 = straight ahead, clockwise). */

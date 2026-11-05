@@ -137,3 +137,11 @@ v2 still costs **one call per eye** (the ±2-call differences between runs are t
 `?dresser=off` (no sim, no view), `?dresser=always` (no health gate: captures, tests), `?dresser=on` (default). `?hunt=always` (the
 Mason ungated: the e2e and the capture tools) leaves the Dresser out unless a `dresser=` flag asks for it. The verify harness and the
 route bots never build it, so `npm run verify:at3d` and the lightmap / GI hashes are untouched (section creature config is not hashed).
+
+## v3: scarier, fully detailed, high LOD at distance (owner: "so poorly detailed, looks so low poly when seen from a bit of distance ... fully detailed and make his LOD high ... more threatening and powerful")
+
+`assets/models/dresser.glb` was rebuilt (`build_dresser.py`, `previews/dresser_sheet.png`): **LOD0 47.7 k / LOD1 17.7 k / LOD2 6.5 k triangles** (v2: 22.6 k / 7.6 k / 2.2 k), 2.29 MB with meshopt + 1024 px KTX2 (still a lazy precache item). Heavier hood with an iron crown of forged points, a hunched lean, a riveted collar, three-plate pauldrons with spikes, 20 % thicker arms, longer toothed blades with hooked tips, a belt hung with a saw, spikes, chains and three cracked porcelain faces, 12 plumb-weights in the hem, a tighter grimace on the mask with iron staples and nails, rust, chalk tallies.
+
+Distances (`render/dresserView.js LOD_DIST`, camera to chest): **desktop 48 m / 90 m** (was 12 m: the switch the owner saw), **low 5 / 18 m**, **Quest 3 / 34 m**. Quest keeps LOD1 (17.7 k, as rich as v2's LOD0) as its working level out to 34 m and the 47.7 k LOD0 only within 3 m: LOD0 costs 95 k stereo triangles, which on top of a section's 218-302 k would break the 350 k budget (`BUDGET_CH1.md`). LOD2 (6.5 k) stays a smooth silhouette (the mask, the crown, the spikes) out to the glints at `GLOW_DIST` (110 m). The eyes turn ember red while it measures or cuts, each step is a heavy footfall (`dresser:step`: a thud, a caption).
+
+Not measured on a headset. The deep red of the eye slits is painted in the albedo and shows only at close range.

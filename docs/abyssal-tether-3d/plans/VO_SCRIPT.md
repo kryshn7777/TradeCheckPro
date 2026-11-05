@@ -7,8 +7,8 @@ pipeline is built so that recordings drop in **with no code change**.
 
 | | |
 |---|---|
-| Roles | 4 speaking roles: ODESSA, TICK, MAREN, VESPER (the UPLINK "voice" is synthesised breathing: no actor) |
-| Lines | 50 live lines + 11 specified story-bible lines not yet in the game (record them in the same session) = 61 |
+| Roles | 5 speaking roles: ODESSA, TICK, MAREN, VESPER and ELIAS (the player's own voice); the UPLINK "voice" is synthesised breathing: no actor |
+| Lines | 62 live Chapter I lines + 5 Chapter II radio lines + 11 specified story-bible lines not yet in the game (record them in the same session) = 78 |
 | Finished audio | about 2.5 minutes (lines are 1-6 s; most 2-4 s) |
 | Session estimate | about 1 hour per actor for 3 takes of each line, plus pickups |
 | Source of truth | the line text is the game's subtitle (`public/abyssal-tether-3d/src/sim/comms3d.js`); direction lives in `tools/abyssal-tether-3d/voice/direction.mjs`; the machine-readable table is `tools/abyssal-tether-3d/voice/lines.csv` |
@@ -73,26 +73,35 @@ Lines without a recording keep the AI placeholder (or, with `--no-ai`, the synth
 
 ## 5. The AI placeholder (what ships today)
 
-| Speaker | Kokoro voice | Language | Base pace |
-|---|---|---|---|
-| ODESSA | af_heart | American English | 0.95 |
-| TICK | am_puck | American English | 1.10 |
-| MAREN | bf_emma | British English | 0.92 |
-| VESPER | bm_george | British English | 1.00 |
+| Speaker | Kokoro voice blend (style tensors mixed by weight) | Language | Base speed | Pitch | Always-on fx |
+|---|---|---|---|---|---|
+| ODESSA | af_heart 0.65 + af_nicole 0.25 + af_kore 0.10 | American English | 0.94 | -0.3 st | |
+| TICK | am_puck 0.70 + am_fenrir 0.30 | American English | 1.08 | | |
+| MAREN | bf_emma 0.70 + bf_isabella 0.30 | British English | 0.93 | -0.6 st | |
+| VESPER | bm_george 0.70 + bm_daniel 0.30 | British English | 1.00 | | (never a breath) |
+| ELIAS | am_michael 0.70 + am_onyx 0.30 | American English | 0.94 | -0.5 st | close (proximity) |
 
-- **Engine:** Kokoro-82M v1.0, the onnx-community q8 ONNX export (`model_quantized.onnx`, SHA-256 `fbae9257...a1478`, the same
-  hash 150+ independent projects pin), run on CPU by `kokoro-onnx` 0.6.1 with espeak-ng phonemes. The weights reach the build
-  machine through npm (`kokoro-q8-shards@1.0.0`, re-joined and hash-checked) and the voice style tensors from the official
-  `kokoro-js@1.2.1` package (hash-checked), because huggingface.co and GitHub releases were not reachable from the build
-  container. `build_voices.py --fetch` repeats this.
+- **Engine:** Kokoro-82M v1.0 at **full precision**: the onnx-community fp32 ONNX export (`onnx/model.onnx`, 325,532,232 bytes,
+  SHA-256 `8fbea51e...21a34cb`, pinned to repository revision `1939ad2a`), replacing the q8 quantisation (`model_quantized.onnx`,
+  `fbae9257...a1478`) the first placeholders used. Run on CPU by `kokoro-onnx` 0.6.1 (onnxruntime, a fixed thread count) with
+  espeak-ng phonemes. `build_voices.py --fetch` downloads the model and the 11 official voice style tensors the cast blends from,
+  from huggingface.co at that revision, and refuses any file whose SHA-256 differs (the table is `ENGINE` / `VOICE_SHA256` in
+  `build_voices.py`); they live in `tools/abyssal-tether-3d/voice/.cache/kokoro-fp32/` (git-ignored, ~331 MB).
 - **Licence:** Apache-2.0 (model and voices). Commercial use is permitted; we credit it. The generated clips contain no third-party
   recording. espeak-ng (GPL-3.0) and PocketSphinx (BSD-2) are build-time tools only and are not shipped.
-- **Direction:** the AI cannot act. It gets the speaker's base pace, a per-line pace and a small pitch drift (the `ai_pace` and
-  `ai_pitch` columns) and the punctuation; everything in the Direction column is for humans.
+- **Direction (the AI now acts):** `tools/abyssal-tether-3d/voice/performance.json` performs every line: the story moment, the
+  emotion and register, a line speed and pitch, and the take itself, phrase by phrase: each phrase synthesised on its own (its own
+  speed and pitch, stressed words forced to primary stress in the phonemes and lifted 2 dB) and joined with measured silences;
+  false starts cut from the speech itself; synthesised breaths, exhales and half-laughs; trailing off; per-line fx (close,
+  breathy, hushed, off mic). A line too long for its Max s gives its pauses first, then its pace (<= 1.16x). The word timing is
+  aligned phrase by phrase. The per-line table, the cast choices and what was measured: `VO_DIRECTION.md`. The `ai_pace` /
+  `ai_pitch` columns of `lines.csv` echo the line speed and pitch from it; the Direction column stays the actors' brief.
+- **Clips:** Ogg Opus mono 24 kHz at 32 kb/s (was 24 kb/s: the breaths and the dry in-suit voice keep their air), -23 LUFS each,
+  peaks under -1 dBFS; about 0.9 MB for the 67 clips (budget 2.5 MB).
 - **Measured, not heard:** nobody has listened to these clips during the build (there was no listener in the build session).
-  They were checked by machine: every clip -23 LUFS +-0.5, peaks under -1 dBFS, all 50 word-aligned, total 0.4 MB, and a
-  generic speech recogniser (PocketSphinx, its default news language model) recovered about 58 % of the words. That is a weak
-  recogniser, not a perception test. **Listen to them before any release.**
+  They were checked by machine: loudness and peaks, every clip word-aligned, the pauses measured in the audio, and a generic
+  speech recogniser (PocketSphinx, its default news language model) as a rough intelligibility check (see VO_DIRECTION.md).
+  That is a weak recogniser, not a perception test. **Listen to them before any release.**
 - **Disclosure:** while any AI clip ships, the About credits (page and VR panel) and the store listing say the radio voices are
   AI-generated placeholders, not actors (RELEASE.md §18.0 item 10).
 
@@ -205,6 +214,16 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 | Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
 |---|---|---|---|---|---|---|
 | `s4-echo` | S4 | reaching 124 m in S4 | **[Your breathing comes back on the channel. Two seconds late.]** *(echo)* | NO ACTOR. The channel plays the player's breathing back two seconds late; the game synthesises it. | 5.3 |  |
+
+#### CHAPTER II · LAMPHOLD (5 lines; data/chapter2-text.js radio, said by chapter2Glue.js radioScript)
+
+| Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |
+|---|---|---|---|---|---|---|
+| `c2-open` | II-S1 | entering II-1 (+2.5 s) | **ODESSA: Five bars, Elias. Down here. The lamps are carrying us.** | Relief and a little wonder: five bars, this deep. "Down here." is almost to herself. Warmer than Chapter I, still controlled. | 5.3 |  |
+| `c2-bell` | II-S5 | the Usher answers a toll (II-9, the second answer) | **TICK: Something answered the bell. Wren, it answered the bell.** | The jokes are gone. Fast, breath caught; the repeat climbs and stresses "bell". Not a scream. | 5 |  |
+| `c2-rule` | II-S5 | 1 s after c2-bell | **MAREN: Not your footsteps. Not you. The bell.** | Cold, exact: she has worked out the rule. Three short sentences, a beat between; "The bell." lower and slower. | 4.2 |  |
+| `c2-bars` | II-S6 | entering II-12 (+3 s) | **ODESSA: Bars are dropping, Elias. Lamps are going out.** | Calm under pressure: reporting, not alarming. A touch quicker than her usual. | 4.6 |  |
+| `c2-orderly` | II-S6 | the Round begins (II-12, phase A) | **MAREN: That isn't the Mason. That's orderly.** | Hushed realisation. A beat before "That's orderly."; the word is the chill. | 3.8 |  |
 
 #### Specified, not in the game yet (DARK_STORY_BIBLE.md §4.3: 11 lines; record them in the same session)
 

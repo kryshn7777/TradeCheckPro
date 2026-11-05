@@ -233,7 +233,7 @@ export class FallCue {
       ph.lethal = diff && diff.lethalImpact > 0 ? diff.lethalImpact : 17;
       pickFallBlocks(level, head.x, head.y, head.z, player.vx || 0, player.vy || 0, player.vz || 0, ph, this.picked);
       this.stats.picks++;
-      this._write(head);
+      this._write();
     }
     this.mesh.visible = this.mesh.count > 0 && this._shown > 0.01;
     this.material.uniforms.uAlpha.value = this._shown;
@@ -242,7 +242,7 @@ export class FallCue {
     if (this.mesh.visible) this._fadeNear(head);
   }
 
-  _write(head) {
+  _write() {
     const list = this.picked;
     const mesh = this.mesh;
     let n = 0;

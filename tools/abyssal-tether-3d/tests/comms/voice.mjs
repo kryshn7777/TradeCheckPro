@@ -35,6 +35,8 @@ const MOCK_URL = pathToFileURL(path.join(TOOLS_DIR, 'tests/audio/mockaudio.mjs')
 const CM = await import(srcUrl('sim/comms3d.js'));
 const C = await import(srcUrl('sim/config3d.js'));
 const { COMMS_SCRIPT, CommsDirector, holdTime, speakTime, voiceHold, voiceStuck, VOICE_LEAD, VOICE_TAIL, NOTQUITE_RATE, STUCK_MAX } = CM;
+// Chapter II's radio (data/chapter2-text.js radio, said by chapter2Glue.js radioScript): its clips share the bank, by id
+const C2_RADIO = (await import(srcUrl('data/chapter2-text.js'))).CHAPTER2_TEXT.radio;
 const manifest = JSON.parse(fs.readFileSync(path.join(VOICE, 'manifest.json'), 'utf8'));
 const L = manifest.lines;
 const fnv = (s) => {
@@ -72,8 +74,10 @@ const byCsv = Object.fromEntries(csvRows.map((r) => [r.id, r]));
   const ids = new Set(COMMS_SCRIPT.map((l) => l.id));
   const missing = COMMS_SCRIPT.filter((l) => !L[l.id] && !(manifest.fallback && typeof manifest.fallback[l.id] === 'string' && manifest.fallback[l.id].length > 10)).map((l) => l.id);
   ok(!missing.length, `every script line has a clip or a documented fallback (${Object.keys(L).length} clips, ${Object.keys(manifest.fallback || {}).length} fallback: ${Object.keys(manifest.fallback || {}).join(', ')})` + (missing.length ? ': missing ' + missing.join(', ') : ''));
-  const strays = Object.keys(L).filter((id) => !ids.has(id));
-  ok(!strays.length, 'no clip for a line that is not in the script' + (strays.length ? ': ' + strays.join(', ') : ''));
+  const strays = Object.keys(L).filter((id) => !ids.has(id) && !C2_RADIO.some((r) => r.id === id));
+  ok(!strays.length, 'no clip for a line that is not in the script (Chapter I, or Chapter II\'s radio)' + (strays.length ? ': ' + strays.join(', ') : ''));
+  const c2stale = C2_RADIO.filter((r) => L[r.id] && L[r.id].h !== fnv(r.text)).map((r) => r.id);
+  ok(!c2stale.length, `Chapter II's radio clips were made from its current text (${C2_RADIO.filter((r) => L[r.id]).length} of ${C2_RADIO.length} voiced)` + (c2stale.length ? ': stale ' + c2stale.join(', ') : ''));
   const voiced = COMMS_SCRIPT.filter((l) => l.speaker !== 'UPLINK' && l.kind !== 'echo');
   ok(voiced.every((l) => L[l.id]), `every spoken line (${voiced.length}: Odessa, Tick, Maren, Vesper) has a clip; only the UPLINK echo falls back`);
   const stale = COMMS_SCRIPT.filter((l) => L[l.id] && L[l.id].h !== fnv(l.text)).map((l) => l.id);
@@ -94,7 +98,7 @@ const byCsv = Object.fromEntries(csvRows.map((r) => [r.id, r]));
     else if (b[oh + 9] !== 1 || b.readUInt32LE(oh + 12) !== 24000) bad.push(`${id}: not mono 24 kHz`);
     if (e.bytes !== b.length) bad.push(`${id}: manifest bytes ${e.bytes} != ${b.length}`);
     if (!/^(odessa|tick|maren|vesper|elias)\/[a-z0-9-]+\.ogg$/.test(e.f) || !e.f.endsWith(`/${id}.ogg`)) bad.push(`${id}: path ${e.f}`);
-    const line = COMMS_SCRIPT.find((l) => l.id === id);
+    const line = COMMS_SCRIPT.find((l) => l.id === id) || C2_RADIO.find((l) => l.id === id);
     if (line && e.f.split('/')[0] !== line.speaker.toLowerCase()) bad.push(`${id}: speaker folder`);
     if (!(e.d > 0.3 && e.d <= 6.5)) bad.push(`${id}: duration ${e.d}`);
     const max = byCsv[id] ? +byCsv[id].max_s : 6;

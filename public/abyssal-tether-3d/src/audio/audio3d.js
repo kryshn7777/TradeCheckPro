@@ -59,6 +59,11 @@ import { Movement } from './movement3d.js';
 import { CreatureSync } from './creatureSync3d.js';
 import { Radio } from './radio3d.js';
 import { LAMPHOLD_SFX, LAMPHOLD_EVENTS } from './lampholdSfx.js'; // CHAPTER II's sounds (the Usher, the Evening, the Mere), mixed in below
+import { SfxEngine, SeqRng } from './sfxDesign.js'; // the designed SFX (plans/SFX_DESIGN.md): recipes in sfxBank.js
+import { SFX_BANK } from './sfxBank.js';
+
+/** Every jitter in this module is drawn from this seeded stream, never Math.random ("no random sounds": SFX_DESIGN.md §4). */
+const SEQ = new SeqRng(0x1a7e);
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {
@@ -181,7 +186,7 @@ function num(v, fallback) {
   return typeof v === 'number' && isFinite(v) ? v : fallback;
 }
 function rand(a, b) {
-  return a + Math.random() * (b - a);
+  return a + SEQ.next() * (b - a);
 }
 
 /**
@@ -211,7 +216,7 @@ function makeNoise(ctx, seconds, kind) {
   let b2 = 0;
   let last = 0;
   for (let i = 0; i < len; i++) {
-    const w = Math.random() * 2 - 1;
+    const w = SEQ.next() * 2 - 1;
     if (kind === 'pink') {
       // Paul Kellet's economy pink filter.
       b0 = 0.99765 * b0 + w * 0.099046;
@@ -353,6 +358,8 @@ export class AudioManager3D {
     this._polledVolume = this._volume; // last settings.volume seen (so direct setVolume() calls are not overridden)
     this._pauseFlag = false;
     this._dead = false;
+    this._jetV = null; // the jetpack's roar voice while it burns
+    this._jetG = null;
     this._victory = false;
     this._hushUntil = 0;
     this._rest = 0; // 1 while the player hides in a Masons' rest (LEVEL_FUN_PLAN P5)
@@ -446,6 +453,9 @@ export class AudioManager3D {
 
     if (!this.enabled) return;
     this._subscribe();
+    this._sfx = new SfxEngine(this, SFX_BANK); // the designed SFX: its own bus routes + the legacy handlers' _sfxTake hooks
+    this._sfx.attach(bus);
+    this._steps = 0; // designed footfalls played
     this._bindDom(W);
   }
 
@@ -816,7 +826,7 @@ export class AudioManager3D {
 
     for (let i = 0; i < this._loops.length; i++) {
       const s = this._loops[i];
-      if (s.buffer) s.start(now, Math.random() * (s.buffer.duration - 0.05));
+      if (s.buffer) s.start(now, SEQ.next() * (s.buffer.duration - 0.05));
       else s.start(now);
     }
     this._built = true;
@@ -1100,6 +1110,21 @@ export class AudioManager3D {
     this.kWindFL = this._knob(wl.frequency, 500, 2, 0.01);
     this.kWindFR = this._knob(wr.frequency, 560, 2, 0.01);
 
+    // WATER (sim/waterPlan.js via game.waterNear): the nearest fall / stream: a hiss of white noise over a rumble of pink, panned toward it
+    const wtf = this._filter('bandpass', 1700, 0.45);
+    const wtl = this._filter('lowpass', 420, 0.7);
+    const wtg = this._gainNode(0);
+    const wtp = this._makePanner(0);
+    whiteA.connect(wtf);
+    wtf.connect(wtg);
+    pinkA.connect(wtl);
+    wtl.connect(wtg);
+    wtg.connect(wtp);
+    wtp.connect(amb);
+    this.kWaterG = this._knob(wtg.gain, 0, 0.003);
+    this.kWaterF = this._knob(wtf.frequency, 1700, 3, 0.01);
+    this.kWaterPan = this._panKnob(wtp, 0);
+
     // Whistle through the masonry: very narrow band of white noise, drifting.
     const wh = this._filter('bandpass', 1100, 16);
     const whg = this._gainNode(0);
@@ -1333,6 +1358,7 @@ export class AudioManager3D {
     this._state = state;
     this._game = game || null;
     this._hookXR(game);
+    this._sfx.update(dt, game);
     const running = this._live();
 
     // Follow the live settings object (volume slider) without needing an event.
@@ -1545,11 +1571,22 @@ export class AudioManager3D {
     // gust itself): the existing bed, no new voice. Objectives3D.squallNow is 0 when the squalls are switched off.
     const sqn = game && game.objectives ? game.objectives.squallNow : null;
     const sq = sqn && playing ? Math.min(1, Math.max(num(sqn.k, 0), 0.6 * num(sqn.rise, 0))) : 0;
-    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq);
+    // a VISTA (sim/vistaWind.js: a big open place, the S4 catwalk): the bed swells with the place and again with each whoosh that passes
+    const vista = game && game.vista && playing ? game.vista : null;
+    const vk = vista ? vista.k : 0;
+    const vg = vista ? vista.gust : 0;
+    const windLvl = sec.windLvl * (1 + 0.8 * speedK) * (1 + 0.25 * tv) * (1 + 0.22 * this._shaftBreath) * (1 + 1.8 * sq) * (1 + 0.9 * vk + 1.1 * vg);
+    // the water bed: silent unless a fall / stream is near
+    const wn = game && game.waterNear && playing ? game.waterNear : null;
+    if (wn) {
+      this.kWaterG.set(0.34 * wn.k * (0.85 + 0.3 * gustL), now, 0.4);
+      this.kWaterF.set(1100 + 1400 * wn.bright, now, 0.5);
+      this.kWaterPan.set(wn.pan, now, 0.3);
+    } else this.kWaterG.set(0, now, 0.6);
     this.kWindGL.set(windLvl * gustL, now, 0.35);
     this.kWindGR.set(windLvl * gustR, now, 0.35);
-    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq), now, 0.4);
-    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq), now, 0.4);
+    this.kWindFL.set(sec.wind * (0.8 + 0.45 * gustL + 0.6 * speedK + 0.7 * sq + 0.5 * vk + 0.8 * vg), now, 0.4);
+    this.kWindFR.set(sec.wind * (0.85 + 0.45 * gustR + 0.6 * speedK + 0.7 * sq + 0.5 * vk + 0.8 * vg), now, 0.4);
     const wh = U.noise1(c * 0.06, 11);
     this.kWhG.set(Math.max(wh > 0 ? sec.whistle * wh * wh * 1.8 : 0, sec.whistle * 2.6 * sq), now, 0.5);
     this.kWhF.set(sec.wFreq * (1 + 0.12 * U.noise1(c * 0.05, 17)), now, 0.6);
@@ -1654,8 +1691,10 @@ export class AudioManager3D {
       this._stride += hspeed * dtc;
       if (this._stride > STRIDE) {
         this._stride = 0;
-        if (this._mov && !this._mov.broken) this._mov.footstep(U.clamp(hspeed / 5.5, 0.3, 1), game);
-        else this._sfxFootstep(U.clamp(hspeed / 5.5, 0.3, 1));
+        const stepK = U.clamp(hspeed / 5.5, 0.3, 1);
+        if (this._sfx.takeK('step', stepK)) this._steps++; // the designed footfall by surface (sfxBank.js step.*)
+        else if (this._mov && !this._mov.broken) this._mov.footstep(stepK, game);
+        else this._sfxFootstep(stepK);
       }
     } else {
       this._stride = STRIDE * 0.65; // the first step lands soon after starting to run
@@ -1950,7 +1989,7 @@ export class AudioManager3D {
 
   /** A random point in the space around the listener (ambient decoration) → this._pos. */
   _around(minD, maxD, ySpread) {
-    const a = Math.random() * Math.PI * 2;
+    const a = SEQ.next() * Math.PI * 2;
     const r = rand(minD, maxD);
     const q = this._pos;
     q.x = this._lx + Math.cos(a) * r;
@@ -2167,7 +2206,7 @@ export class AudioManager3D {
     s.buffer = buf;
     s.loop = true;
     if (rate && rate !== 1) s.playbackRate.value = rate;
-    s.start(t, Math.random() * (buf.duration - 0.05));
+    s.start(t, SEQ.next() * (buf.duration - 0.05));
     v.nodes.push(s);
     v.sources.push(s);
     return s;
@@ -2275,6 +2314,14 @@ export class AudioManager3D {
       'nv:off': this._onNvOff,
       'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
+      'death:beat': this._onDeathBeat,
+      'wind:whoosh': this._onWindWhoosh,
+      // the jetpack (sim/jetpack3d.js)
+      'jetpack:ignite': this._onJetIgnite,
+      'jetpack:cut': this._onJetCut,
+      'jetpack:empty': this._onJetEmpty,
+      'jetpack:can': this._onJetCan,
+      'jetpack:low': this._onJetLow,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
       'trigger:rumble': this._onRumble,
@@ -2301,6 +2348,7 @@ export class AudioManager3D {
       'dresser:saw': this._onDresserSaw,
       'dresser:stagger': this._onDresserStagger,
       'dresser:spoiled': this._onDresserSpoiled,
+      'dresser:step': this._onDresserStep,
       // THE HOLDFAST (sim/holdfast3d.js): knuckle cracks, a wet inhale, the stone grinding as it closes, the hum while it holds you
       'holdfast:inhale': this._onHoldfastInhale,
       'holdfast:breath': this._onHoldfastBreath,
@@ -2481,8 +2529,23 @@ export class AudioManager3D {
     }
   }
 
-  _onUiClick() {
-    this._sfxClick();
+  _onUiClick(p) {
+    if (!this._sfxTake('ui:click', p)) this._sfxClick();
+  }
+
+  /** The designed recipe for `type` (sfxBank.js HOOKS) plays instead of the legacy synth below; false = play the legacy one. */
+  _sfxTake(type, p) {
+    return !!this._sfx && this._sfx.take(type, p);
+  }
+
+  /** Extension point (SFX_DESIGN.md §6): adds a designed recipe, e.g. registerSfx('roach.skitter', {...}). */
+  registerSfx(id, recipe) {
+    return this._sfx ? this._sfx.registerSfx(id, recipe) : null;
+  }
+
+  /** Extension point: routes one more bus event to the designed SFX (fn(payload, engine) calls engine.play). */
+  registerSfxRoute(type, fn) {
+    if (this._sfx) this._sfx.registerRoute(type, fn);
   }
 
   _onXRStart() {
@@ -2499,8 +2562,8 @@ export class AudioManager3D {
     if (p.first) this._sfxSectionShift();
   }
 
-  _onCheckpoint() {
-    this._sfxCheckpoint();
+  _onCheckpoint(p) {
+    if (!this._sfxTake('checkpoint', p)) this._sfxCheckpoint();
   }
 
   // ---- player (payloads carry z and hand; speeds in m/s, distances in metres) ----------
@@ -2517,12 +2580,12 @@ export class AudioManager3D {
     // chuff already played at the fire; only an attach with no shot before it (the debug API) plays them now.
     if (now - this._lastFireAt > 0.9) this._sfxFire(p);
     this._sfxCatch(p, heavy, 0.012);
-    this._sfxAttach(p, heavy, 0.012);
+    if (!this._sfxTake('grapple:attach', p)) this._sfxAttach(p, heavy, 0.012);
     if (p.previous || p.chained) this._sfxRelease(0.6, p.hand);
   }
 
   _onMiss(p) {
-    this._sfxMiss(p);
+    if (!this._sfxTake('grapple:miss', p)) this._sfxMiss(p);
   }
 
   _onRelease(p) {
@@ -2532,7 +2595,7 @@ export class AudioManager3D {
 
   _onBreak(p) {
     this._exertion = Math.min(1, this._exertion + 0.15);
-    this._sfxBreak(p, 1);
+    if (!this._sfxTake('grapple:break', p)) this._sfxBreak(p, 1);
   }
 
   _onCrumble(p) {
@@ -2541,7 +2604,7 @@ export class AudioManager3D {
 
   _onJolt(p) {
     this._exertion = Math.min(1, this._exertion + 0.12);
-    this._sfxJolt(p);
+    if (!this._sfxTake('rope:jolt', p)) this._sfxJolt(p);
   }
 
   _onJump() {
@@ -2557,7 +2620,7 @@ export class AudioManager3D {
       const lethal = Math.max(5, num(this._game && this._game.diff && this._game.diff.lethalImpact, 17));
       ratio = num(p.impact, 0) / lethal;
     }
-    this._sfxLand(ratio, !!p.hard);
+    if (!this._sfxTake('player:land', p)) this._sfxLand(ratio, !!p.hard);
   }
 
   _onWallHit(p) {
@@ -2569,7 +2632,7 @@ export class AudioManager3D {
 
   _onClimbGrab(p) {
     this._exertion = Math.min(1, this._exertion + 0.025);
-    this._sfxGrip(p);
+    if (!this._sfxTake('climb:grab', p)) this._sfxGrip(p);
   }
 
   _onClimbRelease(p) {
@@ -2601,7 +2664,7 @@ export class AudioManager3D {
   // ---- the bag (WP-BAG): pickup chime, bandage rustle, injector hiss, battery click, first-aid ratchet, low-battery warning ----
 
   _onPickup(p) {
-    this._sfxPickup(num(p.kind, 1));
+    if (!this._sfxTake('pickup:collect', p)) this._sfxPickup(num(p.kind, 1));
   }
 
   _onBagApply(p) {
@@ -2615,7 +2678,7 @@ export class AudioManager3D {
 
   _onBagDone(p) {
     this._stopBagVoice();
-    this._sfxBagDone(num(p.kind, 1));
+    if (!this._sfxTake('bag:done', p)) this._sfxBagDone(num(p.kind, 1));
   }
 
   _onBagRefuse() {
@@ -2626,12 +2689,12 @@ export class AudioManager3D {
     if (p && p.on === false) this._sfxBoostEnd();
   }
 
-  _onLanternLow() {
-    this._sfxLanternWarn(false);
+  _onLanternLow(p) {
+    if (!this._sfxTake('lantern:low', p)) this._sfxLanternWarn(false);
   }
 
-  _onLanternEmpty() {
-    this._sfxLanternWarn(true);
+  _onLanternEmpty(p) {
+    if (!this._sfxTake('lantern:empty', p)) this._sfxLanternWarn(true);
   }
 
   /** The opening story: a soft page turn, a low swell when the record darkens, a burst of static and a drop when it is torn off. */
@@ -2671,7 +2734,7 @@ export class AudioManager3D {
   _onHealthDamage(p) {
     const a = U.clamp(num(p.amount, 0.1), 0, 1);
     this._exertion = Math.min(1, this._exertion + 0.15 + 0.4 * a);
-    this._sfxHurt(a);
+    if (!this._sfxTake('health:damage', p)) this._sfxHurt(a);
     if (a >= 0.25) {
       this._hitT = Math.max(this._hitT, 0.6 + 1.6 * a);
       this._sfxRing(a);
@@ -2682,9 +2745,468 @@ export class AudioManager3D {
     this._rest = 0;
     const now = this.ctx.currentTime;
     this._dead = true;
+    if (this._jetV) this._jetEnd(0.05);
     this.kMuffle.force(480, now, 0.12);
     this._silenceEnvelopes(now);
     this._sfxDeath(p.cause);
+  }
+
+  // ---- the death scenes (sim/deathScene.js): one sound per beat; head-locked on the stinger bus (not behind the death muffle) ----
+
+  /** A noise burst through a filter with a percussive envelope. */
+  _dNoise(v, buf, t, type, freq, q, peak, atk, tc, rate) {
+    const n = this._vNoise(v, buf, t, rate || 1);
+    const f = this._vFilter(v, type, freq, q);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, peak, atk, tc);
+    n.connect(f);
+    f.connect(g);
+    g.connect(v.out);
+    return f;
+  }
+
+  /** A swept tone with a percussive envelope. */
+  _dTone(v, t, type, f0, f1, sweep, peak, atk, tc) {
+    const o = this._vOsc(v, type, f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + sweep);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, peak, atk, tc);
+    o.connect(g);
+    g.connect(v.out);
+    return o;
+  }
+
+  _onDeathBeat(p) {
+    const beat = p && p.beat;
+    const bus = this.busStinger;
+    switch (beat) {
+      case 'drop': {
+        // the body hits the floor: a dull thud, the gear rattling, the breath going out of you
+        const v = this._begin('dthud', 3, 0.3, 1.4, bus, 0.8, 0, 0.2, 1400);
+        if (!v) return;
+        const t = v.t0 + 0.05;
+        this._dTone(v, t, 'sine', 95, 42, 0.25, 0.9, 0.004, 0.16);
+        this._dNoise(v, this._white, t, 'bandpass', 2600, 1.4, 0.4, 0.002, 0.07, 1.2);
+        this._dNoise(v, this._brown, t, 'lowpass', 500, 0.5, 0.55, 0.01, 0.3);
+        this._dNoise(v, this._pink, t + 0.22, 'bandpass', 900, 0.9, 0.22, 0.12, 0.35, 0.8); // the air leaving the chest
+        this._commit(v);
+        break;
+      }
+      case 'rest': {
+        // ears ringing: a thin, high pair of tones beating against each other, swelling, then caught by the lids
+        const v = this._begin('dring', 2, 1, 3.6, bus, 0.18, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        for (const f of [3180, 3205]) {
+          const o = this._vOsc(v, 'sine', f, t);
+          const g = this._vGain(v, 0);
+          this._swell(g.gain, t, 0.5, 0.9, 1.4, 0.7);
+          o.connect(g);
+          g.connect(v.out);
+        }
+        this._commit(v);
+        break;
+      }
+      case 'lidsStart': {
+        // the heart, slowing: pairs of low thumps, further apart each time
+        const v = this._begin('dheart', 2, 1, 4.2, bus, 0.85, 0, 0.1, 500);
+        if (!v) return;
+        const t = v.t0;
+        let at = 0.05;
+        let gap = 0.78;
+        for (let i = 0; i < 4; i++) {
+          this._dTone(v, t + at, 'sine', 62, 40, 0.14, 0.75 - 0.12 * i, 0.004, 0.09);
+          this._dTone(v, t + at + 0.2, 'sine', 54, 36, 0.14, 0.5 - 0.1 * i, 0.004, 0.08);
+          at += gap;
+          gap *= 1.32;
+        }
+        this._commit(v);
+        break;
+      }
+      case 'flutter': {
+        // the eyes try to open: one small, wet breath in
+        const v = this._begin('dgasp', 2, 1, 1.2, bus, 0.45, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._pink, t, 1);
+        const bp = this._vFilter(v, 'bandpass', 600, 1.1);
+        bp.frequency.exponentialRampToValueAtTime(1500, t + 0.45);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 0.35, 0.06, 0.12);
+        n.connect(bp);
+        bp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'lidsShut': {
+        // the last of it: a long, low breath out and the ring falling away
+        const v = this._begin('dsigh', 2, 1, 2.6, bus, 0.6, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._brown, t, 1);
+        const lp = this._vFilter(v, 'lowpass', 700, 0.4);
+        lp.frequency.exponentialRampToValueAtTime(120, t + 1.8);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.6, 0.15, 0.5, 0.5);
+        n.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._dTone(v, t, 'sine', 3180, 900, 1.6, 0.06, 0.01, 0.5);
+        this._commit(v);
+        break;
+      }
+      case 'strike': {
+        // thrown down: the whole body going out (the strike's own sound already played)
+        const v = this._begin('dstrike', 3, 0.5, 1.8, bus, 0.9, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 70, 26, 0.6, 1.0, 0.004, 0.28);
+        this._dNoise(v, this._brown, t, 'lowpass', 400, 0.5, 0.7, 0.004, 0.35);
+        this._dNoise(v, this._white, t, 'bandpass', 1800, 0.9, 0.35, 0.002, 0.05, 1.1);
+        this._commit(v);
+        break;
+      }
+      case 'dark': {
+        // the world goes out: a low pressure that builds under everything, held until the bite
+        const v = this._begin('ddrone', 2, 1, 4.6, bus, 0.55, 0, 0.25, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 34, t);
+        o.frequency.exponentialRampToValueAtTime(48, t + 4);
+        const lp = this._vFilter(v, 'lowpass', 90, 0.8);
+        lp.frequency.exponentialRampToValueAtTime(260, t + 4);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.8, 3.2, 0.5, 0.35);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'eyes': {
+        // two red lights come on: a thin, wrong, glassy interval, and the dry tick of the lids of the thing
+        const v = this._begin('deyes', 3, 1, 1.8, bus, 0.35, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 1900, 1900, 0, 0.5, 0.01, 0.5);
+        this._dTone(v, t + 0.12, 'sine', 2011, 2011, 0, 0.4, 0.01, 0.45);
+        this._dNoise(v, this._white, t, 'bandpass', 4200, 4, 0.25, 0.001, 0.02, 1.5);
+        this._dNoise(v, this._white, t + 0.31, 'bandpass', 4200, 4, 0.2, 0.001, 0.02, 1.5);
+        this._commit(v);
+        break;
+      }
+      case 'breath': {
+        // it breathes over you: a slow, rasping in-and-out, a hum under it, wet mandible clicks
+        const v = this._begin('dbreath', 3, 1, 5.4, bus, 0.8, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._pink, t, 0.8);
+        const bp = this._vFilter(v, 'bandpass', 300, 1.3);
+        const g = this._vGain(v, 0);
+        // three breaths, each in (rising) then out (falling), the cycle getting shorter as it comes
+        let at = 0;
+        let cyc = 1.9;
+        for (let i = 0; i < 3; i++) {
+          g.gain.setValueAtTime(0, t + at);
+          g.gain.linearRampToValueAtTime(0.55, t + at + cyc * 0.4);
+          g.gain.linearRampToValueAtTime(0.0, t + at + cyc * 0.95);
+          bp.frequency.setValueAtTime(260, t + at);
+          bp.frequency.linearRampToValueAtTime(520, t + at + cyc * 0.4);
+          bp.frequency.linearRampToValueAtTime(200, t + at + cyc * 0.95);
+          at += cyc;
+          cyc *= 0.88;
+        }
+        n.connect(bp);
+        bp.connect(g);
+        g.connect(v.out);
+        const h = this._vOsc(v, 'sawtooth', 52, t);
+        const hl = this._vFilter(v, 'lowpass', 160, 0.7);
+        const hg = this._vGain(v, 0);
+        this._swell(hg.gain, t, 0.35, 2.4, 1.6, 0.8);
+        h.connect(hl);
+        hl.connect(hg);
+        hg.connect(v.out);
+        // the mandibles, tapping: irregular dry clicks
+        for (let i = 0; i < 9; i++) {
+          const ct = t + 0.4 + i * 0.5 + rand(-0.12, 0.12);
+          this._dNoise(v, this._white, ct, 'bandpass', rand(1800, 3400), 3, rand(0.1, 0.25), 0.001, 0.014, rand(1, 1.6));
+        }
+        this._commit(v);
+        break;
+      }
+      case 'gape': {
+        // the jaw opens further than a jaw should: a long wet stretch, creaking cartilage
+        const v = this._begin('dgape', 3, 1, 2.6, bus, 0.75, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 62, t);
+        o.frequency.exponentialRampToValueAtTime(150, t + 1.4);
+        const lp = this._vFilter(v, 'lowpass', 300, 1.2);
+        lp.frequency.exponentialRampToValueAtTime(1100, t + 1.4);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 1.1, 0.5, 0.4);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        const n = this._vNoise(v, this._pink, t, 1);
+        const bp = this._vFilter(v, 'bandpass', 400, 1.6);
+        bp.frequency.exponentialRampToValueAtTime(1800, t + 1.3);
+        const ng = this._vGain(v, 0);
+        this._swell(ng.gain, t, 0.35, 0.9, 0.4, 0.3);
+        n.connect(bp);
+        bp.connect(ng);
+        ng.connect(v.out);
+        for (let i = 0; i < 7; i++) this._dNoise(v, this._white, t + 0.1 + i * 0.17 + rand(0, 0.06), 'bandpass', rand(900, 2200), 5, rand(0.15, 0.3), 0.001, 0.02, rand(0.8, 1.4));
+        this._commit(v);
+        break;
+      }
+      case 'lungeStart': {
+        // it comes: a roar that goes from nothing to everything in under half a second
+        const v = this._begin('droar', 3, 1, 1.6, bus, 0.95, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 70, t);
+        o.frequency.exponentialRampToValueAtTime(260, t + 0.5);
+        const lp = this._vFilter(v, 'lowpass', 400, 0.9);
+        lp.frequency.exponentialRampToValueAtTime(3200, t + 0.5);
+        const g = this._vGain(v, 0);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.9, t + 0.48);
+        g.gain.setTargetAtTime(0, t + 0.5, 0.05);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        const n = this._vNoise(v, this._white, t, 1);
+        const hp = this._vFilter(v, 'highpass', 600, 0.7);
+        hp.frequency.exponentialRampToValueAtTime(3000, t + 0.5);
+        const ng = this._vGain(v, 0);
+        ng.gain.setValueAtTime(0, t);
+        ng.gain.linearRampToValueAtTime(0.5, t + 0.48);
+        ng.gain.setTargetAtTime(0, t + 0.5, 0.04);
+        n.connect(hp);
+        hp.connect(ng);
+        ng.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'bite': {
+        // the jaws close on you: bone, a wet slam, then nothing for a heartbeat
+        const v = this._begin('dbite', 3, 1, 2.4, bus, 1.0, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 68, 24, 0.5, 1.0, 0.002, 0.3);
+        this._dNoise(v, this._brown, t, 'lowpass', 600, 0.6, 0.9, 0.002, 0.25);
+        this._dNoise(v, this._white, t, 'bandpass', 1500, 0.9, 0.7, 0.001, 0.06, 1.0);
+        for (let i = 0; i < 9; i++) this._dNoise(v, this._white, t + 0.01 + i * 0.022 + rand(0, 0.015), 'bandpass', rand(1800, 5200), 6, rand(0.35, 0.8), 0.0006, 0.012, rand(0.9, 1.7)); // bones going
+        this._dNoise(v, this._pink, t + 0.03, 'lowpass', 900, 1.2, 0.6, 0.004, 0.2, 0.7); // the wet of it
+        this._commit(v);
+        break;
+      }
+      case 'chew': {
+        // being eaten: wet crunches, a slow rhythm, a groan under it; the ring of the ears fading away
+        const v = this._begin('dchew', 3, 1, 3.4, bus, 0.8, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        let at = 0.1;
+        for (let i = 0; i < 5; i++) {
+          this._dNoise(v, this._pink, t + at, 'lowpass', rand(500, 1100), 1.0, 0.55 - 0.06 * i, 0.006, 0.09, rand(0.6, 1));
+          for (let k = 0; k < 4; k++) this._dNoise(v, this._white, t + at + 0.01 + k * 0.03 + rand(0, 0.02), 'bandpass', rand(1800, 4800), 6, rand(0.2, 0.5), 0.0007, 0.012, rand(0.9, 1.6));
+          at += rand(0.3, 0.42);
+        }
+        const o = this._vOsc(v, 'sawtooth', 58, t);
+        o.frequency.exponentialRampToValueAtTime(40, t + 2.8);
+        const lp = this._vFilter(v, 'lowpass', 180, 0.8);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 0.3, 1.8, 0.5);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._dTone(v, t, 'sine', 3190, 1400, 2.2, 0.05, 0.01, 0.7);
+        this._commit(v);
+        break;
+      }
+      case 'swallow': {
+        // the last: one long wet swallow, going down, and the quiet
+        const v = this._begin('dswallow', 3, 1, 1.6, bus, 0.7, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 120, 38, 0.7, 0.8, 0.05, 0.3);
+        const n = this._vNoise(v, this._pink, t, 0.7);
+        const lp = this._vFilter(v, 'lowpass', 900, 1.0);
+        lp.frequency.exponentialRampToValueAtTime(140, t + 0.7);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.55, 0.12, 0.25, 0.2);
+        n.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'splat': {
+        // a swarm on you: a quick wet burst of small bites
+        const v = this._begin('dsplat', 3, 0.5, 1.2, bus, 0.8, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dNoise(v, this._pink, t, 'lowpass', 1000, 1.0, 0.6, 0.004, 0.12);
+        for (let i = 0; i < 8; i++) this._dNoise(v, this._white, t + i * 0.05 + rand(0, 0.03), 'bandpass', rand(2200, 5200), 6, rand(0.2, 0.5), 0.0007, 0.012, rand(1, 1.7));
+        this._commit(v);
+        break;
+      }
+      default:
+    }
+  }
+
+  /**
+   * A WHOOSH of wind passing (sim/vistaWind.js): a swell of air that rises quickly and falls away slowly, the band sweeping up through the
+   * mids and back, the stereo sliding from one ear to the other. Two layers: the body (pink noise through a sweeping band) and the hiss on
+   * top (white noise through a high band), plus a low push under both.
+   */
+  _onWindWhoosh(p) {
+    const str = U.clamp(num(p && p.strength, 0.6), 0.1, 1);
+    const dur = U.clamp(num(p && p.dur, 3.5), 1.5, 6);
+    const dir = U.clamp(num(p && p.dir, 0), -1, 1);
+    const v = this._begin('whoosh', 1, 1.5, dur + 0.6, this.busAmbient, 0.9 * str, dir * 0.6, 0.55, 0);
+    if (!v) return;
+    const t = v.t0;
+    const peak = t + dur * 0.38;
+    // body
+    const n = this._vNoise(v, this._pink, t, 0.9);
+    const bp = this._vFilter(v, 'bandpass', 260, 0.8);
+    bp.frequency.setValueAtTime(240, t);
+    bp.frequency.exponentialRampToValueAtTime(900, peak);
+    bp.frequency.exponentialRampToValueAtTime(300, t + dur);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.9, peak);
+    g.gain.setTargetAtTime(0, peak, dur * 0.22);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    // the hiss of air over the edges
+    const w = this._vNoise(v, this._white, t, 1);
+    const hp = this._vFilter(v, 'bandpass', 2600, 0.6);
+    hp.frequency.setValueAtTime(1800, t);
+    hp.frequency.exponentialRampToValueAtTime(4200, peak);
+    hp.frequency.exponentialRampToValueAtTime(2200, t + dur);
+    const wg = this._vGain(v, 0);
+    wg.gain.setValueAtTime(0, t);
+    wg.gain.linearRampToValueAtTime(0.28, peak);
+    wg.gain.setTargetAtTime(0, peak, dur * 0.2);
+    w.connect(hp);
+    hp.connect(wg);
+    wg.connect(v.out);
+    // a low push
+    const o = this._vOsc(v, 'sine', 48, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + dur);
+    const og = this._vGain(v, 0);
+    this._swell(og.gain, t, 0.35, dur * 0.35, dur * 0.2, dur * 0.2);
+    o.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+  }
+
+  // ---- the jetpack (sim/jetpack3d.js): a roar while it burns, a cough when the tank runs dry, a click when it will not light ----
+
+  /** It lights: the thump of the ignition, then a roaring hiss held until the cut. */
+  _onJetIgnite() {
+    if (this._jetV) this._jetEnd(0.05);
+    const v = this._begin('jet', 3, 0.15, 2.9, this.busPlayer, 0.85, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    // the whump
+    this._dTone(v, t, 'sine', 120, 38, 0.18, 0.8, 0.003, 0.09);
+    this._dNoise(v, this._brown, t, 'lowpass', 700, 0.5, 0.6, 0.004, 0.14);
+    // the roar: filtered noise, a rough low saw under it, held
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 900, 0.7);
+    bp.frequency.setValueAtTime(500, t);
+    bp.frequency.exponentialRampToValueAtTime(1700, t + 0.35);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.07);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sawtooth', 58, t);
+    o.frequency.setTargetAtTime(76, t, 0.4);
+    const lp = this._vFilter(v, 'lowpass', 320, 0.8);
+    const og = this._vGain(v, 0);
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(0.38, t + 0.1);
+    o.connect(lp);
+    lp.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+    this._jetV = v;
+    this._jetG = [g, og];
+  }
+
+  _jetEnd(tc) {
+    const v = this._jetV;
+    this._jetV = null;
+    const gs = this._jetG;
+    this._jetG = null;
+    if (!v || !gs || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (const g of gs) {
+      try {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(g.gain.value, now);
+        g.gain.setTargetAtTime(0, now, tc);
+      } catch {
+        // ignore
+      }
+    }
+    this._kill(v, now + tc * 5, 0.2);
+  }
+
+  _onJetCut(p) {
+    this._jetEnd(0.07);
+    if (p && p.reason === 'fuel') {
+      // the tank runs dry: three coughs, falling
+      const v = this._begin('jetcough', 3, 0.5, 1.2, this.busPlayer, 0.7, 0, 0.2, 0);
+      if (!v) return;
+      const t = v.t0;
+      for (let i = 0; i < 3; i++) {
+        this._dNoise(v, this._white, t + i * 0.13, 'bandpass', 900 - 220 * i, 0.9, 0.5 - 0.12 * i, 0.003, 0.05);
+        this._dTone(v, t + i * 0.13, 'sine', 90 - 15 * i, 50, 0.08, 0.35, 0.003, 0.05);
+      }
+      this._commit(v);
+    }
+  }
+
+  /** It will not light: a dry click and a puff of nothing. */
+  _onJetEmpty() {
+    const v = this._begin('jetempty', 2, 0.4, 0.5, this.busPlayer, 0.6, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dNoise(v, this._white, t, 'bandpass', 2600, 4, 0.45, 0.001, 0.012, 1.4);
+    this._dNoise(v, this._white, t + 0.09, 'bandpass', 1800, 3, 0.3, 0.001, 0.02, 1.2);
+    this._dNoise(v, this._pink, t + 0.12, 'bandpass', 700, 1.0, 0.18, 0.01, 0.1);
+    this._commit(v);
+  }
+
+  /** A can of fuel: a clink of metal and the slosh of what is in it. */
+  _onJetCan() {
+    const v = this._begin('jetcan', 2, 0.3, 1.2, this.busPlayer, 0.7, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dTone(v, t, 'sine', 1320, 1320, 0, 0.35, 0.002, 0.18);
+    this._dTone(v, t + 0.01, 'sine', 2480, 2480, 0, 0.18, 0.002, 0.1);
+    this._dNoise(v, this._pink, t + 0.12, 'bandpass', 420, 1.6, 0.4, 0.04, 0.12, 0.8);
+    this._dNoise(v, this._pink, t + 0.3, 'bandpass', 520, 1.6, 0.3, 0.04, 0.1, 0.9);
+    this._commit(v);
+  }
+
+  /** The tank is nearly empty: two short beeps. */
+  _onJetLow() {
+    const v = this._begin('jetlow', 2, 1, 0.7, this.busUi, 0.5, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dTone(v, t, 'square', 880, 880, 0, 0.14, 0.003, 0.05);
+    this._dTone(v, t + 0.18, 'square', 880, 880, 0, 0.14, 0.003, 0.05);
+    this._commit(v);
   }
 
   // ---- triggers / creature ------------------------------------------------------------
@@ -2856,7 +3378,7 @@ export class AudioManager3D {
     let z = num(data.z, NaN);
     if (!(x === x) || !(y === y) || !(z === z)) {
       // Far above, off to one side (2D: 1400–2200 px up, 300–700 px aside).
-      const a = Math.random() * Math.PI * 2;
+      const a = SEQ.next() * Math.PI * 2;
       const r = rand(15, 35);
       x = this._lx + Math.cos(a) * r;
       z = this._lz + Math.sin(a) * r;
@@ -2948,6 +3470,7 @@ export class AudioManager3D {
       context: this.ctx ? this.ctx.state : 'none',
       sampleRate: this.ctx ? this.ctx.sampleRate : 0,
       tier: this._reduced ? 'reduced' : 'full',
+      sfx: this._sfx ? this._sfx.debug() : null,
       volume: this._volume,
       paused: this._pauseFlag,
       activeVoices: this.activeVoices,
@@ -3582,7 +4105,7 @@ export class AudioManager3D {
   _sfxGrit(stress) {
     const v = this._begin('grit', 0, 0.05, 0.25, this.busPlayer, 0.18 + 0.25 * stress, rand(-0.25, 0.25), 0.1, 0);
     if (!v) return;
-    this._tickTrain(v, v.t0, 2 + Math.floor(Math.random() * 3), 0.12, 0.5, 1500, 4800, 5, 0.008, 0.4);
+    this._tickTrain(v, v.t0, 2 + Math.floor(SEQ.next() * 3), 0.12, 0.5, 1500, 4800, 5, 0.008, 0.4);
     this._commit(v);
   }
 
@@ -4085,7 +4608,7 @@ export class AudioManager3D {
     const pos = this._around(6, 25, 12);
     const v = this._begin('settle', 0, 0.2, 0.7, this.busAmbient, rand(0.05, 0.11) * this._ambientLift(pos), 0, 0.45, 0, pos, 'ambient', true);
     if (!v) return;
-    this._tickTrain(v, v.t0, 1 + Math.floor(Math.random() * 3), 0.3, 0.6, 2800, 5200, 5, 0.01, 0.4);
+    this._tickTrain(v, v.t0, 1 + Math.floor(SEQ.next() * 3), 0.3, 0.6, 2800, 5200, 5, 0.01, 0.4);
     this._commit(v);
   }
 
@@ -4154,7 +4677,7 @@ export class AudioManager3D {
     const v = this._begin('cstep', 0, 0.04, 0.4 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff, this._cPos(sp), 'near');
     if (!v) return;
     const t = v.t0 + sp.delay;
-    this._tickTrain(v, t, 2 + Math.floor(Math.random() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
+    this._tickTrain(v, t, 2 + Math.floor(SEQ.next() * 2), 0.06, 0.6, 2300, 4200, 7, 0.007, 0.3);
     const o = this._vOsc(v, 'sine', rand(140, 210), t);
     o.frequency.setTargetAtTime(rand(85, 110), t, 0.03);
     const og = this._vGain(v, 0);
@@ -4258,7 +4781,7 @@ export class AudioManager3D {
     this._perc(og.gain, t, 0.22, 0.0005, 0.012);
     o.connect(og);
     og.connect(v.out);
-    if (Math.random() < 0.55) this._tick(g.gain, t + rand(0.07, 0.12), 0.5, 0.006); // tick-tick
+    if (SEQ.next() < 0.55) this._tick(g.gain, t + rand(0.07, 0.12), 0.5, 0.006); // tick-tick
     this._commit(v);
   }
 
@@ -4327,7 +4850,7 @@ export class AudioManager3D {
       g.gain.linearRampToValueAtTime(rand(0.35, 0.6), tt + 0.03);
       g.gain.setValueAtTime(rand(0.25, 0.5), tt + len - 0.04);
       g.gain.linearRampToValueAtTime(0, tt + len);
-      if (Math.random() < 0.45) {
+      if (SEQ.next() < 0.45) {
         // a squeak of chalk catching on the grain
         const o = this._vOsc(v, 'sine', rand(2300, 2900), tt + len * 0.3);
         o.frequency.linearRampToValueAtTime(rand(2900, 3500), tt + len * 0.3 + 0.08);
@@ -4430,7 +4953,7 @@ export class AudioManager3D {
     const v = this._begin('hfcrack', 2, 0.15, 0.9 + sp.delay, this.busCreature, 1.0 * this._floor('near', sp.d, 0.3), 0, sp.send * 0.5, Math.max(sp.cutoff, 4000), sp.ok ? sp : null, 'near');
     if (!v) return;
     const t0 = v.t0 + sp.delay;
-    const k = 2 + Math.floor(Math.random() * 3);
+    const k = 2 + Math.floor(SEQ.next() * 3);
     const n = this._vNoise(v, this._white, t0, 1);
     const bp = this._vFilter(v, 'bandpass', 2800, 3.5);
     const g = this._vGain(v, 0);
@@ -4642,6 +5165,29 @@ export class AudioManager3D {
     this._commit(v);
   }
 
+  /** Its weight: a slow, heavy footfall (a low thud falling away, a dry crunch of grit) every step it walks. */
+  _onDresserStep(p) {
+    const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
+    if (sp.gain < 0.02 || this._countAlive('dstep') >= 2) return;
+    const v = this._begin('dstep', 1, 0.4, 0.7 + sp.delay, this.busCreature, 1.1 * this._floor('near', sp.d, 0.2), 0, sp.send, Math.max(sp.cutoff, 1200), sp.ok ? sp : null, 'near');
+    if (!v) return;
+    const t = v.t0 + sp.delay;
+    const o = this._vOsc(v, 'sine', 78, t);
+    o.frequency.setTargetAtTime(40, t, 0.05);
+    const og = this._vGain(v, 0);
+    this._perc(og.gain, t, 0.9, 0.003, 0.16);
+    o.connect(og);
+    og.connect(v.out);
+    const n = this._vNoise(v, this._white, t, 1);
+    const lp = this._vFilter(v, 'lowpass', 900, 0.8);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, 0.5, 0.002, 0.07);
+    n.connect(lp);
+    lp.connect(g);
+    g.connect(v.out);
+    this._commit(v);
+  }
+
   /** You are no longer whole: one low falling note under the hood, and it turns away. */
   _onDresserSpoiled(p) {
     const sp = this._spatial(num(p.x, NaN), num(p.y, NaN), num(p.z, NaN), num(p.distance, NaN));
@@ -4675,7 +5221,7 @@ export class AudioManager3D {
     const v = this._begin('cstep', 0, 0.04, dur + 0.3 + sp.delay, this.busCreature, base * this._cMul(sp, 0), 0, sp.send, sp.cutoff + 900, this._cPos(sp), 'near');
     if (!v) return;
     const t = v.t0 + sp.delay;
-    const n = kind === 'step' ? 4 + Math.floor(Math.random() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
+    const n = kind === 'step' ? 4 + Math.floor(SEQ.next() * 3) : kind === 'burst' || kind === 'attack' ? 14 : 5;
     this._tickTrain(v, t, n, dur * 0.8, 0.55, 3800, 7600, 9, 0.004, 0.35);
     if (kind === 'burst' || kind === 'attack') {
       const nz = this._vNoise(v, this._pink, t, 1);

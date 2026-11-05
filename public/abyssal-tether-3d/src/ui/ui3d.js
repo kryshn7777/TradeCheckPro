@@ -197,6 +197,7 @@ const SETTINGS_SCHEMA = [
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'hitStop', tab: 'rope', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },
@@ -223,6 +224,8 @@ const CONTROLS_QUEST = [
   [['X'], 'Hold to restart the run while paused or after a fall.', 'Hold: restart (paused / fallen)'],
   [['Y'], 'Tap: night vision goggles on / off (the deeper sections are dark on purpose). Hold: re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Tap: goggles · hold: re-centre'],
   [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
+  [['Both triggers'], 'Falling with no rope? Squeeze BOTH triggers together: the jetpack lights for a moment, brakes the fall and settles you down gently. The tank is small (half full at the start); a fuel can on a hard-to-reach ledge adds half. Dying does not refill it. Squeeze both again to cut it early and keep what is left.', 'Falling: both triggers = jetpack'],
+  [['Raise the right wrist'], 'Lift your right wrist toward your face (right gun holstered) and look at the watch: a 3D hologram of the whole descent opens above it: green where you started, amber at the gate you are heading for, white where you are now. The watch face shows your depth and the jetpack fuel.', 'Wrist up: map · depth · fuel'],
   [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
@@ -233,6 +236,8 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
+  [['M'], 'The wrist computer’s map: a 3D hologram of the whole descent (green: where you started, amber: the gate, white: you). Press again to close it.'],
+  [['J', 'Space'], 'Falling with no rope: J (or Space in the air) lights the jetpack: a hard brake, then a gentle descent. The tank is small and a fuel can on a hard-to-reach ledge adds half; dying does not refill it. Press again to cut it early.'],
   [['H'], 'Stow / draw both rope guns. They start holstered on your hips; a click draws that hand’s gun, and a gun left alone on the ground goes back after a few seconds. Walking with a gun out is 20 % slower.'],
   [['N'], 'Night vision goggles on / off. The deeper sections are dark on purpose and the lantern fades with depth; the goggles run on a cell that drains while they are on and trickles back while they are off.'],
   [['F'], 'Hold near a chalk-studded surface or any ledge edge / corner to cling to it (W A S D climb, W or Space at a ledge lip climbs over, otherwise Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
@@ -249,7 +254,7 @@ const CONTROLS_TOUCH = [
   [['Right thumb'], 'Drag anywhere on the right half to look. Dragging from a rope or grip button looks while you hold it.'],
   [['ROPE R', 'ROPE L'], 'Fire that hand’s tether at the highlighted anchor (a holstered gun is drawn by the press). Hold to stay attached, release to let go (or tap to toggle, see Settings, Touch). Walking with a gun out is 20 % slower; it goes back in its holster when left alone on the ground.'],
   [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
-  [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip.'],
+  [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip. In a fall with no rope: lights the jetpack (a short brake; a small tank).'],
   [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
   [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
   [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],
@@ -1992,7 +1997,7 @@ export class UI3D {
   _buildAbout() {
     const d = this.dom;
     d.aboutCredits.textContent =
-      'Created by the Abyssal Tether team. The world, the creature, the score and every sound are original: the sound is synthesised live. The radio voices are AI-generated placeholders (Kokoro-82M text-to-speech, Apache-2.0 licence), not human actors; recorded performances will replace them. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
+      'Created by the Lantern team. The world, the creature, the score and every sound are original: the sound is synthesised live. The radio voices are AI-generated placeholders (Kokoro-82M text-to-speech, Apache-2.0 licence), not human actors; recorded performances will replace them. Built with three.js (MIT licence) and Blender. Chapters II–V are coming.';
   }
 
   _versionLine() {
@@ -2618,7 +2623,7 @@ export class UI3D {
       return;
     }
     if (btn.disabled) return;
-    this._emitClick();
+    this._emitClick(btn.dataset.action);
     this._unlockAudio();
     this._action(btn.dataset.action, btn.dataset, false);
   }
@@ -2936,9 +2941,16 @@ export class UI3D {
     }
   }
 
-  _emitClick() {
+  /** `kind`: the button's action ('back', 'tab', 'start' ...): audio/sfxBank.js UI_KIND picks the designed sound from it. */
+  _emitClick(kind) {
     const bus = this.game && this.game.bus;
-    if (bus && typeof bus.emit === 'function') bus.emit('ui:click', {});
+    if (bus && typeof bus.emit === 'function') bus.emit('ui:click', { kind: kind || '' });
+  }
+
+  /** Focus / hover moved to another control (audio: the ui.move tick). */
+  _emitMove() {
+    const bus = this.game && this.game.bus;
+    if (bus && typeof bus.emit === 'function') bus.emit('ui:move', null);
   }
 
   _unlockAudio() {
@@ -3000,7 +3012,7 @@ export class UI3D {
       e.preventDefault();
       e.stopPropagation();
       if (SUB_SCREENS[this.current]) {
-        this._emitClick();
+        this._emitClick('back');
         this._back();
       } else if (this.current === 'pause') {
         this._action('resume', null, false);
@@ -3044,6 +3056,7 @@ export class UI3D {
     if (i < 0) i = dir > 0 ? -1 : 0;
     const next = list[(i + dir + list.length) % list.length];
     if (next) next.focus({ preventScroll: false });
+    if (next && next !== active) this._emitMove();
   }
 
   _focusables(container) {
@@ -3703,7 +3716,7 @@ export class UI3D {
     if (panelUp && this.current !== null) {
       if (backEdge && SUB_SCREENS[this.current]) {
         // (Game3D's B toggles pause only on the 'pause' screen, so this cannot also resume.)
-        this._emitClick();
+        this._emitClick('back');
         this._back();
       } else if (confirmEdge && this._hover && this._hover.act !== 'slide' && this.current !== 'death' && this._clock - this._lastClickAt > CLICK_DEBOUNCE) {
         // (The death panel is excluded: Game3D already rises again on A there.)
@@ -3799,6 +3812,7 @@ export class UI3D {
     this._hover = region;
     this._setHoverFrame(region);
     if (region) {
+      this._emitMove();
       const g = this.game || {};
       const s = this._settings();
       if (g.input && typeof g.input.haptic === 'function' && s.haptics !== false) {
@@ -3814,7 +3828,7 @@ export class UI3D {
   }
 
   _activateRegion(r, px) {
-    this._emitClick();
+    this._emitClick(r.act);
     this._unlockAudio();
     const data = { diff: r.diff, section: r.section, key: r.key, value: r.value };
     if (r.act === 'slide') data.value = (px - r.x) / r.w;
@@ -4224,7 +4238,7 @@ export class UI3D {
     this._frame(ctx);
     this._header(ctx, 'About');
     const cx = CW / 2;
-    txt(ctx, 'ABYSSAL TETHER', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
+    txt(ctx, 'THE LANTERN', cx, 160, `700 46px ${F_DISPLAY}`, COL.title, 'center', 0.12);
     txt(ctx, 'CHAPTERS I–II · THE FREE GAME', cx, 198, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2);
     const lab = `650 28px ${F_UI}`;
     const val = `500 28px ${F_UI}`;
@@ -4242,7 +4256,7 @@ export class UI3D {
     row(410, 'PRIVACY', this._privacyUrl());
     row(458, 'SUPPORT', this._supportUrl());
     txt(ctx, 'No account. Nothing about you leaves this headset.', 44, 514, val, COL.ink2, 'left', 0);
-    const credits = 'Abyssal Tether team. Original world, creature, score; sound synthesised live. Radio voices: AI placeholders (Kokoro TTS), not actors. three.js (MIT), Blender.';
+    const credits = 'The Lantern team. Original world, creature, score; sound synthesised live. Radio voices: AI placeholders (Kokoro TTS), not actors. three.js (MIT), Blender.';
     wrapLines(ctx, credits, CW - 88, `400 28px ${F_UI}`)
       .slice(0, 3)
       .forEach((ln, i) => txt(ctx, ln, 44, 568 + i * 36, `400 28px ${F_UI}`, COL.ink3, 'left', 0));

@@ -13,7 +13,7 @@
 //     50 % on Normal: it can see you again 11 s later);
 //   - the view (procedural fallback): near LOD <= 12 k triangles, far <= 4.5 k, one skinned mesh (one call) + the outline decal;
 //     glints beyond 60 m; a failing GLB load keeps it;
-//   - THE DRESSER v2: the LOD table (pickLod, hysteresis); assets/models/dresser.glb read from its JSON (<= 2.5 MB, LODs <= 24 k /
+//   - THE DRESSER v2: the LOD table (pickLod, hysteresis); assets/models/dresser.glb read from its JSON (<= 2.5 MB, LODs <= 52 k /
 //     8.5 k / 3.2 k, one primitive each, 3 KTX2 maps <= 1024, meshopt, the skin's joints = BONES: names, parents, bind offsets,
 //     identity rest rotations); parsed in Node and built by the view (three LODs on its skeleton + line + outline in ONE call per
 //     LOD at 4 / 15 / 30 m on Quest, the mask in every LOD, the bounds, the weights, the mask turning with the head);
@@ -603,7 +603,7 @@ for (const [diff, gap] of [
   const THREE = await import('three');
   const { DresserView, GLOW_DIST, LOD_DIST, LOD_DIST_FALLBACK, BONES, pickLod } = await import(srcUrl('render/dresserView.js'));
   const tiersOk = ['low', 'quest', 'high'].every((t) => LOD_DIST[t][0] < LOD_DIST[t][1] && LOD_DIST[t][1] < GLOW_DIST && LOD_DIST_FALLBACK[t] < GLOW_DIST);
-  ok(tiersOk && LOD_DIST.quest[0] === 8 && LOD_DIST.quest[1] === 22, `LOD table: Quest ${LOD_DIST.quest.join(' / ')} m, low ${LOD_DIST.low.join(' / ')}, high ${LOD_DIST.high.join(' / ')}, glints beyond ${GLOW_DIST} m`);
+  ok(tiersOk && LOD_DIST.quest[0] === 3 && LOD_DIST.quest[1] === 34 && GLOW_DIST >= 100, `LOD table: Quest ${LOD_DIST.quest.join(' / ')} m, low ${LOD_DIST.low.join(' / ')}, high ${LOD_DIST.high.join(' / ')}, glints beyond ${GLOW_DIST} m`);
   const q = LOD_DIST.quest;
   ok(
     pickLod(2, 'quest') === 0 && pickLod(q[0] + 0.5, 'quest') === 1 && pickLod(q[1] + 0.5, 'quest') === 2 && pickLod(GLOW_DIST + 1, 'quest') === -1 && pickLod(q[0] + 0.5, 'nope') === 1,
@@ -628,7 +628,7 @@ for (const [diff, gap] of [
       const node = js.nodes.find((n) => n.name === 'Dresser_LOD' + k && n.mesh != null);
       return node ? js.meshes[node.mesh].primitives.length : 0;
     });
-    ok(tris[0] > 0 && tris[0] <= 24000 && tris[1] <= 8500 && tris[2] <= 3200 && tris[0] > tris[1] && tris[1] > tris[2], `LODs ${tris.join(' / ')} triangles (<= 24 k / 8.5 k / 3.2 k), below the Mason's 57 k LOD0`);
+    ok(tris[0] > 0 && tris[0] <= 52000 && tris[1] <= 19000 && tris[2] <= 7200 && tris[0] > tris[1] && tris[1] > tris[2], `LODs ${tris.join(' / ')} triangles (v3: <= 52 k / 19 k / 7.2 k), below the Mason's 57 k LOD0`);
     ok(prims.every((p) => p === 1) && js.materials.length === 1, 'one primitive per LOD, one material: one draw call');
     const imgs = js.images || [];
     const ktx = imgs.every((im) => im.mimeType === 'image/ktx2') && (js.extensionsRequired || []).includes('KHR_texture_basisu');
@@ -676,7 +676,7 @@ for (const [diff, gap] of [
     const body = { visible: true, x: 0, y: 0, z: 0, ux: 0, uy: 1, uz: 0, fx: 0, fy: 0, fz: 1, lx: 0, ly: 2.9, lz: 5, walk: 0, speed: 0, measure: 0, cut: 0, stagger: 0, spoiled: 0, glow: 0.6, tick: 0, line: { on: false, x: 0, y: 0, z: 0, taut: 0 }, outline: { on: false, x: 0, y: 0, z: 0, nx: 1, ny: 0, nz: 0, grow: 0, alpha: 0, seed: 0 } };
     const game = { dresser: { isNull: false, body, targetHand: 'right' }, renderer: { scene, camera, qualityTier: 'quest' }, settings: {} };
     const seen = [];
-    for (const dist of [4, 15, 30, GLOW_DIST + 8]) {
+    for (const dist of [2, 25, 60, GLOW_DIST + 8]) {
       camera.position.set(0, 1.8, dist);
       v._qReady = false;
       v.update(1 / 60, game);
@@ -689,7 +689,7 @@ for (const [diff, gap] of [
         }
       });
       seen.push(`${dist} m: LOD${v.lod} ${n} call ${tr}`);
-      if (dist < GLOW_DIST) ok(n === 1 && v.info.drawCalls === 1 && v.lod === [4, 15, 30].indexOf(dist) && tr === v.triangles[v.lod], `Quest at ${dist} m: LOD${v.lod}, one call, ${tr} triangles`);
+      if (dist < GLOW_DIST) ok(n === 1 && v.info.drawCalls === 1 && v.lod === [2, 25, 60].indexOf(dist) && tr === v.triangles[v.lod], `Quest at ${dist} m: LOD${v.lod}, one call, ${tr} triangles`);
       else ok(n <= 1 && tr <= 4, `beyond ${GLOW_DIST} m: the glints only`);
     }
     // the face is there in every LOD (pale self-light on the mask, at the head, facing forward), and the mask follows the head

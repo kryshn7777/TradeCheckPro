@@ -284,6 +284,17 @@ export class Inventory3D {
     return before - this.lanternCharge;
   }
 
+  /** Adds `k` lantern charge (a swing chain's reward, sim/flow3d.js), clamped to full. Returns the charge actually added. */
+  addCharge(k) {
+    const before = this.lanternCharge;
+    if (!(k > 0)) return 0;
+    this.lanternCharge = Math.min(1, before + k);
+    this._lantern();
+    if (this.lanternCharge > B.lanternLow) this.lanternLow = false;
+    if (this.lanternCharge > 0) this.lanternEmpty = false;
+    return this.lanternCharge - before;
+  }
+
   // ---- checkpoints ---------------------------------------------------------------------------
 
   /** Remembers the bag (counts, selection, lantern charge) for a respawn. */

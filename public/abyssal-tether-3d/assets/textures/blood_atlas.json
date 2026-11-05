@@ -1,0 +1,369 @@
+{
+ "image": "blood_atlas.png",
+ "size": [
+  1024,
+  1024
+ ],
+ "grid": [
+  4,
+  4
+ ],
+ "cell": 256,
+ "alpha": "straight (RGB dilated under alpha 0)",
+ "colour": "sRGB, #8a1515 thin edges -> #4a0a09 thick core",
+ "v_down": "image rows run DOWN: for wall decals, v+ is down the wall",
+ "cells": [
+  {
+   "index": 0,
+   "name": "spray_arterial",
+   "rect": [
+    0,
+    0,
+    256,
+    256
+   ],
+   "uv": [
+    0.0,
+    0.75,
+    0.25,
+    1.0
+   ],
+   "world_size": "1.4 m",
+   "world_size_m": [
+    1.4,
+    1.4
+   ],
+   "note": "arterial spray: source lower left, beads and exclamation tails toward the upper right"
+  },
+  {
+   "index": 1,
+   "name": "spray_wide",
+   "rect": [
+    256,
+    0,
+    256,
+    256
+   ],
+   "uv": [
+    0.25,
+    0.75,
+    0.5,
+    1.0
+   ],
+   "world_size": "1.2 m",
+   "world_size_m": [
+    1.2,
+    1.2
+   ],
+   "note": "wide cast-off spray, radial with satellite droplets"
+  },
+  {
+   "index": 2,
+   "name": "splatter_impact",
+   "rect": [
+    512,
+    0,
+    256,
+    256
+   ],
+   "uv": [
+    0.5,
+    0.75,
+    0.75,
+    1.0
+   ],
+   "world_size": "0.9 m",
+   "world_size_m": [
+    0.9,
+    0.9
+   ],
+   "note": "impact splatter: a central stain with spikes and satellites"
+  },
+  {
+   "index": 3,
+   "name": "spatter_fine",
+   "rect": [
+    768,
+    0,
+    256,
+    256
+   ],
+   "uv": [
+    0.75,
+    0.75,
+    1.0,
+    1.0
+   ],
+   "world_size": "0.6 m",
+   "world_size_m": [
+    0.6,
+    0.6
+   ],
+   "note": "fine mist spatter (layer over others)"
+  },
+  {
+   "index": 4,
+   "name": "pool_large",
+   "rect": [
+    0,
+    256,
+    256,
+    256
+   ],
+   "uv": [
+    0.0,
+    0.5,
+    0.25,
+    0.75
+   ],
+   "world_size": "1.6 m",
+   "world_size_m": [
+    1.6,
+    1.6
+   ],
+   "note": "a dried pool, darker thick core, coffee-ring rim (floor)"
+  },
+  {
+   "index": 5,
+   "name": "pool_medium",
+   "rect": [
+    256,
+    256,
+    256,
+    256
+   ],
+   "uv": [
+    0.25,
+    0.5,
+    0.5,
+    0.75
+   ],
+   "world_size": "1.0 m",
+   "world_size_m": [
+    1.0,
+    1.0
+   ],
+   "note": "a smaller pool (floor, under remains)"
+  },
+  {
+   "index": 6,
+   "name": "pool_seep",
+   "rect": [
+    512,
+    256,
+    256,
+    256
+   ],
+   "uv": [
+    0.5,
+    0.5,
+    0.75,
+    0.75
+   ],
+   "world_size": "0.7 m",
+   "world_size_m": [
+    0.7,
+    0.7
+   ],
+   "note": "a seep / soak stain (floor, wall foot)"
+  },
+  {
+   "index": 7,
+   "name": "drips_cluster",
+   "rect": [
+    768,
+    256,
+    256,
+    256
+   ],
+   "uv": [
+    0.75,
+    0.5,
+    1.0,
+    0.75
+   ],
+   "world_size": "0.5 m",
+   "world_size_m": [
+    0.5,
+    0.5
+   ],
+   "note": "drip cluster with short runs (wall: v points down)"
+  },
+  {
+   "index": 8,
+   "name": "drag_long",
+   "rect": [
+    0,
+    512,
+    256,
+    256
+   ],
+   "uv": [
+    0.0,
+    0.25,
+    0.25,
+    0.5
+   ],
+   "world_size": "2.2 x 0.5 m",
+   "world_size_m": [
+    2.2,
+    0.55
+   ],
+   "note": "a body dragged left -> right: heavy start, streaky, thinning out (floor; stretch the quad 4:1)"
+  },
+  {
+   "index": 9,
+   "name": "drag_curved",
+   "rect": [
+    256,
+    512,
+    256,
+    256
+   ],
+   "uv": [
+    0.25,
+    0.25,
+    0.5,
+    0.5
+   ],
+   "world_size": "2.0 x 0.6 m",
+   "world_size_m": [
+    2.0,
+    0.6
+   ],
+   "note": "a curved drag (floor; stretch 3.3:1)"
+  },
+  {
+   "index": 10,
+   "name": "handprint_left",
+   "rect": [
+    512,
+    512,
+    256,
+    256
+   ],
+   "uv": [
+    0.5,
+    0.25,
+    0.75,
+    0.5
+   ],
+   "world_size": "0.18 m",
+   "world_size_m": [
+    0.18,
+    0.18
+   ],
+   "note": "left hand, fingers up, smeared down (wall)"
+  },
+  {
+   "index": 11,
+   "name": "handprint_right",
+   "rect": [
+    768,
+    512,
+    256,
+    256
+   ],
+   "uv": [
+    0.75,
+    0.25,
+    1.0,
+    0.5
+   ],
+   "world_size": "0.18 m",
+   "world_size_m": [
+    0.18,
+    0.18
+   ],
+   "note": "right hand, fingers up, smeared down (wall)"
+  },
+  {
+   "index": 12,
+   "name": "finger_streaks",
+   "rect": [
+    0,
+    768,
+    256,
+    256
+   ],
+   "uv": [
+    0.0,
+    0.0,
+    0.25,
+    0.25
+   ],
+   "world_size": "0.6 m",
+   "world_size_m": [
+    0.45,
+    0.6
+   ],
+   "note": "four fingers drawn down the wall with runs (wall: v points down)"
+  },
+  {
+   "index": 13,
+   "name": "drips_runs",
+   "rect": [
+    256,
+    768,
+    256,
+    256
+   ],
+   "uv": [
+    0.25,
+    0.0,
+    0.5,
+    0.25
+   ],
+   "world_size": "0.8 m",
+   "world_size_m": [
+    0.5,
+    0.8
+   ],
+   "note": "a few heavy drops running far down (wall)"
+  },
+  {
+   "index": 14,
+   "name": "drips_small",
+   "rect": [
+    512,
+    768,
+    256,
+    256
+   ],
+   "uv": [
+    0.5,
+    0.0,
+    0.75,
+    0.25
+   ],
+   "world_size": "0.3 m",
+   "world_size_m": [
+    0.3,
+    0.3
+   ],
+   "note": "small drip spatter (anywhere)"
+  },
+  {
+   "index": 15,
+   "name": "wipe_palm",
+   "rect": [
+    768,
+    768,
+    256,
+    256
+   ],
+   "uv": [
+    0.75,
+    0.0,
+    1.0,
+    0.25
+   ],
+   "world_size": "0.7 m",
+   "world_size_m": [
+    0.7,
+    0.5
+   ],
+   "note": "a palm wiped sideways and down (wall)"
+  }
+ ]
+}

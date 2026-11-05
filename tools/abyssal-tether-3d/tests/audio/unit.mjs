@@ -512,6 +512,38 @@ function rig() {
   ok([7, 0].includes(semis) || semis === 7, `music: a phrase starts on the fifth above the section root (${semis} semitones)`);
 }
 
+// ---- the death scenes (sim/deathScene.js): every beat of every scene on the strict mock: no NaN / bad automation, bounded voices ----
+{
+  const { BEATS } = await import(srcUrl('sim/deathScene.js'));
+  const R = rig();
+  warnings.length = 0;
+  let sounded = 0;
+  for (const kind of Object.keys(BEATS)) {
+    R.game.state = 'dead';
+    R.bus.emit('player:death', { cause: kind === 'collapse' ? 'impact' : 'creature', x: 0, y: 1, z: 0, impact: 20 });
+    let last = 0;
+    for (const [t, name] of BEATS[kind]) {
+      R.run(Math.max(0.03, t - last));
+      last = t;
+      const before = R.ctx.stats().liveNodes;
+      R.bus.emit('death:beat', { beat: name, kind, t });
+      R.run(0.05);
+      if (R.ctx.stats().liveNodes > before || name === 'down') sounded++;
+    }
+    R.run(7);
+    ok(R.audio.activeVoices <= 24, `death scene ${kind}: voices bounded after its last beat (${R.audio.activeVoices})`);
+    R.game.state = 'playing';
+    R.bus.emit('game:respawn', {});
+    R.run(1);
+  }
+  ok(sounded >= 20, `death scenes: ${sounded} of ${Object.values(BEATS).reduce((a, b) => a + b.length, 0)} beats built audio nodes`);
+  ok(warnings.length === 0, 'death scenes: no NaN / bad automation / swallowed warnings' + (warnings.length ? ': ' + warnings[0].slice(0, 400) : ''));
+  R.bus.emit('death:beat', { beat: 'nonsense' });
+  R.bus.emit('death:beat', null);
+  R.run(0.2);
+  ok(warnings.length === 0, 'death scenes: an unknown / empty beat is ignored');
+}
+
 // ---- 10 simulated minutes of random events: bounded voices and nodes, no warnings ----
 {
   const R = rig();

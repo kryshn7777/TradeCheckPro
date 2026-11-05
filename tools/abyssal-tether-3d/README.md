@@ -145,6 +145,18 @@ the held hand with the forearm through the socket's mouth, mirrored for a left h
 
 ## The Dresser v2 (the mason in the hooded apron)
 
+**v3 (2026-11, "more threatening and powerful", "fully detailed ... LOD high")**: same skeleton, same contract, a heavier and spikier
+silhouette (it must read at 15-40 m): a taller swept-back hood peak ringed by a crown of eleven forged chisel points, a deeper cowl and
+a black interior, the head ensemble leaning 5 cm forward and 2 cm down over a hunched back, an iron collar with a throat ring, a broader
+mantle under riveted three-lame iron pauldrons with three spikes each, longer (+20 cm) and heavier chisel arms (blades serrated on the
+inner edge with a hooked beak; the teeth are sampled tip / valley by the rows, LOD2 drops them), a chain and hook down each forearm,
+a broader belt with a saw, a bundle of spikes, a hook chain, a weight chain and three broken porcelain faces on cords, twelve iron
+plumb-weights in the hem, twelve longer rags and ten strips off the mantle. The mask: a lower, knitted brow over deeper sockets,
+narrower slits (cold white rim in ORM.B, deep red core in the albedo, self-lit by the pale light), the crack opened wide and run up
+through the brow, the serene half split too, three iron staples across the seam, nails through the forehead, the mouth sewn into a
+grimace (eight stitches); rust-brown (not blood) at the holes. Paint: chalk tallies on the apron, rust scale / runs / pitting on the
+iron, rust bled into the robe and the leather.
+
 `build_dresser.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 7171) builds THE DRESSER's model (`src/sim/dresser3d.js`,
 `src/render/dresserView.js`, `docs/abyssal-tether-3d/plans/DRESSER.md`) for the view's EXISTING skeleton: the bone table (names, parents,
 bind positions) is parsed from `dresserView.js` `BONES`, the bones are exported vertical with roll 0 (identity glTF rest rotations), so
@@ -163,13 +175,13 @@ chest -> upper arm, the small arms blended at the elbow) -> GLB.
 
 | Output | |
 |---|---|
-| `public/abyssal-tether-3d/assets/models/dresser.glb` (1.8 MB) | `Dresser_LOD0` / `_LOD1` / `_LOD2` (22.5 k / 7.6 k / 2.2 k triangles; skinned, one primitive each; the HIGH they are baked from is ~7 M), the 32-bone `Dresser_Armature`, one material `DresserBody` (albedo, normal, ORM: R AO, G roughness, B the slit glow), COLOR_0 (R the pale self-light mask, B the hood-lip rim mask), extras `dresser` (whiteUV = the atlas's white block for the line and the chalk outline); meshopt + KTX2 (1024 maps) |
-| `previews/dresser_sheet.png` | Cycles contact sheet of the game mesh (idle, 3/4, measuring, back, the face at 1.5 m, serene / wrong, the wrong eye macro, hands, a chisel arm, LOD0 / 1 / 2) |
+| `public/abyssal-tether-3d/assets/models/dresser.glb` (2.3 MB) | `Dresser_LOD0` / `_LOD1` / `_LOD2` (47.7 k / 17.7 k / 6.5 k triangles; skinned, one primitive each; the HIGH they are baked from is ~6.9 M), the 32-bone `Dresser_Armature`, one material `DresserBody` (albedo, normal, ORM: R AO, G roughness, B the slit glow), COLOR_0 (R the pale self-light mask, B the hood-lip rim mask), extras `dresser` (whiteUV = the atlas's white block for the line and the chalk outline); meshopt + KTX2 (1024 maps) |
+| `previews/dresser_sheet.png` | Cycles contact sheet of the game mesh (idle, 3/4, measuring, back, the face at 1.5 m, serene / wrong, the wrong eye macro, hands, a chisel arm, LOD0 / 1 / 2, LOD1 at 14 m, LOD2 at 28 m) |
 
 ```bash
 PY=.../blender-venv/bin/python
 flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_dresser.py --out <dir> --renders <dir> --cache <dir>/cache --bake 2048 --render [--samples 32] [--blend <file>]
-        # ~6 min + ~2 min of previews; --stage shape = clay renders (LOW + the HIGH mask), --stage paint = the analytic maps only,
+        # ~14 min + ~4 min of previews (v3); --stage shape = clay renders (LOW, LOD1 / LOD2 far, the HIGH mask), --stage paint = the maps only,
         # --bake 1024 for a quick look; delete the cache after any geometry change (the bakes are cached per resolution)
 GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out <dir2> --only dresser
 GLTF_TOOLS=$TOOLS KTX2_TOOLS=$KTX node tools/abyssal-tether-3d/compress_glb_textures.mjs --dir <dir2> --out public/abyssal-tether-3d/assets/models --only dresser
@@ -396,3 +408,52 @@ flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d
 GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir DIR --out public/abyssal-tether-3d/assets/models/env --only ch1_props_v2
 npm run at3d:sw
 ```
+
+## The bones kit (`build_bones.py`) and the blood decal atlas (`build_blood_atlas.py`)
+
+`build_bones.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 6613, ~4 min + ~3 min of previews) writes ONE GLB of static
+skeleton dressing, `public/abyssal-tether-3d/assets/models/bones.glb` (0.21 MB after meshopt + quantisation). Every bone is a signed
+distance field in numpy (smooth unions of spheres / ellipsoids / round cones / plates, subtracted orbits, nasal aperture, sockets, noisy
+cut planes for the breaks), meshed with surface nets at 1.2-2.6 mm, posed by a direction-driven skeleton (1.72 m adult, limbs flagged
+`floor` settle onto y = 0), then QEM-decimated per material class (cloth / leather through a voxel remesh first) to the budget.
+
+| Node (= mesh) | Triangles | Origin / notes |
+|---|---|---|
+| `Bones_Skull` | 878 | base centre on the floor; jaw dropped, a broken-in hole and radiating cracks on the left parietal |
+| `Bones_SkullJawless` | 880 | base centre; tipped on its side, missing teeth |
+| `Bones_LyingA` | 2,778 | floor, centre of the footprint; on its back, the right arm stretched overhead along the floor, a rusted piton in the fist, a rope tangled round the wrist, broken ribs |
+| `Bones_LyingB` | 2,778 | floor; curled on its left side, hands at the face, the right femur snapped (the lower half, shin and foot lie apart) |
+| `Bones_SittingWall` | 2,650 | floor (y 0) and the WALL plane (z 0): the skeleton is in +Z, place it flush; head fallen forward, right hand in the lap, rags over the lap and a shoulder, a pack strap, a belt with a buckle |
+| `Bones_Hanging` | 2,976 | the hook (y 0); iron hook + 3 chain links + rope down to a noose; skull top 1.8 m below the hook, feet ~3.55 m below |
+| `Bones_Reach` | 698 | base centre; a forearm + clawing hand rising out of rubble, rope round the wrist, a broken humerus |
+| `Bones_Ribcage` | 890 | base centre; ribcage on its side, broken ribs, a lumbar fragment |
+| `Bones_Scatter` | 890 | floor, ~0.9 m patch; pelvis, a snapped femur (both halves), humerus, vertebrae, a mandible |
+| `Bones_SkullPile` | 2,978 | base centre; ~0.7 m heap: 14 skulls (pre-decimated, instanced in rings), jaws, long bones, a bone-dust mound |
+| `Bones_Crawler` | 2,626 | floor; prone, chest raised on its arms, hands clawing forward, the left leg gone below a snapped femur stump, a shirt rag, belt + buckle |
+
+All meshes are non-skinned, Y up, metres, smooth normals, no UVs, and share ONE material `BonesMat` (base colour factor 1, roughness 0.8,
+metallic 0, no textures) so a batch is one draw call. `COLOR_0` (RGBA, linear, unsigned-short normalised, A = 1) IS the albedo with
+lighting-independent ambient occlusion baked in: aged ivory bone varied by noise, paler worn ridges (convexity), brown grime pooled by
+AO and concavity, low-frequency dark stains, painted detail (orbits / nose interior, teeth gaps, sutures, the skull's cracks), a soil
+tide line where bones touch the floor, rust-brown dried blood on a few bones (spots with downward runs), dark cloth, brown leather,
+rusted iron, rope. AO: 40 cosine rays per vertex against the mesh (0.3 m) + 7 cm contact with the floor / wall plane, multiplied in
+(`col * (0.28 + 0.72 ao)`). The engine should use `vertexColors: true` and a white base colour.
+
+`build_blood_atlas.py` (numpy + PIL only, deterministic, seed 4471, ~40 s) writes `public/abyssal-tether-3d/assets/textures/blood_atlas.png`
+(RGBA 1024², 4 x 4 cells of 256 px, straight alpha with the blood colour dilated under alpha 0, 8 px transparent margin per cell) and
+`blood_atlas.json` (per cell: name, pixel rect, uv rect, recommended world size, a note; image rows run DOWN, so for wall decals v+ is
+down the wall). Cells: 0 `spray_arterial` 1.4 m, 1 `spray_wide` 1.2 m, 2 `splatter_impact` 0.9 m, 3 `spatter_fine` 0.6 m,
+4 `pool_large` 1.6 m, 5 `pool_medium` 1.0 m, 6 `pool_seep` 0.7 m, 7 `drips_cluster` 0.5 m, 8 `drag_long` 2.2 x 0.5 m,
+9 `drag_curved` 2.0 x 0.6 m, 10 `handprint_left` 0.18 m, 11 `handprint_right` 0.18 m, 12 `finger_streaks` 0.45 x 0.6 m,
+13 `drips_runs` 0.5 x 0.8 m, 14 `drips_small` 0.3 m, 15 `wipe_palm` 0.7 x 0.5 m. Colour #8a1515 at the thin film -> #4a0a09 in the
+thick core, a darker dried ring at the edges.
+
+```bash
+PY=.../blender-venv/bin/python
+flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_bones.py --out <dir> --renders <dir> [--render] [--samples 40] [--only Bones_Skull,Bones_LyingA]
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out public/abyssal-tether-3d/assets/models --only bones
+python3 tools/abyssal-tether-3d/build_blood_atlas.py          # -> assets/textures/blood_atlas.{png,json}, previews/blood_atlas_preview.png
+```
+
+Previews: `previews/bones_sheet.png` (Cycles, every mesh + the skull close), `previews/blood_atlas_preview.png` (the atlas over dark stone).
+Not wired into the game yet (no `src/` change); `bones.glb` is not in the service-worker precache list until the integration adds it.

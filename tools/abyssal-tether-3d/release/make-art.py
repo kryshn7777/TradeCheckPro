@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ABYSSAL TETHER 3D: store art builder (title typography + cover set from real game renders).
+"""THE LANTERN (ABYSSAL TETHER 3D): store art builder (title typography + cover set from real game renders).
 
 Input : docs/abyssal-tether-3d/store/screenshots/hero-2880x1600.png|jpg  a raw render of the real game (capture-screens.mjs --only hero);
         keyart/vista-*-<size>.png renders override it per format when present
@@ -12,10 +12,10 @@ Output: docs/abyssal-tether-3d/store/art/
           logo-transparent.png            Logo, 32-bit PNG with alpha (2880x1440)
           icon-1024.png / icon-512.png    from make-icons.py (opaque)
 
-The TITLE LETTERING IS DESIGNED HERE, not a font: nine angular, chamfered capitals (A B Y S L T E H R) built from
+The TITLE LETTERING IS DESIGNED HERE, not a font: angular, chamfered capitals (A B Y S L T E H R N) built from
 centre-line strokes, rendered as carved metal: a bevel lit from the upper left, an inset channel, an amber rim glow
 from the lantern below, fine grain. Rules followed (RELEASE.md section 13, VRC.Quest.Asset.1-3): the cover carries
-the title only (no taglines, no banners), spelled exactly "ABYSSAL TETHER"; the lockup keeps >= 20 % top / bottom and
+the title only (no taglines, no banners), spelled exactly "THE LANTERN"; the lockup keeps >= 20 % top / bottom and
 >= 10 % side margins so no text sits in the bleed areas; no blood, no organs (the images are of stone, light and
 rope; a creature, if the render has one, stays small).
 
@@ -45,6 +45,7 @@ GLYPHS = {
     'T': (64, [[(0, 0), (64, 0)], [(32, 0), (32, 100)]]),
     'E': (52, [[(52, 0), (0, 0), (0, 100), (52, 100)], [(0, 50), (40, 50)]]),
     'H': (64, [[(0, 0), (0, 100)], [(64, 0), (64, 100)], [(0, 50), (64, 50)]]),
+    'N': (64, [[(0, 100), (0, 0), (64, 100), (64, 0)]]),
     'R': (62, [[(0, 100), (0, 0), (40, 0), (58, 14), (58, 36), (40, 50), (0, 50)], [(34, 50), (62, 100)]]),
 }
 STROKE = 15.0  # stroke width in glyph units
@@ -126,26 +127,23 @@ def glow_layer(mask, radius, color, gain):
 
 
 def lockup(cap_px, stacked, with_tether=True):
-    """The title lockup as (RGBA image, glow mask). Stacked: ABYSSAL over TETHER; else one line."""
+    """The title lockup as a mask. Stacked: a small THE over LANTERN; else one line THE LANTERN."""
     pad = int(cap_px * 0.35)
     if stacked:
-        a = stroke_mask('ABYSSAL', cap_px, pad)
-        t = stroke_mask('TETHER', cap_px, pad)
-        gap = int(cap_px * 0.16)
+        apad = int(pad * 0.55)
+        a = stroke_mask('THE', int(cap_px * 0.55), apad)
+        t = stroke_mask('LANTERN', cap_px, pad)
+        gap = int(cap_px * 0.12)
         W = max(a.width, t.width)
-        H = a.height + t.height - 2 * pad + gap
-        m = Image.new('L', (W, H), 0)
-        m.paste(a, ((W - a.width) // 2, 0))
-        m.paste(t, ((W - t.width) // 2, a.height - 2 * pad + gap + pad - pad), t)
-        # paste TETHER by max so overlapping pads do not erase ABYSSAL
+        H = a.height + t.height - apad - pad + gap
         full = Image.new('L', (W, H), 0)
         full.paste(a, ((W - a.width) // 2, 0))
         tt = Image.new('L', (W, H), 0)
-        tt.paste(t, ((W - t.width) // 2, a.height - 2 * pad + gap))
+        tt.paste(t, ((W - t.width) // 2, a.height - apad - pad + gap))
         m = ImageChops.lighter(full, tt)
     else:
-        a = stroke_mask('ABYSSAL', cap_px, pad)
-        t = stroke_mask('TETHER', cap_px, pad)
+        a = stroke_mask('THE', cap_px, pad)
+        t = stroke_mask('LANTERN', cap_px, pad)
         gapw = int(WORD_GAP * cap_px / 100.0)
         W = a.width + t.width - 2 * pad + gapw
         H = a.height

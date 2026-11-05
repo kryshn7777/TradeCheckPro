@@ -1,4 +1,4 @@
-# Abyssal Tether: Meta Horizon Store release plan (WebXR PWA)
+# The Lantern: Meta Horizon Store release plan (WebXR PWA)
 
 Prepared 2026-10-19 for the owner and the build agents. Scope: shipping the full-3D WebXR build in
 `public/abyssal-tether-3d/` to the **Meta Horizon Store** as an **immersive WebXR PWA**, with a
@@ -267,7 +267,7 @@ Properties:
    finish IAP testing before submitting, and keep BETA under 200 external users until DUC is
    approved.
 3. Monetization > Add-ons > create: **SKU `abyssal_tether_full_game`**, type **Durable**, name
-   "Abyssal Tether: The Full Descent", description (required to fetch by SKU **[S7]**), price
+   "The Lantern: The Full Descent", description (required to fetch by SKU **[S7]**), price
    **USD 9.99**, add-on art. Let the Dashboard derive regional prices or set them by hand.
 4. Optional: show the add-on on the store page (opt-in in the Dashboard **[S29]**).
 
@@ -358,7 +358,7 @@ KT=$(find ~/.bubblewrap/jdk -path '*/bin/keytool' | head -1)
 # 1. Signing key (ONCE, forever). Outside every repo and web folder. Back it up twice offline.
 mkdir -p ~/secure && chmod 700 ~/secure
 "$KT" -genkeypair -v -keystore ~/secure/abyssal-tether.keystore -alias abyssaltether \
-  -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Abyssal Tether, O=<Studio>, C=<CC>"
+  -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=The Lantern, O=<Studio>, C=<CC>"
 "$KT" -list -v -keystore ~/secure/abyssal-tether.keystore -alias abyssaltether | grep SHA256
 #   -> SHA256: AB:CD:...  (the colon-hex fingerprint for assetlinks.json)
 ```
@@ -377,7 +377,7 @@ bubblewrap init --manifest="https://<domain>/play/manifest.webmanifest" --metaqu
 |---|---|
 | App mode for your PWA in Meta Horizon OS? | `immersive` |
 | Domain / URL path | `<domain>` / `/play/index.html` |
-| Application name / Launcher name | `Abyssal Tether` / `Abyssal` (the launcher-name validator allows at most 12 characters **[P1]**) |
+| Application name / Launcher name | `The Lantern` / `Lantern` (the launcher-name validator allows at most 12 characters **[P1]**) |
 | Application ID (package) | `com.<studio>.abyssaltether` (permanent) |
 | Starting version code | `1` |
 | Background colour, icon URLs | `#08090A`, `https://<domain>/play/icons/icon-512.png`, maskable `icon-maskable-512.png` |
@@ -488,7 +488,7 @@ some different sizes, noted below):
 Listing text limits **[P2]**: name 30 characters, short description 150, long description 4000.
 Draft:
 
-- **Name**: Abyssal Tether
+- **Name**: The Lantern
 - **Short** (121 characters): "Descend a buried cathedral-machine on two grappling tethers while
   something vast hunts you from above. Chapter 1 is free."
 - **Long description outline**: hook; two-handed tether movement (swing, reel, yank, chain); the
@@ -554,7 +554,7 @@ VR store); Meta crawls the URL daily and three consecutive failures can get the 
 Outline for `https://<domain>/privacy/` (owner writes and publishes; have it reviewed if in doubt):
 
 1. **Who we are**: studio name, contact email, postal address if required in your country.
-2. **Scope**: Abyssal Tether on Meta Quest (Store app) and the web version at `<domain>`.
+2. **Scope**: The Lantern on Meta Quest (Store app) and the web version at `<domain>`.
 3. **What we collect**: nothing that identifies you on our servers. The game stores settings, best
    times, progress and a purchase-status cache **only on your headset** (browser local storage and
    cache). We run no analytics, ads or third-party SDKs. (If this ever changes, update this page and
@@ -565,7 +565,7 @@ Outline for `https://<domain>/privacy/` (owner writes and publishes; have it rev
    time) for security and delivery, kept for N days.
 6. **How it is used**: to run the game, remember your settings and progress, and restore purchases.
 7. **Children**: not directed at children under 13 (age group Teens and Adults).
-8. **Deleting your data**: clear the app's storage (Quest Settings > Apps > Abyssal Tether >
+8. **Deleting your data**: clear the app's storage (Quest Settings > Apps > The Lantern >
    Clear data, or uninstall), or email us to delete anything we hold (we hold no account data).
    Purchases are tied to your Meta account; Meta handles their deletion.
 9. **Your rights** (GDPR/CCPA wording as applicable), **changes to this policy**, **effective date**.
@@ -586,9 +586,9 @@ instantaneously" **[S19]**). Draft answers to confirm against the build:
 
 | Topic | Draft answer |
 |---|---|
-| Violence | Fantasy violence: a non-human creature can catch and kill the player character. Death is shown as a fade to black with sound; **no blood, no gore, no dismemberment**; the player never attacks anything. |
+| Violence | **Graphic fantasy violence against the player character**: a non-human creature can catch, bite and devour the player (a death scene with its face in the dark, its jaws closing on the camera, blood on the screen); a fall ends with the eyes closing; skeletons lie through the levels. The player never attacks anything. (Updated for the mature build: store/LISTING.md has the full answers.) |
 | Fear / horror | **Yes**: sustained horror atmosphere, a predator stalks the player, sudden lunges (jump scares). |
-| Blood / gore | None. |
+| Blood / gore | **Yes**: old bloodstains on floors and walls, blood on the screen in the creature death scene, skeletal remains. No exposed organs. |
 | Language | None. |
 | Sexual content / nudity | None. |
 | Drugs, alcohol, tobacco | None. |

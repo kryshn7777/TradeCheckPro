@@ -167,7 +167,7 @@ async function scenarioInstallOffline(label, prefix, browser) {
   const deep = await ctx.newPage();
   const resp = await deep.goto(srv.base + 'some/deep/link' + QS, { waitUntil: 'domcontentloaded' }).catch((e) => ({ err: e.message }));
   const title = await deep.title().catch(() => '');
-  check(`[${label}] offline deep link inside the scope serves the app shell`, !resp.err && /Abyssal Tether/.test(title), title || (resp && resp.err));
+  check(`[${label}] offline deep link inside the scope serves the app shell`, !resp.err && /The Lantern/.test(title), title || (resp && resp.err));
   await deep.close();
   await ctx.close();
   return { dir, d1, prefix };

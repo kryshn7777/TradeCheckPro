@@ -1,4 +1,4 @@
-# Abyssal Tether: Meta Horizon Store listing pack (free release, Chapters I and II)
+# The Lantern: Meta Horizon Store listing pack (free release, Chapters I and II)
 
 Everything the owner pastes into the Developer Dashboard for the **free release: Chapters I and II**. Limits are Meta's
 (RELEASE.md section 13): name 30 characters, short description 150, long description 4000. Character counts below
@@ -19,7 +19,7 @@ written; edit this file, not the Dashboard, and re-run the checker):
 
 | Field | Value |
 |---|---|
-| Title | `Abyssal Tether` (14 characters; must equal the title on the cover art, VRC.Quest.Asset.2) |
+| Title | `The Lantern` (11 characters; must equal the title on the cover art, VRC.Quest.Asset.2) |
 | Price | Free. No add-ons at launch (the dormant SKU `abyssal_tether_full_game` is NOT created until Chapters II-V exist) |
 | Category / genres | Games: Action, Adventure |
 | Tags | horror, climbing, physics, single player, atmospheric |
@@ -45,7 +45,7 @@ Descend a buried cathedral-machine, then a town of lamps, on two grappling tethe
 ```
 Something is following you down.
 
-Abyssal Tether is a physical VR descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
+The Lantern is a physical VR descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
 
 HOW YOU MOVE
 - Fire a tether with each trigger and swing across the dark. Hold the trigger to stay attached, release to let go.
@@ -68,10 +68,10 @@ BUILT FOR THE HEADSET
 - Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 65 MB).
 
 COMFORT
-Comfort rating: Intense. Abyssal Tether uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
+Comfort rating: Intense. The Lantern uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
 
 CONTENT
-Horror atmosphere, sudden loud sounds and peril. No blood, no gore.
+Mature horror: sudden loud sounds, peril, bloodstains, skeletal remains and graphic death scenes (a creature devours you; blood splashes the screen). No sexual content, no real-world violence, the player never attacks anything.
 The radio voices in this version are AI-generated (text-to-speech) placeholders, not human actors.
 
 Chapters I and II are free, and Chapter II ends on a hook. The descent continues in future updates.
@@ -83,9 +83,9 @@ Meta judges the default experience. Smooth artificial locomotion, swinging at sp
 turning with a thumbstick are "significant camera movement, player motion" (Meta comfort page): **Intense**.
 Under-rating is a known rejection reason ("Comfort rating mismatch"). Do not pick Moderate.
 
-## Age group: Teens and Adults
+## Age group: Teens and Adults (owner's call: the game is meant to be R-rated, so consider the highest option offered)
 
-Mandatory self-certification (Teens and Adults / Mixed Ages / Children). Horror and peril: Teens and Adults.
+Mandatory self-certification (Teens and Adults / Mixed Ages / Children). Mature horror with blood, remains and a graphic devouring death scene: Teens and Adults at most; the owner wants an R / Mature rating on purpose, so answer the IARC questionnaire below truthfully and accept the stricter outcome.
 
 ## IARC questionnaire: draft answers (Dashboard > Submission Info > Content Ratings)
 
@@ -93,9 +93,9 @@ Answer against the final build; these are written for the free Chapters I-II bui
 
 | Topic | Draft answer |
 |---|---|
-| Violence | Fantasy violence, mild: the player character can be killed by a creature or by falling. Death is a fade to black with sound. **No blood, no gore, no dismemberment.** The player never attacks anything. |
+| Violence | **Graphic fantasy violence against the player character**: a creature kills and eats the player in a death scene (its jaws close on the camera, blood splashes the screen, the sound of chewing), a fall ends with the player's eyes closing, skeletal remains lie through the levels. The player never attacks anything. No dismemberment shown on screen. |
 | Fear / horror | **Yes**: sustained horror atmosphere, a predator that stalks the player, sudden scares and loud sounds. |
-| Blood and gore | None. |
+| Blood and gore | **Yes**: old bloodstains and splatters on floors and walls, blood on the screen in the creature death scene, skeletons and loose bones (not fresh). No exposed organs. |
 | Language | None. |
 | Sexual content / nudity | None. |
 | Controlled substances (drugs, alcohol, tobacco) | None. |
@@ -107,13 +107,13 @@ Answer against the final build; these are written for the free Chapters I-II bui
 | Ads | None. |
 | Online features | The game is downloaded from the web on first launch and cached; there is no multiplayer and no server-side game state. |
 
-Expected outcome: roughly Teen / PEGI 12-16 territory because of horror; IARC decides per region.
+Expected outcome: roughly Mature 17+ / PEGI 16-18 territory because of blood, remains and the death scene; IARC decides per region. This is intended (the owner asked for an R-rated game).
 
 ## Content-guideline notes (marketing material)
 
 Meta judges key art and covers most strictly: no blood, no gore, no soft-tissue or organ close-ups, no "graphic
-depictions of internal organs". The covers, hero and screenshots in `art/` and `screenshots/` come from the real game
-(stone, light, ropes, the shaft) and show none of that. If the creature's final design is organic and graphic, keep it
+depictions of internal organs" in MARKETING material even for a mature game. The covers, hero and screenshots in `art/` and `screenshots/` come from the real game
+(stone, light, ropes, the shaft) and show none of that; keep it so (no blood-lens or skeleton frames in key art). If the creature's final design is organic and graphic, keep it
 out of key art and show it at distance, in silhouette.
 
 ## Data Use Checkup (for the Dashboard)

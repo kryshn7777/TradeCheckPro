@@ -32,7 +32,7 @@
  * Bus events (x, y, z = where the sound comes from): 'dresser:tick' {fast, intensity, hand, distance} (the line, every ~0.6 s,
  * every ~0.25 s while measuring), 'dresser:hum' {distance} (the three-note work-song), 'dresser:measure' {anchorId, hand,
  * distance, ox, oy, oz (the chalk outline)}, 'dresser:saw' {anchorId}, 'dresser:cut' {anchorId, hand, released}, 'dresser:cancel'
- * {reason}, 'dresser:dress', 'dresser:spoiled', 'dresser:whole', 'dresser:stagger', 'dresser:appear'. A cut also emits
+ * {reason}, 'dresser:dress', 'dresser:spoiled', 'dresser:whole', 'dresser:stagger', 'dresser:appear', 'dresser:step' {distance} (a heavy footfall every 1.05 m walked). A cut also emits
  * 'grapple:break' {hand, anchor, x, y, z, cut: true} so the ring sounds and buzzes as a snapped ring does.
  *
  * Output for the view (render/dresserView.js) and audio: `body` {visible, x,y,z (feet on the surface), ux,uy,uz (up),
@@ -47,6 +47,7 @@ import { isStructural, boxSurface } from './creature3d.js';
 
 const TAU = Math.PI * 2;
 const FAR = 99999;
+const STEP_M = 1.05; // m of walk per footfall (the view's gait: render/dresserView.js)
 
 export const DRESSER_STATES = Object.freeze({
   DORMANT: 'DORMANT',
@@ -326,6 +327,7 @@ export class Dresser3D {
     this.fy = 0;
     this.fz = 1;
     this.distance = FAR;
+    this._stepD = 0; // m walked since the last 'dresser:step' (a heavy footfall every STEP_M)
     this.sees = false;
     this.caughtPlayer = false;
     this.caughtCause = '';
@@ -1110,6 +1112,11 @@ export class Dresser3D {
     // facing: along the walk
     this._faceDir(ux, uy, uz, dt);
     this.body.walk += moved;
+    this._stepD += moved;
+    if (this._stepD >= STEP_M) {
+      this._stepD -= STEP_M;
+      this._emit('dresser:step', { x: this.x, y: this.y, z: this.z, distance: this.distance });
+    }
     return moved;
   }
 

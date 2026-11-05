@@ -37,7 +37,7 @@ The website is the product; web-only fixes need only a redeploy.
 KT=$(find ~/.bubblewrap/jdk -path '*/bin/keytool' | head -1)
 mkdir -p ~/secure && chmod 700 ~/secure
 "$KT" -genkeypair -v -keystore ~/secure/abyssal-tether.keystore -alias abyssaltether \
-  -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Abyssal Tether, O=<Studio>, C=<CC>"
+  -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=The Lantern, O=<Studio>, C=<CC>"
 "$KT" -list -v -keystore ~/secure/abyssal-tether.keystore -alias abyssaltether | grep SHA256
 ```
 
@@ -78,7 +78,7 @@ Settings that matter (already in the generated `twa-manifest.json`):
 | `enableMicrophone`, `enableXRScene` | `false` | Security.2: minimum permissions |
 | `features.horizonBilling` | enabled in the template | for the later paid unlock. For the **free** release you can set `"horizonBilling": {"enabled": false}` and `"alphaDependencies": {"enabled": false}`; keep it enabled only if you want the final APK to be able to sell the unlock without a repackage (RELEASE.md Q18: `POST_NOTIFICATIONS` for billing) |
 | `minSdkVersion` | 23 | raise to 29 if the uploader rejects it (RELEASE.md Q8) |
-| launcher name | at most 12 characters | `Abyssal` |
+| launcher name | at most 12 characters | `Lantern` |
 
 Check the APK before it leaves the machine (`dist-at3d/twa/build-and-upload.sh build` does all of this):
 

@@ -14,8 +14,11 @@
  * oscillators, 1 gated noise loop.
  */
 import { SECTION_BEDS, IRBuilder, reverbSpec } from './dsp3d.js';
+import { SeqRng } from './sfxDesign.js';
 
-const rand = (a, b) => a + Math.random() * (b - a);
+const SEQ = new SeqRng(0xa3b1); // seeded jitter, never Math.random (plans/SFX_DESIGN.md section 4)
+
+const rand = (a, b) => a + SEQ.next() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const FADE_TC = 0.8; // s, reverb cross-fade time constant (≈ 2.5 s to settle)
 const IR_BUDGET = 22000; // samples per channel generated per control tick (30 Hz): a 3.4 s IR takes ~8 ticks
@@ -291,12 +294,12 @@ export class Ambience {
     const m = this.m;
     const bed = SECTION_BEDS[this.index];
     const pos = m._around(3, 24, 10);
-    const flavour = Math.random();
+    const flavour = SEQ.next();
     const metal = flavour < 0.22;
     const lvl = rand(0.07, 0.15) * m._ambientLift(pos);
     const v = m._begin('drip', 0, 0.07, 1.3, m.busAmbient, lvl, 0, rand(0.55, 0.9), 0, pos, 'ambient', true);
     if (!v) return;
-    const drops = Math.random() < 0.3 ? 2 : 1;
+    const drops = SEQ.next() < 0.3 ? 2 : 1;
     for (let d = 0; d < drops; d++) {
       const t = v.t0 + (d ? rand(0.1, 0.45) : 0);
       const k = d ? 0.55 : 1;
@@ -393,7 +396,7 @@ export class Ambience {
     b1.connect(g);
     b2.connect(g);
     g.connect(v.out);
-    if (Math.random() < 0.4) {
+    if (SEQ.next() < 0.4) {
       const p = m._vOsc(v, 'sine', f1 * 3.01, t);
       const pg = m._vGain(v, 0);
       m._perc(pg.gain, t + dur * 0.3, 0.12, 0.002, 0.25);
@@ -409,7 +412,7 @@ export class Ambience {
     const pos = m._around(10, 40, 20);
     const v = m._begin('chain', 0, 3, 3, m.busAmbient, rand(0.14, 0.24) * m._ambientLift(pos), 0, 0.6, 0, pos, 'ambient', true);
     if (!v) return;
-    m._tickTrain(v, v.t0, 3 + Math.floor(Math.random() * 4), rand(0.9, 1.9), 0.6, 2200, 4800, 18, 0.05, 0.4);
+    m._tickTrain(v, v.t0, 3 + Math.floor(SEQ.next() * 4), rand(0.9, 1.9), 0.6, 2200, 4800, 18, 0.05, 0.4);
     m._commit(v);
   }
 
@@ -423,7 +426,7 @@ export class Ambience {
     const t = v.t0;
     const n = m._vNoise(v, m._pink, t, 0.9);
     const bp = m._vFilter(v, 'bandpass', rand(250, 500), 7);
-    const up = Math.random() < 0.5;
+    const up = SEQ.next() < 0.5;
     bp.frequency.exponentialRampToValueAtTime(up ? rand(900, 1500) : rand(160, 260), t + dur);
     const g = m._vGain(v, 0);
     m._swell(g.gain, t, 0.8, dur * 0.35, dur * 0.2, dur * 0.18);

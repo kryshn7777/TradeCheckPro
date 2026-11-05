@@ -141,7 +141,7 @@ export class ContactShadows {
     const h = hit.t;
     const nrm = boxFaceNormal(hit.solid, hit.x, hit.y, hit.z, dx, dy, dz, this._n);
     const f = 1 - h / reach;
-    const a = k * Math.pow(f > 0 ? f : 0, 1.6);
+    const a = k * (this._blobK == null ? 1 : this._blobK) * Math.pow(f > 0 ? f : 0, 1.6);
     if (a < 0.01) return false;
     let cx = hit.x;
     let cz = hit.z;
@@ -191,6 +191,9 @@ export class ContactShadows {
       this._finish(r3d);
       return;
     }
+    // the real lantern shadow carries the same job where it is on: the blobs fade to 45 % (a blob under a real shadow doubles it)
+    const ls = r3d && r3d.lanternShadow;
+    this._blobK = ls && ls.k > 0 ? 1 - 0.55 * Math.min(1, ls.k) : 1;
     const tier = r3d && r3d.lighting ? r3d.lighting.tier : 'quest';
     const lowTier = tier === 'low' || !!(game.settings && game.settings.reducedEffects);
     const fog = r3d && r3d.scene ? r3d.scene.fog : null;

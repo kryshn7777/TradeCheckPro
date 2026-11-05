@@ -213,7 +213,7 @@ export class Level3D {
     /** Free attach: any level surface takes the hook (see the constructor doc). */
     this.freeAttach = !!(opts && opts.freeAttach);
     const v = this.variant;
-    this.name = d.name || 'Abyssal Tether';
+    this.name = d.name || 'The Lantern';
 
     // ---- sections (top → bottom) ------------------------------------------------
     const rawSections = (Array.isArray(d.sections) ? d.sections : []).slice().sort((a, b) => num(b.yTop, 0) - num(a.yTop, 0));

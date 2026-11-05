@@ -24,7 +24,8 @@
  *    under load, rope jolts, level rumbles and debris triggers (a column of
  *    stones falls at data.x/y/z, where the audio puts it), and the gate slam
  *  - the death fade: a black sphere around the head (opacity from game.fade),
- *    with a dim warm flash on big impacts (game.flash)
+ *    with a dim warm flash on big impacts (game.flash); the death scenes' eyelids
+ *    and blood on the lens (deathOverlay.js, one sphere, from game.deathSnap)
  * Quality tiers: settings.reducedEffects → minimal; WebXR → Quest budget;
  * desktop → high. `?fx=low|quest|high` (or settings.fxQuality) forces a tier.
  * Draw calls added over the old FX: fog 1 + halo 1 + trickles 1 + rubble 1 (only
@@ -38,6 +39,7 @@ import { Rubble, Trickles } from './debris.js';
 import { LanternHalo } from './lanternHalo.js';
 import { GodRays } from './godRays.js';
 import { WindGusts } from './windGusts.js';
+import { DeathOverlay } from './deathOverlay.js';
 
 const DUST_COUNT = 650; // motes (was 1100): fewer specks in the air in front of the eyes
 const DUST_HALF = 9; // metres: half-size of the wrapped cube around the head
@@ -359,6 +361,8 @@ export class FX {
     this.fade.frustumCulled = false;
     this.fade.visible = false;
     this.camera.add(this.fade);
+    // eyelids closing + blood on the lens (sim/deathScene.js drives it through game.deathSnap)
+    this.deathOverlay = new DeathOverlay(this.camera);
     this._flashColor = new THREE.Color(0x3a1c10);
     this._black = new THREE.Color(0x000000);
   }
@@ -835,7 +839,18 @@ export class FX {
     this._updateRains(dt);
 
     this._updateDust(dt, head);
-    this.windGusts.update(dt, head, tier, this.reduced, game && game.objectives ? game.objectives.squallNow : null);
+    let sqn = game && game.objectives ? game.objectives.squallNow : null;
+    if (game && game.vista && (game.vista.k > 0.05 || game.vista.gust > 0)) {
+      // a vista's whooshes are visible gusts too: the wisps thicken and stream with them (the same draw call as a squall's)
+      const vs = this._vistaSq || (this._vistaSq = { k: 0, rise: 0, dx: 1, dz: 0 });
+      const own = Math.min(1, game.vista.k * 0.25 + game.vista.gust * 0.85);
+      vs.k = sqn ? Math.max(own, sqn.k || 0) : own;
+      vs.rise = sqn ? sqn.rise || 0 : 0;
+      vs.dx = sqn ? sqn.dx || 0 : 1;
+      vs.dz = sqn ? sqn.dz || 0 : 0;
+      sqn = vs;
+    }
+    this.windGusts.update(dt, head, tier, this.reduced, sqn);
     this._updateBursts(dt);
     // creature dust is not emitted past the haze (fully fogged puffs are invisible but still blended and use the pool)
     const fog = this.scene.fog;
@@ -1052,6 +1067,7 @@ export class FX {
   }
 
   _updateFade(game) {
+    this.deathOverlay.update(game && game.deathSnap ? game.deathSnap : null);
     const fade = THREE.MathUtils.clamp(num(game && game.fade, 0), 0, 1);
     const flash = THREE.MathUtils.clamp(num(game && game.flash, 0), 0, 1);
     const mat = this.fade.material;
@@ -1084,6 +1100,7 @@ export class FX {
     this.halo.dispose();
     this.godRays.dispose();
     if (this._noise) this._noise.dispose();
+    if (this.deathOverlay) this.deathOverlay.dispose();
     if (this.fade.parent) this.fade.parent.remove(this.fade);
     this.fade.geometry.dispose();
     this.fade.material.dispose();

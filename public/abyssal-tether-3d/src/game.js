@@ -27,9 +27,17 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { DeathScene } from './sim/deathScene.js'; // the death scenes: the collapse + the eyelids, the Mason eating you (render/deathOverlay.js)
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
+import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: raise it (or press M) and a 3D hologram of the descent blooms
+import { WristComputer } from './render/wristComputer.js';
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
+import { RemainsView } from './render/remainsView.js'; // skeletons (bones.glb) and old blood (blood_atlas.png) through Chapter I
+import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
+import { nearestWater } from './sim/waterPlan.js';
+import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
+import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -39,6 +47,8 @@ import { PAR_3D } from './data/par-3d.js';
 import { ropeHaptic } from './audio/dsp3d.js';
 import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { ObjectiveHint } from './sim/objectiveHint.js';
+import { CatchMoment } from './sim/catch3d.js'; // THE CATCH: the hit-stop on a lifesaving rope bite
+import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line transfers in the air
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
@@ -50,6 +60,8 @@ const C = CONFIG;
 const PROBE_RAY = 2.5;
 const _probeV = new THREE.Vector3();
 const _probeD = new THREE.Vector3();
+const _dcV = new THREE.Vector3(); // death scene scratch (camera position / direction)
+const _dcW = new THREE.Vector3();
 
 // -----------------------------------------------------------------------------
 // Tuning (seconds / metres unless noted)
@@ -132,6 +144,7 @@ const MODULES = {
   nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
+  jetpackView: './render/jetpackView.js', // the fuel cans + the flame
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
@@ -213,13 +226,15 @@ export function blankIntent() {
     backPressed: false,
     nvPressed: false,
     holsterPressed: false,
+    jetPressed: false,
+    mapPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     climb: blankClimb(),
   };
 }
 
-const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed'];
+const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed'];
 
 /**
  * A view of the main bus for per-run objects (creature, tethers, physics):
@@ -308,7 +323,52 @@ function introOff() {
   }
 }
 
+/** `?hitstop=off` turns THE CATCH's hit-stop off (sim/catch3d.js; the e2e bots); Settings › Rope › Catch pause (settings.hitStop) does the same for a player. */
+function hitstopOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]hitstop=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /** `?holster=off` keeps both rope guns in the hands at the old walk speed (the bots, tests, captures). */
+/** `?jet=off` leaves the jetpack out (the route bots / e2e descent that must not light it by a stray press). */
+function jetOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]jet=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?wind=off` leaves the vista wind out. */
+function windOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]wind=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?water=off` leaves the falling water out. */
+function waterOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]water=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?remains=off` leaves the skeletons and the blood out. */
+function remainsOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]remains=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 function holsterOff() {
   try {
     return typeof location !== 'undefined' && /[?&]holster=off/.test(location.search || '');
@@ -861,6 +921,8 @@ export class FallbackInput {
     it.restartPressed = !!this._keyEdges.KeyR;
     it.nvPressed = !!this._keyEdges.KeyN;
     it.holsterPressed = !!this._keyEdges.KeyH;
+    it.jetPressed = !!this._keyEdges.KeyJ;
+    it.mapPressed = !!this._keyEdges.KeyM;
     it.confirmPressed = !!(this._keyEdges.Enter || this._keyEdges.NumpadEnter);
     it.backPressed = !!this._keyEdges.Backspace;
     // Aim ray from the camera centre (both hands).
@@ -1015,6 +1077,11 @@ export class Game3D {
     this.checkpoint = { x: 0, y: 0, z: 0, yaw: 0, index: -1 };
     this.deathCause = null;
     this.deathT = 0;
+    this.deathScene = new DeathScene(); // sim/deathScene.js: what plays between the death and the panel
+    this.deathSnap = null; // the scene's snapshot while it plays (render/fx.js draws the eyelids + blood from it), else null
+    this.deathLead = 0; // s the scene delays the restore / panel by (deathT - deathLead is the restore clock)
+    this._deathHold = null; // debug: freeze the scene at this time
+    this._deathCam = { pitch0: 0, exposure0: 0, faceYaw: 0, haveFace: false, rx: 0, ry: 0, rz: 0 };
     this.creatureView = null;
     this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
     this.skitterViews = [];
@@ -1040,6 +1107,8 @@ export class Game3D {
     this.c2 = null; // Chapter2Glue (chapterGlue.js): Chapter II's director and views
     this._c2views = null;
     this.chapter = chapterFromUrl(); // 1 = The Underspire (the game), 2 = Lamphold (the graybox, ?chapter=2)
+    this.wristMap = new WristMap();
+    this.wristComputer = null; // render/wristComputer.js (built with the renderer)
     this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
     this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
@@ -1051,6 +1120,11 @@ export class Game3D {
     this._nvHint = 0; // the one-time "it is dark: goggles" hint: 0 not yet, 1 shown, 2 used
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
+    this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
+    this.vista = null; // sim/vistaWind.js
+    this.waterView = null; // render/waterView.js (Chapter I)
+    this.remainsView = null; // render/remainsView.js (Chapter I)
+    this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
@@ -1058,6 +1132,7 @@ export class Game3D {
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
+    this.jetpackView = null; // fuel cans + the jet flame (render/jetpackView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
     this.sceneDetail = null; // seeded render-only scene dressing: bones, rubble, chains, puddles, decals (render/sceneDetail.js)
     this.lastDeath = null; // info handed to the death panel
@@ -1114,6 +1189,7 @@ export class Game3D {
     this._uiFallback = false;
     this._uiMode = null;
     this._hapticT = 0;
+    this.catchMoment = new CatchMoment(); // THE CATCH (sim/catch3d.js): _frame scales the run's dt by it
     this._bagHapticT = 0;
     this._lantern0 = null; // { renderer, base, range }: the lantern as the renderer made it (WP-BAG dims it with the charge)
     this._handA = { x: 0, y: 0, z: 0, grip: 0, ok: false };
@@ -1726,6 +1802,15 @@ export class Game3D {
         this.sceneDetail = null;
       }
     }
+    this._syncWater();
+    if (!this.jetpackView && M.jetpackView && typeof M.jetpackView.JetpackView === 'function') {
+      try {
+        this.jetpackView = new M.jetpackView.JetpackView(this);
+      } catch (err) {
+        this._fault('jetpackView', err);
+        this.jetpackView = null;
+      }
+    }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
       try {
         this.pickupsView = new M.pickupsView.PickupsView(this);
@@ -2008,6 +2093,24 @@ export class Game3D {
       if (!this._inRun()) return;
       const k = U.clamp((finiteOr(e.speed, 0) - C.rope.joltFxSpeed) / 20, 0, 1);
       this._hapticTethered(0.35 + 0.5 * k, 60);
+      // THE CATCH: a bite that saved a near-lethal fall holds the world a beat (vy = the speed before the bite, physics3d.js)
+      const vy = finiteOr(e.vy, this.player ? this.player.vy : 0);
+      if (this.state === 'playing' && this.catchMoment.onJolt(finiteOr(e.speed, 0), vy, this.diff && this.diff.lethalImpact, !hitstopOff() && (!this.settings || this.settings.hitStop !== false))) {
+        this._hapticBoth(1, 120);
+        const th = this.threat;
+        if (th && !th.isNull) {
+          th.value = Math.max(finiteOr(th.value, 0), 0.6); // the heart jumps, then settles at the threat's own release rate
+          th.heartRate = Math.max(finiteOr(th.heartRate, 60), 130);
+        }
+        bus.emit('rope:catch', { speed: -vy });
+      }
+    });
+    // SWING CHAINS (sim/flow3d.js): a rising pop per link, a toast when a scored chain of 4+ ends
+    bus.on('flow:link', (e) => {
+      if (this._inRun()) this._haptic(e.hand, 0.2 + 0.08 * Math.min(finiteOr(e.n, 1), 8), 40);
+    });
+    bus.on('flow:end', (e) => {
+      if (this.state === 'playing' && e.scored && e.n >= FLOW.rewardFrom && e.reason !== 'death') this._toast(`Chain x${e.n}`, 1.4);
     });
     // The clutch paying line out: the first bite of a slip (the continuous buzz is in _updateHaptics, same curve as the audio).
     bus.on('rope:slip', (e) => {
@@ -2462,6 +2565,7 @@ export class Game3D {
     this.hidePlayer = false;
     this.time = 0;
     this._runClock = 0;
+    this.catchMoment.reset();
     this.deaths = 0;
     this.victoryT = -1;
     this.gateClosed = false;
@@ -2853,9 +2957,15 @@ export class Game3D {
     this.nv = new NightVision3D(this._runBus);
     this.holster = new Holster3D(this._runBus);
     this.holster.setEnabled(!holsterOff());
+    this.jet = new Jetpack3D(this._runBus);
+    this.vista = new VistaWind(this._runBus);
+    this.vista.enabled = !windOff();
+    this.vista.reset(lvl);
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
+    this.flow = new Flow3D(this._runBus, this.player); // SWING CHAINS (sim/flow3d.js): bus-driven, rebuilt (= reset) with each world
+    this.flow.lantern = diff.bag === false ? null : this.bag; // the 4+ link charge goes through the bag (none where the bag is off)
     this.objectives = null;
     try {
       this.objectives = new Objectives3D(lvl, diff, this._runBus);
@@ -2918,8 +3028,14 @@ export class Game3D {
       const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
       Storage.set('supplyRuns', n);
       this.pickups.setLevel(this.level);
-      this.pickups.reset((Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0);
+      const seed = (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
+      this.pickups.reset(seed);
       this.pickups.snapshot();
+      // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
+      if (this.wristMap) this.wristMap.reset();
+      if (this.vista) this.vista.reset(this.level);
+      if (this.wristComputer) this.wristComputer.reset();
+      if (this.jet) this.jet.reset(this.level && this.level.data ? this.level.data.supplies : [], seed, this.level && this.level.sections ? this.level.sections.length : 0);
     }
     this.player.speedMul = 1;
   }
@@ -2934,6 +3050,7 @@ export class Game3D {
     if (this.bag) this.bag.restore();
     if (this.nv) this.nv.restore();
     if (this.holster) this.holster.reset(); // a respawn: both guns back in their holsters
+    if (this.jet) this.jet.onRespawn(); // ... but the fuel does NOT come back, and a can that was taken stays taken
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -2983,6 +3100,7 @@ export class Game3D {
         b = Bh;
       }
       this.pickups.update(dt, p, bag, a, b);
+      this._updateJetCans(a, b);
     }
     // First aid ratchet: a soft tick in the hands while a long channel runs.
     const ap = bag.applying;
@@ -2992,6 +3110,153 @@ export class Game3D {
         this._bagHapticT = 0.28;
         this._hapticBoth(0.1 + 0.12 * (ap.t / ap.dur), 22);
       }
+    }
+  }
+
+  /**
+   * The wrist computer's map (sim/wristMap.js): M latches it open on a screen; in a headset raising the right wrist toward the face for a
+   * moment opens it (the right gun must be holstered: a gun lifted to aim is not a look at the watch). Closed in every menu, when dead, when paused.
+   */
+  _updateWristMap(dt, intent, live) {
+    const wm = this.wristMap;
+    if (!wm) return;
+    const r = this.renderer;
+    const xr = !!this.xrActive;
+    let head = null;
+    let hand = null;
+    let ok = false;
+    if (live && xr && r && r.camera && this.input && typeof this.input.handPose === 'function') {
+      const cam = r.camera;
+      cam.updateWorldMatrix(true, false);
+      cam.getWorldPosition(_dcV);
+      cam.getWorldDirection(_dcW);
+      head = this._wmHead || (this._wmHead = { x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: -1 });
+      head.x = _dcV.x;
+      head.y = _dcV.y;
+      head.z = _dcV.z;
+      head.fx = _dcW.x;
+      head.fy = _dcW.y;
+      head.fz = _dcW.z;
+      const hp = this.input.handPose('right');
+      hand = this._wmHand || (this._wmHand = { x: 0, y: 0, z: 0 });
+      hand.x = hp.x;
+      hand.y = hp.y;
+      hand.z = hp.z;
+      ok = typeof this.input.handTracked === 'function' ? !!this.input.handTracked('right') : true;
+    }
+    if (live && intent && intent.mapPressed) wm.toggle();
+    const gunOut = !!(this.holster && this.holster.out && this.holster.out[1]);
+    wm.update(dt, { live: !!live && !!this.player && this.player.alive !== false, xr, head, hand, handOk: ok, gunOut });
+  }
+
+  /**
+   * The jetpack's ignition (sim/jetpack3d.js): both triggers within 90 ms, J on a keyboard, or Space in the air on a screen, while falling
+   * with no rope attached. A chord that lights it swallows its presses (no rope shot); with no fuel they stay ordinary shots.
+   */
+  _updateJetpack(intent) {
+    const jet = this.jet;
+    const p = this.player;
+    if (!jet || !p || !intent) return;
+    jet.enabled = !jetOff();
+    let want = false;
+    const ih = intent.hands;
+    if (ih) {
+      for (let k = 0; k < 2; k++) {
+        const hi = ih[HANDS[k]];
+        if (hi && hi.pressed && jet.chord(HANDS[k], this.realTime)) want = true;
+      }
+    }
+    if (intent.jetPressed) want = true;
+    // a keyboard / touch player has no second trigger: Space while falling (a jump needs the ground, so the press is free)
+    else if (intent.jumpPressed && !p.grounded && !p.tethered && p.airTime > 0.3 && p.vy <= -JET.minFall) want = true;
+    if (!want) return;
+    if (jet.request(p, !!p.tethered)) {
+      if (intent !== this._blank && ih) {
+        ih.left.pressed = false;
+        ih.right.pressed = false;
+      }
+      this._pendingJump = false;
+      p.jumpBuffer = 0;
+    }
+  }
+
+  /** Chapter I's water: built for the level on the scene (rebuilt when the level changes, gone in Chapter II). `?water=off` leaves it out. */
+  _syncWater() {
+    const want = this.chapter === 1 && this.level && this.renderer && !waterOff() ? this.level : null;
+    const have = this.waterView ? this.waterView.level : null;
+    if (want === have) return;
+    if (this.waterView) {
+      this.waterView.dispose();
+      this.waterView = null;
+    }
+    if (want) this.waterView = new WaterView(this);
+  }
+
+  /** Chapter I's skeletons and blood (planned at once from the level; the assets load behind the run). `?remains=off` leaves them out. */
+  _syncRemains() {
+    const want = this.chapter === 1 && this.level && this.renderer && !remainsOff() ? this.level : null;
+    const have = this.remainsView ? this.remainsView.level : null;
+    if (want === have) return;
+    if (this.remainsView) {
+      this.remainsView.dispose();
+      this.remainsView = null;
+      this._rvCompiled = false;
+    }
+    if (want) this.remainsView = new RemainsView(this);
+  }
+
+  /** The nearest fall / stream as a sound: a level (distance, size), a pan from where it lies against the view. */
+  _updateWaterSound() {
+    const wv = this.waterView;
+    const p = this.player;
+    const W = this.waterNear;
+    if (!wv || !p || this.state === 'menu') {
+      W.k = 0;
+      return;
+    }
+    const n = nearestWater(wv.list, p.rx, p.ry, p.rz, 60);
+    if (!n) {
+      W.k = 0;
+      return;
+    }
+    const f = n.f;
+    const size = U.clamp(0.35 + (f.w * (f.kind === 'stream' ? Math.min(f.len, 6) : Math.min(f.len, 40))) / 60, 0.35, 1);
+    W.k = (1 - U.smoothstep(5, 60, n.d)) * size * f.flow;
+    const cam = this.renderer && this.renderer.camera;
+    let pan = 0;
+    if (cam) {
+      const e = cam.matrixWorld.elements;
+      const dx = f.x - p.rx;
+      const dz = f.z - p.rz;
+      const l = Math.hypot(dx, dz) || 1;
+      pan = U.clamp(((dx / l) * e[0] + (dz / l) * e[2]) * 0.9, -0.9, 0.9) * U.smoothstep(2, 14, n.d); // up close it fills both ears
+    }
+    W.pan = pan;
+    W.bright = U.clamp(0.35 + f.flow * 0.35 + (f.kind === 'stream' ? -0.2 : 0.1), 0.2, 1);
+  }
+
+  /** Fuel cans: the body (or a gripping hand in VR) within reach takes one. */
+  _updateJetCans(a, b) {
+    const jet = this.jet;
+    const p = this.player;
+    if (!jet || !p) return;
+    const hands = this._jetHands || (this._jetHands = [{ x: 0, y: 0, z: 0, grip: false }, { x: 0, y: 0, z: 0, grip: false }]);
+    let h = null;
+    if (a && b) {
+      hands[0].x = a.x;
+      hands[0].y = a.y;
+      hands[0].z = a.z;
+      hands[0].grip = a.ok !== false && a.grip > 0.6;
+      hands[1].x = b.x;
+      hands[1].y = b.y;
+      hands[1].z = b.z;
+      hands[1].grip = b.ok !== false && b.grip > 0.6;
+      h = hands;
+    }
+    const c = jet.collect(p.x, p.y, p.z, h);
+    if (c) {
+      this._hapticBoth(0.5, 120);
+      this._try('ui', () => this.ui.toast && this.ui.toast('FUEL CAN  ·  TANK ' + Math.round(jet.fuel * 100) + ' %'));
     }
   }
 
@@ -3044,6 +3309,7 @@ export class Game3D {
     const st = this.state;
     const inRun = !!bag && !this.hidePlayer && (st === 'playing' || st === 'paused' || st === 'dead' || st === 'victory');
     let f = inRun ? bag.lanternFactor * lanternFadeAt(r.depthF || 0) : 1; // the lantern fades with depth (sim/nightVision3d.js)
+    if (inRun && this.flow && this.flow.flare > 0) f *= 1 + 0.5 * this.flow.flare; // a swing-chain link flares it (sim/flow3d.js)
     if (inRun && bag.lanternCharge <= C.bag.lanternLow && st === 'playing') {
       // a low battery stutters (bounded, never a strobe)
       const t = this.realTime;
@@ -3216,9 +3482,13 @@ export class Game3D {
       this._applyTurn(dt, intent);
       switch (this.state) {
         case 'playing':
-        case 'dead':
-          this._updateRun(dt, runIntent);
+        case 'dead': {
+          // THE CATCH: the world (physics, creature, run clock) slows together; the head, views and haptics keep real time
+          const sdt = dt * this.catchMoment.step(dt);
+          this._updateRun(sdt, runIntent);
+          if (this.flow) this.flow.step(sdt);
           break;
+        }
         case 'paused':
           break;
         case 'intro':
@@ -3305,10 +3575,19 @@ export class Game3D {
       this._consumed = true;
       return;
     }
-    if (s === 'dead' && this.deathT >= DEATH_PANEL_DELAY && (intent.confirmPressed || intent.jumpPressed || this._anyHandPressed(intent))) {
-      this.respawn();
-      this._consumed = true;
-      return;
+    if (s === 'dead' && (intent.confirmPressed || intent.jumpPressed || this._anyHandPressed(intent))) {
+      const sc = this.deathScene;
+      if (sc.active && !sc.done) {
+        // the scene is still playing: a press cuts it short (once it may be: never in its first beats), the next one rises again
+        if (sc.skip()) this.deathT = Math.max(this.deathT, sc.panelAt);
+        this._consumed = true;
+        return;
+      }
+      if (this.deathT - this.deathLead >= DEATH_PANEL_DELAY) {
+        this.respawn();
+        this._consumed = true;
+        return;
+      }
     }
     if (this._uiFallback) {
       // No menus: any confirm / trigger starts, continues or restarts.
@@ -3352,6 +3631,9 @@ export class Game3D {
     this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
       this._updateHolster(dt, intent, true);
+      this._updateJetpack(intent);
+      this._updateWristMap(dt, intent, true);
+      if (this.vista) this.vista.update(dt, p);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
       this._stepPhysics(dt, intent);
@@ -3413,6 +3695,11 @@ export class Game3D {
       }
       si.jumpPressed = this._pendingJump;
       this._pendingJump = false;
+      if (this.jet) {
+        // the jetpack's push (0 unless it is burning): added to the vertical speed, the step applies gravity and the floor
+        const up = this.jet.step(PDT, p, !!p.tethered);
+        if (up > 0) p.vy += up * PDT;
+      }
       this.physics.step(p, this.tethers, si, PDT);
       if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
       if (this.c2) this.c2.step(PDT, p);
@@ -3784,16 +4071,161 @@ export class Game3D {
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._recordDepth();
     this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
+    this._beginDeathScene(cause);
+  }
+
+  /**
+   * The death scene (sim/deathScene.js): a fall / landing / ironwork / the Dresser is the COLLAPSE (the camera drops, the eyelids
+   * close slowly); a skitterling swarm is the same with blood on the lens; the Mason is the DEVOUR cutscene (the world goes out, its
+   * eyes ignite, it comes close, the jaw opens, it bites). The restore overlay and the death panel wait for it (deathLead).
+   */
+  _beginDeathScene(cause) {
+    const sc = this.deathScene;
+    const D = this._deathCam;
+    this.deathLead = 0;
+    this.deathSnap = null;
+    try {
+      const cm = this.comms;
+      const killer = cause === 'creature' ? (cm && cm.lastHurtCause === 'skitter' && cm.clock - cm.lastHurtAt <= 2 ? 'skitter' : 'mason') : '';
+      const r = this.renderer;
+      const xr = !!this.xrActive;
+      const eye = xr && r && r.camera ? r.camera.position.y : eyeAboveBody() + C.player.radius; // the eye above the FEET (the body centre is a radius up)
+      sc.begin(cause, { killer, xr, eye });
+      this.deathLead = Math.max(0, sc.panelAt - DEATH_PANEL_DELAY);
+      D.haveFace = false;
+      D.pitch0 = r && r.camera && !xr ? r.camera.rotation.x : 0;
+      D.exposure0 = r && r.renderer ? r.renderer.toneMappingExposure : 0;
+      if (r && r.camera) {
+        const q = r.camera;
+        q.updateWorldMatrix(true, false);
+        q.getWorldDirection(_dcV);
+        D.faceYaw = Math.atan2(_dcV.x, -_dcV.z);
+      }
+      this.deathSnap = sc.s;
+      this._deathHold = null;
+    } catch (err) {
+      this._fault('deathScene', err);
+      sc.end();
+      this.deathLead = 0;
+      this.deathSnap = null;
+    }
+  }
+
+  /** Seconds into the restore / panel timeline (the death scene plays first and delays it by deathLead). */
+  get restoreClock() {
+    return Math.max(0, this.deathT - this.deathLead);
+  }
+
+  /** Steps the scene: beats (sound / haptics), exposure, the face of the Mason. Cheap when no scene plays. */
+  _updateDeathScene(dt) {
+    const sc = this.deathScene;
+    if (!sc.active) return;
+    if (this._deathHold != null) sc.seek(this._deathHold);
+    const beats = this._deathHold != null ? sc.noBeats : sc.update(dt);
+    for (let i = 0; i < beats.length; i++) {
+      this.bus.emit('death:beat', { beat: beats[i], kind: sc.kind, t: sc.t });
+      if (beats[i] === 'bite') this._hapticBoth(1, 420);
+      else if (beats[i] === 'strike' || beats[i] === 'splat') this._hapticBoth(1, 260);
+      else if (beats[i] === 'eyes') this._hapticBoth(0.25, 600);
+    }
+  }
+
+  /**
+   * After the rig is placed (every frame): the scene's camera drop / roll / shake on the rig, the world's darkness (exposure), and
+   * the Mason's face in front of the camera. A headset gets only the drop (no roll or pitch is applied to a tracked head).
+   */
+  _applyDeathCam() {
+    const r = this.renderer;
+    const sc = this.deathScene;
+    const D = this._deathCam;
+    if (!r || !r.camera) return;
+    const gl = r.renderer;
+    if (!sc.active) {
+      if (D.exposure0 > 0 && gl) {
+        gl.toneMappingExposure = D.exposure0;
+        D.exposure0 = 0;
+      }
+      if (D.rolled && !this.xrActive) {
+        r.camera.rotation.z = 0;
+        r.camera.rotation.x = D.pitch0;
+      }
+      D.rolled = false;
+      if (D.haveFace) {
+        D.haveFace = false;
+        const cv = this.creatureView;
+        if (cv && typeof cv.cine === 'function') cv.cine(null);
+      }
+      return;
+    }
+    const s = sc.s;
+    const calm = !!(this.settings && this.settings.reducedEffects); // comfort: no shake, a gentler roll
+    const rig = r.rig;
+    const cam = r.camera;
+    const xr = !!this.xrActive;
+    const sh = calm ? 0 : s.shake;
+    rig.position.y -= s.camDrop;
+    if (sh > 0.001) {
+      const t = this.realTime;
+      rig.position.x += Math.sin(t * 61.3) * 0.022 * sh;
+      rig.position.y += Math.sin(t * 47.9 + 1.3) * 0.016 * sh;
+      rig.position.z += Math.sin(t * 53.1 + 2.1) * 0.022 * sh;
+    }
+    if (!xr) {
+      cam.rotation.x = D.pitch0 + s.camPitch * (calm ? 0.5 : 1);
+      cam.rotation.z = s.camRoll * (calm ? 0.5 : 1) + Math.sin(this.realTime * 52) * 0.01 * sh;
+      D.rolled = true;
+    }
+    if (gl && D.exposure0 > 0) gl.toneMappingExposure = D.exposure0 * (1 - 0.84 * s.dark);
+    // the face
+    const cv = this.creatureView;
+    const f = s.face;
+    if (cv && typeof cv.cine === 'function' && sc.kind === 'devour') {
+      if (f.on) {
+        cam.updateWorldMatrix(true, false);
+        cam.getWorldPosition(_dcV);
+        const dt = 1 / 60;
+        // the face stays in front of wherever you look (it slides round to meet your eyes: turning away only makes it come round)
+        cam.getWorldDirection(_dcW);
+        const want = Math.atan2(_dcW.x, -_dcW.z);
+        let dy = want - D.faceYaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        D.faceYaw += dy * (1 - Math.exp(-dt * (f.lunge > 0 ? 9 : 1.4)));
+        const fx = Math.sin(D.faceYaw);
+        const fz = -Math.cos(D.faceYaw);
+        // the head's point: `dist` ahead of the eye, `h` above it; it faces back at you
+        const hx = _dcV.x + fx * f.dist;
+        const hz = _dcV.z + fz * f.dist;
+        const hy = _dcV.y + f.h - 0.35 * Math.min(1, f.lunge * 1.2); // (the head's point sits a little above the maw)
+        cv.cine({ x: hx, y: hy, z: hz, fx: -fx, fy: 0, fz: -fz, gape: f.gape, eyes: f.eyes, lunge: f.lunge, bite: sc.t >= 4.46 });
+        D.haveFace = true;
+      } else if (D.haveFace) {
+        cv.cine(null);
+        D.haveFace = false;
+      }
+    }
+  }
+
+  /** Back to nothing: the eyelids open, the light returns, the real creature is drawn again. */
+  _endDeathScene() {
+    const sc = this.deathScene;
+    if (!sc.active && !this.deathSnap && !this._deathCam.haveFace && !(this._deathCam.exposure0 > 0)) return;
+    sc.end();
+    this.deathSnap = null;
+    this.deathLead = 0;
+    this._deathHold = null;
+    this._applyDeathCam(); // restores the exposure / the camera roll / the creature
   }
 
   _updateDeath(dt) {
     this.deathT += dt;
-    if (this._deathShown || this.deathT < DEATH_PANEL_DELAY) return;
+    this._updateDeathScene(dt);
+    const clock = this.deathT - this.deathLead; // the restore clock: the death scene plays first
+    if (this._deathShown || clock < DEATH_PANEL_DELAY) return;
     const R = this.restore;
     if (R && R.active) {
       // EXPEDITION: the CONTINUITY restore plays instead of the death panel (the continue input skips it, the same respawn());
       // at its end Continuity restores you at the last relay; with no relays (Abyss) the death panel follows it
-      if (this.deathT < R.end) return;
+      if (clock < R.end) return;
       R.active = false;
       if (R.canRespawn && this.respawn()) return;
     }
@@ -4172,6 +4604,7 @@ export class Game3D {
   _updateRig() {
     this._placeRig();
     this._applySwingLag();
+    this._applyDeathCam();
   }
 
   /**
@@ -4266,7 +4699,11 @@ export class Game3D {
     if (!headOnly) {
       if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.4);
       const s = this.state;
-      if (s === 'dead') this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
+      if (s === 'dead') {
+        // a death scene owns the view (eyelids / blackout from its snapshot); with none (a sandbox death, a fault) the old fall to near-black
+        if (this.deathScene.active && this.deathSnap) this.fade = this.deathSnap.black;
+        else this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
+      }
       else if (s === 'paused') this.fade = U.approach(this.fade, PAUSE_FADE, dt * 3);
       else if (s === 'victory') this.fade = U.approach(this.fade, VICTORY_FADE, dt * 0.8);
       else if (s === 'playing' && this.fade > 0) this.fade = Math.max(0, this.fade - dt * FADE_IN_RATE);
@@ -4436,6 +4873,44 @@ export class Game3D {
         this._fault('pickupsView', err);
       }
     }
+    if (this.remainsView || (this.chapter === 1 && this.level)) {
+      try {
+        this._syncRemains();
+        const rv = this.remainsView;
+        if (rv) {
+          // the bones (~1 MB) and the blood atlas load in the background once a run is under way
+          if (!rv.ready && !rv.loading && !rv.failed && this.state === 'playing' && this.modules.gltf) rv.load(() => this._holdfastLoader());
+          rv.update(dt, this);
+          if (rv.ready && !this._rvCompiled) {
+            this._rvCompiled = true;
+            this._precompile();
+          }
+        }
+      } catch (err) {
+        this._fault('remainsView', err);
+        if (this.remainsView) this.remainsView.dispose();
+        this.remainsView = null;
+      }
+    }
+    if (this.waterView || (this.chapter === 1 && this.level)) {
+      try {
+        this._syncWater();
+        if (this.waterView) {
+          this.waterView.update(dt, this);
+          this._updateWaterSound();
+        }
+      } catch (err) {
+        this._fault('waterView', err);
+        this.waterView = null;
+      }
+    }
+    if (this.jetpackView) {
+      try {
+        this.jetpackView.update(dt, this);
+      } catch (err) {
+        this._fault('jetpackView', err);
+      }
+    }
     if (this.c2) {
       try {
         this.c2.update(dt);
@@ -4527,6 +5002,13 @@ export class Game3D {
       this.wristVitals.update(dt);
     } catch (err) {
       this._fault('wristVitals', err);
+    }
+    try {
+      if (!this.wristComputer && this.renderer && this.level) this.wristComputer = new WristComputer(this);
+      if (this.wristComputer) this.wristComputer.update(dt, this);
+    } catch (err) {
+      this._fault('wristComputer', err);
+      this.wristComputer = null;
     }
     // The body last: it reads the rig, the hands' elbow anchors and the sim state of this frame.
     const bv = this.bodyView;
@@ -4734,6 +5216,7 @@ export class Game3D {
     if (this.state === s && !force) return;
     const prev = this.state;
     this.state = s;
+    if (prev === 'dead' && s !== 'dead') this._endDeathScene();
     this._syncUIMode();
     const body = typeof document !== 'undefined' ? document.body : null;
     if (body) {
@@ -4970,6 +5453,8 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      catches: this.catchMoment.count, // THE CATCH (sim/catch3d.js): lifesaving bites this run (the run highlights read it)
+      flow: this.flow ? { n: this.flow.n, best: this.flow.best, links: this.flow.links, chains: this.flow.chains, flare: r(this.flow.flare) } : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
       checkpoint: Object.assign({}, this.checkpoint),
       objectives: this.objectives
@@ -5081,6 +5566,47 @@ export class Game3D {
           return { id: it.id, x: it.x, y: it.y, z: it.z };
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
+      },
+      // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
+      jet: {
+        state: () => {
+          const j = this.jet;
+          return j ? { fuel: j.fuel, burning: j.burning, burnT: j.burnT, thrust: j.thrust, burned: j.burned, cans: j.cans.length, taken: j.cans.filter((c) => c.taken).length, enabled: j.enabled } : null;
+        },
+        fuel: (v) => {
+          if (this.jet) this.jet.fuel = U.clamp(finiteOr(v, 0), 0, JET.tank);
+          return this.jet ? this.jet.fuel : null;
+        },
+        ignite: () => !!(this.jet && this.jet.request(this.player, !!this.player.tethered)),
+        cans: () => (this.jet ? this.jet.cans.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, section: c.section, taken: c.taken })) : []),
+      },
+      // the death scenes (tests, QA, screenshots): play(cause, {killer}) kills the player the way `cause` does ('impact' | 'fall' | 'hazard' |
+      // 'creature' + killer 'mason' | 'skitter' | 'dressed'); hold(t) freezes the scene at t seconds (null = play on); state() reads it.
+      death: {
+        play: (cause, o) => {
+          const cm = this.comms;
+          if (cm && o && o.killer === 'skitter') {
+            cm.lastHurtCause = 'skitter';
+            cm.lastHurtAt = cm.clock;
+          } else if (cm && cause === 'creature') cm.lastHurtCause = 'mason';
+          const god = this._godMode; // (god mode makes kill() a no-op: this is a deliberate kill)
+          this._godMode = false;
+          try {
+            this.physics.kill(this.player, this.tethers, String(cause || 'impact'));
+          } finally {
+            this._godMode = god;
+          }
+          return this.deathScene.active ? this.deathScene.kind : null;
+        },
+        hold: (t) => {
+          this._deathHold = t == null ? null : +t;
+          return true;
+        },
+        state: () => {
+          const sc = this.deathScene;
+          const s = sc.s;
+          return { active: sc.active, kind: sc.kind, t: sc.t, done: sc.done, lead: this.deathLead, lids: s.lids, black: s.black, blood: s.blood, dark: s.dark, drop: s.camDrop, face: Object.assign({}, s.face), fade: this.fade, deathShown: this._deathShown };
+        },
       },
       // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing
       // them; play(clip) / pose(u, clip) force a clip (pose freezes it at normalised time u); stop() / clear() return to the sim; state() reads the rig.

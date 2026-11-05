@@ -21,8 +21,8 @@
  * skeleton (merged with the procedural measuring line and chalk outline, still ONE draw call) and swapped in; until then, and
  * whenever it is missing or fails (offline, Node tests), the procedural meshes below are the fallback.
  *
- * Budget: procedural near LOD <= 12 k triangles, far LOD <= 4.5 k (LOD_DIST_FALLBACK); the GLB's LOD0 <= 24 k, LOD1 <= 8.5 k, LOD2
- * <= 3.2 k (LOD_DIST); beyond GLOW_DIST only the two eye glints (one tiny additive mesh), hidden when the sim is out of play. The
+ * Budget: procedural near LOD <= 12 k triangles, far LOD <= 4.5 k (LOD_DIST_FALLBACK); the GLB's LOD0 <= 52 k, LOD1 <= 19 k, LOD2
+ * <= 7.2 k (LOD_DIST); beyond GLOW_DIST only the two eye glints (one tiny additive mesh), hidden when the sim is out of play. The
  * chalk outline of you is a quad of the same skinned mesh on its own bone (alpha-dithered from the outline texture), so measuring
  * costs no extra call. The material is the level's lit patch (materials.js patchMaterial: lantern, baked GI, wet film, the horror
  * grade) plus: a cold glow on the slits and the line (piercing the fog), a faint pale self-light on the mask so the face reads in
@@ -32,14 +32,20 @@ import * as THREE from 'three';
 import { patchMaterial } from './materials.js';
 
 export const DRESSER_URL = new URL('../../assets/models/dresser.glb', import.meta.url).href;
-/** The GLB's LOD switches per quality tier: [LOD0 -> LOD1, LOD1 -> LOD2] (m, camera to its chest). Quest: the full sculpt within 8 m,
- * the mid LOD to 22 m (THE CORRIDOR with skitterlings in view), then LOD2 (~2 k triangles, still the mask, its brow, nose and slits). */
-export const LOD_DIST = { low: [6, 16], quest: [8, 22], high: [32, 50] };
+/** The GLB's LOD switches per quality tier: [LOD0 -> LOD1, LOD1 -> LOD2] (m, camera to its chest). v3 (the owner: "so low poly when seen from a bit of
+ * distance"): even LOD2 (about 6.5 k triangles) is a smooth silhouette with the mask, the hood's crown and the shoulder spikes, drawn out to GLOW_DIST. */
+// v3 (dresser.glb: LOD0 47.7 k / LOD1 17.7 k / LOD2 6.5 k triangles): the desktop keeps the full model out to 48 m and the rich one to 90 m (it was a
+// 12 m switch: "so low poly when seen from a bit of distance"). On Quest LOD1 (17.7 k, as rich as the old LOD0) is the working LOD out to 34 m, and
+// the 47.7 k LOD0 only within 3 m (the moment before the cut: 95 k stereo triangles on top of a section's 218-302 k would break the 350 k budget).
+export const LOD_DIST = { low: [5, 18], quest: [3, 34], high: [48, 90] };
 /** The procedural fallback's single switch (near -> far). */
-export const LOD_DIST_FALLBACK = { low: 10, quest: 12, high: 45 };
-export const GLOW_DIST = 60;
+export const LOD_DIST_FALLBACK = { low: 10, quest: 18, high: 60 };
+/** Beyond this only the two eye glints draw. */
+export const GLOW_DIST = 110;
 const LOD_HYST = 3;
 const GLOW_COL = new THREE.Color(0.55, 0.78, 1.0);
+/** The slits' glow while it HUNTS you (measuring or cutting): the cold white-blue turns to an ember red, so that a Dresser that has you is read from across the shaft. */
+const GLOW_HOT = new THREE.Color(1.0, 0.17, 0.1);
 
 /**
  * The level of detail for a camera distance (pure: the tests read it). `cur` the current LOD (hysteresis: a finer LOD needs the
@@ -1352,7 +1358,11 @@ export class DresserView {
     const farK = THREE.MathUtils.smoothstep(camD, 9, 28);
     for (let i = 0; i < nL; i++) this.meshes[i].visible = !glowOnly && lod === i;
     this.glints.visible = glowOnly && b.glow > 0.2;
-    this._glowMat.opacity = 0.35 + 0.5 * b.glow;
+    // the hunt shows in the eyes: cold when it only walks, an ember red (and brighter) while it measures or cuts
+    const hunt = clamp(Math.max(b.measure, b.cut), 0, 1);
+    this._glowMat.opacity = (0.35 + 0.5 * b.glow) * (1 + 0.5 * hunt);
+    this._glowMat.color.copy(GLOW_COL).lerp(GLOW_HOT, hunt);
+    this.uniforms.uGlowCol.value.copy(GLOW_COL).lerp(GLOW_HOT, hunt);
     // ---- pose ----
     this._pose(dt, b, reduced);
     // ---- the line's far end: your ring while it measures, else the right hand's fingertips; the chalk outline beside you ----
@@ -1365,7 +1375,7 @@ export class DresserView {
     // procedural paint: a higher floor)
     if (this.glbReady) {
       // up close the carved mask must keep its detail (a weak self-light: the lantern does the work); from afar it is the beacon
-      U.uGlow.value = b.glow * (1 + 1.6 * farK);
+      U.uGlow.value = b.glow * (1 + 1.6 * farK) * (1 + 0.8 * hunt);
       U.uPale.value = 0.14 + 0.1 * b.measure + 0.8 * farK;
       U.uRimHood.value.setRGB(0.07, 0.09, 0.115).multiplyScalar(0.2 + 4.5 * farK); // barely there up close, a beacon edge from afar
       U.uRimC.value.setRGB(0.075, 0.095, 0.115).multiplyScalar(1 + 3 * farK);

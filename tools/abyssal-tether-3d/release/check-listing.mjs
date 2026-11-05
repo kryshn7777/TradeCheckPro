@@ -17,7 +17,7 @@ const md = fs.readFileSync(path.join(STORE, 'LISTING.md'), 'utf8');
 const blocks = [...md.matchAll(/```\n([\s\S]*?)```/g)].map((m) => m[1].trim());
 const [short, long] = blocks;
 const title = /\| Title \| `([^`]+)`/.exec(md)[1];
-ok(title.length <= 30 && title === 'Abyssal Tether', `title "${title}" (${title.length}/30)`);
+ok(title.length <= 30 && title === 'The Lantern', `title "${title}" (${title.length}/30)`);
 ok(short.length <= 150, `short description ${short.length}/150`);
 ok(long.length <= 4000, `long description ${long.length}/4000`);
 ok(/Intense/.test(md) && /Teens and Adults/.test(md), 'comfort Intense and age group Teens and Adults are stated');

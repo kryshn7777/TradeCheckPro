@@ -1,16 +1,21 @@
-"""ABYSSAL TETHER 3D — THE DRESSER v2: procedural builder of the mason in the hooded apron (Blender 5.x / the `bpy` module).
+"""ABYSSAL TETHER 3D — THE DRESSER v3: procedural builder of the mason in the hooded apron (Blender 5.x / the `bpy` module).
 
 "DRESS THE OLD STONE WITH CARE. IT WAS SOMEONE." A 3.2 m Lanternwright mason that stands sideways on the shaft walls and measures
-the whole: a deep peaked hood with a rolled lip over a SPLIT SAINT MASK (two halves of pale porcelain-stone on a vertical seam, one
-serene, one subtly wrong: a heavier lid, a hairline crack from the eye to the cheek, a mouth corner pulled down, a nail missing), the
-mouth sewn shut with cord, closed lids with slit eyes that glow cold, grime tears; a wet wool robe, a stitched leather apron with a
-pocket and a mason's belt (two chisels in loops, a mallet, a plumb bob on its cord), two long segmented chisel arms of forged iron
-(stepped bars, rivetted rings, ball joints) out of ragged sleeves, two small grey hands wrapped in cloth strips holding the measuring
-line's spool, long bare feet.
+the whole: a deep peaked hood with a heavy rolled lip, crowned with a ring of forged chisel points, over a SPLIT SAINT MASK (two
+halves of pale porcelain-stone on a vertical seam, stapled back together with iron; a heavy knitted brow over deep sockets, narrow
+slit eyes that glow cold white at the rim and deep red in the core; the wrong half dropped, cracked wide from the jaw up through the
+brow, the serene half split from the seam; nails driven through the forehead; the mouth sewn shut into a grimace), a heavy iron collar
+with a ring at the throat; a broad wool mantle under forged iron pauldrons with spikes; a hunched wet wool robe with rags, iron
+plumb-weights sewn into the hem; a stitched leather apron chalked with tallies, a mason's belt (chisels, a mallet, a plumb bob, a saw,
+a bundle of spikes, chains with a hook and a weight, broken porcelain faces hung on cords); two long segmented chisel arms of forged
+iron (stepped bars, rivetted rings, ball joints, long blades serrated on the inner edge with a hooked beak, a chain and hook down each
+forearm) out of ragged sleeves; two small grey hands wrapped in cloth strips holding the measuring line's spool; long bare feet.
+v3 (2026-11, the owner: "make him fully detailed ... more threatening and powerful"): heavier, taller and spikier in silhouette, with
+LOD1 / LOD2 dense enough that the hood peak, the crown and pauldron spikes, the blades and the hem stay round at 15-40 m.
 
 Built from code (deterministic, seed 7171, no hand-sculpting). Every part is a parametric (u, v) patch with its own rectangle in ONE
 texture atlas, so the three levels of detail are the same surfaces sampled at three densities and share the atlas:
-  LOW   LOD0 (~20-24 k triangles), LOD1 (~7-8 k), LOD2 (~2-3 k, still a face: the mask's brow, nose, seam and slits), skinned.
+  LOW   LOD0 (~47 k triangles), LOD1 (~17.5 k), LOD2 (~6.5 k, still a face, the spikes, the hooked blades, the ragged hem), skinned.
   HIGH  the same patches sampled at about one vertex per texel of the 2048 bake (~7 M triangles) + 'sculpt' layers in numpy (the
         mask's slits, lid creases, stitches, crack, chisel dents, chips and nails; cloth wrinkles, seams and fraying; leather grain,
         stitch rows and scuffs; forging steps, hammer marks and rivets; finger wraps).
@@ -458,7 +463,7 @@ def mixw(*pairs):
 
 # ---- colours (linear) -----------------------------------------------------------------------------------------------
 WOOL = np.array([0.050, 0.046, 0.043])
-WOOL_IN = np.array([0.012, 0.011, 0.011])
+WOOL_IN = np.array([0.0035, 0.0032, 0.0032])  # v3: the hood's inside is a deep black
 CHALK = np.array([0.43, 0.42, 0.39])
 LEATHER = np.array([0.072, 0.040, 0.024])
 IRON = np.array([0.052, 0.052, 0.058])
@@ -486,7 +491,8 @@ def mix3(a, b, t):
 # mask centre MC. side +1 = its LEFT half (+X): the WRONG one (dropped, turned, heavy lid, crack, the corner pulled down, a nail
 # missing); side -1 = the serene one.
 # =====================================================================================================================
-MC = np.array([0.0, 2.93, 0.085])
+HEAD_OFF = np.array([0.0, -0.02, 0.05])  # v3: the whole head (hood, mask, void) leans forward and down: a hunched, looming posture
+MC = np.array([0.0, 2.93, 0.085]) + HEAD_OFF
 HH = 0.205
 HW = 0.112
 SEAM = 0.0028
@@ -502,7 +508,7 @@ def mask_hw(vv):
 def eye_of(side):
     w = side > 0
     return dict(x=0.049 if w else 0.047, y=0.027 if w else 0.032, x0=0.025, x1=0.072 if w else 0.071, drop=0.0095 if w else 0.0062,
-                lid=1.3 if w else 1.0, ws=0.0022 if w else 0.0011)
+                lid=1.3 if w else 1.0, ws=0.0017 if w else 0.0010)
 
 
 def slit_y(X, e):
@@ -511,8 +517,8 @@ def slit_y(X, e):
 
 
 def mouth_y(X, side):
-    k = np.clip(X / 0.046, 0, 1.3)
-    return np.where(side > 0, -0.118 - 0.0065 * k ** 2.2, -0.118 + 0.0042 * k ** 2)
+    k = np.clip(X / 0.052, 0, 1.3)
+    return np.where(side > 0, -0.116 - 0.016 * k ** 2.0, -0.116 - 0.0085 * k ** 2.2)  # v3: both corners dragged down: a sewn grimace
 
 
 def face_macro(X, Y, side):
@@ -521,11 +527,11 @@ def face_macro(X, Y, side):
     e = eye_of(side)
     h = 0.074 * np.power(np.clip(1 - (X / 0.118) ** 2, 0, 1), 0.6) * (1 - 0.3 * (Y / HH) ** 2)
     h = h + 0.006 * g2(X, Y, 0.0, 0.13, 0.08, 0.06)  # forehead
-    browY = 0.066 - 0.012 * ((X - 0.045) / 0.05) ** 2 - (0.004 if w else 0.0)
-    brow = (0.018 if w else 0.0155) * np.where(Y < browY, g1(Y - browY, 0, 0.009), g1(Y - browY, 0, 0.016)) * sstep(0.112, 0.07, X)
+    browY = 0.06 - 0.016 * ((X - 0.04) / 0.05) ** 2 + 0.006 * sstep(0.02, 0.0, X) - (0.005 if w else 0.0)  # v3: lower, knitted at the seam
+    brow = (0.027 if w else 0.024) * np.where(Y < browY, g1(Y - browY, 0, 0.007), g1(Y - browY, 0, 0.02)) * sstep(0.115, 0.075, X)
     h = h + brow  # the brow ridge: a hard underside over the socket, soft into the forehead
     h = h + 0.007 * g2(X, Y, 0.0, 0.058, 0.014, 0.016)  # glabella
-    h = h - 0.028 * g2(X, Y, e["x"], e["y"] + 0.004, 0.035, 0.029)  # socket
+    h = h - 0.038 * g2(X, Y, e["x"], e["y"] + 0.004, 0.034, 0.027)  # socket (v3: deeper, the slits sunk in shadow)
     h = h + 0.0145 * e["lid"] * g2(X, Y, e["x"], e["y"] + 0.002 - (0.003 if w else 0), 0.026, 0.0165 * (1.15 if w else 1))  # the lids
     if w:
         h = h + 0.004 * g2(X, Y, 0.05, 0.003, 0.02, 0.008)  # a swollen under-eye
@@ -538,12 +544,12 @@ def face_macro(X, Y, side):
     h = h - 0.005 * g2(X, Y, 0.009, -0.075, 0.004, 0.003)  # nostril
     h = h - 0.004 * g2(X, Y, 0.03, -0.062, 0.006, 0.012)  # the alar crease
     h = h + 0.013 * g2(X, Y, 0.075, -0.014, 0.028, 0.02)  # cheekbone
-    h = h - 0.019 * g2(X, Y, 0.072, -0.09, 0.027, 0.042)  # hollow cheek
+    h = h - 0.024 * g2(X, Y, 0.072, -0.09, 0.027, 0.042)  # hollow cheek
     h = h + 0.006 * g2(X, Y, 0.095, -0.16, 0.02, 0.03)  # the jaw corner
     d, _ = seg_dist2(X, Y, (0.027, -0.069), (0.05, -0.122))
     h = h - 0.003 * g1(d, 0, 0.004)  # nasolabial
     Ym = mouth_y(X, side)
-    lipx = sstep(0.054, 0.036, X)
+    lipx = sstep(0.062, 0.044, X)
     h = h + 0.006 * g1(Y, Ym + 0.0085, 0.0065) * lipx + 0.0075 * g1(Y, Ym - 0.0102, 0.008) * lipx
     h = h - 0.0025 * g1(Y, Ym, 0.002) * lipx
     h = h + 0.012 * g2(X, Y, 0.0, -0.175, 0.04, 0.026)  # chin
@@ -554,8 +560,8 @@ def face_macro(X, Y, side):
 
 def stitch_list(side):
     out = []
-    for k in range(6):
-        xk = 0.005 + 0.0078 * k + (0.0014 * (rnd(k + 40 * side) - 0.5) if side > 0 else 0)
+    for k in range(8):
+        xk = 0.005 + 0.0068 * k + (0.0014 * (rnd(k + 40 * side) - 0.5) if side > 0 else 0)
         sl = (0.0016 if side > 0 else -0.0012) + 0.0012 * (rnd(k * 3 + side) - 0.5)
         out.append((xk, sl))
     return out
@@ -563,6 +569,10 @@ def stitch_list(side):
 
 CRACK = [(0.072, 0.019), (0.077, 0.005), (0.081, -0.012), (0.0835, -0.04), (0.079, -0.07), (0.086, -0.1), (0.094, -0.128)]
 CRACK_B = [(0.0835, -0.04), (0.094, -0.049), (0.103, -0.061)]
+CRACK_UP = [(0.072, 0.019), (0.066, 0.045), (0.074, 0.07), (0.061, 0.1), (0.068, 0.135), (0.055, 0.17), (0.06, 0.2)]  # v3: up through the brow
+CRACK_S = [(0.004, 0.19), (0.016, 0.16), (0.012, 0.135), (0.027, 0.11), (0.035, 0.085)]  # v3: the serene half splits from the seam too
+NAILS = [((0.101, 0.064), 1), ((0.073, -0.17), 2), ((0.045, 0.158), 1), ((0.085, 0.118), 1)]  # (X, Y), 1 = driven, 2 = gone on the wrong half
+STAPLES = (0.168, 0.118, -0.158)  # Y of the iron staples bridging the seam
 
 
 def face_micro(X, Y, side, uf):
@@ -578,7 +588,10 @@ def face_micro(X, Y, side, uf):
     ws = e["ws"] * np.power(np.sin(np.pi * t), 0.5) + (0.0016 * g1(t, 0.1, 0.07) if w else 0)
     dy = Y - sy
     cut = np.where(inside, sstep(ws + 0.0004, ws * 0.35, np.abs(dy)), 0)
-    disp = disp - 0.007 * cut
+    disp = disp - 0.009 * cut
+    core = np.where(inside, sstep(ws * 1.5 + 0.0003, ws * 0.3, np.abs(dy)) * np.power(np.sin(np.pi * t), 0.45), 0)
+    m["core"] = core
+    m["halo"] = np.where(inside | (np.abs(X - 0.5 * (e["x0"] + e["x1"])) < 0.03), g1(dy, 0, 0.0055) * sstep(e["x0"] - 0.01, e["x0"] + 0.004, X) * sstep(e["x1"] + 0.01, e["x1"] - 0.004, X), 0)
     disp = disp + np.where(inside, 0.0009 * g1(dy, ws + 0.0011, 0.0008) + 0.0006 * g1(dy, -(ws + 0.001), 0.0008), 0)
     m["slit"] = cut
     # upper lid crease (the wrong one doubled, heavier)
@@ -590,15 +603,15 @@ def face_micro(X, Y, side, uf):
         disp = disp - 0.0009 * g1(Y - cy - 0.0055, 0, 0.0009) * cin
     # the lip line, then the cord stitches across it with drilled holes
     Ym = mouth_y(X, side)
-    lipx = sstep(0.05, 0.036, X)
-    disp = disp - 0.0024 * g1(Y - Ym, 0, 0.0009) * lipx
+    lipx = sstep(0.06, 0.044, X)
+    disp = disp - 0.0032 * g1(Y - Ym, 0, 0.0011) * lipx
     cord = np.zeros(np.shape(X))
     hole = np.zeros(np.shape(X))
     blood = np.zeros(np.shape(X))
     for xk, sl in stitch_list(side):
         ym = float(mouth_y(np.array(xk), side))
-        a = (xk - sl, ym + 0.0155)
-        b = (xk + sl, ym - 0.0145)
+        a = (xk - sl, ym + 0.019)
+        b = (xk + sl, ym - 0.017)
         d, _ = seg_dist2(X, Y, a, b)
         rc = 0.002
         cord = np.maximum(cord, np.sqrt(np.clip(1 - (d / rc) ** 2, 0, 1)))
@@ -614,17 +627,23 @@ def face_micro(X, Y, side, uf):
     m["blood"] = blood * (1 - cord)
     # the crack (wrong half only): a hairline from the slit's outer corner down to the cheek, one branch
     if w:
-        jx = X + 0.0007 * vnoise3(X, Y, 0, 900, 11)
+        jx = X + 0.0009 * vnoise3(X, Y, 0, 900, 11)
         d1, s1 = poly_dist2(jx, Y, CRACK)
         d2, _ = poly_dist2(jx, Y, CRACK_B)
-        dc = np.minimum(d1, d2)
-        crack = g1(dc, 0, 0.0007)
-        disp = disp - 0.0017 * crack + 0.00045 * np.where(s1 > 0, 1, 0) * g1(dc, 0, 0.003) * sstep(0.0, 0.0012, dc)
+        d3, _ = poly_dist2(jx, Y, CRACK_UP)
+        dc = np.minimum(np.minimum(d1, d2), d3)
+        wid = 0.0013 + 0.0009 * g1(Y, 0.0, 0.06)  # v3: open wide under the eye, a dark gap
+        crack = sstep(wid, wid * 0.3, dc)
+        disp = disp - 0.0045 * crack + 0.0006 * np.where(s1 > 0, 1, 0) * g1(dc, 0, 0.004) * sstep(0.0, 0.0018, dc)
         m["crack"] = crack
-        m["crackhalo"] = g1(dc, 0, 0.0045)
+        m["crackhalo"] = g1(dc, 0, 0.006)
     else:
-        m["crack"] = np.zeros(np.shape(X))
-        m["crackhalo"] = np.zeros(np.shape(X))
+        jx = X + 0.0007 * vnoise3(X, Y, 0, 900, 12)
+        dc, _ = poly_dist2(jx, Y, CRACK_S)
+        crack = sstep(0.0009, 0.0003, dc)
+        disp = disp - 0.003 * crack
+        m["crack"] = crack
+        m["crackhalo"] = g1(dc, 0, 0.004)
     # chisel dents: elongated shallow strikes, mostly toward the cut edges and the forehead
     dent = np.zeros(np.shape(X))
     for k in range(46):
@@ -650,7 +669,8 @@ def face_micro(X, Y, side, uf):
     nail = np.zeros(np.shape(X))
     nhole = np.zeros(np.shape(X))
     rust = np.zeros(np.shape(X))
-    for (nx, ny), gone in (((0.101, 0.064), False), ((0.073, -0.17), w)):
+    for (nx, ny), kind in NAILS:
+        gone = (kind == 2) and w
         lx = np.abs(X - nx)
         ly = np.abs(Y - ny)
         sq = np.maximum(lx, ly)
@@ -660,8 +680,14 @@ def face_micro(X, Y, side, uf):
             head = sstep(0.0027, 0.002, sq)
             nail = np.maximum(nail, head)
             disp = disp + head * (0.002 + 0.001 * np.clip(1 - (sq / 0.0025) ** 2, 0, 1))
-        streak = sstep(0.004, 0.0015, lx + 0.002 * vnoise3(X, Y, 1, 500, 5)) * sstep(ny + 0.002, ny - 0.002, Y) * sstep(ny - 0.06, ny - 0.01, Y)
-        rust = np.maximum(rust, np.maximum(streak * 0.55, 0.25 * g1(np.sqrt(lx ** 2 + ly ** 2), 0, 0.004)))
+        streak = sstep(0.005, 0.0015, lx + 0.002 * vnoise3(X, Y, 1, 500, 5)) * sstep(ny + 0.002, ny - 0.002, Y) * sstep(ny - 0.09, ny - 0.01, Y)
+        rust = np.maximum(rust, np.maximum(streak * 0.7, 0.4 * g1(np.sqrt(lx ** 2 + ly ** 2), 0, 0.006)))
+    for sy0 in STAPLES:  # the staples' holes and their rust (the iron itself is geometry)
+        dh = np.sqrt((X - 0.016) ** 2 + (Y - sy0 + (0.009 if w else 0)) ** 2)
+        hole = sstep(0.004, 0.0022, dh)
+        nhole = np.maximum(nhole, hole * 0.6)
+        streak = sstep(0.006, 0.002, np.abs(X - 0.016) + 0.002 * vnoise3(X, Y, 2, 400, 6)) * sstep(sy0, sy0 - 0.004, Y) * sstep(sy0 - 0.08, sy0 - 0.01, Y)
+        rust = np.maximum(rust, np.maximum(streak * 0.6, 0.5 * g1(dh, 0, 0.007)))
     disp = disp - 0.004 * nhole
     m["nail"] = nail
     m["nhole"] = nhole
@@ -756,24 +782,29 @@ def mask_part(side):
         alb = mix3(alb, GRIME * 0.9, cl(pool * 0.85))  # soot in the sockets: the slits glow out of dark hollows
         alb = mix3(alb, GRIME * 0.4, cl(m["tear"] * 1.5))
         alb = mix3(alb, np.array([0.74, 0.73, 0.69]), cl(m["mark"] * 0.85))
-        alb = mix3(alb, GRIME * 0.7, cl(m["crackhalo"] * (0.45 if side > 0 else 0)))
-        alb = mix3(alb, np.array([0.02, 0.018, 0.016]), cl(m["crack"]))
+        alb = mix3(alb, GRIME * 0.7, cl(m["crackhalo"] * (0.6 if side > 0 else 0.35)))
+        alb = mix3(alb, np.array([0.006, 0.005, 0.005]), cl(m["crack"]))
+        # v3: soot smoked up from the slits onto the brow, grime in the craquelure over the whole glaze
+        alb = mix3(alb, GRIME * 0.55, cl(0.5 * m["halo"] * sstep(-0.004, 0.01, Y - slit_y(X, e)[0])))
         alb = mix3(alb, GRIME * 1.2, cl(m["dent"] * 0.15 + m["chip"] * 0.8))
         alb = mix3(alb, GRIME * 1.6, cl(m["craq"] * 0.3))
         alb = mix3(alb, np.array([0.03, 0.022, 0.018]), cl(m["cord"]))
-        alb = mix3(alb, np.array([0.07, 0.022, 0.016]), cl(m["blood"] * 0.8))
+        alb = mix3(alb, np.array([0.075, 0.034, 0.018]), cl(m["blood"] * 0.75))  # rust-brown weeping from the drilled holes
         alb = mix3(alb, np.array([0.012, 0.01, 0.01]), cl(m["hole"] + m["nhole"]))
         alb = alb * (1 - 0.2 * sstep(0.62, 1.0, m["uf"]))[..., None]  # the edges sink into the hood
         alb = mix3(alb, RUST * 1.3, cl(m["rust"] * 0.75))
         alb = mix3(alb, IRON * 3.0 + RUST * 0.4, cl(m["nail"]))
         alb = mix3(alb, GRIME * 0.6, cl(m["lip"] * 0.8))
         alb = mix3(alb, np.array([0.004, 0.005, 0.007]), cl(m["slit"]))
+        alb = mix3(alb, np.array([0.9, 0.045, 0.012]), cl(m["core"] * 1.6))  # v3: the deep red core (self-lit by the pale light)
         alb = mix3(np.array([0.045, 0.04, 0.036]) * (0.85 + 0.15 * n1)[..., None], alb, front)  # the returns: the grimy unglazed underside
         rough = 0.3 + 0.12 * cl(n1 * 0.5 + 0.5) + 0.3 * cl(pool) + 0.4 * m["crack"] + 0.45 * m["cord"] + 0.3 * m["rust"]
         rough = lerp(rough, 0.14, cl(m["tear"]))  # wet
         rough = lerp(rough, 0.9, cl(m["mark"]))
         rough = lerp(0.8, rough, front)
-        return dict(alb=alb, rough=cl(rough), glow=cl(m["slit"] * front))
+        # v3 glow: cold white at the slit's rim, lower in the red core, a faint hot halo in the socket
+        gl = cl(m["slit"] * (1 - 0.88 * cl(m["core"] * 1.3)) + 0.1 * m["halo"])
+        return dict(alb=alb, rough=cl(rough), glow=cl(gl * front))
 
     def fx(U, V, P):
         ts = np.clip((0.05 - U) / 0.05, 0, 1)
@@ -789,13 +820,33 @@ def mask_part(side):
 
     def vrows(n):
         return np.concatenate([[0.0], VCHIN + (1 - VCHIN) * vw(np.linspace(0, 1, n))])
-    p = Part("mask" + ("L" if side > 0 else "R"), fn, {0: (20, 60), 1: (12, 34), 2: (8, 20)}, "mask", "head", uvw=30.0, relief=relief,
+    p = Part("mask" + ("L" if side > 0 else "R"), fn, {0: (18, 56), 1: (12, 32), 2: (8, 22)}, "mask", "head", uvw=30.0, relief=relief,
              paint=paint, fx=fx, cage=0.012, orient=None)
     p.ucols, p.vrows = ucols, vrows
     return p
 
 
 VCHIN = 0.035
+
+
+def mask_surface(side, X, Y):
+    """A point of a mask half's carved (LOW) surface at local (X >= 0, Y) and its outward normal (for the nails and staples)."""
+    rot, dyo, dzo = PLACE[side]
+    cr, sr = math.cos(rot), math.sin(rot)
+
+    def pt(x_, y_):
+        z = float(face_macro(np.array(x_), np.array(y_), side))
+        x = side * x_
+        return np.array([x * cr - y_ * sr, MC[1] + x * sr + y_ * cr + dyo, MC[2] + z + dzo])
+    e = 1e-3
+    p0 = pt(X, Y)
+    du = (pt(X + e, Y) - pt(X - e, Y)) * side
+    dv = pt(X, Y + e) - pt(X, Y - e)
+    n = np.cross(du, dv)
+    n = n / np.linalg.norm(n)
+    if n[2] < 0:
+        n = -n
+    return p0, n
 
 
 def warp_fn(bumps, to_v=None):
@@ -815,7 +866,7 @@ def warp_fn(bumps, to_v=None):
 
 
 # ---- the hood -------------------------------------------------------------------------------------------------------
-HC = np.array([0.0, 2.95, -0.03])
+HC = np.array([0.0, 2.95, -0.03]) + HEAD_OFF
 A0 = 0.86
 PK = np.array([0.0, 0.83, -0.56]) / np.linalg.norm([0.0, 0.83, -0.56])
 
@@ -832,10 +883,11 @@ def hood_outer(alpha, beta, folds=True):
     y = HC[1] + dy * ry
     z = HC[2] + dz * rz
     pk = np.power(np.maximum(0, dx * PK[0] + dy * PK[1] + dz * PK[2]), 6)
-    y = y + pk * 0.13
-    z = z - pk * 0.26
+    pk = np.power(np.maximum(0, dx * PK[0] + dy * PK[1] + dz * PK[2]), 4.5)
+    y = y + pk * 0.25  # v3: a taller, sharper peak swept back
+    z = z - pk * 0.31
     rim = sstep(A0 + 0.4, A0, alpha)
-    z = z + rim * 0.085
+    z = z + rim * 0.105  # v3: a deeper cowl
     x = x * (1 - rim * 0.1)
     y = y + rim * np.where(dy > 0, 0.02, -0.01)
     if folds:
@@ -863,7 +915,7 @@ def hood_fn(U, V):
     mid = (Prim + Pri) * 0.5
     half = (Prim - Pri) * 0.5
     ph = np.pi * t_roll
-    Proll = mid + half * np.cos(ph)[..., None] + np.array([0.0, 0.0, 0.017]) * np.sin(ph)[..., None]
+    Proll = mid + half * np.cos(ph)[..., None] + np.array([0.0, 0.0, 0.026]) * np.sin(ph)[..., None]  # v3: a heavier lip
     return np.where(vin[..., None], Pin, np.where(vroll[..., None], Proll, Po))
 
 
@@ -908,7 +960,7 @@ def hood_fx(U, V, P):
 
 
 # ---- the mantle: a short wool cape over the shoulders (it covers the shoulder joints; the chalk settles on it) ----------
-MANTLE = [(0.0, 0.13, 2.715), (0.12, 0.2, 2.70), (0.32, 0.33, 2.655), (0.55, 0.405, 2.575), (0.78, 0.44, 2.44), (1.0, 0.46, 2.3)]
+MANTLE = [(0.0, 0.13, 2.715), (0.12, 0.2, 2.69), (0.32, 0.32, 2.62), (0.55, 0.415, 2.51), (0.78, 0.47, 2.36), (1.0, 0.5, 2.19)]  # v3: broader, longer
 
 
 def mantle_fn(U, V):
@@ -958,7 +1010,7 @@ def mantle_skin(P, U=None, V=None):
 
 
 # ---- the robe -------------------------------------------------------------------------------------------------------
-ROBE_P =[(2.66, 0.11), (2.6, 0.2), (2.5, 0.235), (2.3, 0.21), (2.0, 0.172), (1.74, 0.158), (1.5, 0.198), (1.0, 0.255), (0.5, 0.315), (0.0, 0.37)]
+ROBE_P = [(2.66, 0.11), (2.6, 0.21), (2.5, 0.25), (2.3, 0.225), (2.0, 0.182), (1.74, 0.165), (1.5, 0.21), (1.0, 0.275), (0.5, 0.34), (0.0, 0.40)]  # v3: heavier
 
 
 def robeR(y):
@@ -967,8 +1019,8 @@ def robeR(y):
 
 def robe_xyz(th, y, r):
     shoulder = sstep(2.3, 2.52, y) * (1 - sstep(2.58, 2.66, y))
-    xs = 1 + 0.14 * shoulder
-    hunch = 0.03 * sstep(1.9, 2.3, y) * sstep(2.6, 2.35, y) * np.maximum(0, -np.cos(th))
+    xs = 1 + 0.2 * shoulder
+    hunch = 0.075 * sstep(1.8, 2.3, y) * sstep(2.66, 2.4, y) * np.maximum(0, -np.cos(th)) ** 0.7  # v3: a hunched back
     return stack3(np.sin(th) * r * xs, y, np.cos(th) * r * 0.82 - hunch)
 
 
@@ -1024,6 +1076,10 @@ def robe_paint(U, V, P, N, m):
     alb = alb * (1 - 0.25 * streak)[..., None]
     alb = mix3(alb, np.array([0.068, 0.052, 0.036]), m["patch"])
     alb = mix3(alb, np.array([0.17, 0.15, 0.12]), m["stitch"] * 0.7)
+    # v3: rust bled down from the hem's iron weights and the belt's tools, grime climbing the hem
+    rs = cl(pnoise(th * 3, y * 0.25, 7.0, 26) * 2.2 - 0.7) * sstep(0.75, 0.15, y) + cl(pfbm(th, y * 1.5, 3.0, 27, 3) * 2.6 - 1.1) * sstep(1.0, 1.6, y) * sstep(1.85, 1.6, y)
+    alb = mix3(alb, RUST * 0.75, cl(rs) * 0.55)
+    alb = alb * (1 - 0.25 * sstep(0.45, 0.1, y))[..., None]
     rough = 0.84 - 0.42 * wet + 0.06 * smear
     return dict(alb=alb, rough=cl(rough), glow=0 * rough)
 
@@ -1080,8 +1136,35 @@ def apron_paint(U, V, P, N, m):
     hand = g2(P[..., 0], y, 0.03, 1.6, 0.1, 0.06) * 0.35  # wiped hands
     alb = mix3(alb, CHALK * 0.9, hand)
     alb = mix3(alb, np.array([0.27, 0.25, 0.21]), m["stitch"] * 0.8)
-    rough = 0.62 + 0.15 * dust - 0.25 * stain + 0.1 * m["scuff"]
+    # v3: rust-red stains soaked into the leather (iron, not blood), darker at the hem
+    rs = cl(fbm3(P[..., 0] * 1.3, P[..., 1] * 0.6, P[..., 2], 5.0, 39, 4) * 2.6 - 1.0) * (0.4 + 0.6 * sstep(1.4, 0.7, y))
+    alb = mix3(alb, RUST * 0.7, rs * 0.7)
+    # v3: the tally: groups of five chalked across the bib, counting the whole ones (hand-drawn, smudged)
+    tal = apron_tally(U * 2 - 1, y)
+    alb = mix3(alb, CHALK * 1.45, tal * 0.9)
+    rough = 0.62 + 0.15 * dust - 0.25 * stain + 0.1 * m["scuff"] + 0.25 * tal
     return dict(alb=alb, rough=cl(rough), glow=0 * rough)
+
+
+def apron_tally(s, y):
+    halfw = lerp(0.15, 0.255, np.power(np.clip((2.3 - y) / 1.68, 0, 1), 0.8))
+    xm = s * halfw
+    out = np.zeros(np.shape(xm))
+    rows = [(2.2, 5), (2.11, 4), (2.02, 5), (1.93, 3), (0.98, 4), (0.89, 5), (0.8, 2)]
+    for r, (yc, ng) in enumerate(rows):
+        if np.all(np.abs(y - yc) > 0.05):
+            continue
+        for g in range(ng):
+            gx = -0.15 + 0.068 * g + 0.012 * (rnd(r * 31 + g) - 0.5) + (0.03 if r >= 4 else 0)
+            gy = yc + 0.008 * (rnd(r * 17 + g * 3) - 0.5)
+            d = np.full(np.shape(xm), 1.0)
+            for i in range(4):
+                xi = gx + 0.0105 * i + 0.002 * (rnd(r * 7 + g * 11 + i) - 0.5)
+                tlt = 0.004 * (rnd(r * 5 + g + i * 13) - 0.5)
+                d = np.minimum(d, seg_dist2(xm, y, (xi - tlt, gy + 0.024), (xi + tlt, gy - 0.024))[0])
+            d = np.minimum(d, seg_dist2(xm, y, (gx - 0.008, gy - 0.016), (gx + 0.04, gy + 0.018))[0])
+            out = np.maximum(out, sstep(0.0028, 0.0012, d + 0.0008 * vnoise3(xm, y, 0, 300, 400 + r)))
+    return out * (0.65 + 0.35 * cl(vnoise3(xm, y, 1, 90, 401) + 0.5))
 
 
 def pocket_fn(U, V):
@@ -1115,8 +1198,8 @@ def belt_fn(U, V):
     a = V * TAU
     rr = robeR_s(y0) - 0.012 * 0.6 + 0.004
     q = robe_xyz(th, np.full_like(th, y0), rr)
-    k = 1 + (0.007 * np.cos(a)) / rr
-    return stack3(q[..., 0] * k * 1.02, y0 + 0.03 * np.sin(a), q[..., 2] * k * 1.03)
+    k = 1 + (0.009 * np.cos(a)) / rr
+    return stack3(q[..., 0] * k * 1.02, y0 + 0.042 * np.sin(a), q[..., 2] * k * 1.03)  # v3: a broader belt
 
 
 def belt_relief(U, V, P, N):
@@ -1145,14 +1228,22 @@ def tube_part(name, pts, r0, r1, res, cls, skin, uvw=1.0, cap=(0.08, 0.08), up=(
 
 def iron_paint_fn(seed, bright=0.0):
     def paint(U, V, P, N, m):
-        n1 = fbm3(P[..., 0], P[..., 1], P[..., 2], 12.0, seed, 3)
-        alb = IRON * (0.85 + 0.3 * n1)[..., None]
+        x, y, z = P[..., 0], P[..., 1], P[..., 2]
+        n1 = fbm3(x, y, z, 12.0, seed, 3)
+        n2 = fbm3(x, y, z, 70.0, seed + 5, 2)
+        alb = IRON * (0.8 + 0.3 * n1 + 0.12 * n2)[..., None]
         edge = cl(m.get("edge", 0 * n1))
         alb = mix3(alb, IRON_EDGE, edge * 0.8 + bright)
-        rust = cl(m.get("rust", 0 * n1) + cl(fbm3(P[..., 0], P[..., 1], P[..., 2], 7.0, seed + 1, 3) * 2 - 0.9) * 0.6)
-        alb = mix3(alb, RUST, rust * 0.8)
-        alb = mix3(alb, CHALK * 0.6, cl(m.get("dust", 0 * n1)) * 0.5)
-        rough = 0.42 + 0.25 * rust - 0.15 * edge + 0.08 * n1
+        rust = cl(m.get("rust", 0 * n1) + cl(fbm3(x, y, z, 7.0, seed + 1, 3) * 2 - 0.9) * 0.6)
+        scale = RUST * (0.75 + 0.6 * cl(n2 * 0.5 + 0.5))[..., None]  # v3: blistered rust scale, its colour broken up
+        alb = mix3(alb, scale, rust * 0.85)
+        # v3: rust runs (long vertical weeps, the bind pose's arms hang), pitting, grime in the hollows, a dusting of chalk
+        runs = cl(vnoise3(x * 70, y * 3.5, z * 70, 1.0, seed + 7) * 3 - 1.5) * cl(fbm3(x, y, z, 4.0, seed + 8, 2) * 2.2 + 0.3)
+        alb = mix3(alb, RUST * 1.25, runs * 0.5 * (1 - edge))
+        pits = cl(n2 * 4 - 2.4)
+        alb = mix3(alb, RUST * 0.45, pits * 0.55)
+        alb = mix3(alb, CHALK * 0.6, cl(m.get("dust", 0 * n1) + cl(N[..., 1] * 2 - 1.2) * cl(n1 + 0.2) * 0.5) * 0.5)
+        rough = 0.42 + 0.25 * rust + 0.15 * runs + 0.1 * pits - 0.17 * edge + 0.08 * n1
         return dict(alb=alb, rough=cl(rough), glow=0 * n1)
     return paint
 
@@ -1181,6 +1272,37 @@ def lathe_part(name, c, axis, prof, res, cls, skin, uvw=1.0, relief=None, paint=
 
 # ---- the chisel arms (left; the right is the mirror) -------------------------------------------------------------------
 AX = 0.31
+BLADE_SAW = (0.3, 0.74, 9)  # V range of the serrated inner edge, number of teeth
+BLADE_SAW_A = 0.017
+
+
+def saw_profile(ph):
+    """Raked teeth: 0 at each valley (integer phase), up to 1 at 0.7, back to 0."""
+    f = np.mod(ph, 1.0)
+    return np.where(f < 0.7, f / 0.7, (1 - f) / 0.3)
+
+
+def blade_rows(n):
+    """The blade's V rows: the teeth sampled at their valleys and tips (LOD0 4 rows per tooth, LOD1 2, LOD2 1 = no teeth), the dome
+    and the hooked tip denser, the rest even."""
+    v0, v1, nt = BLADE_SAW
+    if n >= 200:  # HIGH: dense and even
+        k = max(8, int(n * (v1 - v0) / nt))
+        ph = tuple(np.linspace(0, 1, k, endpoint=False))
+    else:
+        k = 4 if n >= 80 else (2 if n >= 40 else 1)
+        ph = {4: (0.0, 0.35, 0.7, 0.85), 2: (0.0, 0.7), 1: (0.0,)}[k]
+    teeth = np.array([v0 + (i + f) / nt * (v1 - v0) for i in range(nt) for f in ph] + [v1])
+    rest = n - len(teeth) + 1
+    na = max(4, int(round(rest * 0.45)))
+    nb = max(4, rest - na)
+    wa = warp_fn([(0.0, 0.08, 5.0)])
+    wb = warp_fn([(1.0, 0.18, 3.0)])
+    top = v0 * wa(np.linspace(0, 1, na + 1))[:-1]
+    bot = v1 + (1 - v1) * wb(np.linspace(0, 1, nb + 1))[1:]
+    out = np.concatenate([top, teeth, bot])
+    assert len(out) == n + 1, (len(out), n)
+    return out
 
 
 def arm_steps(V, steps, h=0.004):
@@ -1218,48 +1340,54 @@ def forged_relief(seed, rings=(), steps=()):
 def arm_parts():
     parts = []
     # upper arm: 2.53 -> 1.88, an octagonal forged bar with two hand-cut steps (hidden in the sleeve until it spreads)
-    st_u = [(0.3, -0.004), (0.72, -0.004)]
+    st_u = [(0.3, -0.006), (0.72, -0.006)]
 
     def ra_u(V, th):
-        return cap_r(V, lerp(0.042, 0.034, V) + arm_steps(V, st_u), 0.0, 0.0)
+        return cap_r(V, lerp(0.053, 0.043, V) + arm_steps(V, st_u) + 0.007 * g1(V, 0.5, 0.025), 0.0, 0.0)
     cu = Curve([(AX, 2.535, 0), (AX, 1.875, 0)], up=(0, 0, 1))
-    parts.append(Part("armU", sweep_fn(cu, ra_u, shape=octagon), {0: (8, 12), 1: (6, 5), 2: (4, 2)}, "iron", "upperArmL", uvw=1.3,
+    parts.append(Part("armU", sweep_fn(cu, ra_u, shape=octagon), {0: (16, 20), 1: (8, 8), 2: (8, 4)}, "iron", "upperArmL", uvw=1.3,
                       relief=forged_relief(101, rings=(2.36,), steps=(2.535 - 0.66 * 0.3, 2.535 - 0.66 * 0.72)), paint=iron_paint_fn(111)))
     # forearm: a cup round the elbow ball, then three segments with rivetted rings and stepped ends
-    st_f = [(0.06, -0.012), (0.33, 0.003), (0.36, -0.003), (0.64, 0.003), (0.67, -0.003), (0.94, 0.004)]
+    st_f = [(0.06, -0.014), (0.33, 0.006), (0.36, -0.006), (0.64, 0.006), (0.67, -0.006), (0.94, 0.006)]
 
     def ra_f(V, th):
-        base = lerp(0.035, 0.027, V) + arm_steps(V, st_f, 0.006)
-        cup = 0.059 * np.sqrt(np.clip(1 - ((V - 0.0) / 0.075) ** 2, 0, 1))
+        base = lerp(0.045, 0.035, V) + arm_steps(V, st_f, 0.006)
+        cup = 0.072 * np.sqrt(np.clip(1 - ((V - 0.0) / 0.08) ** 2, 0, 1))
         return np.maximum(base, cup) * np.where(V < 0.004, 0.75, 1.0)
     cf = Curve([(AX, 1.875, 0), (AX, 1.175, 0)], up=(0, 0, 1))
     yr = [1.875 - 0.7 * 0.345, 1.875 - 0.7 * 0.655]
-    parts.append(Part("armF", sweep_fn(cf, ra_f, shape=octagon), {0: (8, 24), 1: (6, 11), 2: (4, 5)}, "iron", "foreArmL", uvw=1.3,
+    parts.append(Part("armF", sweep_fn(cf, ra_f, shape=octagon), {0: (16, 40), 1: (8, 16), 2: (8, 7)}, "iron", "foreArmL", uvw=1.3,
                       relief=forged_relief(102, rings=yr, steps=(1.875 - 0.7 * 0.06, 1.875 - 0.7 * 0.94)), paint=iron_paint_fn(112)))
     # the ball joints, centred on the pivots (they turn into themselves: no pinch); the wrist's is inside the chisel's dome
-    for nm, c, r, bone, res in (("ballS", BPOS["upperArmL"], 0.054, "upperArmL", {0: (8, 6), 1: (6, 4), 2: None}),
-                                ("ballE", BPOS["foreArmL"], 0.05, "upperArmL", {0: (10, 7), 1: (6, 4), 2: (4, 3)})):
+    for nm, c, r, bone, res in (("ballS", BPOS["upperArmL"], 0.066, "upperArmL", {0: (12, 8), 1: (8, 5), 2: None}),
+                                ("ballE", BPOS["foreArmL"], 0.062, "upperArmL", {0: (14, 10), 1: (10, 6), 2: (8, 5)})):
         parts.append(Part(nm, ellipsoid_fn(c, r, r, r), res, "iron", bone, uvw=1.2, relief=forged_relief(103), paint=iron_paint_fn(113)))
     # the chisel: a dome round the wrist pivot (it turns into itself), a stepped shoulder, then the long flat blade (fuller, bevel,
     # honed edge, the cutting edge slanted)
-    yT, yB = 1.197, 0.22
+    yT, yB = 1.21, 0.015  # v3: 20 cm longer (the hooked tip stops at the soles in the bind pose)
 
     def blade_fn(U, V):
         th = U * TAU
         y = lerp(yT, yB, V)
         t = np.clip((1.12 - y) / (1.12 - yB), 0, 1)
         k = np.clip((y - 1.12) / 0.03, 0, 1)
-        w_b = lerp(0.05, 0.03, t) * (1 + 0.12 * g1(t, 0.45, 0.025)) + 0.012 * sstep(0.03, 0.0, t)
-        t_b = lerp(0.019, 0.009, t) * (1 - 0.82 * sstep(0.8, 1.0, t)) + 0.01 * sstep(0.03, 0.0, t)
-        dome = np.sqrt(np.clip(0.047 ** 2 - np.clip(y - 1.15, 0, None) ** 2, 0, None))
-        w = np.maximum(lerp(w_b, dome, k), 1e-5)
+        w_b = lerp(0.066, 0.046, t) * (1 + 0.12 * g1(t, 0.42, 0.02)) + 0.016 * sstep(0.03, 0.0, t)
+        t_b = lerp(0.024, 0.011, t) * (1 - 0.8 * sstep(0.84, 1.0, t)) + 0.012 * sstep(0.03, 0.0, t)
+        dome = np.sqrt(np.clip(0.058 ** 2 - np.clip(y - 1.15, 0, None) ** 2, 0, None))
+        ct, stt = np.cos(th), np.sin(th)
+        # the inner edge (-x, toward the body) serrated: raked teeth, sampled tip / valley by the rows (blade_rows)
+        saw = BLADE_SAW_A * saw_profile(np.clip((V - BLADE_SAW[0]) / (BLADE_SAW[1] - BLADE_SAW[0]), 0, 1) * BLADE_SAW[2]) * (ct < 0)
+        saw = saw * sstep(BLADE_SAW[0], BLADE_SAW[0] + 0.01, V) * sstep(BLADE_SAW[1], BLADE_SAW[1] - 0.01, V)
+        # the outer edge (+x) swells into a hooked beak at the tip
+        hook = 0.05 * sstep(0.8, 0.97, t) * sstep(1.0, 0.95, t) * (ct > 0)
+        w = np.maximum(lerp(w_b + saw + hook, dome, k), 1e-5)
         thk = np.maximum(lerp(t_b, dome, k), 1e-5)
         n = lerp(6.0, 2.0, k)
-        ct, stt = np.cos(th), np.sin(th)
         rr = np.power(np.power(np.abs(ct) / w, n) + np.power(np.abs(stt) / thk, n), -1 / n)
-        slant = 0.05 * sstep(0.82, 1.0, t)
         x = ct * rr
-        return stack3(AX + x, y - slant * 0.5 * x / w, stt * rr)
+        slant = 0.07 * sstep(0.82, 1.0, t)
+        lift = 0.06 * np.clip(x - 0.04, 0, None) / 0.05 * sstep(0.85, 1.0, t)  # the beak curls back up
+        return stack3(AX + x, y - slant * 0.5 * x / np.maximum(w_b, 1e-4) + lift, stt * rr)
 
     def blade_relief(U, V, P, N):
         th = U * TAU
@@ -1272,9 +1400,9 @@ def arm_parts():
         edge = cl(sstep(0.78, 0.95, t) + g1(y, 1.12, 0.004) + 0.7 * cl(np.abs(np.cos(th)) * 8 - 7.2))
         rust = cl(fbm3(P[..., 0], P[..., 1], P[..., 2], 9.0, 122, 3) * 2 - 0.7) * (1 - edge) * 0.7
         return d, dict(edge=edge, rust=rust)
-    bl = Part("blade", blade_fn, {0: (8, 18), 1: (6, 9), 2: (4, 5)}, "iron", "chiselL", uvw=1.1, relief=blade_relief,
+    bl = Part("blade", blade_fn, {0: (12, 90), 1: (8, 44), 2: (6, 20)}, "iron", "chiselL", uvw=1.1, relief=blade_relief,
               paint=iron_paint_fn(123), cage=0.008)
-    bl.vwarp = warp_fn([(0.03, 0.04, 5.0), (0.97, 0.04, 2.0)])
+    bl.vrows = blade_rows
     parts.append(bl)
     return parts
 
@@ -1284,7 +1412,7 @@ def sleeve_fn(U, V):
     th = U * TAU
     rag = 0.05 * pnoise(th, 7, 0.9, 7) + 0.12 * np.power(np.maximum(0, pnoise(th, 8, 1.4, 8)), 1.5)
     y = lerp(2.58, 2.06 - rag, V)
-    r = lerp(0.068, 0.108, np.power(V, 0.8)) * (1 + 0.12 * np.sin(th * 5 + V * 3) + 0.05 * np.sin(th * 11 + 1))
+    r = lerp(0.082, 0.13, np.power(V, 0.8)) * (1 + 0.12 * np.sin(th * 5 + V * 3) + 0.05 * np.sin(th * 11 + 1))
     return stack3(AX + np.sin(th) * r - 0.012 * V, y, np.cos(th) * r * 0.85 - 0.015 * V)
 
 
@@ -1602,12 +1730,13 @@ def tool_parts():
 # ---- the hood void and the tatters --------------------------------------------------------------------------------
 def void_part():
     def paint(U, V, P, N, m):
-        return dict(alb=np.zeros(np.shape(U) + (3,)) + 0.004, rough=0.9 + 0 * U, glow=0 * U)
-    return Part("void", ellipsoid_fn((0, 2.94, -0.045), 0.155, 0.245, 0.125), {0: (12, 8), 1: (10, 6), 2: (8, 5)}, "void", "head", uvw=0.15,
+        return dict(alb=np.zeros(np.shape(U) + (3,)) + 0.0015, rough=0.95 + 0 * U, glow=0 * U)
+    return Part("void", ellipsoid_fn(np.array([0, 2.94, -0.045]) + HEAD_OFF, 0.155, 0.245, 0.125), {0: (12, 8), 1: (10, 6), 2: (8, 5)}, "void", "head", uvw=0.15,
                 paint=paint)
 
 
-TATTERS = [(0.35, 0.42, 0.36, 0), (1.4, 0.38, 0.33, 1), (2.3, 0.5, 0.45, 2), (3.3, 0.36, 0.3, 3), (4.4, 0.46, 0.4, 4), (5.5, 0.4, 0.34, 5)]
+TATTERS = [(0.35, 0.42, 0.4, 0), (0.9, 0.62, 0.58, 6), (1.4, 0.38, 0.36, 1), (1.85, 0.7, 0.66, 7), (2.3, 0.55, 0.53, 2), (2.8, 0.66, 0.62, 8),
+           (3.3, 0.4, 0.38, 3), (3.8, 0.72, 0.68, 9), (4.4, 0.5, 0.48, 4), (4.95, 0.6, 0.57, 10), (5.5, 0.44, 0.42, 5), (6.0, 0.68, 0.64, 11)]  # v3
 
 
 def tatter_parts():
@@ -1617,7 +1746,7 @@ def tatter_parts():
 
         def fn(U, V, th0=th0, tx=tx, tz=tz, ln=ln, k=k, y0=y0):
             # strips torn from the robe, hanging along it (outside its folds) and stopping short of the wall it stands on
-            w = 0.024 * (1 - 0.55 * V) * (1 + 0.2 * np.sin(V * 9 + k))
+            w = 0.034 * (1 - 0.6 * V) * (1 + 0.2 * np.sin(V * 9 + k))
             s = U * 2 - 1
             y = y0 + 0.02 - (ln + 0.02) * V
             q = robe_xyz(th0, y, robeR(y) * 1.1 + 0.012 + 0.012 * V)
@@ -1627,7 +1756,7 @@ def tatter_parts():
             Q = P.copy()
             Q[:, 1] = np.minimum(Q[:, 1], 0.5)
             return skirt_weights(Q)
-        parts.append(Part(f"tatter{i}", fn, {0: (2, 6), 1: (1, 4), 2: None}, "cloth", skin, uvw=0.8, orient=1,
+        parts.append(Part(f"tatter{i}", fn, {0: (3, 10), 1: (2, 5), 2: (1, 3)}, "cloth", skin, uvw=0.8, orient=1,
                           relief=lambda U, V, P, N: (0.0012 * np.sin(V * 60 + U * 4), {}), paint=robe_strip_paint))
     return parts
 
@@ -1638,30 +1767,555 @@ def robe_strip_paint(U, V, P, N, m):
     return dict(alb=alb, rough=cl(0.45 + 0.2 * n1), glow=0 * n1)
 
 
+# =====================================================================================================================
+# v3: THE MENACE (silhouette first: it must read at 15-40 m in the dark). Pauldrons and spikes, a crown of chisel points round the
+# hood, an iron collar, chains with hooks and weights, a heavier belt of tools (a saw, a bundle of spikes), porcelain face
+# fragments on cords, plumb-weights sewn into the hem, more and longer rags, strips hanging from the mantle; nails and staples
+# driven through the mask.
+# =====================================================================================================================
+def _unit(v):
+    v = np.asarray(v, float)
+    return v / np.linalg.norm(v)
+
+
+def _perp_up(d):
+    return (0.0, 0.0, 1.0) if abs(d[2]) < 0.9 else (1.0, 0.0, 0.0)
+
+
+def squarish(th, round_=0.25):
+    """A forged square section with softened corners (corners at th = pi/4 + k pi/2)."""
+    k = np.cos(np.pi / 4) / np.cos(np.mod(th + np.pi / 4, np.pi / 2) - np.pi / 4)
+    return k * (1 - round_) + round_ * 0.85
+
+
+def spike_part(name, base, d, L, r0, skin, res, bend=None, seed=201, collar=True, cage=0.006):
+    """A forged spike / chisel point: square section tapering to a point, a stepped collar at its root."""
+    base = np.asarray(base, float)
+    d = _unit(d)
+    mid = base + d * L * 0.5 + (np.asarray(bend, float) if bend is not None else 0.0)
+    c = Curve([base - d * 0.012, mid, base + d * L], up=_perp_up(d))
+
+    def ra(V, th):
+        r = r0 * np.power(np.clip(1 - V, 0, 1), 0.8) + 0.0007
+        if collar:
+            r = r + 0.22 * r0 * sstep(0.1, 0.07, V)
+        return cap_r(V, r, 0.04, 0.0)
+
+    def relief(U, V, P, N):
+        ham = fbm3(P[..., 0], P[..., 1], P[..., 2], 120.0, seed, 2)
+        edge = cl(np.abs(np.cos(2 * (U * TAU) - np.pi / 2)) * 5 - 4.0) * 0.7 + sstep(0.85, 1.0, V) + g1(V, 0.085, 0.01)
+        return 0.0004 * ham, dict(edge=cl(edge), rust=g1(V, 0.12, 0.05) * 0.6)
+    return Part(name, sweep_fn(c, ra, shape=squarish), res, "iron", skin, uvw=1.2, relief=relief, paint=iron_paint_fn(seed + 1), cage=cage)
+
+
+def surface_points(fn, nu=240, nv=240, u=(0.0, 1.0), v=(0.0, 1.0)):
+    U, V = np.meshgrid(np.linspace(u[0], u[1], nu), np.linspace(v[0], v[1], nv))
+    return fn(U, V).reshape(-1, 3)
+
+
+class Ring:
+    """A closed ring hugging the outermost of some surfaces in a (tilted) plane: R(az) by azimuth about its centre. tilt > 0 lowers
+    the front (+z)."""
+
+    def __init__(self, pts, center, tilt=0.0, band=0.01, bins=120, smooth=3):
+        self.n = np.array([0.0, math.cos(tilt), math.sin(tilt)])
+        self.ex = np.array([1.0, 0.0, 0.0])
+        self.ez = np.array([0.0, -math.sin(tilt), math.cos(tilt)])
+        c = np.asarray(center, float)
+        q = pts - c
+        qs = q[np.abs(q @ self.n) < band]
+        # recentre (front / back) on the section's middle
+        zz = qs @ self.ez
+        c = c + self.ez * 0.5 * (zz.max() + zz.min())
+        q = pts - c
+        qs = q[np.abs(q @ self.n) < band]
+        self.c = c
+        az = np.mod(np.arctan2(qs @ self.ex, qs @ self.ez), TAU)
+        r = np.sqrt((qs @ self.ex) ** 2 + (qs @ self.ez) ** 2)
+        b = np.floor(az / TAU * bins).astype(int) % bins
+        R = np.full(bins, np.nan)
+        for i in range(bins):
+            m = b == i
+            if m.any():
+                R[i] = r[m].max()
+        ok = ~np.isnan(R)
+        idx = np.arange(bins)
+        R = np.interp(idx, np.concatenate([idx[ok] - bins, idx[ok], idx[ok] + bins]), np.concatenate([R[ok]] * 3))
+        for _ in range(smooth):
+            R = 0.25 * np.roll(R, 1) + 0.5 * R + 0.25 * np.roll(R, -1)
+        self.R = R
+        self.bins = bins
+
+    def r(self, az):
+        x = np.mod(az, TAU) / TAU * self.bins
+        i0 = np.floor(x).astype(int) % self.bins
+        f = x - np.floor(x)
+        return self.R[i0] * (1 - f) + self.R[(i0 + 1) % self.bins] * f
+
+    def dir(self, az):
+        az = np.asarray(az, float)
+        return self.ex * np.sin(az)[..., None] + self.ez * np.cos(az)[..., None]
+
+    def at(self, az, dr=0.0, h=0.0):
+        az = np.asarray(az, float)
+        return self.c + self.dir(az) * (self.r(az) + dr)[..., None] + self.n * np.asarray(h)[..., None]
+
+
+def band_part(name, ring, height, thick, res, skin, off=0.004, flare=0.0, seed=210, uvw=1.2, rivets=16, cage=0.008):
+    """An iron band round a Ring: a rounded-rectangle section `height` tall, `thick` thick, rivets round it (relief)."""
+    def fn(U, V):
+        az = U * TAU
+        a = V * TAU
+        ca, sa = np.cos(a), np.sin(a)
+        rad = np.sign(ca) * np.power(np.abs(ca), 0.45)
+        ver = np.sign(sa) * np.power(np.abs(sa), 0.45)
+        dr = off + thick * 0.5 * (1 + rad) + flare * (0.5 - 0.5 * ver)
+        return ring.at(az, dr, ver * height * 0.5)
+
+    def relief(U, V, P, N):
+        az = U * TAU
+        a = V * TAU
+        outer = np.cos(a) > 0.3
+        riv = cl(np.cos(az * rivets) * 9 - 8.0) * g1(np.sin(a), 0, 0.3) * outer
+        ham = fbm3(P[..., 0], P[..., 1], P[..., 2], 90.0, seed, 2)
+        edge = g1(np.abs(np.sin(a)), 0.75, 0.12) * outer
+        return 0.0022 * riv + 0.0005 * ham, dict(edge=cl(edge + riv), rust=g1(np.sin(a), -0.7, 0.2) * 0.7)
+    return Part(name, fn, res, "iron", skin, uvw=uvw, relief=relief, paint=iron_paint_fn(seed + 1), cage=cage)
+
+
+PAUL_C = np.array([0.345, 2.56, -0.01])
+
+
+def pauldron_fn(U, V):
+    th = U * TAU  # about the vertical through PAUL_C; th = 0 toward the front
+    ph = V * 0.66 * np.pi
+    lame = 1 + 0.075 * sstep(0.33 * np.pi, 0.36 * np.pi, ph) + 0.075 * sstep(0.49 * np.pi, 0.52 * np.pi, ph)  # three overlapping lames
+    crest = 0.016 * g1(np.cos(th), 0, 0.22) * sstep(0.42 * np.pi, 0.1 * np.pi, ph)  # a raised crest across the shoulder
+    rx, ry, rz = 0.19, 0.13, 0.18
+    s = np.sin(ph) * lame
+    return stack3(PAUL_C[0] + s * np.sin(th) * rx, PAUL_C[1] + np.cos(ph) * ry * lame + crest, PAUL_C[2] + s * np.cos(th) * rz)
+
+
+def pauldron_relief(U, V, P, N):
+    th = U * TAU
+    ph = V * 0.66 * np.pi
+    edge = g1(ph, 0.345 * np.pi, 0.012) + g1(ph, 0.505 * np.pi, 0.012) + sstep(0.62 * np.pi, 0.66 * np.pi, ph)
+    riv = np.zeros(np.shape(U))
+    for pr in (0.3 * np.pi, 0.46 * np.pi, 0.61 * np.pi):
+        riv = np.maximum(riv, cl(np.cos(th * 14) * 9 - 8.0) * g1(ph, pr, 0.02))
+    ham = fbm3(P[..., 0], P[..., 1], P[..., 2], 70.0, 221, 2)
+    dents = cl(fbm3(P[..., 0], P[..., 1], P[..., 2], 25.0, 222, 2) * 3 - 1.4)
+    return 0.002 * riv + 0.0006 * ham - 0.0012 * dents, dict(edge=cl(edge + riv), rust=cl(g1(ph, 0.33 * np.pi, 0.03) + g1(ph, 0.49 * np.pi, 0.03)) * 0.7,
+                                                            dust=cl(N[..., 1] * 1.5 - 0.6))
+
+
+def pauldron_parts():
+    parts = [Part("pauldron", pauldron_fn, {0: (28, 12), 1: (20, 9), 2: (14, 6)}, "iron", "upperArmL", uvw=1.4, relief=pauldron_relief,
+                  paint=iron_paint_fn(223), cage=0.01)]
+    for k, (u, v, L, r0) in enumerate(((0.25, 0.36, 0.30, 0.03), (0.13, 0.3, 0.21, 0.022), (0.37, 0.32, 0.24, 0.024))):
+        base = pauldron_fn(np.array(u), np.array(v)).reshape(3)
+        out = _unit(base - PAUL_C)
+        d = _unit(out * 0.75 + np.array([0.0, 1.25, 0.0]) + np.array([0.0, 0.0, -0.15]))
+        parts.append(spike_part(f"pspike{k}", base - out * 0.006, d, L, r0, "upperArmL", {0: (8, 7), 1: (8, 4), 2: (4, 3)},
+                                bend=-out * 0.012 + np.array([0, 0, -0.01]), seed=230 + k * 3))
+    return parts
+
+
+_HOOD_PTS = []
+
+
+def hood_ring_points():
+    if not _HOOD_PTS:
+        _HOOD_PTS.append(surface_points(hood_fn, 360, 360, v=(0.09, 1.0)))
+    return _HOOD_PTS[0]
+
+
+def crown_parts():
+    ring = Ring(hood_ring_points(), np.array([0.0, 3.19, HC[2] - 0.02]), tilt=-0.12, band=0.008)
+    parts = [band_part("crown", ring, 0.034, 0.012, {0: (56, 6), 1: (36, 4), 2: (20, 4)}, "head", off=0.003, seed=240, rivets=22)]
+    n = 11
+    for k in range(n):
+        az = TAU * k / n
+        fr = math.cos(az * 0.5) ** 2  # 1 at the front, 0 at the back
+        L = 0.085 + 0.13 * fr * (1.25 if k == 0 else 1.0)
+        base = ring.at(np.array(az), 0.01, 0.012).reshape(3)
+        d = _unit(ring.n + ring.dir(np.array(az)).reshape(3) * (0.35 + 0.15 * fr))
+        parts.append(spike_part(f"cspike{k}", base, d, L, 0.0125 + 0.004 * fr, "head", {0: (8, 5), 1: (4, 4), 2: (4, 2)}, seed=250 + k))
+    return parts
+
+
+def collar_parts():
+    ring = Ring(hood_ring_points(), np.array([0.0, 2.735, 0.0]), tilt=0.3, band=0.01)
+    parts = [band_part("collar", ring, 0.07, 0.026, {0: (40, 8), 1: (28, 6), 2: (20, 4)}, hood_weights, off=0.004, flare=0.014, seed=260,
+                       uvw=1.3, rivets=18)]
+    # a heavy ring at the throat
+    front = ring.at(np.array(0.0), 0.04, -0.03).reshape(3)
+    c = front + np.array([0.0, -0.035, 0.012])
+
+    def ring_fn(U, V):
+        a = V * TAU
+        u = U * TAU
+        R, r = 0.032, 0.0075
+        x = (R + r * np.cos(u)) * np.cos(a)
+        y = (R + r * np.cos(u)) * np.sin(a)
+        return stack3(c[0] + x, c[1] + y, c[2] + r * np.sin(u))
+    parts.append(Part("throatring", ring_fn, {0: (8, 20), 1: (6, 12), 2: (4, 8)}, "iron", hood_weights, uvw=1.2, relief=forged_relief(262),
+                      paint=iron_paint_fn(263)))
+    return parts
+
+
+# ---- chains, hooks, weights -----------------------------------------------------------------------------------------
+def link_fn(cc, t, w, L=0.044, W=0.026, r=0.0048):
+    """One oval chain link centred at cc, long along t, wide along w."""
+    t = _unit(t)
+    w = _unit(w - t * np.dot(w, t))
+    nrm = np.cross(t, w)
+    a, b = L * 0.5 - r, W * 0.5 - r
+
+    def fn(U, V):
+        s = V * TAU
+        u = U * TAU
+        cs, ss = np.cos(s), np.sin(s)
+        ca = np.sign(cs) * np.power(np.abs(cs), 0.75)
+        sa = np.sign(ss) * np.power(np.abs(ss), 0.75)
+        ctr = cc + t * (a * ca)[..., None] + w * (b * sa)[..., None]
+        o = t * (cs / a)[..., None] + w * (ss / b)[..., None]
+        o = o / np.linalg.norm(o, axis=-1, keepdims=True)
+        return ctr + o * (r * np.cos(u))[..., None] + nrm * (r * np.sin(u))[..., None]
+    return fn
+
+
+CHAIN_OWNER = "achain_l0"  # every chain link shares the first one's rectangle
+
+
+def link_relief(U, V, P, N):
+    return 0.0004 * fbm3(P[..., 0], P[..., 1], P[..., 2], 160.0, 272, 2), dict(edge=cl(np.cos(U * TAU) * 2 - 1.2) * 0.8, rust=cl(-np.cos(U * TAU)) * 0.6)
+
+
+def chain_parts(tag, pts, skin, pitch=0.038, lod2=True, L=0.044, W=0.026, r=0.0048):
+    c = Curve(pts, up=(0.0, 0.0, 1.0))
+    n = max(2, int(c.length / pitch))
+    parts = []
+    for i in range(n):
+        v = (i + 0.5) / n
+        C, N_, Bn = c.at(np.array(v))
+        C, N_, Bn = C.reshape(3), N_.reshape(3), Bn.reshape(3)
+        T = np.cross(N_, Bn)
+        w = N_ if i % 2 == 0 else Bn
+        p = Part(f"{tag}_l{i}", link_fn(C, T, w, L, W, r), {0: (5, 8), 1: (4, 5), 2: None}, "iron", skin, uvw=1.3, relief=link_relief,
+                 paint=iron_paint_fn(271), cage=0.004)
+        p.mirror_of = None if p.name == CHAIN_OWNER else CHAIN_OWNER
+        parts.append(p)
+    if lod2:  # far away a chain is a single iron line
+        def ra(V, th):
+            return 0.0075 + 0 * V
+        p = Part(f"{tag}_lo", sweep_fn(c, ra), {2: (4, max(3, n // 2))}, "iron", skin, uvw=1.0, paint=iron_paint_fn(271))
+        p.mirror_of = CHAIN_OWNER
+        parts.append(p)
+    return parts, c
+
+
+def hook_part(name, top, side, skin, size=1.0, seed=281):
+    top = np.asarray(top, float)
+    s = _unit(side) * size
+    dn = np.array([0.0, -1.0, 0.0]) * size
+    pts = [top, top + dn * 0.05, top + dn * 0.1 + s * 0.012, top + dn * 0.125 + s * 0.04, top + dn * 0.105 + s * 0.068, top + dn * 0.07 + s * 0.072,
+           top + dn * 0.05 + s * 0.06]
+    c = Curve(pts, up=tuple(_unit(np.cross(s, dn))))
+
+    def ra(V, th):
+        r = (0.0095 * size) * (1 - 0.8 * sstep(0.6, 1.0, V)) * (1 + 0.25 * g1(V, 0.45, 0.12))
+        return cap_r(V, r, 0.08, 0.04)
+    return Part(name, sweep_fn(c, ra, shape=lambda th: squarish(th, 0.5)), {0: (8, 18), 1: (6, 9), 2: (4, 5)}, "iron", skin, uvw=1.3,
+                relief=forged_relief(seed), paint=iron_paint_fn(seed + 1), cage=0.006)
+
+
+def weight_part(name, top, skin, h=0.075, r=0.03, res=None, seed=291):
+    top = np.asarray(top, float)
+
+    def prof(V):
+        hh = lerp(0.0, -h, V)
+        rr = interp(V, [(0, 0.0), (0.03, 0.006), (0.1, 0.007), (0.16, r * 0.55), (0.3, r * 0.92), (0.75, r), (0.92, r * 0.85), (0.985, r * 0.4), (1.0, 0.0)])
+        return rr, hh
+
+    def relief(U, V, P, N):
+        band = g1(V, 0.3, 0.03) + g1(V, 0.75, 0.03)
+        return 0.0012 * band + 0.0006 * fbm3(P[..., 0], P[..., 1], P[..., 2], 80.0, seed, 2), dict(edge=band, rust=sstep(0.6, 1.0, V) * 0.5)
+    return lathe_part(name, top, (0, 1, 0), prof, res or {0: (12, 10), 1: (8, 6), 2: (6, 4)}, "iron", skin, uvw=1.3, relief=relief,
+                      paint=iron_paint_fn(seed + 1))
+
+
+def az_pt(th, y, extra=0.0):
+    """A point just outside the robe at azimuth th (x = sin th, z = cos th), height y."""
+    r = float(robeR(y)) * (1 + 0.1 * float(sstep(1.68, 0.3, y))) * 1.1 + extra
+    return np.asarray(robe_xyz(np.array(th), np.array(y), np.array(r))).reshape(3)
+
+
+def chain_set():
+    parts = []
+    # the left arm: a chain from the forearm's first ring down the back of the bar, a hook dangling past the wrist (the right mirrors)
+    pts = [(AX + 0.02, 1.64, -0.058), (AX + 0.035, 1.47, -0.078), (AX + 0.025, 1.3, -0.08), (AX + 0.005, 1.12, -0.08)]
+    lp, c = chain_parts("achain", pts, "foreArmL")
+    end = c.C[-1] + np.array([0.0, -0.022, 0.0])
+    lp.append(hook_part("ahook", end, (0.6, 0.0, -0.8), "foreArmL", 1.15))
+    for p in lp:
+        parts.append(p)
+        m = mirror(p, p.name + "_R", swapLR)
+        m.mirror_of = p.mirror_of or p.name
+        parts.append(m)
+    # the belt: a hook chain at the right back, a weight chain at the back left
+    sk_rb = mixw(("skirtR1", 0.45), ("skirtB1", 0.25), ("hips", 0.3))
+    sk_lb = mixw(("skirtB1", 0.4), ("skirtL1", 0.3), ("hips", 0.3))
+    a0 = 4.05
+    pts = [az_pt(a0, 1.72, 0.0), az_pt(a0 + 0.04, 1.5, 0.015), az_pt(a0 + 0.06, 1.3, 0.02), az_pt(a0 + 0.07, 1.14, 0.025)]
+    bp, c = chain_parts("bchain", pts, sk_rb)
+    bp.append(hook_part("bhook", c.C[-1] + np.array([0.0, -0.022, 0.0]), (0.0, 0.0, -1.0), sk_rb, 1.5, seed=284))
+    a1 = 2.75
+    pts = [az_pt(a1, 1.71, 0.0), az_pt(a1 - 0.03, 1.52, 0.012), az_pt(a1 - 0.05, 1.36, 0.02)]
+    wp, c = chain_parts("wchain", pts, sk_lb)
+    wp.append(weight_part("bweight", c.C[-1] + np.array([0.0, -0.016, 0.0]), sk_lb, h=0.11, r=0.036, seed=294))
+    parts += bp + wp
+    return parts
+
+
+# ---- the belt's new tools: a saw at the right back, a bundle of spikes at the left back ----------------------------------
+def saw_parts():
+    parts = []
+    sk = mixw(("skirtB1", 0.35), ("skirtR1", 0.35), ("hips", 0.3))
+    th0 = 3.45
+    p0 = az_pt(th0, 1.69, 0.012)
+    p1 = az_pt(th0 - 0.32, 1.12, 0.03)
+    radial = _unit(np.array([math.sin(th0 - 0.15), 0.0, math.cos(th0 - 0.15)]))
+    c = Curve([p0, (p0 + p1) * 0.5 + radial * 0.006, p1], up=tuple(radial))
+
+    def ra(V, th):  # thickness (radial)
+        return 0.0028 + 0 * V
+
+    def rb(V, th):  # half width
+        return cap_r(V, lerp(0.05, 0.034, V), 0.0, 0.02)
+
+    def relief(U, V, P, N):
+        th = U * TAU
+        st = np.sin(th)
+        teeth = (st > 0.6) * (0.5 + 0.5 * np.sin(V * 260))
+        return -0.0006 * teeth + 0.0003 * fbm3(P[..., 0], P[..., 1], P[..., 2], 90.0, 301, 2), dict(
+            edge=cl(teeth + (np.abs(st) > 0.95) * 0.5), rust=cl(fbm3(P[..., 0], P[..., 1], P[..., 2], 12.0, 302, 2) * 2))
+    parts.append(Part("sawB", sweep_fn(c, ra, rb), {0: (12, 14), 1: (8, 7), 2: (4, 3)}, "iron", sk, uvw=1.2, relief=relief, paint=iron_paint_fn(303)))
+    # the wooden grip: a closed D loop at the top of the blade
+    up = _unit(p0 - p1)
+    side = _unit(np.cross(radial, up))
+    g0 = p0 + up * 0.005
+    gp = [g0 - side * 0.03, g0 - side * 0.032 + up * 0.06, g0 + side * 0.01 + up * 0.075, g0 + side * 0.045 + up * 0.05, g0 + side * 0.04, g0 - side * 0.03]
+    parts.append(tube_part("sawG", gp, 0.012, 0.012, {0: (6, 16), 1: (5, 8), 2: (4, 4)}, "wood", sk, uvw=1.4, cap=(0.0, 0.0), paint=wood_paint,
+                           relief=lambda U, V, P, N: (0.0003 * np.sin(V * 120), dict(worn=g1(V, 0.5, 0.25)))))
+    # the bundle of spikes in a leather loop, points down
+    sk2 = mixw(("skirtL1", 0.45), ("skirtB1", 0.25), ("hips", 0.3))
+    th1 = 2.05
+    for k in range(4):
+        o = (k - 1.5) * 0.024
+        tt = th1 + o / 0.25
+        top = az_pt(tt, 1.84, 0.012 + 0.006 * (k % 2))
+        d = np.array([0.03 * (k - 1.5), -1.0, 0.0])
+        parts.append(spike_part(f"bspike{k}", top, d, 0.27 + 0.03 * ((k * 7) % 3), 0.011, sk2,
+                                {0: (8, 8), 1: (4, 4), 2: (4, 2)} if k < 2 else {0: (8, 8), 1: (4, 4), 2: None}, seed=310 + k))
+    pts = [az_pt(th1 - 0.26, 1.72, 0.022), az_pt(th1, 1.715, 0.03), az_pt(th1 + 0.26, 1.72, 0.022)]
+    parts.append(tube_part("sloop", pts, 0.009, 0.009, {0: (6, 10), 1: (4, 5), 2: None}, "leather", sk2, uvw=1.3, cap=(0.0, 0.0), paint=belt_paint,
+                           relief=lambda U, V, P, N: (0 * V, dict(stitch=0 * V, hole=0 * V))))
+    return parts
+
+
+# ---- porcelain face fragments hanging from the belt -----------------------------------------------------------------
+def cord_paint(U, V, P, N, m):
+    return dict(alb=np.array([0.24, 0.21, 0.16]) * (0.8 + 0.3 * np.sin(V * 400 + U * TAU)[..., None]), rough=0.8 + 0 * V, glow=0 * V)
+
+
+def trophy_parts():
+    parts = []
+    sk = mixw(("skirtF1", 0.4), ("skirtR1", 0.3), ("hips", 0.3))
+    first = None
+    for k, (th, y0, drop, scl, brk) in enumerate(((-0.42, 1.7, 0.12, 0.55, 0.5), (-0.78, 1.7, 0.2, 0.5, -0.4), (-0.15, 1.7, 0.28, 0.48, 0.2))):
+        top = az_pt(th, y0, 0.01)
+        cc = az_pt(th, y0 - drop - 0.07 * scl / 0.5, 0.03)
+        out = _unit(np.array([math.sin(th), 0.0, math.cos(th) * 0.82]))
+        tilt = 0.25 * (rnd(500 + k) - 0.5)
+        upv = _unit(np.array([math.sin(tilt), 1.0, 0.0]))
+        rt = _unit(np.cross(upv, out))
+        upv = _unit(np.cross(out, rt))
+        s = scl
+        hh = HH * s
+
+        def fn(U, V, cc=cc, out=out, upv=upv, rt=rt, s=s, hh=hh, brk=brk, k=k):
+            vv = V * 2 - 1
+            w = mask_hw(vv) * s
+            X = (U * 2 - 1) * w
+            Y = vv * hh
+            # broken: a chunk gone along a ragged line
+            lim = (brk * (Y / hh) + 0.35) * HW * s + 0.006 * vnoise3(Y, np.full_like(Y, float(k)), 0, 60.0, 520 + k)
+            X = np.where(X > lim, lim + (X - lim) * 0.04, X)
+            z = s * face_macro(np.abs(X) / s, Y / s, -1) - 0.02 * s * (np.abs(U * 2 - 1) ** 4 + np.abs(vv) ** 6)
+            return cc + rt * X[..., None] + upv * Y[..., None] + out * z[..., None]
+
+        def relief(U, V, P, N, s=s):
+            vv = V * 2 - 1
+            X = (U * 2 - 1) * mask_hw(vv)
+            Y = vv * HH
+            e = eye_of(-1)
+            sy, t = slit_y(np.abs(X), e)
+            inside = (np.abs(X) > e["x0"]) & (np.abs(X) < e["x1"])
+            hole = np.where(inside, sstep(0.006, 0.002, np.abs(Y - sy)), 0)
+            jx = np.abs(X) + 0.001 * vnoise3(X, Y, 0, 300, 530)
+            crack = g1(poly_dist2(jx, Y, CRACK)[0], 0, 0.0015)
+            cq = voronoi_edge2(X, Y, 0.01, 531)
+            craq = g1(cq, 0, 0.0004)
+            return (-0.004 * hole - 0.0012 * crack - 0.0002 * craq) * s / 0.5, dict(hole=hole, crack=crack, craq=craq, X=X, Y=Y)
+
+        def paint(U, V, P, N, m):
+            X, Y = m["X"], m["Y"]
+            n1 = fbm3(X, Y, 3.0, 14.0, 540, 3)
+            alb = IVORY * (0.82 + 0.14 * n1)[..., None]
+            alb = mix3(alb, IVORY * np.array([0.8, 0.72, 0.6]), cl(0.4 + 0.4 * n1) * 0.6)
+            e = eye_of(-1)
+            sock = g2(np.abs(X), Y, e["x"], e["y"], 0.035, 0.025)
+            alb = mix3(alb, GRIME * 0.6, cl(sock * 0.9))
+            alb = mix3(alb, np.array([0.006, 0.005, 0.005]), cl(m["hole"] + m["crack"]))
+            alb = mix3(alb, GRIME * 1.4, cl(m["craq"] * 0.5))
+            alb = mix3(alb, RUST * 0.9, cl(sstep(-0.05, -0.2, Y) * cl(fbm3(X, Y, 1, 20.0, 541, 2) * 2)) * 0.6)
+            alb = alb * (1 - 0.35 * sstep(0.6, 1.0, np.abs(U * 2 - 1)))[..., None]
+            rough = 0.35 + 0.2 * cl(n1) + 0.4 * m["hole"]
+            return dict(alb=alb, rough=cl(rough), glow=0 * n1)
+        p = Part(f"trophy{k}", fn, {0: (10, 14), 1: (6, 8), 2: (4, 5)}, "porcelain", sk, uvw=6.0, relief=relief, paint=paint, cage=0.006)
+        if first is None:
+            first = p.name
+        else:
+            p.mirror_of = first
+        parts.append(p)
+        tp = cc + upv * hh * 0.95
+        parts.append(tube_part(f"tcord{k}", [top, (top + tp) * 0.5 + out * 0.01, tp], 0.0026, 0.0026, {0: (4, 8), 1: (3, 4), 2: None}, "cord", sk, uvw=1.0,
+                               cap=(0.0, 0.0), paint=cord_paint, relief=lambda U, V, P, N: (0.0004 * np.sin(V * 700 + U * TAU), {})))
+    for p in parts:
+        if p.name.startswith("tcord") and p.name != "tcord0":
+            p.mirror_of = "tcord0"
+    return parts
+
+
+# ---- the hem: iron plumb-weights sewn into it, and the mantle's hanging strips ----------------------------------------
+def hem_skin(P_, U=None, V=None):
+    Q = P_.copy()
+    Q[:, 1] = np.minimum(Q[:, 1], 0.4)
+    return skirt_weights(Q)
+
+
+def hem_weight_parts():
+    parts = []
+    n = 12
+    first = None
+    for k in range(n):
+        u = (k + 0.3 + 0.4 * rnd(600 + k)) / n
+        P = robe_fn(np.array([u]), np.array([1.0])).reshape(3)
+        th = math.pi + u * TAU
+        out = _unit(np.array([math.sin(th), 0.0, math.cos(th) * 0.82]))
+        top = P + out * 0.012 + np.array([0.0, 0.03, 0.0])
+        p = weight_part(f"hemw{k}", top, hem_skin, h=0.085, r=0.021, res={0: (8, 8), 1: (6, 5), 2: (6, 3)}, seed=610)
+        if first is None:
+            first = p.name
+        else:
+            p.mirror_of = first
+        parts.append(p)
+    return parts
+
+
+def mantle_strip_parts():
+    parts = []
+    n = 10
+    first = None
+    for k in range(n):
+        u = (k + 0.5 + 0.5 * (rnd(700 + k) - 0.5)) / n
+        L = 0.16 + 0.22 * rnd(710 + k)
+        w0 = 0.04 + 0.02 * rnd(720 + k)
+
+        def fn(U, V, u=u, L=L, w0=w0, k=k):
+            uu = u + (U - 0.5) * w0 * (1 - 0.5 * V) / (TAU * 0.48)
+            top = mantle_fn(uu, np.full_like(uu, 0.9))
+            th = math.pi + u * TAU
+            out = np.array([math.sin(th), 0.0, math.cos(th) * 0.74])
+            return top + np.array([0.0, -1.0, 0.0]) * (L * V)[..., None] + out * (0.012 + 0.03 * V + 0.006 * np.sin(V * 5 + k))[..., None]
+        p = Part(f"mstrip{k}", fn, {0: (3, 8), 1: (2, 4), 2: (1, 2)}, "cloth", mantle_skin, uvw=0.8, orient=1,
+                 relief=lambda U, V, P, N: (0.0012 * np.sin(V * 50 + U * 4) + 0.0015 * sstep(0.85, 1.0, V) * vnoise3(U * 30, V * 30, 0, 1.0, 730), {}),
+                 paint=robe_strip_paint)
+        if first is None:
+            first = p.name
+        else:
+            p.mirror_of = first
+        parts.append(p)
+    return parts
+
+
+# ---- nails and staples driven through the mask ------------------------------------------------------------------------
+def mask_iron_parts():
+    parts = []
+    first = None
+
+    def prof(V):
+        h = lerp(0.0055, -0.002, V)
+        r = interp(V, [(0, 0.0), (0.15, 0.0058), (0.45, 0.0078), (0.6, 0.0078), (0.7, 0.003), (1.0, 0.0028)])
+        return r, h
+    for side in (1, -1):
+        for k, ((nx, ny), kind) in enumerate(NAILS):
+            if kind == 2 and side > 0:
+                continue  # the wrong half's jaw nail is gone
+            c, n = mask_surface(side, nx, ny)
+            p = lathe_part(f"mnail{k}{'L' if side > 0 else 'R'}", c, n, prof, {0: (8, 5), 1: (6, 3), 2: None}, "iron", "head", uvw=3.0,
+                           relief=lambda U, V, P, N: (0.0002 * fbm3(P[..., 0], P[..., 1], P[..., 2], 900.0, 801, 2), dict(edge=g1(V, 0.5, 0.15), rust=sstep(0.4, 0.0, V) * 0.6)),
+                           paint=iron_paint_fn(802))
+            if first is None:
+                first = p.name
+            else:
+                p.mirror_of = first
+            parts.append(p)
+    sfirst = None
+    for k, sy0 in enumerate(STAPLES):
+        a, na = mask_surface(-1, 0.016, sy0)
+        b, nb = mask_surface(1, 0.016, sy0 - 0.009)
+        pts = [a - na * 0.004, a + na * 0.0045, (a + b) * 0.5 + (na + nb) * 0.0065, b + nb * 0.0045, b - nb * 0.004]
+        c = Curve(pts, up=tuple(_unit(np.cross(b - a, na))))
+
+        def ra(V, th):
+            return 0.0024 + 0 * V
+        p = Part(f"staple{k}", sweep_fn(c, ra, shape=lambda th: squarish(th, 0.4)), {0: (6, 10), 1: (4, 6), 2: None}, "iron", "head", uvw=3.0,
+                 relief=forged_relief(811), paint=iron_paint_fn(812), cage=0.003)
+        if sfirst is None:
+            sfirst = p.name
+        else:
+            p.mirror_of = sfirst
+        parts.append(p)
+    return parts
+
+
 # ---- all parts ------------------------------------------------------------------------------------------------------
 def make_parts():
     parts = []
-    parts.append(Part("robe", robe_fn, {0: (64, 38), 1: (36, 22), 2: (18, 11)}, "cloth", torso_weights, uvw=0.75, relief=robe_relief,
+    parts.append(Part("robe", robe_fn, {0: (72, 42), 1: (48, 24), 2: (34, 17)}, "cloth", torso_weights, uvw=0.75, relief=robe_relief,
                       paint=robe_paint, cage=0.015))
-    hood = Part("hood", hood_fn, {0: (48, 34), 1: (28, 19), 2: (14, 10)}, "cloth", hood_weights, uvw=1.15, relief=hood_relief, paint=hood_paint,
+    hood = Part("hood", hood_fn, {0: (52, 34), 1: (32, 20), 2: (24, 14)}, "cloth", hood_weights, uvw=1.15, relief=hood_relief, paint=hood_paint,
                 fx=hood_fx, cage=0.015)
     hood.vwarp = warp_fn([(0.05, 0.05, 1.5), (0.13, 0.04, 3.0)])
     parts.append(hood)
-    parts.append(Part("mantle", mantle_fn, {0: (44, 14), 1: (24, 8), 2: (12, 4)}, "cloth", mantle_skin, uvw=1.1, relief=mantle_relief,
+    parts.append(Part("mantle", mantle_fn, {0: (72, 18), 1: (44, 10), 2: (28, 6)}, "cloth", mantle_skin, uvw=1.1, relief=mantle_relief,
                       paint=mantle_paint, cage=0.015))
     parts.append(void_part())
     parts.append(mask_part(1))
     parts.append(mask_part(-1))
-    parts.append(Part("apron", apron_fn, {0: (14, 30), 1: (8, 15), 2: (5, 8)}, "leather",
+    parts.append(Part("apron", apron_fn, {0: (20, 44), 1: (12, 22), 2: (6, 10)}, "leather",
                       lambda P, U=None, V=None: apron_skin(P), uvw=1.4, relief=apron_relief, paint=apron_paint, cage=0.01))
     parts.append(Part("pocket", pocket_fn, {0: (8, 6), 1: (4, 3), 2: None}, "leather", lambda P, U=None, V=None: apron_skin(P), uvw=1.5,
                       relief=pocket_relief, paint=pocket_paint, cage=0.008))
-    parts.append(Part("belt", belt_fn, {0: (48, 6), 1: (28, 4), 2: (16, 2)}, "leather", mixw(("hips", 0.6), ("spine", 0.4)), uvw=1.4,
+    parts.append(Part("belt", belt_fn, {0: (56, 6), 1: (36, 4), 2: (24, 4)}, "leather", mixw(("hips", 0.6), ("spine", 0.4)), uvw=1.4,
                       relief=belt_relief, paint=belt_paint, cage=0.008))
     left = []
     left += arm_parts()
-    sl = Part("sleeve", sleeve_fn, {0: (16, 9), 1: (10, 5), 2: (8, 3)}, "cloth", sleeve_skin, uvw=1.0, relief=sleeve_relief, paint=sleeve_paint, cage=0.012)
+    sl = Part("sleeve", sleeve_fn, {0: (20, 12), 1: (14, 6), 2: (10, 4)}, "cloth", sleeve_skin, uvw=1.0, relief=sleeve_relief, paint=sleeve_paint, cage=0.012)
     left.append(sl)
+    left += pauldron_parts()
     left += hand_parts()
     left += foot_parts()
     for p in left:
@@ -1670,6 +2324,14 @@ def make_parts():
     parts.append(spool_part())
     parts += tool_parts()
     parts += tatter_parts()
+    parts += crown_parts()
+    parts += collar_parts()
+    parts += chain_set()
+    parts += saw_parts()
+    parts += trophy_parts()
+    parts += hem_weight_parts()
+    parts += mantle_strip_parts()
+    parts += mask_iron_parts()
     # tatters share one rectangle
     for p in parts:
         if p.name.startswith("tatter") and p.name != "tatter0":
@@ -1735,7 +2397,7 @@ def orient(part):
     """+1 when dP/du x dP/dv points outward (from the part's centroid)."""
     if part.orient is not None:
         return float(part.orient)
-    nu, nv = part.res[0]
+    nu, nv = part.res[min(part.res)]
     _, _, P = grid_eval(part, max(nu, 8) * 2, max(nv, 8) * 2)
     N = np.cross(np.gradient(P, axis=1), np.gradient(P, axis=0))
     c = P.reshape(-1, 3).mean(axis=0)
@@ -2536,16 +3198,16 @@ def render_sheet(scene, arm, lods, paths):
         log(f"render {name} {time.time() - t0:.0f}s")
         tiles.append((fp, label))
     idle = pose_idle()
-    shot("front", "IDLE: the split saint in its hood", cam_at("c1", (0.25, 1.8, 3.7), (0.0, 1.75, 0.0), 35), idle)
-    shot("q34", "3/4: mantle, apron, the belt of tools", cam_at("c2", (2.4, 2.1, 2.7), (0.0, 1.7, 0.0), 35), idle)
+    shot("front", "IDLE: the split saint in its hood", cam_at("c1", (0.25, 1.9, 4.3), (0.0, 1.8, 0.0), 35), idle)
+    shot("q34", "3/4: pauldrons, chalk tallies, the belt of tools", cam_at("c2", (2.7, 2.2, 3.1), (0.0, 1.7, 0.0), 35), idle)
     shot("measure", "MEASURING: dividers, head tilted", cam_at("c3", (-1.6, 2.0, 3.4), (0.0, 1.8, 0.0), 35), pose_idle(me=1.0, tilt=0.0))
-    shot("back", "BACK: peak, mantle, patched robe", cam_at("c4", (-1.8, 2.4, -3.2), (0.0, 1.75, 0.0), 35), idle)
-    shot("face", "THE FACE at 1.5 m", cam_at("c5", (0.05, 2.75, 1.5), (0.0, 2.9, 0.1), 50), pose_idle(pitch=0.05, tilt=0.06), energy=(0.7, 1, 1))
-    shot("face34", "serene / wrong: the lid, the crack, the corner", cam_at("c6", (0.75, 2.85, 1.05), (0.0, 2.9, 0.1), 50), pose_idle(pitch=0.05, yaw=0.25, tilt=0.06),
+    shot("back", "BACK: peak, crown, saw, chains, weighted hem", cam_at("c4", (-1.8, 2.4, -3.2), (0.0, 1.75, 0.0), 35), idle)
+    shot("face", "THE FACE at 1.5 m", cam_at("c5", (0.05, 2.8, 1.55), (0.0, 2.92, 0.15), 50), pose_idle(pitch=0.05, tilt=0.06), energy=(0.7, 1, 1))
+    shot("face34", "serene / wrong: the crack, the staples, the grimace", cam_at("c6", (0.6, 2.86, 1.15), (0.0, 2.9, 0.15), 50), pose_idle(pitch=0.05, yaw=0.25, tilt=0.06),
          energy=(0.7, 1, 1))
-    shot("macro", "the wrong eye, the sewn mouth", cam_at("c7", (0.42, 2.9, 0.95), (0.035, 2.87, 0.14), 60), pose_idle(pitch=0.0, tilt=0.0), energy=(0.6, 1, 1))
+    shot("macro", "the wrong eye, the sewn mouth", cam_at("c7", (0.26, 2.89, 1.0), (0.04, 2.86, 0.19), 60), pose_idle(pitch=0.0, tilt=0.0), energy=(0.6, 1, 1))
     shot("hands", "small hands, cloth-wrapped, the spool", cam_at("c8", (0.6, 2.05, 1.45), (0.0, 1.82, 0.5), 45), idle, energy=(0.7, 1, 1))
-    shot("arm", "a chisel arm: forged steps, rivets", cam_at("c9", (1.4, 1.7, 1.3), (0.31, 1.6, 0.25), 40), idle, energy=(0.8, 1, 1))
+    shot("arm", "a chisel arm: serrated blade, hooked beak, chain", cam_at("c9", (1.4, 1.7, 1.3), (0.31, 1.6, 0.25), 40), idle, energy=(0.8, 1, 1))
     lodtiles = []
     for k in range(3):
         fp0 = len(tiles)
@@ -2561,6 +3223,9 @@ def render_sheet(scene, arm, lods, paths):
         sp = os.path.join(RENDER_DIR, "dresser_lods.png")
         strip.save(sp)
         tiles.append((sp, "LOD0 / LOD1 / LOD2 (" + "/".join(str(REPORT.get(f"lod{k}_tris", "?")) for k in range(3)) + " tris)"))
+    # v3: the far levels as the game uses them (Quest: LOD1 from 8 m, LOD2 from 22 m), seen from 14 m and 28 m through a long lens
+    shot("far1", "LOD1 at 14 m (x3 crop)", cam_at("cf1", (2.0, 2.2, 13.8), (0.0, 1.75, 0.0), 105), pose_idle(me=0.6, tilt=0.05), lod=1, energy=(1.6, 1.4, 1))
+    shot("far2", "LOD2 at 28 m (x6 crop)", cam_at("cf2", (-4.0, 2.4, 27.7), (0.0, 1.75, 0.0), 210), idle, lod=2, energy=(2.5, 1.6, 1))
     for o in lods:
         o.hide_render = False
     apply_pose(arm, {})
@@ -2601,6 +3266,9 @@ def main():
         REPORT[f"lod{lod}_tris"] = n
         log(f"LOD{lod}: {len(lows[lod])} parts, {n} triangles")
     log("LOD0 parts:", ", ".join(f"{o.name[:-3]}={tri_count(o)}" for o in lows[0]))
+    allv = np.concatenate([from_b(np.array([v.co[:] for v in o.data.vertices])) for o in lows[0]])
+    REPORT["bounds"] = [[round(float(v), 3) for v in allv.min(0)], [round(float(v), 3) for v in allv.max(0)]]
+    log("LOD0 bounds (creature frame):", REPORT["bounds"])
     if args.stage == "paint":
         alb, rough, glow, cov = paint_atlas(parts, args.bake)
         save_png(srgb_encode(alb), os.path.join(RENDER_DIR, "paint_albedo.png"))
@@ -2615,6 +3283,16 @@ def main():
         body = [("front", (0.0, 1.75, 3.9), (0.0, 1.62, 0.0), 35), ("q34", (2.3, 2.2, 3.0), (0.0, 1.62, 0.0), 35), ("side", (3.8, 1.75, 0.0), (0.0, 1.62, 0.0), 35),
                 ("back", (-1.2, 2.3, -3.4), (0.0, 1.7, 0.0), 35)]
         clay(sc, lows[0], "low", body + [("face", face[0][0], face[0][1], face[0][2]), ("face34", face[1][0], face[1][1], face[1][2])])
+        for lod in (1, 2):  # the far levels, seen as they are used (a long lens from far away)
+            for k in (0, 1, 2):
+                for o in lows[k]:
+                    o.hide_render = k != lod
+            clay(sc, lows[lod], f"lod{lod}", [("front", (0.0, 1.9, 4.6), (0.0, 1.75, 0.0), 32), ("q34", (2.6, 2.2, 3.4), (0.0, 1.75, 0.0), 32)])
+        for k in (1, 2):
+            for o in lows[k]:
+                o.hide_render = True
+        for o in lows[0]:
+            o.hide_render = False
         for p in parts:
             if p.name.startswith("mask"):
                 p.hi = (380, 760)
@@ -2666,7 +3344,7 @@ def main():
         attach(o, arm, mat)
         o.hide_render = False
     wu = (WHITE[0] + WHITE[2] * 0.5, 1 - (WHITE[1] + WHITE[3] * 0.5))  # glTF uv (v down)
-    arm["dresser"] = json.dumps({"version": 2, "whiteUV": [round(wu[0], 5), round(wu[1], 5)], "lods": [REPORT[f"lod{k}_tris"] for k in range(3)],
+    arm["dresser"] = json.dumps({"version": 3, "whiteUV": [round(wu[0], 5), round(wu[1], 5)], "lods": [REPORT[f"lod{k}_tris"] for k in range(3)],
                                  "bones": [b[0] for b in BONES], "fx": "COLOR_0: R pale, G -, B hood rim; ORM: R AO, G rough, B glow"})
     glb = os.path.join(args.out, "dresser.glb")
     export_glb(arm, lod_obs, glb)
