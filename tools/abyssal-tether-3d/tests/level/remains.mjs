@@ -23,7 +23,7 @@ register(
 globalThis.self = globalThis;
 const THREE = await import('three');
 const { planRemains, REMAINS, faceNormal } = await import(srcUrl('sim/remainsPlan.js'));
-const { RemainsView, RANGE } = await import(srcUrl('render/remainsView.js'));
+const { RemainsView, RANGE, MAX_SHOWN } = await import(srcUrl('render/remainsView.js'));
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
 let fails = 0;
@@ -132,15 +132,15 @@ const atlasTex = () => new THREE.DataTexture(new Uint8Array(16).fill(255), 2, 2,
   const a = sk.find((s) => s.kind !== 'hanging');
   cam.position.set(a.x + 3, a.y + 1.6, a.z);
   v.update(0.016, game);
-  const near = sk.filter((s) => Math.hypot(s.x - cam.position.x, s.y - cam.position.y, s.z - cam.position.z) <= RANGE.quest).length;
-  ok(v.stats.shown === near && near >= 1, `view: Quest range ${RANGE.quest} m: ${v.stats.shown} of ${sk.length} skeletons in the buffers`);
+  const near = Math.min(MAX_SHOWN.quest, sk.filter((s) => Math.hypot(s.x - cam.position.x, s.y - cam.position.y, s.z - cam.position.z) <= RANGE.quest).length);
+  ok(v.stats.shown === near && near >= 1 && near <= MAX_SHOWN.quest, `view: Quest range ${RANGE.quest} m, at most ${MAX_SHOWN.quest}: ${v.stats.shown} of ${sk.length} skeletons in the buffers`);
   const nearSt = st.filter((s) => Math.hypot(s.x - cam.position.x, s.y - cam.position.y, s.z - cam.position.z) <= 45).length;
   ok(v.stats.stainsShown === nearSt && nearSt >= 1, `view: ${v.stats.stainsShown} of ${st.length} stains within 45 m`);
   game.renderer.qualityTier = 'high';
   v._last.set(1e9, 1e9, 1e9);
   v.update(0.016, game);
-  const nearHigh = sk.filter((s) => Math.hypot(s.x - cam.position.x, s.y - cam.position.y, s.z - cam.position.z) <= RANGE.high).length;
-  ok(v.stats.shown === nearHigh && nearHigh >= near, `view: desktop range ${RANGE.high} m: ${v.stats.shown} skeletons`);
+  const nearHigh = Math.min(MAX_SHOWN.high, sk.filter((s) => Math.hypot(s.x - cam.position.x, s.y - cam.position.y, s.z - cam.position.z) <= RANGE.high).length);
+  ok(v.stats.shown === nearHigh && nearHigh >= near, `view: desktop range ${RANGE.high} m, at most ${MAX_SHOWN.high}: ${v.stats.shown} skeletons`);
   cam.position.set(900, 900, 900);
   v._last.set(1e9, 1e9, 1e9);
   v.update(0.016, game);

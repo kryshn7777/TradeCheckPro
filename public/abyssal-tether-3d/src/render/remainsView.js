@@ -5,7 +5,7 @@
  *
  *   SKELETONS   one InstancedMesh per kind that the level uses (each mesh of the GLB is one pose: slumped, hanging, sprawled, crumpled, crawling,
  *               ribcage, loose bones, skull pile, a hand in a heap), sharing the GLB's one material (vertex colours, the level's lit patch). Only the
- *               ones within the tier's range are in the instance buffers (a refresh every 1.5 m of travel): Quest 28 m, low 22 m, desktop 70 m.
+ *               ones within the tier's range are in the instance buffers (a refresh every 1.5 m of travel): Quest 22 m (at most 5), low 18 m (3), desktop 70 m (24).
  *   BLOOD       ONE InstancedMesh of quads with the atlas (an alpha-blended decal 1-2 cm off the surface: the same haze as the level, darker away from
  *               the lantern so it does not glow); floors use the pools and the drag marks, walls the sprays, splatters, handprints and runs
  *               (the atlas rows run DOWN: a wall decal's v+ is down the wall). Within 45 m.
@@ -25,7 +25,9 @@ export const ATLAS_URL = new URL('../../assets/textures/blood_atlas.png', import
 export const ATLAS_JSON_URL = new URL('../../assets/textures/blood_atlas.json', import.meta.url).href;
 
 /** How far (m) each tier draws them. */
-export const RANGE = { low: 22, quest: 28, high: 70 };
+export const RANGE = { low: 18, quest: 22, high: 70 };
+/** ... and at most this many skeletons at once (the nearest): a pose is 0.7-3 k triangles, drawn twice in a headset (the Quest budget is 350 k stereo). */
+export const MAX_SHOWN = { low: 3, quest: 5, high: 24 };
 const STAIN_RANGE = 45;
 const REFRESH = 1.5; // m of camera travel between rebuilds of the near lists
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -319,24 +321,35 @@ export class RemainsView {
     this._last.copy(this._cam);
     const tier = (game.renderer && game.renderer.qualityTier) || 'quest';
     const range = RANGE[tier] || RANGE.quest;
-    let shown = 0;
+    const cap = MAX_SHOWN[tier] || MAX_SHOWN.quest;
+    // the candidates in range, nearest first, up to the cap; then each mesh's buffer takes its own
+    const cand = this._cand || (this._cand = []);
+    cand.length = 0;
     for (const [, k] of this.byKind) {
-      let n = 0;
-      const im = k.mesh;
-      const arr = im.instanceMatrix.array;
       for (let i = 0; i < k.items.length; i++) {
         const s = k.items[i];
         const dx = s.x - this._cam.x;
         const dy = s.y - this._cam.y;
         const dz = s.z - this._cam.z;
-        if (dx * dx + dy * dy + dz * dz > range * range) continue;
-        for (let j = 0; j < 16; j++) arr[n * 16 + j] = k.mats[i * 16 + j];
-        n++;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 <= range * range) cand.push({ k, i, d2 });
       }
-      im.count = n;
-      im.instanceMatrix.needsUpdate = true;
-      im.visible = n > 0;
-      shown += n;
+    }
+    cand.sort((a, b) => a.d2 - b.d2);
+    if (cand.length > cap) cand.length = cap;
+    for (const [, k] of this.byKind) k.n = 0;
+    for (const c of cand) {
+      const k = c.k;
+      const arr = k.mesh.instanceMatrix.array;
+      for (let j = 0; j < 16; j++) arr[k.n * 16 + j] = k.mats[c.i * 16 + j];
+      k.n++;
+    }
+    let shown = 0;
+    for (const [, k] of this.byKind) {
+      k.mesh.count = k.n;
+      k.mesh.instanceMatrix.needsUpdate = true;
+      k.mesh.visible = k.n > 0;
+      shown += k.n;
     }
     this.stats.shown = shown;
     if (this.stainMesh) {
