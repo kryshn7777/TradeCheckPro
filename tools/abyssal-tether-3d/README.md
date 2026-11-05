@@ -408,3 +408,52 @@ flock /tmp/at3d-blender.lock .../blender-venv/bin/python tools/abyssal-tether-3d
 GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir DIR --out public/abyssal-tether-3d/assets/models/env --only ch1_props_v2
 npm run at3d:sw
 ```
+
+## The bones kit (`build_bones.py`) and the blood decal atlas (`build_blood_atlas.py`)
+
+`build_bones.py` (Blender 5.2 / `bpy`, procedural, deterministic, seed 6613, ~4 min + ~3 min of previews) writes ONE GLB of static
+skeleton dressing, `public/abyssal-tether-3d/assets/models/bones.glb` (0.21 MB after meshopt + quantisation). Every bone is a signed
+distance field in numpy (smooth unions of spheres / ellipsoids / round cones / plates, subtracted orbits, nasal aperture, sockets, noisy
+cut planes for the breaks), meshed with surface nets at 1.2-2.6 mm, posed by a direction-driven skeleton (1.72 m adult, limbs flagged
+`floor` settle onto y = 0), then QEM-decimated per material class (cloth / leather through a voxel remesh first) to the budget.
+
+| Node (= mesh) | Triangles | Origin / notes |
+|---|---|---|
+| `Bones_Skull` | 878 | base centre on the floor; jaw dropped, a broken-in hole and radiating cracks on the left parietal |
+| `Bones_SkullJawless` | 880 | base centre; tipped on its side, missing teeth |
+| `Bones_LyingA` | 2,778 | floor, centre of the footprint; on its back, the right arm stretched overhead along the floor, a rusted piton in the fist, a rope tangled round the wrist, broken ribs |
+| `Bones_LyingB` | 2,778 | floor; curled on its left side, hands at the face, the right femur snapped (the lower half, shin and foot lie apart) |
+| `Bones_SittingWall` | 2,650 | floor (y 0) and the WALL plane (z 0): the skeleton is in +Z, place it flush; head fallen forward, right hand in the lap, rags over the lap and a shoulder, a pack strap, a belt with a buckle |
+| `Bones_Hanging` | 2,976 | the hook (y 0); iron hook + 3 chain links + rope down to a noose; skull top 1.8 m below the hook, feet ~3.55 m below |
+| `Bones_Reach` | 698 | base centre; a forearm + clawing hand rising out of rubble, rope round the wrist, a broken humerus |
+| `Bones_Ribcage` | 890 | base centre; ribcage on its side, broken ribs, a lumbar fragment |
+| `Bones_Scatter` | 890 | floor, ~0.9 m patch; pelvis, a snapped femur (both halves), humerus, vertebrae, a mandible |
+| `Bones_SkullPile` | 2,978 | base centre; ~0.7 m heap: 14 skulls (pre-decimated, instanced in rings), jaws, long bones, a bone-dust mound |
+| `Bones_Crawler` | 2,626 | floor; prone, chest raised on its arms, hands clawing forward, the left leg gone below a snapped femur stump, a shirt rag, belt + buckle |
+
+All meshes are non-skinned, Y up, metres, smooth normals, no UVs, and share ONE material `BonesMat` (base colour factor 1, roughness 0.8,
+metallic 0, no textures) so a batch is one draw call. `COLOR_0` (RGBA, linear, unsigned-short normalised, A = 1) IS the albedo with
+lighting-independent ambient occlusion baked in: aged ivory bone varied by noise, paler worn ridges (convexity), brown grime pooled by
+AO and concavity, low-frequency dark stains, painted detail (orbits / nose interior, teeth gaps, sutures, the skull's cracks), a soil
+tide line where bones touch the floor, rust-brown dried blood on a few bones (spots with downward runs), dark cloth, brown leather,
+rusted iron, rope. AO: 40 cosine rays per vertex against the mesh (0.3 m) + 7 cm contact with the floor / wall plane, multiplied in
+(`col * (0.28 + 0.72 ao)`). The engine should use `vertexColors: true` and a white base colour.
+
+`build_blood_atlas.py` (numpy + PIL only, deterministic, seed 4471, ~40 s) writes `public/abyssal-tether-3d/assets/textures/blood_atlas.png`
+(RGBA 1024², 4 x 4 cells of 256 px, straight alpha with the blood colour dilated under alpha 0, 8 px transparent margin per cell) and
+`blood_atlas.json` (per cell: name, pixel rect, uv rect, recommended world size, a note; image rows run DOWN, so for wall decals v+ is
+down the wall). Cells: 0 `spray_arterial` 1.4 m, 1 `spray_wide` 1.2 m, 2 `splatter_impact` 0.9 m, 3 `spatter_fine` 0.6 m,
+4 `pool_large` 1.6 m, 5 `pool_medium` 1.0 m, 6 `pool_seep` 0.7 m, 7 `drips_cluster` 0.5 m, 8 `drag_long` 2.2 x 0.5 m,
+9 `drag_curved` 2.0 x 0.6 m, 10 `handprint_left` 0.18 m, 11 `handprint_right` 0.18 m, 12 `finger_streaks` 0.45 x 0.6 m,
+13 `drips_runs` 0.5 x 0.8 m, 14 `drips_small` 0.3 m, 15 `wipe_palm` 0.7 x 0.5 m. Colour #8a1515 at the thin film -> #4a0a09 in the
+thick core, a darker dried ring at the edges.
+
+```bash
+PY=.../blender-venv/bin/python
+flock /tmp/at3d-blender.lock $PY tools/abyssal-tether-3d/build_bones.py --out <dir> --renders <dir> [--render] [--samples 40] [--only Bones_Skull,Bones_LyingA]
+GLTF_TOOLS=$TOOLS node tools/abyssal-tether-3d/compress_glbs.mjs --dir <dir> --out public/abyssal-tether-3d/assets/models --only bones
+python3 tools/abyssal-tether-3d/build_blood_atlas.py          # -> assets/textures/blood_atlas.{png,json}, previews/blood_atlas_preview.png
+```
+
+Previews: `previews/bones_sheet.png` (Cycles, every mesh + the skull close), `previews/blood_atlas_preview.png` (the atlas over dark stone).
+Not wired into the game yet (no `src/` change); `bones.glb` is not in the service-worker precache list until the integration adds it.
