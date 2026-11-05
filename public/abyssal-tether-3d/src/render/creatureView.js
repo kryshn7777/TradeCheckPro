@@ -32,7 +32,6 @@
 
 import * as THREE from 'three';
 import { computeFrames } from './mason/masonPose.js';
-import { injectToon } from './materials.js';
 
 const KIT_REQUIRED = ['Mason_Head', 'Mason_Tail', 'Mason_Pit', 'Mason_LimbUpper', 'Mason_LimbLower', 'Mason_Hook'];
 const KIT_OPTIONAL = ['Mason_Jaw', 'Mason_Spine', 'Mason_Membrane'];
@@ -337,7 +336,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 #endif`,
       );
     shader.fragmentShader = frag;
-    injectToon(shader);
   };
   mat.customProgramCacheKey = () => 'mason-view-v3-' + (vertexOverrides ? 'vc' : 'tex') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

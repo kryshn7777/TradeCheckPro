@@ -11,7 +11,6 @@
  * `reduced` (settings.reducedEffects) drops the wet film.
  */
 import * as THREE from 'three';
-import { injectToon } from '../materials.js';
 
 export function makeMasonUniforms() {
   return {
@@ -21,7 +20,7 @@ export function makeMasonUniforms() {
     uNear: { value: new THREE.Vector2(0.55, 1.3) }, // dissolve starts at x metres, fully solid beyond y
     uTint: { value: new THREE.Color(1, 1, 1) },
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
-    uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze
+    uRim: { value: new THREE.Color(0, 0, 0) }, // grazing rim: off for the Mason (no cool sheen: the lantern alone shapes it); the skitterlings set their own
   };
 }
 
@@ -94,7 +93,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 }
 #endif`,
       );
-    injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
   };
   mat.customProgramCacheKey = () => 'mason-rig-v3' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

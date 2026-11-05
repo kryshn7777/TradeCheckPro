@@ -57,7 +57,7 @@ import { ContactShadows } from './contactShadows.js';
 import { DroppedProps } from './droppedProps.js';
 import { LanternShadow } from './lanternShadow.js';
 import { creatureLightPlan } from './auxShadowLogic.js';
-import { setOutlineLook, syncOutlines } from './outline.js';
+import { LOOK_TIERS, filmTerms, perSection, resolveLook } from './lookPresets.js';
 import { maxPixelRatio } from '../platform/deviceProfile.js';
 import { LevelCache } from './levelCache.js'; // LOADING_OPTIMIZATION.md: the dressed level cached in IndexedDB
 import { depthDarknessAt, foldDarkness } from '../sim/nightVision3d.js';
@@ -153,40 +153,9 @@ const XR_FOVEATION_CAP = { low: 1, quest: 0.66, high: 0.5 };
 // Near plane (m). The head-clearance fade (game.js HEAD_BLACK 0.1 m, eyes 0.032 m off the head centre) keeps solids beyond
 // ~0.1 m, so 0.08 never cuts the view; it doubles the depth resolution of the old 0.05 (24-bit depth, far 400).
 const CAMERA_NEAR = 0.08;
-// Cap of the lit surfaces' black-point lift (linear, before the tone mapper; the ACES curve has a slope of ~0.45 there).
+// Cap of the lit surfaces' black-point lift (linear, before the tone mapper). Three's ACES fit outputs 0 below ~0.0023 x 0.6 / exposure, so
+// this does not grey the black: it parks the darkest lit values at the toe, where the first steps of shadow detail get some slope.
 const BLACK_LIFT_MAX = 0.004;
-/**
- * The look of the whole game, one preset (`?look=horror|classic|anime` or settings.look; the default is `anime`):
- * anime = a stylised, cel-shaded "3D anime" picture: the lighting is cut into a few flat, soft-edged bands (materials.js atToon: the
- * albedo keeps its texture, only the light is stepped), shadows are a cool violet tint of the surface instead of black, colour is
- * vivid and the contrast curve is left flat, the haze rim light is hard and strong, the micro relief (detail normal, crevice grime)
- * is mostly flattened so the bands stay clean, and there is no grain and no vignette. All in the lit materials' own shader: no post pass.
- * horror = a lower exposure, a steeper contrast curve, drained colour, cold crushed shadows with sickly warm lights, a vignette
- * and fine film grain (all in the lit materials' grade, no post pass), and a lower black lift (the pits go darker).
- * classic = the first realistic grade.
- */
-const LOOK_PRESETS = {
-  anime: {
-    exposure: 1.4, contrast: -0.1, sat: 0.4, lift: 1.6, grain: 0, vignette: 0, tone: 0,
-    toon: 1, bands: 5, soft: 1.2, gain: 0.55, shade: [0.58, 0.66, 1.0], shadeAmt: 0.15,
-    detail: 0.3, crev: 0.35, depthDesat: 0.06, rim: 1.7, // kept low on purpose: at 0.5 the detail normal turns the cel bands into blotchy camouflage (checked in screenshots); the wall depth comes from the parallax instead
-    // ink outlines: hulls on the hero meshes (outline.js), a line on the masonry's box edges (materials.js); the width is an angle (rad)
-    ink: 1, inkWidth: 0.0026, inkEdge: 0.9, inkColor: [0.012, 0.008, 0.02],
-  },
-  horror: { exposure: 1.0, contrast: 0.16, sat: -0.14, lift: 0.5, grain: 0.04, vignette: 0.4, tone: 1.0 },
-  classic: { exposure: 1.25, contrast: 0, sat: 0, lift: 1, grain: 0, vignette: 0, tone: 0 },
-};
-function lookPreset(settings) {
-  let n = settings && typeof settings.look === 'string' ? settings.look : 'anime';
-  try {
-    const m = /[?&]look=([a-z]+)/i.exec((typeof location !== 'undefined' && location.search) || '');
-    if (m) n = m[1].toLowerCase();
-  } catch {
-    /* no location */
-  }
-  return LOOK_PRESETS[n] || LOOK_PRESETS.anime;
-}
-
 const _tmpC = new THREE.Color();
 /** `?walldepth=N` overrides the relief depth of vertical faces (0 = the old flat picture, 1.6 = the Quest default, 3 = deep): an A/B for the headset. */
 function wallDepthOverride() {
@@ -201,18 +170,6 @@ function wallDepthOverride() {
   }
   return null;
 }
-const _tmpInk = new THREE.Color();
-/** `?ink=off` (or settings.ink === false) turns the outlines off, whatever the look. */
-function inkDisabled(settings) {
-  try {
-    const m = /[?&]ink=([a-z0-9]+)/i.exec((typeof location !== 'undefined' && location.search) || '');
-    if (m && /^(off|0|false|no)$/i.test(m[1])) return true;
-  } catch {
-    /* no location */
-  }
-  return !!(settings && settings.ink === false);
-}
-
 function num(v, fb) {
   return typeof v === 'number' && isFinite(v) ? v : fb;
 }
@@ -240,9 +197,12 @@ export class Renderer3D {
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(maxPixelRatio());
     r.outputColorSpace = THREE.SRGBColorSpace;
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    this.look = lookPreset(this.settings);
+    // the look (render/lookPresets.js: `?look=` / settings.look; the default is the dark realism look, DARK_REALISM_LOOK.md)
+    this.look = resolveLook(this.settings);
+    this.lookName = this.look.name;
+    r.toneMapping = this.look.toneMapping === 'agx' ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = this.look.exposure;
+    this._film = { grain: 0, vignette: 0, toe: 0 };
     r.shadowMap.enabled = false; // three.js' own shadow maps stay off: the lantern shadow is custom (lanternShadow.js)
     r.info.autoReset = false; // render() resets it once per frame so the shadow passes and the main pass add up in stats
     r.xr.enabled = true;
@@ -322,7 +282,8 @@ export class Renderer3D {
     this.lanternFlare.material.userData.noLook = true;
     this.lanternFlare.visible = false; // the fake bloom is OFF (owner's call); the sprite stays so the API and the dispose path are unchanged
     this.lanternGroup.add(this.lanternFlare);
-    this.lanternBase = LANTERN_CANDELA;
+    this.lanternBase = LANTERN_CANDELA * this.look.lantern; // (game.js reads this once as the full-charge base)
+    this.lantern.decay = this.look.lanternDecay;
     this.setLanternParent(this.camera);
 
     // Environment light pool.
@@ -349,6 +310,8 @@ export class Renderer3D {
     this._lampFlick = 1;
     this.governor = new RenderGovernor(this);
     this.lighting = new Lighting(this);
+    const lk = this.look;
+    this.lighting.setLightmapTune({ exposure: lk.lmExposure, floor: lk.lmFloor, lanternGain: lk.lmLanternGain, lanternFalloff: lk.lmLanternFalloff });
     this.xrRenderScale = XR_RENDER_SCALE[this.lighting.tier] || 1;
     this._applyXRRenderScale();
     // the next session starts with the tier's scale again (a degraded tier during this one never reaches the swapchain)
@@ -882,13 +845,15 @@ export class Renderer3D {
     // Threat tightens and darkens the fog a little (felt, not read).
     const tk = this.threat;
     const fog = this.scene.fog;
-    fog.color.copy(th.fog).multiplyScalar(FOG_GAIN);
+    const lkH = this.look.haze;
+    fog.color.copy(th.fog).multiplyScalar(FOG_GAIN * this.look.hazeGain);
+    fog.color.setRGB(fog.color.r * lkH[0], fog.color.g * lkH[1], fog.color.b * lkH[2]); // the look's haze: drained, a little sickly
     // The warm sections' fog (S5 / S6 / S8: brown, amber) is the whole backdrop and the far wall of every view, and it moves with the head:
     // at full saturation it read as an orange screen stuck to the camera. Pull warm hues toward their own grey (luminance kept);
     // the blue / green fogs (r <= b) are untouched.
     const lum0 = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
     const warm = THREE.MathUtils.clamp(((fog.color.r - fog.color.b) / Math.max(fog.color.r, 1e-4)) * 1.6, 0, 1);
-    const keep = 1 - FOG_WARM_DESAT * warm;
+    const keep = (1 - FOG_WARM_DESAT * warm) * (1 - this.look.hazeDesat);
     fog.color.setRGB(lum0 + (fog.color.r - lum0) * keep, lum0 + (fog.color.g - lum0) * keep, lum0 + (fog.color.b - lum0) * keep);
     const lum = fog.color.r * 0.2126 + fog.color.g * 0.7152 + fog.color.b * 0.0722;
     const lumFloor = FOG_LUM_FLOOR * (1 - 0.95 * dark); // the haze may go darker than the floor of the other difficulties
@@ -912,16 +877,18 @@ export class Renderer3D {
     const grey = (_tmpC.r + _tmpC.g + _tmpC.b) / 3;
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
-    this.hemi.intensity = Math.max(0, th.ambient) * AMBIENT_SCALE * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.0 * nvK);
+    // the look scales the fill, but never below its per-section floor (the dark is a design element, never a void: lookPresets.js floor)
+    const floorK = perSection(this.look.floor, this.depthF) * (LOOK_TIERS[this.lighting.tier] || LOOK_TIERS.quest).floor;
+    this.hemi.intensity = Math.max(floorK, Math.max(0, th.ambient) * AMBIENT_SCALE * this.look.ambient) * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.0 * nvK);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
     this.key.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.55);
-    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.tune.key * (1 - tk * 0.35) * (1 + 1.3 * nvK);
+    this.key.intensity = Math.max(0, th.ambient) * this.keyScale * this.look.key * this.tune.key * (1 - tk * 0.35) * (1 + 1.3 * nvK);
 
     // Shared look of every lit surface: wet stone, and the haze reflected at grazing angles.
     LOOK.uTime.value = this.time;
     LOOK.uWet.value = th.wet;
-    LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3) * (this.look.rim || 1);
+    LOOK.uRim.value = th.rim * this.tune.rim * (1 - tk * 0.3) * this.look.rim;
     LOOK.uRimColor.value.copy(fog.color).multiplyScalar(1.5);
     this._driveSurfaceLook(th, tk);
     this._driveProbeBox(d, head);
@@ -1020,8 +987,8 @@ export class Renderer3D {
     const par = lvl >= 3 ? 0 : P.parallax;
     LOOK.uParallaxK.value.set(par, P.parMax, P.parFade, P.parScale);
     LOOK.uParallaxS.value.set(lvl >= 2 ? 0 : P.steps, P.stepMax, P.stepFade, wallDepthOverride() ?? P.wallDepth);
-    LOOK.uDetailK.value.set(P.detail * (this.look.detail == null ? 1 : this.look.detail) * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
-    const lcr = this.look.crev == null ? 1 : this.look.crev;
+    LOOK.uDetailK.value.set(P.detail * this.look.detail * (lvl >= 3 ? 0.6 : 1), lvl >= 2 ? P.dNear * 0.7 : P.dNear, lvl >= 2 ? P.dFar * 0.7 : P.dFar, lvl >= 2 ? 0 : P.near);
+    const lcr = this.look.crev;
     LOOK.uCrevK.value.set(0.55 * P.crev * lcr, 0.55 * P.crev * lcr, 0.7 * P.crev * lcr, 0);
     // edge bevel (box solids) and standing water: tier levers; the governor drops the bevel first at level 2 (pure ALU)
     LOOK.uBevelK.value.set(lvl >= 2 ? 0 : P.bevel, 0.035, lvl >= 1 ? P.bevelFar * 0.7 : P.bevelFar, 0);
@@ -1031,20 +998,12 @@ export class Renderer3D {
     const m = Math.max(a.r, a.g, a.b, 1e-3);
     LOOK.uGradeTint.value.setRGB(1 + (a.r / m - 1) * 0.1, 1 + (a.g / m - 1) * 0.1, 1 + (a.b / m - 1) * 0.1);
     const lk = this.look;
-    LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, lk.depthDesat == null ? 0.22 : lk.depthDesat, 0);
-    LOOK.uToonK.value.set(lk.toon || 0, lk.bands || 5, lk.soft || 1.2, lk.gain || 3);
-    {
-      // ink outlines: the hulls (a draw call each: off in the `low` tier / reduced effects) and the line on the masonry's box edges (free)
-      const lowFx0 = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
-      const off = inkDisabled(this.settings);
-      const ink = lk.ink && !off ? 1 : 0;
-      const col = lk.inkColor || [0.012, 0.008, 0.02];
-      setOutlineLook(ink > 0 && !lowFx0, lk.inkWidth || 0.0026, _tmpInk.setRGB(col[0], col[1], col[2]));
-      LOOK.uInkK.value.set(ink * (lk.inkEdge || 0), 0, 0, 0);
-    }
-    if (lk.shade) LOOK.uToonShade.value.set(lk.shade[0], lk.shade[1], lk.shade[2], lk.shadeAmt || 0);
-    const lowFx = this.lighting.tier === 'low' || (this.settings && this.settings.reducedEffects);
-    LOOK.uHorrorK.value.set(lowFx ? 0 : lk.grain, lk.vignette, lk.tone, (this.time || 0) % 100);
+    // the dark realism grade (lookPresets.js): the film terms follow the tier, VR (no grain, no vignette) and reduced effects (no grain)
+    const film = filmTerms(lk, this.lighting.tier, !!this.renderer.xr.isPresenting, !!(this.settings && this.settings.reducedEffects), this._film);
+    LOOK.uGradeK.value.set(1.1 + 0.06 * tk + lk.contrast, 0.94 - 0.1 * tk + lk.sat, lk.depthDesat, film.toe);
+    LOOK.uFilmK.value.set(film.grain, film.vignette, lk.split, (this.time || 0) % 100);
+    LOOK.uSplitLo.value.setRGB(lk.splitLo[0], lk.splitLo[1], lk.splitLo[2]);
+    LOOK.uSplitHi.value.setRGB(lk.splitHi[0], lk.splitHi[1], lk.splitHi[2]);
     // LCD black point: a Quest 3 panel never reaches OLED black, so crushed pits read as a hole in the picture, not as depth. The
     // darkest lit surfaces keep a trace (a third of the haze colour, so it follows the section's mood), never more than ~sRGB 8/255.
     const fc = this.scene.fog.color;
@@ -1135,7 +1094,6 @@ export class Renderer3D {
         if (typeof console !== 'undefined') console.warn('[AT3D] lantern shadow disabled', err);
       }
     }
-    syncOutlines(); // the hulls follow their meshes' visibility (LOD switches), after every view has updated
     r.render(this.scene, this.camera);
     this.stats.shadowCalls = shCalls;
     this.stats.calls = info.render.calls;

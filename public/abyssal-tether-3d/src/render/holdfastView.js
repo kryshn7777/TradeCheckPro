@@ -18,7 +18,6 @@
  */
 import * as THREE from 'three';
 import { HOLDFAST_TUNING } from '../sim/holdfast3d.js';
-import { injectToon } from './materials.js';
 
 export const HOLDFAST_URL = new URL('../../assets/models/holdfast.glb', import.meta.url).href;
 
@@ -99,7 +98,6 @@ function patchMaterial(mat, uniforms) {
   roughnessFactor = mix( roughnessFactor, roughnessFactor * 0.62, uHfWet );
 #endif`,
       );
-    injectToon(shader);
   };
   mat.customProgramCacheKey = () => 'at3d-holdfast';
   mat.needsUpdate = true;
