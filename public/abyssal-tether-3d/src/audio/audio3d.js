@@ -353,6 +353,8 @@ export class AudioManager3D {
     this._polledVolume = this._volume; // last settings.volume seen (so direct setVolume() calls are not overridden)
     this._pauseFlag = false;
     this._dead = false;
+    this._jetV = null; // the jetpack's roar voice while it burns
+    this._jetG = null;
     this._victory = false;
     this._hushUntil = 0;
     this._rest = 0; // 1 while the player hides in a Masons' rest (LEVEL_FUN_PLAN P5)
@@ -2276,6 +2278,12 @@ export class AudioManager3D {
       'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
       'death:beat': this._onDeathBeat,
+      // the jetpack (sim/jetpack3d.js)
+      'jetpack:ignite': this._onJetIgnite,
+      'jetpack:cut': this._onJetCut,
+      'jetpack:empty': this._onJetEmpty,
+      'jetpack:can': this._onJetCan,
+      'jetpack:low': this._onJetLow,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
       'trigger:rumble': this._onRumble,
@@ -2684,6 +2692,7 @@ export class AudioManager3D {
     this._rest = 0;
     const now = this.ctx.currentTime;
     this._dead = true;
+    if (this._jetV) this._jetEnd(0.05);
     this.kMuffle.force(480, now, 0.12);
     this._silenceEnvelopes(now);
     this._sfxDeath(p.cause);
@@ -2993,6 +3002,109 @@ export class AudioManager3D {
       }
       default:
     }
+  }
+
+  // ---- the jetpack (sim/jetpack3d.js): a roar while it burns, a cough when the tank runs dry, a click when it will not light ----
+
+  /** It lights: the thump of the ignition, then a roaring hiss held until the cut. */
+  _onJetIgnite() {
+    if (this._jetV) this._jetEnd(0.05);
+    const v = this._begin('jet', 3, 0.15, 2.9, this.busPlayer, 0.85, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    // the whump
+    this._dTone(v, t, 'sine', 120, 38, 0.18, 0.8, 0.003, 0.09);
+    this._dNoise(v, this._brown, t, 'lowpass', 700, 0.5, 0.6, 0.004, 0.14);
+    // the roar: filtered noise, a rough low saw under it, held
+    const n = this._vNoise(v, this._white, t, 1);
+    const bp = this._vFilter(v, 'bandpass', 900, 0.7);
+    bp.frequency.setValueAtTime(500, t);
+    bp.frequency.exponentialRampToValueAtTime(1700, t + 0.35);
+    const g = this._vGain(v, 0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.55, t + 0.07);
+    n.connect(bp);
+    bp.connect(g);
+    g.connect(v.out);
+    const o = this._vOsc(v, 'sawtooth', 58, t);
+    o.frequency.setTargetAtTime(76, t, 0.4);
+    const lp = this._vFilter(v, 'lowpass', 320, 0.8);
+    const og = this._vGain(v, 0);
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(0.38, t + 0.1);
+    o.connect(lp);
+    lp.connect(og);
+    og.connect(v.out);
+    this._commit(v);
+    this._jetV = v;
+    this._jetG = [g, og];
+  }
+
+  _jetEnd(tc) {
+    const v = this._jetV;
+    this._jetV = null;
+    const gs = this._jetG;
+    this._jetG = null;
+    if (!v || !gs || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    for (const g of gs) {
+      try {
+        g.gain.cancelScheduledValues(now);
+        g.gain.setValueAtTime(g.gain.value, now);
+        g.gain.setTargetAtTime(0, now, tc);
+      } catch {
+        // ignore
+      }
+    }
+    this._kill(v, now + tc * 5, 0.2);
+  }
+
+  _onJetCut(p) {
+    this._jetEnd(0.07);
+    if (p && p.reason === 'fuel') {
+      // the tank runs dry: three coughs, falling
+      const v = this._begin('jetcough', 3, 0.5, 1.2, this.busPlayer, 0.7, 0, 0.2, 0);
+      if (!v) return;
+      const t = v.t0;
+      for (let i = 0; i < 3; i++) {
+        this._dNoise(v, this._white, t + i * 0.13, 'bandpass', 900 - 220 * i, 0.9, 0.5 - 0.12 * i, 0.003, 0.05);
+        this._dTone(v, t + i * 0.13, 'sine', 90 - 15 * i, 50, 0.08, 0.35, 0.003, 0.05);
+      }
+      this._commit(v);
+    }
+  }
+
+  /** It will not light: a dry click and a puff of nothing. */
+  _onJetEmpty() {
+    const v = this._begin('jetempty', 2, 0.4, 0.5, this.busPlayer, 0.6, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dNoise(v, this._white, t, 'bandpass', 2600, 4, 0.45, 0.001, 0.012, 1.4);
+    this._dNoise(v, this._white, t + 0.09, 'bandpass', 1800, 3, 0.3, 0.001, 0.02, 1.2);
+    this._dNoise(v, this._pink, t + 0.12, 'bandpass', 700, 1.0, 0.18, 0.01, 0.1);
+    this._commit(v);
+  }
+
+  /** A can of fuel: a clink of metal and the slosh of what is in it. */
+  _onJetCan() {
+    const v = this._begin('jetcan', 2, 0.3, 1.2, this.busPlayer, 0.7, 0, 0.3, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dTone(v, t, 'sine', 1320, 1320, 0, 0.35, 0.002, 0.18);
+    this._dTone(v, t + 0.01, 'sine', 2480, 2480, 0, 0.18, 0.002, 0.1);
+    this._dNoise(v, this._pink, t + 0.12, 'bandpass', 420, 1.6, 0.4, 0.04, 0.12, 0.8);
+    this._dNoise(v, this._pink, t + 0.3, 'bandpass', 520, 1.6, 0.3, 0.04, 0.1, 0.9);
+    this._commit(v);
+  }
+
+  /** The tank is nearly empty: two short beeps. */
+  _onJetLow() {
+    const v = this._begin('jetlow', 2, 1, 0.7, this.busUi, 0.5, 0, 0.1, 0);
+    if (!v) return;
+    const t = v.t0;
+    this._dTone(v, t, 'square', 880, 880, 0, 0.14, 0.003, 0.05);
+    this._dTone(v, t + 0.18, 'square', 880, 880, 0, 0.14, 0.003, 0.05);
+    this._commit(v);
   }
 
   // ---- triggers / creature ------------------------------------------------------------

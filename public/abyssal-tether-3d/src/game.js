@@ -31,6 +31,7 @@ import { DeathScene } from './sim/deathScene.js'; // the death scenes: the colla
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
+import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -135,6 +136,7 @@ const MODULES = {
   nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
+  jetpackView: './render/jetpackView.js', // the fuel cans + the flame
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
@@ -216,13 +218,14 @@ export function blankIntent() {
     backPressed: false,
     nvPressed: false,
     holsterPressed: false,
+    jetPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
     climb: blankClimb(),
   };
 }
 
-const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed'];
+const EDGE_KEYS = ['jumpPressed', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed'];
 
 /**
  * A view of the main bus for per-run objects (creature, tethers, physics):
@@ -312,6 +315,15 @@ function introOff() {
 }
 
 /** `?holster=off` keeps both rope guns in the hands at the old walk speed (the bots, tests, captures). */
+/** `?jet=off` leaves the jetpack out (the route bots / e2e descent that must not light it by a stray press). */
+function jetOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]jet=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 function holsterOff() {
   try {
     return typeof location !== 'undefined' && /[?&]holster=off/.test(location.search || '');
@@ -864,6 +876,7 @@ export class FallbackInput {
     it.restartPressed = !!this._keyEdges.KeyR;
     it.nvPressed = !!this._keyEdges.KeyN;
     it.holsterPressed = !!this._keyEdges.KeyH;
+    it.jetPressed = !!this._keyEdges.KeyJ;
     it.confirmPressed = !!(this._keyEdges.Enter || this._keyEdges.NumpadEnter);
     it.backPressed = !!this._keyEdges.Backspace;
     // Aim ray from the camera centre (both hands).
@@ -1059,6 +1072,7 @@ export class Game3D {
     this._nvHint = 0; // the one-time "it is dark: goggles" hint: 0 not yet, 1 shown, 2 used
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
+    this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
@@ -1066,6 +1080,7 @@ export class Game3D {
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
     this.pickupsView = null; // glowing item props (render/pickupsView.js)
+    this.jetpackView = null; // fuel cans + the jet flame (render/jetpackView.js)
     this.climbView = null; // studs on the climbable surfaces (render/climbView.js)
     this.sceneDetail = null; // seeded render-only scene dressing: bones, rubble, chains, puddles, decals (render/sceneDetail.js)
     this.lastDeath = null; // info handed to the death panel
@@ -1732,6 +1747,14 @@ export class Game3D {
       } catch (err) {
         this._fault('sceneDetail', err);
         this.sceneDetail = null;
+      }
+    }
+    if (!this.jetpackView && M.jetpackView && typeof M.jetpackView.JetpackView === 'function') {
+      try {
+        this.jetpackView = new M.jetpackView.JetpackView(this);
+      } catch (err) {
+        this._fault('jetpackView', err);
+        this.jetpackView = null;
       }
     }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
@@ -2861,6 +2884,7 @@ export class Game3D {
     this.nv = new NightVision3D(this._runBus);
     this.holster = new Holster3D(this._runBus);
     this.holster.setEnabled(!holsterOff());
+    this.jet = new Jetpack3D(this._runBus);
     this.pickups = new Pickups3D(lvl, this._runBus);
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
@@ -2926,8 +2950,11 @@ export class Game3D {
       const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
       Storage.set('supplyRuns', n);
       this.pickups.setLevel(this.level);
-      this.pickups.reset((Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0);
+      const seed = (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
+      this.pickups.reset(seed);
       this.pickups.snapshot();
+      // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
+      if (this.jet) this.jet.reset(this.level && this.level.data ? this.level.data.supplies : [], seed, this.level && this.level.sections ? this.level.sections.length : 0);
     }
     this.player.speedMul = 1;
   }
@@ -2942,6 +2969,7 @@ export class Game3D {
     if (this.bag) this.bag.restore();
     if (this.nv) this.nv.restore();
     if (this.holster) this.holster.reset(); // a respawn: both guns back in their holsters
+    if (this.jet) this.jet.onRespawn(); // ... but the fuel does NOT come back, and a can that was taken stays taken
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -2991,6 +3019,7 @@ export class Game3D {
         b = Bh;
       }
       this.pickups.update(dt, p, bag, a, b);
+      this._updateJetCans(a, b);
     }
     // First aid ratchet: a soft tick in the hands while a long channel runs.
     const ap = bag.applying;
@@ -3000,6 +3029,62 @@ export class Game3D {
         this._bagHapticT = 0.28;
         this._hapticBoth(0.1 + 0.12 * (ap.t / ap.dur), 22);
       }
+    }
+  }
+
+  /**
+   * The jetpack's ignition (sim/jetpack3d.js): both triggers within 90 ms, J on a keyboard, or Space in the air on a screen, while falling
+   * with no rope attached. A chord that lights it swallows its presses (no rope shot); with no fuel they stay ordinary shots.
+   */
+  _updateJetpack(intent) {
+    const jet = this.jet;
+    const p = this.player;
+    if (!jet || !p || !intent) return;
+    jet.enabled = !jetOff();
+    let want = false;
+    const ih = intent.hands;
+    if (ih) {
+      for (let k = 0; k < 2; k++) {
+        const hi = ih[HANDS[k]];
+        if (hi && hi.pressed && jet.chord(HANDS[k], this.realTime)) want = true;
+      }
+    }
+    if (intent.jetPressed) want = true;
+    // a keyboard / touch player has no second trigger: Space while falling (a jump needs the ground, so the press is free)
+    else if (intent.jumpPressed && !p.grounded && !p.tethered && p.airTime > 0.3 && p.vy <= -JET.minFall) want = true;
+    if (!want) return;
+    if (jet.request(p, !!p.tethered)) {
+      if (intent !== this._blank && ih) {
+        ih.left.pressed = false;
+        ih.right.pressed = false;
+      }
+      this._pendingJump = false;
+      p.jumpBuffer = 0;
+    }
+  }
+
+  /** Fuel cans: the body (or a gripping hand in VR) within reach takes one. */
+  _updateJetCans(a, b) {
+    const jet = this.jet;
+    const p = this.player;
+    if (!jet || !p) return;
+    const hands = this._jetHands || (this._jetHands = [{ x: 0, y: 0, z: 0, grip: false }, { x: 0, y: 0, z: 0, grip: false }]);
+    let h = null;
+    if (a && b) {
+      hands[0].x = a.x;
+      hands[0].y = a.y;
+      hands[0].z = a.z;
+      hands[0].grip = a.ok !== false && a.grip > 0.6;
+      hands[1].x = b.x;
+      hands[1].y = b.y;
+      hands[1].z = b.z;
+      hands[1].grip = b.ok !== false && b.grip > 0.6;
+      h = hands;
+    }
+    const c = jet.collect(p.x, p.y, p.z, h);
+    if (c) {
+      this._hapticBoth(0.5, 120);
+      this._try('ui', () => this.ui.toast && this.ui.toast('FUEL CAN  ·  TANK ' + Math.round(jet.fuel * 100) + ' %'));
     }
   }
 
@@ -3369,6 +3454,7 @@ export class Game3D {
     this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
       this._updateHolster(dt, intent, true);
+      this._updateJetpack(intent);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
       this._stepPhysics(dt, intent);
@@ -3430,6 +3516,11 @@ export class Game3D {
       }
       si.jumpPressed = this._pendingJump;
       this._pendingJump = false;
+      if (this.jet) {
+        // the jetpack's push (0 unless it is burning): added to the vertical speed, the step applies gravity and the floor
+        const up = this.jet.step(PDT, p, !!p.tethered);
+        if (up > 0) p.vy += up * PDT;
+      }
       this.physics.step(p, this.tethers, si, PDT);
       if (this.objectives) this.objectives.step(PDT, p, this.tethers, si, this.time);
       if (this.c2) this.c2.step(PDT, p);
@@ -4603,6 +4694,13 @@ export class Game3D {
         this._fault('pickupsView', err);
       }
     }
+    if (this.jetpackView) {
+      try {
+        this.jetpackView.update(dt, this);
+      } catch (err) {
+        this._fault('jetpackView', err);
+      }
+    }
     if (this.c2) {
       try {
         this.c2.update(dt);
@@ -5250,6 +5348,19 @@ export class Game3D {
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
       },
+      // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
+      jet: {
+        state: () => {
+          const j = this.jet;
+          return j ? { fuel: j.fuel, burning: j.burning, burnT: j.burnT, thrust: j.thrust, burned: j.burned, cans: j.cans.length, taken: j.cans.filter((c) => c.taken).length, enabled: j.enabled } : null;
+        },
+        fuel: (v) => {
+          if (this.jet) this.jet.fuel = U.clamp(finiteOr(v, 0), 0, JET.tank);
+          return this.jet ? this.jet.fuel : null;
+        },
+        ignite: () => !!(this.jet && this.jet.request(this.player, !!this.player.tethered)),
+        cans: () => (this.jet ? this.jet.cans.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z, section: c.section, taken: c.taken })) : []),
+      },
       // the death scenes (tests, QA, screenshots): play(cause, {killer}) kills the player the way `cause` does ('impact' | 'fall' | 'hazard' |
       // 'creature' + killer 'mason' | 'skitter' | 'dressed'); hold(t) freezes the scene at t seconds (null = play on); state() reads it.
       death: {
@@ -5259,7 +5370,13 @@ export class Game3D {
             cm.lastHurtCause = 'skitter';
             cm.lastHurtAt = cm.clock;
           } else if (cm && cause === 'creature') cm.lastHurtCause = 'mason';
-          this.physics.kill(this.player, this.tethers, String(cause || 'impact'));
+          const god = this._godMode; // (god mode makes kill() a no-op: this is a deliberate kill)
+          this._godMode = false;
+          try {
+            this.physics.kill(this.player, this.tethers, String(cause || 'impact'));
+          } finally {
+            this._godMode = god;
+          }
           return this.deathScene.active ? this.deathScene.kind : null;
         },
         hold: (t) => {

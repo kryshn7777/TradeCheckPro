@@ -223,6 +223,7 @@ const CONTROLS_QUEST = [
   [['X'], 'Hold to restart the run while paused or after a fall.', 'Hold: restart (paused / fallen)'],
   [['Y'], 'Tap: night vision goggles on / off (the deeper sections are dark on purpose). Hold: re-centre your body under your head and re-measure your height (stand or sit as you will play).', 'Tap: goggles · hold: re-centre'],
   [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
+  [['Both triggers'], 'Falling with no rope? Squeeze BOTH triggers together: the jetpack lights for a moment, brakes the fall and settles you down gently. The tank is small (half full at the start); a fuel can on a hard-to-reach ledge adds half. Dying does not refill it. Squeeze both again to cut it early and keep what is left.', 'Falling: both triggers = jetpack'],
   [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
@@ -233,6 +234,7 @@ const CONTROLS_DESKTOP = [
   [['Space'], 'Jump · reel in while tethered.'],
   [['Shift'], 'Reel out.'],
   [['C'], 'Brake on the ground.'],
+  [['J', 'Space'], 'Falling with no rope: J (or Space in the air) lights the jetpack: a hard brake, then a gentle descent. The tank is small and a fuel can on a hard-to-reach ledge adds half; dying does not refill it. Press again to cut it early.'],
   [['H'], 'Stow / draw both rope guns. They start holstered on your hips; a click draws that hand’s gun, and a gun left alone on the ground goes back after a few seconds. Walking with a gun out is 20 % slower.'],
   [['N'], 'Night vision goggles on / off. The deeper sections are dark on purpose and the lantern fades with depth; the goggles run on a cell that drains while they are on and trickles back while they are off.'],
   [['F'], 'Hold near a chalk-studded surface or any ledge edge / corner to cling to it (W A S D climb, W or Space at a ledge lip climbs over, otherwise Space hops off; grip strength runs out, standing on the ground refills it). Elsewhere: yank both ropes.'],
@@ -249,7 +251,7 @@ const CONTROLS_TOUCH = [
   [['Right thumb'], 'Drag anywhere on the right half to look. Dragging from a rope or grip button looks while you hold it.'],
   [['ROPE R', 'ROPE L'], 'Fire that hand’s tether at the highlighted anchor (a holstered gun is drawn by the press). Hold to stay attached, release to let go (or tap to toggle, see Settings, Touch). Walking with a gun out is 20 % slower; it goes back in its holster when left alone on the ground.'],
   [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
-  [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip.'],
+  [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip. In a fall with no rope: lights the jetpack (a short brake; a small tank).'],
   [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
   [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
   [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],

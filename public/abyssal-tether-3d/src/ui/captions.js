@@ -84,6 +84,12 @@ export const RULES = Object.freeze({
   dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
   dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
   dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
+  // the jetpack (sim/jetpack3d.js)
+  jetOn: R('[Jetpack roaring]', 'creature', 1, 'jet', 2),
+  jetDry: R('[The tank coughs and dies]', 'creature', 1, 'jetdry', 2),
+  jetEmpty: R('[A dry click: no fuel]', 'creature', 1, 'jetempty', 2),
+  jetCan: R('[Fuel sloshing in a can]', 'creature', 0, 'jetcan', 2),
+  jetLow: R('[Two beeps: fuel low]', 'creature', 1, 'jetlow', 4),
   // THE HOLDFAST (sim/holdfast3d.js): the wall's hand
   hfCrack: R('[Knuckles cracking]', 'creature', 1, 'hfcrack', 3),
   hfBreath: R('[A wet breath in the wall]', 'creature', 2, 'hfbreath', 4),
@@ -238,6 +244,16 @@ export function captionForEvent(type, p) {
       return finite(e.distance) && e.distance < 22 ? RULES.dStep : null;
     case 'death:beat':
       return DEATH_BEAT_RULES[e.beat] || null;
+    case 'jetpack:ignite':
+      return RULES.jetOn;
+    case 'jetpack:cut':
+      return e.reason === 'fuel' ? RULES.jetDry : null;
+    case 'jetpack:empty':
+      return RULES.jetEmpty;
+    case 'jetpack:can':
+      return RULES.jetCan;
+    case 'jetpack:low':
+      return RULES.jetLow;
     case 'dresser:measure':
       return RULES.dScrape;
     case 'dresser:saw':
@@ -403,6 +419,11 @@ export const CAPTION_EVENTS = Object.freeze([
   'dresser:hum',
   'dresser:step',
   'death:beat',
+  'jetpack:ignite',
+  'jetpack:cut',
+  'jetpack:empty',
+  'jetpack:can',
+  'jetpack:low',
   'dresser:measure',
   'dresser:saw',
   'holdfast:twitch',
