@@ -40,7 +40,7 @@ const DECOR_CHUNK_COUNT = { quest: 1, high: 12 }; // draw calls the decor chunks
 const DECOR_NAME = /^decor_(stone|metal|rock|flesh)_/;
 const REPACK_MOVE = 2.5; // m the lantern may drift from the proxy pack centre before the proxies are re-chosen
 const REPACK_EVERY = 0.4; // s: at least this often (solids switching on / off)
-const DISCOVER_EVERY = 0.5; // s
+const DISCOVER_EVERY = 1; // s
 const PROXY_CELL = { hand: 0.016, body: 0.04, creature: 0.14 }; // weld cell (m) of the low-poly dynamic casters
 const AXIS_RATE = 7; // 1/s: the cone axis follows the head's forward direction
 
@@ -101,7 +101,7 @@ export class LanternShadow {
   /** @param {object} r3d Renderer3D (.renderer .scene .camera .lantern .lighting .governor .settings .levelView) */
   constructor(r3d) {
     this.r3d = r3d;
-    this._apiOn = false; // the real-time lantern shadow map is OFF by default (owner's call); renderer.lanternShadow.setEnabled(true) brings it back
+    this._apiOn = true; // ON again (the owner asked for "real shadows" on 2026-11-05; it was off since 56b04ad); setEnabled(false) turns it off, and the governor does at level 3
     this._tierOverride = null;
     this.plan = shadowPlan('low');
     this.k = 0; // strength 0..1 (eased: no pop when the tier / governor switches it)
@@ -353,7 +353,9 @@ export class LanternShadow {
     this._dt = dt > 0 ? dt : this._dt;
     this._time += this._dt;
     if (!this._readyS || !this._readyD) this._useDummy();
-    const gov = 0; // the frame governor trades resolution only; the shadow keeps its tier
+    // the frame governor: level 2 and 3 halve the maps and the refresh rate (the Quest budget's valve); it never switches the shadow off (the owner
+    // asked for real shadows: the resolution drop and the lower rate are the price, not the shadow itself)
+    const gov = r3d.governor && Number.isFinite(r3d.governor.level) ? Math.min(2, r3d.governor.level | 0) : 0;
     const settings = (game && game.settings) || r3d.settings || {};
     const plan = shadowPlan(this.tier, { govLevel: gov, reduced: !!settings.reducedEffects, enabled: this._apiOn });
     this.plan = plan;

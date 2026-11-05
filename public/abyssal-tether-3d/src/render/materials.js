@@ -968,7 +968,8 @@ float atLanternShadow( const in vec3 vpos, const in vec3 vnrm, const in vec3 vlp
 		vec2 e = min( c.xy, 1.0 - c.xy );
 		float f = smoothstep( 0.0, 0.06, min( e.x, e.y ) ) * step( c.z, 1.0 );
 		if ( f > 0.001 ) {
-			float t = 1.4 / float( textureSize( uLSMapS, 0 ).x );
+			// the penumbra widens with the distance from the lantern: crisp at your feet, soft across the cavern (the same 4 taps)
+			float t = 1.4 / float( textureSize( uLSMapS, 0 ).x ) * mix( 0.8, 2.4, clamp( d / uLSK.w, 0.0, 1.0 ) );
 			float s = texture( uLSMapS, vec3( c.xy + vec2( 0.5, 1.4 ) * t, c.z ) ) + texture( uLSMapS, vec3( c.xy + vec2( -1.4, 0.5 ) * t, c.z ) )
 				+ texture( uLSMapS, vec3( c.xy + vec2( -0.5, -1.4 ) * t, c.z ) ) + texture( uLSMapS, vec3( c.xy + vec2( 1.4, -0.5 ) * t, c.z ) );
 			vis = mix( 1.0, s * 0.25, f );
@@ -1007,6 +1008,9 @@ function installLanternShadowChunks() {
       mPoint,
       mPoint + '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }\n#endif',
     );
+  // a body in the lantern's shadow is dark, not just unlit by the lantern: the fill (baked lightmap / GI / ambient) loses 40 % under a full shadow, so a shadow
+  // READS in the dark grade (it only removed the lantern's own share before, which a faint shadow on a baked wall hardly showed)
+  SC.lights_fragment_end = SC.lights_fragment_end + '\n#ifdef AT_LSHADOW\n\treflectedLight.indirectDiffuse *= mix( 0.6, 1.0, atLsVis );\n#endif\n';
   return true;
 }
 const LS_CHUNKS_OK = installLanternShadowChunks();

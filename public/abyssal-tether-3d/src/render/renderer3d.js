@@ -426,7 +426,7 @@ export class Renderer3D {
     const parent = object3D || this.camera;
     parent.add(this.lanternGroup);
     if (offset && isFinite(offset.x)) this.lanternGroup.position.set(offset.x, offset.y || 0, offset.z || 0);
-    else if (parent === this.camera) this.lanternGroup.position.set(-0.3, -0.12, -0.12);
+    else if (parent === this.camera) this.lanternGroup.position.set(-0.32, -0.32, -0.1); // low and to the left, so the shadows fall to the side of what casts them (was -0.12: a shadow right behind its caster)
     else this.lanternGroup.position.set(0, 0.05, 0.02);
     const bulb = options && typeof options.bulb === 'boolean' ? options.bulb : parent !== this.camera;
     this.lanternBulb.visible = bulb;
