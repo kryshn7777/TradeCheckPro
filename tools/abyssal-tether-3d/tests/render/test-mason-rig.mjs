@@ -275,17 +275,14 @@ ok('pose maths: spine frames orthonormal, head fit shrinks in a tight gap and li
   assert.ok(sectionHeadScale({ level: { sections: [{ shaft: { minX: -9, maxX: 9, minZ: -9, maxZ: 9 } }] }, sectionIndex: 0 }) < 0.7);
 });
 
-// the skitterling's head is in proportion to its thin body ("their head is so big ... scale the head down, make it normal")
+// The skitterlings no longer clone this rig (SKITTERLINGS.md: the hunter skitterlings are red cockroaches, render/skitterlingView.js). This
+// replaced the WP-SKITTER check that pinned the old look (SKITTER_VIEW.headK 0.4-0.7: "their head is so big"). The Mason keeps its own view.
 await import('node:fs').then((fs) => {
   const view = fs.readFileSync(path.resolve(HERE, '../../../../public/abyssal-tether-3d/src/render/masonRigView.js'), 'utf8');
-  const m = /export const SKITTER_VIEW = \{[\s\S]*?headK:\s*([0-9.]+)/.exec(view);
-  assert.ok(m, 'SKITTER_VIEW has a headK');
-  const k = parseFloat(m[1]);
-  assert.ok(k >= 0.4 && k <= 0.7, 'the skitterling crown is 40-70 % of the Mason proportion (' + k + ')');
-  assert.ok(/const hs = this\.fit\.scale \* size \* hk;/.test(view) && /const lift = this\.fit\.lift \* size \* hk;/.test(view), 'the crown scale and its lift off the wall both follow headK (the Mason has none: hk = 1)');
-  assert.ok(!/export const DEFAULTS|headK:\s*[0-9.]+,\s*\/\/ [^\n]*Mason's own/.test(view), 'the Mason itself is not scaled');
+  assert.ok(!/export const SKITTER_VIEW|export function makeSkitterViews|export function cloneSkitterScenes|skitterClone\.js/.test(view), 'the Mason rig view no longer builds skitterling clones');
+  assert.ok(/export class MasonRigView/.test(view), 'the Mason rig view is still there');
 });
 n++;
-console.log('skitterling head proportion ok');
+console.log('skitterlings are not Mason clones any more ok');
 
 console.log(`${n} tests passed`);

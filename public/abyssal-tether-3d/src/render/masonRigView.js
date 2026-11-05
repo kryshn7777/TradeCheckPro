@@ -28,7 +28,6 @@ import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
-import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
 import { blockScales, clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
 import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
@@ -1305,44 +1304,5 @@ function advanceSynthetic(C, dt) {
   }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
-// WP-SKITTER: clones of the loaded rig for the skitterlings (one GLB download, shared geometry / textures / clips)
-// ---------------------------------------------------------------------------------------------------------------------
-export const SKITTER_VIEW = {
-  variant: 'skitter',
-  size: 0.45,
-  clipRate: 1.5, // clips play 1.5x speed
-  twitch: 0.025, // procedural quiver (m of sideways shiver per vertebra at full agitation, before the size); the body spring chain adds the rest
-  lodDistance: 6, // LOD1 (20k tris) beyond 6 m; LOD0 only when it is on top of you
-  lodHysteresis: 1,
-  farDistance: 34, // beyond this the pose refreshes every 2nd frame
-  fogHide: 0, // the red veins glow on every mesh and pierce the fog: no glow-only mode
-  // 110 -> 75 m (perf pass): past the haze only the hair-thin veins show (sub-pixel beyond ~70 m), yet LOD1 is 20 k tris x 2 eyes,
-  // skinned, plus its mixer and leg IK every 2nd frame
-  hideDistance: 75,
-  glowPierce: 0.6,
-  bodyScale: 0.98,
-  headK: 0.55, // the crown at 55 % of the Mason's proportion: a worm's head, not a skull on a thread (owner: "their head is so big")
-};
-
-/** Clones the glTF scene `n` times. Call BEFORE the Mason's own view is built (it moves the meshes out of gltf.scene). */
-export function cloneSkitterScenes(gltf, n) {
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(cloneRigged(gltf.scene));
-  return out;
-}
-
-/**
- * Builds the skitterling views from the clones of skitter_rig.glb (the original Mason model, kept for the small hunters). The
- * clips of that glTF are shared by its clones: the first view makes the additive ones additive, the others reuse them
- * (`clipsReady` = the caller already did it, e.g. the clips are those of another view).
- */
-export function makeSkitterViews(scene, gltf, clones, clipsReady = false) {
-  const views = [];
-  for (let i = 0; i < clones.length; i++) {
-    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: clipsReady || i > 0 }, SKITTER_VIEW);
-    v.root.name = 'SkitterRigView' + i;
-    views.push(v);
-  }
-  return views;
-}
+// The hunter skitterlings no longer clone this rig: they are red cockroaches (render/skitterlingView.js, plans/SKITTERLINGS.md). The
+// `variant` option above is kept for now (unused by the game).

@@ -1,4 +1,5 @@
-// RED ROACHES (sim/roaches.js, render/roachView.js, audio/roachSfx.js; docs/abyssal-tether-3d/plans/ROACHES.md).
+// THE SWARM SKITTERLINGS, code name 'roaches' (sim/roaches.js, render/roachView.js, audio/roachSfx.js; plans/ROACHES.md, plans/SKITTERLINGS.md).
+// The hunter skitterlings (the same species, bigger, the ones that bite) are in skitterlings.mjs.
 // Asked for: "Add tiny super tiny skitterlings. Super optimized. Often spawning near player out of camera like cockroaches in red colour."
 //   - the sim on the REAL level: deterministic, never appears inside the view frustum (desktop and the wider headset frustum), always 2-9 m from the
 //     head, never inside a solid, always on a face of a solid and inside it, never within 7 m of the spawn / a checkpoint, more of them deeper,
@@ -284,7 +285,8 @@ function runTrace(seed, frames = 1500) {
   const s2 = sanitizeUxSettings(Object.assign({}, SETTINGS_DEFAULTS, { roaches: 'nope' }));
   ok(SETTINGS_DEFAULTS.roaches === true && s0.roaches === true && s1.roaches === false && s2.roaches === true, 'setting: roaches on by default, off stays off, junk reads as on');
   const ui = fs.readFileSync(path.join(SRC_DIR, 'ui/ui3d.js'), 'utf8');
-  ok(/key: 'roaches', tab: 'display'[^\n]*desktop: true/.test(ui) && /key: 'roaches', tab: 'access'[^\n]*vr: true/.test(ui), 'setting: a Roaches switch on the Display tab (desktop) and on the Access page in a headset (the VR Display page is full)');
+  ok(/key: 'roaches', tab: 'display'[^\n]*desktop: true/.test(ui) && /key: 'roaches', tab: 'access'[^\n]*vr: true/.test(ui), 'setting: a switch (storage key roaches) on the Display tab (desktop) and on the Access page in a headset (the VR Display page is full)');
+  ok((ui.match(/key: 'roaches', [^\n]*label: 'Tiny skitterlings'/g) || []).length === 2, 'setting: the player reads "Tiny skitterlings", never roaches');
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -660,7 +662,7 @@ const dist3 = (r, i, p) => Math.hypot(r.pos[i * 3] - p.x, r.pos[i * 3 + 1] - p.y
   ok(tris === ROACH_TRIS && tris >= 20 && tris <= 40, `model: ${tris} triangles (carapace 10, head 3, six legs 12, antennae 2)`);
   const rig = g.getAttribute('aRig');
   const parts = new Set();
-  for (let i = 0; i < rig.count; i++) parts.add(rig.getX(i));
+  for (let i = 0; i < rig.count; i++) parts.add(Math.floor(rig.getX(i))); // legs are 2 + 0.1 x pair (the species model, skitterlingModel.js)
   ok(parts.size === 4 && g.getAttribute('normal') && g.getAttribute('position').count === rig.count, 'model: body, head, legs and antennae tagged for the vertex-shader gait');
   const scene = new THREE.Scene();
   const view = new RoachView({ renderer: { scene } });
@@ -809,7 +811,7 @@ function p0() {
   ok(/new Roaches\(this\._runBus/.test(gsrc) && /attract \? null : new Roaches/.test(gsrc), 'wiring: a sim per run on the run bus (none in the menu\'s attract flight)');
   ok((gsrc.match(/if \(this\.roaches\) this\.roaches\.clear\(\)/g) || []).length === 2, 'wiring: a respawn and a warp empty the floor');
   ok(/new RoachView\(this\)/.test(gsrc) && /this\.roachView\.update\(dt, this\)/.test(gsrc), 'wiring: the view is made and updated in _updateViews');
-  ok(/roaches: \{\s*\n\s*state:/.test(gsrc) && /burst: \(\) =>/.test(gsrc) && /clear: \(\) =>/.test(gsrc), 'wiring: AT3D.debug.roaches.{state, burst, clear}');
+  ok(/skitterlings: \{\s*\n\s*state:/.test(gsrc) && /burst: \(\) =>/.test(gsrc) && /clear: \(\) =>/.test(gsrc) && /api\.roaches = api\.skitterlings;/.test(gsrc), 'wiring: AT3D.debug.skitterlings.{state, burst, clear} (AT3D.debug.roaches the same object)');
   const asrc = fs.readFileSync(path.join(SRC_DIR, 'audio/audio3d.js'), 'utf8');
   ok(/ROACH_EVENTS/.test(asrc) && /Object\.assign\(AudioManager3D\.prototype, ROACH_SFX\)/.test(asrc), 'wiring: the sounds are mixed into the audio manager');
   const r = new Roaches(new EventBus(), { seed: 1 });

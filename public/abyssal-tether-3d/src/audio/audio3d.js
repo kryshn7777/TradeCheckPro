@@ -64,7 +64,7 @@ import { SFX_BANK } from './sfxBank.js';
 
 /** Every jitter in this module is drawn from this seeded stream, never Math.random ("no random sounds": SFX_DESIGN.md §4). */
 const SEQ = new SeqRng(0x1a7e);
-import { ROACH_SFX, ROACH_EVENTS } from './roachSfx.js'; // the red roaches (sim/roaches.js): ticks, scatter, squish, the crack burst
+import { ROACH_SFX, ROACH_EVENTS } from './roachSfx.js'; // the swarm skitterlings (sim/roaches.js): ticks, scatter, squish, the crack burst
 
 // Maths helpers (config3d's U plus the 1D value noise the 2D util provided).
 const U = {

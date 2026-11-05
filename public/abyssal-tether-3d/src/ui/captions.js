@@ -86,7 +86,7 @@ export const RULES = Object.freeze({
   dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
   dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
   dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
-  // the red roaches (sim/roaches.js): low priority, long cooldowns, never push another line off (low: true)
+  // the swarm skitterlings (sim/roaches.js; 'roach' is only their code name): low priority, long cooldowns, never push another line off (low: true)
   roachSkit: Object.freeze({ ...R('[Dry ticking, close]', 'world', 0, 'roachskit', 20), low: true }),
   roachScatter: Object.freeze({ ...R('[Tiny legs scattering]', 'world', 0, 'roachscat', 10), low: true }),
   roachSquish: Object.freeze({ ...R('[A wet crunch]', 'world', 0, 'roachsquish', 3), low: true }),
@@ -574,7 +574,7 @@ export class CaptionTracker {
     let slot = null;
     for (const l of this.lines) if (l.on && l.rule === rule) slot = l;
     if (!slot) for (const l of this.lines) if (!l.on) { slot = l; break; }
-    if (!slot && rule.low) return null; // a low-priority caption (the roaches) never pushes another line off
+    if (!slot && rule.low) return null; // a low-priority caption (the swarm skitterlings) never pushes another line off
     if (!slot) {
       let worst = -1;
       for (const l of this.lines) {

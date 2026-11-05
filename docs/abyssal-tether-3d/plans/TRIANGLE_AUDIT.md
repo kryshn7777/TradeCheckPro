@@ -12,7 +12,7 @@ that doc left "untouched", plus the creatures' LOD chains.
 | File | Size | Meshes (triangles) | In the runtime? |
 |---|---|---|---|
 | `mason_rig.glb` | 5.4 MB | LOD0 **63,361** (4 parts), LOD1 23,239 | yes: the Mason, LOD0 within 38 m, LOD1 beyond |
-| `skitter_rig.glb` | 5.3 MB | LOD0 **56,722**, LOD1 20,677 | yes: skitterlings, LOD1 from 6 m out to the fog, LOD0 only on top of you |
+| `skitter_rig.glb` | 5.3 MB | LOD0 **56,722**, LOD1 20,677 | **removed** (SKITTERLINGS.md): the hunter skitterlings are procedural red cockroaches, 156 / 27 triangles |
 | `mason_hero.glb` | 4.4 MB | 83,714 (21,000-triangle head + 15 modules) | **no loader**; already excluded from the PWA precache |
 | `mason_kit.glb` | 4.3 MB | 34,972 (21,000-triangle head) | loaded by `game.js` (precached) as the legacy `CreatureView` |
 | `player_arms.glb` | 12.7 MB | 19,327: Launcher L/R 5,647 / 5,610, Arm L 3,232, glove 3,232, lantern 1,182, grapple head 424 | yes, always on screen: ~38k stereo triangles, 22 calls |

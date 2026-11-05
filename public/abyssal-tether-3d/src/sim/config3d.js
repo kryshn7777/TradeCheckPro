@@ -325,7 +325,9 @@ export const SETTINGS_DEFAULTS = {
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
   bloodWriting: false, // opt-in content: the Masons' messages in blood on the walls (data/blood-writing-3d.js, render/bloodWriting.js); off by default
-  roaches: true, // the red roaches (sim/roaches.js): tiny red cockroaches scuttling near you; off = none ever (some players hate bugs)
+  // the swarm skitterlings (sim/roaches.js, plans/SKITTERLINGS.md): the tiny harmless red ones scuttling near you; off = none ever (some players
+  // hate bugs; the hunter skitterlings that bite are gameplay and stay). The storage key keeps its first name 'roaches': saved settings carry over.
+  roaches: true,
   // EXPEDITION (sim/comms3d.js, docs/abyssal-tether-3d/plans/COMMS.md): the team on the radio. radioVoices: the synthesised voices
   // (audio/radio3d.js; off = silent, the subtitles still show every line). signalGlitches: the failing signal's static and flicker on
   // the subtitle panel (off = a plain panel, the radio static lowered). Both on by default.

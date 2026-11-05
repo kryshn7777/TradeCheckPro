@@ -36,8 +36,9 @@ import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from it
 import { RemainsView } from './render/remainsView.js'; // skeletons (bones.glb) and old blood (blood_atlas.png) through Chapter I
 import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
 import { nearestWater } from './sim/waterPlan.js';
-import { Roaches } from './sim/roaches.js'; // RED ROACHES: tiny red cockroaches near you, out of camera (plans/ROACHES.md)
+import { Roaches } from './sim/roaches.js'; // the SWARM skitterlings: tiny harmless red cockroaches near you, out of camera (plans/SKITTERLINGS.md)
 import { RoachView } from './render/roachView.js'; // ... one InstancedMesh, one draw call
+import { SkitterlingView } from './render/skitterlingView.js'; // the HUNTER skitterlings: the same red cockroach, bigger (plans/SKITTERLINGS.md)
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
@@ -111,19 +112,13 @@ const LEVEL_CACHE_WAIT_MS = 4000; // the level build waits this long at most for
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
-// the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
-const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
 // The Mason's LOD0 -> LOD1 switch (nearest spine point -> camera, m; MasonRigView keeps LOD0 until it is 5 m closer again). Owner's
 // rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
 // LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
 // 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
-// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k). The small hunters keep their
-// own short LOD (SKITTER_VIEW in masonRigView.js).
+// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k).
+// The hunter skitterlings are red cockroaches now (render/skitterlingView.js: 156 / 27 triangles, <= 2 calls for all of them, its own LOD table).
 const CREATURE_LOD = { low: 10, quest: 12, high: Infinity };
-// The skitterlings' LOD0 (57 k triangles, x2 eyes) -> LOD1 (21 k) switch, m. They are 0.45 scale: LOD1 reads the same from 3-4 m. Quest budget
-// harness, S6: Normal / Nightmare / Abyss show 1 / 2 / 3 of them at once and each LOD1 one costs ~40 k stereo triangles, so a LOD0 one on
-// top of you (it bites at 2-3 m) must not cost another ~70 k.
-const SKITTER_LOD = { low: 2.5, quest: 3.5, high: 6 };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -1085,8 +1080,8 @@ export class Game3D {
     this._deathHold = null; // debug: freeze the scene at this time
     this._deathCam = { pitch0: 0, exposure0: 0, faceYaw: 0, haveFace: false, rx: 0, ry: 0, rz: 0 };
     this.creatureView = null;
-    this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
-    this.skitterViews = [];
+    this.skitters = null; // WP-SKITTER: SkitterGroup (sim: the hunter skitterlings)
+    this.skitterView = null; // render/skitterlingView.js: every hunter skitterling, two instanced LODs (made on first use)
     this.dresser = nullDresser(); // THE DRESSER (sim/dresser3d.js): hunts only while you are whole
     this.dresserView = null; // render/dresserView.js
     this._dresserBuzzT = 0;
@@ -1126,7 +1121,7 @@ export class Game3D {
     this.vista = null; // sim/vistaWind.js
     this.waterView = null; // render/waterView.js (Chapter I)
     this.remainsView = null; // render/remainsView.js (Chapter I)
-    this.roaches = null; // sim/roaches.js (per run; settings.roaches off = none)
+    this.roaches = null; // sim/roaches.js: the swarm skitterlings (per run; settings.roaches off = none)
     this.roachView = null; // render/roachView.js
     this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
@@ -1927,7 +1922,6 @@ export class Game3D {
             this.creatureView = rig;
             this._precompile(); // both LOD programs + atlases, on the menu
             this.bus.emit('assets:rig', { ok: true });
-            this._loadSkitterRig(loader, rig, dust);
           } catch (err) {
             this._fault('masonRigView', err);
           }
@@ -1937,60 +1931,6 @@ export class Game3D {
       );
     } catch (err) {
       this._fault('masonRigAsset', err);
-    }
-  }
-
-  /**
-   * The small hunters keep the original Mason model (skitter_rig.glb): loaded in the background once the big one is in. A failure
-   * leaves the sim running without their views (nothing to see, the kill radius still applies).
-   */
-  _loadSkitterRig(loader, rig, dust) {
-    if (skitterOff()) return;
-    try {
-      loader.load(
-        SKITTER_RIG_URL,
-        (gltf) => {
-          if (this.creatureView !== rig) return;
-          try {
-            const clones = this._cloneSkitterScenes(gltf); // before any view takes the meshes out of the glTF scene
-            this.skitterViews = this._buildSkitterViews(gltf, clones);
-            for (const v of this.skitterViews) v.bindDust(dust);
-            this._precompile();
-            this.bus.emit('assets:skitterRig', { ok: true });
-          } catch (err) {
-            this._fault('skitterView', err);
-          }
-        },
-        undefined,
-        (err) => this._fault('skitterAsset', err),
-      );
-    } catch (err) {
-      this._fault('skitterAsset', err);
-    }
-  }
-
-  /**
-   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded skitter_rig.glb (geometry, textures and clips are shared
-   * between the clones; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
-   */
-  _cloneSkitterScenes(gltf) {
-    const M = this.modules;
-    if (skitterOff() || !M.masonRigView || typeof M.masonRigView.cloneSkitterScenes !== 'function') return [];
-    try {
-      return M.masonRigView.cloneSkitterScenes(gltf, 3); // one per skitterling slot (SKITTER.maxAlive: two from the data, one from below)
-    } catch (err) {
-      this._fault('skitterView', err);
-      return [];
-    }
-  }
-
-  _buildSkitterViews(gltf, clones) {
-    if (!clones || !clones.length) return [];
-    try {
-      return this.modules.masonRigView.makeSkitterViews(this.renderer.scene, gltf, clones);
-    } catch (err) {
-      this._fault('skitterView', err);
-      return [];
     }
   }
 
@@ -4991,20 +4931,14 @@ export class Game3D {
         if (cv.isRig) this._fallbackToKit(cv);
       }
     }
-    const sv = this.skitterViews;
-    if (sv.length && this.skitters) {
-      const cam = this.renderer && this.renderer.camera;
-      const skLod = SKITTER_LOD[this.renderer && this.renderer.qualityTier] || SKITTER_LOD.high;
-      for (let i = 0; i < sv.length; i++) {
-        try {
-          if (sv[i].opts) sv[i].opts.lodDistance = skLod;
-          sv[i].update(this.skitters.slots[i] || null, dt, cam);
-        } catch (err) {
-          this._fault('skitterView', err);
-          sv[i].root.visible = false;
-          sv.splice(i, 1); // a broken view retires; the sim keeps running (no visuals, only sound)
-          i--;
-        }
+    if ((this.skitters || this.skitterView) && this.renderer && !skitterOff() && this._skitterViewOk !== false) {
+      try {
+        if (!this.skitterView) this.skitterView = new SkitterlingView(this.renderer.scene);
+        this.skitterView.update(this.skitters, dt, this.renderer.camera, this.renderer.qualityTier);
+      } catch (err) {
+        this._fault('skitterView', err);
+        this._skitterViewOk = false; // a broken view retires; the sim keeps running (no visuals, only sound)
+        if (this.skitterView) for (const m of this.skitterView.lods) m.visible = false;
       }
     }
     // A HandsView the input manager created is updated by the input manager.
@@ -5562,7 +5496,7 @@ export class Game3D {
 
   /** The window.AT3D.debug object (contract §8). */
   debugApi() {
-    return {
+    const api = {
       // Bag (tests, QA, screenshots): give(kind, n) adds items (kind 0 FIRST_AID .. 3 BATTERY), use(kind) starts applying, cancel(),
       // lantern(charge 0..1), spawn(kind, dx, dy, dz) drops a pickup near the player, pickups() lists the supplies of the run.
       bag: {
@@ -5639,24 +5573,11 @@ export class Game3D {
         clear: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.clear()),
         set: (patch) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.set(patch)),
         state: () => (this.creatureView && this.creatureView.debug ? this.creatureView.debug.state() : { rig: false }),
-        // WP-SKITTER: placeSkitter({distance, height, yaw, up, state, count}) puts synthetic skitterlings near the player (screenshots);
-        // clearSkitter() returns them to the sim; spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
-        placeSkitter: (o) => {
-          const sv = this.skitterViews;
-          const out = [];
-          const n = Math.max(1, Math.min(sv.length, (o && o.count) | 0 || 1));
-          for (let i = 0; i < n; i++) {
-            const oo = Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {});
-            if (i) oo.yaw = (oo.yaw || 0) + 38 * i;
-            if (i) oo.distance = (oo.distance == null ? 4 : oo.distance) + 1.5 * i;
-            out.push(sv[i].debug.place(oo));
-          }
-          return out;
-        },
-        clearSkitter: () => {
-          for (const v of this.skitterViews) v.debug.clear();
-          return true;
-        },
+        // WP-SKITTER (the hunter skitterlings): placeSkitter([{x, y, z (a point on a surface), ux, uy, uz, fx, fy, fz, speed, rear, leap}]) puts
+        // synthetic hunters there (screenshots; render/skitterlingView.js debug.place); clearSkitter() returns the view to the sim;
+        // spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
+        placeSkitter: (o) => (this.skitterView ? this.skitterView.debug.place(o) : 0),
+        clearSkitter: () => !!(this.skitterView && this.skitterView.debug.clear()),
         spawnSkitter: (n) => {
           const g = this.skitters;
           return g && g.enabled ? g.force(Math.max(1, Math.min(2, n | 0 || 1)), this.player) : 0;
@@ -5664,13 +5585,13 @@ export class Game3D {
         skitter: () => ({
           enabled: !!(this.skitters && this.skitters.enabled),
           off: skitterOff(),
-          views: this.skitterViews.length,
+          views: this.skitterView ? 1 : 0,
           alive: this.skitters ? this.skitters.aliveCount : 0,
           hits: this.skitters ? this.skitters.hits : 0,
           slots: this.skitters
             ? this.skitters.slots.map((c) => ({ on: c.on, state: c.state, distance: Math.round(c.distance), speed: +c.speed.toFixed(2), visible: c.body.visible }))
             : [],
-          views_: this.skitterViews.map((v) => ({ visible: v.root.visible, lod: v._lod, calls: v.info.drawCalls, tris: v.info.triangles })),
+          view: this.skitterView ? this.skitterView.debug.state() : null,
         }),
         view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
       },
@@ -5755,15 +5676,17 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
-      // RED ROACHES (sim/roaches.js): state() = alive / cap / by state / stats + the view's instances; burst() pours a stream out of the wall
-      // nearest the right hand (or the head); clear() empties the floor
-      roaches: {
+      // THE SKITTERLINGS. The swarm (sim/roaches.js, the tiny harmless ones): state() = alive / cap / by state / stats + the view's instances;
+      // burst() pours a stream out of the wall nearest the right hand (or the head); clear() empties the floor. The hunters: hunters() = the
+      // hunter view's state (debug.creature.placeSkitter / spawnSkitter stage them). AT3D.debug.roaches is the same object (the old name).
+      skitterlings: {
         state: () => (this.roaches ? Object.assign(this.roaches.state(), { view: this.roachView ? { ...this.roachView.stats } : null }) : { enabled: false }),
         burst: () => {
           const o = this.handOrigin('right', {});
           return !!(this.roaches && this.roaches.burstAt(o.x, o.y, o.z, true));
         },
         clear: () => (this.roaches ? (this.roaches.clear(), true) : false),
+        hunters: () => (this.skitterView ? this.skitterView.debug.state() : null),
       },
       // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
@@ -5806,6 +5729,8 @@ export class Game3D {
         stinger: (kind) => !!(this.audio && this.audio._music && (this.audio._music.stinger(kind || 'sighting'), true)),
       },
     };
+    api.roaches = api.skitterlings; // the swarm skitterlings' first name (scripts and docs that still say roaches)
+    return api;
   }
 }
 

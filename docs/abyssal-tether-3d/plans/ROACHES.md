@@ -1,18 +1,23 @@
-# Red roaches
+# Swarm skitterlings (code name: red roaches)
+
+> **Superseded naming (2026-11-05, owner: "I mean I need the skitterlings to be roaches").** These ARE the skitterlings: one species,
+> two tiers, see [SKITTERLINGS.md](SKITTERLINGS.md). This page documents the **swarm skitterlings** (tiny, harmless); 'roach' survives only in
+> file and identifier names (`sim/roaches.js`, `roach:*` events, the setting key `roaches`). The player only ever reads "skitterlings".
 
 Owner's brief (2026-11-05): "Add tiny super tiny skitterlings. Super optimized. Often spawning near player out of camera like cockroaches in red colour."
 
-**Lore line.** *The Masons never cleaned up after themselves. Something else does: red, glossy, the length of a fingernail, and it does not like the light.*
+**Lore line.** *The Masons never cleaned up after themselves. The skitterlings do: red, glossy, the length of a fingernail, and they do not like the light. Some of them grow.*
 
-They are **not** the Skitterling (`sim/skitter3d.js`, the small fast red hunter that bites). Red roaches are ambient dread with a little play: you catch one
+~~They are not the Skitterling~~ (corrected: they are the same species; the **hunter skitterlings**, `sim/skitter3d.js`, are the big ones that bite and
+now wear this same red cockroach body, bigger: SKITTERLINGS.md). Swarm skitterlings are ambient dread with a little play: you catch one
 in the corner of your eye scuttling away, you hear a dry tick-tick-tick behind you and turn and it is gone; later three of them dash across the ledge in
-front of you and scatter from your lantern. **They never hurt you.** Everything is in both chapters; Settings switch "Roaches" (on by default) removes
+front of you and scatter from your lantern. **They never hurt you.** Everything is in both chapters; Settings switch "Tiny skitterlings" (storage key `roaches`, on by default) removes
 them completely for players who hate bugs.
 
 | Part | File |
 |---|---|
 | Pure sim (no three.js, no DOM): pool, spawn planner, behaviour, events | `src/sim/roaches.js` |
-| View: ONE InstancedMesh, gait in the vertex shader, the context glue | `src/render/roachView.js` |
+| View: ONE InstancedMesh, gait in the vertex shader, the context glue | `src/render/roachView.js` (model + shader: `src/render/skitterlingModel.js`, shared with the hunters) |
 | Sounds (mixed into the audio manager) | `src/audio/roachSfx.js` |
 | Captions | `src/ui/captions.js` (`roach:*` rules, low priority) |
 | Wiring | `src/game.js` (per run, `_updateViews`, respawn / warp, debug API) |
@@ -125,7 +130,7 @@ update ranges allocate a record and, because three clears them with `length = 0`
 
 ## Debug
 
-`AT3D.debug.roaches.state()` (alive, cap, target, section, remains weight, by state, stats, the view's shown / triangles / calls), `.burst()` (a crack burst
+`AT3D.debug.skitterlings.state()` (`AT3D.debug.roaches` is the same object) (alive, cap, target, section, remains weight, by state, stats, the view's shown / triangles / calls), `.burst()` (a crack burst
 beside the right hand), `.clear()`. The sim is `AT3D.game.roaches` (`placeAt(solid, face, x, y, z, state, heading)` for tests and captures).
 
 ## Not verified
