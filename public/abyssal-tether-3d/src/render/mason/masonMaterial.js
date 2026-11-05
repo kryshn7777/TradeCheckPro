@@ -12,6 +12,8 @@
  *   - a faint cold ambient (x albedo) + a grazing fresnel rim so the mostly unlit mass keeps its form and its outline against the haze;
  *   - the sensory glow level and the stone ramp live in uniforms (no recompiles).
  * `reduced` (settings.reducedEffects) drops the wet film.
+ * SEAM EMBER (matte only): the flesh / sinew between the blocks (_MASK.r) smoulders where it is deepest (baked AO), pulsed by the
+ * view's heartbeat and listening (uEmber.rgb = colour x level, kept well under the red eyes; 0 with reducedEffects).
  * The anime look's shadow tint (atToon) is the Mason's own warm-neutral uToonShade (bone-ash), not the shared violet.
  */
 import * as THREE from 'three';
@@ -27,6 +29,8 @@ export function makeMasonUniforms() {
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
     uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze (flesh seams only, halved)
     uStone: { value: new THREE.Vector4(1.8, 0.35, 0.86, 0.3) }, // stone: albedo lift, cavity floor (x AO), roughness floor, direct specular kept
+    uEmber: { value: new THREE.Color(0, 0, 0) }, // seam ember radiance (masonRigView sets it per frame)
+    uAoLo: { value: 0.4 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
     uToonShade: { value: new THREE.Vector4(0.7, 0.64, 0.56, 0.12) }, // atToon's shadow lift for the Mason: warm bone-ash, not violet
   };
 }
@@ -66,7 +70,9 @@ uniform vec2 uNear;
 uniform vec3 uTint;
 uniform vec3 uAmb;
 uniform vec3 uRim;
-uniform vec4 uStone;`,
+uniform vec4 uStone;
+uniform vec3 uEmber;
+uniform float uAoLo;`,
       )
       .replace(
         '#include <clipping_planes_fragment>',
@@ -103,7 +109,7 @@ ${matte ? '' : '#if 0'}
   // stone: lift the near-black albedo toward weathered stone, crush the baked cavities (AO packed 0.4 + 0.6 ao)
   float mAo = 1.0;
 #ifdef USE_AOMAP
-  mAo = smoothstep( 0.4, 1.0, texture2D( aoMap, vAoMapUv ).r );
+  mAo = smoothstep( uAoLo, 1.0, texture2D( aoMap, vAoMapUv ).r );
 #endif
   diffuseColor.rgb *= mix( uStone.x * mix( uStone.y, 1.0, mAo ), 1.0, vMasonMask.r );
 }
@@ -116,6 +122,20 @@ ${matte ? '' : '#endif'}`,
 roughnessFactor = mix( max( roughnessFactor, uStone.z ), roughnessFactor, vMasonMask.r );
 roughnessFactor = mix( roughnessFactor, min( roughnessFactor, 0.32 ), clamp( vMasonMask.r * uWet, 0.0, 1.0 ) );`
           : '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, min( roughnessFactor, 0.22 ), clamp( vMasonMask.g * uWet, 0.0, 1.0 ) );',
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        matte
+          ? `#include <emissivemap_fragment>
+{
+  // seam ember: only the flesh, only where it is deep in the joint
+  float mOcc = 1.0;
+#ifdef USE_AOMAP
+  mOcc = clamp( ( texture2D( aoMap, vAoMapUv ).r - uAoLo ) / ( 1.0 - uAoLo ), 0.0, 1.0 );
+#endif
+  totalEmissiveRadiance += uEmber * vMasonMask.r * ( 1.0 - smoothstep( 0.2, 0.65, mOcc ) );
+}`
+          : '#include <emissivemap_fragment>',
       )
       .replace(
         '#include <fog_fragment>',
@@ -133,5 +153,5 @@ vec3 mPreFog = gl_FragColor.rgb;
     injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
     if (matte) shader.uniforms.uToonShade = U.uToonShade; // the Mason's own shadow tint (warm bone-ash instead of the shared violet)
   };
-  mat.customProgramCacheKey = () => (matte ? 'mason-rig-v4' : 'mason-rig-v3') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
+  mat.customProgramCacheKey = () => (matte ? 'mason-rig-v5' : 'mason-rig-v3') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

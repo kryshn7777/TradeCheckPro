@@ -4492,6 +4492,7 @@ export class Game3D {
       try {
         // LOD0 (63 k triangles, x2 eyes) only within CREATURE_LOD on Quest / low: LOD1 (~23 k) beyond; high keeps LOD0 at every range
         if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
+        if (cv.opts) cv.opts.reducedEffects = !!this.settings.reducedEffects; // the Mason's seam ember and wet film
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);
