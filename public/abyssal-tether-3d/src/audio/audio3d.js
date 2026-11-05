@@ -2275,6 +2275,7 @@ export class AudioManager3D {
       'nv:off': this._onNvOff,
       'nv:refuse': this._onNvRefuse,
       'player:death': this._onDeath,
+      'death:beat': this._onDeathBeat,
       'section:enter': this._onSection,
       checkpoint: this._onCheckpoint,
       'trigger:rumble': this._onRumble,
@@ -2686,6 +2687,312 @@ export class AudioManager3D {
     this.kMuffle.force(480, now, 0.12);
     this._silenceEnvelopes(now);
     this._sfxDeath(p.cause);
+  }
+
+  // ---- the death scenes (sim/deathScene.js): one sound per beat; head-locked on the stinger bus (not behind the death muffle) ----
+
+  /** A noise burst through a filter with a percussive envelope. */
+  _dNoise(v, buf, t, type, freq, q, peak, atk, tc, rate) {
+    const n = this._vNoise(v, buf, t, rate || 1);
+    const f = this._vFilter(v, type, freq, q);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, peak, atk, tc);
+    n.connect(f);
+    f.connect(g);
+    g.connect(v.out);
+    return f;
+  }
+
+  /** A swept tone with a percussive envelope. */
+  _dTone(v, t, type, f0, f1, sweep, peak, atk, tc) {
+    const o = this._vOsc(v, type, f0, t);
+    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + sweep);
+    const g = this._vGain(v, 0);
+    this._perc(g.gain, t, peak, atk, tc);
+    o.connect(g);
+    g.connect(v.out);
+    return o;
+  }
+
+  _onDeathBeat(p) {
+    const beat = p && p.beat;
+    const bus = this.busStinger;
+    switch (beat) {
+      case 'drop': {
+        // the body hits the floor: a dull thud, the gear rattling, the breath going out of you
+        const v = this._begin('dthud', 3, 0.3, 1.4, bus, 0.8, 0, 0.2, 1400);
+        if (!v) return;
+        const t = v.t0 + 0.05;
+        this._dTone(v, t, 'sine', 95, 42, 0.25, 0.9, 0.004, 0.16);
+        this._dNoise(v, this._white, t, 'bandpass', 2600, 1.4, 0.4, 0.002, 0.07, 1.2);
+        this._dNoise(v, this._brown, t, 'lowpass', 500, 0.5, 0.55, 0.01, 0.3);
+        this._dNoise(v, this._pink, t + 0.22, 'bandpass', 900, 0.9, 0.22, 0.12, 0.35, 0.8); // the air leaving the chest
+        this._commit(v);
+        break;
+      }
+      case 'rest': {
+        // ears ringing: a thin, high pair of tones beating against each other, swelling, then caught by the lids
+        const v = this._begin('dring', 2, 1, 3.6, bus, 0.18, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        for (const f of [3180, 3205]) {
+          const o = this._vOsc(v, 'sine', f, t);
+          const g = this._vGain(v, 0);
+          this._swell(g.gain, t, 0.5, 0.9, 1.4, 0.7);
+          o.connect(g);
+          g.connect(v.out);
+        }
+        this._commit(v);
+        break;
+      }
+      case 'lidsStart': {
+        // the heart, slowing: pairs of low thumps, further apart each time
+        const v = this._begin('dheart', 2, 1, 4.2, bus, 0.85, 0, 0.1, 500);
+        if (!v) return;
+        const t = v.t0;
+        let at = 0.05;
+        let gap = 0.78;
+        for (let i = 0; i < 4; i++) {
+          this._dTone(v, t + at, 'sine', 62, 40, 0.14, 0.75 - 0.12 * i, 0.004, 0.09);
+          this._dTone(v, t + at + 0.2, 'sine', 54, 36, 0.14, 0.5 - 0.1 * i, 0.004, 0.08);
+          at += gap;
+          gap *= 1.32;
+        }
+        this._commit(v);
+        break;
+      }
+      case 'flutter': {
+        // the eyes try to open: one small, wet breath in
+        const v = this._begin('dgasp', 2, 1, 1.2, bus, 0.45, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._pink, t, 1);
+        const bp = this._vFilter(v, 'bandpass', 600, 1.1);
+        bp.frequency.exponentialRampToValueAtTime(1500, t + 0.45);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 0.35, 0.06, 0.12);
+        n.connect(bp);
+        bp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'lidsShut': {
+        // the last of it: a long, low breath out and the ring falling away
+        const v = this._begin('dsigh', 2, 1, 2.6, bus, 0.6, 0, 0.1, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._brown, t, 1);
+        const lp = this._vFilter(v, 'lowpass', 700, 0.4);
+        lp.frequency.exponentialRampToValueAtTime(120, t + 1.8);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.6, 0.15, 0.5, 0.5);
+        n.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._dTone(v, t, 'sine', 3180, 900, 1.6, 0.06, 0.01, 0.5);
+        this._commit(v);
+        break;
+      }
+      case 'strike': {
+        // thrown down: the whole body going out (the strike's own sound already played)
+        const v = this._begin('dstrike', 3, 0.5, 1.8, bus, 0.9, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 70, 26, 0.6, 1.0, 0.004, 0.28);
+        this._dNoise(v, this._brown, t, 'lowpass', 400, 0.5, 0.7, 0.004, 0.35);
+        this._dNoise(v, this._white, t, 'bandpass', 1800, 0.9, 0.35, 0.002, 0.05, 1.1);
+        this._commit(v);
+        break;
+      }
+      case 'dark': {
+        // the world goes out: a low pressure that builds under everything, held until the bite
+        const v = this._begin('ddrone', 2, 1, 4.6, bus, 0.55, 0, 0.25, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 34, t);
+        o.frequency.exponentialRampToValueAtTime(48, t + 4);
+        const lp = this._vFilter(v, 'lowpass', 90, 0.8);
+        lp.frequency.exponentialRampToValueAtTime(260, t + 4);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.8, 3.2, 0.5, 0.35);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'eyes': {
+        // two red lights come on: a thin, wrong, glassy interval, and the dry tick of the lids of the thing
+        const v = this._begin('deyes', 3, 1, 1.8, bus, 0.35, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 1900, 1900, 0, 0.5, 0.01, 0.5);
+        this._dTone(v, t + 0.12, 'sine', 2011, 2011, 0, 0.4, 0.01, 0.45);
+        this._dNoise(v, this._white, t, 'bandpass', 4200, 4, 0.25, 0.001, 0.02, 1.5);
+        this._dNoise(v, this._white, t + 0.31, 'bandpass', 4200, 4, 0.2, 0.001, 0.02, 1.5);
+        this._commit(v);
+        break;
+      }
+      case 'breath': {
+        // it breathes over you: a slow, rasping in-and-out, a hum under it, wet mandible clicks
+        const v = this._begin('dbreath', 3, 1, 5.4, bus, 0.8, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const n = this._vNoise(v, this._pink, t, 0.8);
+        const bp = this._vFilter(v, 'bandpass', 300, 1.3);
+        const g = this._vGain(v, 0);
+        // three breaths, each in (rising) then out (falling), the cycle getting shorter as it comes
+        let at = 0;
+        let cyc = 1.9;
+        for (let i = 0; i < 3; i++) {
+          g.gain.setValueAtTime(0, t + at);
+          g.gain.linearRampToValueAtTime(0.55, t + at + cyc * 0.4);
+          g.gain.linearRampToValueAtTime(0.0, t + at + cyc * 0.95);
+          bp.frequency.setValueAtTime(260, t + at);
+          bp.frequency.linearRampToValueAtTime(520, t + at + cyc * 0.4);
+          bp.frequency.linearRampToValueAtTime(200, t + at + cyc * 0.95);
+          at += cyc;
+          cyc *= 0.88;
+        }
+        n.connect(bp);
+        bp.connect(g);
+        g.connect(v.out);
+        const h = this._vOsc(v, 'sawtooth', 52, t);
+        const hl = this._vFilter(v, 'lowpass', 160, 0.7);
+        const hg = this._vGain(v, 0);
+        this._swell(hg.gain, t, 0.35, 2.4, 1.6, 0.8);
+        h.connect(hl);
+        hl.connect(hg);
+        hg.connect(v.out);
+        // the mandibles, tapping: irregular dry clicks
+        for (let i = 0; i < 9; i++) {
+          const ct = t + 0.4 + i * 0.5 + rand(-0.12, 0.12);
+          this._dNoise(v, this._white, ct, 'bandpass', rand(1800, 3400), 3, rand(0.1, 0.25), 0.001, 0.014, rand(1, 1.6));
+        }
+        this._commit(v);
+        break;
+      }
+      case 'gape': {
+        // the jaw opens further than a jaw should: a long wet stretch, creaking cartilage
+        const v = this._begin('dgape', 3, 1, 2.6, bus, 0.75, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 62, t);
+        o.frequency.exponentialRampToValueAtTime(150, t + 1.4);
+        const lp = this._vFilter(v, 'lowpass', 300, 1.2);
+        lp.frequency.exponentialRampToValueAtTime(1100, t + 1.4);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 1.1, 0.5, 0.4);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        const n = this._vNoise(v, this._pink, t, 1);
+        const bp = this._vFilter(v, 'bandpass', 400, 1.6);
+        bp.frequency.exponentialRampToValueAtTime(1800, t + 1.3);
+        const ng = this._vGain(v, 0);
+        this._swell(ng.gain, t, 0.35, 0.9, 0.4, 0.3);
+        n.connect(bp);
+        bp.connect(ng);
+        ng.connect(v.out);
+        for (let i = 0; i < 7; i++) this._dNoise(v, this._white, t + 0.1 + i * 0.17 + rand(0, 0.06), 'bandpass', rand(900, 2200), 5, rand(0.15, 0.3), 0.001, 0.02, rand(0.8, 1.4));
+        this._commit(v);
+        break;
+      }
+      case 'lungeStart': {
+        // it comes: a roar that goes from nothing to everything in under half a second
+        const v = this._begin('droar', 3, 1, 1.6, bus, 0.95, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        const o = this._vOsc(v, 'sawtooth', 70, t);
+        o.frequency.exponentialRampToValueAtTime(260, t + 0.5);
+        const lp = this._vFilter(v, 'lowpass', 400, 0.9);
+        lp.frequency.exponentialRampToValueAtTime(3200, t + 0.5);
+        const g = this._vGain(v, 0);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.9, t + 0.48);
+        g.gain.setTargetAtTime(0, t + 0.5, 0.05);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        const n = this._vNoise(v, this._white, t, 1);
+        const hp = this._vFilter(v, 'highpass', 600, 0.7);
+        hp.frequency.exponentialRampToValueAtTime(3000, t + 0.5);
+        const ng = this._vGain(v, 0);
+        ng.gain.setValueAtTime(0, t);
+        ng.gain.linearRampToValueAtTime(0.5, t + 0.48);
+        ng.gain.setTargetAtTime(0, t + 0.5, 0.04);
+        n.connect(hp);
+        hp.connect(ng);
+        ng.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'bite': {
+        // the jaws close on you: bone, a wet slam, then nothing for a heartbeat
+        const v = this._begin('dbite', 3, 1, 2.4, bus, 1.0, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 68, 24, 0.5, 1.0, 0.002, 0.3);
+        this._dNoise(v, this._brown, t, 'lowpass', 600, 0.6, 0.9, 0.002, 0.25);
+        this._dNoise(v, this._white, t, 'bandpass', 1500, 0.9, 0.7, 0.001, 0.06, 1.0);
+        for (let i = 0; i < 9; i++) this._dNoise(v, this._white, t + 0.01 + i * 0.022 + rand(0, 0.015), 'bandpass', rand(1800, 5200), 6, rand(0.35, 0.8), 0.0006, 0.012, rand(0.9, 1.7)); // bones going
+        this._dNoise(v, this._pink, t + 0.03, 'lowpass', 900, 1.2, 0.6, 0.004, 0.2, 0.7); // the wet of it
+        this._commit(v);
+        break;
+      }
+      case 'chew': {
+        // being eaten: wet crunches, a slow rhythm, a groan under it; the ring of the ears fading away
+        const v = this._begin('dchew', 3, 1, 3.4, bus, 0.8, 0, 0.3, 0);
+        if (!v) return;
+        const t = v.t0;
+        let at = 0.1;
+        for (let i = 0; i < 5; i++) {
+          this._dNoise(v, this._pink, t + at, 'lowpass', rand(500, 1100), 1.0, 0.55 - 0.06 * i, 0.006, 0.09, rand(0.6, 1));
+          for (let k = 0; k < 4; k++) this._dNoise(v, this._white, t + at + 0.01 + k * 0.03 + rand(0, 0.02), 'bandpass', rand(1800, 4800), 6, rand(0.2, 0.5), 0.0007, 0.012, rand(0.9, 1.6));
+          at += rand(0.3, 0.42);
+        }
+        const o = this._vOsc(v, 'sawtooth', 58, t);
+        o.frequency.exponentialRampToValueAtTime(40, t + 2.8);
+        const lp = this._vFilter(v, 'lowpass', 180, 0.8);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.5, 0.3, 1.8, 0.5);
+        o.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._dTone(v, t, 'sine', 3190, 1400, 2.2, 0.05, 0.01, 0.7);
+        this._commit(v);
+        break;
+      }
+      case 'swallow': {
+        // the last: one long wet swallow, going down, and the quiet
+        const v = this._begin('dswallow', 3, 1, 1.6, bus, 0.7, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dTone(v, t, 'sine', 120, 38, 0.7, 0.8, 0.05, 0.3);
+        const n = this._vNoise(v, this._pink, t, 0.7);
+        const lp = this._vFilter(v, 'lowpass', 900, 1.0);
+        lp.frequency.exponentialRampToValueAtTime(140, t + 0.7);
+        const g = this._vGain(v, 0);
+        this._swell(g.gain, t, 0.55, 0.12, 0.25, 0.2);
+        n.connect(lp);
+        lp.connect(g);
+        g.connect(v.out);
+        this._commit(v);
+        break;
+      }
+      case 'splat': {
+        // a swarm on you: a quick wet burst of small bites
+        const v = this._begin('dsplat', 3, 0.5, 1.2, bus, 0.8, 0, 0.2, 0);
+        if (!v) return;
+        const t = v.t0;
+        this._dNoise(v, this._pink, t, 'lowpass', 1000, 1.0, 0.6, 0.004, 0.12);
+        for (let i = 0; i < 8; i++) this._dNoise(v, this._white, t + i * 0.05 + rand(0, 0.03), 'bandpass', rand(2200, 5200), 6, rand(0.2, 0.5), 0.0007, 0.012, rand(1, 1.7));
+        this._commit(v);
+        break;
+      }
+      default:
+    }
   }
 
   // ---- triggers / creature ------------------------------------------------------------

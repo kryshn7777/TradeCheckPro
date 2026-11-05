@@ -68,6 +68,22 @@ export const RULES = Object.freeze({
   dScrape: R('[Scraping]', 'creature', 2, 'dscrape', 3),
   dStep: R('[Heavy footfalls]', 'creature', 1, 'dstep', 7),
   dSaw: R('[Sawing]', 'creature', 2, 'dsaw', 2),
+  // the death scenes (sim/deathScene.js): the collapse (a fall) and the devour (the Mason)
+  dthFall: R('[A heavy fall]', 'creature', 2, 'dth', 1),
+  dthRing: R('[Ringing in the ears]', 'creature', 1, 'dthring', 3, 4),
+  dthHeart: R('[A heartbeat, slowing]', 'creature', 1, 'dthheart', 3, 4),
+  dthBreath: R('[A faint breath]', 'creature', 1, 'dthbreath', 3),
+  dthBlow: R('[A crushing blow]', 'creature', 2, 'dth', 1),
+  dthEyes: R('[Something opens its eyes]', 'creature', 2, 'dtheyes', 2),
+  dthBreathe: R('[Slow, wet breathing, very close]', 'creature', 2, 'dthbreathe', 3, 4),
+  dthGape: R('[Jaws stretching wide]', 'creature', 2, 'dthgape', 3),
+  dthLunge: R('[It lunges]', 'creature', 2, 'dthlunge', 1.4),
+  dthBite: R('[A crunch of bone]', 'creature', 2, 'dthbite', 1.4),
+  dthChew: R('[Wet chewing]', 'creature', 2, 'dthchew', 3, 4),
+  dthSwallow: R('[A swallow]', 'creature', 1, 'dthswallow', 3),
+  dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
+  dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
+  dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
   // THE HOLDFAST (sim/holdfast3d.js): the wall's hand
   hfCrack: R('[Knuckles cracking]', 'creature', 1, 'hfcrack', 3),
   hfBreath: R('[A wet breath in the wall]', 'creature', 2, 'hfbreath', 4),
@@ -123,6 +139,24 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+});
+
+export const DEATH_BEAT_RULES = Object.freeze({
+  drop: RULES.dthFall,
+  rest: RULES.dthRing,
+  lidsStart: RULES.dthHeart,
+  flutter: RULES.dthBreath,
+  strike: RULES.dthBlow,
+  eyes: RULES.dthEyes,
+  breath: RULES.dthBreathe,
+  gape: RULES.dthGape,
+  lungeStart: RULES.dthLunge,
+  bite: RULES.dthBite,
+  chew: RULES.dthChew,
+  swallow: RULES.dthSwallow,
+  splat: RULES.dthSwarm,
+  lidsShut: RULES.dthSigh,
+  dark: RULES.dthDark,
 });
 
 // ---- colour-safe status cues (settings.colorSafe): a shape and words for what colour alone says elsewhere --------------------
@@ -202,6 +236,8 @@ export function captionForEvent(type, p) {
       return !finite(e.distance) || e.distance < 36 ? RULES.dHum : null;
     case 'dresser:step':
       return finite(e.distance) && e.distance < 22 ? RULES.dStep : null;
+    case 'death:beat':
+      return DEATH_BEAT_RULES[e.beat] || null;
     case 'dresser:measure':
       return RULES.dScrape;
     case 'dresser:saw':
@@ -366,6 +402,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'dresser:tick',
   'dresser:hum',
   'dresser:step',
+  'death:beat',
   'dresser:measure',
   'dresser:saw',
   'holdfast:twitch',

@@ -209,7 +209,8 @@ export class CommsView {
       return;
     }
     if (want === 'restore') {
-      const t = typeof g.deathT === 'number' ? g.deathT : 0;
+      // the restore clock: a death scene (eyelids closing, the Mason's bite) plays first and delays it (game.restoreClock = deathT - deathLead)
+      const t = typeof g.restoreClock === 'number' ? g.restoreClock : typeof g.deathT === 'number' ? g.deathT : 0;
       const a = clamp((t - 0.15) / 0.6, 0, 1);
       this.alpha = a * a * (3 - 2 * a) * 0.97;
       this._layout('restore', scale, false);

@@ -27,6 +27,7 @@ import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
 import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { DeathScene } from './sim/deathScene.js'; // the death scenes: the collapse + the eyelids, the Mason eating you (render/deathOverlay.js)
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
 import { FallPose } from './render/fallPose.js'; // the body's free-fall pose (weight + the desktop hands' flail)
 import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from its anchor reels the line in (the body is pulled forward)
@@ -50,6 +51,8 @@ const C = CONFIG;
 const PROBE_RAY = 2.5;
 const _probeV = new THREE.Vector3();
 const _probeD = new THREE.Vector3();
+const _dcV = new THREE.Vector3(); // death scene scratch (camera position / direction)
+const _dcW = new THREE.Vector3();
 
 // -----------------------------------------------------------------------------
 // Tuning (seconds / metres unless noted)
@@ -1015,6 +1018,11 @@ export class Game3D {
     this.checkpoint = { x: 0, y: 0, z: 0, yaw: 0, index: -1 };
     this.deathCause = null;
     this.deathT = 0;
+    this.deathScene = new DeathScene(); // sim/deathScene.js: what plays between the death and the panel
+    this.deathSnap = null; // the scene's snapshot while it plays (render/fx.js draws the eyelids + blood from it), else null
+    this.deathLead = 0; // s the scene delays the restore / panel by (deathT - deathLead is the restore clock)
+    this._deathHold = null; // debug: freeze the scene at this time
+    this._deathCam = { pitch0: 0, exposure0: 0, faceYaw: 0, haveFace: false, rx: 0, ry: 0, rz: 0 };
     this.creatureView = null;
     this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
     this.skitterViews = [];
@@ -3305,10 +3313,19 @@ export class Game3D {
       this._consumed = true;
       return;
     }
-    if (s === 'dead' && this.deathT >= DEATH_PANEL_DELAY && (intent.confirmPressed || intent.jumpPressed || this._anyHandPressed(intent))) {
-      this.respawn();
-      this._consumed = true;
-      return;
+    if (s === 'dead' && (intent.confirmPressed || intent.jumpPressed || this._anyHandPressed(intent))) {
+      const sc = this.deathScene;
+      if (sc.active && !sc.done) {
+        // the scene is still playing: a press cuts it short (once it may be: never in its first beats), the next one rises again
+        if (sc.skip()) this.deathT = Math.max(this.deathT, sc.panelAt);
+        this._consumed = true;
+        return;
+      }
+      if (this.deathT - this.deathLead >= DEATH_PANEL_DELAY) {
+        this.respawn();
+        this._consumed = true;
+        return;
+      }
     }
     if (this._uiFallback) {
       // No menus: any confirm / trigger starts, continues or restarts.
@@ -3784,16 +3801,161 @@ export class Game3D {
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._recordDepth();
     this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
+    this._beginDeathScene(cause);
+  }
+
+  /**
+   * The death scene (sim/deathScene.js): a fall / landing / ironwork / the Dresser is the COLLAPSE (the camera drops, the eyelids
+   * close slowly); a skitterling swarm is the same with blood on the lens; the Mason is the DEVOUR cutscene (the world goes out, its
+   * eyes ignite, it comes close, the jaw opens, it bites). The restore overlay and the death panel wait for it (deathLead).
+   */
+  _beginDeathScene(cause) {
+    const sc = this.deathScene;
+    const D = this._deathCam;
+    this.deathLead = 0;
+    this.deathSnap = null;
+    try {
+      const cm = this.comms;
+      const killer = cause === 'creature' ? (cm && cm.lastHurtCause === 'skitter' && cm.clock - cm.lastHurtAt <= 2 ? 'skitter' : 'mason') : '';
+      const r = this.renderer;
+      const xr = !!this.xrActive;
+      const eye = xr && r && r.camera ? r.camera.position.y : eyeAboveBody();
+      sc.begin(cause, { killer, xr, eye });
+      this.deathLead = Math.max(0, sc.panelAt - DEATH_PANEL_DELAY);
+      D.haveFace = false;
+      D.pitch0 = r && r.camera && !xr ? r.camera.rotation.x : 0;
+      D.exposure0 = r && r.renderer ? r.renderer.toneMappingExposure : 0;
+      if (r && r.camera) {
+        const q = r.camera;
+        q.updateWorldMatrix(true, false);
+        q.getWorldDirection(_dcV);
+        D.faceYaw = Math.atan2(_dcV.x, -_dcV.z);
+      }
+      this.deathSnap = sc.s;
+      this._deathHold = null;
+    } catch (err) {
+      this._fault('deathScene', err);
+      sc.end();
+      this.deathLead = 0;
+      this.deathSnap = null;
+    }
+  }
+
+  /** Seconds into the restore / panel timeline (the death scene plays first and delays it by deathLead). */
+  get restoreClock() {
+    return Math.max(0, this.deathT - this.deathLead);
+  }
+
+  /** Steps the scene: beats (sound / haptics), exposure, the face of the Mason. Cheap when no scene plays. */
+  _updateDeathScene(dt) {
+    const sc = this.deathScene;
+    if (!sc.active) return;
+    if (this._deathHold != null) sc.seek(this._deathHold);
+    const beats = this._deathHold != null ? sc.noBeats : sc.update(dt);
+    for (let i = 0; i < beats.length; i++) {
+      this.bus.emit('death:beat', { beat: beats[i], kind: sc.kind, t: sc.t });
+      if (beats[i] === 'bite') this._hapticBoth(1, 420);
+      else if (beats[i] === 'strike' || beats[i] === 'splat') this._hapticBoth(1, 260);
+      else if (beats[i] === 'eyes') this._hapticBoth(0.25, 600);
+    }
+  }
+
+  /**
+   * After the rig is placed (every frame): the scene's camera drop / roll / shake on the rig, the world's darkness (exposure), and
+   * the Mason's face in front of the camera. A headset gets only the drop (no roll or pitch is applied to a tracked head).
+   */
+  _applyDeathCam() {
+    const r = this.renderer;
+    const sc = this.deathScene;
+    const D = this._deathCam;
+    if (!r || !r.camera) return;
+    const gl = r.renderer;
+    if (!sc.active) {
+      if (D.exposure0 > 0 && gl) {
+        gl.toneMappingExposure = D.exposure0;
+        D.exposure0 = 0;
+      }
+      if (D.rolled && !this.xrActive) {
+        r.camera.rotation.z = 0;
+        r.camera.rotation.x = D.pitch0;
+      }
+      D.rolled = false;
+      if (D.haveFace) {
+        D.haveFace = false;
+        const cv = this.creatureView;
+        if (cv && typeof cv.cine === 'function') cv.cine(null);
+      }
+      return;
+    }
+    const s = sc.s;
+    const calm = !!(this.settings && this.settings.reducedEffects); // comfort: no shake, a gentler roll
+    const rig = r.rig;
+    const cam = r.camera;
+    const xr = !!this.xrActive;
+    const sh = calm ? 0 : s.shake;
+    rig.position.y -= s.camDrop;
+    if (sh > 0.001) {
+      const t = this.realTime;
+      rig.position.x += Math.sin(t * 61.3) * 0.022 * sh;
+      rig.position.y += Math.sin(t * 47.9 + 1.3) * 0.016 * sh;
+      rig.position.z += Math.sin(t * 53.1 + 2.1) * 0.022 * sh;
+    }
+    if (!xr) {
+      cam.rotation.x = D.pitch0 + s.camPitch * (calm ? 0.5 : 1);
+      cam.rotation.z = s.camRoll * (calm ? 0.5 : 1) + Math.sin(this.realTime * 52) * 0.01 * sh;
+      D.rolled = true;
+    }
+    if (gl && D.exposure0 > 0) gl.toneMappingExposure = D.exposure0 * (1 - 0.84 * s.dark);
+    // the face
+    const cv = this.creatureView;
+    const f = s.face;
+    if (cv && typeof cv.cine === 'function' && sc.kind === 'devour') {
+      if (f.on) {
+        cam.updateWorldMatrix(true, false);
+        cam.getWorldPosition(_dcV);
+        const dt = 1 / 60;
+        // the face stays in front of wherever you look (it slides round to meet your eyes: turning away only makes it come round)
+        cam.getWorldDirection(_dcW);
+        const want = Math.atan2(_dcW.x, -_dcW.z);
+        let dy = want - D.faceYaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        D.faceYaw += dy * (1 - Math.exp(-dt * (f.lunge > 0 ? 9 : 1.4)));
+        const fx = Math.sin(D.faceYaw);
+        const fz = -Math.cos(D.faceYaw);
+        // the head's point: `dist` ahead of the eye, `h` above it; it faces back at you
+        const hx = _dcV.x + fx * f.dist;
+        const hz = _dcV.z + fz * f.dist;
+        const hy = _dcV.y + f.h - 0.35 * Math.min(1, f.lunge * 1.2); // (the head's point sits a little above the maw)
+        cv.cine({ x: hx, y: hy, z: hz, fx: -fx, fy: 0, fz: -fz, gape: f.gape, eyes: f.eyes, lunge: f.lunge, bite: sc.t >= 4.46 });
+        D.haveFace = true;
+      } else if (D.haveFace) {
+        cv.cine(null);
+        D.haveFace = false;
+      }
+    }
+  }
+
+  /** Back to nothing: the eyelids open, the light returns, the real creature is drawn again. */
+  _endDeathScene() {
+    const sc = this.deathScene;
+    if (!sc.active && !this.deathSnap && !this._deathCam.haveFace && !(this._deathCam.exposure0 > 0)) return;
+    sc.end();
+    this.deathSnap = null;
+    this.deathLead = 0;
+    this._deathHold = null;
+    this._applyDeathCam(); // restores the exposure / the camera roll / the creature
   }
 
   _updateDeath(dt) {
     this.deathT += dt;
-    if (this._deathShown || this.deathT < DEATH_PANEL_DELAY) return;
+    this._updateDeathScene(dt);
+    const clock = this.deathT - this.deathLead; // the restore clock: the death scene plays first
+    if (this._deathShown || clock < DEATH_PANEL_DELAY) return;
     const R = this.restore;
     if (R && R.active) {
       // EXPEDITION: the CONTINUITY restore plays instead of the death panel (the continue input skips it, the same respawn());
       // at its end Continuity restores you at the last relay; with no relays (Abyss) the death panel follows it
-      if (this.deathT < R.end) return;
+      if (clock < R.end) return;
       R.active = false;
       if (R.canRespawn && this.respawn()) return;
     }
@@ -4172,6 +4334,7 @@ export class Game3D {
   _updateRig() {
     this._placeRig();
     this._applySwingLag();
+    this._applyDeathCam();
   }
 
   /**
@@ -4266,7 +4429,11 @@ export class Game3D {
     if (!headOnly) {
       if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 2.4);
       const s = this.state;
-      if (s === 'dead') this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
+      if (s === 'dead') {
+        // a death scene owns the view (eyelids / blackout from its snapshot); with none (a sandbox death, a fault) the old fall to near-black
+        if (this.deathScene.active && this.deathSnap) this.fade = this.deathSnap.black;
+        else this.fade = U.approach(this.fade, DEATH_FADE_MAX, dt * 1.6);
+      }
       else if (s === 'paused') this.fade = U.approach(this.fade, PAUSE_FADE, dt * 3);
       else if (s === 'victory') this.fade = U.approach(this.fade, VICTORY_FADE, dt * 0.8);
       else if (s === 'playing' && this.fade > 0) this.fade = Math.max(0, this.fade - dt * FADE_IN_RATE);
@@ -4734,6 +4901,7 @@ export class Game3D {
     if (this.state === s && !force) return;
     const prev = this.state;
     this.state = s;
+    if (prev === 'dead' && s !== 'dead') this._endDeathScene();
     this._syncUIMode();
     const body = typeof document !== 'undefined' ? document.body : null;
     if (body) {
@@ -5081,6 +5249,28 @@ export class Game3D {
           return { id: it.id, x: it.x, y: it.y, z: it.z };
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
+      },
+      // the death scenes (tests, QA, screenshots): play(cause, {killer}) kills the player the way `cause` does ('impact' | 'fall' | 'hazard' |
+      // 'creature' + killer 'mason' | 'skitter' | 'dressed'); hold(t) freezes the scene at t seconds (null = play on); state() reads it.
+      death: {
+        play: (cause, o) => {
+          const cm = this.comms;
+          if (cm && o && o.killer === 'skitter') {
+            cm.lastHurtCause = 'skitter';
+            cm.lastHurtAt = cm.clock;
+          } else if (cm && cause === 'creature') cm.lastHurtCause = 'mason';
+          this.physics.kill(this.player, this.tethers, String(cause || 'impact'));
+          return this.deathScene.active ? this.deathScene.kind : null;
+        },
+        hold: (t) => {
+          this._deathHold = t == null ? null : +t;
+          return true;
+        },
+        state: () => {
+          const sc = this.deathScene;
+          const s = sc.s;
+          return { active: sc.active, kind: sc.kind, t: sc.t, done: sc.done, lead: this.deathLead, lids: s.lids, black: s.black, blood: s.blood, dark: s.dark, drop: s.camDrop, face: Object.assign({}, s.face), fade: this.fade, deathShown: this._deathShown };
+        },
       },
       // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing
       // them; play(clip) / pose(u, clip) force a clip (pose freezes it at normalised time u); stop() / clear() return to the sim; state() reads the rig.

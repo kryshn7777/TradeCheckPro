@@ -131,6 +131,7 @@ export class MasonRigView {
     this._focus = { yaw: 0, pitch: 0, vyaw: 0, vpitch: 0, gain: 0 };
     this._forced = null;
     this._dbg = null;
+    this._cine = false;
     this._level = null;
     this._lastCreature = null;
     this.debug = this._makeDebug();
@@ -457,8 +458,11 @@ export class MasonRigView {
     if (C.level) this._level = C.level;
     const cap = sectionHeadScale(C);
     this.fit.update(dt, level, F[0], F[1], F[2], F[6], F[7], F[8], F[9], F[10], F[11], cap);
-    const hs = this.fit.scale * size;
-    const lift = this.fit.lift * size;
+    // `headK`: a head-to-body proportion for the small hunters. The skitterling shares the Mason's crown, but its body is a thin wire at 0.45 of the
+    // size, so the full crown (a 5-6 x wider block than the body) read as a giant head on a worm. Only the crown scales (the lift off the wall with it).
+    const hk = o.headK || 1;
+    const hs = this.fit.scale * size * hk;
+    const lift = this.fit.lift * size * hk;
     // lift the crown (and the first links) off the wall it clings to
     for (let i = 0; i < LIFT_FALLOFF.length; i++) {
       const k = lift * LIFT_FALLOFF[i];
@@ -1050,6 +1054,43 @@ export class MasonRigView {
     };
   }
 
+  /**
+   * CINEMATIC (the death scene, sim/deathScene.js): a synthetic Mason the game places every frame, in place of the sim's creature, so
+   * the face can come out of the dark in front of the camera whatever the real creature is doing. Call with the head point, the
+   * facing (towards the camera) and the scene's face fields; `cine(null)` hands the rig back to the sim.
+   *   o: { x, y, z, fx, fy, fz, gape: 0..1 (jaw), eyes: 0..1 (glow), lunge: 0..1 (the portal), bite: bool (the jaws slam shut) }
+   * The body trails away from the camera behind the head. Rebuilt per frame (a few small arrays) so there is no state to drift.
+   */
+  cine(o) {
+    if (!o) {
+      if (this._cine) {
+        this._cine = false;
+        this._dbg = null;
+        if (this.mandibles) this.mandibles.hold = null;
+        this.legs.reset();
+        this.fit.reset();
+      }
+      return false;
+    }
+    const first = !this._cine;
+    this._cine = true;
+    const size = this.opts.size || 1;
+    const c = makeSyntheticCreature(o.x, o.y, o.z, o.fx, o.fy || 0, o.fz, [0, 1, 0], 'OBSERVING', 1.45 * size, this._lastCreature, size);
+    const B = c.body;
+    B.glow = clamp(o.eyes == null ? 0 : o.eyes, 0, 1);
+    B.lunge = clamp(o.lunge || 0, 0, 1);
+    B.frondOpen = 0.9;
+    c.distance = 2;
+    if (o.bite) c.attack = { phase: 'strike', t: 0.05, windup: 0.75, hit: true };
+    this._dbg = { creature: c };
+    if (this.mandibles) this.mandibles.hold = o.bite ? -0.55 : 0.3 + 0.98 * clamp(o.gape || 0, 0, 1);
+    if (first) {
+      this.legs.reset();
+      this.fit.reset();
+    }
+    return true;
+  }
+
   setVisible(v) {
     this.root.visible = !!v;
   }
@@ -1281,6 +1322,7 @@ export const SKITTER_VIEW = {
   hideDistance: 75,
   glowPierce: 0.6,
   bodyScale: 0.98,
+  headK: 0.55, // the crown at 55 % of the Mason's proportion: a worm's head, not a skull on a thread (owner: "their head is so big")
 };
 
 /** Clones the glTF scene `n` times. Call BEFORE the Mason's own view is built (it moves the meshes out of gltf.scene). */
