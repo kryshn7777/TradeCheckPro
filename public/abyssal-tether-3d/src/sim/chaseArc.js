@@ -9,7 +9,7 @@
  *                                                   the SETTLE window opens (MERGE s). A re-notice / re-commit inside it is the same
  *                                                   chase; when it closes                               -> chase:lost {duration, closest,
  *                                                                                                            knockers, nearMisses}
- *        creature:strike  {hit}                     a miss = a near miss; a hit = it caught you: the chase ends with NO lost
+ *        creature:strike  {hit}                     a miss = a near miss; a hit = caught (counted; MASON_STRIKES: the chase goes on)
  *        knocker:throw                              a knocker thrown during the chase
  *        player:death                               the chase ends with NO lost (and nothing more until a respawn / a new run)
  *        game:start / game:restart / game:menu / game:respawn / game:victory: forget the chase, silently
@@ -156,10 +156,9 @@ export class ChaseArc {
   onStrike(p) {
     if (this.dead || this.state === S.IDLE || (p && p.skit)) return;
     if (p && p.hit) {
-      // it caught you: that is not an escape. No release.
+      // it caught you: not a near miss. MASON_STRIKES.md: a strike no longer kills, the chase goes on (a lethal one ends it through
+      // player:death)
       this.stats.caught++;
-      this.state = S.IDLE;
-      this.started = false;
       return;
     }
     this.nearMisses++;

@@ -190,6 +190,7 @@ export class Health3D {
     if (this.god || this.dead || !(amount > 0)) return false;
     const taken = Math.min(this.hp, amount);
     this.hp = Math.max(0, this.hp - amount);
+    if (this.hp < 1e-6) this.hp = 0; // MASON_STRIKES.md: four 0.30 strikes / ten 0.10 bites are exactly lethal (no float residue)
     this.sinceHurt = 0;
     this.wounded = true;
     this.hits++;

@@ -52,7 +52,8 @@ const lvl = (k) => new Level3D(LEVEL_DATA_3D, DIFFICULTY[k].levelVariant);
   const mono = [5, 6, 7].every((i) => c(i)[0] <= c(i)[1] && c(i)[1] <= c(i)[2]);
   ok(early === 0 && c(4).join() === '0,0,1' && c(5).every((n) => n === 1) && c(6)[0] >= 1 && c(7)[0] >= 1 && [5, 6, 7].every((i) => c(i).every((n) => n <= SKITTER.maxAlive)) && mono,
     `spawn data: none in S1-S4; S5 [${c(4)}] (Abyss only); S6 [${c(5)}], S7 [${c(6)}], S8 [${c(7)}] (normal, nightmare, abyss)`);
-  ok(skitterDamage('normal') < skitterDamage('nightmare') && skitterDamage('nightmare') < skitterDamage('abyss') && skitterDamage('abyss') < 0.6, `hit costs ${KEYS.map((k) => skitterDamage(k)).join(' / ')} of full health`);
+  // MASON_STRIKES.md: the owner's number, 10 % a bite on every difficulty (config3d STRIKE_DAMAGE.skitter)
+  ok(KEYS.every((k) => skitterDamage(k) === 0.1), `hit costs ${KEYS.map((k) => skitterDamage(k)).join(' / ')} of full health (10 % everywhere)`);
   const sb = new SkitterGroup(lvl('sandbox'), DIFFICULTY.sandbox, new EventBus(), { seed: 1 });
   ok(!sb.enabled && sb.aliveCount === 0, 'sandbox: group disabled');
 }

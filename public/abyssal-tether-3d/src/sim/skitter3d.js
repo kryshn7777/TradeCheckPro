@@ -68,6 +68,7 @@ export class SkitterGroup {
     this.pendingDamage = 0;
     this.pendingGrip = 0;
     this._hurt = 0;
+    this.lastBite = { x: 0, y: 0, z: 0 }; // MASON STRIKES: the head of the last skitterling that bit (player:hit's attacker)
     this.hits = 0;
     this.spawned = 0;
     this.minSpawnDistance = Infinity;
@@ -253,6 +254,9 @@ export class SkitterGroup {
         if (this._hurt > 0) continue;
         this._hurt = SKITTER.hurtCooldown;
         this.pendingDamage += skitterDamage(this._tuneKey);
+        this.lastBite.x = c.x;
+        this.lastBite.y = c.y;
+        this.lastBite.z = c.z;
         this.pendingGrip += SKITTER.gripBite[this._tuneKey] || 0;
         this.hits++;
       }
