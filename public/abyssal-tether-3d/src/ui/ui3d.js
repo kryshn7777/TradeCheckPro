@@ -2283,7 +2283,8 @@ export class UI3D {
     const d = this.dom;
     d.deathKicker.textContent = copy.kicker;
     d.deathMsg.textContent = i.message || copy.message;
-    d.deathStats.textContent = `Deaths ${i.deaths} · ${fmtMeters(i.depthMeters)} · ${fmtTime(i.time)}`;
+    const hl = this._highlightBest(); // RUN HIGHLIGHTS: the run's best moment, so a death reads as a story
+    d.deathStats.textContent = `Deaths ${i.deaths} · ${fmtMeters(i.depthMeters)} · ${fmtTime(i.time)}${hl ? ` · ${hl}` : ''}`;
     d.deathContinue.querySelector('.btn-label').textContent = i.canRespawn ? 'Continue' : 'Begin again';
     d.deathContinueSub.textContent = i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty';
     if (i.prompt) setRichText(d.deathPrompt, i.prompt);
@@ -2353,6 +2354,80 @@ export class UI3D {
     if (i.names != null) d.vNote.textContent = `${d.vNote.textContent ? `${d.vNote.textContent} ` : ''}Names found ${i.names} of 5.`;
     this._fillVictorySplits();
     this._fillVictoryChapter();
+    this._fillVictoryHighlights(i);
+  }
+
+  /** RUN HIGHLIGHTS: the death card's one line ('' without a highlights module or a highlight). */
+  _highlightBest() {
+    const h = (this.game || {}).highlights;
+    try {
+      return h && typeof h.best === 'function' ? h.best() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** RUN HIGHLIGHTS: every line of the run (the victory block) and the share line ({lines, share}). */
+  _highlightsOf(i) {
+    const g = this.game || {};
+    const h = g.highlights;
+    if (!h || typeof h.all !== 'function') return { lines: [], share: '' };
+    try {
+      const share = h.shareLine({ chapter: g.chapter === 2 ? 2 : 1, label: i.label, time: i.time, deaths: i.falls != null ? i.falls : i.deaths, splits: this._runSplits });
+      return { lines: h.all(), share };
+    } catch {
+      return { lines: [], share: '' };
+    }
+  }
+
+  /** RUN HIGHLIGHTS on the DOM victory card: a list under the note and a desktop "Copy result" button (hidden in XR). Built once, lazily. */
+  _fillVictoryHighlights(i) {
+    const d = this.dom;
+    if (!d || !d.vNote || !d.vNote.parentNode) return;
+    if (!d.vHl) {
+      const wrap = make('div', 'v-hl-wrap');
+      wrap.style.cssText = 'width:100%;margin-top:.9em;text-align:left';
+      wrap.append(make('h3', 'group-title', 'Highlights'));
+      const ul = make('ul', 'v-hl');
+      ul.style.cssText = 'margin:.3em 0;padding-left:1.2em;color:var(--ink-2)';
+      const share = make('p', 'v-share');
+      share.style.cssText = 'margin:.4em 0;font-size:.82em;color:var(--ink-3);user-select:text;-webkit-user-select:text';
+      const btn = make('button', 'btn btn-ghost v-copy');
+      btn.type = 'button';
+      btn.append(make('span', 'btn-label', 'Copy result'));
+      btn.addEventListener('click', () => this._copyResult());
+      wrap.append(ul, share, btn);
+      d.vNote.parentNode.insertBefore(wrap, d.vNote.nextSibling);
+      Object.assign(d, { vHl: wrap, vHlList: ul, vShare: share, vCopy: btn });
+    }
+    const r = this._highlightsOf(i);
+    this._shareLine = r.share;
+    d.vHlList.textContent = '';
+    for (const ln of r.lines) d.vHlList.appendChild(make('li', null, ln));
+    d.vShare.textContent = r.share;
+    d.vHl.hidden = !r.share;
+    d.vCopy.hidden = !!this._xr || !r.share;
+    d.vCopy.querySelector('.btn-label').textContent = 'Copy result';
+  }
+
+  /** Desktop: the share line to the clipboard (a failure leaves the line on the card to select by hand). */
+  _copyResult() {
+    const text = this._shareLine;
+    const btn = this.dom && this.dom.vCopy;
+    const say = (s) => {
+      if (btn) btn.querySelector('.btn-label').textContent = s;
+    };
+    if (!text || this._xr) return;
+    try {
+      const cb = typeof navigator !== 'undefined' && navigator.clipboard;
+      if (!cb || typeof cb.writeText !== 'function') return say('Select the line to copy');
+      cb.writeText(text).then(
+        () => say('Copied'),
+        () => say('Select the line to copy'),
+      );
+    } catch {
+      say('Select the line to copy');
+    }
   }
 
   /** The end card's purchase line: { label, enabled } or null when there is nothing to sell (owned, or no entitlement module). Loads the store price once. */
@@ -4392,9 +4467,11 @@ export class UI3D {
     ctx.restore();
     const sy = 212 + lines.length * 64 + 8;
     txt(ctx, `Deaths ${i.deaths}  ·  ${fmtMeters(i.depthMeters)}  ·  ${fmtTime(i.time)}`, cx, sy, `500 28px ${F_UI}`, COL.ink3, 'center', 0.06);
+    const hl = this._highlightBest(); // RUN HIGHLIGHTS: one more row on the same canvas (no new draw call)
+    if (hl) txt(ctx, hl, cx, sy + 40, `600 28px ${F_UI}`, COL.amber, 'center', 0.04, CW - 80);
     const bw = 540;
     const bx = (CW - bw) / 2;
-    const by = sy + 40;
+    const by = sy + (hl ? 80 : 40);
     this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), i.canRespawn ? 'Continue' : 'Begin again', i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty', {
       primary: true,
       size: 34,
@@ -4458,16 +4535,24 @@ export class UI3D {
     const g1 = this.game || {};
     const nextCh = g1.chapter !== 2 && typeof g1.isChapterPlayable === 'function' && g1.isChapterPlayable(2);
     const kick = g1.chapter === 2 ? 'CHAPTERS III–V · THE FULL VERSION' : nextCh ? 'CHAPTER II · LAMPHOLD · THE TOWN BELOW' : 'CHAPTERS II–V · COMING SOON';
+    // RUN HIGHLIGHTS: one text row under the cells (same canvas: no new draw call); the rows below move down 32 px.
+    const hls = this._highlightsOf(i).lines.slice(0, 3).join('  ·  ');
+    const dy = hls ? 32 : 0;
+    if (hls) {
+      const hf = `600 ${fitSize(ctx, hls, CW - 64, 30, 28, (px) => `600 ${px}px ${F_UI}`, 0.02)}px ${F_UI}`;
+      txt(ctx, ellipsize(ctx, hls, CW - 64, hf), cx, 496, hf, COL.amber, 'center', 0.02);
+    }
     if (splits.length) {
-      this._paintVictorySplits(ctx, splits, 478);
-      txt(ctx, kick, cx, 640, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
-      this._victoryButtons(ctx, 676, 76, nextCh);
+      this._paintVictorySplits(ctx, splits, 478 + dy);
+      txt(ctx, kick, cx, 640 + dy - (hls ? 6 : 0), `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+      this._victoryButtons(ctx, 676 + dy - (hls ? 18 : 0), hls ? 68 : 76, nextCh);
       return;
     }
     // The hook.
-    const ty = 484;
-    rr(ctx, 24, ty, CW - 48, 168, 8);
-    const tg = ctx.createLinearGradient(0, ty, 0, ty + 168);
+    const ty = 484 + dy;
+    const th = hls ? 150 : 168;
+    rr(ctx, 24, ty, CW - 48, th, 8);
+    const tg = ctx.createLinearGradient(0, ty, 0, ty + th);
     tg.addColorStop(0, 'rgba(255,240,210,0.07)');
     tg.addColorStop(1, 'rgba(255,240,210,0.015)');
     ctx.fillStyle = tg;
@@ -4475,12 +4560,13 @@ export class UI3D {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(224,160,80,0.45)';
     ctx.stroke();
-    txt(ctx, kick, cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+    const hk = hls ? 0.9 : 1; // (the hook squeezed under a highlights row)
+    txt(ctx, kick, cx, ty + Math.round(46 * hk), `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
     const names = g1.chapter === 2 ? 'III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME' : 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
     const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
-    txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
-    txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
-    this._victoryButtons(ctx, 670, 82, nextCh);
+    txt(ctx, names, cx, ty + Math.round(98 * hk), `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
+    txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + Math.round(142 * hk), `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
+    this._victoryButtons(ctx, 670 + dy - (hls ? 14 : 0), hls ? 76 : 82, nextCh);
   }
 
   /** The end card's buttons: [Chapter II] (Chapter I, when Lamphold is playable), Descend again, Menu. */
