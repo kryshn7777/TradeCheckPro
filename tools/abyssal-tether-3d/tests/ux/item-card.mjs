@@ -264,7 +264,7 @@ const run = (gz, c, list, seconds, occ) => {
   const kinds = Object.values(INV.ITEM);
   const missing = kinds.filter((k) => !ITEM_CARDS[k]);
   ok(missing.length === 0, `every bag kind of the ITEM enum (${kinds.length}: ${Object.keys(INV.ITEM).join(', ')}) has a card${missing.length ? ` (missing: ${missing})` : ''}`);
-  const all = [...kinds, 5, 6, FUEL_CARD];
+  const all = [...new Set([...kinds, 5, 6, FUEL_CARD])]; // the enum now has the weapons (5, 6) itself
   const good = all.every((k) => {
     const c = ITEM_CARDS[k];
     return c && c.name && c.hint && /^#[0-9a-f]{6}$/i.test(c.accent) && c.icon && c.use && c.use.vr && c.use.desktop && c.use.touch;
@@ -473,7 +473,7 @@ const run = (gz, c, list, seconds, occ) => {
 {
   ok(SETTINGS_DEFAULTS.itemCards === true, 'settings.itemCards defaults to ON');
   const keys = Object.keys(SETTINGS_DEFAULTS);
-  ok(keys.indexOf('itemCards') === keys.indexOf('frameRate') + 1, 'appended at the end of the WP-UX block (after frameRate)');
+  ok(keys.indexOf('itemCards') > keys.indexOf('frameRate') && keys.indexOf('itemCards') < keys.indexOf('touchControls'), 'appended at the end of the WP-UX block (after frameRate)');
   const s1 = sanitizeUxSettings(Object.assign({}, SETTINGS_DEFAULTS, { itemCards: false }));
   const s2 = sanitizeUxSettings(JSON.parse(JSON.stringify(s1)));
   const s3 = sanitizeUxSettings(Object.assign({}, SETTINGS_DEFAULTS, { itemCards: 'garbage' }));

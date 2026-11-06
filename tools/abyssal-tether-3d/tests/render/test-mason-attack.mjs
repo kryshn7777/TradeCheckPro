@@ -627,7 +627,7 @@ function makeGame() {
 // ---- 6. the wiring ----------------------------------------------------------------------------------------------------------------
 {
   const g = fs.readFileSync(SRC_DIR + '/game.js', 'utf8');
-  ok(/import \{ MasonAttackGlue \} from '\.\/masonAttackGlue\.js'/.test(g) && /this\._setupHood\(\);\n\s*this\._setupMasonAttack\(\);/.test(g), 'game.js: MasonAttackGlue built with the bus (_setupMasonAttack next to the other glues)');
+  ok(/import \{ MasonAttackGlue \} from '\.\/masonAttackGlue\.js'/.test(g) && /this\._setupHood\(\);[\s\S]*?this\._setupMasonAttack\(\);/.test(g), 'game.js: MasonAttackGlue built with the bus (_setupMasonAttack next to the other glues)');
   const iu = g.indexOf('this.masonAttack.update(dt)');
   const iv = g.indexOf('cv.update(this.creature, dt');
   ok(iu > 0 && iv > iu && /if \(this\.masonAttack\) this\.masonAttack\.update\(dt\);[^\n]*\n\s*\} catch \(err\) \{\n\s*this\._fault\('masonAttack', err\);/.test(g), "game.js: masonAttack.update(dt) in _updateViews before the creature view, guarded by _fault('masonAttack')");

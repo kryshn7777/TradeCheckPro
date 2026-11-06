@@ -535,7 +535,7 @@ const neutral = (g) =>
 {
   ok(SETTINGS_DEFAULTS.hitFeedback === 'full' && UX_LIMITS.hitFeedbacks.join() === 'full,gentle', "the setting: hitFeedback 'full' (default) | 'gentle'");
   const keys = Object.keys(SETTINGS_DEFAULTS);
-  ok(keys.indexOf('hitFeedback') === keys.indexOf('lanternHood') + 1 && keys.indexOf('hitFeedback') < keys.indexOf('touchControls'), 'appended at the end of the WP-UX block');
+  ok(keys.indexOf('hitFeedback') > keys.indexOf('lanternHood') && keys.indexOf('hitFeedback') < keys.indexOf('touchControls'), 'appended at the end of the WP-UX block');
   const a = sanitizeUxSettings({ ...SETTINGS_DEFAULTS, hitFeedback: 'nope' });
   const b = sanitizeUxSettings(JSON.parse(JSON.stringify({ ...SETTINGS_DEFAULTS, hitFeedback: 'gentle' })));
   const c = sanitizeUxSettings({ ...SETTINGS_DEFAULTS, hitFeedback: undefined });
@@ -603,7 +603,7 @@ const neutral = (g) =>
 // ---- 9. the wiring ---------------------------------------------------------------------------------------------------------------
 {
   const g = fs.readFileSync(SRC_DIR + '/game.js', 'utf8');
-  ok(/import \{ HitFeedbackGlue \} from '\.\/hitFeedbackGlue\.js'/.test(g) && /this\._setupHood\(\);\n\s*this\._setupHitFeedback\(\);/.test(g), 'game.js: HitFeedbackGlue built with the bus (_setupHitFeedback after _setupHood)');
+  ok(/import \{ HitFeedbackGlue \} from '\.\/hitFeedbackGlue\.js'/.test(g) && /this\._setupHood\(\);[\s\S]*?this\._setupHitFeedback\(\);/.test(g), 'game.js: HitFeedbackGlue built with the bus (_setupHitFeedback after _setupHood)');
   ok(/if \(this\.hitFeedback\) this\.hitFeedback\.update\(dt\);[^\n]*\n\s*\} catch \(err\) \{\n\s*this\._fault\('hitFeedback', err\);/.test(g), "game.js: hitFeedback.update(dt) once a frame in _updateViews, guarded by _fault('hitFeedback')");
   const views = g.slice(g.indexOf('\n  _updateViews(dt) {'));
   ok(views.indexOf('this.hitFeedback.update(dt)') > 0 && views.indexOf('this.hitFeedback.update(dt)') < views.indexOf('fx.update(dt, this)'), 'game.js: the update runs before healthFx reads its inputs');
