@@ -8,6 +8,7 @@
  *   node tools/abyssal-tether-3d/release/render-opening.mjs --video [--from 0] [--to 4] [--fps 24]   frames -> H.264 MP4 (+ the score)
  *   node tools/abyssal-tether-3d/release/render-opening.mjs --video --full                     the whole film (hours in software GL)
  *   options: --w 1280 --h 720 --out tools/abyssal-tether-3d/release/out --no-audio --root public/abyssal-tether-3d
+ *            --dir opening-stills (the stills' folder) --sheet opening-contact.png --name file.mp4
  *
  * The soundtrack is rendered OFFLINE in the page with the game's own audio code (audio/openingSfx.js OpeningScore on an
  * OfflineAudioContext: every cue and narration line at its film time), written as a WAV and muxed by ffmpeg (AAC 192 kb/s).
@@ -17,7 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launch, newPage, sleep, until } from './lib/browser.mjs';
 import { createStaticServer } from './lib/server.mjs';
 
@@ -38,6 +39,11 @@ const STILLS = has('--stills');
 const VIDEO = has('--video');
 const FULL = has('--full');
 const AUDIO = !has('--no-audio');
+const STILL_DIR = arg('--dir', 'opening-stills'); // the stills' folder under --out (e.g. opening-stills-hd)
+const SHEET = arg('--sheet', 'opening-contact.png');
+const NAME = arg('--name', null); // the MP4's file name (default: the-lantern-opening[-from-to s].mp4)
+// the film's own shot table (pure): a frame after a cut warms the level's lazy dressing first (no pop-in on the first frame of a shot)
+const FILM = await import(pathToFileURL(path.join(ROOT, 'src/sim/openingCinematic.js')).href);
 const XR_NOTE = 'desktop camera (a headset sees the static vantages: see OPENING_CINEMATIC.md section 5)';
 if (!STILLS && !VIDEO) {
   console.log('usage: render-opening.mjs --stills [--times a,b,..] | --video [--from s] [--to s] [--fps n] [--full]');
@@ -115,7 +121,7 @@ function ffmpeg(args) {
 
 try {
   if (STILLS) {
-    const dir = path.join(OUT, 'opening-stills');
+    const dir = path.join(OUT, STILL_DIR);
     fs.mkdirSync(dir, { recursive: true });
     const custom = arg('--times', null);
     const list = custom ? custom.split(',').map((x) => [+x, `t ${x}`]) : SHOT_TIMES;
@@ -141,7 +147,7 @@ try {
     });
     const n = files.length;
     const layout = files.map((_, i) => `${(i % cols) * tw}_${Math.floor(i / cols) * th}`).join('|');
-    const sheet = path.join(OUT, 'opening-contact.png');
+    const sheet = path.join(OUT, SHEET);
     ffmpeg([...inputs, '-filter_complex', `${chains.join(';')};${files.map((_, i) => `[v${i}]`).join('')}xstack=inputs=${n}:layout=${layout}:fill=black`, '-frames:v', '1', sheet]);
     console.log(`contact sheet: ${path.relative(REPO, sheet)}`);
   }
@@ -156,11 +162,13 @@ try {
     const dt = 1 / FPS;
     const v0 = Date.now();
     for (let k = 0; k < n; k++) {
-      const png = await frameAt(from + k * dt, dt, k === 0 ? 30 : 0);
+      const t = from + k * dt;
+      const cut = k > 0 && FILM.shotAt(t) !== FILM.shotAt(t - dt);
+      const png = await frameAt(t, dt, k === 0 ? 30 : cut ? 8 : 0);
       fs.writeFileSync(path.join(dir, `f${String(k).padStart(5, '0')}.png`), png);
       if (k % FPS === 0 || k === n - 1) console.log(`  frame ${k + 1}/${n}  t ${(from + k * dt).toFixed(2)} s  (${((Date.now() - v0) / 1000 / (k + 1)).toFixed(1)} s a frame)`);
     }
-    const mp4 = path.join(OUT, FULL ? 'the-lantern-opening.mp4' : `the-lantern-opening-${from}-${to}s.mp4`);
+    const mp4 = path.join(OUT, NAME || (FULL ? 'the-lantern-opening.mp4' : `the-lantern-opening-${from}-${to}s.mp4`));
     let wav = null;
     if (AUDIO) {
       // the soundtrack: the game's own score code on an OfflineAudioContext, every cue and line at its film time

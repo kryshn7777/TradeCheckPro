@@ -459,6 +459,35 @@ export class OpeningScore {
     if (this._wind) this._wind.gain.setTargetAtTime(0.085, t, 3);
   }
 
+  _cue_girder(t) {
+    // the lantern nears the great girder (it passes it 0.55 s after the cue): the iron sings as the light and the chain slide past it
+    // (a slow attack peaking on the pass, inharmonic, cold), and the air between them breathes once (a band of noise, up and down)
+    const pass = t + 0.55;
+    for (const [f, a, d] of [
+      [92.5, 0.05, 1.6],
+      [255.3, 0.03, 1.1],
+      [499.5, 0.016, 0.7],
+      [811.0, 0.008, 0.45],
+    ]) {
+      const o = this._osc('sine', f, t, pass + 4.2);
+      const g = this._gain(0);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(a, pass + 0.15);
+      g.gain.setTargetAtTime(0, pass + 0.15, d);
+      o.connect(g);
+      this._out(g, this.fx, 0.55, -0.25);
+    }
+    const n = this._noise(this.pink, t, pass + 1.2, 1, 1.3);
+    const bp = this._filter('bandpass', 420, 0.9);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.035, pass);
+    g.gain.linearRampToValueAtTime(0, pass + 1.1);
+    n.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.3, -0.15);
+  }
+
   _cue_motif2(t) {
     // THE WINDOW: the motif full (an octave under it) and a cold high cluster that opens slowly
     this._motif(t + 0.4, 0.075, 1.35, true);

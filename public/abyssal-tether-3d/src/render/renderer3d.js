@@ -825,7 +825,10 @@ export class Renderer3D {
     this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
     if (game && typeof game.cineDark === 'number') this._dark = Math.max(wantDark, game.cineDark); // THE LANTERN's opening film holds the world dark itself (already eased)
     const dark = this._dark * (1 - 0.92 * nvK);
-    this.lighting.setDarkness(dark * this.look.bakedDark); // the look decides how much of the depth darkness the baked light takes (lookPresets.js)
+    // THE LANTERN's opening film (cineDark) takes the baked light and the fill floor down with it, so its lantern is the only light;
+    // at the film's last frame cineDark is 0 and this is the game's own look again (no pop at the hand-off)
+    const cine = game && typeof game.cineDark === 'number' ? THREE.MathUtils.clamp(game.cineDark, 0, 1) : 0;
+    this.lighting.setDarkness(dark * (this.look.bakedDark + (1 - this.look.bakedDark) * cine)); // the look decides how much of the depth darkness the baked light takes (lookPresets.js)
     this.lighting.setNightVision(nvK);
     if (dark > 0.001) {
       tgt.ambient *= 1 - 0.95 * dark; // hemisphere + key + everything that reads the theme's ambient
@@ -882,7 +885,7 @@ export class Renderer3D {
     this.hemi.color.setRGB(grey, grey, grey).lerp(_tmpC, 0.7);
     this.hemi.groundColor.copy(th.fog).multiplyScalar(0.9).lerp(th.accent, 0.06);
     // the look scales the fill, but never below its per-section floor (the dark is a design element, never a void: lookPresets.js floor)
-    const floorK = perSection(this.look.floor, this.depthF) * (LOOK_TIERS[this.lighting.tier] || LOOK_TIERS.quest).floor;
+    const floorK = perSection(this.look.floor, this.depthF) * (LOOK_TIERS[this.lighting.tier] || LOOK_TIERS.quest).floor * (1 - 0.9 * cine);
     this.hemi.intensity = Math.max(floorK, Math.max(0, th.ambient) * AMBIENT_SCALE * this.look.ambient) * this.tune.ambient * (1 - tk * 0.25) * (1 + 2.0 * nvK);
     // Key from above: the theme light, desaturated a little (a pale shaft of the
     // surface's daylight), weaker with the threat.
