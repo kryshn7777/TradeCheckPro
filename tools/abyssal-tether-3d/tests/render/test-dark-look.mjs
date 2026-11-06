@@ -93,7 +93,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
     ok(L.lanternDecay >= 1.6 && L.lanternDecay <= 2 && L.lantern >= 1 && L.lantern <= 2, `${L.name}: the lantern x${L.lantern}, decay ${L.lanternDecay}`);
     ok(L.sat < 0 && L.hazeDesat > 0, `${L.name}: drained colour (sat ${L.sat}), the haze drained (${L.hazeDesat})`);
   }
-  ok(D.floor[0] / D.floor[7] >= 3, `dark: the descent darkens (floor S1 / S8 = ${(D.floor[0] / D.floor[7]).toFixed(1)}x)`);
+  ok(D.floor[0] / D.floor[7] >= 2, `dark: the descent darkens (with the depth darkness of sim/nightVision3d.js on top) (floor S1 / S8 = ${(D.floor[0] / D.floor[7]).toFixed(1)}x)`);
   ok(D.lanternDecay === 2, 'dark: the lantern falls off with the inverse square (a bright pool, a fast dark)');
   ok(C.exposure > D.exposure && C.toe < D.toe && C.floor.every((v, i) => v > D.floor[i]) && C.lift >= D.lift, 'classic is lighter than dark everywhere (exposure, toe, floor, black lift)');
   ok(D.grain <= 0.05 && D.vignette <= 0.4, `dark: fine grain (${D.grain}) and a gentle vignette (${D.vignette})`);
@@ -160,7 +160,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   const L = (v) => v[0] * 0.2126 + v[1] * 0.7152 + v[2] * 0.0722;
   const dim = [0.006, 0.006, 0.006];
   const nb = { black: new THREE.Color(0, 0, 0) };
-  ok(L(M.gradeColor(dim, Object.assign({}, o, nb))) < 0.6 * L(M.gradeColor(dim, Object.assign({}, noToe, nb))), 'the toe presses the unlit shadow toward black (an unlit wall at linear 0.006 loses > 40 %)');
+  ok(L(M.gradeColor(dim, Object.assign({}, o, nb))) < 0.8 * L(M.gradeColor(dim, Object.assign({}, noToe, nb))), 'the toe presses the unlit shadow toward black (an unlit wall at linear 0.006 loses > 20 %)');
   const lit = [0.4, 0.3, 0.2];
   ok(Math.abs(L(M.gradeColor(lit, o)) - L(M.gradeColor(lit, noToe))) < 1e-6, 'the toe leaves the lantern pool alone');
   const black = M.gradeColor([0, 0, 0], o);

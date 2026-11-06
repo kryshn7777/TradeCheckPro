@@ -18,11 +18,11 @@ export const LOOK_PRESETS = Object.freeze({
   dark: Object.freeze({
     name: 'dark',
     toneMapping: 'aces', // ACES filmic: a real toe and shoulder (AgX was tried: flatter, greyer blacks; see the plan)
-    exposure: 0.9,
-    contrast: 0.14, // added to the base 1.1 contrast exponent about mid grey
+    exposure: 1.0,
+    contrast: 0.04, // added to the base 1.1 contrast exponent about mid grey (0.14 halved every deep shadow: the toe does the crushing instead)
     sat: -0.2, // added to the base 0.94 saturation
     depthDesat: 0.4, // extra desaturation at -300 m (0..1)
-    toe: 0.5, // how hard the unlit shadow (linear luminance < 0.04 pre-tone-map) is pressed toward black
+    toe: 0.3, // how hard the unlit shadow (linear luminance < 0.04 pre-tone-map) is pressed toward black
     split: 1, // split-tone strength
     splitLo: Object.freeze([0.9, 0.98, 1.06]), // shadows: neutral-cool (never violet, never green)
     splitHi: Object.freeze([1.05, 1.0, 0.93]), // the lit parts: the warm of the lantern's pool
@@ -33,26 +33,27 @@ export const LOOK_PRESETS = Object.freeze({
     detail: 1, // detail normal (x the tier's)
     crev: 1.15, // crevice grime / moss / water (x the tier's): dirtier joints
     // the carried lantern: candela x, decay (2 = inverse square: a bright pool and a fast dark), and the baked-light response
-    lantern: 1.45,
+    lantern: 1.7,
     lanternDecay: 2.0,
-    lmExposure: 1.25, // baked lightmap exposure (lighting.js LM_TUNE.exposure was 1.5)
-    lmFloor: 0.008, // baked ambient floor (was 0.012)
-    lmLanternGain: 1.1,
-    lmLanternFalloff: 0.55, // was 0.38: the lantern on lightmapped stone falls off with the point light's square law
-    ambient: 0.72, // hemisphere fill (x the section's)
-    key: 0.6, // the cold shaft key from above (x the section's)
+    bakedDark: 0.55, // how much of the depth darkness (sim/nightVision3d.js) reaches the baked light (1 = all of it: S4-S7 went black)
+    lmExposure: 1.5, // baked lightmap exposure (as LM_TUNE: the depth darkness already dims it per section)
+    lmFloor: 0.012, // baked ambient floor (as LM_TUNE)
+    lmLanternGain: 1.15,
+    lmLanternFalloff: 0.42, // was 0.38: a touch steeper, with the point light's square law
+    ambient: 0.9, // hemisphere fill (x the section's)
+    key: 0.75, // the cold shaft key from above (x the section's)
     // the haze: a sickly, drained mid-distance (multiplier on the section fog colour, then pulled toward its own grey)
     haze: Object.freeze([0.96, 1.0, 0.9]),
     hazeDesat: 0.35,
-    hazeGain: 0.85,
+    hazeGain: 0.9,
     // the ambient floor: minimum hemisphere intensity per section (S1 dim but readable .. S8 the lantern is the world)
-    floor: Object.freeze([0.16, 0.14, 0.12, 0.1, 0.08, 0.065, 0.05, 0.04]),
+    floor: Object.freeze([0.26, 0.24, 0.22, 0.2, 0.18, 0.16, 0.13, 0.1]),
   }),
   classic: Object.freeze({
     name: 'classic',
     toneMapping: 'aces',
     exposure: 1.15,
-    contrast: 0.04,
+    contrast: 0,
     sat: -0.08,
     depthDesat: 0.25,
     toe: 0,
@@ -65,8 +66,9 @@ export const LOOK_PRESETS = Object.freeze({
     rim: 0.85,
     detail: 1,
     crev: 1,
-    lantern: 1.25,
+    lantern: 1.8,
     lanternDecay: 1.8,
+    bakedDark: 0.45,
     lmExposure: 1.5,
     lmFloor: 0.012,
     lmLanternGain: 1.05,
@@ -76,7 +78,7 @@ export const LOOK_PRESETS = Object.freeze({
     haze: Object.freeze([1, 1, 1]),
     hazeDesat: 0.15,
     hazeGain: 1,
-    floor: Object.freeze([0.24, 0.22, 0.2, 0.18, 0.16, 0.14, 0.12, 0.1]),
+    floor: Object.freeze([0.32, 0.3, 0.28, 0.26, 0.24, 0.22, 0.19, 0.16]),
   }),
 });
 

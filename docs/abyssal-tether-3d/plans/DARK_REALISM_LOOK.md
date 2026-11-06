@@ -31,17 +31,18 @@ A saved `settings.look: 'anime'` falls back to the default. No new localStorage 
 
 ### Tone mapping and exposure
 
-ACES filmic (three r170, vendored), exposure **0.9** (anime was 1.4, horror 1.0). ACES has a real toe: below a linear input of ~0.0023
+ACES filmic (three r170, vendored), exposure **1.0** (anime was 1.4, horror 1.0). ACES has a real toe: below a linear input of ~0.0023
 (after the exposure) it outputs black, so the dark is made by the curve, not by a filter. AgX (also in r170) was considered and is
 selectable per preset (`toneMapping: 'agx'`): it is flatter and lifts the blacks to a grey, which reads as "not scary" in a dark headset.
 
 ### How black the blacks are
 
-* **The toe** (`toe` 0.5): in the lit grade, below a linear luminance of 0.04 (pre tone map) the colour is pressed toward black
-  (`smoothstep(0, 0.04, L)`, half strength). A wall the lantern does not reach goes black; a wall it grazes keeps its shape.
+* **The toe** (`toe` 0.3): in the lit grade, below a linear luminance of 0.04 (pre tone map) the colour is pressed toward black
+  (`smoothstep(0, 0.04, L)`, 30 % strength; 0.5 was tried and with the ACES toe on top it turned S4-S6 into a black screen, see section 4). A wall the lantern does not reach goes black; a wall it grazes keeps its shape.
 * **The floor** (never a void): two terms.
   * an albedo-proportional fill: the hemisphere light never drops below a per-section floor, `floor` =
-    **0.16 / 0.14 / 0.12 / 0.10 / 0.08 / 0.065 / 0.05 / 0.04** (S1..S8; `low` tier x1.25). It keeps the stone's texture (it multiplies
+    **0.26 / 0.24 / 0.22 / 0.20 / 0.18 / 0.16 / 0.13 / 0.10** (S1..S8; `low` tier x1.25). The depth darkness
+    (`sim/nightVision3d.js`) still takes the theme's own fill down with depth: the floor is what is left when it has. It keeps the stone's texture (it multiplies
     the albedo), so in the deep you can still make out a ledge edge against the void at a few metres;
   * the black point (`uBlack`, `lift` 0.6 x 0.004 linear, in the haze colour): it sits right at the ACES toe, so it does not grey the
     black, it moves the first steps of shadow detail onto the part of the curve that has slope.
@@ -50,28 +51,30 @@ selectable per preset (`toneMapping: 'agx'`): it is flatter and lifts the blacks
 | distance | 1 m | 2 m | 4 m | 7 m | 10 m | 15 m |
 | --- | --- | --- | --- | --- | --- | --- |
 | anime (before, without the bands) | 215 | 149 | 74 | 36 | 21 | 9 |
-| **dark**, full lantern (S1-S2) | 225 | 123 | 31 | 2 | 0 | 0 |
-| **dark**, lantern at 47 % (S6) | 179 | 64 | 6 | 0 | 0 | 0 |
-| **dark**, lantern at 26 % (S8) | 127 | 33 | 1 | 0 | 0 | 0 |
-| classic, full lantern | 223 | 141 | 52 | 18 | 7 | 2 |
+| **dark**, full lantern (S1-S2) | 229 | 144 | 47 | 9 | 2 | 0 |
+| **dark**, lantern at 47 % (S6) | 193 | 84 | 17 | 2 | 0 | 0 |
+| **dark**, lantern at 26 % (S8) | 148 | 49 | 6 | 1 | 0 | 0 |
+| classic, full lantern | 234 | 170 | 73 | 27 | 12 | 3 |
 
-  The lantern is a pool, not a floodlight: bright at arm's length, readable to ~4 m, gone by 7 m. Beyond it the world is the haze,
+  The lantern is a pool, not a floodlight: bright at arm's length, readable to ~4 m near the top (~2-3 m in the deep, where it has
+  faded), gone by 7 m. Beyond it the world is the haze,
   the lamps, the baked light, the anchors' glyphs and the floor above. (The lantern's fade with depth is the existing gameplay table
   `sim/nightVision3d.js` DEPTH_LANTERN; not changed.)
 
 ### The lantern
 
-Warm (`PALETTE.lantern` #ffb46a, ~2000 K flame), candela **x1.45** (9.4 cd at full charge), **inverse-square** falloff (decay 2, was 1.6),
+Warm (`PALETTE.lantern` #ffb46a, ~2000 K flame), candela **x1.7** (11 cd at full charge), **inverse-square** falloff (decay 2, was 1.6),
 range 30 m (shrinks with the charge as before). The real-time lantern shadow (`lanternShadow.js`) is unchanged: with the square law the
 shadow edge reads harder near you and the shadowed side of a ledge is dark, which is the point. On lightmapped stone the lantern's
-extra falloff exponent goes 0.38 -> **0.55** and its gain 1.05 -> **1.1**, so baked and dynamic surfaces fall off alike.
+extra falloff exponent goes 0.38 -> **0.42** and its gain 1.05 -> **1.15**, so baked and dynamic surfaces fall off alike.
 
 ### Shadow colour and the grade
 
 In the lit materials' grade (`materials.js` `GRADE_FRAG`, JS twin `gradeColor`), in this order:
 
 1. saturation **0.74** (0.94 - 0.2), and a further **40 %** desaturation toward -300 m (colour drains with the descent);
-2. contrast exponent about mid grey **1.24** (+0.06 under threat);
+2. contrast exponent about mid grey **1.14** (+0.06 under threat; 1.24 was tried: a power curve halves every deep shadow, the toe
+   crushes more selectively);
 3. the section tint (the accent colour at 10 %);
 4. split tone: the shadows x **(0.90, 0.98, 1.06)** (neutral-cool: a hint of blue, never violet, never the old green), the lit parts x
    **(1.05, 1.00, 0.93)** (the lantern's warm pool);
@@ -81,15 +84,18 @@ In the lit materials' grade (`materials.js` `GRADE_FRAG`, JS twin `gradeColor`),
 
 ### Haze
 
-The section fog colours are kept (art bible), then: x **0.85**, x **(0.96, 1.00, 0.90)** (a little sickly, yellow-green drained), pulled
+The section fog colours are kept (art bible), then: x **0.9**, x **(0.96, 1.00, 0.90)** (a little sickly, yellow-green drained), pulled
 **35 %** toward their own grey (warm fogs still lose their extra 65 % of saturation as before). The haze's grazing rim on verticals is
 **0.55x** (anime 1.7x): a faint scatter edge, not a drawn line. The depth darkness (`sim/nightVision3d.js` DEPTH_DARK, unchanged) still
 dims the fog, the fill and the baked light per section.
 
 ### Ambient, key, baked light
 
-Hemisphere fill **x0.72** (never below the floor above), the cold shaft key from above **x0.6**, lightmap exposure **1.25** (was 1.5),
-lightmap ambient floor **0.008** (was 0.012). By section: S1 dim but readable (the window, the lamps, the key on the cornices); the descent
+Hemisphere fill **x0.9** (never below the floor above), the cold shaft key from above **x0.75**, lightmap exposure **1.5** and ambient
+floor **0.012** (as before: 1.25 / 0.008 were tried and, with the depth darkness on top, left the mid-descent unreadable).
+**`bakedDark` 0.55**: the baked light takes 55 % of the depth darkness (`sim/nightVision3d.js` DEPTH_DARK, unchanged); the fog, the fill
+and the lamps take all of it. With all of it, the baked exposure fell to 0.39x at S6 and S4-S7 were a black screen (the cel bands had
+lifted that dim light into a visible band; a realistic curve does not). By section: S1 dim but readable (the window, the lamps, the key on the cornices); the descent
 darkens with the depth table; S7-S8 the lantern is the world, the lamps and the Still Lamp are islands.
 
 ### Reflections, wetness, specular, AO
@@ -103,7 +109,7 @@ look had cut them to 30 % / 35 %): the joints are dirtier, the stone reads by it
 
 | | low | quest | high |
 | --- | --- | --- | --- |
-| toe | 0.375 (x0.75: no lantern shadow there, keep the shapes) | 0.5 | 0.5 |
+| toe | 0.225 (x0.75: no lantern shadow there, keep the shapes) | 0.3 | 0.3 |
 | ambient floor | x1.25 | x1 | x1 |
 | grain (desktop) | 0 | 0 | 0.035 |
 | vignette (desktop) | 0 | 0.3 | 0.3 |

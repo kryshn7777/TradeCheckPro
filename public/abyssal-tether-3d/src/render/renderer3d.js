@@ -821,7 +821,7 @@ export class Renderer3D {
     const wantDark = foldDarkness(num(game && game.diff && game.diff.darkness, 0), inRun ? depthDarknessAt(this.depthF) * this.deepDark : 0);
     this._dark += (wantDark - this._dark) * (this._themeInit ? 1 - Math.exp(-1.5 * d) : 1);
     const dark = this._dark * (1 - 0.92 * nvK);
-    this.lighting.setDarkness(dark);
+    this.lighting.setDarkness(dark * this.look.bakedDark); // the look decides how much of the depth darkness the baked light takes (lookPresets.js)
     this.lighting.setNightVision(nvK);
     if (dark > 0.001) {
       tgt.ambient *= 1 - 0.95 * dark; // hemisphere + key + everything that reads the theme's ambient
