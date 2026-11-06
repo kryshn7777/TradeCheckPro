@@ -8,7 +8,7 @@
 //     it does NOT tear (the old weights did: the control run below); the other ushers ignore it; the bounds follow it
 //   - the torch: one shell per sphere following its state, recoloured per stage (pale, warming, GOLD, white-gold, dying), fading when it is
 //     snuffed or gone, a thin line from the ring (given or read off the skeleton) to the centre; reduced effects; the glint of a far ushers
-//   - levels of detail by distance (tier table, hysteresis, the head judged as 1/1.8), ink hulls, stats (<= 150 calls), no allocation, dispose
+//   - levels of detail by distance (tier table, hysteresis, the head judged as 1/1.8), no ink hulls, stats (<= 150 calls), no allocation, dispose
 //   node test-usher-view.mjs
 import fs from 'node:fs';
 import http from 'node:http';
@@ -45,7 +45,6 @@ await MeshoptDecoder.ready;
 const mod = (p) => import(pathToFileURL(path.join(GAME, p)).href);
 const U = await mod('src/render/usherView.js');
 const { UsherView, pickLod, LOD_DIST, STAGE, HEAD_SCALE, POOL_SIZE, POOL_ORDINARY, HEAD_SLOT, STRETCH_MAX, GLINT_FAR } = U;
-const { OUTLINE, setOutlineLook } = await mod('src/render/outline.js');
 
 let pass = 0;
 let fail = 0;
@@ -218,7 +217,6 @@ const { v, renderer } = await make();
   ok(v.info.triangles[0] > 15000 && v.info.triangles[0] <= 32000, `LOD0 is the model: ${v.info.triangles[0]} triangles in 6 draws`);
   ok(v.info.triangles[1] > 4000 && v.info.triangles[1] < 9000, `LOD1 is ~7 k triangles (${v.info.triangles[1]}) in 2 draws`);
   ok(v.info.triangles[2] > 900 && v.info.triangles[2] < 2600, `LOD2 is ~1.8 k triangles (${v.info.triangles[2]}) in 2 draws`);
-  ok(v.info.hull[0] < v.info.triangles[0] && v.info.hull[1] < v.info.triangles[1], `the ink hulls are cheaper than the bodies (${v.info.hull[0]} near, ${v.info.hull[1]} far)`);
   ok(v.members.every((m) => !m.root.visible && m.lod0.every((s) => !s.visible) && !m.body1.visible && !m.body2.visible), 'nothing shows before the first state');
   ok(Math.abs(v.members[HEAD_SLOT].root.scale.x - HEAD_SCALE) < 1e-9 && HEAD_SCALE === 1.8 && v.members[0].root.scale.x === 1, 'the head is the same model at 1.8, the others at 1');
   // LOD1 / LOD2: valid geometry in the same skinning space
@@ -617,7 +615,7 @@ const { v, renderer } = await make();
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// 7. Levels of detail, glints, ink, stats
+// 7. Levels of detail, glints, stats
 // ---------------------------------------------------------------------------------------------------------------------
 {
   const at = (z) => st({ id: 'f', x: 0, z });
@@ -681,32 +679,21 @@ const { v, renderer } = await make();
   ok(hq === 0 && lodShown(v, 'g').lod === 1, 'the head keeps the full model farther out (19 m: head LOD0, ordinary LOD1)');
   frames(v, [], 3);
 
-  // the ink hulls follow the look
-  setOutlineLook(true, 0.0026);
+  // no ink hulls any more (the cel look and its outlines are gone): six draws near, two mid, two far
   frames(v, [at(4)], 3, 0.05, cam);
-  let mm = slotOf(v, 'f');
-  ok(mm.hullNear.visible && !mm.hullFar.visible && v.stats.hulls === 1 && v.stats.drawCalls === 7, 'ink on, near: one hull from the real surface (7 draws)');
-  ok(v.stats.triangles === v.info.triangles[0] + v.info.hull[0], 'and its triangles are counted');
+  const mm = slotOf(v, 'f');
+  ok(v.stats.drawCalls === 6 && v.stats.triangles === v.info.triangles[0] && !('hullNear' in mm) && !('hulls' in v.stats), 'near: the model alone in 6 draws, no outline hull');
   frames(v, [at(20)], 3, 0.05, cam);
-  ok(!mm.hullNear.visible && mm.hullFar.visible && v.stats.drawCalls === 3, 'mid: the cheap hull (3 draws)');
-  frames(v, [at(50)], 3, 0.05, cam);
-  ok(!mm.hullNear.visible && !mm.hullFar.visible && v.stats.drawCalls === 2, 'far: no hull');
-  frames(v, [at(4)], 3, 0.05, cam);
-  setOutlineLook(false);
-  frames(v, [at(4)], 1, 0.05, cam);
-  ok(!mm.hullNear.visible && v.stats.drawCalls === 6, 'ink off: the hulls go');
-  ok(mm.hullNear.parent === mm.root && mm.hullNear.skeleton === mm.skeleton, 'a hull is a sibling bound to the same skeleton');
+  ok(v.stats.drawCalls === 2, 'mid: the cheap body and the glow (2 draws)');
   frames(v, [], 3);
 
-  // the worst case: six ushers, all near, the ink on, six spheres
-  setOutlineLook(true, 0.0026);
+  // the worst case: six ushers, all near, six spheres
   const worst = [];
   for (let i = 0; i < 5; i++) worst.push(st({ id: 'w' + i, x: i - 2, z: 3, sphere: { x: i, y: 1.5, z: 9, r: 3, stage: 'coil' } }));
   worst.push(st({ id: 'WH', head: true, x: 0, z: 9, stretch: 4, sphere: { x: 0, y: 3, z: 20, r: 4.4, stage: 'listen' } }));
   frames(v, worst, 10, 0.05, cam);
   ok(v.stats.shown === 6 && v.stats.drawCalls <= 150, `the worst case is ${v.stats.drawCalls} draw calls (<= 150), ${v.stats.triangles} triangles`);
-  ok(v.stats.drawCalls === 6 * 7 + 6 + 1 && v.stats.sphereShown, 'six ushers in 7 draws each, six shells, one line');
-  setOutlineLook(false);
+  ok(v.stats.drawCalls === 6 * 6 + 6 + 1 && v.stats.sphereShown, 'six ushers in 6 draws each, six shells, one line');
   frames(v, [], 60, 0.05);
 }
 

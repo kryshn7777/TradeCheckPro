@@ -16,7 +16,6 @@
  * view's heartbeat and listening (uEmber.rgb = colour x level, kept well under the red eyes; 0 with reducedEffects).
  */
 import * as THREE from 'three';
-import { injectToon } from '../materials.js';
 
 export function makeMasonUniforms() {
   return {
@@ -26,7 +25,7 @@ export function makeMasonUniforms() {
     uNear: { value: new THREE.Vector2(0.55, 1.3) }, // dissolve starts at x metres, fully solid beyond y
     uTint: { value: new THREE.Color(1, 1, 1) },
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
-    uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze (flesh seams only, halved)
+    uRim: { value: new THREE.Color(0, 0, 0) }, // grazing rim: off for the Mason (no cool sheen: the lantern alone shapes it); the skitterlings set their own
     uStone: { value: new THREE.Vector4(0.95, 0.7, 0.86, 0.3) }, // stone (the re-baked atlas is already lit-stone value; was 1.8 / 0.35 on the black v2 bake): albedo lift, cavity floor (x AO), roughness floor, direct specular kept
     uEmber: { value: new THREE.Color(0, 0, 0) }, // seam ember radiance (masonRigView sets it per frame)
     uAoLo: { value: 0.15 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
@@ -148,7 +147,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 }
 #endif`,
       );
-    injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
   };
   mat.customProgramCacheKey = () => (matte ? 'mason-rig-v5' : 'mason-rig-v3') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

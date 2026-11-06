@@ -13,7 +13,7 @@
  * adds aPose = (rear 0..1: the front legs raised and pawing, antennae up; lunge 0..1: the legs flung out; glint 0..1: the faint red sheen
  * on the head, never eyes (the Mason's two red eyes stay its own); agitation 0..1: a shiver).
  * LOOK: the carried lantern only (the shared LOOK uniforms the lighting drives), a lacquered red with a hard glint, the wing-case seam, a lighter
- * pronotum, darker legs; the level's fog. No textures, no outlines, no toon bands (the realistic shading pass: never injectToon here).
+ * pronotum, darker legs; the level's fog. No textures, no outlines, no banded shading (the realistic dark look: plain lit PBR only).
  */
 import * as THREE from 'three';
 import { LOOK } from './materials.js';

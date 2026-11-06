@@ -60,7 +60,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../sim/config3d.js';
 import { GEAR_TUNING, GEAR_URL, HandGear, loadGearGLTF, readPoses } from './handsGear.js';
 import { getGlassMaterial, patchGearSurface } from './gearSurface.js';
-import { injectToon } from './materials.js';
 
 const HANDS = ['left', 'right'];
 
@@ -316,7 +315,6 @@ function makeLauncherMaterial() {
         '#include <emissivemap_fragment>',
         '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor.rgb * (vGlow.x * uGlowA + vGlow.y * uGlowB + uSelf);',
       );
-    injectToon(shader);
   };
   mat.customProgramCacheKey = () => 'at3d-launcher-glow';
   mat.userData.glow = uniforms;
@@ -869,7 +867,6 @@ export class HandsView {
             '#include <lights_fragment_end>',
             '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uGearLight;\n\treflectedLight.directSpecular *= uGearLight;',
           );
-        injectToon(shader);
       };
       m.customProgramCacheKey = () => 'at3d-gear-light';
       // fingerprints / scratches / dust / grain, cloth sheen, skin response (gearSurface.js; not on the brass lantern)
