@@ -48,7 +48,7 @@ GLYPHS = {
     'N': (64, [[(0, 100), (0, 0), (64, 100), (64, 0)]]),
     'R': (62, [[(0, 100), (0, 0), (40, 0), (58, 14), (58, 36), (40, 50), (0, 50)], [(34, 50), (62, 100)]]),
 }
-STROKE = 15.0  # stroke width in glyph units
+STROKE = 17.0  # stroke width in glyph units (heavier than the old 15: the stacked LANTERN reads at icon-card sizes)
 TRACK = 24.0  # space between letters
 WORD_GAP = 80.0
 
@@ -195,8 +195,8 @@ def darken_band(img, y0, y1, amount=0.55):
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), 'RGB')
 
 
-def compose(bg, cap_px, center, stacked, tether=True, tether_x=None):
-    """Draws the title (and the tether line) onto an RGB background. center = (cx, cy) in pixels."""
+def compose(bg, cap_px, center, stacked, tether=False, tether_x=None):
+    """Draws the title onto an RGB background. center = (cx, cy) in pixels. tether=True adds the old ABYSSAL TETHER ring and line (off: not on brand for THE LANTERN)."""
     W, H = bg.size
     m = lockup(cap_px, stacked)
     lw, lh = m.size
@@ -302,6 +302,10 @@ def main():
     out, box = compose(bg, cap_px=250, center=(1280, 660), stacked=True, tether_x=1280)
     out.save(os.path.join(args.out, 'cover-landscape-2560x1440.png'), optimize=True)
     print('landscape', box)
+    # the landing page's cover (store/site/index.html; build-release.mjs copies it next to the page)
+    site = os.path.join(os.path.dirname(os.path.abspath(args.out)), 'site')  # store/site when --out is store/art
+    if os.path.isdir(site):
+        out.resize((1600, 900), Image.LANCZOS).save(os.path.join(site, 'hero-1600x900.jpg'), 'JPEG', quality=84, optimize=True, progressive=True)
 
     # square 1440 x 1440
     bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-square.png'), 1440, 1440))

@@ -174,6 +174,10 @@ for (const pg of pages) {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.writeFileSync(to, html);
 }
+// the landing page's cover image (make-art.py writes it from the landscape cover)
+const siteHero = path.join(STORE_DIR, 'site', 'hero-1600x900.jpg');
+if (fs.existsSync(siteHero)) fs.copyFileSync(siteHero, path.join(WEB, 'hero-1600x900.jpg'));
+else warn('store/site/hero-1600x900.jpg is missing: run make-art.py (the landing page shows a broken cover image)');
 if (unfilled.size) warn(`owner placeholders still in the site pages: ${[...unfilled].join(', ')} (edit tools/abyssal-tether-3d/release/release.config.json "owner")`);
 
 // 6. headers --------------------------------------------------------------------------------------------------------
