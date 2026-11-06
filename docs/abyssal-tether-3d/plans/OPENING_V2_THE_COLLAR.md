@@ -83,13 +83,14 @@ person on the channel who is not surprised.
 
 Geometry. The S1 chimney (x, z in -11..11) from y -6 to 60; the Threshold ledge (x -11..3, z 4..11, top y 0); the spawn (-4, 0, 8.5)
 (eye 2.06), yaw 0 (looking -Z). New, in the timeline (`COLLAR` in `sim/openingCinematic.js`, the single source of the choreography):
-the deck at **y 62**, the iris centre **(0, 62, 0)** (radius 11.6), the **cradle line x -4, z 8.0** (it lands 0.5 m in front of the spawn,
-2.6 m clear of the great diagonal girder at y 26 and of the arch and statues), four drone pads on the south deck
-(-9, 62, 15) (-5.5, 62, 16.2) (-2.5, 62, 16.2) (1, 62, 15), the console at (-1.2, 62, 13.6) facing north. Anchors: `A` world, `C` the
+**mirrored from the merged kit's `FACILITY`** (render/facilityKit.js; the test checks they agree): the closed iris' top at **y 60.3**
+(radius 16), the deck at **60.45**, the gantry at 69.45, the four pads at the kit's PAD_R 21.6, the console (ours: the empty chair) at
+(-1.2, 60.45, 18.6); the **cradle line x -4, z 8.0** (the kit's column is z 8.5: 0.5 m north so the +Z drones clear the Threshold arch's
+face at z 9.9; it lands 0.5 m in front of the spawn, 2.8 m clear of the great diagonal girder at y 26). Anchors: `A` world, `C` the
 cradle's floor point, `L` the hero lantern (it hangs on the cradle's north rail hook, 1.45 m up, 0.62 m forward), `HO` the hand-off eye.
 
-**The cradle's height** (its floor; one monotone function): rests at 62.0 to 17.5 · lifted to 63.0 by 20.0 (the iris opens under it) ·
-descends from 24.5 at **0.9 m/s** (eased in over 1.5 s) to 56.0 at 33.0 · **cut** to 30.5, the same 0.9 m/s past the window to 22.4 at
+**The cradle's height** (its floor; one monotone function): rests at 60.42 (on the iris) to 17.5 · lifted 1 m by 20.0 (the iris opens under it) ·
+descends from 24.5 at **0.9 m/s** (eased in over 1.5 s) to 54.4 at 33.0 · **cut** to 30.5, the same 0.9 m/s past the window to 22.4 at
 42.0 · **cut** to 7.32, 0.9 m/s then eased to rest on the ledge at **51.0** (floor 0.12: the plate sits on the stone). The cuts are on
 cues on the desktop and inside a black dip in a headset (§4), so the descent reads continuous and never exceeds 1 m/s anywhere.
 
@@ -97,7 +98,7 @@ cues on the desktop and inside a black dip in a headset (§4), so the descent re
 |---|---|---|---|---|---|---|
 | 1 | **THE COLLAR** | 0-9 | High over the north-east of the deck, a slow push toward the cradle; A, 40 -> 36 | Fade up 0.4-3.6. The cold station: LED strips, the closed iris, the cradle standing on it with the lantern lit on its rail, four drones on their pads; 3.0 the rotors spin up | `roomTone` (the score's D drone), `stationHum` (the LED hum, the deck's air handling), `droneSpin` | ODESSA 1.6 *"The team's all here, Elias. The Lighters are four hours behind you."* · ODESSA 6.6 *"Your job is small. Go down to Lamp Zero, clear the ring points, and wait."* |
 | 2 | **THE MEASURE** | 9-17 | Medium on the cradle from the north-east, the drones flying in from the south pads toward the lens; C, 42 -> 38 | 8.6 the drones lift off (staggered 0.25 s), fly to the cradle's corners, **clamp** 12.5-13.25; 15.4 a pale **scan line** sweeps the cradle from its top to its floor (2.2 s) | `droneFly` (rotor whine, Doppler and pan from the sim's own drone paths), `clamp` x4, `scan` | TICK 13.5 *"Clamps on. All green."* · VESPER 15.4 *"Hold still. Measuring."* |
-| 3 | **THE HALL** | 17-21 | Behind the console's empty chair, over the screen, out at the cradle; A, 34 | The screen at the frame's lower right: **CRADLE 01 · LINE 62 M · PAYLOAD 1 · RETURN 0**. The chair is empty. 17.5 the drones take the weight, the cradle lifts 1 m | `lift` (the drones' pitch rises under load, the cradle's servo, the line's brake) | TICK 17.4 *"Got you. Head to boots, to the millimetre."* |
+| 3 | **THE HALL** | 17-21 | Behind the console's empty chair, over the screen, out at the cradle; A, 34 | The screen at the frame's lower right: **CRADLE 01 · LINE 62 M · PAYLOAD 1 · RETURN 0**. The chair is empty. 17.5 the drones take the weight, the cradle lifts 1 m | `lift` (the drones' pitch rises under load, the cradle's servo, the line's brake) | TICK 17.8 *"Got you. Head to boots, to the millimetre."* |
 | 4 | **THE IRIS** | 21-33 | High over the south deck looking straight down past the cradle into the opening iris; A position, C target (it follows the cradle down); 46 -> 38 | 20.5 the iris opens (eight leaves, 4 s) on black; 23.0 the drones' down-lights come on (cold LED beams); 24.5 the descent: the cradle, its four beams and the lantern sink into the shaft and become a cluster of stars; the line pays out above it | `iris`, `beamsOn`, `descend` (the descent air, the rotors under load, the line paying out), `motif1` 25.0 (the Lamp motif's first statement, soft) | VESPER 20.8 *"Work order confirmed. Payload one. Return zero."* · ODESSA 26.0 *"Five hundred and fifty-six metres of cut stone. Every probe we lowered went quiet at the bottom."* · ODESSA 32.6 *"So we are lowering a person."* |
 | 5 | **THE WINDOW** | 33-42 | Inside the chimney by the west wall, level with the lantern, a slow lateral dolly as the cradle sinks past the east window; L, 40 -> 38 | **The wonder shot** (the old shot 4, kept): the cradle in silhouette against the Outer Dark, the colossal arch 75 m out, the cold window light and the god rays come up | `motif2` (the motif full, the cold cluster) | MAREN 35.8 *"Seventeen ninety-one. One woman climbed out of this shaft, carrying a flame."* |
 | 6 | **LAMP ZERO** | 42-51.5 | Low on the Threshold floor by the west statue, looking up as the cradle comes down out of the dark; A position, C target; 50 -> 44 | The beams paint the ledge, the arch, the east statue; the landing at 51.0 (the plate settles on the stone, the lantern swings) | `approach` (the rotors' wash off stone, the drone bed returning), `land` (a heavy composite clunk, the cage ringing, grit) | TICK 45.6 *"Five metres. Three. Lamp Zero's right under your boots."* |
@@ -172,9 +173,9 @@ close as before.
 | op-11 | 1.6 | 4.6 | ODESSA | The team's all here, Elias. The Lighters are four hours behind you. | Warm, unhurried, a director opening a day she has opened before |
 | op-12 | 6.6 | 5.0 | ODESSA | Your job is small. Go down to Lamp Zero, clear the ring points, and wait. | Reassuring; *small* is a gift; *wait* lands soft |
 | op-13 | 13.5 | 1.8 | TICK | Clamps on. All green. | Quick, happy with his kit |
-| op-14 | 15.4 | 1.8 | VESPER | Hold still. Measuring. | Flat, even (the Dresser's chalk, word for word) |
-| op-15 | 17.4 | 2.9 | TICK | Got you. Head to boots, to the millimetre. | Pleased, a grin |
-| op-16 | 20.8 | 3.6 | VESPER | Work order confirmed. Payload one. Return zero. | A readout; equal stress on *one* and *zero* |
+| op-14 | 15.4 | 2.2 | VESPER | Hold still. Measuring. | Flat, even (the Dresser's chalk, word for word) |
+| op-15 | 17.8 | 2.6 | TICK | Got you. Head to boots, to the millimetre. | Pleased, a grin |
+| op-16 | 20.8 | 4.3 | VESPER | Work order confirmed. Payload one. Return zero. | A readout; equal stress on *one* and *zero* |
 | op-4 | 26.0 | 6.4 | ODESSA | Five hundred and fifty-six metres of cut stone. Every probe we lowered went quiet at the bottom. | (kept clip) |
 | op-5 | 32.6 | 2.6 | ODESSA | So we are lowering a person. | (kept clip) |
 | op-1 | 35.8 | 6.4 | MAREN | Seventeen ninety-one. One woman climbed out of this shaft, carrying a flame. | (kept clip) |
@@ -226,6 +227,7 @@ Continue that starts in S2 hears only the S2 lines (still true: he is under Lamp
 route (verify.mjs V1 seal checks, the route bots).
 
 Not done (out of scope, noted for later): a visible line falling past the player at the release, a sound for it in the game mix.
+The line is held behind the opening and the slip at the bell by a small director rule: a line may `wait` for other chains (comms3d.js).
 
 ## 8. Code
 

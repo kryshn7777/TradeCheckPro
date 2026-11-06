@@ -95,7 +95,7 @@ stone, two hearts, "it's us", not quite Odessa).
 | `s1-open-2` | S1 Threshold | ODESSA | after `s1-open-1` +0.4 s | 3 | First descent, Elias. History. | glitch: none · skippable |
 | `s1-open-3` | S1 Threshold | TICK | after `s1-open-2` +0.5 s | 3 | Uplink's clean, five bars. I've got your eyes and your heart. | glitch: none · skippable |
 | `s1-open-4` | S1 Threshold | MAREN | after `s1-open-3` +0.5 s | 3 | Nobody's stood there since 1791. Read me every board you pass. | glitch: none · skippable |
-| `s1-open-5` | S1 Threshold | ODESSA | after `s1-open-4` +0.5 s | 3 | The Ember's dimming, Elias. Bring us a kindling. Take your time. | glitch: none · skippable |
+| `s1-open-5` | S1 Threshold | ODESSA | after `s1-open-4` +0.5 s | 3 | Clear the ring points. Then ring the bell for the Lighters. | glitch: none · skippable (v2: the small job; THE FALL lines `s1-fall-*` / `s2-fall-*`: OPENING_V2_THE_COLLAR.md §6.2) |
 | `s1-bell-1` | S1 Threshold | ODESSA | `hint` (hint with "bell") or `bell:ring` | 2 | Mind the bell, Elias. It's louder than last time. | **the slip** |
 | `s1-bell-2` | S1 Threshold | TICK | after `s1-bell-1` +0.35 s | 2 | Last time? |  |
 | `s1-bell-3` | S1 Threshold | ODESSA | after `s1-bell-2` +0.3 s | 2 | The probes, Tomasz. Focus. |  |

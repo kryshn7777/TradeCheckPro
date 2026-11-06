@@ -149,6 +149,11 @@ player to avoid a real recovery ring, a blood writing that names Wren (the mende
 
 ### 2.3 The team truth (never on a wall; the player only ever pieces it together)
 
+> The opening (OPENING_V2_THE_COLLAR.md) now tells the **cover story** in the open: Elias is the Line, a rope rescuer sent ahead of the
+> Lighters to rig Lamp Zero; his fall below it after the bell is the plan (Odessa commands the release; Tick and Maren believe the cover
+> story). The ride he remembers is the memory he wakes with each time (*IF YOU WAKE HERE AND DO NOT REMEMBER THE CLIMB DOWN, THERE WAS
+> NONE*); the kindling is now the Lighters' brief.
+
 1. **The price.** The Still Flame does not give light; it lends it. A flame lifted from it burns above only while one whole person
    stands in its light below, held still and awake: *the Still One*. Every lamp in the shaft was paid for this way (*LAMPS PAID FOR*);
    the statues and the columns are, among other things, the payers. One lamp was never paid for.
