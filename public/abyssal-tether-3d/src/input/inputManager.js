@@ -116,7 +116,9 @@ export function makeIntent() {
     // The bag (WP-BAG): slot 0..3 = quick-use that item (desktop 1-4, VR radial release), use = apply the selected one
     // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
     // hip-bag gesture state (bagGesture.js; null on the desktop).
-    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    // gadget / gadgetCycle (SOLDIER_WEAPONS.md): select the thrown / fired item G uses (desktop 5 6 7 = knocker / grenade / revolver,
+    // T cycles; touch: the bag's KNOCK / GRENADE / REVOLVER buttons; VR: X tapped with the bag ring open cycles, weaponGlue.js)
+    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null, gadget: -1, gadgetCycle: 0 },
     // THE KNOCKER (sim/knocker3d.js): desktop G: pressed / released edges and held (the charge); touch KNOCK: tap = pressed +
     // released. VR throws it with the hand (intent.bag.vr: the bag gesture's draw / throw edges, handVelocity()).
     knocker: { pressed: false, held: false, released: false },
@@ -287,7 +289,7 @@ export class InputManager {
     this._hoodGrip = false; // VR: the right grip squeezed (hysteresis)
     this._l3T = 0; // VR: how long the left stick has been clicked (a short click toggles the hood, a hold is the brake)
     this._hv = new Vector3();
-    this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
+    this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false, gadget: -1, gcycle: 0 };
     this._knock = { down: false, up: false, held: false };
     this._handVel = [makeHandVel(), makeHandVel()]; // VR: each hand's world velocity (the knocker's throw)
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
@@ -454,6 +456,8 @@ export class InputManager {
     IB.use = BE.use;
     IB.cycle = BE.cycle;
     IB.cancel = BE.cancel;
+    IB.gadget = BE.gadget;
+    IB.gadgetCycle = BE.gcycle;
     IB.vr = xr ? this._bagGesture : null;
     const KN = this._knock;
     const IK = I.knocker;
@@ -484,6 +488,8 @@ export class InputManager {
     BE.use = false;
     BE.cycle = 0;
     BE.cancel = false;
+    BE.gadget = -1;
+    BE.gcycle = 0;
     this._knock.down = false;
     this._knock.up = false;
     for (const h of HANDS) {
@@ -910,6 +916,8 @@ export class InputManager {
     else if (name === 'use') B.use = true;
     else if (name === 'cancel') B.cancel = true;
     else if (name === 'cycle') B.cycle += value < 0 ? -1 : 1;
+    else if (name === 'gadget') B.gadget = value | 0; // SOLDIER_WEAPONS.md: the item G uses (4 knocker, 5 grenade, 6 revolver)
+    else if (name === 'gcycle') B.gcycle += value < 0 ? -1 : 1;
   }
 
   /** The knocker key (desktop G down / up, touch KNOCK tap): edges for this frame + the held state. */
@@ -1465,7 +1473,10 @@ export class InputManager {
     S.left = !!(this.settings && this.settings.dominantHand === 'left');
     S.counts = bag && bag.counts ? bag.counts : this._noCounts;
     const kn = this.game ? this.game.knocker : null;
-    S.knocker = !!(kn && kn.drawable); // a knocker may be pulled out of the bag now (the game sets it each frame)
+    // SOLDIER_WEAPONS.md: the pull-up draws the selected gadget (the knocker, a grenade, the revolver: weaponGlue.js sets gadget / drawable)
+    const wp = this.game ? this.game.weapons : null;
+    S.gadget = wp && wp.gadget >= 4 ? wp.gadget : 4;
+    S.knocker = S.gadget === 4 ? !!(kn && kn.drawable) : !!wp.drawable; // a knocker may be pulled out of the bag now (the game sets it each frame)
     const hm = this._m3.elements; // the head matrix of this frame (set for the left stick)
     S.hx = hm[12];
     S.hy = hm[13];

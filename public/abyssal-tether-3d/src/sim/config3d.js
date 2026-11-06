@@ -183,9 +183,9 @@ export const CONFIG = {
   // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
   // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
   bag: {
-    caps: [1, 5, 2, 3, 3], // how many of each the bag holds (index 4: the KNOCKER, a thrown gadget: sim/knocker3d.js)
-    applyTime: [5, 1.5, 0.6, 1, 0], // s a use is channelled (cancelled by damage / death / the cancel input); the knocker is thrown, not applied
-    heal: [1, 0.2, 0.1, 0, 0], // fraction of full health restored when the channel completes
+    caps: [1, 5, 2, 3, 3, 3, 12], // how many of each the bag holds (4: the KNOCKER, sim/knocker3d.js; 5: GRENADE, 6: SIDEARM rounds, sim/weapons3d.js)
+    applyTime: [5, 1.5, 0.6, 1, 0, 0, 0], // s a use is channelled (cancelled by damage / death / the cancel input); the knocker / grenade are thrown, the revolver fired
+    heal: [1, 0.2, 0.1, 0, 0, 0, 0], // fraction of full health restored when the channel completes
     adrenalineTime: 10, // s of the speed boost
     adrenalineMul: 2, // x run / air speed caps, acceleration, reel and pump speed (gravity and fall damage unchanged)
     batteryRestore: 0.5, // lantern charge a battery restores (0..1)
@@ -371,6 +371,7 @@ export const SETTINGS_DEFAULTS = {
   // and the desktop mouse / keys; touch keeps touchRopeMode)
   gripMode: 'hold',
   ropeLatch: false,
+  weapons: true, // SOLDIER_WEAPONS.md: the dead soldiers' grenades and revolver lie in the shaft (sim/weapons3d.js); off = none found (also ?weapons=off)
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -459,6 +460,7 @@ export function sanitizeUxSettings(s) {
   if (L.lanternHoods.indexOf(s.lanternHood) < 0) s.lanternHood = D.lanternHood; // THE HOOD
   if (L.gripModes.indexOf(s.gripMode) < 0) s.gripMode = D.gripMode;
   s.ropeLatch = s.ropeLatch === true;
+  s.weapons = s.weapons !== false && s.weapons !== 'off'; // on unless switched off (SOLDIER_WEAPONS.md)
   sanitizeTouchSettings(s);
   return s;
 }

@@ -75,6 +75,10 @@ export class SkitterGroup {
     this._tuneKey = null;
     this._belowT = -1; // seconds until the slot-2 skitterling enters from below (-1: none pending)
     this._belowRng = hashSeed(this.seed, 99);
+    // SOLDIER_WEAPONS.md: slots killed by a grenade / a round stay out of the group until another section, a respawn or a new run
+    this._dead = new Uint8Array(SKITTER.maxAlive);
+    this.kills = 0;
+    this._evKill = { x: 0, y: 0, z: 0, slot: 0, source: '' };
     if (!this.enabled) return;
     for (let i = 0; i < SKITTER.maxAlive; i++) {
       const c = new Creature3D(level, diff, bus, { seed: hashSeed(this.seed, i), variant: 'skitterling' });
@@ -103,6 +107,7 @@ export class SkitterGroup {
     this._belowT = -1;
     this.pendingDamage = 0;
     this.pendingGrip = 0;
+    this._dead.fill(0);
     for (const c of this.slots) this._off(c);
   }
 
@@ -177,12 +182,13 @@ export class SkitterGroup {
     const sec = lv && lv.sections ? lv.sections[index] : null;
     const prev = this.sectionIndex;
     this.sectionIndex = index;
+    if (index !== prev) this._dead.fill(0); // (another section: the dead are behind you)
     const want = skitterCount(sec, this._tuneKey);
     // the one from below: wherever the section has skitterlings at all, on the harder difficulties, at a random moment
     const below = this.slots.length > SKITTER.dataSlots ? this.slots[SKITTER.dataSlots] : null;
     if (below) {
       if (want > 0 && this._belowOn()) {
-        if (!below.on && this._belowT < 0) {
+        if (!below.on && this._belowT < 0 && !this._dead[SKITTER.dataSlots]) {
           const dl = SKITTER.below.delayBy[this._tuneKey] || SKITTER.below.delay;
           this._belowT = dl[0] + this._belowRand() * (dl[1] - dl[0]);
         }
@@ -194,7 +200,7 @@ export class SkitterGroup {
     for (let i = 0; i < SKITTER.dataSlots && i < this.slots.length; i++) {
       const c = this.slots[i];
       if (i < want) {
-        if (!c.on) this._on(c, i, player, sec, index);
+        if (!c.on && !this._dead[i]) this._on(c, i, player, sec, index);
       } else if (c.on && index < prev) {
         // climbing back above the data: they go with the hunt state of the Mason (a dormant section sends them away)
         this._off(c);
@@ -230,7 +236,46 @@ export class SkitterGroup {
     const index = lv && player ? lv.sectionIndexAt(player.y) : this.sectionIndex;
     for (const c of this.slots) this._off(c);
     this.sectionIndex = -1;
+    this._dead.fill(0);
     this.setSection(index, player);
+  }
+
+  /**
+   * SOLDIER_WEAPONS.md: slot `i` is killed (a grenade, a round): out of the group at once ('skitter:killed' {x,y,z,slot,source}, the
+   * gory splat) and it stays out until another section / a respawn / a new run. Returns true when a live one died.
+   */
+  kill(i, source) {
+    const c = this.slots[i];
+    if (!c || !c.on) return false;
+    const e = this._evKill;
+    e.x = c.x;
+    e.y = c.y;
+    e.z = c.z;
+    e.slot = i;
+    e.source = typeof source === 'string' ? source : 'blast';
+    this._off(c);
+    this._dead[i] = 1;
+    if (i === SKITTER.dataSlots) this._belowT = -1;
+    this.kills++;
+    if (c.bus) c.bus.emit('skitter:killed', e);
+    return true;
+  }
+
+  /** The live slot the ray (unit dir) meets first within `range` (and its distance in `out.t`), -1 none (Creature3D.rayHit volumes). */
+  rayHit(ox, oy, oz, dx, dy, dz, range, out) {
+    let best = -1;
+    let bt = range;
+    for (let i = 0; i < this.slots.length; i++) {
+      const c = this.slots[i];
+      if (!c.on) continue;
+      const t = c.rayHit(ox, oy, oz, dx, dy, dz, bt, 1.6);
+      if (t >= 0 && t <= bt) {
+        bt = t;
+        best = i;
+      }
+    }
+    if (out) out.t = best >= 0 ? bt : -1;
+    return best;
   }
 
   update(dt, player, time) {

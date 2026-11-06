@@ -673,6 +673,13 @@ export class FX {
         cg = g;
         cb = g * 0.92;
       }
+      const tint = opts.tint; // SOLDIER_WEAPONS.md: [r, g, b] over the kind's own colour (the gore of a killed skitterling, a blast's embers)
+      if (tint) {
+        const sh = 0.75 + r() * 0.5;
+        cr = tint[0] * sh;
+        cg = tint[1] * sh;
+        cb = tint[2] * sh;
+      }
       this._spawnPoint(k, x + (r() - 0.5) * spread * 2, y + (r() - 0.5) * spread, z + (r() - 0.5) * spread * 2, vx, vy, vz, life, size, cr, cg, cb);
     }
   }

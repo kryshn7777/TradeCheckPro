@@ -225,6 +225,7 @@ const SETTINGS_SCHEMA = [
   // ASSIST PACK (plans/TUTORIAL_ASSIST.md; vrNote: the one line the VR Assist page shows under its rows)
   { key: 'gripMode', tab: 'assist', type: 'choice', label: 'Grip', desc: 'Hold: keep squeezing to hold on. Toggle: one squeeze grabs, the next lets go (and pulls your hand free of a hand in the wall).', options: [['hold', 'Hold'], ['toggle', 'Toggle']], vrNote: 'Grip toggle: one squeeze grabs, the next lets go.' },
   { key: 'ropeLatch', tab: 'assist', type: 'toggle', label: 'Rope latch', desc: 'Tap to fire a tether and stay attached, tap again to let go: the triggers and the mouse. Touch has its own Rope behaviour.', vrNote: 'Rope latch: tap to fire and stay on, tap again to let go.' },
+  { key: 'weapons', tab: 'rope', type: 'toggle', label: "Soldiers' weapons", desc: 'Grenades and an old revolver lie by the dead soldiers. They hurt the Mason and drive it off for a while. Off: none are found.' },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -266,6 +267,7 @@ const CONTROLS_DESKTOP = [
   [['Wheel', 'B'], 'Bag: select the previous / next item · apply the selected item.'],
   [['G'], 'The knocker: hold to aim (an arc shows; longer is farther), release to throw. Where it lands it knocks the Mason’s own rhythm for 9 s and the Mason goes to answer it. One at a time, rare, 3 at most.'],
   [['X'], 'Stop applying a bag item (taking damage stops it too).'],
+  [['5', '6', '7', 'T'], 'What G uses: 5 the knocker, 6 a grenade, 7 the service revolver (T cycles). A grenade is thrown like the knocker and goes off 2.2 s later: it drives the Mason off and kills skitterlings, and it kills you too within 2 m. The revolver fires a round at the crosshair on a tap: loud, it brings the Mason if you miss.'],
 ];
 
 const CONTROLS_TOUCH = [
@@ -278,6 +280,7 @@ const CONTROLS_TOUCH = [
   [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying. KNOCK throws a knocker: the Mason goes to answer its knocking.'],
   [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],
   [['II'], 'Pause.'],
+  [['GREN', 'GUN'], 'In the bag: GREN lobs a grenade along the view (it goes off 2.2 s later, deadly within 2 m of you too), GUN fires a round of the service revolver. Both drive the Mason off for a while.'],
 ];
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]';

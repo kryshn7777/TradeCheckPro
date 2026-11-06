@@ -171,6 +171,15 @@ export const KNOCKER_RULES = Object.freeze({
   lost: R('[A faint clack, far below]', 'world', 0, 'knocker-lost', 3),
 });
 
+/** THE SOLDIERS' WEAPONS (sim/weapons3d.js, plans/SOLDIER_WEAPONS.md): the fuse, the blast, the Mason hurt, a hunter killed. */
+export const WEAPON_RULES = Object.freeze({
+  fuse: R('[A fuse hissing]', 'world', 1, 'fuse', 2.4, 2.4),
+  blast: R('[A blast]', 'world', 2, 'blast', 0.6),
+  flee: R('[It screams and flees up the shaft]', 'creature', 1, 'frighten', 3, 4),
+  stagger: R('[It recoils, screaming]', 'creature', 1, 'frighten', 2),
+  squish: R('[A wet crunch]', 'creature', 0, 'squish', 1.5),
+});
+
 /** The knocker's caption for a source at (x, z) heard from `head` {x,z,yaw,ok} (null / not ok: no side). Pure. */
 export function knockerCaption(head, x, z) {
   if (!head || head.ok === false || !finite(head.x) || !finite(head.z) || !finite(head.yaw) || !finite(x) || !finite(z)) return KNOCKER_RULES.any;
@@ -434,6 +443,14 @@ export function captionForEvent(type, p, head) {
       return e.idx === 0 ? knockerCaption(head, e.x, e.z) : null; // the start of a bar (the group's cooldown keeps it to one line)
     case 'knocker:end':
       return e.reason === 'lost' ? KNOCKER_RULES.lost : null;
+    case 'grenade:throw':
+      return WEAPON_RULES.fuse;
+    case 'grenade:blast':
+      return WEAPON_RULES.blast;
+    case 'creature:frighten':
+      return e.stagger ? WEAPON_RULES.stagger : WEAPON_RULES.flee;
+    case 'skitter:killed':
+      return WEAPON_RULES.squish;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -546,6 +563,10 @@ export const CAPTION_EVENTS = Object.freeze([
   'hint:wave:pass',
   'knocker:clack',
   'knocker:end',
+  'grenade:throw',
+  'grenade:blast',
+  'creature:frighten',
+  'skitter:killed',
   ...SFX_CAPTION_EVENTS,
 ]);
 

@@ -62,6 +62,7 @@ import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's he
 import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
 import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
 import { newTrial, trialSeed } from './meta/trials.js';
+import { WeaponGlue, weaponDebug } from './weaponGlue.js'; // THE SOLDIERS' WEAPONS: the grenade + the service revolver (plans/SOLDIER_WEAPONS.md)
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
 import { applyPing, originGlow } from './render/hintWaveView.js';
 import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
@@ -159,6 +160,7 @@ const MODULES = {
   pickupsView: './render/pickupsView.js',
   jetpackView: './render/jetpackView.js', // the fuel cans + the flame
   knockerView: './render/knockerView.js', // THE KNOCKER in the world (one instanced mesh) + its aim arc
+  weaponView: './render/weaponView.js', // THE SOLDIERS' WEAPONS in the world (one instanced mesh; weaponGlue.js builds it)
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
@@ -1315,6 +1317,7 @@ export class Game3D {
     this._setupPuzzleFocus();
     this._setupChase();
     this._setupHood();
+    this._setupWeapons();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -3272,6 +3275,7 @@ export class Game3D {
       this.knocker.reset();
     }
     if (this.pickups) this.pickups.knockers = kOn;
+    if (this.pickups) this.pickups.weaponDiff = this.weapons ? this.weapons.pickupDiff() : ''; // SOLDIER_WEAPONS.md: the soldiers' kit
     if (this.pickups) {
       const tr = this.trial; // SECTION TRIALS: the same supplies every attempt (0x7a1a1 + section), the run counter untouched
       const n = tr ? 0 : (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
@@ -4012,6 +4016,13 @@ export class Game3D {
       this._updateHolster(dt, intent, true);
       this._updateJetpack(intent);
       this._updateWristMap(dt, intent, true);
+      if (this.weapons) {
+        try {
+          this.weapons.input(dt, intent); // SOLDIER_WEAPONS.md: before the knocker (it takes G / the VR draw when a weapon is selected)
+        } catch (err) {
+          this._fault('weapons', err);
+        }
+      }
       this._updateKnockerInput(dt, intent);
       if (this.vista) this.vista.update(dt, p);
       t.updateTargets(p, intent);
@@ -4044,6 +4055,13 @@ export class Game3D {
       this.knocker.update(dt, this.level, this.creature && !this.creature.isNull ? this.creature : null);
     }
     if (this.knocker && (this.state !== 'playing' || !p.alive)) this._knockerIdle();
+    if (this.weapons) {
+      try {
+        this.weapons.step(dt); // SOLDIER_WEAPONS.md: the grenades fly and go off (the run's clock), the blast's own damage
+      } catch (err) {
+        this._fault('weapons', err);
+      }
+    }
     this._updateCreature(dt);
     this._updateThreat(dt);
     this._updateComms(dt, intent);
@@ -5311,6 +5329,16 @@ export class Game3D {
     }
   }
 
+  /** THE SOLDIERS' WEAPONS (weaponGlue.js, plans/SOLDIER_WEAPONS.md): `game.weapons` (its `sim`); a failure leaves the game without them. */
+  _setupWeapons() {
+    try {
+      this.weapons = new WeaponGlue(this);
+    } catch (err) {
+      this._fault('weapons', err);
+      this.weapons = null;
+    }
+  }
+
   /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
   _updateObjectiveHint(dt) {
     let view = this._hintView;
@@ -5559,6 +5587,13 @@ export class Game3D {
       } catch (err) {
         this._fault('knockerView', err);
         this.knockerView = null;
+      }
+    }
+    if (this.weapons) {
+      try {
+        this.weapons.update(dt); // SOLDIER_WEAPONS.md: the grenades / the VR revolver, the grenade's aim arc (after the knocker's)
+      } catch (err) {
+        this._fault('weapons', err);
       }
     }
     if (this.c2) {
@@ -6259,6 +6294,8 @@ export class Game3D {
           return true;
         },
       },
+      // THE SOLDIERS' WEAPONS (weaponGlue.js debugApi): state(), give(grenades, rounds), select(kind), throw({...}), fire({...}), blast(x, y, z)
+      weapons: weaponDebug(() => this.weapons),
       // THE KNOCKER (tests, QA, screenshots): state() reads it; throw({charge, yaw, pitch, dx, dy, dz, x, y, z, vx, vy, vz, free}) throws one
       // from the eye along the view (or the given direction / velocity; free = without taking one from the bag); give(n) sets the bag's
       // count; clear() removes every knocker from the world; arc() reads the aim preview.
