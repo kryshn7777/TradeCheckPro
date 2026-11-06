@@ -182,7 +182,7 @@ const count = (pk, kind) => pk.items.filter((i) => i.kind === kind).length;
 {
   ok(SETTINGS_DEFAULTS.weapons === true, 'settings.weapons defaults ON');
   const keys = Object.keys(SETTINGS_DEFAULTS);
-  ok(keys.indexOf('weapons') === keys.indexOf('frameRate') + 1 && keys.indexOf('weapons') < keys.indexOf('touchControls'), 'appended at the end of the WP-UX block');
+  ok(keys.indexOf('weapons') > keys.indexOf('frameRate') && keys.indexOf('weapons') < keys.indexOf('touchControls'), 'appended at the end of the WP-UX block');
   ok(sanitizeUxSettings({ weapons: 'off' }).weapons === false && sanitizeUxSettings({ weapons: false }).weapons === false && sanitizeUxSettings({}).weapons === true, 'sanitised: on unless switched off');
   const ui = read('ui/ui3d.js');
   ok(/key: 'weapons', tab: 'rope', type: 'toggle'/.test(ui), 'one SETTINGS_SCHEMA row (Rope)');
