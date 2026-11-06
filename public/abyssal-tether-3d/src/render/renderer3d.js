@@ -301,7 +301,7 @@ export class Renderer3D {
     // The creature's glow takes the LAST pooled-lamp slot while it hunts (decay 1.9: lit on baked surfaces too; shadowed by the aux map, auxShadow.js)
     this._creatureSrc = { creature: true, x: 0, y: 0, z: 0, color: new THREE.Color(1, 0.24, 0.1), candela: 0, range: 11, flicker: 0.35, seed: 7.31, ref: null };
     this._creatureOn = false;
-    this._crPlan = { visible: true, state: '', dist: 1e9, listen: 0 };
+    this._crPlan = { visible: true, state: '', dist: 1e9, listen: 0, flare: 0 };
 
     this.materials = new MaterialLibrary(r);
     configureTextureLoading({ renderer: r }); // KTX2 (GPU-compressed) texture sets need the renderer's compressed-format support
@@ -681,6 +681,8 @@ export class Renderer3D {
     c.state = cr.state;
     c.dist = hyp(h.x - head.x, h.y - head.y, h.z - head.z);
     c.listen = b.listen || 0;
+    const ma = game.masonAttack; // MASON SNAKE ATTACK (masonAttackGlue.js): the lock's pulse / the strike's flare; the coiled head
+    c.flare = ma ? num(ma.lightFlare, 0) : 0;
     const p = creatureLightPlan(c, aux.plan);
     if (!p.on) return false;
     const src = this._creatureSrc;
@@ -688,9 +690,10 @@ export class Renderer3D {
     const ux = num(h.ux, 0);
     const uy = num(h.uy, 1);
     const uz = num(h.uz, 0);
-    src.x = h.x + ux * 1.2 + num(h.fx, 0) * 0.7;
-    src.y = h.y + uy * 1.2 + num(h.fy, 0) * 0.7;
-    src.z = h.z + uz * 1.2 + num(h.fz, 0) * 0.7;
+    const pz = ma && ma.pose && ma.pose.active && ma.pose.headOk ? ma.pose : null; // reared up: the light rises with the head
+    src.x = (pz ? pz.headX : h.x) + ux * 1.2 + num(h.fx, 0) * 0.7;
+    src.y = (pz ? pz.headY : h.y) + uy * 1.2 + num(h.fy, 0) * 0.7;
+    src.z = (pz ? pz.headZ : h.z) + uz * 1.2 + num(h.fz, 0) * 0.7;
     src.candela = p.candela;
     src.range = p.range;
     src.flicker = p.flicker;
