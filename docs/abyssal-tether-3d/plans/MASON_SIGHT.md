@@ -121,6 +121,14 @@ radius), or break the line for 4 s.
 - `AT3D.debug.creature.sight(force?)`: the state (sees, noticing, chasing, lost, near, nearDist, noRecovery, the numbers, the decoy, the
   stats); `force` `'see'` (always seen when eligible) | `'blind'` | `''`. `AT3D.debug.creature.distract(x, y, z, opts)`.
 
+## Cost
+
+Deterministic (no Math.random, no clock but dt), Node-safe. The per-frame paths (`update`, `_los`, `decoyStep`) build no object, array,
+closure or string (checked statically by sight.mjs); event payloads are built only on the rare events. Lines of sight: 3 segment tests
+every 0.1 s at most. V8's sampling heap profiler still sees short-lived boxed doubles (about 0.5 KB per update in the sense; the whole
+creature samples about 16 KB per update before this change in `tests/creature/allocprof.mjs`, about 21 KB after, the rest from the
+chase keeping the body close and busy).
+
 ## Balance note (measured, for the owner)
 
 The pacing sim (`tests/creature/pacing.mjs`, scripted human-pattern players who never hide or break the line, the hunt gate OFF, 20

@@ -150,14 +150,6 @@ export class WristVitals {
     ctx.font = '700 34px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'left';
     ctx.fillText('HP', 14, 46);
-    if (this._nr) {
-      // MASON_SIGHT.md: NO RECOVERY in red under the HP tag while the chasing Mason is near
-      ctx.fillStyle = COLORS.low;
-      ctx.font = '800 17px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-      ctx.fillText('NO', 14, 70);
-      ctx.fillText('RECOVERY', 14, 90);
-      ctx.fillStyle = col;
-    }
     ctx.font = '800 84px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'right';
     if (st === 'dead') ctx.fillText('--', W - 58, 92);
@@ -165,11 +157,20 @@ export class WristVitals {
     ctx.font = '700 40px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(st === 'dead' ? '' : '%', W - 54, 92);
-    // the bar
-    ctx.globalAlpha = 0.45;
-    ctx.fillRect(14, H - 24, W - 28, 10);
-    ctx.globalAlpha = beat;
-    ctx.fillRect(14, H - 24, Math.max(0, (W - 28) * (pct / 100)), 10);
+    if (this._nr) {
+      // MASON_SIGHT.md: the chasing Mason is near, nothing heals: NO RECOVERY in red where the bar was
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = COLORS.low;
+      ctx.font = '800 24px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('NO RECOVERY', W / 2, H - 10);
+    } else {
+      // the bar
+      ctx.globalAlpha = 0.45;
+      ctx.fillRect(14, H - 24, W - 28, 10);
+      ctx.globalAlpha = beat;
+      ctx.fillRect(14, H - 24, Math.max(0, (W - 28) * (pct / 100)), 10);
+    }
     ctx.globalAlpha = 1;
     this.texture.needsUpdate = true;
     this.stats.redraws++;
