@@ -346,6 +346,7 @@ export const SETTINGS_DEFAULTS = {
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
+  lanternHood: 'hold', // THE HOOD (sim/lanternHood.js, plans/LANTERN_HOOD.md): 'hold' (covered while the input is held) | 'toggle' (each press flips it)
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -377,6 +378,7 @@ export const UX_LIMITS = {
   touchScale: [0.9, 1.5],
   touchLaunchers: ['two', 'toggle'],
   touchRopeModes: ['hold', 'latch'],
+  lanternHoods: ['hold', 'toggle'], // THE HOOD
 };
 
 /** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
@@ -429,6 +431,7 @@ export function sanitizeUxSettings(s) {
   s.signalGlitches = s.signalGlitches !== false;
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
+  if (L.lanternHoods.indexOf(s.lanternHood) < 0) s.lanternHood = D.lanternHood; // THE HOOD
   sanitizeTouchSettings(s);
   return s;
 }
