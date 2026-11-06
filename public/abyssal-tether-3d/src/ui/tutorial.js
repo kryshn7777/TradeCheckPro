@@ -9,6 +9,18 @@
  *   bag    a bag item was picked up, or health is low           done on bag:apply
  *   knocker  a knocker was picked up, or one is carried in S3+    done on knocker:throw (THE KNOCKER, sim/knocker3d.js)
  *
+ * TUTORIAL v2 (plans/TUTORIAL_ASSIST.md) appends six one-time hints, each queued by the event that makes it relevant and shown at
+ * the next quiet moment inside its window (WINDOW s; the dark and the fuel wait as long as they stay true):
+ *
+ *   sight  the first 'creature:notice' (sim/masonSight.js)             done on 'lantern:hood' {on:true} or 'chase:lost'
+ *   chain  'flow:link' {n:2} (sim/flow3d.js)                           done on 'flow:end' {n >= 3}
+ *   guide  hanging on a line > 2 s with settings.releaseGuide on       done on 'grapple:release' {reason:'input'} once shown
+ *          (render/releaseGuide.js; the rope's own release: physics3d.js, not climb3d's 'climb:release')
+ *   rest   'nook:enter' (sim/objectives3d.js, a Masons' rest)          done the moment it is shown (once ever)
+ *   nv     'nv:dark' (game.js, the first time the shaft is too dark)   done on 'nv:on' (sim/nightVision3d.js)
+ *   jet    'jetpack:can' (sim/jetpack3d.js, the first fuel can)         done on 'jetpack:ignite'
+ *
+ * Danger keeps every hint away: moving fast, a Mason chase on (game.chase.arc.chasing), a Holdfast hand locked on yours.
  * A learned step never returns (persisted in Storage 'tutorial', so it survives restarts); an unlearned one is shown at
  * most twice, at least 25 s apart, never over a level hint, a menu, a death, or while the player is fighting the rope for
  * their life (fast). settings.tutorialHints = false silences all of it. Pure logic over (game, bus, ui): Node-testable with
@@ -52,7 +64,57 @@ export const STEPS = Object.freeze([
     touch: 'Tap [BAG], then [KNOCK] to throw a knocker. The Mason answers knocks.',
     seconds: 7,
   }),
+  // ---- TUTORIAL v2 ----
+  Object.freeze({
+    id: 'sight',
+    text: 'It sees your LIGHT; a hit costs 30% health. Break the line or [Grip] your hand over the lantern.',
+    desktop: 'It sees your LIGHT; a hit costs 30% health. Break the line or hold [V] to cover the lantern.',
+    touch: 'It sees your LIGHT; a hit costs 30% health. Break the line or hold [HOOD] to cover the lantern.',
+    seconds: 6,
+  }),
+  Object.freeze({
+    id: 'chain',
+    text: 'Fire the next tether before you land: chains feed your lantern.',
+    desktop: 'Fire the next tether before you land: chains feed your lantern.',
+    touch: 'Fire the next tether before you land: chains feed your lantern.',
+    seconds: 5,
+  }),
+  Object.freeze({
+    id: 'guide',
+    text: 'The dotted arc is where you land if you let go. Release the [Trigger] to drop.',
+    desktop: 'The dotted arc is where you land if you let go. Release the [Mouse button] to drop.',
+    touch: 'The dotted arc is where you land if you let go. Release [ROPE] to drop.',
+    seconds: 6,
+  }),
+  Object.freeze({
+    id: 'rest',
+    text: 'A Masons’ rest: it cannot strike you here. It will not last.',
+    desktop: 'A Masons’ rest: it cannot strike you here. It will not last.',
+    touch: 'A Masons’ rest: it cannot strike you here. It will not last.',
+    seconds: 6,
+    learnOnShow: true,
+  }),
+  Object.freeze({
+    id: 'nv',
+    text: 'Too dark for the lantern alone. Tap [Y]: night vision.',
+    desktop: 'Too dark for the lantern alone. Press [N]: night vision.',
+    touch: 'Too dark for the lantern alone. Tap [NV]: night vision.',
+    seconds: 6,
+  }),
+  Object.freeze({
+    id: 'jet',
+    text: 'Jetpack fuel. Falling with no rope? Squeeze [Both triggers] to brake the fall.',
+    desktop: 'Jetpack fuel. Falling with no rope? Press [J] to brake the fall.',
+    touch: 'Jetpack fuel. Falling with no rope? Tap [JUMP] in the air to brake the fall.',
+    seconds: 6,
+  }),
 ]);
+/** The steps by id (TUTORIAL v2: the new steps are found by id, not by index). */
+export const STEP = Object.freeze(Object.fromEntries(STEPS.map((s) => [s.id, s])));
+/** TUTORIAL v2: how long (s) an event-queued hint stays relevant (Infinity: as long as its condition holds: the dark, the fuel). */
+export const WINDOW = Object.freeze({ sight: 20, chain: 12, rest: 8, nv: Infinity, jet: Infinity });
+const QUEUED = Object.freeze(['sight', 'rest', 'jet', 'nv', 'chain']); // the order they win a quiet moment in
+const GUIDE_AFTER = 2; // s on one line before the release-guide hint
 const KNOCK_AFTER = 40; // s of run time, carrying a knocker from S3 down, before the knocker hint (without a pickup)
 
 const MAX_SHOWS = 2;
@@ -79,6 +141,7 @@ export class Tutorial {
     this._bagPending = -1; // clock time at which to show the bag hint (after a pickup)
     this._knockPending = -1; // ... and the knocker hint (after a knocker pickup)
     this._pending = null; // the step shown now (to mark learned if the player does it while it is up)
+    this._due = { sight: -1, chain: -1, rest: -1, nv: -1, jet: -1 }; // TUTORIAL v2: clock time each queued hint expires (-1 = none)
     this._offs = [];
   }
 
@@ -132,6 +195,28 @@ export class Tutorial {
         if (!this.data.done.knocker) this._knockPending = this.clock + 3.4; // (after the pickup's own toast)
       } else if (!this.data.done.bag) this._bagPending = this.clock + 1.6;
     });
+    // ---- TUTORIAL v2: queued by the event that makes each relevant ----
+    on('creature:notice', (e) => {
+      if (!(e && e.skit)) this._queue('sight');
+    });
+    on('lantern:hood', (e) => {
+      if (e && e.on) this.learn('sight');
+    });
+    on('chase:lost', () => this.learn('sight'));
+    on('flow:link', (e) => {
+      if (e && e.n === 2) this._queue('chain');
+    });
+    on('flow:end', (e) => {
+      if (e && e.n >= 3) this.learn('chain');
+    });
+    on('grapple:release', (e) => {
+      if (e && e.reason === 'input' && (this.data.shown.guide | 0) > 0) this.learn('guide');
+    });
+    on('nook:enter', () => this._queue('rest'));
+    on('nv:dark', () => this._queue('nv'));
+    on('nv:on', () => this.learn('nv'));
+    on('jetpack:can', () => this._queue('jet'));
+    on('jetpack:ignite', () => this.learn('jet'));
     on('game:start', () => this._newRun());
     on('game:restart', () => this._newRun());
     on('game:respawn', () => {
@@ -145,7 +230,27 @@ export class Tutorial {
     this._offs.length = 0;
   }
 
+  /** TUTORIAL v2: an event made a hint relevant: it waits for a quiet moment within its window. */
+  _queue(id) {
+    const g = this.game;
+    if (g && g.settings && g.settings.tutorialHints === false) return; // (silenced: nothing waits to speak later)
+    if (this.data.done[id] || (this.data.shown[id] | 0) >= MAX_SHOWS) return;
+    if (this._due[id] >= this.clock) return; // already waiting
+    this._due[id] = this.clock + WINDOW[id];
+  }
+
+  /** Moving fast, a chase on, a Holdfast hand locked on yours: no hint now. */
+  _danger(g) {
+    const p = g.player;
+    if (p && Math.hypot(p.vx || 0, p.vy || 0, p.vz || 0) > 12) return true; // nobody reads a hint mid-swing
+    const arc = g.chase && g.chase.arc;
+    if (arc && arc.chasing) return true;
+    const hf = g.holdfast;
+    return !!(hf && hf.held);
+  }
+
   _newRun() {
+    for (const k of QUEUED) this._due[k] = -1;
     this._attachedFor = 0;
     this._hoverFor = 0;
     this._bagPending = -1;
@@ -167,8 +272,9 @@ export class Tutorial {
     const n = this.data.shown[step.id] | 0;
     if (n >= MAX_SHOWS) return false;
     this.data.shown[step.id] = n + 1;
-    this._save();
     this._lastShown = this.clock;
+    if (step.learnOnShow) this.data.done[step.id] = true; // (before _pending: learning it must not take it straight down)
+    this._save();
     this._pending = step;
     this.ui.showHint({ text: step.text, desktop: step.desktop, touch: step.touch }, step.seconds);
     if (this.ui._hint) this.ui._hint.tutorial = true;
@@ -203,10 +309,20 @@ export class Tutorial {
     if (cl && cl.hands) hover = !!(cl.hands.left && (cl.hands.left.hoverIn || cl.hands.left.hover)) || !!(cl.hands.right && (cl.hands.right.hoverIn || cl.hands.right.hover));
     this._hoverFor = hover && !(cl && cl.holding) ? this._hoverFor + step : 0;
     if (!this._quiet(g)) return;
+    if (this._danger(g)) return;
     // ---- pick the most relevant step ----
-    const p = g.player;
-    const fast = p && Math.hypot(p.vx || 0, p.vy || 0, p.vz || 0) > 12;
-    if (fast) return; // nobody reads a hint mid-swing
+    // TUTORIAL v2: the queued hints first (each is relevant right now, and only for a while)
+    const due = this._due;
+    for (let k = 0; k < QUEUED.length; k++) {
+      const id = QUEUED[k];
+      if (due[id] < 0) continue;
+      if (d[id] || this.clock > due[id]) {
+        due[id] = -1;
+        continue;
+      }
+      due[id] = -1;
+      if (this._show(STEP[id])) return;
+    }
     if (!d.grip && this._hoverFor >= HOVER_AFTER) {
       this._show(STEPS[2]);
     } else if (!d.bag && this._bagPending >= 0 && this.clock >= this._bagPending) {
@@ -219,8 +335,10 @@ export class Tutorial {
       this._show(STEPS[4]);
     } else if (!d.knocker && g.knocker && g.knocker.enabled !== false && g.bag && g.bag.counts && g.bag.counts[4] > 0 && (g.sectionIndex | 0) >= 2 && (g.time || 0) > KNOCK_AFTER) {
       this._show(STEPS[4]);
-    } else if (!d.reel && this._attachedFor >= HANG_AFTER && (g.time || 0) > 20) {
+    } else if (!d.reel && (this.data.shown.reel | 0) < MAX_SHOWS && this._attachedFor >= HANG_AFTER && (g.time || 0) > 20) {
       this._show(STEPS[1]);
+    } else if (!d.guide && (d.reel || (this.data.shown.reel | 0) >= MAX_SHOWS) && this._attachedFor >= GUIDE_AFTER && g.settings.releaseGuide !== false && (g.time || 0) > 20 && (this.data.shown.guide | 0) < MAX_SHOWS) {
+      this._show(STEP.guide);
     } else if (!d.fire && (g.time || 0) >= FIRE_AFTER && g.sectionIndex === 0 && !(t && t.attached)) {
       this._show(STEPS[0]);
     }

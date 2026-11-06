@@ -217,6 +217,8 @@ function blankHand() {
 }
 
 /** The grip-climbing part of an intent (sim/climb3d.js): grab per hand, desktop climb axes + view axes, palm points. */
+const NV_DARK_EV = Object.freeze({}); // TUTORIAL v2: 'nv:dark' (the first time the shaft is too dark for the lantern alone)
+
 function blankClimb() {
   const hand = () => ({ ok: false, x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 });
   return { vr: false, grab: { left: false, right: false }, fwd: 0, side: 0, rx: 1, rz: 0, fx: 0, fz: -1, hands: { left: hand(), right: hand() } };
@@ -2200,6 +2202,11 @@ export class Game3D {
     bus.on('holdfast:grip', (e) => {
       if (this._inRun() && e && e.hand) this._haptic(e.hand, 0.3, 60);
     });
+    // ASSIST PACK (gripMode 'toggle', input/assistLatch.js): the squeeze that lets a latched grip go counts as the pull that frees a
+    // Holdfast hand (its out-pull: no cost)
+    bus.on('input:gripRelease', (e) => {
+      if (e && e.hand && this._inRun() && this.holdfast && typeof this.holdfast.assistPull === 'function') this.holdfast.assistPull(e.hand);
+    });
     bus.on('holdfast:close', (e) => {
       if (this._inRun() && e && e.hand) this._haptic(e.hand, e.low ? 1 : 0.9, 180);
       if (this._inRun() && !this._hfHinted) {
@@ -3603,7 +3610,9 @@ export class Game3D {
     // the first time the world is dark enough that the lantern alone will not do (depth darkness >= 0.18, ~ the third section)
     if (live && this._nvHint === 0 && this.renderer && depthDarknessAt(this.renderer.depthF || 0) >= 0.18) {
       this._nvHint = 1;
-      this._toast(this.xrActive ? 'Too dark. Tap Y: night vision' : 'Too dark. Press N: night vision', 5);
+      // TUTORIAL v2 (ui/tutorial.js 'nv'): with the hints on, the tutorial shows it at a quiet moment (until learned on nv:on)
+      if (this.settings && this.settings.tutorialHints !== false) this.bus.emit('nv:dark', NV_DARK_EV);
+      else this._toast(this.xrActive ? 'Too dark. Tap Y: night vision' : 'Too dark. Press N: night vision', 5);
     }
   }
 

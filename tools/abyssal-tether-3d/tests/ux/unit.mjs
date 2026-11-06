@@ -334,13 +334,232 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   run(40);
   ok(shown.length === before, 'no hint mid-swing');
   game.player.vx = 0;
-  tut.data.shown = { reel: 2, fire: 2, grip: 2, bag: 2 };
+  tut.data.shown = Object.fromEntries(TUT.STEPS.map((st) => [st.id, 2])); // (TUTORIAL v2: every step, the new ones too)
   game.time = 100;
   run(60);
   ok(shown.length === before, 'a step shown twice is not shown again');
   tut.reset();
   ok(Object.keys(tut.data.done).length === 0, 'reset forgets everything');
   tut.detach();
+}
+
+// ---- TUTORIAL v2 (plans/TUTORIAL_ASSIST.md): sight, chain, guide, rest, nv, jet ------------------------------------------------
+{
+  const V2 = ['sight', 'chain', 'guide', 'rest', 'nv', 'jet'];
+  for (const id of V2) {
+    const st = TUT.STEP[id];
+    ok(!!st && TUT.STEPS.includes(st), `v2 step '${id}' is in STEPS`);
+    for (const k of ['text', 'desktop', 'touch']) ok(st && typeof st[k] === 'string' && st[k].length >= 20 && st[k].length <= 100 && !/undefined/.test(st[k]), `v2 '${id}' ${k} text exists and fits (<= 100 chars)`);
+    ok(st && st.seconds >= 4 && st.seconds <= 8, `v2 '${id}' stays up 4..8 s`);
+  }
+  ok(/HOOD/.test(TUT.STEP.sight.touch) && /\[V\]/.test(TUT.STEP.sight.desktop) && /Grip/.test(TUT.STEP.sight.text), 'sight: VR grip over the lantern / desktop V / touch HOOD');
+  ok(['text', 'desktop', 'touch'].every((k) => /30% health/.test(TUT.STEP.sight[k]) && !/kill/i.test(TUT.STEP.sight[k])), 'sight: a Mason hit costs 30% health (never "kills")');
+  ok(/\[N\]/.test(TUT.STEP.nv.desktop) && /\[Y\]/.test(TUT.STEP.nv.text) && /\[NV\]/.test(TUT.STEP.nv.touch), 'nv: Y / N / NV');
+  ok(/\[J\]/.test(TUT.STEP.jet.desktop) && /Both triggers/.test(TUT.STEP.jet.text), 'jet: both triggers / J');
+
+  const mk = () => {
+    mem.delete('abyssalTether3d.v1.tutorial');
+    const bus = new C.EventBus();
+    const shown = [];
+    const ui = {
+      current: null,
+      _hint: { on: false, tutorial: false },
+      showHint: (h) => {
+        shown.push(h);
+        ui._hint.on = true;
+        ui._hint.tutorial = true;
+      },
+      hideHint: () => {
+        ui._hint.on = false;
+      },
+    };
+    const game = {
+      bus,
+      settings: { tutorialHints: true, releaseGuide: true },
+      state: 'playing',
+      player: { alive: true, vx: 0, vy: 0, vz: 0 },
+      victoryT: -1,
+      time: 30,
+      sectionIndex: 3,
+      tethers: { attached: false },
+      physics: { climb: { holding: false, hands: { left: {}, right: {} } } },
+      intent: { reel: 0 },
+      health: { hp: 1 },
+      bag: { counts: [0, 0, 0, 0, 0] },
+      chase: { arc: { chasing: false } },
+      holdfast: { held: null },
+    };
+    const tut = new TUT.Tutorial(game, ui);
+    for (const id of ['fire', 'reel', 'grip', 'bag', 'knocker']) tut.data.done[id] = true; // the old steps learned: only the new ones speak
+    tut.attach();
+    bus.emit('game:start', {});
+    const run = (sec, dt = 0.1) => {
+      for (let i = 0; i < Math.round(sec / dt); i++) {
+        game.time += dt;
+        tut.update(dt);
+      }
+    };
+    const idOf = (h) => (h ? TUT.STEPS.find((st) => st.text === h.text)?.id : undefined);
+    const last = () => idOf(shown[shown.length - 1]);
+    const clear = () => {
+      ui._hint.on = false;
+    };
+    return { bus, shown, ui, game, tut, run, idOf, last, clear };
+  };
+  // each fires on its event, learned on its own event
+  {
+    const E = mk();
+    E.run(9); // past the 8 s run-start quiet
+    E.bus.emit('creature:notice', { distance: 20 });
+    E.run(0.5);
+    ok(E.shown.length === 1 && E.last() === 'sight', "'creature:notice' shows the sight hint at once");
+    ok(E.shown[0].desktop === TUT.STEP.sight.desktop && E.shown[0].touch === TUT.STEP.sight.touch, 'the hint carries all three texts (VR / desktop / touch)');
+    E.clear();
+    E.bus.emit('lantern:hood', { on: false });
+    ok(!E.tut.data.done.sight, "'lantern:hood' {on:false} teaches nothing");
+    E.bus.emit('lantern:hood', { on: true });
+    ok(E.tut.data.done.sight === true, "'lantern:hood' {on:true} teaches the sight step");
+    E.run(30);
+    E.bus.emit('creature:notice', { distance: 20 });
+    E.run(1);
+    ok(E.shown.length === 1, 'a learned sight hint never returns');
+    // chain: flow:link n=2 (n=1 / n=3 do not queue it)
+    E.run(30);
+    E.bus.emit('flow:link', { n: 1 });
+    E.bus.emit('flow:link', { n: 3 });
+    E.run(1);
+    ok(E.shown.length === 1, "'flow:link' with n != 2 does not queue the chain hint");
+    E.bus.emit('flow:link', { n: 2 });
+    E.run(0.5);
+    ok(E.shown.length === 2 && E.last() === 'chain', "'flow:link' {n:2} shows the chain hint");
+    E.clear();
+    E.bus.emit('flow:end', { n: 2 });
+    ok(!E.tut.data.done.chain, "'flow:end' {n:2} does not teach it");
+    E.bus.emit('flow:end', { n: 3 });
+    ok(E.tut.data.done.chain === true, "'flow:end' {n:3} teaches the chain");
+    // rest: shown once, learned on display
+    E.run(30);
+    E.bus.emit('nook:enter', { id: 'r1', left: 1 });
+    E.run(0.5);
+    ok(E.last() === 'rest' && E.tut.data.done.rest === true && E.ui._hint.on, 'a rest: the hint shows, is learned on display and stays up');
+    E.clear();
+    const n0 = E.shown.length;
+    E.run(30);
+    E.bus.emit('nook:enter', { id: 'r2', left: 1 });
+    E.run(1);
+    ok(E.shown.length === n0, 'the rest hint is shown once ever');
+    // nv: 'nv:dark' from game.js, learned on nv:on
+    E.run(30);
+    E.bus.emit('nv:dark', {});
+    E.run(0.5);
+    ok(E.last() === 'nv', "'nv:dark' shows the night-vision hint");
+    E.clear();
+    E.bus.emit('nv:on', {});
+    ok(E.tut.data.done.nv === true, "'nv:on' teaches it");
+    // jet: the first fuel can
+    E.run(30);
+    E.bus.emit('jetpack:can', { id: 'c1', fuel: 1, gained: 0.5 });
+    E.run(0.5);
+    ok(E.last() === 'jet', "'jetpack:can' shows the jetpack hint");
+    E.clear();
+    E.bus.emit('jetpack:ignite', {});
+    ok(E.tut.data.done.jet === true, "'jetpack:ignite' teaches it");
+    // guide: hanging > 2 s with the release guide on; learned on a rope let-go only once it has been shown
+    E.run(30);
+    E.bus.emit('grapple:release', { hand: 'right', reason: 'input' });
+    ok(!E.tut.data.done.guide, 'a rope let-go before the guide hint was ever shown teaches nothing');
+    const n1 = E.shown.length;
+    E.game.settings.releaseGuide = false;
+    E.game.tethers.attached = true;
+    E.run(4);
+    ok(E.shown.length === n1, 'no guide hint with settings.releaseGuide off');
+    E.game.tethers.attached = false;
+    E.run(0.5);
+    E.game.settings.releaseGuide = true;
+    E.game.tethers.attached = true;
+    E.run(1.5);
+    ok(E.shown.length === n1, 'not before 2 s on the line');
+    E.run(1);
+    ok(E.shown.length === n1 + 1 && E.last() === 'guide', 'hanging over 2 s with the guide on shows the release-guide hint');
+    E.clear();
+    E.bus.emit('climb:release', { hand: 'right', reason: 'input' });
+    ok(!E.tut.data.done.guide, "a grip let-go ('climb:release') is not the rope's");
+    E.bus.emit('grapple:release', { hand: 'right', reason: 'break' });
+    ok(!E.tut.data.done.guide, 'a broken line teaches nothing');
+    E.bus.emit('grapple:release', { hand: 'right', reason: 'input' });
+    ok(E.tut.data.done.guide === true, "the rope's own let-go teaches the guide");
+    E.game.tethers.attached = false;
+    const t2 = new TUT.Tutorial(E.game, E.ui);
+    ok(['sight', 'chain', 'rest', 'nv', 'jet', 'guide'].every((id) => t2.data.done[id] === true), 'every v2 step stays learned after a restart (Storage)');
+    E.tut.detach();
+  }
+  // never while dead / in a menu / in danger; the 25 s gap; twice at most; the window
+  {
+    const E = mk();
+    E.run(9);
+    E.game.player.alive = false;
+    E.bus.emit('creature:notice', { distance: 20 });
+    E.run(3);
+    ok(E.shown.length === 0, 'never while dead');
+    E.game.player.alive = true;
+    E.ui.current = 'pause';
+    E.run(3);
+    ok(E.shown.length === 0, 'never over a menu');
+    E.ui.current = null;
+    E.game.chase.arc.chasing = true;
+    E.run(3);
+    ok(E.shown.length === 0, 'never while a chase is on');
+    E.game.chase.arc.chasing = false;
+    E.game.holdfast.held = {};
+    E.run(1);
+    ok(E.shown.length === 0, 'never while a Holdfast hand has yours');
+    E.game.holdfast.held = null;
+    E.game.player.vx = 20;
+    E.run(1);
+    ok(E.shown.length === 0, 'never mid-swing');
+    E.game.player.vx = 0;
+    E.run(0.5);
+    ok(E.shown.length === 1 && E.last() === 'sight', 'shown at the first quiet moment inside its window');
+    E.clear();
+    E.bus.emit('flow:link', { n: 2 });
+    E.run(5);
+    ok(E.shown.length === 1, 'the 25 s gap holds for the queued hints too');
+    E.run(9);
+    ok(E.shown.length === 1, 'a queued hint is dropped once its window (chain 12 s) has passed');
+    E.run(20);
+    E.bus.emit('creature:notice', { distance: 20 });
+    E.run(0.5);
+    ok(E.shown.length === 2 && E.last() === 'sight', 'an unlearned hint comes back a second time');
+    E.clear();
+    E.run(30);
+    E.bus.emit('creature:notice', { distance: 20 });
+    E.run(1);
+    ok(E.shown.length === 2 && E.tut.data.shown.sight === 2, 'and never a third');
+    E.game.settings.tutorialHints = false;
+    E.run(30);
+    E.bus.emit('jetpack:can', {});
+    E.run(1);
+    ok(E.shown.length === 2, 'settings.tutorialHints = false silences the v2 steps too');
+    E.game.settings.tutorialHints = true;
+    E.bus.emit('creature:notice', { skit: true });
+    E.run(1);
+    ok(E.shown.length === 2, 'a skitterling notice is not the Mason');
+    E.tut.detach();
+  }
+  // the static checks: game.js emits nv:dark where the old toast was; the payload names are the emitters'
+  {
+    const fs = await import('node:fs');
+    const { SRC_DIR } = await import('../../verify/root.mjs');
+    const rd = (f) => fs.readFileSync(SRC_DIR + '/' + f, 'utf8');
+    ok(/emit\('nv:dark'/.test(rd('game.js')), "game.js emits 'nv:dark' at the too-dark condition");
+    ok(/_emit\('creature:notice'/.test(rd('sim/masonSight.js')) && /emit\('lantern:hood'/.test(rd('sim/lanternHood.js')) && /emit\('chase:lost'/.test(rd('sim/chaseArc.js')), 'sight: the emitters exist (masonSight / lanternHood / chaseArc)');
+    ok(/_emit\('flow:link', \{ n: this\.n/.test(rd('sim/flow3d.js')) && /_emit\('flow:end', \{ n,/.test(rd('sim/flow3d.js')), 'chain: flow:link {n} / flow:end {n}');
+    ok(/emit\('grapple:release', \{ hand, anchor, reason/.test(rd('sim/physics3d.js')), "guide: physics3d 'grapple:release' {reason}");
+    ok(/emit\('nook:enter'/.test(rd('sim/objectives3d.js')) && /_emit\('nv:on'/.test(rd('sim/nightVision3d.js')) && /emit\('jetpack:can'/.test(rd('sim/jetpack3d.js')) && /emit\('jetpack:ignite'/.test(rd('sim/jetpack3d.js')), 'rest / nv / jet: the emitters exist');
+    const tsrc = rd('ui/tutorial.js');
+    const upd = tsrc.slice(tsrc.indexOf('  update(dt) {')).replace(/\/\/.*$/gm, '');
+    ok(!/new |\[\]|\{\s*\w+:/.test(upd), 'Tutorial.update allocates nothing (no new / [] / object literal)');
+  }
 }
 
 await sleep(20);
