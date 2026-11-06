@@ -57,6 +57,7 @@ import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
+import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
 import { applyPing, originGlow } from './render/hintWaveView.js';
 import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
@@ -1295,6 +1296,7 @@ export class Game3D {
     this.settings = Storage.loadSettings();
     this.bus = new EventBus();
     this._setupPuzzleFocus();
+    this._setupChase();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -5167,6 +5169,16 @@ export class Game3D {
     }
   }
 
+  /** THE CHASE ARC (chaseGlue.js, plans/CHASE_ARC.md): `game.chase` (its `arc`); a failure leaves the game without it. */
+  _setupChase() {
+    try {
+      this.chase = new ChaseGlue(this);
+    } catch (err) {
+      this._fault('chase', err);
+      this.chase = null;
+    }
+  }
+
   /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
   _updateObjectiveHint(dt) {
     let view = this._hintView;
@@ -5272,6 +5284,11 @@ export class Game3D {
       if (this.puzzleFocus) this.puzzleFocus.update(dt); // after the 20 s hint (it escalates on it), before the render (the glance)
     } catch (err) {
       this._fault('puzzleFocus', err);
+    }
+    try {
+      if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
+    } catch (err) {
+      this._fault('chase', err);
     }
     this._updateReleaseGuide(dt);
     const fx = this.healthFx;
@@ -6367,6 +6384,12 @@ export class Game3D {
         state: () => (this.puzzleFocus ? this.puzzleFocus.debugState() : null),
         puzzles: () => (this.puzzleFocus ? this.puzzleFocus.debugPuzzles() : []),
         ready: () => !!(this.puzzleFocus && this.puzzleFocus.debugReady()),
+      },
+      // THE CHASE ARC (chaseGlue.js): state() the arc, start(dist) a chase now, lost() the release now (no 3 s settle)
+      chase: {
+        state: () => (this.chase ? this.chase.debugState() : null),
+        start: (dist) => !!(this.chase && this.chase.debugStart(dist)),
+        lost: () => !!(this.chase && this.chase.debugLost()),
       },
       comms: {
         state: () => {
