@@ -42,48 +42,66 @@ creature). The skitterling table `CREATURE_VARIANTS.skitterling.hitDamage` reads
 - Out of scope, unchanged: the Dresser (`'dressed'`), the Usher, the Holdfast, falls, hazards, regen, heals; the no-heal radius
   of a chasing Mason (`health.noRecovery`, MASON_SIGHT.md) stays.
 
-## 3. Cadence (the Mason only)
+## 3. How it attacks: the SNAKE (owner clarifications, verbatim)
 
-- `STRIKE_TUNE[diff].cadence = [lo, hi]`: the interval from one attack START to the next, drawn uniformly from a dedicated seeded
-  stream (`U.rng(seed ^ 0x57c1ade)`, so the creature's main random stream and every older seeded test stays as it was):
-  Normal **[3.6, 5.0]**, Nightmare **[3.3, 4.6]**, Abyss **[3.0, 4.2]**; always inside [3, 5].
-- Gate: `_startAttack` refuses (returns false, no side effects) while the cadence clock `_atkCd > 0`. Every existing trigger
-  (contact / sight / creep / committed lunge / stall lunge) goes through it, so no two Mason attacks ever start < 3 s apart.
-- Driver: while **engaged** (lethal, the player alive and not in a rest, and it chases you OR you are within engage + 4 m) a
-  refused attack holds (no extra surges), stamina does not drain, and after a MISS the recoil goes back to PURSUING (not
-  RECOVERING): in reach it strikes again the moment the clock allows, so the start-to-start interval is the drawn [lo, hi].
-  Not engaged: the old wave pacing (stamina, bursts, listening, RECOVERING withdraws) is unchanged.
-- After a HIT: `_atkCd = max(_atkCd, afterHit)` with **afterHit = 3.5 + 1.5 = 5.0 s** from the impact (knockdown total + 1.5),
-  and it goes to PURSUING holding off (the attack is gated) while you are down. A frozen player in reach is hit every
-  windup + 5.0 = ~6 s: dead in 4 hits about **18 s** after the first.
-- Every existing safety lever is kept in front of the cadence: spawn / section grace, the first-sighting warning and the
-  post-chase cooldown (masonSight), the rests (refuge 1: no attack starts, nothing hits), the lure niche (refuge 2: it attacks,
-  the keystone takes it), the knocker decoy, the hood, the S4 sighting, prowl passes until it sees you, overrides.
-- Max one Mason hit per 3 s for any player state: enforced by the gate and again in `_strike` (`_lastHitT`).
+> "How the Mason attacks is that it comes near the player, it sees like a snake, it just like it plans to attack, and then
+> immediately it attacks every 3 to 5 seconds, and again it stares at the player, it attacks like that, like a snake."
+>
+> "when it comes near the player, it slowly comes at normal speed, and then when it is nearby player or when it is in seeable
+> distance to the player, the mason suddenly comes at a much higher speed and then positions itself to attack the player."
 
-## 4. The dodgeable telegraph
+The Mason's attack is a cycle of view phases (`Creature3D.attackPhase`, bus `creature:phase`):
 
-`STRIKE_TUNE` (Mason; the skitterlings keep their own wind-up and reach):
-
-| | Normal | Nightmare | Abyss |
+| phase | creature state | what it does | numbers |
 |---|---|---|---|
-| windup (s) | 1.0 | 0.9 | 0.85 |
-| strike radius R (m) | 2.0 | 2.0 | 1.9 |
-| lead (s of player velocity, capped 0.5 m) | 0.08 | 0.1 | 0.12 |
-| cadence (s) | 3.6-5.0 | 3.3-4.6 | 3.0-4.2 |
+| `stalk` | APPROACHING / PURSUING / OBSERVING (lethal hunt) | the old sound hunt at its normal speed (approach / pursue / creep / listen) | DIFF_TUNE unchanged |
+| `dash` | BURST, reason `'dash'` | it has SEEN you (the committed chase, after the 0.5 s notice roar) or you are within **12 m**: it surges at burst speed (14 / 16 / 18.5 m/s x mode, 1.6-2.7x the pursuit) along its nav path to its stand-off point; harmless; capped **2.5 s**, at most one per **4 s**; a rest, a decoy or a lost hunt calls it off | `STRIKE_COMMON.dashNear / dashMax / dashCooldown` |
+| `rise` | ATTACK | within the engage radius (killRadius x 2.5 + 3.5 m) it stops charging, holds a **5.5 m** stand-off (closes / backs off at <= windupAdv, sways), rears up and tracks you; the first rise is the long one, later rises come out of the coil | riseFirst **0.8 / 0.7 / 0.6 s**, riseAgain **0.5 / 0.45 / 0.4 s** |
+| `lock` | ATTACK | the aim freezes on the point where you stand (no lead): the dodge deadline; it shivers in place | **0.30 / 0.28 / 0.27 s** |
+| `strike` | ATTACK | a very fast straight lunge from the head toward the locked point (at most the old reach, stopped 0.8 m short of the first solid); the hit test at its end | **0.20 / 0.18 / 0.16 s** |
+| `recoil` | ATTACK | it snaps back to where it struck from (the coil) | **0.5 / 0.5 / 0.45 s** |
+| `stare` | ATTACK | coiled, it sways and stares at you until the cadence clock allows the next rise; while you are down after a hit it holds here (it does not pile on) | until the clock |
 
-- Windup start: the strike point **L** = the player's position + lead (capped 0.5 m), locked. The `creature:attack` event carries
-  `{windup, lx, ly, lz, radius}` in addition to the old fields. During the windup the head draws back and advances toward L (not
-  toward the player) at windupAdv, stopping 3.5 m short of L.
-- Impact (windup end): the lunge runs from the head S toward L, at most `reach` long (killRadius x 1.6 + nav.stretch: unchanged)
-  to E. **Hit** iff: lethal, alive, no grace, not immune, refuge 0, the line head -> player not occluded (`_occlusion`), and the
-  player is within **R** of the segment S-E (the locked point and the swept line). Standing still or hanging still = hit; running,
-  reeling, swinging, dropping or strafing more than R off the line = a miss (`creature:strike {hit:false, distance}`: near
-  misses, hunger, run highlights and the chase arc's near misses unchanged).
-- Dodge reachable on foot from standing (walk 5.5 m/s, 4.4 m/s with a gun out, runAccel 40 m/s^2: 0.07 s to speed): leaving R
-  takes R / v + 0.06 s = 0.42 s (5.5) / 0.51 s (4.4) on Normal, leaving a reaction budget of 0.58 / 0.49 s in the 1.0 s windup;
-  Nightmare 0.48 / 0.39 s; Abyss 0.44 / 0.36 s. Expert (0.2 s) always escapes; careful (0.4 s) escapes on Normal, sometimes not on
-  Nightmare / Abyss with a gun out; hesitant (0.9 s) is hit.
+Out of the coil (in `stare`, or a rise that will not strike): you left its reach (lunge reach + 2.5 m), you hid in a rest
+(it listens at the mouth), you died, a knocker decoy went live, the hunt stopped being lethal / it withdraws -> back to `stalk`
+(and a `dash` again when it sees you). Lock / strike / recoil always run to their end.
+
+`attack.phase` keeps the rig's old names: rise / lock / stare = `'windup'` (a.t / a.windup = the rear: rise + lock; stare holds
+the full rear), strike = `'strike'`, recoil = `'recoil'`. `creature:attack {windup, interval, radius, strike, coiled}` fires at
+every rise that ends in a strike; `creature:strike {hit, distance, zone, stop, ...}` at every impact.
+
+Exposed to the views (MASON VISUALS): `creature:phase {phase, t: 0, dur, tx, ty, tz, x, y, z}` (tx..tz = the locked point from
+the lock on, the player before), `attackPhase`, `attackT01` (0..1 through the phase), `aimX / aimY / aimZ` (where the crown looks:
+the player, the locked point from the lock to the impact), `strikeSrc {x, y, z}` (where the lunge left from).
+
+## 3b. Cadence
+
+- `STRIKE_TUNE[diff].cadence = [lo, hi]`: from one striking rise to the next, uniform from a dedicated seeded stream
+  (`U.rng(seed ^ 0x57c1ade)`: the creature's behaviour stream and older seeded tests are unchanged): Normal **[3.6, 5.0]**,
+  Nightmare **[3.3, 4.6]**, Abyss **[3.0, 4.2]**, always inside [3, 5] (`cadenceInterval` clamps). In reach it rises the moment
+  the clock allows, so the start-to-start interval is exactly the draw.
+- After a HIT: `_atkCd = max(_atkCd, 5.0)` from the impact (the knockdown's 3.5 s + 1.5 s): a frozen player is struck every
+  ~6 s: from full, dead about **18 s** after the first hit (measured 17.6-18.2 s).
+- Engaged (lethal, alive, not in a rest, and chasing you or within engage + 4 m): the stamina does not drain (the cadence, not the
+  old stamina waves, paces it). Not engaged: the old wave pacing (stamina, bursts, listening, RECOVERING withdraws) is unchanged.
+- Every safety lever stays in front: spawn / section grace, the first-sighting warning and the post-chase cooldown (masonSight),
+  the rests (refuge 1: no attack starts, nothing hits), the lure niche (refuge 2: it strikes, the keystone takes it), the knocker
+  decoy, the hood (no sight: no dash from afar), the S4 sighting, prowl passes until it sees you, overrides.
+- Max one Mason hit per 3 s for any player state: the cadence, and again `minHitGap` in the impact test.
+
+## 4. The dodge
+
+Hit iff at the impact: lethal, alive, no grace, not immune, refuge 0, the line from the lunge's origin to the player clear
+(`_occlusion`), and the player within **R** of the swept segment origin -> lunge end; R = **2.0 / 1.85 / 1.75 m**. Standing still
+or hanging still = hit; running toward it along the line = hit; moving off the line (walk, reel, swing, drop, strafe) = a miss
+(`creature:strike {hit:false, distance}`: near misses, hunger, run highlights, the chase arc unchanged).
+
+The dodge on foot (walk 5.5 m/s, 4.4 m/s with a gun out): moving at the lock carries you (lock + strike) x v by the impact:
+2.20 / 2.02 / 1.89 m at 4.4 m/s (2.75 / 2.53 / 2.37 m at 5.5) against R 2.0 / 1.85 / 1.75 m: always possible, tight on Abyss with a
+gun out. A lead on the locked point would eat exactly that margin, so there is none. The reaction window is the rise: a re-rise
+gives 0.5 / 0.45 / 0.4 s (the first rise 0.8 / 0.7 / 0.6 s) to start moving before the lock. Expert (0.2 s) always makes it;
+careful (0.4 s) on Normal, mostly on Nightmare, rarely on Abyss; hesitant (0.9 s) never from a standstill (only already moving).
+A dash you cannot out-run is intended: the dodge is what saves you.
 
 ## 5. After a hit (the game glue: `sim/playerHits.js`, `PlayerHits`)
 
@@ -113,9 +131,9 @@ Owns `knock` (the Knockdown), the immunity clock and the application of hits. ga
 ## 7. Bots and balance targets
 
 `tests/creature/pacing.mjs` gets real health (Health3D, `noRecovery` from the creature), the real PlayerHits / Knockdown (a knocked
-bot stays put while down, moves at moveMul while rising), and a DODGE: on a Mason `creature:attack`, after the profile's reaction
-time (**expert 0.2 s, careful 0.4 s, hesitant 0.9 s**; a frozen bot / a stalled bot never), a grounded bot runs out of the zone at
-5 m/s (a hanging bot swings away). `STRIKES=1` prints the table (20 runs per cell, LEVEL=real): Normal / Nightmare / Abyss x
+bot stays put while down, moves at moveMul while rising), and a DODGE: on a Mason `creature:attack` (a striking rise), after the
+profile's reaction time (**expert 0.2 s, careful 0.4 s, hesitant 0.9 s**; a frozen bot / a stalled bot never), the bot moves off
+the line at 5 m/s for 1 s (sideways to the Mason, horizontally). `STRIKES=1` prints the table (20 runs per cell, LEVEL=real): Normal / Nightmare / Abyss x
 expert / careful / hesitant x blind / hunting / healthy gate: hits/run, HP lost/run, deaths/run, plus the frozen camper's hits to
 death and seconds from the first hit to death.
 

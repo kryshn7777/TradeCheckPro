@@ -625,7 +625,7 @@ export class Creature3D {
     this.audio = { x: 0, y: 0, z: 0, distance: FAR, intensity: 0, movement: 0, state: S.DORMANT };
     // MASON_STRIKES.md: px/py/pz the strike point locked at the wind-up start, radius the zone around the swept line, interval the
     // cadence drawn at this attack's start
-    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, px: 0, py: 0, pz: 0, radius: 0, interval: 0, sp: '', st: 0, sd: 1, riseDur: 0, armed: false, coiled: false, stop: '', hit: false, cause: '' };
+    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, px: 0, py: 0, pz: 0, radius: 0, interval: 0, sp: '', st: 0, sd: 1, rx: 0, ry: 0, rz: 0, riseDur: 0, armed: false, coiled: false, stop: '', hit: false, cause: '' };
     this._solids = [];
     this._grip = [];
     this._surf = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
@@ -2498,7 +2498,7 @@ export class Creature3D {
     this._emit('creature:phase', { phase: name, t: 0, dur, tx, ty, tz, x: this.x, y: this.y, z: this.z });
   }
 
-  /** Holds the standing-off distance (it sways, the crown on you): never closer than standOff - 0.75 m, never running through you. */
+  /** Holds the standing-off distance (it sways, the crown on you): it backs off inside standOff - 0.4 m, never running through you. */
   _snakeHold(dt, player) {
     const so = this.strikeK.standOff;
     const d = this.distance > 1e-3 ? this.distance : 1e-3;
@@ -2510,12 +2510,12 @@ export class Creature3D {
     let tx = this.x + this._tanX() * sw;
     let ty = this.y;
     let tz = this.z + this._tanZ() * sw;
-    if (d > so + 0.75) {
+    if (d > so + 0.6) {
       sp = this.k.windupAdv;
       tx += ux * (d - so);
       ty += uy * (d - so);
       tz += uz * (d - so);
-    } else if (d < so - 0.75) {
+    } else if (d < so - 0.4) {
       sp = 2.5;
       tx -= ux * (so - d);
       ty -= uy * (so - d);
@@ -2545,6 +2545,12 @@ export class Creature3D {
       this.attackPhase = ph;
       this._emit('creature:phase', { phase: ph, t: 0, dur, tx: player.x, ty: player.y, tz: player.z, x: this.x, y: this.y, z: this.z });
     }
+  }
+
+  /** MASON_STRIKES.md: coiled with no strike under way (stare, or a rise that will not strike): a knocker may still draw it off. */
+  get coiledFree() {
+    const a = this.attack;
+    return this.state === S.ATTACK && !this.v && (a.sp === 'stare' || (a.sp === 'rise' && !a.armed));
   }
 
   /** Leaves the coil (you went out of reach, into a rest, died, a decoy): back to the hunt. */
@@ -2626,8 +2632,18 @@ export class Creature3D {
       a.t = a.st;
       if (a.st >= a.sd) this._snakeImpact(player);
     } else if (a.sp === 'recoil') {
-      this._moveToward(a.sx, a.sy, a.sz, 12, 6, dt, 0.3);
-      this._surfaceStep(dt, 0.3);
+      // the snap back into the coil: eased from the lunge's end to where it struck from, exactly in the recoil time
+      const k = Math.min(1, a.st / a.sd);
+      const e = k * k * (3 - 2 * k);
+      const nx = U.lerp(a.rx, a.sx, e);
+      const ny = U.lerp(a.ry, a.sy, e);
+      const nz = U.lerp(a.rz, a.sz, e);
+      this.vx = (nx - this.x) / dt;
+      this.vy = (ny - this.y) / dt;
+      this.vz = (nz - this.z) / dt;
+      this.x = nx;
+      this.y = ny;
+      this.z = nz;
       a.t = a.st;
       this.aimX = player.x;
       this.aimY = player.y;
@@ -2724,6 +2740,9 @@ export class Creature3D {
     // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); zone: m from the swept line
     this._emit('creature:strike', { x: ex, y: ey, z: ez, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge, zone });
     this._emitStep(ex, ey, ez, 1, md, true);
+    a.rx = this.x; // the recoil leaves from the lunge's end
+    a.ry = this.y;
+    a.rz = this.z;
     this._snakePhase('recoil', this.strikeK.recoil, a.px, a.py, a.pz);
   }
 

@@ -15,16 +15,17 @@ import { STRIKE_DAMAGE } from './config3d.js';
  *   strike     s: the straight lunge to the locked point (the hit test is at its end)
  *   recoil     s: the snap back into the coil
  *   radius     m around the swept segment head -> locked point that the lunge connects within
- *   standOff   m: the distance it holds from you in the coil (it does not run through you)
+ *   standOff   m: the distance it holds from you in the coil (it does not run through you): -0.4 / +0.6 m, always outside the
+ *              knocker's decoyOverride (5 / 6 / 7 m: a knocker can draw it out of its stare) and inside its lunge reach (7.66 / 8.14 / 8.46 m)
  *   lead       s of the player's velocity added to the locked point (capped at leadMax m)
  *   cadence    [lo, hi] s from one strike's rise to the next (always inside [3, 5], the owner's rule)
  */
 export const STRIKE_TUNE = {
   // the dodge: moving at the lock at walk speed with a gun out (4.4 m/s) carries you (lock + strike) x 4.4 = 2.20 / 2.02 / 1.89 m
   // > radius 2.0 / 1.85 / 1.75 m (at 5.5 m/s 2.75 / 2.53 / 2.37 m). No lead: a lead would eat into exactly that margin.
-  normal: { riseFirst: 0.8, riseAgain: 0.5, lock: 0.3, strike: 0.2, recoil: 0.5, radius: 2.0, standOff: 5.5, lead: 0, cadence: [3.6, 5.0] },
-  nightmare: { riseFirst: 0.7, riseAgain: 0.45, lock: 0.28, strike: 0.18, recoil: 0.5, radius: 1.85, standOff: 5.5, lead: 0, cadence: [3.3, 4.6] },
-  abyss: { riseFirst: 0.6, riseAgain: 0.4, lock: 0.27, strike: 0.16, recoil: 0.45, radius: 1.75, standOff: 5.5, lead: 0, cadence: [3.0, 4.2] },
+  normal: { riseFirst: 0.8, riseAgain: 0.5, lock: 0.3, strike: 0.2, recoil: 0.5, radius: 2.0, standOff: 5.6, lead: 0, cadence: [3.6, 5.0] },
+  nightmare: { riseFirst: 0.7, riseAgain: 0.45, lock: 0.28, strike: 0.18, recoil: 0.5, radius: 1.85, standOff: 6.6, lead: 0, cadence: [3.3, 4.6] },
+  abyss: { riseFirst: 0.6, riseAgain: 0.4, lock: 0.27, strike: 0.16, recoil: 0.45, radius: 1.75, standOff: 7.6, lead: 0, cadence: [3.0, 4.2] },
 };
 
 export const STRIKE_COMMON = Object.freeze({

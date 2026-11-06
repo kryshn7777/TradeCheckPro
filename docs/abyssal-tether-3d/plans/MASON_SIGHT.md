@@ -10,8 +10,9 @@ How that was read (redirect here if it was meant differently):
    the stamina waves of CREATURE_PACING.md all still work).
 2. **Near = health no longer protects you.** While it chases you and you are within `lethalNear` of its crown / front blocks, **nothing
    heals**: no regeneration, the regen clock stops, bandages and the first-aid kit are refused (a heal being applied is cancelled, the
-   item kept). A Mason connect was already a kill from any hp (`creature3d.js` `caughtPlayer` -> `physics.kill(..., 'creature')`, the
-   devour scene); it still is, and every regular strike now lands inside the `lethalNear` radius by construction (table below). Also:
+   item kept). **MASON_STRIKES.md (2026-11-06) replaced the one-hit kill:** a Mason connect now takes **30 %** of the health and knocks
+   you down (`caughtPlayer` -> `PlayerHits.mason`); four from full kill (the devour scene at hp 0). The no-heal radius is what makes a
+   chase deadly: inside it the hits add up and nothing comes back. Every regular strike lands inside `lethalNear` by construction. Also:
    **while it chases you, the hunt gate's 14 s scent window is held full**: healing up past 50 % no longer sends a Mason that is looking
    at you away (the old "it hunts only while you are hurt" rule now ends only once it has lost you).
 3. **The knocker** (another agent builds the gadget): `Creature3D.distract(x, y, z, {duration, strength})` lures it away for a while.
@@ -60,8 +61,10 @@ for 3 s (glimpses do not spam the cue). **The first notice of a section** (and t
 plays, the eyes flare, but it cannot commit for `firstHold` s (if it still sees you then, it commits at once).
 
 **The chase** (`creature:sight {on:true}`). It pursues along the crawl nav at **pursue x `pursueMul`**, does not stop to listen, creep or
-stalk at its menace distance, and attacks by the existing rules: the telegraphed wind-up (0.75 / 0.65 / 0.5 s), never through masonry,
-never into a rest; bursts and stamina as before (out of stamina it rests: the chase ends there). A still player no longer counts as
+stalk at its menace distance, and attacks by the SNAKE of MASON_STRIKES.md: it DASHES in (a surge, 2.5 s at most), holds a 5.5 m
+stand-off, rises (0.8 / 0.7 / 0.6 s), locks on where you stand (0.3 s), lunges (0.2 s), recoils and stares, striking again every
+3-5 s while you stay in its reach; never through masonry, never into a rest. While it is engaged with you the stamina does not drain
+(the cadence paces it); out of reach the old stamina waves apply (out of stamina it rests: the chase ends there). A still player no longer counts as
 silent to a Mason that sees him (a contact attack starts on a still player too: cause `'sight'`). Losing sight, it keeps the chase for
 `memory` s (`creature:sight {on:false, reason:'lost'}`), then it is back to the sound hunt and cannot commit again for `cooldown` s
 (the same after a rest or a refuge; not after a knocker drew it off: walk up to it and it takes you).
@@ -104,29 +107,35 @@ kill radius) reaches 8.7 m on Normal, just past it. Shared: line of sight sample
 - **A Masons' rest** (refuge 1): it cannot see you there; the chase drops at once; it holds at its stalking distance and listens.
 - **Douse your light**: an empty lantern is invisible to it (the lantern burns down by itself; the game has no off switch for it).
 - **Hood your light** (LANTERN_HOOD.md): a covered lantern is invisible to it too (it still hears you).
-- **Out-move it**: the chase is 5.2 / 6.4 / 8.6 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17), swing
-  and fall far faster. On Normal a run, a reel or a swing out-runs it; on Abyss a reel, a swing, a fall or a yank does.
+- **Out-move it**: the slow chase is 5.2 / 6.4 / 8.6 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17),
+  swing and fall far faster. But once it has seen you it DASHES (14 / 16 / 18.5 m/s for up to 2.5 s): the dash is meant to catch you.
+  What saves you then is the **dodge** (MASON_STRIKES.md): it rears up, the aim locks where you stand, and anything that moves you more
+  than 2.0 / 1.85 / 1.75 m off that line by the impact (a run, a reel, a swing, a drop) makes it miss. Standing still is a hit (30 %).
 - **Out-wait it**: break the line and it holds the chase only 3 / 3 / 4 s, then it hunts by sound (go still to be silent) and cannot
   commit again for 20 / 18 / 14 s.
 - **The knocker** (below): it drops a chase, and while it lives sight is off for anyone beyond 5 / 6 / 7 m.
 - **The grace**: arriving in a section (or after a respawn) you get the entry grace, the first pass waits 20 / 16 / 12 s, and the first
   notice there is only a warning for 8 / 8 / 6 s.
-- The stamina waves: after a strike, or out of stamina, it RESTS and cannot commit; every new wave needs a fresh notice (a new cue).
+- The stamina waves (out of its reach): out of stamina it RESTS and cannot commit; every new wave needs a fresh notice (a new cue).
+- **Survive a hit**: a strike is 30 %, a knockdown (1.1 s down, 2.4 s getting up) and then 1 s of immunity; it holds its coil and
+  stares while you are down (the next strike is at least 5 s after the hit). Four strikes from full kill.
 
 **Worked example (Normal, full health).** You arrive in S6 whole. About 20 s later a pass comes down the far wall, harmless. It rounds a
 buttress 20 m away with your lantern in view: the knocks, the roar, [It sees your light], its eyes flare. It is the section's first
 notice: a warning, no chase for 8 s; you step behind the buttress. Later, a second sighting: 0.5 s after the cue it commits (the gate
-arms: now it can kill): 20 -> 10 m (where the wind-up starts) at 5.2 m/s takes about 2 s, the wind-up 0.75 s, the strike reaches
-7.66 m. Doing nothing you are bitten about 3 s after the cue. At about 8 m the wrist reads NO RECOVERY. Answers: inside the first 0.5 s
-step out of its line (no chase); after it commits, reel up and away at 12 m/s (the gap grows ~7 m/s), or break the line for 3 s: then
-it is 20 s before it can commit to you again; or throw the knocker.
+arms: now it can strike): it dashes 20 -> 10 m in about a second, coils 5.5 m away, rises 0.8 s, locks 0.3 s, lunges 0.2 s. Doing
+nothing you are struck (30 %, knocked down) about 2.5 s after the cue, then every ~6 s: dead in about 18 s. At about 8 m the wrist
+reads NO RECOVERY. Answers: inside the first 0.5 s step out of its line (no chase); at each rise move (walk, reel, swing, drop) so
+that you are off the line at the impact; break the line for 3 s: then it is 20 s before it can commit to you again; or throw the
+knocker (it is accepted while the Mason stares from its coil, not during a lock / strike / recoil).
 
 ## The knocker decoy (contract for the gadget)
 
 `Creature3D.distract(x, y, z, opts = { duration: 9, strength: 1 })` -> `true` when accepted.
 
 - **Accepted** only when it is the Mason (skitterlings ignore it), active, IN PLAY (a hunt or a prowl pass; not dormant / out of play / the S4
-  sighting / an override / the victory / the hunt gate's withdraw), not mid-strike (`ATTACK`: call again a moment later), not in the S5
+  sighting / an override / the victory / the hunt gate's withdraw), not mid-strike (`ATTACK` lock / strike / recoil or a striking rise:
+  call again a moment later; MASON_STRIKES: while it only stares from its coil it is accepted and it leaves the coil), not in the S5
   lure niche rule (refuge 2), the point within `hearRange x strength` (strength 0.25..2) of its crown, the player not already within
   `decoyOverride`, and not a knocker it inspected less than 20 s ago (within 4 m of it). A rest (refuge 1) does not refuse it.
 - **A call while live** refreshes it: the point moves (if it moved more than 3 m while it was inspecting, it walks there again) and the

@@ -256,6 +256,26 @@ function mk(key, seed, opts = {}) {
   ok(im.hits === 0 && im.all('creature:strike').length > 3, 'immune: strikes come, none hits');
 }
 
+// ---- 6b. the knocker while it stares from the coil ------------------------------------------------------------------------------
+{
+  const w = mk('normal', 3);
+  let acc = null;
+  let refusedMid = false;
+  w.step(60 * 30, (x) => {
+    x.c.immune = true;
+    const sp = x.c.attackPhase;
+    if ((sp === 'lock' || sp === 'strike' || sp === 'recoil') && refusedMid === false) refusedMid = !x.c.distract(-7, -329.9, 14.4, { duration: 9 }) ? 'yes' : 'no';
+    if (sp === 'stare' && acc === null) {
+      acc = x.c.distract(-7, -329.9, 14.4, { duration: 9 });
+      if (process.env.DEBUG) console.log('at stare', x.c.distance, Math.hypot(x.c._px - x.c.x, x.c._py - x.c.y, x.c._pz - x.c.z), x.c.coiledFree, x.c.attack.sp, x.c.sense.stats.refused, x.c.inPlay, x.c._override, x.c._withdraw, x.c.refuge);
+      return false;
+    }
+  });
+  w.step(30);
+  if (process.env.DEBUG) console.log(refusedMid, acc, w.c.distance, w.c.sense.decoy, w.c.sense.stats, w.c.attackPhase);
+  ok(refusedMid === 'yes' && acc === true && w.c.state !== 'ATTACK' && w.c.attackPhase === 'stalk', `a knocker is refused mid-strike, accepted while it stares: it leaves the coil (state ${w.c.state})`);
+}
+
 // ---- 7. determinism -------------------------------------------------------------------------------------------------------------
 {
   const run = () => {
