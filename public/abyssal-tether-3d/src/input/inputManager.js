@@ -38,6 +38,7 @@
 
 import { Group, Matrix4, Quaternion, Vector3 } from 'three';
 import { CONFIG, U, VIEW } from '../sim/config3d.js';
+import { makeGripToggle, resetGripToggle, stepGripToggle, makeRopeLatch, ropeLatchRise } from './assistLatch.js'; // ASSIST PACK
 import { XRInput, tetherDown, makeHandVel, trackHandVel, handVelOf } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
 import { TouchInput } from './touchInput.js';
@@ -290,6 +291,10 @@ export class InputManager {
     this._knock = { down: false, up: false, held: false };
     this._handVel = [makeHandVel(), makeHandVel()]; // VR: each hand's world velocity (the knocker's throw)
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
+    // ASSIST PACK (input/assistLatch.js): gripMode 'toggle' (VR per hand; [2] = the desktop / touch cling) and ropeLatch per hand
+    this._gripTog = [makeGripToggle(), makeGripToggle(), makeGripToggle()];
+    this._ropeLatch = { left: makeRopeLatch(), right: makeRopeLatch() };
+    this._gripRelEv = { left: { hand: 'left' }, right: { hand: 'right' } };
     this._bagGesture = makeBagGesture();
     this._bagHands = [
       { ok: false, x: 0, y: 0, z: 0, grip: 0 },
@@ -330,6 +335,16 @@ export class InputManager {
       });
       on('player:death', () => {
         this._playerDead = true;
+      });
+      // ASSIST PACK: a latched rope whose line ended on its own (a miss, a break, a cut, a cancel) unlatches: the next tap fires
+      const drop = (p) => this._ropeLatchDrop(p && p.hand);
+      on('grapple:miss', drop);
+      on('grapple:break', drop);
+      on('rope:cancel', (p) => {
+        if (p && p.reason !== 'input') drop(p);
+      });
+      on('grapple:release', (p) => {
+        if (p && p.reason !== 'input') drop(p);
       });
       for (const t of ['game:start', 'game:restart', 'game:respawn', 'game:menu']) {
         on(t, () => {
@@ -922,7 +937,22 @@ export class InputManager {
   _handPhysical(hand, down, source) {
     const ht = this._ht[hand];
     if (!ht) return;
-    const d = !!down;
+    let d = !!down;
+    if (this._ropeLatchOn(source)) {
+      // ASSIST PACK rope latch: only a fresh press counts; it flips the tether (fire-and-stay / let go). A press over a panel clicks.
+      if (!ropeLatchRise(this._ropeLatch[hand], d)) return;
+      if (this.uiMode) {
+        this._edges.any = true;
+        if (source !== 'desktop') {
+          this.uiHand = hand;
+          this._edges.click = true;
+        }
+        return;
+      }
+      ht.reblock = false;
+      ht.blocked = false;
+      d = !ht.phys;
+    }
     if (ht.reblock) {
       ht.reblock = false;
       if (d) {
@@ -958,6 +988,35 @@ export class InputManager {
         ht.releaseEdge = true;
       }
     }
+  }
+
+  /** ASSIST PACK: the rope latch applies to this source (settings.ropeLatch; VR triggers and the mouse / keys, not the touch layer). */
+  _ropeLatchOn(source) {
+    if (!this.settings || this.settings.ropeLatch !== true || source === 'touch') return false;
+    return !(source === 'desktop' && this.touch && this.touch.active); // (touch keeps its own touchRopeMode latch)
+  }
+
+  /** ASSIST PACK: a latched tether whose line ended by itself lets go of its latch. */
+  _ropeLatchDrop(hand) {
+    const ht = hand ? this._ht[hand] : null;
+    if (!ht || !this._ropeLatchOn(this.mode === 'xr' ? 'xr' : 'desktop') || !ht.game) return;
+    ht.game = false;
+    ht.phys = false;
+    ht.pressEdge = false;
+    ht.pendingRelease = false;
+    ht.releaseEdge = true;
+  }
+
+  /** ASSIST PACK: climb3d holds on with this hand (last frame). */
+  _climbHolding(hand) {
+    const g = this.game;
+    const cl = g && g.physics ? g.physics.climb : null;
+    return !!(cl && cl.hands && cl.hands[hand] && cl.hands[hand].gripping);
+  }
+
+  /** ASSIST PACK: settings.gripMode 'toggle'. */
+  get gripToggle() {
+    return !!this.settings && this.settings.gripMode === 'toggle';
   }
 
   /** Releases every held input (blur, tab hidden, XR blur, mode switch). */
@@ -1308,9 +1367,18 @@ export class InputManager {
       let on = this._gripOn[i] ? grip > K.gripOff : grip > K.gripOn;
       if (!readable || this.uiMode) on = false;
       // A grip at the hip belongs to the bag.
-      if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i]) || g.knocker === i) on = false; // (a hand holding a knocker does not climb)
+      const bagHand = (g.open && g.hand === i) || g.knocker === i;
+      if (bagHand || (g.zone === i && g.gripDown[i])) on = false; // (a hand holding a knocker does not climb)
       this._gripOn[i] = on;
-      C.grab[h] = on;
+      if (this.gripToggle) {
+        // ASSIST PACK: one squeeze grabs, the next lets go (a squeeze that is the bag's toggles nothing)
+        const T = this._gripTog[i];
+        const raw = readable && !this.uiMode && grip > (T.raw ? K.gripOff : K.gripOn);
+        const blocked = !readable || this.uiMode || bagHand || (g.zone === i && g.gripDown[i]);
+        const latched = stepGripToggle(T, raw, this._bagDt, this._climbHolding(h), blocked);
+        if (T.released) this._emit('input:gripRelease', this._gripRelEv[h]);
+        C.grab[h] = latched && readable && !this.uiMode && !bagHand;
+      } else C.grab[h] = on;
       const hi = C.hands[h];
       const sock = this.sockets[h];
       hi.ok = this._handTracked(h) && !!sock && !!sock.parent;
@@ -1362,6 +1430,7 @@ export class InputManager {
     if (on) {
       I.climb.grab.right = false;
       this._gripOn[1] = false;
+      if (this._gripTog[1].on && !this._gripTog[1].held) resetGripToggle(this._gripTog[1]); // (ASSIST PACK: the squeeze was the hood's)
       I.hands.right.yank = 0;
     }
   }
@@ -1499,7 +1568,16 @@ export class InputManager {
     // climbing: F clings to a marked surface in reach, W/S climb, A/D traverse (view relative), Space hops off
     const C = I.climb;
     C.vr = false;
-    const cling = !!yank && !this.uiMode;
+    let cling = !!yank && !this.uiMode;
+    if (this.gripToggle) {
+      // ASSIST PACK: F / GRIP once clings, once more lets go (and pulls a Holdfast hand free)
+      const T = this._gripTog[2];
+      cling = stepGripToggle(T, !!yank, this._bagDt, this._climbHolding('left') || this._climbHolding('right'), this.uiMode) && !this.uiMode;
+      if (T.released) {
+        this._emit('input:gripRelease', this._gripRelEv.right);
+        this._emit('input:gripRelease', this._gripRelEv.left);
+      }
+    }
     C.grab.left = cling;
     C.grab.right = cling;
     C.fwd = (D.key('KeyW') ? 1 : 0) - (D.key('KeyS') ? 1 : 0);

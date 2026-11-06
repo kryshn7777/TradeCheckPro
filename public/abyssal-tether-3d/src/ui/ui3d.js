@@ -141,6 +141,8 @@ const TABS = [
   { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
   { id: 'access', label: 'Access', title: 'Accessibility' },
   { id: 'rope', label: 'Rope', title: 'Rope and hands' },
+  // ASSIST PACK (plans/TUTORIAL_ASSIST.md): its own page; the VR Comfort, Access and Rope pages already hold their rows
+  { id: 'assist', label: 'Assist', title: 'Assist (no button held down)' },
   { id: 'touch', label: 'Touch', title: 'Touch controls (phone and tablet)', desktopOnly: true },
 ];
 /** The VR panel has no touch page. */
@@ -219,6 +221,9 @@ const SETTINGS_SCHEMA = [
   { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
   { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
   { key: 'dominantHand', tab: 'rope', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
+  // ASSIST PACK (plans/TUTORIAL_ASSIST.md; vrNote: the one line the VR Assist page shows under its rows)
+  { key: 'gripMode', tab: 'assist', type: 'choice', label: 'Grip', desc: 'Hold: keep squeezing to hold on. Toggle: one squeeze grabs, the next lets go (and pulls your hand free of a hand in the wall).', options: [['hold', 'Hold'], ['toggle', 'Toggle']], vrNote: 'Grip toggle: one squeeze grabs, the next lets go.' },
+  { key: 'ropeLatch', tab: 'assist', type: 'toggle', label: 'Rope latch', desc: 'Tap to fire a tether and stay attached, tap again to let go: the triggers and the mouse. Touch has its own Rope behaviour.', vrNote: 'Rope latch: tap to fire and stay on, tap again to let go.' },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -4267,6 +4272,12 @@ export class UI3D {
       }
     }
     if (tab.id === 'access') this._btn(ctx, this._region(CW / 2 - 200, y + 14, 400, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+    // ASSIST PACK: the page's short explanations, one 28 px line per row
+    for (const def of rows) {
+      if (!def.vrNote) continue;
+      y += 44;
+      txt(ctx, def.vrNote, 44, y + 12, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'left', 0, CW - 88);
+    }
   }
 
   /** One settings row at y: label + value, then a − slider + for ranges or option buttons (rows of 80 px are squeezed). */
