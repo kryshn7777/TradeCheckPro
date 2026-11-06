@@ -49,7 +49,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   ok(good, 'fall damage: 0 up to the threshold, convex + monotonic, 1 at the lethal speed (' + rows.join(' | ') + ')');
   const t = DIFFICULTY.normal.health.fallThreshold;
   const L = DIFFICULTY.normal.lethalImpact;
-  ok(near(t * L, 0.55 * 17, 1e-3) && near(fallDamage(0.775 * 17, L, t), 0.125, 1e-3), 'normal curve (FALL TOUGHNESS x2): the free-drop SPEED is still 55 % of the old 17 m/s (a drop under ~4.5 m is free), the old 77.5 % landing now costs 12.5 hp instead of 25, and the curve reaches 100 at ' + L.toFixed(1) + ' m/s');
+  ok(near(t * L, 0.55 * 17, 1e-3) && near(fallDamage(0.775 * 17, L, t), 0.125, 1e-3), 'normal curve (FALL TOUGHNESS x2): the free-drop SPEED is still 55 % of the old 17 m/s (a drop under ~3.2 m is free), the old 77.5 % landing now costs 12.5 hp instead of 25, and the curve reaches 100 at ' + L.toFixed(1) + ' m/s');
   ok(dropSpeed(0) === 0 && near(dropHeight(dropSpeed(7)), 7, 1e-9), 'drop height <-> speed helpers agree');
 }
 // 2. Wall impacts: gentler than floor impacts, capped, zero below half the lethal speed.

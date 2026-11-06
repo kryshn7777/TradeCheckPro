@@ -238,7 +238,7 @@ export const DIFFICULTY = {
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
-    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55 of the OLD lethal speed (a drop under ~4.5 m costs nothing): see toughFall
+    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55 of the OLD lethal speed (a drop under ~3.2 m costs nothing): see toughFall
     climb: { drainMul: 1, reelDrain: 0 },
   },
   nightmare: {

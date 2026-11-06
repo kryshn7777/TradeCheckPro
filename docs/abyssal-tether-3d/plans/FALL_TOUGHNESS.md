@@ -14,9 +14,9 @@ those two numbers (health, release guide, fall cue, audio, bots), so they all mo
 
 | | old lethal | new lethal | free drop | lethal free fall (old -> new) |
 |---|---|---|---|---|
-| Normal | 17.0 m/s | 20.17 m/s | ~4.5 m (unchanged) | 10.7 m -> 15.1 m |
-| Nightmare | 15.5 m/s | 18.71 m/s | ~3.0 m (unchanged) | 8.9 m -> 13.0 m |
-| Abyss | 14.5 m/s | 17.80 m/s | ~2.4 m (unchanged) | 7.8 m -> 11.7 m |
+| Normal | 17.0 m/s | 20.17 m/s | ~3.2 m (unchanged) | 10.7 m -> 15.1 m |
+| Nightmare | 15.5 m/s | 18.71 m/s | ~2.2 m (unchanged) | 8.9 m -> 13.0 m |
+| Abyss | 14.5 m/s | 17.80 m/s | ~1.6 m (unchanged) | 7.8 m -> 11.7 m |
 
 Normal, damage by free-fall height (old -> new): 5 m 9 -> 4 hp, 6.5 m 26 -> 13, 8 m 49 -> 24, 10 m 85 -> 43, 12 m dead -> 64, 14 m dead
 -> 87, 15 m+ dead.
