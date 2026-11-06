@@ -59,6 +59,7 @@ import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlay
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
+import { MasonAttackGlue } from './masonAttackGlue.js'; // MASON SNAKE ATTACK: the cobra pose, the light flare, the sounds (plans/MASON_SNAKE_ATTACK.md)
 import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
 import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
 import { newTrial, trialSeed } from './meta/trials.js';
@@ -1310,6 +1311,7 @@ export class Game3D {
     this._setupPuzzleFocus();
     this._setupChase();
     this._setupHood();
+    this._setupMasonAttack();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -5266,6 +5268,16 @@ export class Game3D {
     }
   }
 
+  /** MASON SNAKE ATTACK (masonAttackGlue.js, plans/MASON_SNAKE_ATTACK.md): `game.masonAttack`; a failure leaves the plain lunge. */
+  _setupMasonAttack() {
+    try {
+      this.masonAttack = new MasonAttackGlue(this);
+    } catch (err) {
+      this._fault('masonAttack', err);
+      this.masonAttack = null;
+    }
+  }
+
   /** THE HOOD (lanternHoodGlue.js, plans/LANTERN_HOOD.md): `game.hood` { on, k }; a failure leaves the lantern uncovered for good. */
   _setupHood() {
     try {
@@ -5399,6 +5411,11 @@ export class Game3D {
       if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
     } catch (err) {
       this._fault('chase', err);
+    }
+    try {
+      if (this.masonAttack) this.masonAttack.update(dt); // MASON SNAKE ATTACK: the phase, the cobra pose for the view below, the sounds
+    } catch (err) {
+      this._fault('masonAttack', err);
     }
     this._updateReleaseGuide(dt);
     const fx = this.healthFx;
@@ -6517,6 +6534,14 @@ export class Game3D {
         state: () => (this.chase ? this.chase.debugState() : null),
         start: (dist) => !!(this.chase && this.chase.debugStart(dist)),
         lost: () => !!(this.chase && this.chase.debugLost()),
+      },
+      // MASON SNAKE ATTACK: masonPhase('stalk'|'dash'|'rise'|'stare'|'lock'|'strike'|'recoil'|'cycle', u | {u, freeze}) forces the attack's look and
+      // sound (u holds it at 0..1; freeze holds the pose); masonPhase('') returns to the sim; masonPhase() reads the state.
+      masonPhase: (phase, o) => {
+        const ma = this.masonAttack;
+        if (!ma) return null;
+        if (phase === undefined) return ma.debugState();
+        return ma.debugPhase(phase, o) ? ma.debugState() : null;
       },
       comms: {
         state: () => {

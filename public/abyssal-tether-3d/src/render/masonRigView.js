@@ -132,6 +132,7 @@ export class MasonRigView {
     this._cine = false;
     this._level = null;
     this._lastCreature = null;
+    this.snake = null; // MASON SNAKE ATTACK: a SnakePose (masonAttackGlue.js sets it each frame)
     this.debug = this._makeDebug();
     if (this.scene) this.scene.add(this.root);
   }
@@ -435,6 +436,10 @@ export class MasonRigView {
       const wind = sn.phase === 'windup' ? clamp(sn.atkT / Math.max(sn.atkWindup, 0.05), 0, 1) : sn.phase === 'strike' ? -0.5 : 0;
       this.motion.update(dt, F, sp, size, gs.freeze ? 0 : this._speed, this.legs.cycle, this.legs.loadL, this.legs.loadR, wind, B.jitter || 0);
     }
+    // MASON SNAKE ATTACK (mason/snakePose.js, set by masonAttackGlue.js): the cobra rear / sway / strike stretch / dash over the frames
+    const sn = !o.variant && this.snake && this.snake.active ? this.snake : null;
+    if (sn) sn.apply(F, null, SEG, size);
+    else if (this.snake) this.snake.headOk = false;
     const level = C.level || this._level;
     if (C.level) this._level = C.level;
     const cap = sectionHeadScale(C);
@@ -459,6 +464,7 @@ export class MasonRigView {
     const bs = o.bodyScale / P0;
     S[0] = hs;
     blockScales(B, sp, bs, size < 1 ? 0.08 : 0.4, S);
+    if (sn) sn.scaleBlocks(S);
     if (o.twitch > 0) this._twitch(F, S, o.twitch, B);
 
     // ---- crown aim (spring) ----
@@ -483,10 +489,15 @@ export class MasonRigView {
         camera.getWorldPosition(_v1).applyMatrix4(_m4aim);
         this.mandibles.setTarget(_v1.x, _v1.y, _v1.z);
       } else this.mandibles.setTarget(null);
+      // the snake's jaw (the gape on the lock, the snap on the strike) unless a cinematic / debug hold has the mandibles
+      const hold0 = this.mandibles.hold;
+      if (sn && hold0 == null && sn.jaw > -0.9) this.mandibles.hold = sn.jaw;
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
+      this.mandibles.hold = hold0;
       // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
       this.eyes.follow(nw, rw);
       this.eyes.update(this.graph.snapshot, this._time, true);
+      if (sn && sn.eyes > this.eyes.glow) this.eyes.boost(sn.eyes); // the LOCK flare: the red eyes blaze for ~0.3 s
       this.maw.follow(nw, rw);
       this.maw.update(dt, this.mandibles.open, show); // (it was LOD0-only: on Quest, beyond 12 m, the open mouth was not drawn at all)
       this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
@@ -678,7 +689,7 @@ export class MasonRigView {
     let ty = 0;
     let tp = 0;
     let gt = 0; // the wanted focus gain
-    const attacking = this.graph.snapshot.phase !== null;
+    const attacking = this.graph.snapshot.phase !== null || !!(this.snake && this.snake.active && this.snake.coil > 0.05); // the coil aims the head itself
     if (foc && !attacking) {
       const dx = foc.x - F[0];
       const dy = foc.y - F[1];

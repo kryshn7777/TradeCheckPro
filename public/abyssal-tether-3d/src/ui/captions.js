@@ -64,6 +64,11 @@ export const RULES = Object.freeze({
   noRecovery: R('[No recovery this close]', 'creature', 0, 'norecovery', 8),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
   skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
+  // MASON SNAKE ATTACK (masonAttackGlue.js 'mason:attack'): the coil's rattle, THE LOCK (the dodge deadline), the lunge, the dash
+  masonRattle: R('[STONE RATTLING]', 'creature', 1, 'mason-rattle', 4),
+  masonLock: R('[IT LOCKS ON]', 'creature', 2, 'mason-lock', 0.8, 1.6),
+  masonLunge: R('[LUNGE]', 'creature', 2, 'mason-lunge', 0.8, 1.6),
+  masonSurge: R('[IT SURGES]', 'creature', 2, 'surge', 2.5),
   skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
   skitBite: R('[A sharp bite]', 'creature', 2, 'skitstrike', 1.2),
   skitMiss: R('[Small jaws snap, missing]', 'creature', 1, 'skitstrike', 1.2),
@@ -289,6 +294,8 @@ export function captionForEvent(type, p, head) {
       return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
     case 'creature:notice':
       return RULES.notice;
+    case 'mason:attack':
+      return e.phase === 'rise' || e.phase === 'stare' ? RULES.masonRattle : e.phase === 'lock' ? RULES.masonLock : e.phase === 'strike' ? RULES.masonLunge : e.phase === 'dash' ? RULES.masonSurge : null;
     case 'creature:near':
       return e.on ? RULES.noRecovery : null;
     case 'creature:step':
@@ -488,6 +495,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:sighting',
   'creature:retreat',
   'creature:notice',
+  'mason:attack',
   'creature:near',
   'creature:step',
   'dresser:tick',
