@@ -10,7 +10,7 @@ import { srcUrl, SRC_DIR, TOOLS_DIR } from '../../verify/root.mjs';
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { LEVEL_DATA_3D } = await import(srcUrl('data/level-data-3d.js'));
 const { DIFFICULTY, EventBus, CONFIG, SETTINGS_DEFAULTS, sanitizeUxSettings } = await import(srcUrl('sim/config3d.js'));
-const { Pickups3D, pickWeapons, checkWeaponFairness, checkFairness, pickSupplies, WEAPON_SPAWN } = await import(srcUrl('sim/pickups3d.js'));
+const { Pickups3D, pickWeapons, checkWeaponFairness, checkFairness, WEAPON_SPAWN } = await import(srcUrl('sim/pickups3d.js'));
 const { Inventory3D, ITEM, ITEM_COUNT, BAG_KINDS, ITEM_KEYS, ITEM_NAMES, ITEM_SHORT, migrateCounts } = await import(srcUrl('sim/inventory3d.js'));
 const { WEAPON_RECIPES, WEAPON_ROUTES, registerWeaponSfx } = await import(srcUrl('audio/weaponSfx.js'));
 const { compileRecipe, validateRecipe } = await import(srcUrl('audio/sfxDesign.js'));
