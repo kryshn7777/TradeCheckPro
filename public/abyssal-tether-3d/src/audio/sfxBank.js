@@ -19,6 +19,7 @@
  */
 import { hashPos, hashStr, VAR } from './sfxDesign.js';
 import { SECTION_BEDS, sectionOfY } from './dsp3d.js';
+import { KNOCKER_RECIPES, KNOCKER_ROUTES } from './knockerSfx.js'; // THE KNOCKER (sim/knocker3d.js): its recipes + routes
 
 // ===========================================================================
 // Surfaces (feet, hook, landing, props)
@@ -802,6 +803,7 @@ export const RECIPES = {
       { t: 'tone', w: 'square', f: 151, at: 0.09, a: 0.002, h: 0.05, d: 0.04, g: 0.12 },
     ],
   },
+  ...KNOCKER_RECIPES,
 };
 
 // ===========================================================================
@@ -1066,6 +1068,7 @@ export const ROUTES = {
     if (!place(o, p)) o.dist = num(p.distance, 40);
     E.play('dresser.appear', 0.5, o);
   },
+  ...KNOCKER_ROUTES,
 };
 
 function stopVoice(E, key) {

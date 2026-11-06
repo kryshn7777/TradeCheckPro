@@ -10,6 +10,11 @@
  *      right = adrenaline, down = battery; further than BAG_ZONE.pick = 0.06 m) and RELEASE the grip. That item
  *      is applied (`chosen` = slot 0..3). Release without pointing (or on an empty slot, `hover` -1) just closes it.
  *   4. A grip press in the zone while an item is being applied cancels it (`cancel` edge).
+ *   5. THE KNOCKER (sim/knocker3d.js): with the radial open, DRAW the hand up and out of the bag (BAG_ZONE.draw = 0.2 m from the
+ *      anchor, at least BAG_ZONE.drawUp = 0.15 m of it upward) still squeezing the grip: a knocker comes out in that hand
+ *      (`drawn` edge, `knocker` = the hand; only when S.knocker says one may be drawn, else `drawRefused` once). Swing the arm
+ *      and RELEASE the grip: `thrown` edge (the hand); the game throws it with the hand's release velocity, or puts it back
+ *      when the release was too gentle. One reach-and-throw motion: grab at the hip, pull, throw.
  *
  * update() fills `out` every frame; edges (`entered`, `chosen`, `cancel`) last one frame.
  */
@@ -23,6 +28,8 @@ export const BAG_ZONE = {
   gripOn: 0.55,
   gripOff: 0.35,
   radial: 0.1, // m: distance of the icons from the anchor (drawn by BagFx)
+  draw: 0.2, // m from the anchor: pulling the hand this far out (and up) with the grip held draws a knocker
+  drawUp: 0.15, // m of that upward
 };
 
 /** Slot hovered for a hand offset (right r, up u) from the anchor, or -1 inside the dead centre. Left 0, up 1, right 2, down 3. */
@@ -47,6 +54,12 @@ export function makeBagGesture() {
     entered: false, // edge: a hand just entered the zone
     chosen: -1, // edge: slot released on (0..3), else -1
     cancel: false, // edge: grip pressed in the zone while applying
+    knocker: -1, // the hand holding a knocker drawn from the bag, else -1
+    drawn: -1, // edge: a knocker was drawn into this hand
+    thrown: -1, // edge: this hand let the knocker go (the game throws it / puts it back)
+    drawRefused: false, // edge: a draw was tried while none may be drawn
+    drawK: 0, // 0..1 how far the open hand is along the draw (the radial's hint)
+    _refused: false,
     gripping: false, // the opening hand's grip is held (the rope must not yank)
     // gripDown[i]: hand i's grip is pressed (hysteresis); the InputManager does not yank a rope with a grip that is at the bag
     _prevZone: -1,
@@ -62,6 +75,10 @@ export function updateBagGesture(g, S) {
   g.entered = false;
   g.chosen = -1;
   g.cancel = false;
+  g.drawn = -1;
+  g.thrown = -1;
+  g.drawRefused = false;
+  g.drawK = 0;
   const cy = Math.cos(S.yaw);
   const sy = Math.sin(S.yaw);
   // right = (cos, 0, -sin), forward = (-sin, 0, -cos)
@@ -97,7 +114,19 @@ export function updateBagGesture(g, S) {
     g.zone = -1;
     g._prevZone = -1;
     g.gripDown[0] = g.gripDown[1] = false;
+    g.knocker = -1;
     return g;
+  }
+  // A knocker in a hand: the release of that grip throws it (an untracked hand lets go too).
+  if (g.knocker >= 0) {
+    const kh = g.knocker;
+    const h = S.hands[kh];
+    const down = !!h && h.ok && (g.gripDown[kh] ? h.grip > BAG_ZONE.gripOff : h.grip >= BAG_ZONE.gripOn);
+    g.gripDown[kh] = down;
+    if (!down) {
+      g.thrown = kh;
+      g.knocker = -1;
+    }
   }
   if (g.open) {
     // Keep the opening hand even if it wanders off the zone.
@@ -116,7 +145,22 @@ export function updateBagGesture(g, S) {
       const wasDown = g.gripDown[g.hand];
       const down = wasDown ? h.grip > BAG_ZONE.gripOff : h.grip >= BAG_ZONE.gripOn;
       g.gripDown[g.hand] = down;
-      if (!down) {
+      const d2 = ox * ox + oy * oy + oz * oz;
+      g.drawK = oy > 0 ? Math.min(1, Math.min(oy / BAG_ZONE.drawUp, Math.sqrt(d2) / BAG_ZONE.draw)) : 0;
+      if (down && oy >= BAG_ZONE.drawUp && d2 >= BAG_ZONE.draw * BAG_ZONE.draw && S.counts.length > 4 && S.counts[4] > 0) {
+        if (S.knocker) {
+          // pulled out of the bag: the knocker is in this hand, the radial closes, the grip holds it
+          g.knocker = g.hand;
+          g.drawn = g.hand;
+          g.open = false;
+          g.hover = -1;
+          g.gripping = true;
+          g._refused = false;
+        } else if (!g._refused) {
+          g._refused = true;
+          g.drawRefused = true;
+        }
+      } else if (!down) {
         if (g.hover >= 0) g.chosen = g.hover;
         g.open = false;
         g.hover = -1;
@@ -128,6 +172,7 @@ export function updateBagGesture(g, S) {
   } else {
     g.gripping = false;
     for (let i = 0; i < 2; i++) {
+      if (i === g.knocker || i === g.thrown) continue; // that grip is holding (or just threw) the knocker
       const h = S.hands[i];
       const wasDown = g.gripDown[i];
       const down = !!h && h.ok && (wasDown ? h.grip > BAG_ZONE.gripOff : h.grip >= BAG_ZONE.gripOn);
@@ -137,6 +182,7 @@ export function updateBagGesture(g, S) {
           g.cancel = true;
         } else {
           g.open = true;
+          g._refused = false;
           g.hand = i;
           g.ax = h.x;
           g.ay = h.y;

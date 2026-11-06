@@ -39,11 +39,13 @@ const ICON = {
   i1: '<rect x="3" y="9" width="18" height="6" rx="3" transform="rotate(-35 12 12)"/><path d="M10 10.5l3.5 3M12.5 8.5l3.5 3" stroke-width="1.4"/>',
   i2: '<path d="M4 20l6-6M9 9l6 6M11 7l6 6 3-3-6-6zM17 3l4 4M5 15l4 4"/>',
   i3: '<rect x="7" y="5" width="10" height="16" rx="2"/><path d="M10 3h4v2h-4zM13 9l-3 4h4l-3 4" stroke-width="1.6"/>',
+  // THE KNOCKER: a squat drum, its striker arm and the wind-up key on its flank
+  i4: '<rect x="4" y="11" width="12" height="8" rx="2"/><path d="M6 11V9h7M13 9l3-3M16 15h3M19 12.5v5"/>',
 };
 const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', nv: 'NV', pause: '', fs: '' };
 const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', nv: 'Night vision goggles', pause: 'Pause' };
-const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT'];
-const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery'];
+const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT', 'KNOCK'];
+const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker (throw it)'];
 
 const CSS = `
 html.touch-on,html.touch-on body{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -522,7 +524,13 @@ export class TouchInput {
         if (id.startsWith('bag')) {
           const n = id.charCodeAt(3) - 48;
           const bag = im.game && im.game.bag;
-          if (n >= 0 && n < 4 && bag && bag.counts && bag.counts[n] > 0) {
+          if (n === 4 && bag && bag.counts && bag.counts[4] > 0) {
+            // THE KNOCKER: a tap lobs it along the view (sim/knocker3d.js; the game refuses it with a soft click when it cannot)
+            im._knockEdge(true);
+            im._knockEdge(false);
+            this._tick(16);
+            this._setBag(false);
+          } else if (n >= 0 && n < 4 && bag && bag.counts && bag.counts[n] > 0) {
             im._edge('any');
             im._bagEdge('slot', n);
             this._tick(16);
@@ -627,11 +635,11 @@ export class TouchInput {
   _paintBag() {
     const bag = this.im.game && this.im.game.bag;
     if (!bag || !bag.counts) return;
-    const key = bagCountsKey(bag.counts) * 4 + (bag.selected | 0);
+    const key = (bagCountsKey(bag.counts) * 4 + (bag.selected | 0)) * 8 + ((bag.counts[4] | 0) & 7);
     if (key === this._bagKey) return;
     this._bagKey = key;
     let total = 0;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const n = bag.counts[i] | 0;
       total += n;
       const it = this.els['bag' + i];
@@ -706,7 +714,8 @@ export class TouchInput {
 
     const panel = el('div', 'tc-bag');
     panel.hidden = true;
-    for (let i = 0; i < 4; i++) {
+    const kinds = this.im.game && this.im.game.knocker && this.im.game.knocker.enabled === false ? 4 : 5; // 5: THE KNOCKER
+    for (let i = 0; i < kinds; i++) {
       const it = el('button', 'tc-btn tc-item');
       it.type = 'button';
       it.dataset.tc = 'bag' + i;

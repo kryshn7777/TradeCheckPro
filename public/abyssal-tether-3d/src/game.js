@@ -41,6 +41,7 @@ import { RoachView } from './render/roachView.js'; // ... one InstancedMesh, one
 import { SkitterlingView } from './render/skitterlingView.js'; // the HUNTER skitterlings: the same red cockroach, bigger (plans/SKITTERLINGS.md)
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
+import { Knocker3D, KNOCKER, startCount as knockerStart, throwVelocity as knockerThrowVel, vrThrowVelocity as knockerVrVel, predictArc as knockerArc } from './sim/knocker3d.js'; // THE KNOCKER: the thrown clockwork decoy the Mason answers
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -151,6 +152,7 @@ const MODULES = {
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   jetpackView: './render/jetpackView.js', // the fuel cans + the flame
+  knockerView: './render/knockerView.js', // THE KNOCKER in the world (one instanced mesh) + its aim arc
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
@@ -236,6 +238,7 @@ export function blankIntent() {
     mapPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    knocker: { pressed: false, held: false, released: false }, // THE KNOCKER's key (desktop G / touch KNOCK)
     climb: blankClimb(),
   };
 }
@@ -352,6 +355,15 @@ function hitstopOff() {
 function jetOff() {
   try {
     return typeof location !== 'undefined' && /[?&]jet=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?knocker=off` leaves THE KNOCKER out (none carried, none in the supplies, G does nothing): the route bots / e2e. */
+function knockerOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]knocker=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1139,6 +1151,9 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
+    this.knocker = null; // THE KNOCKER (sim/knocker3d.js): the thrown decoy; its slots are read by the creature tests (live decoys)
+    this.knockerView = null; // render/knockerView.js
+    this._kn = { aiming: false, held: 0, arc: new Float32Array(48 * 3), n: 0, v: { vx: 0, vy: 0, vz: 0, speed: 0, charge: 0 }, o: { x: 0, y: 0, z: 0 }, hv: { x: 0, y: 0, z: 0 }, ctx: { dead: false, busy: false }, firstPick: true, emptyT: -1e9 };
     this.vista = null; // sim/vistaWind.js
     this.waterView = null; // render/waterView.js (Chapter I)
     this.remainsView = null; // render/remainsView.js (Chapter I)
@@ -1846,6 +1861,14 @@ export class Game3D {
         this.jetpackView = null;
       }
     }
+    if (!this.knockerView && M.knockerView && typeof M.knockerView.KnockerView === 'function') {
+      try {
+        this.knockerView = new M.knockerView.KnockerView(this);
+      } catch (err) {
+        this._fault('knockerView', err);
+        this.knockerView = null;
+      }
+    }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
       try {
         this.pickupsView = new M.pickupsView.PickupsView(this);
@@ -2219,7 +2242,10 @@ export class Game3D {
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;
       this._hapticBoth(e && e.hand ? 0.5 : 0.3, 45);
-      this._toast(`${ITEM_NAMES[e.kind] || 'Supplies'} taken`, 1.6);
+      if (e && e.kind === ITEM.KNOCKER && this._kn.firstPick) {
+        this._kn.firstPick = false; // the first knocker of a run says what it is for
+        this._toast('A knocker. Throw it far: it answers for you.', 3.2);
+      } else this._toast(`${ITEM_NAMES[e.kind] || 'Supplies'} taken`, 1.6);
     });
     bus.on('pickup:full', (e) => {
       if (this._inRun()) this._toast(`${ITEM_NAMES[e && e.kind] || 'Bag'}: bag is full`, 1.6);
@@ -2939,6 +2965,8 @@ export class Game3D {
     if (this.roaches) this.roaches.clear(); // a respawn / warp wakes to an empty floor
     this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
+    if (this.knocker) this.knocker.reset(); // (a warp: no knocker left knocking where you were)
+    this._kn.aiming = false;
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
     this._setState('playing');
@@ -3079,6 +3107,8 @@ export class Game3D {
     this.holster = new Holster3D(this._runBus);
     this.holster.setEnabled(!holsterOff());
     this.jet = new Jetpack3D(this._runBus);
+    this.knocker = new Knocker3D(this._runBus);
+    this.knocker.enabled = this._knockerOn();
     this.vista = new VistaWind(this._runBus);
     this.vista.enabled = !windOff();
     this.vista.reset(lvl);
@@ -3086,6 +3116,7 @@ export class Game3D {
     this.roaches = attract ? null : new Roaches(this._runBus, { seed: (0x2545f491 * (this._runCount + 1)) >>> 0 });
     if (this.roaches) this.roaches.reset(lvl);
     this.pickups = new Pickups3D(lvl, this._runBus);
+    this.pickups.knockers = this._knockerOn(); // the rare extra knockers in the supplies
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
     this.flow = new Flow3D(this._runBus, this.player); // SWING CHAINS (sim/flow3d.js): bus-driven, rebuilt (= reset) with each world
@@ -3149,6 +3180,17 @@ export class Game3D {
   _resetBag() {
     if (!this.bag) return;
     this.bag.reset();
+    // THE KNOCKER: a new run starts with 1 (Sandbox 2, Nightmare 1, Abyss 0) and none in the world
+    const kOn = this._knockerOn();
+    this.bag.seed(ITEM.KNOCKER, kOn ? knockerStart(this.difficultyKey) : 0);
+    this.bag.snapshot();
+    this._kn.firstPick = true;
+    this._kn.aiming = false;
+    if (this.knocker) {
+      this.knocker.enabled = kOn;
+      this.knocker.reset();
+    }
+    if (this.pickups) this.pickups.knockers = kOn;
     if (this.pickups) {
       const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
       Storage.set('supplyRuns', n);
@@ -3176,6 +3218,8 @@ export class Game3D {
     if (this.nv) this.nv.restore();
     if (this.holster) this.holster.reset(); // a respawn: both guns back in their holsters
     if (this.jet) this.jet.onRespawn(); // ... but the fuel does NOT come back, and a can that was taken stays taken
+    if (this.knocker) this.knocker.reset(); // the knockers lying about are gone; the bag KEEPS its knocker count (like the fuel)
+    this._kn.aiming = false;
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -3272,6 +3316,125 @@ export class Game3D {
     if (live && intent && intent.mapPressed) wm.toggle();
     const gunOut = !!(this.holster && this.holster.out && this.holster.out[1]);
     wm.update(dt, { live: !!live && !!this.player && this.player.alive !== false, xr, head, hand, handOk: ok, gunOut });
+  }
+
+  /** THE KNOCKER is on: the setting (default on) and not ?knocker=off. */
+  _knockerOn() {
+    return !knockerOff() && !(this.settings && this.settings.knocker === false);
+  }
+
+  /** The knocker's refusal context: dead / not live (paused, a cutscene, the intro, the victory). */
+  _knockerCtx() {
+    const c = this._kn.ctx;
+    const p = this.player;
+    c.dead = !p || p.alive === false || this.state === 'dead';
+    c.busy = this.state !== 'playing' || this.victoryT >= 0 || !!this.prologue || !!(this.deathScene && this.deathScene.active);
+    return c;
+  }
+
+  /** Not in play: no aiming, no knocker in a hand (back in the bag), no arc. */
+  _knockerIdle() {
+    this._kn.aiming = false;
+    if (this.knocker) {
+      this.knocker.drawable = false;
+      this.knocker.putBack();
+    }
+  }
+
+  /**
+   * THE KNOCKER's input (sim/knocker3d.js), once per live run frame. Desktop: G held charges (0..1 s: a tap lobs ~6 m, a full
+   * charge ~19 m along the view, lofted), an aim arc shows, the release throws. Touch: the KNOCK button throws a tap lob. VR: the
+   * bag gesture's draw puts one in the hand, the grip's release throws it with the hand's velocity (too gentle: back in the bag).
+   */
+  _updateKnockerInput(dt, intent) {
+    const k = this.knocker;
+    const bag = this.bag;
+    const p = this.player;
+    const K = this._kn;
+    if (!k || !bag || !p) return;
+    k.enabled = this._knockerOn();
+    const ctx = this._knockerCtx();
+    const count = bag.counts[ITEM.KNOCKER];
+    k.drawable = k.refusal(count, ctx) === '';
+    const r = this.renderer;
+    const ki = intent && intent.knocker;
+    const vr = intent && intent.bag ? intent.bag.vr : null;
+    if (this.xrActive && vr) {
+      K.aiming = false;
+      const input = this.input;
+      const poseOk = !!input && typeof input.handPose === 'function';
+      if (vr.drawRefused) k._refuse(k.refusal(count, ctx) || 'busy');
+      if (vr.drawn >= 0 && poseOk) {
+        const hp = input.handPose(HANDS[vr.drawn]);
+        k.hold(HANDS[vr.drawn], hp.x, hp.y, hp.z, count, ctx);
+      }
+      if (k.held >= 0 && poseOk) {
+        const hs = k.slots[k.held];
+        const hp = input.handPose(hs.hand);
+        k.moveHeld(hp.x, hp.y, hp.z, r && r.rig ? r.rig.rotation.y : NaN);
+      }
+      if (vr.thrown >= 0 && k.held >= 0) {
+        const hand = HANDS[vr.thrown];
+        const hv = input && typeof input.handVelocity === 'function' ? input.handVelocity(hand, K.hv) : K.hv;
+        const v = knockerVrVel(hv.x, hv.y, hv.z, K.v);
+        const hs = k.slots[k.held];
+        if (v.speed > 0 && k.tryThrow(bag, ctx, hs.x, hs.y, hs.z, v.vx, v.vy, v.vz)) this._haptic(hand, 0.55, 70);
+        else if (k.putBack()) {
+          k._refuse('gentle'); // let go without a throw: it is back in the bag
+          this._haptic(hand, 0.15, 25);
+        }
+      }
+      return;
+    }
+    if (!ki || !r || !r.camera) return;
+    if (ki.pressed) {
+      const why = k.refusal(count, ctx);
+      if (why) {
+        k._refuse(why);
+        if (why === 'empty' && this.realTime - K.emptyT > 3) {
+          K.emptyT = this.realTime;
+          this._toast('No knocker left', 1.4);
+        }
+      } else {
+        K.aiming = true;
+        K.held = 0;
+      }
+    }
+    if (!K.aiming) return;
+    if (!ki.held && !ki.released) {
+      K.aiming = false; // the key went up while the run was not taking input (a pause, a menu): no throw
+      K.n = 0;
+      return;
+    }
+    K.held += dt;
+    // the throw's origin: the right hand, just ahead of the eye (the eye itself if that is inside a solid)
+    const cam = r.camera;
+    cam.updateWorldMatrix(true, false);
+    cam.getWorldPosition(_dcV);
+    cam.getWorldDirection(_dcW);
+    const e = cam.matrixWorld.elements;
+    const o = K.o;
+    o.x = _dcV.x + _dcW.x * 0.35 + e[0] * 0.14 - e[4] * 0.12;
+    o.y = _dcV.y + _dcW.y * 0.35 + e[1] * 0.14 - e[5] * 0.12;
+    o.z = _dcV.z + _dcW.z * 0.35 + e[2] * 0.14 - e[6] * 0.12;
+    const lv = this.level;
+    if (lv && (lv.pointInSolid(o.x, o.y, o.z) || lv.segmentBlocked(_dcV.x, _dcV.y, _dcV.z, o.x, o.y, o.z, 0))) {
+      o.x = _dcV.x;
+      o.y = _dcV.y;
+      o.z = _dcV.z;
+    }
+    const v = knockerThrowVel(K.held, _dcW.x, _dcW.y, _dcW.z, K.v);
+    // the body's own motion goes with the throw
+    const bvx = finiteOr(p.vx, 0);
+    const bvy = finiteOr(p.vy, 0);
+    const bvz = finiteOr(p.vz, 0);
+    if (ki.released) {
+      K.aiming = false;
+      K.n = 0;
+      k.tryThrow(bag, ctx, o.x, o.y, o.z, v.vx + bvx, v.vy + bvy, v.vz + bvz);
+      return;
+    }
+    K.n = knockerArc(lv, o.x, o.y, o.z, v.vx + bvx, v.vy + bvy, v.vz + bvz, K.arc, 40, 0.05);
   }
 
   /**
@@ -3667,6 +3830,10 @@ export class Game3D {
         }
       }
       if (o.ui) o.ui.click = false;
+      if (o.knocker) {
+        o.knocker.pressed = false;
+        o.knocker.released = false;
+      }
     }
     this._endState = this.state;
     this._endUi = this._uiScreen();
@@ -3758,6 +3925,7 @@ export class Game3D {
       this._updateHolster(dt, intent, true);
       this._updateJetpack(intent);
       this._updateWristMap(dt, intent, true);
+      this._updateKnockerInput(dt, intent);
       if (this.vista) this.vista.update(dt, p);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
@@ -3783,6 +3951,11 @@ export class Game3D {
     if (this.victoryT < 0) this.time += dt; // counts while playing or dead
     if (this._ghostRec && this.victoryT < 0) this._ghostRec.sample(this.time, p.x, p.y, p.z); // GHOST LANTERN: 10 Hz on the run clock
 
+    if (this.knocker && this.state === 'playing') {
+      // the flight and the clack run with the run's clock (never while paused); only the Mason answers it
+      this.knocker.update(dt, this.level, this.creature && !this.creature.isNull ? this.creature : null);
+    }
+    if (this.knocker && (this.state !== 'playing' || !p.alive)) this._knockerIdle();
     this._updateCreature(dt);
     this._updateThreat(dt);
     this._updateComms(dt, intent);
@@ -5227,6 +5400,16 @@ export class Game3D {
         this._fault('jetpackView', err);
       }
     }
+    if (this.knockerView) {
+      try {
+        this.knockerView.update(dt, this);
+        const K = this._kn;
+        this.knockerView.setArc(K.aiming && !this.xrActive && this.state === 'playing' ? K.arc : null, K.aiming ? K.n : 0);
+      } catch (err) {
+        this._fault('knockerView', err);
+        this.knockerView = null;
+      }
+    }
     if (this.c2) {
       try {
         this.c2.update(dt);
@@ -5591,6 +5774,11 @@ export class Game3D {
     ic.rz = 0;
     ic.fx = 0;
     ic.fz = -1;
+    // THE KNOCKER's key: { pressed, held, released } (tests, QA, captures)
+    const ok = o.knocker || null;
+    it.knocker.pressed = !!(ok && ok.pressed);
+    it.knocker.held = !!(ok && ok.held);
+    it.knocker.released = !!(ok && ok.released);
     const ui = o.ui || {};
     it.ui.ray = ui.ray || null;
     it.ui.click = !!ui.click;
@@ -5654,6 +5842,7 @@ export class Game3D {
     const o = Object.assign({}, partial);
     if (partial.move) o.move = Object.assign({}, partial.move);
     if (partial.ui) o.ui = Object.assign({}, partial.ui);
+    if (partial.knocker) o.knocker = Object.assign({}, partial.knocker); // (a copy: the frame end clears its edges)
     o.hands = {};
     for (let k = 0; k < 2; k++) {
       const h = HANDS[k];
@@ -5766,6 +5955,7 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      knocker: this.knocker ? Object.assign(this.knocker.debugState(), { count: this.bag ? this.bag.counts[ITEM.KNOCKER] : 0, aiming: this._kn.aiming }) : null,
       catches: this.catchMoment.count, // THE CATCH (sim/catch3d.js): lifesaving bites this run (the run highlights read it)
       flow: this.flow ? { n: this.flow.n, best: this.flow.best, links: this.flow.links, chains: this.flow.chains, flare: r(this.flow.flare) } : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
@@ -5915,6 +6105,38 @@ export class Game3D {
           applyPing(null);
           return true;
         },
+      },
+      // THE KNOCKER (tests, QA, screenshots): state() reads it; throw({charge, yaw, pitch, dx, dy, dz, x, y, z, vx, vy, vz, free}) throws one
+      // from the eye along the view (or the given direction / velocity; free = without taking one from the bag); give(n) sets the bag's
+      // count; clear() removes every knocker from the world; arc() reads the aim preview.
+      knocker: {
+        state: () => (this.knocker ? Object.assign(this.knocker.debugState(), { count: this.bag ? this.bag.counts[ITEM.KNOCKER] : 0 }) : null),
+        throw: (o) => {
+          const k = this.knocker;
+          const r = this.renderer;
+          if (!k || !r || !r.camera) return false;
+          const a = o || {};
+          r.camera.updateWorldMatrix(true, false);
+          r.camera.getWorldPosition(_dcV);
+          r.camera.getWorldDirection(_dcW);
+          if (typeof a.yaw === 'number' || typeof a.pitch === 'number') {
+            const yaw = finiteOr(a.yaw, Math.atan2(-_dcW.x, -_dcW.z));
+            const pitch = finiteOr(a.pitch, 0);
+            _dcW.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+          }
+          if (typeof a.dx === 'number') _dcW.set(a.dx, finiteOr(a.dy, 0), finiteOr(a.dz, 0)).normalize();
+          const v = knockerThrowVel(KNOCKER.tapTime + finiteOr(a.charge, 0) * (KNOCKER.chargeTime - KNOCKER.tapTime), _dcW.x, _dcW.y, _dcW.z, this._kn.v);
+          const x = finiteOr(a.x, _dcV.x + _dcW.x * 0.35);
+          const y = finiteOr(a.y, _dcV.y + _dcW.y * 0.35 - 0.1);
+          const z = finiteOr(a.z, _dcV.z + _dcW.z * 0.35);
+          return k.tryThrow(a.free ? null : this.bag, this._knockerCtx(), x, y, z, finiteOr(a.vx, v.vx), finiteOr(a.vy, v.vy), finiteOr(a.vz, v.vz));
+        },
+        give: (n) => (this.bag ? this.bag.seed(ITEM.KNOCKER, finiteOr(n, 1)) : 0),
+        clear: () => {
+          if (this.knocker) this.knocker.reset();
+          return true;
+        },
+        arc: () => Array.from(this._kn.arc.subarray(0, this._kn.n * 3)),
       },
       // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
       jet: {

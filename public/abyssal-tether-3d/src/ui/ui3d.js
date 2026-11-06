@@ -237,7 +237,7 @@ const CONTROLS_QUEST = [
   [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
   [['Both triggers'], 'Falling with no rope? Squeeze BOTH triggers together: the jetpack lights for a moment, brakes the fall and settles you down gently. The tank is small (half full at the start); a fuel can on a hard-to-reach ledge adds half. Dying does not refill it. Squeeze both again to cut it early and keep what is left.', 'Falling: both triggers = jetpack'],
   [['Raise the right wrist'], 'Lift your right wrist toward your face (right gun holstered) and look at the watch: a 3D hologram of the whole descent opens above it: green where you started, amber at the gate you are heading for, white where you are now. The watch face shows your depth and the jetpack fuel.', 'Wrist up: map · depth · fuel'],
-  [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
+  [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop. To take a KNOCKER, pull the hand up and out of the bag with the grip held, swing and let go: it lands, knocks the Mason’s own rhythm for 9 s and the Mason goes to answer it.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
   [['Mouse'], 'Look around. Click the view first to capture the mouse.'],
@@ -256,7 +256,8 @@ const CONTROLS_DESKTOP = [
   [['R'], 'Restart the run.'],
   [['Enter'], 'Confirm · continue after a fall.'],
   [['1', '2', '3', '4'], 'Bag: apply the first aid kit, bandage, adrenaline shot or lantern battery.'],
-  [['Wheel', 'G'], 'Bag: select the previous / next item · apply the selected item.'],
+  [['Wheel', 'B'], 'Bag: select the previous / next item · apply the selected item.'],
+  [['G'], 'The knocker: hold to aim (an arc shows; longer is farther), release to throw. Where it lands it knocks the Mason’s own rhythm for 9 s and the Mason goes to answer it. One at a time, rare, 3 at most.'],
   [['X'], 'Stop applying a bag item (taking damage stops it too).'],
 ];
 
@@ -267,7 +268,7 @@ const CONTROLS_TOUCH = [
   [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
   [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip. In a fall with no rope: lights the jetpack (a short brake; a small tank).'],
   [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
-  [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
+  [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying. KNOCK throws a knocker: the Mason goes to answer its knocking.'],
   [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],
   [['II'], 'Pause.'],
 ];

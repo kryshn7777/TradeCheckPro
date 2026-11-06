@@ -15,6 +15,7 @@
  *   BANDAGE     a roll seen from the side (a squat drum, a dark core, a band) with a flat loose tail
  *   ADRENALINE  a syringe on the diagonal: barrel, needle, plunger rod, finger flange and thumb plate
  *   BATTERY     an upright cell: tall drum, a terminal nub, a wide band
+ *   KNOCKER     the brass clockwork rattle (render/knockerView.js knockerTemplate), shown 1.7x so it reads on a ledge
  *
  *   PickupsView(game)         game: { renderer.scene, pickups }
  *   .update(dt, game)         once per frame (Game3D._updateViews)
@@ -25,7 +26,8 @@
  */
 
 import * as THREE from 'three';
-import { ITEM, ITEM_COUNT } from '../sim/inventory3d.js';
+import { ITEM } from '../sim/inventory3d.js';
+import { knockerTemplate } from './knockerView.js';
 
 const MAX_ITEMS = 48;
 const PUFF_S = 0.55;
@@ -131,6 +133,28 @@ export function buildTemplates(tilt = TILT) {
     { geo: cyl(0.022, 0.022, 0.035, 8), pos: [0, 0.1, 0], color: cap },
     { geo: cyl(0.056, 0.056, 0.012, 12), pos: [0, 0.085, 0], color: cap },
   ], 1.15);
+  // KNOCKER: the thrown gadget's own mesh, tilted like the others and enlarged
+  {
+    const k = knockerTemplate();
+    const size = 1.7;
+    const c = Math.cos(tilt);
+    const sn = Math.sin(tilt);
+    const pos = new Float32Array(k.verts * 3);
+    const nor = new Float32Array(k.verts * 3);
+    for (let i = 0; i < k.verts; i++) {
+      const y = k.pos[i * 3 + 1];
+      const z = k.pos[i * 3 + 2];
+      pos[i * 3] = k.pos[i * 3] * size;
+      pos[i * 3 + 1] = (c * y - sn * z) * size;
+      pos[i * 3 + 2] = (sn * y + c * z) * size;
+      const ny = k.nor[i * 3 + 1];
+      const nz = k.nor[i * 3 + 2];
+      nor[i * 3] = k.nor[i * 3];
+      nor[i * 3 + 1] = c * ny - sn * nz;
+      nor[i * 3 + 2] = sn * ny + c * nz;
+    }
+    t[ITEM.KNOCKER] = { pos, nor, col: k.col, idx: k.idx, verts: k.verts };
+  }
   return t;
 }
 
@@ -186,7 +210,7 @@ void main() {
   float core = exp(-r * r * 8.0);
   float halo = exp(-r * 3.2) * 0.2;
   float edge = 1.0 - smoothstep(0.45, 1.0, r);
-  vec3 tint = vKind < 0.5 ? vec3(1.0, 0.55, 0.45) : vKind < 1.5 ? vec3(1.0, 0.86, 0.55) : vKind < 2.5 ? vec3(0.5, 0.95, 0.9) : vec3(1.0, 0.78, 0.3);
+  vec3 tint = vKind < 0.5 ? vec3(1.0, 0.55, 0.45) : vKind < 1.5 ? vec3(1.0, 0.86, 0.55) : vKind < 2.5 ? vec3(0.5, 0.95, 0.9) : vKind < 3.5 ? vec3(1.0, 0.78, 0.3) : vec3(1.0, 0.6, 0.22);
   gl_FragColor = vec4(tint * (core + halo) * edge * vA, 1.0);
   #include <colorspace_fragment>
 }`;
@@ -208,7 +232,7 @@ export class PickupsView {
     this.templates = buildTemplates();
     let maxV = 0;
     let maxI = 0;
-    for (let k = 0; k < ITEM_COUNT; k++) {
+    for (let k = 0; k < this.templates.length; k++) {
       maxV = Math.max(maxV, this.templates[k].verts);
       maxI = Math.max(maxI, this.templates[k].idx.length);
     }

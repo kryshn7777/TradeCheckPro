@@ -159,6 +159,25 @@ export const RULES = Object.freeze({
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
 });
 
+/**
+ * THE KNOCKER (sim/knocker3d.js): '[A brass knocking, to your left]' with the side worded from the head's yaw when the knocking
+ * starts (and again at the third bar). Low severity, one group with a cooldown longer than its life: it never stacks.
+ */
+const KNOCK_SIDES = Object.freeze(['ahead', 'ahead to your right', 'to your right', 'behind you, right', 'behind you', 'behind you, left', 'to your left', 'ahead to your left']);
+export const KNOCKER_RULES = Object.freeze({
+  dir: Object.freeze(KNOCK_SIDES.map((w) => R(`[A brass knocking, ${w}]`, 'world', 0, 'knocker', 4.5))),
+  near: R('[A brass knocking, close by]', 'world', 0, 'knocker', 4.5),
+  any: R('[A brass knocking]', 'world', 0, 'knocker', 4.5),
+  lost: R('[A faint clack, far below]', 'world', 0, 'knocker-lost', 3),
+});
+
+/** The knocker's caption for a source at (x, z) heard from `head` {x,z,yaw,ok} (null / not ok: no side). Pure. */
+export function knockerCaption(head, x, z) {
+  if (!head || head.ok === false || !finite(head.x) || !finite(head.z) || !finite(head.yaw) || !finite(x) || !finite(z)) return KNOCKER_RULES.any;
+  const sec = sectorOf(head.x, head.z, head.yaw, x, z);
+  return sec < 0 ? KNOCKER_RULES.near : KNOCKER_RULES.dir[sec];
+}
+
 export const DEATH_BEAT_RULES = Object.freeze({
   drop: RULES.dthFall,
   rest: RULES.dthRing,
@@ -229,8 +248,9 @@ export function hintBlipRule(sector, vert) {
  * The caption rule for a bus event, or null (not captioned, or below the threshold that makes it audible). Pure.
  * @param {string} type bus event name
  * @param {object} [p]  payload
+ * @param {{x,z,yaw,ok}} [head] the listener's head (the knocker words its side from it)
  */
-export function captionForEvent(type, p) {
+export function captionForEvent(type, p, head) {
   const e = p || {};
   if (e.skit) {
     // WP-SKITTER: the small red hunters share the creature events, tagged skit:true
@@ -410,6 +430,10 @@ export function captionForEvent(type, p) {
       return RULES.strain;
     case 'lane:on':
       return RULES.debris;
+    case 'knocker:clack':
+      return e.idx === 0 ? knockerCaption(head, e.x, e.z) : null; // the start of a bar (the group's cooldown keeps it to one line)
+    case 'knocker:end':
+      return e.reason === 'lost' ? KNOCKER_RULES.lost : null;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -520,6 +544,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'health:damage',
   'pickup:collect',
   'hint:wave:pass',
+  'knocker:clack',
+  'knocker:end',
   ...SFX_CAPTION_EVENTS,
 ]);
 
@@ -559,6 +585,7 @@ export class CaptionTracker {
     this.clock = 0;
     this._groups = Object.create(null); // group -> clock of its last caption
     this._dirT = 0;
+    this._head = null; // the last head pose update() was given (the knocker words its side from it)
     this._offs = [];
   }
 
@@ -587,7 +614,7 @@ export class CaptionTracker {
   push(type, p) {
     let out = null;
     if (this.wantCaptions()) {
-      const rule = captionForEvent(type, p);
+      const rule = captionForEvent(type, p, this._head);
       if (rule) out = this._take(rule, type, p) || out;
     }
     if (this.wantStatus()) {
@@ -642,6 +669,7 @@ export class CaptionTracker {
   /** Ages the lines and refreshes their directions from the head pose {x,y,z,yaw,ok}. */
   update(dt, head) {
     this.clock += dt;
+    if (head) this._head = head;
     let any = false;
     for (const l of this.lines) {
       if (!l.on) continue;
