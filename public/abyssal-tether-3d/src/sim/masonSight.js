@@ -183,7 +183,7 @@ export class MasonSense {
     // `canSee`: it can see you at all; `eligible`: it can also notice / commit (not resting). While it rests or cools down it still
     // SEES you (s.sees: the hunt gate keeps its scent window full: health does not send away a Mason that is looking at you).
     const canSee =
-      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && s.forced !== 'blind';
+      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && s.forced !== 'blind' && !(c._frightT > 0); // (frightened: SOLDIER_WEAPONS.md)
     const eligible = canSee && !resting;
     s.eligible = eligible;
     if (d.live && !decoyHolds) this.endDecoy('overridden'); // walked up to it: the decoy no longer holds it

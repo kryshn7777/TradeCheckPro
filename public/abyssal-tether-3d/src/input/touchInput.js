@@ -41,11 +41,14 @@ const ICON = {
   i3: '<rect x="7" y="5" width="10" height="16" rx="2"/><path d="M10 3h4v2h-4zM13 9l-3 4h4l-3 4" stroke-width="1.6"/>',
   // THE KNOCKER: a squat drum, its striker arm and the wind-up key on its flank
   i4: '<rect x="4" y="11" width="12" height="8" rx="2"/><path d="M6 11V9h7M13 9l3-3M16 15h3M19 12.5v5"/>',
+  // SOLDIER_WEAPONS.md: the iron grenade (a ball, its collar and fuse) and the service revolver (barrel, drum, grip)
+  i5: '<circle cx="11" cy="14" r="6"/><path d="M10 8V6h3v2M11.5 6c0-2 2-3 4-2M5.5 14h11" stroke-width="1.4"/>',
+  i6: '<path d="M3 8h13v4H9l-1 7H4l1-7H3zM16 9h5M10 12l1 3h2" stroke-width="1.6"/><circle cx="11" cy="10" r="1.6"/>',
 };
 const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', nv: 'NV', pause: '', fs: '' };
 const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', nv: 'Night vision goggles', pause: 'Pause' };
-const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT', 'KNOCK'];
-const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker (throw it)'];
+const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT', 'KNOCK', 'GREN', 'GUN'];
+const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker (throw it)', 'Grenade (throw it)', 'Service revolver (fire, rounds)'];
 
 const CSS = `
 html.touch-on,html.touch-on body{touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
@@ -524,8 +527,10 @@ export class TouchInput {
         if (id.startsWith('bag')) {
           const n = id.charCodeAt(3) - 48;
           const bag = im.game && im.game.bag;
-          if (n === 4 && bag && bag.counts && bag.counts[4] > 0) {
-            // THE KNOCKER: a tap lobs it along the view (sim/knocker3d.js; the game refuses it with a soft click when it cannot)
+          if (n >= 4 && n <= 6 && bag && bag.counts && bag.counts[n] > 0) {
+            // THE KNOCKER: a tap lobs it along the view (sim/knocker3d.js; the game refuses it with a soft click when it cannot);
+            // SOLDIER_WEAPONS.md: GREN lobs a grenade the same way, GUN fires a round along the view (weaponGlue.js)
+            im._bagEdge('gadget', n);
             im._knockEdge(true);
             im._knockEdge(false);
             this._tick(16);
@@ -635,11 +640,11 @@ export class TouchInput {
   _paintBag() {
     const bag = this.im.game && this.im.game.bag;
     if (!bag || !bag.counts) return;
-    const key = (bagCountsKey(bag.counts) * 4 + (bag.selected | 0)) * 8 + ((bag.counts[4] | 0) & 7);
+    const key = (((bagCountsKey(bag.counts) * 4 + (bag.selected | 0)) * 8 + ((bag.counts[4] | 0) & 7)) * 4 + ((bag.counts[5] | 0) & 3)) * 16 + ((bag.counts[6] | 0) & 15);
     if (key === this._bagKey) return;
     this._bagKey = key;
     let total = 0;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 7; i++) {
       const n = bag.counts[i] | 0;
       total += n;
       const it = this.els['bag' + i];
@@ -714,8 +719,13 @@ export class TouchInput {
 
     const panel = el('div', 'tc-bag');
     panel.hidden = true;
-    const kinds = this.im.game && this.im.game.knocker && this.im.game.knocker.enabled === false ? 4 : 5; // 5: THE KNOCKER
-    for (let i = 0; i < kinds; i++) {
+    const g0 = this.im.game;
+    const kinds = g0 && g0.knocker && g0.knocker.enabled === false ? 4 : 5; // 5: THE KNOCKER
+    // SOLDIER_WEAPONS.md: GREN / GUN (always built; shown only while the weapons are on: the setting, ?weapons=off)
+    const wOn = !(g0 && g0.weapons && typeof g0.weapons.on === 'function' && !g0.weapons.on());
+    for (let i = 0; i < 7; i++) {
+      if (i === 4 && kinds < 5) continue;
+      if (i > 4 && !wOn) continue;
       const it = el('button', 'tc-btn tc-item');
       it.type = 'button';
       it.dataset.tc = 'bag' + i;

@@ -16,6 +16,8 @@
  *   mouse wheel             → bag: select the previous / next item      B → apply the selected item
  *   X                       → bag: stop applying (taking damage stops it too)
  *   G                       → THE KNOCKER (sim/knocker3d.js): hold to charge (an aim arc shows), release to throw; a tap lobs it
+ *   5 6 7 / T               → SOLDIER_WEAPONS.md: G uses the knocker / a grenade (thrown the same way) / the revolver (fires along the
+ *                             view centre); T cycles them
  *
  * Losing pointer lock during play (the browser's own Esc handling) counts as
  * one pause press. Window blur / tab hide release every key and button.
@@ -84,6 +86,10 @@ const KEY_TO_CODE = {
   2: 'Digit2',
   3: 'Digit3',
   4: 'Digit4',
+  5: 'Digit5',
+  6: 'Digit6',
+  7: 'Digit7',
+  t: 'KeyT',
 };
 
 export function codeOf(e) {
@@ -107,6 +113,10 @@ const GAME_KEYS = {
   Numpad2: 1,
   Numpad3: 1,
   Numpad4: 1,
+  Digit5: 1,
+  Digit6: 1,
+  Digit7: 1,
+  KeyT: 1,
   KeyG: 1,
   KeyB: 1,
   KeyX: 1,
@@ -375,6 +385,14 @@ export class DesktopInput {
     // The bag keys act on the run only (the Game ignores them elsewhere); they are not a "press any key".
     if (code === 'KeyG') {
       if (!ui && !xr) im._knockEdge(true); // the knocker: held = charging, the release throws (inputManager.js)
+      return;
+    }
+    if (code === 'Digit5' || code === 'Digit6' || code === 'Digit7' || code === 'KeyT') {
+      // SOLDIER_WEAPONS.md: which item G uses (weaponGlue.js reads intent.bag.gadget / gadgetCycle)
+      if (!ui && !xr) {
+        if (code === 'KeyT') im._bagEdge('gcycle', 1);
+        else im._bagEdge('gadget', code === 'Digit5' ? 4 : code === 'Digit6' ? 5 : 6);
+      }
       return;
     }
     if (code in BAG_SLOT_KEYS || code === 'KeyB' || code === 'KeyX') {

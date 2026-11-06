@@ -141,6 +141,23 @@ it is 20 s before it can commit to you again; or throw the knocker.
   and its listen turn is 0.35 s; the knocker it inspected is ignored.
 - `?sight=off` / the setting Off: the knocker still works (it is a sound); sight and the near rule stay off.
 
+## Weapons (SOLDIER_WEAPONS.md)
+
+The dead soldiers' grenade and service revolver (`src/sim/weapons3d.js`) hurt and frighten the Mason through two public methods here,
+built on the hunt gate's withdraw (shared with the parallel Flare work): `Creature3D.frighten(duration, source, fromX, fromZ)` and
+`hurt(amount, source)`.
+
+- **Frightened** = it recoils (RECOVERING), climbs away like the gate's withdraw and stays out of play (every hunting mode dormant, no prowl
+  pass, a wound does not re-arm it) for 40 / 32 / 24 s after a grenade (x0.7 after a round); frights within 90 s diminish (x0.6 each, at
+  least x0.3, never under 5 s). Sight is off while frightened (`canSee` checks `_frightT`), a chase and a knocker decoy end, the knocker
+  is refused (the `_withdraw` rule). When the fright ends its next notice is a first-notice warning again, and the prowl waits `first` s.
+- **Scripted beats only stagger** (`scriptedNow`): the override (S7 escape), the glue's `setScripted` (the S5 keystone / S7 arena
+  objective open), the S4 sighting, an `escape` section, the lure niche (refuge 2), the victory: a 1.2 s recoil, nothing else.
+- **A miss is loud**: `hearShot(x, y, z)` wakes it to the shooter within 55 m (sound, not sight: no notice, no chase commit), or brings a
+  gated prowl pass to within 4 s.
+- **The rests** keep their rules through a fright. A respawn forgets the fright. Never called, nothing changes (the pacing sim is byte for
+  byte the same).
+
 ## Switches and debug
 
 - `?sight=off` (game.js `sightOff()`): no sight-chase, no near rule (the e2e `e2e.cjs` and `free-attach.cjs` pass it; the Node route bots

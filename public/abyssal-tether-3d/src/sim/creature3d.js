@@ -216,6 +216,26 @@ export const CREATURE_TUNING = {
 const T = CREATURE_TUNING;
 
 /**
+ * SOLDIER_WEAPONS.md: the Mason hurt and frightened (hurt / frighten / hearShot below; the weapons are sim/weapons3d.js, which own the
+ * withdraw lengths: 40 / 32 / 24 s for a grenade, x0.7 for a round). It never dies.
+ *   window     s: frights closer together than this diminish: x decay per earlier one (dimFloor at least: never a free removal, never 0)
+ *   minFright  s: the shortest fright
+ *   stagger    s of recoil (the RECOVERING retreat) where a hit cannot send it away: a scripted section (setScripted, the override, the
+ *              S4 sighting, the S5 lure niche, an `escape` section, the victory)
+ *   hearRange  m: a shot that misses wakes it to the shooter from this far (sound, not sight); out of play it brings the next prowl
+ *              pass to within `rouse` s
+ */
+export const FRIGHT = Object.freeze({
+  window: 90,
+  decay: 0.6,
+  dimFloor: 0.3,
+  minFright: 5,
+  stagger: 1.2,
+  hearRange: 55,
+  rouse: 4,
+});
+
+/**
  * Per-difficulty hunting tuning (Normal / Nightmare / Abyss), metres and seconds.
  *   approach/pursue/burst  m/s (far / near / surge)
  *   menace     stalking distance it presses to while you keep moving
@@ -688,7 +708,7 @@ export class Creature3D {
     if (this._hurt || this.sense.sight.chasing || (this.sense.sight.sees && this._holdT > 0)) this._holdT = T.huntHold;
     else if (this._holdT > 0) this._holdT -= dt;
     const armed = this._override != null || this._holdT > 0;
-    if (!armed && !this._armed && !this._withdraw) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you)
+    if (!armed && !this._armed && !this._withdraw && !(this._frightT > 0)) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you); not while frightened (SOLDIER_WEAPONS.md)
     if (armed === this._armed) return;
     this._armed = armed;
     this._prowling = false;
@@ -784,6 +804,7 @@ export class Creature3D {
     this.stateTime = Math.min(this.stateTime, 0.6); // keeps the recover pace from decaying
     if (dist > T.withdrawFar || this._withdrawT > T.withdrawMax) {
       this._withdraw = false;
+      this._fleeing = false; // SOLDIER_WEAPONS.md: a fright's flee climb is over (setSection takes it out of play while frightened)
       const lv = this.level;
       const si = this.sectionIndex;
       if (lv && lv.sections && lv.sections[si]) this.setSection(si, lv.sections[si], player);
@@ -939,7 +960,15 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0, hurts: 0, frights: 0, staggers: 0, heardShots: 0 };
+    // SOLDIER_WEAPONS.md: hurt / frighten (the grenade, the revolver). Inert until one of them is called (the old behaviour bit for bit).
+    this._frightT = 0; // > 0: frightened: it withdraws, then stays out of play (no hunt, no prowl) for this long
+    this._frightDur = 0; // the length of the current fright (read-out)
+    this._fleeing = false; // the flee climb is running (a section re-apply keeps it climbing instead of popping it out of view)
+    this._frightN = 0; // frights in a row within FRIGHT.window s (the diminishing rule)
+    this._frightLast = -1e9; // this._t of the last fright
+    this._scripted = false; // setScripted: a scripted section (the S5 keystone, the S7 arena): a hit only staggers it
+    this.wounds = 0;
     this._applyScaling(SECTION_DEFAULTS);
     this._tHead = -1;
     this._tCount = 0;
@@ -976,6 +1005,11 @@ export class Creature3D {
     }
     // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
     if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
+    // SOLDIER_WEAPONS.md: frightened, every hunting mode is the unseen dormant one until the fright is over (a scripted beat only staggers it)
+    else if (this._frightT > 0 && LETHAL_MODES[c.mode]) {
+      c.mode = 'dormant';
+      c.lethal = false;
+    }
     return c;
   }
 
@@ -1034,6 +1068,210 @@ export class Creature3D {
     return this._prowling && this.inPlay;
   }
 
+  // ===========================================================================
+  // SOLDIER_WEAPONS.md: hurt / frighten / hearShot / rayHit (the grenade and the revolver: sim/weapons3d.js; the Flare reuses them).
+  // Inert until called: nothing here runs, draws a random number or changes a field on its own.
+  // ===========================================================================
+
+  /** game.js / the weapons glue, per frame: a scripted section (the S5 keystone, the S7 arena) where a hit only staggers it. */
+  setScripted(on) {
+    this._scripted = !!on;
+  }
+
+  /** A hit here only staggers it (a recoil), never sends it away: a scripted beat must keep its flow. */
+  get scriptedNow() {
+    return this._scripted || this._override != null || this.victory != null || this.mode === 'sighting' || this.mode === 'escape' || this.sighting != null || this.refuge === 2;
+  }
+
+  /** Frightened right now (s left, 0 none) and the length of that fright. */
+  get frightened() {
+    return this._frightT > 0 ? this._frightT : 0;
+  }
+
+  /** The withdraw a fright of `duration` s would get now (the diminishing rule; deterministic: the run clock). */
+  frightFor(duration) {
+    const base = num(duration, 0);
+    if (!(base > 0)) return 0;
+    const n = this._t - this._frightLast < FRIGHT.window ? this._frightN : 0;
+    const mul = Math.max(FRIGHT.dimFloor, Math.pow(FRIGHT.decay, n));
+    return Math.max(FRIGHT.minFright, base * mul);
+  }
+
+  /**
+   * Frightened by a blast or a round from (fromX, fromZ): it screeches, recoils and WITHDRAWS (the hunt gate's climb away, up the masonry
+   * and out of sight), then stays out of play (no hunt, no prowl) for the diminished `duration` (frightFor). A live chase and a decoy end;
+   * a later hit extends it (the longer wins). In a scripted beat (scriptedNow) it only staggers: a short recoil, nothing else changes.
+   * Returns the withdraw it got (s), 0 for a stagger, -1 refused (not the Mason, not active). Event 'creature:frighten'.
+   */
+  frighten(duration, source, fromX, fromZ) {
+    if (this.v || !this.active) return -1;
+    const src = typeof source === 'string' ? source : 'blast';
+    const P = this._evFright || (this._evFright = { x: 0, y: 0, z: 0, source: '', withdraw: 0, stagger: false, count: 0, fromX: 0, fromZ: 0 });
+    P.x = this.x;
+    P.y = this.y;
+    P.z = this.z;
+    P.source = src;
+    P.fromX = num(fromX, this.x);
+    P.fromZ = num(fromZ, this.z);
+    if (this.scriptedNow) {
+      this.stats.staggers++;
+      if (this.inPlay && !this.victory) this._stagger();
+      P.withdraw = 0;
+      P.stagger = true;
+      P.count = this._frightN;
+      this._emit('creature:frighten', P);
+      return 0;
+    }
+    const dur = this.frightFor(duration);
+    if (!(dur > 0)) return -1;
+    this._frightN = this._t - this._frightLast < FRIGHT.window ? this._frightN + 1 : 1;
+    this._frightLast = this._t;
+    this.stats.frights++;
+    if (dur > this._frightT) this._frightT = dur;
+    this._frightDur = this._frightT;
+    if (this.sense.decoy.live) this.sense.endDecoy('overridden');
+    if (this.sense.sight.chasing) this.sense._drop(false);
+    this._prowling = false;
+    if (this.inPlay) {
+      // the flee: the hunt gate's withdraw (RECOVERING steering, up and away), harmless, then out of play once far
+      this._fleeing = true;
+      this._withdraw = true;
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+      this.staring = false;
+      this.burstCommit = false;
+      if (this.state !== S.RECOVERING) this._setState(S.RECOVERING);
+      this.stateTime = 0;
+    }
+    P.withdraw = this._frightT;
+    P.stagger = false;
+    P.count = this._frightN;
+    this._emit('creature:frighten', P);
+    return this._frightT;
+  }
+
+  /** A recoil: the strike or surge is broken off, it retreats a moment (RECOVERING) and comes on again. */
+  _stagger() {
+    this.attack.phase = null;
+    this.burstCommit = false;
+    this.creeping = false;
+    this.listening = false;
+    this.staring = false;
+    this._setState(S.RECOVERING);
+    this.stateDur = FRIGHT.stagger;
+    this.stateTime = 0;
+  }
+
+  _frightEnd(player) {
+    this._frightT = 0;
+    this._fleeing = false;
+    const P = this._prowlTune();
+    if (this._gate && P) this._prowlT = P.first; // the next pass waits as after an entry
+    this.sense._first = true; // its next notice is a warning again
+    this._emit('creature:frighten:end', { x: this.x, y: this.y, z: this.z });
+    const lv = this.level;
+    const si = this.sectionIndex;
+    if (!this.victory && player && lv && lv.sections && si >= 0 && lv.sections[si]) this.setSection(si, lv.sections[si], player);
+  }
+
+  /**
+   * A wound (the weapons call frighten first, then this): stats.hurts, this.wounds, 'creature:hurt' {x,y,z,source,withdraw,amount}. It never
+   * dies (a level fixture). Returns the wounds so far, -1 refused.
+   */
+  hurt(amount, source) {
+    if (this.v || !this.active) return -1;
+    const a = Math.max(0, num(amount, 1));
+    this.stats.hurts++;
+    this.wounds += a;
+    this._emit('creature:hurt', { x: this.x, y: this.y, z: this.z, source: typeof source === 'string' ? source : 'blast', withdraw: this.frightened, amount: a, stagger: this.scriptedNow });
+    return this.wounds;
+  }
+
+  /**
+   * A shot that did not hit it, fired from (x, y, z): LOUD. In play within FRIGHT.hearRange of the crown it wakes to the shooter (sound,
+   * not sight): a live decoy ends, it stops listening / creeping, it counts the shooter as moving and pursues, annoyed (faster for a
+   * moment) when its annoy cooldown allows. Out of play in a hunting section, the next prowl pass comes within FRIGHT.rouse s. Frightened:
+   * nothing. Returns 'heard' | 'roused' | ''.
+   */
+  hearShot(x, y, z) {
+    if (this.v || !this.active || this.victory || this._frightT > 0 || !isFinite(x) || !isFinite(y) || !isFinite(z)) return '';
+    if (this.inPlay) {
+      if (this._withdraw) return '';
+      const d = len3(x - this.x, y - this.y, z - this.z);
+      if (d > FRIGHT.hearRange) return '';
+      this.stats.heardShots++;
+      if (this.sense.decoy.live) this.sense.endDecoy('overridden');
+      this._noiseT = T.noiseDur * 3;
+      this.listening = false;
+      this.creeping = false;
+      if (this.state === S.OBSERVING || this.state === S.APPROACHING) this._setState(S.PURSUING);
+      if (this._annoyCd <= 0) {
+        this._annoyCd = T.annoy.cooldown;
+        this._annoyT = 0;
+        this.annoyCount++;
+        this._emit('creature:annoyed', { x: this.x, y: this.y, z: this.z, distance: d, dur: T.annoy.dur, burstDur: T.annoy.burstDur, count: this.annoyCount, shot: true });
+      }
+      this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: d, intensity: 1, annoyed: true });
+      return 'heard';
+    }
+    const lv = this.level;
+    const sec = lv && lv.sections && this.sectionIndex >= 0 ? lv.sections[this.sectionIndex] : null;
+    if (this._gate && !this._prowling && this._huntable(sec) && this._prowlT > FRIGHT.rouse) {
+      this.stats.heardShots++;
+      this._prowlT = FRIGHT.rouse;
+      return 'roused';
+    }
+    return '';
+  }
+
+  /**
+   * The ray (ox,oy,oz) + t (dx,dy,dz) (unit) against the body, t in 0..range: the distance to the nearest block it passes within reach of,
+   * -1 none. Generous volumes (a hit volume, not the mesh): each spine block's annoy radius x `pad` (the crown and the front blocks x 1.6).
+   * Masonry is not tested here (the caller compares with its own level ray). Only while it is in play and shown.
+   */
+  rayHit(ox, oy, oz, dx, dy, dz, range, pad = 1.15) {
+    if (!this.active || !(this.inPlay || this.sighting) || this.body.visible === false) return -1;
+    const sp = this.body.spine;
+    const A = T.annoy;
+    let best = -1;
+    for (let i = 0; i < SEG; i++) {
+      const cx = sp[i * 3] - ox;
+      const cy = sp[i * 3 + 1] - oy;
+      const cz = sp[i * 3 + 2] - oz;
+      const t = cx * dx + cy * dy + cz * dz;
+      if (t < 0 || t > range) continue;
+      const ex = cx - dx * t;
+      const ey = cy - dy * t;
+      const ez = cz - dz * t;
+      const r = (A.radius * this.body.scale[i] * this._scale + A.pad) * pad * (i < 3 ? 1.6 : 1);
+      if (ex * ex + ey * ey + ez * ez <= r * r && (best < 0 || t < best)) best = t;
+    }
+    return best;
+  }
+
+  /** The nearest body point to (x, y, z) into `out` {x,y,z,d} (the blast's measure). Returns out. */
+  nearestPoint(x, y, z, out) {
+    const sp = this.body.spine;
+    let bd = Infinity;
+    for (let i = 0; i < SEG; i++) {
+      const ex = sp[i * 3] - x;
+      const ey = sp[i * 3 + 1] - y;
+      const ez = sp[i * 3 + 2] - z;
+      const q = ex * ex + ey * ey + ez * ez;
+      if (q < bd) {
+        bd = q;
+        out.x = sp[i * 3];
+        out.y = sp[i * 3 + 1];
+        out.z = sp[i * 3 + 2];
+      }
+    }
+    out.d = Math.sqrt(bd);
+    return out;
+  }
+
   setSection(index, section, player) {
     const lv = this.level;
     if (this._override && index !== this._overrideSec) {
@@ -1067,6 +1305,10 @@ export class Creature3D {
       }
     } else {
       this.lethal = false;
+      if (this.inPlay && this._fleeing) {
+        this._withdraw = true; // SOLDIER_WEAPONS.md: frightened mid-climb: it keeps climbing away (never a pop out of view)
+        return;
+      }
       if (this.inPlay) this._leavePlay();
       this._sightTrigger = null;
       this._sightAuto = -1;
@@ -1105,6 +1347,8 @@ export class Creature3D {
     this._annoyT = -1;
     this._annoyCd = 0;
     this.sense.reset(); // MASON_SIGHT.md: a respawn forgets the chase and the decoy
+    this._frightT = 0; // SOLDIER_WEAPONS.md: ... and a fright (the diminishing memory stays)
+    this._fleeing = false;
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -1251,6 +1495,10 @@ export class Creature3D {
     if (!this.victory && lv && lv.sections && lv.sections.length) {
       const si = lv.sectionIndexAt(player.y);
       if (si !== this.sectionIndex) this.setSection(si, lv.sections[si], player);
+    }
+    if (this._frightT > 0) {
+      this._frightT -= dt; // SOLDIER_WEAPONS.md: the fright runs out: back to the section's behaviour (it arrives from above as a hunt would)
+      if (this._frightT <= 0) this._frightEnd(player);
     }
     if (!this.victory) this.sense.update(dt, player); // MASON_SIGHT.md: sight first (a chase keeps the gate's scent hold full)
     if (this._gate && !this.victory) this._updateGate(dt, player);

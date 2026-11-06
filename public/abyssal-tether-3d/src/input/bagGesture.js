@@ -147,7 +147,8 @@ export function updateBagGesture(g, S) {
       g.gripDown[g.hand] = down;
       const d2 = ox * ox + oy * oy + oz * oz;
       g.drawK = oy > 0 ? Math.min(1, Math.min(oy / BAG_ZONE.drawUp, Math.sqrt(d2) / BAG_ZONE.draw)) : 0;
-      if (down && oy >= BAG_ZONE.drawUp && d2 >= BAG_ZONE.draw * BAG_ZONE.draw && S.counts.length > 4 && S.counts[4] > 0) {
+      const gk = S.gadget >= 4 ? S.gadget : 4; // SOLDIER_WEAPONS.md: the selected gadget (4 knocker, 5 grenade, 6 revolver) is what comes out
+      if (down && oy >= BAG_ZONE.drawUp && d2 >= BAG_ZONE.draw * BAG_ZONE.draw && S.counts.length > gk && S.counts[gk] > 0) {
         if (S.knocker) {
           // pulled out of the bag: the knocker is in this hand, the radial closes, the grip holds it
           g.knocker = g.hand;

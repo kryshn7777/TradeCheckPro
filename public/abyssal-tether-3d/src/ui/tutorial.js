@@ -8,6 +8,7 @@
  *   grip   a hand near a chalk-studded hold, never grabbed      done on climb:grab
  *   bag    a bag item was picked up, or health is low           done on bag:apply
  *   knocker  a knocker was picked up, or one is carried in S3+    done on knocker:throw (THE KNOCKER, sim/knocker3d.js)
+ *   weapons  a dead soldier's grenade / revolver was picked up      done on grenade:throw / revolver:fire (SOLDIER_WEAPONS.md)
  *
  * A learned step never returns (persisted in Storage 'tutorial', so it survives restarts); an unlearned one is shown at
  * most twice, at least 25 s apart, never over a level hint, a menu, a death, or while the player is fighting the rope for
@@ -52,6 +53,14 @@ export const STEPS = Object.freeze([
     touch: 'Tap [BAG], then [KNOCK] to throw a knocker. The Mason answers knocks.',
     seconds: 7,
   }),
+  // SOLDIER_WEAPONS.md: a dead soldier's grenade or revolver was picked up; done on grenade:throw / revolver:fire
+  Object.freeze({
+    id: 'weapons',
+    text: 'At your hip, tap [X] with the bag open to choose the grenade or revolver. Pull it up, throw it, or let go to fire.',
+    desktop: 'Press [6] for a grenade or [7] for the revolver, then [G]: hold to throw, tap to fire. It drives the Mason off.',
+    touch: 'Tap [BAG], then [GREN] to throw a grenade or [GUN] to fire. It drives the Mason off.',
+    seconds: 8,
+  }),
 ]);
 const KNOCK_AFTER = 40; // s of run time, carrying a knocker from S3 down, before the knocker hint (without a pickup)
 
@@ -78,6 +87,7 @@ export class Tutorial {
     this._hoverFor = 0;
     this._bagPending = -1; // clock time at which to show the bag hint (after a pickup)
     this._knockPending = -1; // ... and the knocker hint (after a knocker pickup)
+    this._weaponPending = -1; // ... and the weapons hint (after a grenade / revolver pickup: SOLDIER_WEAPONS.md)
     this._pending = null; // the step shown now (to mark learned if the player does it while it is up)
     this._offs = [];
   }
@@ -130,8 +140,14 @@ export class Tutorial {
     on('pickup:collect', (e) => {
       if (e && e.kind === 4) {
         if (!this.data.done.knocker) this._knockPending = this.clock + 3.4; // (after the pickup's own toast)
-      } else if (!this.data.done.bag) this._bagPending = this.clock + 1.6;
+      } else if (!this.data.done.bag && !(e && e.kind >= 5)) this._bagPending = this.clock + 1.6;
     });
+    // SOLDIER_WEAPONS.md: the weapons hint after the first grenade / revolver pickup (after its lore toast)
+    on('pickup:collect', (e) => {
+      if (e && (e.kind === 5 || e.kind === 6) && !this.data.done.weapons) this._weaponPending = this.clock + 4.6;
+    });
+    on('grenade:throw', () => this.learn('weapons'));
+    on('revolver:fire', () => this.learn('weapons'));
     on('game:start', () => this._newRun());
     on('game:restart', () => this._newRun());
     on('game:respawn', () => {
@@ -223,6 +239,9 @@ export class Tutorial {
       this._show(STEPS[1]);
     } else if (!d.fire && (g.time || 0) >= FIRE_AFTER && g.sectionIndex === 0 && !(t && t.attached)) {
       this._show(STEPS[0]);
+    } else if (!d.weapons && this._weaponPending >= 0 && this.clock >= this._weaponPending) {
+      this._weaponPending = -1; // SOLDIER_WEAPONS.md
+      this._show(STEPS[5]);
     }
   }
 }

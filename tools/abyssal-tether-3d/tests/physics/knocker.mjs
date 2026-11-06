@@ -380,7 +380,7 @@ const run = (k, secs, level, creature, dt = 1 / 72, each) => {
 // ---- the bag ------------------------------------------------------------------------------------------------------------------
 {
   const inv = new Inventory3D(null);
-  ok(ITEM.KNOCKER === 4 && ITEM_COUNT === 4 && BAG_KINDS === 5 && inv.counts.length === 5, 'the bag counts a fifth kind, KNOCKER (4), outside the four numbered slots (keys 1-4, the radial, the icon cells)');
+  ok(ITEM.KNOCKER === 4 && ITEM_COUNT === 4 && BAG_KINDS >= 5 && inv.counts.length === BAG_KINDS, 'the bag counts a fifth kind (the soldiers\' weapons 5 / 6 after it: SOLDIER_WEAPONS.md), KNOCKER (4), outside the four numbered slots (keys 1-4, the radial, the icon cells)');
   ok(CONFIG.bag.caps[ITEM.KNOCKER] === 3 && KNOCKER.cap === 3, 'carried at most 3');
   ok(inv.add(ITEM.KNOCKER, 5) === 3 && !inv.canAdd(ITEM.KNOCKER), 'the cap holds (5 offered, 3 taken)');
   ok(inv.use(ITEM.KNOCKER, { hp: 0.5, dead: false, hits: 0 }) === false && inv.lastRefusal === 'thrown', 'it is never applied as a consumable (it is thrown)');

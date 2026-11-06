@@ -16,6 +16,8 @@
  *   ADRENALINE  a syringe on the diagonal: barrel, needle, plunger rod, finger flange and thumb plate
  *   BATTERY     an upright cell: tall drum, a terminal nub, a wide band
  *   KNOCKER     the brass clockwork rattle (render/knockerView.js knockerTemplate), shown 1.7x so it reads on a ledge
+ *   GRENADE     the dead soldier's iron grenade / SIDEARM his service revolver (render/weaponView.js weaponTemplate), 2.0x / 1.6x,
+ *               a pale iron halo
  *
  *   PickupsView(game)         game: { renderer.scene, pickups }
  *   .update(dt, game)         once per frame (Game3D._updateViews)
@@ -28,6 +30,7 @@
 import * as THREE from 'three';
 import { ITEM } from '../sim/inventory3d.js';
 import { knockerTemplate } from './knockerView.js';
+import { weaponTemplate } from './weaponView.js';
 
 const MAX_ITEMS = 48;
 const PUFF_S = 0.55;
@@ -155,6 +158,30 @@ export function buildTemplates(tilt = TILT) {
     }
     t[ITEM.KNOCKER] = { pos, nor, col: k.col, idx: k.idx, verts: k.verts };
   }
+  // SOLDIER_WEAPONS.md: the grenade and the service revolver (render/weaponView.js weaponTemplate: the same models as in the hand), enlarged
+  for (const [kind, size] of [
+    [ITEM.GRENADE, 2.0],
+    [ITEM.SIDEARM, 1.6],
+  ]) {
+    const k = weaponTemplate(kind);
+    const c = Math.cos(tilt);
+    const sn = Math.sin(tilt);
+    const pos = new Float32Array(k.verts * 3);
+    const nor = new Float32Array(k.verts * 3);
+    for (let i = 0; i < k.verts; i++) {
+      const y = k.pos[i * 3 + 1];
+      const z = k.pos[i * 3 + 2];
+      pos[i * 3] = k.pos[i * 3] * size;
+      pos[i * 3 + 1] = (c * y - sn * z) * size;
+      pos[i * 3 + 2] = (sn * y + c * z) * size;
+      const ny = k.nor[i * 3 + 1];
+      const nz = k.nor[i * 3 + 2];
+      nor[i * 3] = k.nor[i * 3];
+      nor[i * 3 + 1] = c * ny - sn * nz;
+      nor[i * 3 + 2] = sn * ny + c * nz;
+    }
+    t[kind] = { pos, nor, col: k.col, idx: k.idx, verts: k.verts };
+  }
   return t;
 }
 
@@ -210,7 +237,7 @@ void main() {
   float core = exp(-r * r * 8.0);
   float halo = exp(-r * 3.2) * 0.2;
   float edge = 1.0 - smoothstep(0.45, 1.0, r);
-  vec3 tint = vKind < 0.5 ? vec3(1.0, 0.55, 0.45) : vKind < 1.5 ? vec3(1.0, 0.86, 0.55) : vKind < 2.5 ? vec3(0.5, 0.95, 0.9) : vKind < 3.5 ? vec3(1.0, 0.78, 0.3) : vec3(1.0, 0.6, 0.22);
+  vec3 tint = vKind < 0.5 ? vec3(1.0, 0.55, 0.45) : vKind < 1.5 ? vec3(1.0, 0.86, 0.55) : vKind < 2.5 ? vec3(0.5, 0.95, 0.9) : vKind < 3.5 ? vec3(1.0, 0.78, 0.3) : vKind < 4.5 ? vec3(1.0, 0.6, 0.22) : vec3(0.86, 0.8, 0.7);
   gl_FragColor = vec4(tint * (core + halo) * edge * vA, 1.0);
   #include <colorspace_fragment>
 }`;
