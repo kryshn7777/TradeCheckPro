@@ -77,6 +77,7 @@ kill radius) reaches 8.7 m on Normal, just past it. Shared: line of sight sample
   lip or a floor, swing round the shaft's corner. It does not commit.
 - **A Masons' rest** (refuge 1): it cannot see you there; the chase drops at once; it holds at its stalking distance and listens.
 - **Douse your light**: an empty lantern is invisible to it (the lantern burns down by itself; the game has no off switch for it).
+- **Hood your light** (LANTERN_HOOD.md): a covered lantern is invisible to it too (it still hears you).
 - **Out-move it**: the chase is 5.8 / 7.4 / 9.8 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17), swing
   and fall far faster. On Normal a reel or a swing out-runs it; on Abyss only a swing, a fall or a yank does.
 - **Out-wait it**: break the line and it holds the chase only 4 / 5 / 6 s, then it is back to hunting by sound (go still to be silent).
