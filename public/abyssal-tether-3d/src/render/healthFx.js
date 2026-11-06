@@ -48,6 +48,8 @@ const BANDS = [
   { from: 150, to: PLOT_W - GAP, a: 0.42, w: 2.4 },
 ];
 const MAX_FLASH = 0.34;
+/** HIT FEEDBACK: the ECG tick's words, built once ('-0%' .. '-100%'): no string building at 30 Hz. */
+const TICK_TEXT = Object.freeze(Array.from({ length: 101 }, (_, i) => `-${i}%`));
 const PULSE_ALPHA = 0.14;
 const PULSE_RADIUS = 0.05;
 
@@ -63,6 +65,7 @@ uniform float uVig;     // 0..1 rim strength
 uniform float uHaze;    // 0..1 centre darkening / desaturation
 uniform float uFlash;   // 0..1 damage flash
 uniform float uGrip;    // 0..1 failing grip (WP-CLIMB): a cold, dark tunnel closes in
+uniform float uHit;     // 0..1 HIT FEEDBACK punch (hitFeedbackGlue.js): a blood-dark wash, a luminance drop more than a hue
 uniform vec2 uRange;    // rim start / end radius in NDC
 varying vec2 vNdc;
 void main() {
@@ -84,6 +87,10 @@ void main() {
   float ga = clamp(e * uGrip * 0.7, 0.0, 0.7);
   c = mix(c, vec3(0.012, 0.022, 0.03), ga / max(a + ga * (1.0 - a), 1e-4));
   a = a + ga * (1.0 - a);
+  // A hit (HIT_FEEDBACK.md): dark, warm blood over everything, heavier at the rim (reads without hue: it darkens).
+  float ha = uHit * (0.42 + 0.58 * e);
+  c = mix(c, vec3(0.20, 0.008, 0.006), ha / max(a + ha * (1.0 - a), 1e-4));
+  a = a + ha * (1.0 - a);
   // Interleaved-gradient dither: no banding in the dark gradient.
   float n = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   a = clamp(a + (n - 0.5) / 255.0, 0.0, 1.0);
@@ -131,6 +138,7 @@ export class HealthFx {
         uHaze: { value: 0 },
         uFlash: { value: 0 },
         uGrip: { value: 0 },
+        uHit: { value: 0 },
         uRange: { value: new THREE.Vector2(0.55, 1.35) },
       },
       transparent: true,
@@ -184,6 +192,13 @@ export class HealthFx {
     this._dead = false;
     this._deadT = 0;
     this._lastFlashAt = -1;
+    // HIT FEEDBACK inputs (written each frame by hitFeedbackGlue.js before update(); 0 = none): the punch (rim alpha), the held
+    // red-black vignette while knocked down, the slow sway of its rim (NDC), and the '-30%' tick on the ECG screen (percent, 0..1 age)
+    this.hitFlash = 0;
+    this.hitVig = 0;
+    this.hitDizzy = 0;
+    this.hitTick = 0;
+    this.hitTickT = 1;
     this._unsub = [];
 
     const bus = game.bus;
@@ -207,6 +222,11 @@ export class HealthFx {
   /** A fresh start: full health look, calm trace. */
   reset() {
     if (this.text) this.text.reset();
+    this.hitFlash = 0;
+    this.hitVig = 0;
+    this.hitDizzy = 0;
+    this.hitTick = 0;
+    this.hitTickT = 1;
     this._grip = 0;
     this._vig = 0;
     this._haze = 0;
@@ -281,6 +301,10 @@ export class HealthFx {
     const pulse = reduced ? 0 : beatEnv(this._phase) * this._pulseAmp;
     // flash decays
     if (this._flash > 0) this._flash = reduced ? 0 : Math.max(0, this._flash - dts * 0.85);
+    // HIT FEEDBACK: the hit punch owns the moment (no second, brighter flash under it); its held vignette joins the rim and the haze
+    const hitF = this.hitFlash > 0 ? Math.min(1, this.hitFlash) : 0;
+    const hitV = inRun && this.hitVig > 0 ? Math.min(1, this.hitVig) : 0;
+    if (hitF > 0.004) this._flash = 0;
 
     // failing grip (sim/climb3d.js warn 0..1): the rim darkens as the strength runs out; a slow bounded breath unless reduced
     const cl = g.climb;
@@ -288,18 +312,19 @@ export class HealthFx {
     this._grip += (gTarget - this._grip) * (1 - Math.exp(-dts * (gTarget > this._grip ? 5 : 2)));
     const gripPulse = reduced ? 0 : 0.12 * Math.sin(this._ecgT * 6.5) * this._grip;
 
-    const vig = U.clamp(this._vig * (1 + PULSE_ALPHA * pulse), 0, 1);
+    const vig = Math.max(U.clamp(this._vig * (1 + PULSE_ALPHA * pulse), 0, 1), hitV);
     this.strength = vig;
     const u = this.material.uniforms;
     u.uVig.value = vig;
-    u.uHaze.value = this._haze;
+    u.uHaze.value = Math.max(this._haze, hitV * 0.7);
     u.uFlash.value = this._flash;
+    u.uHit.value = hitF;
     u.uGrip.value = U.clamp(this._grip * (0.85 + gripPulse), 0, 1);
     // Lenses crop the corners of the eye buffer: start the rim a little further in when presenting.
-    const r0 = (this._xr ? 0.5 : 0.6) - PULSE_RADIUS * pulse;
+    const r0 = (this._xr ? 0.5 : 0.6) - PULSE_RADIUS * pulse - 0.18 * hitV + (hitV > 0 ? this.hitDizzy : 0);
     const r1 = this._xr ? 1.22 : 1.4;
     u.uRange.value.set(r0, r1);
-    this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004 || this._grip > 0.004;
+    this.vignette.visible = vig > 0.004 || this._flash > 0.004 || this._haze > 0.004 || this._grip > 0.004 || hitF > 0.004;
     // THE DRESSER hunting you (you are whole): the line comes in chalk (lowHealthText.js; never with low health)
     const dr = g.dresser;
     const chalk = !!(dr && !dr.isNull && dr.hunting);
@@ -497,6 +522,16 @@ export class HealthFx {
     ctx.font = '700 15px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'right';
     ctx.fillText(String(Math.round(hpv * 100)), W - 6, by + 10);
+    // HIT FEEDBACK: a '-30%' / '-10%' tick floating up off the hp numeral and fading (hitFeedbackGlue.js sets hitTick / hitTickT)
+    const tick = this.hitTick | 0;
+    if (tick > 0 && tick <= 100 && !dead && this.hitTickT < 1) {
+      const ta = this.hitTickT;
+      ctx.globalAlpha = ta < 0.15 ? ta / 0.15 : 1 - (ta - 0.15) / 0.85;
+      ctx.fillStyle = '#ff4a3a';
+      ctx.font = '800 16px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.fillText(TICK_TEXT[tick], W - 6, by - 6 - 16 * ta);
+      ctx.globalAlpha = 1;
+    }
 
     // CRT scanlines + a dim frame
     ctx.fillStyle = 'rgba(0,0,0,0.16)';

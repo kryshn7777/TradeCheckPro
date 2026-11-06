@@ -372,6 +372,7 @@ export const SETTINGS_DEFAULTS = {
   gripMode: 'hold',
   ropeLatch: false,
   weapons: true, // SOLDIER_WEAPONS.md: the dead soldiers' grenades and revolver lie in the shaft (sim/weapons3d.js); off = none found (also ?weapons=off)
+  hitFeedback: 'full', // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'full' | 'gentle' (half the red punch, no fall of the view, a shorter ring)
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -405,6 +406,7 @@ export const UX_LIMITS = {
   touchRopeModes: ['hold', 'latch'],
   lanternHoods: ['hold', 'toggle'], // THE HOOD
   gripModes: ['hold', 'toggle'], // ASSIST PACK
+  hitFeedbacks: ['full', 'gentle'], // HIT FEEDBACK
 };
 
 /** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
@@ -461,6 +463,7 @@ export function sanitizeUxSettings(s) {
   if (L.gripModes.indexOf(s.gripMode) < 0) s.gripMode = D.gripMode;
   s.ropeLatch = s.ropeLatch === true;
   s.weapons = s.weapons !== false && s.weapons !== 'off'; // on unless switched off (SOLDIER_WEAPONS.md)
+  if (L.hitFeedbacks.indexOf(s.hitFeedback) < 0) s.hitFeedback = D.hitFeedback; // HIT FEEDBACK
   sanitizeTouchSettings(s);
   return s;
 }

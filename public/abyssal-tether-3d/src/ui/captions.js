@@ -157,6 +157,10 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'player:hit' and its ring ('hit:ring')
+  hit: R('[Hit]', 'player', 2, 'hit', 0.9),
+  hitRing: R('[High-pitched ringing]', 'player', 1, 'hitring', 2.5),
+  hitBite: R('[Skitterling bite]', 'creature', 2, 'skitstrike', 1.2),
 });
 
 /**
@@ -451,6 +455,10 @@ export function captionForEvent(type, p, head) {
       return e.stagger ? WEAPON_RULES.stagger : WEAPON_RULES.flee;
     case 'skitter:killed':
       return WEAPON_RULES.squish;
+    case 'player:hit':
+      return e.source === 'skitter' ? RULES.hitBite : RULES.hit;
+    case 'hit:ring':
+      return e.source === 'skitter' ? null : RULES.hitRing;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -567,6 +575,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'grenade:blast',
   'creature:frighten',
   'skitter:killed',
+  'player:hit',
+  'hit:ring',
   ...SFX_CAPTION_EVENTS,
 ]);
 
