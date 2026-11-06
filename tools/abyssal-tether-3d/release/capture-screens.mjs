@@ -212,6 +212,8 @@ async function setScene(page, r) {
       return { state: 'playing', opening: rec.opening };
     }
     if (G.state === 'intro' && D.opening) D.opening.skip();
+    if (rec.yaw == null) rec.yaw = 0; // an eye + target recipe computes its look below
+    if (rec.pitch == null) rec.pitch = 0;
     D.freeze(false);
     G.start('normal');
     D.godMode(true);
@@ -324,7 +326,8 @@ async function setScene(page, r) {
       // the watch's hologram map latched open (M) and fully bloomed
       G.wristMap.pinned = true;
       G.wristMap.on = true;
-      G.wristMap.k = 1;
+      D.step(1.2, { render: false, state: false }); // the bloom (the view follows wristMap.k in the frame update)
+      G._setLook(rec.yaw, rec.pitch);
     }
     if (rec.hideHands) {
       // key art: no gauntlets, no reticle, no watch (layer 31 is never rendered; the views reset `visible` every frame, not layers)
@@ -421,7 +424,6 @@ async function setScene(page, r) {
       D.teleport(rec.eye[0], rec.eye[1] - 1.24, rec.eye[2]);
       G._setLook(rec.yaw, rec.pitch);
     }
-    if (rec.wristMap && G.wristMap) G.wristMap.k = 1;
     G.fade = rec.fade || 0;
     D.freeze(true);
     for (let i = 0; i < (rec.eye || rec.wristMap ? 6 : 0); i++) G._render(1 / 60); // the pack LODs re-pick every 3rd frame after a teleport
