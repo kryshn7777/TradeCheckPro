@@ -296,7 +296,7 @@ export class MasonSense {
     const d = this.decoy;
     const D = DECOY_TUNE;
     if (!this.enabled || !fin(x) || !fin(y) || !fin(z)) return false;
-    if (!c.active || !c.inPlay || c.victory || c.sighting || c._override || c._withdraw || c.refuge === 2 || c.state === 'ATTACK') {
+    if (!c.active || !c.inPlay || c.victory || c.sighting || c._override || c._withdraw || c.refuge === 2 || (c.state === 'ATTACK' && !c.coiledFree)) {
       this.stats.refused++;
       return false;
     }

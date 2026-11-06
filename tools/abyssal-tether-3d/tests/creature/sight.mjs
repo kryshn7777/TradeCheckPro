@@ -305,12 +305,12 @@ function frontDist(c, p) {
     return !x.c.sight.chasing;
   });
   const chasing = w.c.sight.chasing;
-  w.c.lethal = false; // watch it, do not die
+  w.c.immune = true; // watch it, do not get hit (MASON_STRIKES.md: was lethal = false; a lethal hunt keeps its strikes going, all misses here)
   let withdrew = false;
   w.step(60 * 30, (x) => {
     x.c.setHurt(false); // healed
     if (x.c._withdraw) withdrew = true;
-    x.c.lethal = false;
+    x.c.immune = true;
   });
   ok(chasing && !withdrew && w.c.sight.chasing, 'hunt gate: healed while it keeps seeing you, it never withdraws (30 s): the scent hold is kept full by the chase');
   w.c.setSight(true, false, false); // the light is gone
@@ -323,7 +323,7 @@ function frontDist(c, p) {
   ok(tW > SIGHT_TUNE.normal.memory + 13 && tW < SIGHT_TUNE.normal.memory + 15, `... and once it loses you it withdraws after memory + the 14 s scent hold (${f2(tW)} s)`);
 }
 
-// ---- 9. a scripted chase from ~25 m converges; every connect is inside lethalNear; full hp still dies ----------------------------
+// ---- 9. a scripted chase from ~25 m converges; every connect is inside lethalNear; a connect at full hp is survivable (MASON_STRIKES) --
 {
   let good = true;
   let nearOk = true;
@@ -347,7 +347,7 @@ function frontDist(c, p) {
         h.step(DT);
         if (x.c.attack.phase === 'windup') fd = frontDist(x.c, x.p);
         if (x.c.caughtPlayer) {
-          // game.js: c.caughtPlayer -> physics.kill(..., 'creature') whatever the hp
+          // game.js: c.caughtPlayer -> PlayerHits.mason: 30 % of the health (MASON_STRIKES.md), the devour death only at 0
           if (h.hp < 1) fullHp = false;
           h.die();
           tHit = x.t;
@@ -364,9 +364,9 @@ function frontDist(c, p) {
   }
   ok(good, `a player standing on a ledge in view from ~25 m is caught on every seed and difficulty (${KEYS.map((k) => k + ' ' + times[k].join(' ')).join(' | ')})`);
   ok(nearOk && hits > 0, 'every connect came out of the lethalNear radius (the near flag was on before it, the wind-up ended inside it)');
-  ok(fullHp, 'the connect kills at FULL hp (deathCause creature: the devour scene)');
+  ok(fullHp, 'the connect comes at FULL hp (MASON_STRIKES.md: it now takes 30 %, tests/creature/strikes.mjs)');
   const gsrc = fs.readFileSync(SRC_DIR + '/game.js', 'utf8');
-  ok(/if \(c\.caughtPlayer\) \{\s*c\.caughtPlayer = false;\s*if \(this\.player\.alive && this\.state === 'playing'\) this\.physics\.kill\(this\.player, this\.tethers, 'creature'\);/.test(gsrc), "game.js: a Mason connect is physics.kill(..., 'creature') with no hp test (unchanged)");
+  ok(/if \(c\.caughtPlayer\) \{\s*c\.caughtPlayer = false;[^]*?hits\.mason\(/.test(gsrc) && !/c\.caughtPlayer = false;\s*if \(this\.player\.alive && this\.state === 'playing'\) this\.physics\.kill/.test(gsrc), "game.js: a Mason connect goes through PlayerHits.mason (30 %, the knockdown), not a physics.kill at any hp");
 }
 
 // ---- 10. the near radius: no recovery inside, restored outside ---------------------------------------------------------------------

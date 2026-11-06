@@ -51,6 +51,12 @@
  *   frozen, it holds at its stalking distance and listens; 2 the S5 lure niche: it attacks, no strike hits); a strike never
  *   hits through an active solid; setOverride(cfg, section) lays a mode over a section (S7: escape once the iris opens).
  *   All event payloads carry world z as well as x, y.
+ *   MASON_STRIKES.md (the Mason; skitterlings keep the old wind-up): a strike no longer kills, it costs 30 % (game.js -> PlayerHits).
+ *   The snake: seen / near it DASHES (BURST 'dash'), then in ATTACK it holds a stand-off, rises, LOCKS on where you stand, lunges,
+ *   recoils and stares, every 3-5 s (strikeZone.js STRIKE_TUNE, its own seeded stream). Read-outs: attackPhase ('stalk' | 'dash' |
+ *   'rise' | 'stare' | 'lock' | 'strike' | 'recoil' | ''), attackT01, aimX/Y/Z, strikeSrc, strikeStats, coiledFree; input: immune;
+ *   events creature:phase {phase, t, dur, tx, ty, tz, x, y, z}, creature:attack (each striking rise: + interval, radius, strike,
+ *   coiled), creature:strike (+ zone). attack.phase keeps the rig's names: rise / lock / stare = 'windup', 'strike', 'recoil'.
  * Section data: creature.spawnOffsetY is read as metres ABOVE the player
  * (sign-agnostic), clamped to 28–80 m (beyond ~70 m the out-of-sight rubber
  * band closes the gap at catch-up speed anyway). Sighting trigger data:
@@ -60,6 +66,7 @@
 import { U } from './config3d.js';
 import { surfaceNavFor } from './creatureNav.js';
 import { MasonSense } from './masonSight.js'; // MASON_SIGHT.md: sight -> chase, the near no-recovery radius, the knocker decoy
+import { strikeTune, cadenceInterval, segDist, STRIKE_COMMON, STRIKE_DAMAGE } from './strikeZone.js'; // MASON_STRIKES.md
 
 const TAU = Math.PI * 2;
 const FAR = 99999;
@@ -272,7 +279,7 @@ export const CREATURE_VARIANTS = {
     windupMul: 1 / 1.5,
     killRadiusMul: 0.62,
     steerMul: 1.5,
-    hitDamage: { normal: 0.26, nightmare: 0.32, abyss: 0.4 },
+    hitDamage: { normal: STRIKE_DAMAGE.skitter, nightmare: STRIKE_DAMAGE.skitter, abyss: STRIKE_DAMAGE.skitter }, // MASON_STRIKES.md: 10 % on every difficulty
   },
 };
 
@@ -584,6 +591,9 @@ export class Creature3D {
     this.k = Object.assign({ burstRate: 0, commit: 0 }, DIFF_TUNE[key]);
     this.seed = options && isFinite(options.seed) ? options.seed | 0 : (Math.random() * 1e9) | 0;
     this._rand = U.rng(this.seed);
+    // MASON_STRIKES.md: the strike cadence draws from its own seeded stream (the behaviour stream above is unchanged)
+    this.strikeK = strikeTune(key);
+    this._cadRand = U.rng((this.seed ^ 0x57c1ade) >>> 0);
 
     // ---- body (preallocated) ----
     this._segOff = new Float64Array(SEG); // arc length from the head
@@ -619,7 +629,9 @@ export class Creature3D {
     this._tCount = 0;
 
     this.audio = { x: 0, y: 0, z: 0, distance: FAR, intensity: 0, movement: 0, state: S.DORMANT };
-    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, hit: false, cause: '' };
+    // MASON_STRIKES.md: px/py/pz the strike point locked at the wind-up start, radius the zone around the swept line, interval the
+    // cadence drawn at this attack's start
+    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, px: 0, py: 0, pz: 0, radius: 0, interval: 0, sp: '', st: 0, sd: 1, rx: 0, ry: 0, rz: 0, riseDur: 0, armed: false, coiled: false, stop: '', hit: false, cause: '' };
     this._solids = [];
     this._grip = [];
     this._surf = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
@@ -854,6 +866,7 @@ export class Creature3D {
     this.lethal = false;
     this.caughtPlayer = false;
     this.hitPlayer = false;
+    this._resetStrikes();
     this.sighting = null;
     this.sightingDone = false;
     this.inPlay = false;
@@ -1096,6 +1109,7 @@ export class Creature3D {
       this._prowlT = this._prowlFirst(); // the first pass after a respawn waits (MASON_SIGHT.md)
     }
     this.attack.phase = null;
+    this._resetStrikes(true);
     this.nearMiss = 0;
     this.stillTime = 0;
     this.stallTime = 0;
@@ -1263,6 +1277,7 @@ export class Creature3D {
     else if (this.mode === 'sighting') this._updateSighting(dt, player);
     else this._updateDormant(dt, player);
 
+    if (!this.v) this._phaseTick(player);
     this.speed = len3(this.vx, this.vy, this.vz);
     if (this.inPlay || this.sighting) {
       this.distance = len3(player.x - this.x, player.y - this.y, player.z - this.z);
@@ -1309,6 +1324,8 @@ export class Creature3D {
     const below = this.y - player.y; // > 0: the player is below it
     this.distance = dist;
     this.grace = Math.max(0, this.grace - dt);
+    if (this._atkCd > 0) this._atkCd -= dt; // MASON_STRIKES.md: the cadence clock
+    if (this._dashCd > 0) this._dashCd -= dt;
     this.listenCd -= dt;
     this.burstTimer -= dt;
     this.routeTimer -= dt;
@@ -1341,6 +1358,9 @@ export class Creature3D {
     const still = alive && this.stillTime > T.stillDebounce;
     const moving = alive && (this.playerSpeed > T.moveSpeed || this._noiseT > 0);
     const stalled = canAttack && this.stallTime >= K.stallCommit;
+    // MASON_STRIKES.md: engaged = it chases you or you are in its reach (a lethal hunt, not in a rest): the cadence drives the attacks,
+    // the stamina does not drain and a missed strike goes straight back to the pursuit (no withdraw wave in between)
+    this._engaged = !this.v && this.lethal && alive && !hidden && (chase || dist <= engage + STRIKE_COMMON.engagePad);
     const st = this.state;
     if (st !== S.APPROACHING) this.creeping = false;
 
@@ -1369,7 +1389,8 @@ export class Creature3D {
             break;
           }
           if (st === S.PURSUING) this._drain(K.drain * dt);
-          if (canAttack && dist < engage && (!still || chase)) this._startAttack(chase && still ? 'sight' : 'contact');
+          if (this._dashOk(dist, chase, canAttack, engage)) this._startBurst(true, 'dash'); // MASON_STRIKES.md: seen / near: it surges in
+          else if (canAttack && dist < engage && (!still || chase)) this._startAttack(chase && still ? 'sight' : 'contact');
           else if (stalled && this.stamina > 0.15 && dist < T.burstMax) this._stallLunge();
           else if (this.stamina <= 0) this._setState(S.RECOVERING);
           else if (!chase && this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
@@ -1398,7 +1419,9 @@ export class Creature3D {
           } else if (dist <= this._menace() * 0.9) end = true; // pressure surge stops short
           // A committed surge runs along the masonry, which is longer than the straight line it used to take through the air: it
           // keeps going (up to nav.burstExtend x its time, while it has the stamina) until it is in range to strike.
-          if (end && this.burstCommit && canAttack && this._nav && T.nav.enabled && this.stateTime < this.stateDur * T.nav.burstExtend && this.stamina > 0.08) end = false;
+          if (end && this.burstCommit && canAttack && this._nav && T.nav.enabled && this.burstReason !== 'dash' && this.stateTime < this.stateDur * T.nav.burstExtend && this.stamina > 0.08) end = false;
+          // MASON_STRIKES.md: a dash is capped and a rest, a decoy or a lost hunt calls it off (it holds at its stand-off point)
+          if (this.burstReason === 'dash' && (hidden || this.sense.decoy.live || !canAttack)) end = true;
           if (end) {
             if (this.burstCommit) this._lungeFails++; // never got in reach (see _watchdog)
             if (this.stamina <= 0) this._setState(S.RECOVERING);
@@ -1839,6 +1862,19 @@ export class Creature3D {
       tz = this._ntz;
       stick = 1;
     }
+    if (this.state === S.BURST && this.burstReason === 'dash') {
+      // MASON_STRIKES.md DASH: the same way, at full surge speed (the soft arrival at each near waypoint would hold it to a crawl)
+      const ex = tx - this.x;
+      const ey = ty - this.y;
+      const ez = tz - this.z;
+      const el = len3(ex, ey, ez);
+      const want = speed / 2.5;
+      if (el > 1e-3 && el < want) {
+        tx = this.x + (ex / el) * want;
+        ty = this.y + (ey / el) * want;
+        tz = this.z + (ez / el) * want;
+      }
+    }
     if (!navOn && !this.v && this.lethal && !this.creeping) {
       // It aims where you will be: a swing across the shaft does not shake it off.
       const w = this.state === S.BURST ? Math.max(swing, this.burstCommit ? 0.85 : 0.55) : this.state === S.PURSUING || this.state === S.APPROACHING ? swing : 0;
@@ -2223,6 +2259,30 @@ export class Creature3D {
 
   // ---- attack ----------------------------------------------------------------------
 
+  /** MASON_STRIKES.md: no attack yet (the cadence clock), no strike stats, no hit memory: a new run, a respawn. */
+  _resetStrikes(keepStats) {
+    this._atkCd = 0;
+    this._lastHitT = -1e9;
+    this._engaged = false;
+    /** set by the game every frame (sim/playerHits.js): the player cannot be struck right now (after a hit) */
+    this.immune = false;
+    /** where the last Mason lunge left from (the crown before the strike): player:hit's attacker position */
+    if (!this.strikeSrc) this.strikeSrc = { x: 0, y: 0, z: 0 };
+    if (!keepStats || !this.strikeStats) this.strikeStats = { attacks: 0, hits: 0, misses: 0, dashes: 0 };
+    this._dashCd = 0;
+    /** read-only for the views: 'stalk' | 'dash' | 'rise' | 'stare' | 'lock' | 'strike' | 'recoil' | '' (out of the hunt) */
+    this.attackPhase = '';
+    this.attackT01 = 0; // 0..1 through the phase
+    this.aimX = 0; // where the crown looks (the player; the locked point from the lock to the impact)
+    this.aimY = 0;
+    this.aimZ = 0;
+    if (this.attack) {
+      this.attack.sp = '';
+      this.attack.phase = null;
+    }
+  }
+
+  /** Returns false (nothing changes but the stall bookkeeping of a blocked line) when no attack starts. */
   _startAttack(cause) {
     if (this._losBlocked(null)) {
       // Masonry between you (it is above the floor you hang under): no strike
@@ -2230,7 +2290,7 @@ export class Creature3D {
       this._lungeFails++;
       this.creeping = false;
       this._setState(S.PURSUING);
-      return;
+      return false;
     }
     const a = this.attack;
     a.cause = cause || 'contact';
@@ -2249,15 +2309,25 @@ export class Creature3D {
       this.vy *= cap / sp;
       this.vz *= cap / sp;
     }
+    if (!this.v) {
+      this._setState(S.ATTACK);
+      this._snakeEnter(); // MASON_STRIKES.md: the snake (rise / stare / lock / strike / recoil, the cadence inside)
+      return true;
+    }
     this.stats.attacks++;
     this._setState(S.ATTACK);
     this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, windup: a.windup, distance: this.distance, cause: a.cause });
+    return true;
   }
 
   _updateAttack(dt, player) {
     const a = this.attack;
     if (!a.phase) {
       this._setState(S.RECOVERING);
+      return;
+    }
+    if (!this.v) {
+      this._updateSnake(dt, player);
       return;
     }
     a.t += dt;
@@ -2373,6 +2443,313 @@ export class Creature3D {
     // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); refuge: 0 / 1 / 2
     this._emit('creature:strike', { x: a.lx, y: a.ly, z: a.lz, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge });
     this._emitStep(a.lx, a.ly, a.lz, 1, md, true);
+  }
+
+  // ---- MASON_STRIKES.md: the snake ------------------------------------------------------------------------------------------
+  // In reach the Mason does not run through you: it holds a standing-off distance, rears up and stares (RISE), the aim freezes on
+  // where you stand (LOCK), a fast straight lunge (STRIKE) that connects only within the strike radius of its swept line, it snaps
+  // back into the coil (RECOIL) and stares again (STARE) until the cadence clock lets it rise for the next strike: every 3-5 s
+  // start to start while you stay in its reach. `attack.phase` keeps the rig's old names: rise / stare / lock = 'windup' (a.t /
+  // a.windup = the rear), strike = 'strike', recoil = 'recoil'.
+
+  /** The lunge's reach (m) from the head. */
+  _reach() {
+    return this.cfg.killRadius * T.strikeMul * (this.burstReason === 'stall' ? 1.25 : 1) + (T.nav.enabled && this._nav ? T.nav.stretch : 0);
+  }
+
+  /** Entering ATTACK (the Mason): the first rise; the strike itself waits for the cadence clock. */
+  _snakeEnter() {
+    const a = this.attack;
+    a.hit = false;
+    a.coiled = false;
+    this._snakeRise();
+  }
+
+  /** A rise: the first (longer) or a re-rise from the coil. `armed` when the cadence allows a strike at its end. */
+  _snakeRise() {
+    const a = this.attack;
+    const SK = this.strikeK;
+    const dur = a.coiled ? SK.riseAgain : SK.riseFirst;
+    a.armed = this._atkCd <= 0;
+    a.riseDur = dur;
+    a.windup = dur + SK.lock;
+    a.radius = SK.radius;
+    a.phase = 'windup';
+    a.t = 0;
+    a.hit = false;
+    this._snakePhase('rise', dur, this._px, this._py, this._pz);
+    if (a.armed) {
+      a.interval = cadenceInterval(SK, this._cadRand());
+      this._atkCd = a.interval;
+      this.stats.attacks++;
+      this.strikeStats.attacks++;
+      this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, windup: a.windup, distance: this.distance, cause: a.cause, interval: a.interval, radius: a.radius, strike: SK.strike, coiled: a.coiled });
+    }
+  }
+
+  /** Sets the snake phase (rare: one event per phase). */
+  _snakePhase(name, dur, tx, ty, tz) {
+    const a = this.attack;
+    a.sp = name;
+    a.st = 0;
+    a.sd = dur > 0.05 ? dur : 0.05;
+    this._setPhase(name, a.sd, tx, ty, tz);
+  }
+
+  /** The public phase for the views (attackPhase / creature:phase); events only on a change. */
+  _setPhase(name, dur, tx, ty, tz) {
+    this.attackT01 = 0;
+    if (name === this.attackPhase && name !== 'rise' && name !== 'stare') return;
+    this.attackPhase = name;
+    this._emit('creature:phase', { phase: name, t: 0, dur, tx, ty, tz, x: this.x, y: this.y, z: this.z });
+  }
+
+  /** Holds the standing-off distance (it sways, the crown on you): it backs off inside standOff - 0.4 m, never running through you. */
+  _snakeHold(dt, player) {
+    const so = this.strikeK.standOff;
+    const d = this.distance > 1e-3 ? this.distance : 1e-3;
+    const ux = (player.x - this.x) / d;
+    const uy = (player.y - this.y) / d;
+    const uz = (player.z - this.z) / d;
+    const sw = Math.sin(this._t * 2.1 + this.seed) * 0.5;
+    let sp = 0;
+    let tx = this.x + this._tanX() * sw;
+    let ty = this.y;
+    let tz = this.z + this._tanZ() * sw;
+    if (d > so + 0.6) {
+      sp = this.k.windupAdv;
+      tx += ux * (d - so);
+      ty += uy * (d - so);
+      tz += uz * (d - so);
+    } else if (d < so - 0.4) {
+      sp = 2.5;
+      tx -= ux * (so - d);
+      ty -= uy * (so - d);
+      tz -= uz * (so - d);
+    } else sp = 0.6;
+    this._moveToward(tx, ty, tz, sp, 5, dt, 0.3);
+    this._surfaceStep(dt, 0.3);
+  }
+
+  /** MASON_STRIKES.md: the view phase outside the snake: 'dash' (the surge), 'stalk' (the lethal hunt closing in), '' otherwise. */
+  _phaseTick(player) {
+    if (this.state === S.ATTACK && this.attack.sp) return;
+    let ph = '';
+    let dur = 0;
+    if (this.inPlay && this.lethal && !this.victory && !this._withdraw) {
+      if (this.state === S.BURST && this.burstReason === 'dash') {
+        ph = 'dash';
+        dur = this.stateDur;
+        this.attackT01 = U.clamp(this.stateTime / Math.max(0.05, this.stateDur), 0, 1);
+      } else if (this.state === S.APPROACHING || this.state === S.PURSUING || this.state === S.OBSERVING || this.state === S.BURST) ph = 'stalk';
+    }
+    this.aimX = player.x;
+    this.aimY = player.y;
+    this.aimZ = player.z;
+    if (ph !== this.attackPhase) {
+      if (ph !== 'dash') this.attackT01 = 0;
+      this.attackPhase = ph;
+      this._emit('creature:phase', { phase: ph, t: 0, dur, tx: player.x, ty: player.y, tz: player.z, x: this.x, y: this.y, z: this.z });
+    }
+  }
+
+  /** MASON_STRIKES.md: coiled with no strike under way (stare, or a rise that will not strike): a knocker may still draw it off. */
+  get coiledFree() {
+    const a = this.attack;
+    return this.state === S.ATTACK && !this.v && (a.sp === 'stare' || (a.sp === 'rise' && !a.armed));
+  }
+
+  /** Leaves the coil (you went out of reach, into a rest, died, a decoy): back to the hunt. */
+  _snakeExit(hidden, alive) {
+    const a = this.attack;
+    a.phase = null;
+    a.sp = '';
+    if (!alive) this._enterObserve(2.5, false);
+    else if (hidden) this._enterObserve(this.k.listenDur, true);
+    else this._setState(S.PURSUING);
+  }
+
+  _updateSnake(dt, player) {
+    const a = this.attack;
+    const SK = this.strikeK;
+    const alive = player.alive !== false;
+    const hidden = this.refuge === 1;
+    a.st += dt;
+    const free = a.sp === 'stare' || (a.sp === 'rise' && !a.armed);
+    if (free && (hidden || !alive || !this.lethal || this.sense.decoy.live || this._withdraw || this.distance > this._reach() + STRIKE_COMMON.leave)) {
+      this._snakeExit(hidden, alive);
+      return;
+    }
+    if (a.sp === 'rise') {
+      this._snakeHold(dt, player);
+      a.t = Math.min(a.st, a.riseDur);
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (a.st >= a.sd) {
+        if (a.armed) {
+          // LOCK: the aim freezes where you stand (a hair of lead): the dodge deadline
+          let lx = this._pvx * SK.lead;
+          let ly = this._pvy * SK.lead;
+          let lz = this._pvz * SK.lead;
+          const ll = len3(lx, ly, lz);
+          if (ll > STRIKE_COMMON.leadMax) {
+            lx *= STRIKE_COMMON.leadMax / ll;
+            ly *= STRIKE_COMMON.leadMax / ll;
+            lz *= STRIKE_COMMON.leadMax / ll;
+          }
+          a.px = player.x + lx;
+          a.py = player.y + ly;
+          a.pz = player.z + lz;
+          this._snakePhase('lock', SK.lock, a.px, a.py, a.pz);
+        } else {
+          a.coiled = true;
+          this._snakePhase('stare', this._atkCd, player.x, player.y, player.z);
+        }
+      }
+    } else if (a.sp === 'stare') {
+      this._snakeHold(dt, player);
+      a.t = a.riseDur; // the rig holds the full coil
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (this._atkCd <= 0) this._snakeRise();
+    } else if (a.sp === 'lock') {
+      // frozen on the point, a shiver of the coil (no advance)
+      this._moveToward(this.x, this.y, this.z, 0, 8, dt, 0.3);
+      this._surfaceStep(dt, 0.3);
+      a.t = a.riseDur + a.st;
+      this.aimX = a.px;
+      this.aimY = a.py;
+      this.aimZ = a.pz;
+      if (a.st >= a.sd) this._snakeLunge();
+    } else if (a.sp === 'strike') {
+      const k = Math.min(1, a.st / a.sd);
+      const e = 1 - (1 - k) * (1 - k);
+      const nx = U.lerp(a.sx, a.lx, e);
+      const ny = U.lerp(a.sy, a.ly, e);
+      const nz = U.lerp(a.sz, a.lz, e);
+      this.vx = (nx - this.x) / dt;
+      this.vy = (ny - this.y) / dt;
+      this.vz = (nz - this.z) / dt;
+      this.x = nx;
+      this.y = ny;
+      this.z = nz;
+      a.t = a.st;
+      if (a.st >= a.sd) this._snakeImpact(player);
+    } else if (a.sp === 'recoil') {
+      // the snap back into the coil: eased from the lunge's end to where it struck from, exactly in the recoil time
+      const k = Math.min(1, a.st / a.sd);
+      const e = k * k * (3 - 2 * k);
+      const nx = U.lerp(a.rx, a.sx, e);
+      const ny = U.lerp(a.ry, a.sy, e);
+      const nz = U.lerp(a.rz, a.sz, e);
+      this.vx = (nx - this.x) / dt;
+      this.vy = (ny - this.y) / dt;
+      this.vz = (nz - this.z) / dt;
+      this.x = nx;
+      this.y = ny;
+      this.z = nz;
+      a.t = a.st;
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (a.st >= a.sd) {
+        a.coiled = true;
+        a.phase = 'windup';
+        this._snakePhase('stare', this._atkCd, player.x, player.y, player.z);
+      }
+    } else this._snakeExit(hidden, alive);
+    this.attackT01 = U.clamp(a.st / a.sd, 0, 1);
+  }
+
+  /** LOCK -> STRIKE: the lunge line from the head toward the locked point, at most the reach, stopped short of the first solid. */
+  _snakeLunge() {
+    const a = this.attack;
+    let ux = a.px - this.x;
+    let uy = a.py - this.y;
+    let uz = a.pz - this.z;
+    const ul = len3(ux, uy, uz) || 1;
+    ux /= ul;
+    uy /= ul;
+    uz /= ul;
+    let ext = Math.min(ul, this._reach());
+    const occ = this._occlusion(ux, uy, uz, 1, ext);
+    a.stop = '';
+    if (occ < ext) {
+      ext = Math.max(0, occ - 0.8);
+      const by = this._occBy;
+      a.stop = by === 'rest' ? 'rest' : by && by.id ? by.id : '';
+    }
+    a.sx = this.x;
+    a.sy = this.y;
+    a.sz = this.z;
+    const sr = this.strikeSrc;
+    sr.x = this.x;
+    sr.y = this.y;
+    sr.z = this.z;
+    a.lx = this.x + ux * ext;
+    a.ly = this.y + uy * ext;
+    a.lz = this.z + uz * ext;
+    a.phase = 'strike';
+    a.t = 0;
+    this._snakePhase('strike', this.strikeK.strike, a.px, a.py, a.pz);
+  }
+
+  /**
+   * The impact (the end of the lunge): a connect only with a player within the strike radius of the swept segment, on a clear line,
+   * not in a refuge, not in grace, not immune, and never twice within STRIKE_COMMON.minHitGap s. A connect sets caughtPlayer (the
+   * game takes 30 % of the health and knocks you down: sim/playerHits.js), never a kill from any hp.
+   */
+  _snakeImpact(player) {
+    const a = this.attack;
+    const zone = segDist(player.x, player.y, player.z, a.sx, a.sy, a.sz, a.lx, a.ly, a.lz);
+    const dx = player.x - a.sx;
+    const dy = player.y - a.sy;
+    const dz = player.z - a.sz;
+    const d = len3(dx, dy, dz) || 1;
+    // the line to you must be clear too (a strike never hits through stone: LEVEL_FUN_PLAN P5), measured from where the lunge began
+    const hx = this.x;
+    const hy = this.y;
+    const hz = this.z;
+    this.x = a.sx;
+    this.y = a.sy;
+    this.z = a.sz;
+    const occ = this._occlusion(dx, dy, dz, d, d);
+    this.x = hx;
+    this.y = hy;
+    this.z = hz;
+    const hit =
+      this.lethal && player.alive !== false && this.grace <= 0 && !this.immune && this.refuge === 0 && zone <= a.radius && occ >= d - 0.35 && this._t - this._lastHitT >= STRIKE_COMMON.minHitGap;
+    let stop = a.stop;
+    if (hit) {
+      stop = '';
+      this.caughtPlayer = true;
+      this.stats.hits++;
+      this.strikeStats.hits++;
+      this._lastHitT = this._t;
+      this._atkCd = Math.max(this._atkCd, STRIKE_COMMON.afterHit); // you are down: it holds the coil and stares, it does not pile on
+    } else {
+      this.nearMiss = d < this._reach() * 2.2 ? 1 : 0.6;
+      this.stats.nearMisses++;
+      this.strikeStats.misses++;
+      this._hunger = Math.min(T.hunger.max, this._hunger + T.hunger.step); // a miss makes it hungrier, for the rest of the section
+    }
+    a.hit = hit;
+    a.phase = 'recoil';
+    a.t = 0;
+    this._drain(T.drainLunge);
+    const ex = hit ? player.x : a.lx;
+    const ey = hit ? player.y : a.ly;
+    const ez = hit ? player.z : a.lz;
+    const md = len3(player.x - a.lx, player.y - a.ly, player.z - a.lz);
+    // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); zone: m from the swept line
+    this._emit('creature:strike', { x: ex, y: ey, z: ez, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge, zone });
+    this._emitStep(ex, ey, ez, 1, md, true);
+    a.rx = this.x; // the recoil leaves from the lunge's end
+    a.ry = this.y;
+    a.rz = this.z;
+    this._snakePhase('recoil', this.strikeK.recoil, a.px, a.py, a.pz);
   }
 
   // ---- victory ---------------------------------------------------------------------
@@ -2670,6 +3047,11 @@ export class Creature3D {
       // too (it launches itself off the masonry at you) — within reason.
       const need = (this.distance - this.cfg.killRadius * T.engageMul) / Math.max(1, this.k.burst) + 0.5;
       this.stateDur = U.clamp(Math.max(this.stateDur, need), this.stateDur, 3.5);
+      if (this.burstReason === 'dash') {
+        this.stateDur = Math.min(this.stateDur, STRIKE_COMMON.dashMax); // MASON_STRIKES.md: the dash is capped
+        this._dashCd = STRIKE_COMMON.dashCooldown;
+        this.strikeStats.dashes++;
+      }
     }
     if (this._snapping()) this.stateDur += this.k.snap;
     this._drain(T.drainBurstEntry);
@@ -2677,6 +3059,14 @@ export class Creature3D {
     this.stats.bursts++;
     this._setState(S.BURST);
     this._emit('creature:burst', { x: this.x, y: this.y, z: this.z, distance: this.distance, commit: this.burstCommit, reason: this.burstReason, snap: this._snapping() ? this.k.snap : 0 });
+  }
+
+  /**
+   * MASON_STRIKES.md DASH: it has seen you (the committed chase, after the notice roar) or you are within dashNear: the slow stalk
+   * becomes a surge at burst speed along its path to its stand-off point (harmless: only the telegraphed strike hurts).
+   */
+  _dashOk(dist, chase, canAttack, engage) {
+    return !this.v && canAttack && this._dashCd <= 0 && (chase || dist <= STRIKE_COMMON.dashNear) && dist > engage && dist < T.burstMax;
   }
 
   /** Bursts that open with the crown snapping toward you (see DIFF_TUNE.snap). */
@@ -2690,6 +3080,7 @@ export class Creature3D {
   }
 
   _drain(amount) {
+    if (this._engaged) return; // MASON_STRIKES.md: engaged, the cadence (not the stamina) paces it
     this.stamina = Math.max(0, this.stamina - amount * this.cfg.staminaDrain);
   }
 

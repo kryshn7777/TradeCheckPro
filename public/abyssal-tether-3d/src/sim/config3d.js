@@ -304,6 +304,8 @@ export const DIFFICULTY = {
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;
 export const DIFFICULTY_ORDER = ['normal', 'nightmare', 'abyss'];
+/** plans/MASON_STRIKES.md (the owner's numbers, every difficulty): hp fraction a Mason strike / a hunter-skitterling bite takes. */
+export const STRIKE_DAMAGE = Object.freeze({ mason: 0.3, skitter: 0.1 });
 
 export const SETTINGS_DEFAULTS = {
   volume: 0.8,

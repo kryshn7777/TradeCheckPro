@@ -1,0 +1,190 @@
+# MASON STRIKES: survivable, dodgeable hits (SIM side)
+
+Owner decision (verbatim): "when the mason hits us, we won't die immediately, but we will lose like 30% of our health per every
+hit. The skittlings cause 10% damage, the mason does 30% damage, and every hit the player camera goes like red and a high pitched
+sound and then he falls down for a moment and slowly gets up. The mason attacks once every 3 to 5 seconds. The player must, if he
+stays in there when it attacks, he will get damage. If he starts moving something like that, he might be able to avoid the damage.
+This system must be implemented properly."
+
+Two owners: **SIM** (this plan: the rules, the numbers, the state, the bots, the tests) and **FEEDBACK** (the red flash, the
+whine, the camera/body fall and rise, haptics, captions). FEEDBACK only reads the contract below; it never edits the SIM files.
+
+## 1. The contract (fixed, both sides)
+
+- Bus event **`player:hit`** `{source: 'mason'|'skitter', amount, hp, x, y, z, dx, dz, down}`: `amount` the hp fraction taken,
+  `hp` after the hit, `x, y, z` the attacker's head, `dx, dz` the unit horizontal direction attacker -> player (0, 0 when directly
+  above), `down` true when a knockdown follows. Emitted AFTER the usual `health:damage` (cause `'creature'` for the Mason,
+  `'skitter'` for a skitterling bite). A lethal hit also emits it (`down: false`), then the existing death (`physics.kill(...,
+  'creature')`: the Mason's devour scene, the skitterling's bitten scene: unchanged).
+- **`game.knock`**: an instance of `Knockdown` (`src/sim/knockdown.js`, pure, Node-safe):
+  - `phase` `'none' | 'down' | 'rise'`, `t` (s in the phase), `dur` (the phase's total s), `active` (phase !== 'none')
+  - `k` 0 standing .. 1 flat: down = cubic ease-out to 1 over the first **0.25 s**, then held; rise = smoothstep from the value
+    it had back to 0 over the rise (slow get-up)
+  - `moveMul` 0..1 on walk / air steer / jump / reel: **0** while down, **0.35 -> 1** linearly across the rise, 1 standing;
+    during a stagger (below) **0.4 -> 1** across the stagger
+  - `stagger` (s left of a stagger; `phase` stays `'none'`, `k` stays 0)
+  - `start(strength, floorOk)`: `strength >= 1 && floorOk` = the full knockdown (**1.1 s down + 2.4 s rise**, 3.5 s); otherwise a
+    stagger of **0.6 s** (strength >= 1: a Mason hit while gripping / hanging / airborne) or **0.35 s** (a skitterling bite)
+  - `update(dt)`, `cancel()` (immediately standing, no events but `player:up` when it was active), `abort()` (a fast 0.4 s rise
+    from where it is: the body left the floor, e.g. grabbed a wall)
+  - events: `player:down {dur}`, `player:rise {dur}`, `player:up {}`
+- Bites and strikes never rotate the headset camera: SIM only provides state; FEEDBACK decides the view (VR comfort).
+
+## 2. Damage (single-sourced)
+
+`config3d.js` gains `STRIKE_DAMAGE = { mason: 0.30, skitter: 0.10 }` (fractions of full hp, every difficulty; Sandbox has no
+creature). The skitterling table `CREATURE_VARIANTS.skitterling.hitDamage` reads it (0.10 on Normal / Nightmare / Abyss; it was
+0.26 / 0.32 / 0.40). `health3d.damage` snaps hp below 1e-6 to 0 so ten 0.10 bites (and four 0.30 strikes) are exactly lethal.
+
+- A Mason connect: `health.damage(0.30, 'creature', 0)`. hp > 0: knockdown (grounded) or stagger (not), NO `physics.kill`.
+  hp <= 0: the existing Mason death (`'creature'`, devour). From full: 1.00 -> 0.70 -> 0.40 -> 0.10 -> dead (**4 hits**).
+- A skitterling bite: `health.damage(0.10, 'skitter', 0)` (the existing path), stumble 0.35 s, its grip cost unchanged.
+- Out of scope, unchanged: the Dresser (`'dressed'`), the Usher, the Holdfast, falls, hazards, regen, heals; the no-heal radius
+  of a chasing Mason (`health.noRecovery`, MASON_SIGHT.md) stays.
+
+## 3. How it attacks: the SNAKE (owner clarifications, verbatim)
+
+> "How the Mason attacks is that it comes near the player, it sees like a snake, it just like it plans to attack, and then
+> immediately it attacks every 3 to 5 seconds, and again it stares at the player, it attacks like that, like a snake."
+>
+> "when it comes near the player, it slowly comes at normal speed, and then when it is nearby player or when it is in seeable
+> distance to the player, the mason suddenly comes at a much higher speed and then positions itself to attack the player."
+
+The Mason's attack is a cycle of view phases (`Creature3D.attackPhase`, bus `creature:phase`):
+
+| phase | creature state | what it does | numbers |
+|---|---|---|---|
+| `stalk` | APPROACHING / PURSUING / OBSERVING (lethal hunt) | the old sound hunt at its normal speed (approach / pursue / creep / listen) | DIFF_TUNE unchanged |
+| `dash` | BURST, reason `'dash'` | it has SEEN you (the committed chase, after the 0.5 s notice roar) or you are within **12 m**: it surges at burst speed (14 / 16 / 18.5 m/s x mode, 1.6-2.7x the pursuit) along its nav path to its stand-off point; harmless; capped **2.5 s**, at most one per **4 s**; a rest, a decoy or a lost hunt calls it off | `STRIKE_COMMON.dashNear / dashMax / dashCooldown` |
+| `rise` | ATTACK | within the engage radius (killRadius x 2.5 + 3.5 m) it stops charging, holds a **5.5 m** stand-off (closes / backs off at <= windupAdv, sways), rears up and tracks you; the first rise is the long one, later rises come out of the coil | riseFirst **0.8 / 0.7 / 0.6 s**, riseAgain **0.5 / 0.45 / 0.4 s** |
+| `lock` | ATTACK | the aim freezes on the point where you stand (no lead): the dodge deadline; it shivers in place | **0.30 / 0.28 / 0.27 s** |
+| `strike` | ATTACK | a very fast straight lunge from the head toward the locked point (at most the old reach, stopped 0.8 m short of the first solid); the hit test at its end | **0.20 / 0.18 / 0.16 s** |
+| `recoil` | ATTACK | it snaps back to where it struck from (the coil) | **0.5 / 0.5 / 0.45 s** |
+| `stare` | ATTACK | coiled, it sways and stares at you until the cadence clock allows the next rise; while you are down after a hit it holds here (it does not pile on) | until the clock |
+
+Out of the coil (in `stare`, or a rise that will not strike): you left its reach (lunge reach + 2.5 m), you hid in a rest
+(it listens at the mouth), you died, a knocker decoy went live, the hunt stopped being lethal / it withdraws -> back to `stalk`
+(and a `dash` again when it sees you). Lock / strike / recoil always run to their end.
+
+`attack.phase` keeps the rig's old names: rise / lock / stare = `'windup'` (a.t / a.windup = the rear: rise + lock; stare holds
+the full rear), strike = `'strike'`, recoil = `'recoil'`. `creature:attack {windup, interval, radius, strike, coiled}` fires at
+every rise that ends in a strike; `creature:strike {hit, distance, zone, stop, ...}` at every impact.
+
+Exposed to the views (MASON VISUALS): `creature:phase {phase, t: 0, dur, tx, ty, tz, x, y, z}` (tx..tz = the locked point from
+the lock on, the player before), `attackPhase`, `attackT01` (0..1 through the phase), `aimX / aimY / aimZ` (where the crown looks:
+the player, the locked point from the lock to the impact), `strikeSrc {x, y, z}` (where the lunge left from).
+
+## 3b. Cadence
+
+- `STRIKE_TUNE[diff].cadence = [lo, hi]`: from one striking rise to the next, uniform from a dedicated seeded stream
+  (`U.rng(seed ^ 0x57c1ade)`: the creature's behaviour stream and older seeded tests are unchanged): Normal **[3.6, 5.0]**,
+  Nightmare **[3.3, 4.6]**, Abyss **[3.0, 4.2]**, always inside [3, 5] (`cadenceInterval` clamps). In reach it rises the moment
+  the clock allows, so the start-to-start interval is exactly the draw.
+- After a HIT: `_atkCd = max(_atkCd, 5.0)` from the impact (the knockdown's 3.5 s + 1.5 s): a frozen player is struck every
+  ~6 s: from full, dead about **18 s** after the first hit (measured 17.6-18.2 s).
+- Engaged (lethal, alive, not in a rest, and chasing you or within engage + 4 m): the stamina does not drain (the cadence, not the
+  old stamina waves, paces it). Not engaged: the old wave pacing (stamina, bursts, listening, RECOVERING withdraws) is unchanged.
+- Every safety lever stays in front: spawn / section grace, the first-sighting warning and the post-chase cooldown (masonSight),
+  the rests (refuge 1: no attack starts, nothing hits), the lure niche (refuge 2: it strikes, the keystone takes it), the knocker
+  decoy, the hood (no sight: no dash from afar), the S4 sighting, prowl passes until it sees you, overrides.
+- Max one Mason hit per 3 s for any player state: the cadence, and again `minHitGap` in the impact test.
+
+## 4. The dodge
+
+Hit iff at the impact: lethal, alive, no grace, not immune, refuge 0, the line from the lunge's origin to the player clear
+(`_occlusion`), and the player within **R** of the swept segment origin -> lunge end; R = **2.0 / 1.85 / 1.75 m**. Standing still
+or hanging still = hit; running toward it along the line = hit; moving off the line (walk, reel, swing, drop, strafe) = a miss
+(`creature:strike {hit:false, distance}`: near misses, hunger, run highlights, the chase arc unchanged).
+
+The dodge on foot (walk 5.5 m/s, 4.4 m/s with a gun out): moving at the lock carries you (lock + strike) x v by the impact:
+2.20 / 2.02 / 1.89 m at 4.4 m/s (2.75 / 2.53 / 2.37 m at 5.5) against R 2.0 / 1.85 / 1.75 m: always possible, tight on Abyss with a
+gun out. A lead on the locked point would eat exactly that margin, so there is none. The reaction window is the rise: a re-rise
+gives 0.5 / 0.45 / 0.4 s (the first rise 0.8 / 0.7 / 0.6 s) to start moving before the lock. Expert (0.2 s) always makes it;
+careful (0.4 s) on Normal, mostly on Nightmare, rarely on Abyss; hesitant (0.9 s) never from a standstill (only already moving).
+A dash you cannot out-run is intended: the dodge is what saves you.
+
+## 5. After a hit (the game glue: `sim/playerHits.js`, `PlayerHits`)
+
+Owns `knock` (the Knockdown), the immunity clock and the application of hits. game.js: `game.knock = game.hits.knock`.
+
+- `mason(src, player, ctx)` / `skitter(amount, src, player, ctx)`; ctx = `{health, kill(cause), level, gripping, tethers}`.
+- Immunity: a Mason hit makes the player immune to creature strikes and bites until the knockdown (or stagger) ends **+ 1.0 s**
+  (4.5 s for a knockdown, 1.6 s for a stagger). `creature.immune` is set from it every frame, so the Mason's own decision (and its
+  `creature:strike hit`) already sees it; a bite while immune is dropped.
+- **Never a deadly fall**: the knockdown only when `floorOk`: grounded, not climbing / gripping, a floor under the body (a 0.9 m
+  ray down hits a solid). Otherwise a 0.6 s stagger: holds, ropes and reel stay (no release, nothing pushes you). Knockback: up to
+  **0.8 m** (cap 1.5) along (dx, dz) over the first 0.25 s, applied kinematically in 0.1 m slices, each slice only if the path is
+  clear (`segmentBlocked`) and there is floor under the new point (ray down): it stops at an edge, never off it.
+- Lethal: `player:hit {down:false}`, then `kill('creature')` (devour) / the bite's existing death.
+- Controls (game.js `_stepPhysics`): `move.x/z *= moveMul`, `reel *= moveMul` (down / rise only), `jumpPressed` dropped (not
+  buffered) while moveMul < 0.5. The intent is rebuilt every frame from the raw input, so nothing latches: at `player:up` the
+  controls are exactly the raw input again. The knockdown aborts (fast rise) when the body leaves the floor or starts climbing,
+  and is cancelled on death, respawn, restart, menu (`game:*` bus events) and when not playing.
+
+## 6. Scripted sections and other consumers
+
+- S4 sighting, S5 lure niche + keystone breach (`Objectives3D.onStrike` on `creature:strike {hit:false, stop}`: strikes at stone
+  still come with the cadence), the S7 survive arena and escape override, lure / hidden flags, the rests: unchanged rules.
+- chaseArc: a hit no longer ends the chase (the Mason keeps chasing a survivor); a lethal hit ends it through `player:death`.
+- Run highlights (near misses), trials (Untouched = no `health:damage`), dread, hood, knocker, tutorial: unchanged.
+
+## 7. Bots and balance targets
+
+`tests/creature/pacing.mjs` gets real health (Health3D, `noRecovery` from the creature), the real PlayerHits / Knockdown (a knocked
+bot stays put while down, moves at moveMul while rising), and a DODGE: on a Mason `creature:attack` (a striking rise), after the
+profile's reaction time (**expert 0.2 s, careful 0.4 s, hesitant 0.9 s**; a frozen bot / a stalled bot never), the bot moves off
+the line at 5 m/s for 1 s (sideways to the Mason, horizontally). `STRIKES=1` prints the table (20 runs per cell, LEVEL=real): Normal / Nightmare / Abyss x
+expert / careful / hesitant x blind / hunting / healthy gate: hits/run, HP lost/run, deaths/run, plus the frozen camper's hits to
+death and seconds from the first hit to death.
+
+Targets: expert ~0 deaths and < 1 hit/run; careful <= 0.5 deaths/run on Normal and <= 2 on Nightmare; frozen in reach dies in 4
+hits (12-20 s); no run is a guaranteed death. Tuning knobs: cadence bias, R, windup, immunity only (not 30 % / 10 % / 3-5 s).
+The route bots (`verify/`) never face the creature (they count catches, not applied): they need no dodge; the verify must stay green.
+
+## 8. Tests (registered in run-tests.mjs)
+
+- `tests/creature/strikes.mjs` (the real Creature3D on the stub shaft): cadence in [3, 5] over many seeds and difficulties; the
+  windup locks L; stand still = hit, run off = miss, a swing = miss; one `creature:strike hit:true` per hit and never a kill at
+  full hp; 4 hits kill from full (with PlayerHits + Health3D); nooks safe; occlusion; grace / immunity; no chained hit
+  (>= 5 s after a hit); deterministic with a seed.
+- `tests/health/strike-damage.mjs`: 0.30 / 0.10 single-sourced, the `player:hit` payload, the devour death at hp 0, no kill on a
+  survivable hit, ten bites kill.
+- `tests/physics/test-knockdown.mjs`: phases, k curve, moveMul ramp, events, cancel / abort, staggers, no knockdown while gripping
+  or airborne, edge-safe knockback on a real ledge, no stuck input through the game's step mapping.
+- Existing tests that asserted lethality are adjusted only there.
+
+## 9. Edge cases
+
+- A hit during the rest / lure niche: impossible (refuge rules). A hit through a solid: impossible (occlusion).
+- A hit while the S7 survive clock runs: damage only; the arena is not reset.
+- God mode / victory: `health.god` = no damage, no knockdown (PlayerHits checks it).
+- Death during a knockdown (a fall, another creature): cancelled on `player:death`.
+- Respawn / restart / menu / pause: knockdown cancelled, immunity cleared.
+- Allocation: Knockdown and PlayerHits preallocate; event payloads only on the rare hit events.
+
+## 10. Measured (2026-11-06)
+
+`STRIKES=1 LEVEL=real node tools/abyssal-tether-3d/tests/creature/pacing.mjs 20` (20 runs per cell, the real Chapter I level, the
+scripted human-pattern bots; blind = `sight: false`, hunting = sight on and the gate off (the worst case), gate = the hunt gate on with
+a player who starts well; hits = Mason strikes that connected; HP lost per run as a % of a full bar; a death = the bar emptied).
+
+| diff | player | blind: hits / HP / deaths | hunting: hits / HP / deaths | gate: hits / HP / deaths | target |
+|---|---|---|---|---|---|
+| Normal | expert | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | ~0 deaths, < 1 hit |
+| Normal | careful | 0.10 / 3 % / 0.00 | 0.65 / 20 % / 0.00 | 0.40 / 12 % / 0.00 | <= 0.5 deaths |
+| Normal | hesitant | 12.1 / 357 % / 2.00 | 34.3 / 902 % / 6.80 | 3.65 / 97 % / 0.70 | (worse than careful) |
+| Nightmare | expert | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | ~0 deaths, < 1 hit |
+| Nightmare | careful | 0.35 / 11 % / 0.00 | 1.05 / 32 % / 0.00 | 0.45 / 14 % / 0.00 | <= 2 deaths |
+| Nightmare | hesitant | 46.8 / 1228 % / 9.40 | 113.6 / 2900 % / 26.4 | 35.8 / 919 % / 7.95 | |
+| Abyss | expert | 0.05 / 2 % / 0.00 | 0.15 / 5 % / 0.00 | 0.00 / 0 % / 0.00 | |
+| Abyss | careful | 0.85 / 26 % / 0.00 | 1.75 / 53 % / 0.00 | 2.00 / 58 % / 0.10 | |
+| Abyss | hesitant | 36.8 / 958 % / 7.95 | 42.7 / 1080 % / 10.3 | 39.7 / 1006 % / 9.70 | |
+
+For comparison the one-hit-kill Mason (MASON_SIGHT.md, hunting): Normal careful 0.45 / hesitant 9.20, Nightmare careful 1.55 /
+hesitant 27.7, Abyss careful 5.35 / hesitant 10.3 deaths per run. The careful player no longer dies to it at all on Normal and
+Nightmare (it takes 1-2 strikes a run on the hard difficulties); the hesitant bot (it stands still in view for 3-12 s at a time
+and never reacts inside a 0.4-0.5 s rise) is about where it was: the dodge is the skill.
+
+The frozen camper (a careful bot that stops at a random depth in the lethal sections, lit, never moves again; 40 runs, the "still"
+ones): dies in **4 strikes, 18.1 s** (Normal, 18.1-18.2 s) / **17.9 s** (Nightmare) / **17.6 s** (Abyss) from the first strike
+(fewer strikes when already hurt); 4 / 3 / 7 stalls sit where it cannot reach them at all (under masonry: it relocates; as before).

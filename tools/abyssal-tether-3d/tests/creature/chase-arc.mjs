@@ -127,9 +127,12 @@ function rig() {
   h.bus.emit('creature:sight', { on: true, distance: 10 });
   h.run(2, 3);
   h.bus.emit('creature:strike', { hit: true, distance: 0.4 });
+  // MASON_STRIKES.md: a connect costs 30 % and the chase goes on (it is not an escape: no near miss); a lethal one ends it as a death
+  ok(h.arc.chasing && h.arc.stats.caught === 1 && h.arc.nearMisses === 0, 'a strike that connects: caught (no near miss), the chase goes on');
+  h.bus.emit('player:death', { cause: 'creature' });
   h.bus.emit('creature:sight', { on: false, reason: 'blocked' });
   h.run(5, 30);
-  ok(h.n('lost') === 0 && h.arc.stats.caught === 1, 'a strike that connects: caught, no release');
+  ok(h.n('lost') === 0, 'a connect that kills: no release');
   // the run / menu forget it silently
   for (const ev of ['game:start', 'game:restart', 'game:menu', 'game:victory']) {
     const m = rig();

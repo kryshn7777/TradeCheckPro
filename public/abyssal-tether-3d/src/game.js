@@ -71,6 +71,7 @@ import { speedFovTarget, stepSpeedFov } from './render/speedFov.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
+import { PlayerHits } from './sim/playerHits.js'; // MASON STRIKES: a hit costs 30 % / 10 % and knocks you down (game.knock)
 
 const C = CONFIG;
 // LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
@@ -1118,6 +1119,8 @@ export class Game3D {
     this._deathCam = { pitch0: 0, exposure0: 0, faceYaw: 0, haveFace: false, rx: 0, ry: 0, rz: 0 };
     this.creatureView = null;
     this.skitters = null; // WP-SKITTER: SkitterGroup (sim: the hunter skitterlings)
+    this.hits = null; // MASON STRIKES (sim/playerHits.js): applies creature hits; this.knock = its Knockdown (the views read k / phase / moveMul)
+    this.knock = null;
     this.skitterView = null; // render/skitterlingView.js: every hunter skitterling, two instanced LODs (made on first use)
     this.dresser = nullDresser(); // THE DRESSER (sim/dresser3d.js): hunts only while you are whole
     this.dresserView = null; // render/dresserView.js
@@ -1307,6 +1310,8 @@ export class Game3D {
   async _bootMinimal() {
     this.settings = Storage.loadSettings();
     this.bus = new EventBus();
+    this.hits = new PlayerHits(this.bus); // MASON STRIKES (resets itself on game:* / player:death)
+    this.knock = this.hits.knock;
     this._setupPuzzleFocus();
     this._setupChase();
     this._setupHood();
@@ -4063,6 +4068,9 @@ export class Game3D {
     si.move.z = mv ? U.clamp(finiteOr(mv.z, 0), -1, 1) : 0;
     si.reel = U.clamp(finiteOr(intent.reel, 0), -1, 1);
     si.brake = !!intent.brake;
+    // MASON STRIKES: knocked down / getting up / staggered: the step intent is scaled (it is rebuilt from the raw input every frame, so
+    // nothing latches); a jump pressed while down is dropped, not buffered
+    if (this.hits && this.hits.applyIntent(si)) this._pendingJump = false;
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
@@ -4871,6 +4879,11 @@ export class Game3D {
       const sightOn = !sightOff() && !(this.settings && this.settings.masonSight === 'off');
       const lit = !!(this.bag && this.bag.lanternCharge > 0) && !(this.hood && this.hood.on); // THE HOOD: a covered lantern does not show
       if (typeof c.setSight === 'function') c.setSight(sightOn, lit, this.state !== 'playing' || !this.player.alive);
+      const hits = this.hits;
+      if (hits) {
+        if (this.state === 'playing') hits.update(dt, this.player, this.level); // (held while paused; game:* / player:death reset it)
+        c.immune = hits.immune; // MASON STRIKES: no strike lands while you are down / just up
+      }
       c.update(dt, this.player, this._runClock);
       if (this.health) this.health.noRecovery = !!(sightOn && c.sight && c.sight.near && this.state === 'playing' && this.player.alive); // no healing while it is near
       if (this._nookPulseT > 0) {
@@ -4879,7 +4892,8 @@ export class Game3D {
       }
       if (c.caughtPlayer) {
         c.caughtPlayer = false;
-        if (this.player.alive && this.state === 'playing') this.physics.kill(this.player, this.tethers, 'creature');
+        // MASON STRIKES: 30 % of the health and a knockdown (a stagger off the floor); an empty bar is the devour death
+        if (this.player.alive && this.state === 'playing' && hits) hits.mason(c.strikeSrc || c, this.player, this._hitCtx());
       }
     } catch (err) {
       this._fault('creature', err);
@@ -4981,13 +4995,23 @@ export class Game3D {
       const dmg = g.takeDamage();
       const grip = g.takeGripDamage();
       if (grip > 0 && this.climb && typeof this.climb.bite === 'function') this.climb.bite(grip); // a bite costs grip too
-      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health) {
-        const h = this.physics.health;
-        if (h.damage(dmg, 'skitter', 0)) this.physics.kill(this.player, this.tethers, 'creature');
+      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health && this.hits) {
+        this.hits.skitter(dmg, g.lastBite, this.player, this._hitCtx()); // MASON STRIKES: 10 % a bite, a stumble; an empty bar kills
       }
     } catch (err) {
       this._fault('skitter', err);
     }
+  }
+
+  /** MASON STRIKES: the context a creature hit is applied with (sim/playerHits.js); one object, reused. */
+  _hitCtx() {
+    const x = this._hitCtxObj || (this._hitCtxObj = { health: null, level: null, gripping: false, god: false, kill: (cause) => this.physics.kill(this.player, this.tethers, cause) });
+    x.health = this.physics ? this.physics.health : null;
+    x.level = this.level;
+    const cl = this.climb;
+    x.gripping = !!(this.player.climbing || (cl && cl.gripCount > 0));
+    x.god = !!this._godMode;
+    return x;
   }
 
   _updateThreat(dt) {
