@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { KNOCKER, KSTATE } from '../sim/knocker3d.js';
 import { patchMaterial } from './materials.js';
 
-export const KNOCKER_VIEW = Object.freeze({ maxInstances: KNOCKER.maxProps, arcMax: 48, restLift: 0.026 - KNOCKER.radius });
+export const KNOCKER_VIEW = Object.freeze({ maxInstances: KNOCKER.maxProps, arcMax: 48, scale: 1.4, restLift: 0.026 * 1.4 - KNOCKER.radius }); // scale: drawn 1.4x life size so the 9 cm drum reads at a few metres in the dark
 
 const BRASS = [0.72, 0.52, 0.22];
 const BRASS_DK = [0.5, 0.34, 0.14];
@@ -145,7 +145,7 @@ export class KnockerView {
         );
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vKnGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vec3( 1.0, 0.58, 0.18 ) * ( 2.6 * vKnGlow );');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vec3( 1.0, 0.58, 0.18 ) * ( 4.0 * vKnGlow );');
     };
     mat.customProgramCacheKey = () => baseKey + '|at3d-knocker';
     this.mesh = new THREE.InstancedMesh(g, mat, N);
@@ -208,7 +208,7 @@ export class KnockerView {
         }
         const lift = s.state === KSTATE.FLIGHT || s.state === KSTATE.HELD ? 0 : KNOCKER_VIEW.restLift;
         _p.set(s.x, s.y + lift, s.z);
-        const sc = s.fade > 0 ? s.fade : 0;
+        const sc = (s.fade > 0 ? s.fade : 0) * KNOCKER_VIEW.scale;
         _s.set(sc, sc, sc);
         _m.compose(_p, _q, _s);
         mesh.setMatrixAt(n, _m);
