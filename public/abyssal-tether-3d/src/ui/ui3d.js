@@ -170,6 +170,7 @@ const SETTINGS_SCHEMA = [
   { type: 'height', tab: 'comfort', page: 'height' },
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
   { key: 'swingLag', tab: 'comfort', type: 'range', label: 'Swing camera lag', desc: 'The view trails your body a little while you swing on a tether. 0 = none. In VR it is fixed very small, and Reduced effects turns it off.', min: 0, max: 1, step: 0.05, fmt: pct, desktop: true },
+  { key: 'speedFov', tab: 'comfort', type: 'toggle', label: 'Speed field of view', desc: 'The view widens a little at high speed on a rope or in a fall. Never in VR; Reduced effects turns it off.', desktop: true },
 
   { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
   { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },
@@ -206,6 +207,7 @@ const SETTINGS_SCHEMA = [
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'hitStop', tab: 'rope', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },
   { key: 'puzzleFocus', tab: 'rope', type: 'choice', label: 'Puzzle focus', desc: 'At a puzzle someone suggests it and the view glances at it. Cues: a glow and a sound, the view never turns. In VR it never turns.', options: [['auto', 'Glance'], ['cues', 'Cues'], ['off', 'Off']] },
+  { key: 'releaseGuide', tab: 'rope', type: 'toggle', label: 'Release guide', desc: 'While you hang on one line, a dotted arc shows where you land if you let go now. Red: that landing kills.' },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },

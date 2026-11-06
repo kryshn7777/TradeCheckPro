@@ -291,6 +291,8 @@ export const DIFFICULTY_ORDER = ['normal', 'nightmare', 'abyss'];
 export const SETTINGS_DEFAULTS = {
   volume: 0.8,
   aimAssist: 1.0, // 0.6..1.4 scales cone + ray assist
+  releaseGuide: true, // the dotted arc + ring of where a full let-go lands, while hanging on a line (render/releaseGuide.js)
+  speedFov: true, // desktop only: the fov widens up to 7 degrees at speed on a rope or in a fall (render/speedFov.js; never in XR, off with reducedEffects)
   ropeCooldown: 1.5, // s a hand's rope launcher takes to recharge after a shot (0 = no cooldown); shown on the wrist screen (sim/physics3d.js TetherSystem)
   turnSpeed: 1.0, // smooth-turn rate multiplier (0.5..2)
   mouseSensitivity: 1.0, // desktop look (0.3..3)

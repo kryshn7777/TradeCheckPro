@@ -60,6 +60,8 @@ import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // T
 import { applyPing, originGlow } from './render/hintWaveView.js';
 import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
 import { sectorOf } from './ui/captions.js';
+import { ReleaseGuide } from './render/releaseGuide.js';
+import { speedFovTarget, stepSpeedFov } from './render/speedFov.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
@@ -4730,6 +4732,35 @@ export class Game3D {
     this._applySwingLag();
     this._applyDeathCam();
     this._applyOpeningCam();
+    this._applySpeedFov();
+  }
+
+  /**
+   * Desktop speed FOV kick (render/speedFov.js, settings.speedFov): the fov widens by up to 7 degrees at 25 m/s on a rope or in a
+   * fall. Never in XR (the headset owns the projection; resize() restores baseFov after a session), never with Reduced effects.
+   */
+  _applySpeedFov() {
+    const r = this.renderer;
+    const cam = r && r.camera;
+    const p = this.player;
+    if (!cam || !p || !(r.baseFov > 0)) return;
+    const st = this._speedFov || (this._speedFov = { kick: 0, t: 0 });
+    const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+    const dt = st.t > 0 ? Math.min(0.1, Math.max(0, now - st.t)) : 0;
+    st.t = now;
+    if (this.xrActive) {
+      st.kick = 0;
+      return;
+    }
+    const s = this.settings;
+    const falling = !p.grounded && (p.vy || 0) < -4;
+    const active = this.state === 'playing' && p.alive !== false && (!!(this.tethers && this.tethers.attached) || falling);
+    const speed = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vy || 0) * (p.vy || 0) + (p.vz || 0) * (p.vz || 0));
+    st.kick = stepSpeedFov(st.kick, speedFovTarget(speed, active, false, !!(s && s.reducedEffects), !(s && s.speedFov === false)), dt);
+    const fov = r.baseFov + st.kick;
+    if (Math.abs(cam.fov - fov) < 1e-4) return;
+    cam.fov = fov;
+    cam.updateProjectionMatrix();
   }
 
   /**
@@ -5023,6 +5054,22 @@ export class Game3D {
     return w;
   }
 
+  /** The release guide, "if I let go now" (render/releaseGuide.js): the arc + ring of a full let-go while hanging on a line. */
+  _updateReleaseGuide(dt) {
+    const scene = this.renderer && this.renderer.scene;
+    let g = this._releaseGuide;
+    try {
+      if (g && g.parent !== scene) {
+        g.dispose(); // the renderer was swapped (fallback): rebuild on the new scene
+        g = this._releaseGuide = null;
+      }
+      if (!g && scene && this.state === 'playing') g = this._releaseGuide = new ReleaseGuide(scene);
+      if (g) g.update(dt, this);
+    } catch (err) {
+      this._fault('releaseGuide', err);
+    }
+  }
+
   _updateViews(dt) {
     try {
       this.fallPose.update(dt); // before the hands and the body read it
@@ -5040,6 +5087,7 @@ export class Game3D {
     } catch (err) {
       this._fault('puzzleFocus', err);
     }
+    this._updateReleaseGuide(dt);
     const fx = this.healthFx;
     if (fx) {
       try {
