@@ -425,6 +425,20 @@ export class Holdfast3D {
     i.reeling = !!reeling;
   }
 
+  /**
+   * ASSIST PACK (settings.gripMode 'toggle', plans/TUTORIAL_ASSIST.md): the squeeze that lets a latched grip go is the pull for a
+   * player who cannot tear an arm back: a locked hand comes free as if the rope had out-pulled it ('holdfast:outpull', no cost).
+   * Returns true when it freed the hand.
+   */
+  assistPull(hand) {
+    const s = this.held;
+    if (!this.enabled || !s || this.heldHand !== hand || s.state !== S.CLOSE) return false;
+    this.stats.outpulls++;
+    this._emit('holdfast:outpull', s, { hand, assist: true });
+    this._free(s, this._p, 'outpull', false);
+    return true;
+  }
+
   /** The hp to take this frame (cause 'holdfast'); already floored so that it alone never kills. */
   takeDamage() {
     const d = this._dmg;
