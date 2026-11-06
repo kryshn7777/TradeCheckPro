@@ -1,8 +1,8 @@
 /* THE LANTERN — audio/openingSfx.js
  * The opening cinematic's sound (docs/abyssal-tether-3d/plans/OPENING_CINEMATIC.md section 7): a score, foley, the creature and the
- * narration, each a designed cue at a fixed time on the film's cue sheet (sim/openingCinematic.js CUES / VO). Nothing is random: the
- * noise sources are seeded buffers and every "variation" (the crackle of the flame, the chain's links) is a fixed table, so the film
- * sounds the same every time.
+ * narration (v2: THE COLLAR's machines, OPENING_V2_THE_COLLAR.md section 5), each a designed cue at a fixed time on the film's cue
+ * sheet (sim/openingCinematic.js CUES / VO). Nothing is random: the noise sources are seeded buffers and every "variation" (the
+ * line's ratchet, the grit, the grinding) is a fixed table, and the rotors' pitch / pan come from the timeline itself.
  *
  *   OpeningScore(ctx, {score, sfx, voice})   works on any BaseAudioContext: the game's live one (AudioManager3D mixes it in below)
  *                                             and an OfflineAudioContext (tools/abyssal-tether-3d/release/render-opening.mjs renders the
@@ -16,7 +16,7 @@
  * opening:skip, opening:end {skipped}. Routing: the score and the narration on the stinger bus (the master volume, not the effects slider: it is
  * music), the foley and the creature on the player bus (the effects slider).
  */
-import { CUES, VO } from '../sim/openingCinematic.js';
+import { CUES, VO, LIGHTS_DIE, newOpeningSnapshot, sampleOpening } from '../sim/openingCinematic.js';
 
 const SR_NOISE = 2.5; // seconds of each noise buffer
 
@@ -80,24 +80,6 @@ function chimneyIR(ctx, seconds) {
 // ---- the fixed tables (built once from a seed, never at play time) ----------------------------------------------------------
 const TABLE = (() => {
   const r = seeded(4111);
-  // the flame's crackle: [t (s from flameIn), level, pitch] over 17 s
-  const crackle = [];
-  for (let t = 0.3; t < 17; ) {
-    crackle.push([t, 0.35 + 0.65 * r(), 0.8 + 0.5 * r()]);
-    t += 0.28 + 1.05 * r();
-  }
-  // the chain paying out: link clinks from 17.5 to 40.4; the gap follows the lantern's speed (faster mid-descent), slower to the stop
-  const clinks = [];
-  let t = 17.6;
-  let i = 0;
-  while (t < 40.3) {
-    const u = (t - 17.5) / (40.4 - 17.5);
-    const speed = Math.sin(Math.PI * Math.min(1, Math.max(0, u * 1.08))) ** 0.7; // 0 at the ends
-    const gap = 0.24 + 0.62 * (1 - speed) + 0.05 * Math.sin(i * 1.7);
-    clinks.push([t, 0.55 + 0.45 * r(), r(), i % 8 === 7 ? 1 : 0]);
-    t += gap;
-    i++;
-  }
   // dust off the arch after the stop: grains [t, level, freq]
   const dust = [];
   for (let k = 0, tt = 0.2; k < 34 && tt < 2.6; k++) {
@@ -110,12 +92,17 @@ const TABLE = (() => {
     grind.push([tt, 0.3 + 0.7 * r(), 90 + 160 * r()]);
     tt += 0.07 + 0.22 * r();
   }
-  return Object.freeze({ crackle, clinks, dust, grind });
+  // the line paying out from the Collar's winch on the way down: a ratchet tick every ~1.6 s, a fixed jitter
+  const ratchet = [];
+  for (let tt = 0.4; tt < 26; tt += 1.45 + 0.3 * r()) ratchet.push([tt, 0.5 + 0.5 * r()]);
+  return Object.freeze({ dust, grind, ratchet });
 })();
 
 export const OPENING_TABLES = TABLE; // tests: the sheet is fixed
 
 const D2 = 73.416;
+/** The narration's colour per line: 'radio' (the team on the uplink: the console speaker) or 'close' (the record, dry). */
+const VO_FX = Object.freeze(Object.fromEntries(VO.map((l) => [l.id, l.fx || 'close'])));
 const MOTIF = [293.66, 440.0, 349.23, 329.63, 293.66]; // D A F E D: the Lamp motif
 
 export class OpeningScore {
@@ -144,7 +131,6 @@ export class OpeningScore {
     this.voBufs = Object.create(null);
     this._live = []; // [{src, end}]
     this._drone = null;
-    this._held = null; // the motif's last note (the gutter bends it)
     this._voSrc = null;
     this._dead = false;
   }
@@ -362,24 +348,6 @@ export class OpeningScore {
     this._wind = wg;
   }
 
-  _cue_flameIn(t) {
-    // the flame's breath (a soft band of air) and its crackle (the fixed table), for the two shots on it
-    const n = this._noise(this.pink, t, t + 17.4, 1, 0.9);
-    const bp = this._filter('bandpass', 900, 0.7);
-    const g = this._gain(0);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.018, t + 2.5);
-    g.gain.setValueAtTime(0.018, t + 16.2);
-    g.gain.linearRampToValueAtTime(0, t + 17.3);
-    n.connect(bp);
-    bp.connect(g);
-    this._out(g, this.fx, 0.05, -0.05);
-    for (const [ct, lvl, p] of TABLE.crackle) {
-      if (ct > 16.8) break;
-      this._burst(this.white, t + ct, 0.012, 'highpass', 2600 * p, 0.8, 0.07 * lvl * Math.min(1, ct / 2), this.fx, 0.08, 0.04);
-    }
-  }
-
   _motif(t, peak, step, octave) {
     let last = null;
     for (let i = 0; i < MOTIF.length; i++) {
@@ -391,101 +359,7 @@ export class OpeningScore {
   }
 
   _cue_motif1(t) {
-    this._held = this._motif(t, 0.05, 1.15, false);
-  }
-
-  _cue_swell(t) {
-    const d = this._drone;
-    if (d) {
-      d.g.gain.setTargetAtTime(0.13, t, 0.8);
-      d.lp.frequency.setTargetAtTime(420, t, 1.2);
-    }
-    this._burst(this.brown, t - 0.25, 1.1, 'lowpass', 240, 0.7, 0.18, this.fx, 0.3);
-  }
-
-  _cue_gutter(t) {
-    // the flame gutters: a breathy dip with a flutter, and the motif's held note bends down a semitone
-    const f = this._burst(this.pink, t, 0.7, 'bandpass', 1200, 1.1, 0.08, this.fx, 0.1);
-    f.frequency.setValueAtTime(1300, t);
-    f.frequency.exponentialRampToValueAtTime(320, t + 0.6);
-    const am = this._osc('square', 14, t, t + 0.7);
-    const amg = this._gain(0.02);
-    am.connect(amg);
-    const g = this._gain(0);
-    this._ad(g.gain, t, 0.03, 0.02, 0.25);
-    amg.connect(g.gain);
-    const n = this._noise(this.pink, t, t + 0.8, 1, 1.1);
-    n.connect(g);
-    this._out(g, this.fx, 0.1);
-    if (this._held) {
-      try {
-        this._held.frequency.setValueAtTime(this._held.frequency.value, t + 0.05);
-        this._held.frequency.exponentialRampToValueAtTime(MOTIF[4] * 0.9439, t + 1.4);
-      } catch {
-        /* the note has ended */
-      }
-    }
-    const d = this._drone;
-    if (d) d.lp.frequency.setTargetAtTime(240, t, 0.6);
-  }
-
-  _cue_winch(t) {
-    // the chain paying out from the dark above (the fixed clink table), a ratchet every 8th, the winch's low groan
-    const t0 = 17.5;
-    for (const [ct, lvl, k, ratchet] of TABLE.clinks) {
-      const at = t + (ct - t0);
-      this._clink(at, k, 0.045 * lvl, this.fx, 0.1 * Math.sin(ct));
-      if (ratchet) for (let j = 1; j <= 3; j++) this._burst(this.white, at + j * 0.045, 0.01, 'bandpass', 3800, 3, 0.05, this.fx, 0.2, 0.15);
-    }
-    const o = this._osc('sawtooth', 48, t, t + 23.2);
-    o.frequency.setValueAtTime(48, t);
-    o.frequency.linearRampToValueAtTime(58, t + 10);
-    o.frequency.linearRampToValueAtTime(44, t + 22.9);
-    const lp = this._filter('lowpass', 170, 1.5);
-    const g = this._gain(0);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.03, t + 1.5);
-    g.gain.setValueAtTime(0.03, t + 21.5);
-    g.gain.linearRampToValueAtTime(0, t + 22.9);
-    o.connect(lp);
-    lp.connect(g);
-    this._out(g, this.fx, 0.3);
-    const d = this._drone;
-    if (d) {
-      d.fifth.gain.setTargetAtTime(0.5, t, 2.5); // the drone opens a fifth
-      d.lp.frequency.setTargetAtTime(380, t, 3);
-      d.g.gain.setTargetAtTime(0.14, t, 2);
-    }
-    if (this._wind) this._wind.gain.setTargetAtTime(0.085, t, 3);
-  }
-
-  _cue_girder(t) {
-    // the lantern nears the great girder (it passes it 0.55 s after the cue): the iron sings as the light and the chain slide past it
-    // (a slow attack peaking on the pass, inharmonic, cold), and the air between them breathes once (a band of noise, up and down)
-    const pass = t + 0.55;
-    for (const [f, a, d] of [
-      [92.5, 0.05, 1.6],
-      [255.3, 0.03, 1.1],
-      [499.5, 0.016, 0.7],
-      [811.0, 0.008, 0.45],
-    ]) {
-      const o = this._osc('sine', f, t, pass + 4.2);
-      const g = this._gain(0);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(a, pass + 0.15);
-      g.gain.setTargetAtTime(0, pass + 0.15, d);
-      o.connect(g);
-      this._out(g, this.fx, 0.55, -0.25);
-    }
-    const n = this._noise(this.pink, t, pass + 1.2, 1, 1.3);
-    const bp = this._filter('bandpass', 420, 0.9);
-    const g = this._gain(0);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.035, pass);
-    g.gain.linearRampToValueAtTime(0, pass + 1.1);
-    n.connect(bp);
-    bp.connect(g);
-    this._out(g, this.fx, 0.3, -0.15);
+    this._motif(t, 0.05, 1.15, false);
   }
 
   _cue_motif2(t) {
@@ -511,38 +385,324 @@ export class OpeningScore {
     }
   }
 
-  _cue_chainSlow(t) {
-    // the chain slows: a long iron creak overhead
-    const o = this._osc('sawtooth', 120, t, t + 1.6);
-    o.frequency.linearRampToValueAtTime(96, t + 1.5);
-    const bp = this._filter('bandpass', 700, 9);
+  // ---- THE COLLAR (v2: OPENING_V2_THE_COLLAR.md section 5) ------------------------------------------------------------------
+  /** Where drone i is at film time ft, as a stereo pan and a distance gain from the desktop camera (sampled once per cue). */
+  _droneAt(i, ft) {
+    const s = sampleOpening(ft, null, this._snap || (this._snap = newOpeningSnapshot()));
+    const d = s.drones[i];
+    const c = s.cam;
+    const dx = d.x - c.x;
+    const dy = d.y - c.y;
+    const dz = d.z - c.z;
+    const r = Math.hypot(dx, dy, dz) || 1;
+    const right = (dx * Math.cos(c.yaw) - dz * Math.sin(c.yaw)) / r;
+    return { pan: Math.max(-0.9, Math.min(0.9, right)), g: 1 / (1 + r / 4), r };
+  }
+
+  /** A rotor: a band-passed saw at the blade-pass frequency and its wash; gain / pitch / pan automated every 0.5 s from the timeline. */
+  _rotor(i, t, ft0, ft1, f0, f1) {
+    const o = this._osc('sawtooth', f0, t, t + (ft1 - ft0) + 0.3);
+    const bp = this._filter('bandpass', f0 * 2.2, 1.4);
+    const n = this._noise(this.pink, t, t + (ft1 - ft0) + 0.3, 1, i * 0.37);
+    const nb = this._filter('bandpass', 1300 + 140 * i, 0.8);
     const g = this._gain(0);
-    this._ad(g.gain, t, 0.025, 0.3, 0.5);
+    const pan = this._pan(0);
     o.connect(bp);
     bp.connect(g);
-    this._out(g, this.fx, 0.4, 0.1);
+    n.connect(nb);
+    const ng = this._gain(0.6);
+    nb.connect(ng);
+    ng.connect(g);
+    g.connect(pan);
+    pan.connect(this.fx);
+    const send = this._gain(0.2);
+    pan.connect(send);
+    send.connect(this.revIn);
+    g.gain.setValueAtTime(0, t);
+    let lastR = -1;
+    for (let ft = ft0; ft <= ft1 + 1e-6; ft += 0.5) {
+      const at = t + (ft - ft0);
+      const k = (ft - ft0) / Math.max(0.5, ft1 - ft0);
+      const p = this._droneAt(i, ft);
+      const vr = lastR < 0 ? 0 : (p.r - lastR) / 0.5; // receding > 0
+      lastR = p.r;
+      const dop = 343 / (343 + Math.max(-60, Math.min(60, vr)));
+      const f = (f0 + (f1 - f0) * Math.min(1, k * 3)) * dop;
+      o.frequency.linearRampToValueAtTime(f, at);
+      bp.frequency.linearRampToValueAtTime(f * 2.2, at);
+      g.gain.linearRampToValueAtTime(0.045 * p.g * Math.min(1, k * 4), at);
+      if (pan.pan) pan.pan.linearRampToValueAtTime(p.pan, at);
+    }
+    g.gain.linearRampToValueAtTime(0, t + (ft1 - ft0) + 0.25);
+  }
+
+  _cue_stationHum(t) {
+    // the LED strips' hum (100 Hz and its third, narrow and cold) and the deck's air handling; gone as the shaft takes over
+    const end = t + 26;
+    for (const [f, a] of [
+      [100, 0.012],
+      [300, 0.006],
+    ]) {
+      const o = this._osc('sine', f, t, end);
+      const g = this._gain(0);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(a, t + 2);
+      g.gain.setValueAtTime(a, t + 22);
+      g.gain.linearRampToValueAtTime(0, end - 0.1);
+      o.connect(g);
+      this._out(g, this.fx, 0.05);
+    }
+    const n = this._noise(this.pink, t, end, 0.8, 0.2);
+    const bp = this._filter('bandpass', 620, 0.6);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.03, t + 3);
+    g.gain.setValueAtTime(0.03, t + 22);
+    g.gain.linearRampToValueAtTime(0, end - 0.1);
+    n.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.1);
+  }
+
+  _cue_droneSpin(t) {
+    // four rotors spin up on their pads and stay with the drones until they are gone (the climb home), Doppler and pan from the film
+    for (let i = 0; i < 4; i++) this._rotor(i, t + 0.2 * i, 3.0 + 0.2 * i, 63.5, 30, 148);
+  }
+
+  _cue_droneFly(t) {
+    // the lift-off: a gust off each pad, staggered
+    for (let i = 0; i < 4; i++) {
+      const p = this._droneAt(i, 8.75 + 0.25 * i);
+      this._burst(this.brown, t + 0.15 + 0.25 * i, 0.9, 'lowpass', 420, 0.7, 0.12 * p.g, this.fx, 0.15, p.pan);
+    }
+  }
+
+  _cue_measureIn(t) {
+    const f = this._burst(this.pink, t - 0.3, 0.9, 'bandpass', 600, 1.2, 0.035, this.fx, 0.1, 0.3);
+    f.frequency.setValueAtTime(600, t - 0.3);
+    f.frequency.exponentialRampToValueAtTime(1500, t + 0.5);
+  }
+
+  _cue_clamp(t) {
+    // a latch: the solenoid's click, metal on composite, a short servo whir
+    this._burst(this.white, t, 0.012, 'bandpass', 4200, 3, 0.09, this.fx, 0.15, 0.1);
+    this._thump(t + 0.02, 420, 180, 0.07, 0.12, this.fx, 0.2, 0.1);
+    const o = this._osc('square', 310, t + 0.06, t + 0.32);
+    o.frequency.linearRampToValueAtTime(520, t + 0.3);
+    const bp = this._filter('bandpass', 1400, 4);
+    const g = this._gain(0);
+    this._ad(g.gain, t + 0.06, 0.012, 0.03, 0.1);
+    o.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.1, 0.1);
+  }
+
+  _cue_scan(t) {
+    // the measure: a clean sweep up and down, a fixed data chirp under it
+    const o = this._osc('sine', 1200, t, t + 2.3);
+    o.frequency.linearRampToValueAtTime(2400, t + 1.1);
+    o.frequency.linearRampToValueAtTime(1300, t + 2.2);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.012, t + 0.2);
+    g.gain.setValueAtTime(0.012, t + 2.0);
+    g.gain.linearRampToValueAtTime(0, t + 2.25);
+    o.connect(g);
+    this._out(g, this.fx, 0.1);
+    for (let k = 0; k < 14; k++) this._burst(this.white, t + 0.1 + k * 0.15, 0.01, 'bandpass', 3000 + 400 * (k % 3), 6, 0.02, this.fx, 0.05);
+  }
+
+  _cue_hallIn(t) {
+    // the console: two soft chirps; the room's air
+    for (const [dt, f] of [
+      [0.1, 1760],
+      [0.28, 2349.3],
+    ]) {
+      const o = this._osc('sine', f, t + dt, t + dt + 0.2);
+      const g = this._gain(0);
+      this._ad(g.gain, t + dt, 0.01, 0.005, 0.05);
+      o.connect(g);
+      this._out(g, this.fx, 0.05, 0.25);
+    }
+  }
+
+  _cue_lift(t) {
+    // the drones take the weight: the cradle's servo, the line's brake letting go
+    const o = this._osc('sawtooth', 90, t, t + 2.6);
+    o.frequency.linearRampToValueAtTime(140, t + 2.4);
+    const lp = this._filter('lowpass', 700, 2);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.02, t + 0.4);
+    g.gain.linearRampToValueAtTime(0, t + 2.5);
+    o.connect(lp);
+    lp.connect(g);
+    this._out(g, this.fx, 0.15);
+    this._burst(this.white, t + 0.2, 0.25, 'bandpass', 2200, 2, 0.04, this.fx, 0.2);
+  }
+
+  _cue_iris(t) {
+    // eight leaf motors (fixed clicks), the leaves sliding, the shaft's air meeting the station's
+    for (let k = 0; k < 8; k++) this._burst(this.white, t + k * 0.09, 0.015, 'bandpass', 2600 + 90 * k, 4, 0.05, this.fx, 0.2, ((k % 4) - 1.5) * 0.3);
+    const n = this._noise(this.pink, t + 0.3, t + 4.2, 0.6, 0.4);
+    const bp = this._filter('bandpass', 380, 1.1);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t + 0.3);
+    g.gain.linearRampToValueAtTime(0.05, t + 2.2);
+    g.gain.linearRampToValueAtTime(0, t + 4.1);
+    n.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.3);
+    this._thump(t + 3.9, 48, 30, 0.6, 0.25, this.fx, 0.4);
+  }
+
+  _cue_irisIn(t) {
+    // the draft up out of the shaft
+    const n = this._noise(this.brown, t, t + 3, 0.7, 0.8);
+    const lp = this._filter('lowpass', 300, 0.7);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.08, t + 1.6);
+    g.gain.linearRampToValueAtTime(0, t + 2.9);
+    n.connect(lp);
+    lp.connect(g);
+    this._out(g, this.fx, 0.3);
+  }
+
+  _cue_beamsOn(t) {
+    for (let i = 0; i < 4; i++) this._burst(this.white, t + 0.15 * i, 0.01, 'bandpass', 3400, 5, 0.06, this.fx, 0.15, this._droneAt(i, 23 + 0.15 * i).pan);
+  }
+
+  _cue_descend(t) {
+    // the descent: the shaft's air rising past the cradle, the drone's bed opening a fifth, the line paying out (a ratchet tick)
+    const n = this._noise(this.brown, t, t + 26.6, 0.9, 1.1);
+    const bp = this._filter('bandpass', 240, 0.8);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.09, t + 3);
+    g.gain.setValueAtTime(0.09, t + 25.2);
+    g.gain.linearRampToValueAtTime(0, t + 26.5);
+    n.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.3);
+    for (const [dt, lvl] of TABLE.ratchet) this._burst(this.white, t + dt, 0.012, 'bandpass', 3600, 3, 0.035 * lvl, this.fx, 0.25, -0.1);
+    const d = this._drone;
+    if (d) {
+      d.fifth.gain.setTargetAtTime(0.5, t, 2.5);
+      d.lp.frequency.setTargetAtTime(380, t, 3);
+      d.g.gain.setTargetAtTime(0.14, t, 2);
+    }
+  }
+
+  _cue_approach(t) {
+    // near stone again: the rotors' wash thrown back off the walls (a comb of two short delays)
+    const n = this._noise(this.pink, t, t + 9, 1, 1.4);
+    const bp = this._filter('bandpass', 900, 0.9);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.04, t + 6);
+    g.gain.linearRampToValueAtTime(0, t + 9);
+    n.connect(bp);
+    bp.connect(g);
+    for (const dl of [0.007, 0.013]) {
+      if (typeof this.ctx.createDelay !== 'function') break;
+      const de = this.ctx.createDelay(0.05);
+      de.delayTime.value = dl;
+      bp.connect(de);
+      de.connect(g);
+    }
+    this._out(g, this.fx, 0.35);
     const d = this._drone;
     if (d) d.g.gain.setTargetAtTime(0.11, t, 1.2);
   }
 
-  _cue_chainStop(t) {
-    // the stop: a heavy clank, the chain's slack settling, a sub thump; then dust off the arch
-    this._thump(t, 70, 38, 0.35, 0.35, this.fx, 0.35);
-    for (const [f, a, d] of [
-      [420, 0.12, 0.5],
-      [913, 0.08, 0.32],
-      [1610, 0.05, 0.2],
-      [2730, 0.03, 0.1],
+  _cue_land(t) {
+    // the plate on the stone: a heavy thump, the cage ringing, grit off the ledge
+    this._thump(t, 72, 36, 0.4, 0.4, this.fx, 0.35);
+    for (const [f, a, dd] of [
+      [520, 0.06, 0.4],
+      [1130, 0.04, 0.25],
+      [1980, 0.025, 0.15],
+      [3110, 0.015, 0.09],
     ]) {
-      const o = this._osc('sine', f, t, t + 2);
+      const o = this._osc('sine', f, t, t + 1.6);
       const g = this._gain(0);
-      this._ad(g.gain, t, a, 0.002, d);
+      this._ad(g.gain, t, a, 0.002, dd);
       o.connect(g);
-      this._out(g, this.fx, 0.5);
+      this._out(g, this.fx, 0.45);
     }
-    this._burst(this.white, t, 0.08, 'lowpass', 1800, 0.8, 0.22, this.fx, 0.4);
-    for (let j = 1; j <= 3; j++) this._clink(t + 0.11 * j + 0.03 * j * j, j / 3, 0.03 / j, this.fx, -0.1);
-    for (const [dt, lvl, f] of TABLE.dust) this._burst(this.white, t + 0.25 + dt, 0.018, 'bandpass', f, 2.5, 0.022 * lvl, this.fx, 0.25, -0.2);
+    for (const [dt, lvl, f] of TABLE.dust) this._burst(this.white, t + 0.15 + dt, 0.018, 'bandpass', f, 2.5, 0.02 * lvl, this.fx, 0.25, -0.2);
+  }
+
+  _cue_releaseIn(t) {
+    // the shaft's long reverb opens over the landed cradle: a low swell
+    const o = this._osc('sine', 41, t, t + 1.8);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.06, t + 0.8);
+    g.gain.linearRampToValueAtTime(0, t + 1.7);
+    o.connect(g);
+    this._out(g, this.music, 0.3);
+  }
+
+  _cue_release(t) {
+    // a clamp lets go (the latch in reverse) and the rotor surges
+    this._burst(this.white, t, 0.01, 'bandpass', 3800, 3, 0.08, this.fx, 0.2, -0.1);
+    this._thump(t + 0.015, 300, 140, 0.06, 0.1, this.fx, 0.25, -0.1);
+    this._burst(this.brown, t + 0.05, 0.5, 'lowpass', 500, 0.8, 0.07, this.fx, 0.3);
+  }
+
+  _cue_droneAway(t) {
+    // the climb home: the chimney's reverb takes the whine (the rotors' own Doppler is in their automation)
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.25, t + 3);
+    g.gain.linearRampToValueAtTime(0, t + 10);
+    const n = this._noise(this.pink, t, t + 10.2, 1, 0.9);
+    const bp = this._filter('bandpass', 700, 1.5);
+    bp.frequency.setValueAtTime(900, t);
+    bp.frequency.exponentialRampToValueAtTime(260, t + 9);
+    const ng = this._gain(0.12);
+    n.connect(bp);
+    bp.connect(ng);
+    ng.connect(g);
+    this._out(g, this.fx, 0.9);
+  }
+
+  _cue_lightDie(t) {
+    // a failing LED driver: a buzz that stutters three times (fixed) and stops
+    const k = this._dies = (this._dies || 0) + 1;
+    const p = this._droneAt(Math.min(3, k - 1), LIGHTS_DIE[Math.min(3, k - 1)]);
+    for (const [dt, dur] of [
+      [-0.3, 0.08],
+      [-0.12, 0.06],
+      [0.05, 0.12],
+    ]) {
+      const o = this._osc('square', 120, t + dt, t + dt + dur + 0.02);
+      const bp = this._filter('bandpass', 2400, 3);
+      const g = this._gain(0);
+      g.gain.setValueAtTime(0, t + dt);
+      g.gain.linearRampToValueAtTime(0.02 * (0.4 + p.g), t + dt + 0.005);
+      g.gain.setValueAtTime(0.02 * (0.4 + p.g), t + dt + dur);
+      g.gain.linearRampToValueAtTime(0, t + dt + dur + 0.01);
+      o.connect(bp);
+      bp.connect(g);
+      this._out(g, this.fx, 0.6, p.pan);
+    }
+  }
+
+  _cue_doorIn(t) {
+    // the Threshold lamp's hiss and a stone tick
+    this._burst(this.white, t + 0.1, 0.02, 'bandpass', 1800, 3, 0.03, this.fx, 0.4, -0.2);
+    const n = this._noise(this.white, t, t + 2.2, 1, 1.7);
+    const bp = this._filter('bandpass', 4200, 1.2);
+    const g = this._gain(0);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.006, t + 0.8);
+    g.gain.linearRampToValueAtTime(0, t + 2.1);
+    n.connect(bp);
+    bp.connect(g);
+    this._out(g, this.fx, 0.1, -0.3);
   }
 
   _cue_creak(t) {
@@ -895,10 +1055,18 @@ export class OpeningScore {
     if (!buf || this._dead) return false;
     const s = this.ctx.createBufferSource();
     s.buffer = buf;
-    const hp = this._filter('highpass', 90, 0.7);
-    const g = this._gain(1.0);
+    const radio = VO_FX[id] === 'radio';
+    const hp = this._filter('highpass', radio ? 280 : 90, 0.7);
+    const g = this._gain(radio ? 1.15 : 1.0);
     s.connect(hp);
-    hp.connect(g);
+    if (radio) {
+      const lp = this._filter('lowpass', 3400, 0.9);
+      const pk = this._filter('peaking', 1700, 1.2);
+      if (pk.gain) pk.gain.value = 4;
+      hp.connect(pk);
+      pk.connect(lp);
+      lp.connect(g);
+    } else hp.connect(g);
     g.connect(this.vo);
     const send = this._gain(0.07);
     g.connect(send);

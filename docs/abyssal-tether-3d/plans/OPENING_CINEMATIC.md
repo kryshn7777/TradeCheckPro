@@ -1,5 +1,10 @@
 # THE LANTERN: the opening cinematic
 
+> **Superseded in part (2026-11-06) by [OPENING_V2_THE_COLLAR.md](OPENING_V2_THE_COLLAR.md):** shots 1-4 (the lantern alone on a
+> chain) are replaced by THE COLLAR (the station, the four hoist drones, the cradle's descent, Lamp Zero, the release); shots 5-9 are
+> re-aimed and act III (the knock, the well, the title, the waking) is this film's, moved +15.5 s. The engine, the skip, the settings,
+> the hand-off and the rules below still hold; the shot table, the cue sheet and the narration of this file are the first film's.
+
 > Owner (2026-11-05): *"Remove the cutscene at the starting and add a proper one. ... The opening cutscene of lantern must be of
 > supreme quality. Also add detailed sfx, no random ones."*
 

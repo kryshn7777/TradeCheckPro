@@ -53,20 +53,21 @@ fs.mkdirSync(OUT, { recursive: true });
 
 /** One moment per shot (the composed frame of each) + the title and the hand-off. */
 const SHOT_TIMES = [
-  [5.5, '01 EMBER'],
-  [13.4, '02 THE LIGHT WE KEPT'],
-  [15.45, '02b the gutter'],
-  [23.0, '03 THE LOWERING'],
-  [31.0, '04 THE WINDOW'],
-  [35.5, '04b the window, later'],
-  [40.8, '05 THE THRESHOLD'],
-  [46.2, '05b THE DOOR'],
-  [53.5, '06 THE KNOCK'],
-  [60.6, '07 BEFORE THE LAMP'],
-  [64.3, '07b the lunge'],
-  [69.0, '08 THE LANTERN'],
-  [79.6, '09 THE WAKING'],
-  [84.0, '10 the hand-off'],
+  [5.0, '01 THE COLLAR'],
+  [12.8, '02 THE MEASURE (the clamps)'],
+  [16.4, '02b the scan'],
+  [19.0, '03 THE HALL (the empty chair, the screen)'],
+  [27.0, '04 THE IRIS (the descent begins)'],
+  [37.0, '05 THE WINDOW'],
+  [47.0, '06 LAMP ZERO'],
+  [55.0, '07 THE RELEASE (the lights dying)'],
+  [61.0, '08 THE DOOR'],
+  [69.0, '09 THE KNOCK'],
+  [76.1, '10 BEFORE THE LAMP'],
+  [79.8, '10b the lunge'],
+  [84.5, '11 THE LANTERN'],
+  [95.1, '12 THE WAKING'],
+  [99.5, '13 the hand-off'],
 ];
 
 const srv = await createStaticServer({ root: ROOT, prefix: '/', prodHeaders: false }).start();

@@ -328,6 +328,9 @@ E17), the hook's interactables, movers and moving anchor (E09, E13–E16), the e
 
 ### 5.1 Polish list (each item is data, art or small engine work)
 
+> The first frame is still a waking: the opening film (OPENING_V2_THE_COLLAR.md: the Collar, the drones, the cradle to Lamp Zero) ends
+> in black, the title, then the waking at the spawn. The S1 bell is now framed as *the fall*: the line is released from above.
+
 | # | Polish | Where | Needs |
 |---|---|---|---|
 | P1 | **The waking opening.** First frame: darkness, a dead lantern on your gauntlet, the Threshold lamp flares (L1-1), your lantern catches, a drawn breath. Identical to every respawn. | S1 spawn | E07, E25 lantern ramp, E26 |
