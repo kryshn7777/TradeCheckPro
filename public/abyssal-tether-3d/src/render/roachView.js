@@ -72,6 +72,10 @@ export function roachContext(game, ctx) {
     L.y = m[13];
     L.z = m[14];
     L.k = lan.visible === false ? 0 : Math.max(0, Math.min(1, lan.intensity / (r.lanternBase || 6.5)));
+    // THE HOOD (sim/lanternHood.js): the base above is already scaled by the hood, so the ratio would cancel it: apply it here (the
+    // swarm stops fleeing a covered lantern and creeps up)
+    const hood = game.hood;
+    if (hood && hood.k > 0) L.k *= 1 - hood.k;
   } else {
     L.x = H.x;
     L.y = H.y;
