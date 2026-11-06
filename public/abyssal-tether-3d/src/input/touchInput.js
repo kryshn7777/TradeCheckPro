@@ -10,6 +10,7 @@
  *   REEL / LET OUT           hold: reel every attached tether in / out        (Space / Shift)
  *   JUMP                     jump, hop off a hold                              (Space edge)
  *   GRIP                     hold: cling to marked surfaces and edges, stick climbs (F + WASD)
+ *   HOOD                     hold: cover the lantern (THE HOOD, sim/lanternHood.js; Settings: Hold / Toggle)   (V)
  *   BAG                      row of the four items with counts; tap one to apply it, X stops applying (1-4 / X)
  *   II                       pause (Esc)
  *
@@ -32,6 +33,8 @@ const ICON = {
   bag: '<path d="M6 9h12l1.5 11h-15zM9 9V7a3 3 0 016 0v2M9 14h6"/>',
   nv: '<circle cx="7.5" cy="12" r="4.2"/><circle cx="16.5" cy="12" r="4.2"/><path d="M11.7 12h.6M3.3 12H2M22 12h-1.3M7.5 10v4M16.5 10v4" stroke-width="1.4"/>',
   pause: '<path d="M8 5v14M16 5v14" stroke-width="3.2"/>',
+  // THE HOOD: a lantern under a cupped hand
+  hood: '<path d="M9 10h6l1 8H8zM10 10V8h4v2M12 13v2" fill="currentColor" fill-opacity=".2"/><path d="M4 9c2-5 14-5 16 0" stroke-width="2.2"/>',
   x: '<path d="M6 6l12 12M18 6L6 18" stroke-width="2.6"/>',
   fs: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   // bag items: aid kit (cross in a box), bandage (slanted pad), adrenaline (syringe), battery (cell + bolt)
@@ -42,8 +45,8 @@ const ICON = {
   // THE KNOCKER: a squat drum, its striker arm and the wind-up key on its flank
   i4: '<rect x="4" y="11" width="12" height="8" rx="2"/><path d="M6 11V9h7M13 9l3-3M16 15h3M19 12.5v5"/>',
 };
-const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', nv: 'NV', pause: '', fs: '' };
-const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', nv: 'Night vision goggles', pause: 'Pause' };
+const LABEL = { fireR: 'ROPE R', fireL: 'ROPE L', fire: 'ROPE', jump: 'JUMP', grip: 'GRIP', reel: 'REEL', out: 'LET OUT', bag: 'BAG', nv: 'NV', hood: 'HOOD', pause: '', fs: '' };
+const NAME = { fireR: 'Right rope', fireL: 'Left rope', fire: 'Rope', jump: 'Jump', grip: 'Grip and cling', reel: 'Reel in', out: 'Let rope out', bag: 'Bag', nv: 'Night vision goggles', hood: 'Cover the lantern', pause: 'Pause' };
 const ITEM_SHORT = ['AID', 'BAND', 'ADREN', 'BATT', 'KNOCK'];
 const ITEM_NAME = ['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker (throw it)'];
 
@@ -169,6 +172,7 @@ export class TouchInput {
       grip: new ButtonMachine('hold'),
       reel: new ButtonMachine('hold'),
       out: new ButtonMachine('hold'),
+      hood: new ButtonMachine('hold'), // THE HOOD: held = covered (the game's LanternHood applies the Hold / Toggle setting)
     };
     this.sel = 'right'; // hand of the single ROPE button
     this._fireHand = 'right'; // the hand the single button fired with while held
@@ -226,6 +230,11 @@ export class TouchInput {
 
   get gripHeld() {
     return this.visible && this._btn.grip.held;
+  }
+
+  /** THE HOOD button held (plans/LANTERN_HOOD.md). */
+  get hoodHeld() {
+    return this.visible && this._btn.hood.held;
   }
 
   /** -1 (let out) .. 1 (reel in). */
@@ -484,6 +493,7 @@ export class TouchInput {
       case 'grip':
       case 'reel':
       case 'out':
+      case 'hood':
         this._btn[id].down(pid);
         this._tick(10);
         im._edge('any');
@@ -706,6 +716,7 @@ export class TouchInput {
     mk('grip', play, 'grip', LABEL.grip);
     mk('reel', play, 'reel', LABEL.reel);
     mk('out', play, 'out', LABEL.out);
+    mk('hood', play, 'hood', LABEL.hood);
     const badge = el('i', 'tc-badge', '0');
     badge.hidden = true;
     mk('bag', play, 'bag', LABEL.bag, badge);
@@ -784,7 +795,7 @@ export class TouchInput {
       if (p.top) s.top = `calc(${Math.round(p.y)}px + env(safe-area-inset-top, 0px))`;
       else s.bottom = `calc(${Math.round(p.y)}px + env(safe-area-inset-bottom, 0px))`;
     };
-    for (const id of ['fireR', 'fireL', 'fire', 'jump', 'grip', 'reel', 'out', 'bag', 'pause']) place(id);
+    for (const id of ['fireR', 'fireL', 'fire', 'jump', 'grip', 'reel', 'out', 'bag', 'pause', 'hood']) place(id);
     E.fireR.hidden = !two;
     E.fireL.hidden = !two;
     E.fire.hidden = two;

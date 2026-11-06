@@ -59,6 +59,7 @@ import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlay
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
+import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
 import { applyPing, originGlow } from './render/hintWaveView.js';
 import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
@@ -1167,6 +1168,8 @@ export class Game3D {
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
     this.puzzleFocus = null; // PUZZLE FOCUS (puzzleFocusGlue.js): built with the bus; `focusBeat` is its camera beat (lookTarget for the lantern)
     this.focusBeat = null;
+    this.hood = null; // THE HOOD (lanternHoodGlue.js -> sim/lanternHood.js): { on, k } the lantern covered; built with the bus
+    this._hoodGlue = null;
     this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
     this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
@@ -1298,6 +1301,7 @@ export class Game3D {
     this.bus = new EventBus();
     this._setupPuzzleFocus();
     this._setupChase();
+    this._setupHood();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -3260,7 +3264,7 @@ export class Game3D {
         } else if (ib.use) bag.use(bag.selected, health);
       }
     }
-    bag.update(dt, health, live);
+    bag.update(dt, health, live, this.hood ? this.hood.drainMul : 1); // THE HOOD: a covered flame burns slower
     p.speedMul = bag.speedMul;
     if (live && this.pickups) {
       let a = null;
@@ -3619,9 +3623,11 @@ export class Game3D {
       const t = this.realTime;
       f *= 1 - 0.14 * Math.max(0, Math.sin(t * 13.1) * Math.sin(t * 4.3 + 1));
     }
+    const hood = inRun && this.hood && this.hood.k > 0 ? this.hood : null; // THE HOOD: the flame pinched to a slit, the shaft goes black
+    if (hood) f *= hood.lightMul; // x(1 - 0.93 k)
     if (L.base === L.base) r.lanternBase = L.base * f;
     else r.lantern.intensity *= f;
-    if (L.range > 0) r.lantern.distance = L.range * (0.6 + 0.4 * f);
+    if (L.range > 0) r.lantern.distance = L.range * (0.6 + 0.4 * f) * (hood ? hood.rangeMul : 1); // x(0.25 + 0.75 (1 - k))
   }
 
   /** Menu background: the level of the last difficulty, the view drifting down the shaft. */
@@ -3935,6 +3941,7 @@ export class Game3D {
   _updateRun(dt, intent) {
     const p = this.player;
     const t = this.tethers;
+    this._updateHood(dt, intent); // THE HOOD (before the bag: the drain reads it)
     this._updateBag(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
@@ -4797,7 +4804,8 @@ export class Game3D {
       if (typeof c.setHurt === 'function') c.setHurt(!!(this.health && this.health.low && this.state === 'playing'));
       // MASON_SIGHT.md: it sees the lantern-bearer (on: ?sight=off / the masonSight setting; lit: the lantern has charge; blocked: not playing)
       const sightOn = !sightOff() && !(this.settings && this.settings.masonSight === 'off');
-      if (typeof c.setSight === 'function') c.setSight(sightOn, !!(this.bag && this.bag.lanternCharge > 0), this.state !== 'playing' || !this.player.alive);
+      const lit = !!(this.bag && this.bag.lanternCharge > 0) && !(this.hood && this.hood.on); // THE HOOD: a covered lantern does not show
+      if (typeof c.setSight === 'function') c.setSight(sightOn, lit, this.state !== 'playing' || !this.player.alive);
       c.update(dt, this.player, this._runClock);
       if (this.health) this.health.noRecovery = !!(sightOn && c.sight && c.sight.near && this.state === 'playing' && this.player.alive); // no healing while it is near
       if (this._nookPulseT > 0) {
@@ -5190,6 +5198,27 @@ export class Game3D {
     } catch (err) {
       this._fault('chase', err);
       this.chase = null;
+    }
+  }
+
+  /** THE HOOD (lanternHoodGlue.js, plans/LANTERN_HOOD.md): `game.hood` { on, k }; a failure leaves the lantern uncovered for good. */
+  _setupHood() {
+    try {
+      this._hoodGlue = new LanternHoodGlue(this);
+      this.hood = this._hoodGlue.hood;
+    } catch (err) {
+      this._fault('hood', err);
+      this._hoodGlue = null;
+      this.hood = null;
+    }
+  }
+
+  /** THE HOOD, once a run frame before the bag (the drain reads hood.k). */
+  _updateHood(dt, intent) {
+    try {
+      if (this._hoodGlue) this._hoodGlue.update(dt, intent);
+    } catch (err) {
+      this._fault('hood', err);
     }
   }
 
@@ -6397,6 +6426,14 @@ export class Game3D {
       },
       // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
+      // THE HOOD (sim/lanternHood.js): hood(true) covers the lantern, hood(false) uncovers it, hood(null) gives it back to the input;
+      // returns { on, k, mode, lock, forced, stats }
+      hood: (on) => {
+        const h = this.hood;
+        if (!h) return null;
+        if (on !== undefined) h.force(on);
+        return { on: h.on, k: h.k, mode: h.mode, lock: h.lock, forced: h.forced, stats: { ...h.stats } };
+      },
       // PUZZLE FOCUS (puzzleFocusGlue.js): state() the beat and its log, puzzles() the ratchet, ready() clears the 25 s cooldown
       focus: {
         state: () => (this.puzzleFocus ? this.puzzleFocus.debugState() : null),

@@ -171,6 +171,7 @@ const SETTINGS_SCHEMA = [
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
   { key: 'swingLag', tab: 'comfort', type: 'range', label: 'Swing camera lag', desc: 'The view trails your body a little while you swing on a tether. 0 = none. In VR it is fixed very small, and Reduced effects turns it off.', min: 0, max: 1, step: 0.05, fmt: pct, desktop: true },
   { key: 'speedFov', tab: 'comfort', type: 'toggle', label: 'Speed field of view', desc: 'The view widens a little at high speed on a rope or in a fall. Never in VR; Reduced effects turns it off.', desktop: true },
+  { key: 'lanternHood', tab: 'comfort', type: 'choice', label: 'Lantern hood', desc: 'Cover your lantern so the Mason cannot see you (it still hears you). Hold: covered while held. Toggle: each press.', options: [['hold', 'Hold'], ['toggle', 'Toggle']] },
 
   { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
   { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },

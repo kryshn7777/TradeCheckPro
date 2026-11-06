@@ -4,7 +4,8 @@
  *   - a wind squall: it leans (a small sideways offset) and dims;
  *   - the creature's threat: it shrinks and goes blue-white, steadily, the more danger there is;
  *   - the Mason commits to a burst / an attack: it shudders hard (an honest tell: only then);
- *   - hidden in a Masons' rest: perfectly still and steady (safe).
+ *   - hidden in a Masons' rest: perfectly still and steady (safe);
+ *   - covered by THE HOOD (sim/lanternHood.js): still too, and the visible flame pinched to a slit (inp.hood = hood.k, 0..1).
  *
  * Pure and deterministic: no Math.random (phase accumulators and sines), no allocation per call (the state lives on `out`).
  * Never a strobe: every oscillator is <= MAX_HZ (12 Hz) and the fast intensity flutter is shallow (FLUTTER_MAX); every output is
@@ -92,6 +93,16 @@ function identity(out) {
   return out;
 }
 
+/** THE HOOD: a covered flame is still and pinched to a slit (hood.k is already slewed: applied as is, not halved by reducedEffects). */
+function hooded(out, inp) {
+  const hk = clamp01(fin(inp.hood, 0));
+  if (hk > 0) {
+    if (hk > out.still) out.still = hk;
+    out.scale *= 1 - 0.8 * hk;
+  }
+  return out;
+}
+
 /**
  * One step of the mood.
  * @param {number} dt seconds
@@ -102,7 +113,8 @@ function identity(out) {
  */
 export function lanternMood(dt, inp, out) {
   if (!out) out = createLanternMood();
-  if (!inp || inp.enabled === false) return identity(out);
+  if (!inp) return identity(out);
+  if (inp.enabled === false) return hooded(identity(out), inp); // the hood is gameplay: it pinches the flame with the living flame off too
   const d = Math.min(Math.max(fin(dt, 0), 0), 0.1);
   out._ph += d;
   if (out._ph > 1000) out._ph -= 1000; // every oscillator below completes a whole number of cycles in 1000 s (frequencies x 1000 are integers)
@@ -154,7 +166,7 @@ export function lanternMood(dt, inp, out) {
   out.jx = out._x * k;
   out.jy = out._y * k;
   out.still = out._r; // the renderer's idle flicker fades out in a refuge (in every mode: steady is the calm reading)
-  return out;
+  return hooded(out, inp);
 }
 
 /**
@@ -162,7 +174,7 @@ export function lanternMood(dt, inp, out) {
  * (state, refuge), game.objectives.squallNow, game.settings (reducedEffects, livingFlame).
  */
 export function lanternMoodInputs(game, inp) {
-  const o = inp || { speed: 0, threat: 0, burst: false, refuge: false, squall: 0, reduced: false, enabled: true };
+  const o = inp || { speed: 0, threat: 0, burst: false, refuge: false, squall: 0, reduced: false, enabled: true, hood: 0 };
   const P = game && game.player;
   const playing = !!P && P.alive !== false && (!game.state || game.state === 'playing');
   const th = game && game.threat;
@@ -176,6 +188,8 @@ export function lanternMoodInputs(game, inp) {
   o.squall = playing && sq ? clamp01(Math.max(fin(sq.k, 0), 0.6 * fin(sq.rise, 0))) : 0;
   o.reduced = !!(s && s.reducedEffects);
   o.enabled = !(s && s.livingFlame === false);
+  const hd = game && game.hood; // THE HOOD (sim/lanternHood.js)
+  o.hood = playing && hd ? fin(hd.k, 0) : 0;
   return o;
 }
 

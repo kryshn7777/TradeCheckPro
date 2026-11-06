@@ -216,8 +216,9 @@ export class Inventory3D {
    * @param {number} dt seconds
    * @param {Health3D|null} health the player's health model (heal target, damage / death detection)
    * @param {boolean} live false while the run is not live (paused, dead, menu): the channel is cancelled and nothing drains
+   * @param {number} [drainMul] x the lantern drain (THE HOOD, sim/lanternHood.js: 0.3 while the lantern is covered); default 1
    */
-  update(dt, health, live = true) {
+  update(dt, health, live = true, drainMul = 1) {
     const a = this.applying;
     if (!live) {
       if (a.active) this.cancel('inactive');
@@ -249,7 +250,8 @@ export class Inventory3D {
     // The lantern never goes dark but it does burn down.
     const before = this.lanternCharge;
     if (before > 0) {
-      this.lanternCharge = Math.max(0, before - B.lanternDrain * dt);
+      const dm = drainMul >= 0 && drainMul <= 1 ? drainMul : 1;
+      this.lanternCharge = Math.max(0, before - B.lanternDrain * dm * dt);
       this._lantern();
       if (before > B.lanternLow && this.lanternCharge <= B.lanternLow) {
         this.lanternLow = true;
