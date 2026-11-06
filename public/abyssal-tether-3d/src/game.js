@@ -1143,7 +1143,7 @@ export class Game3D {
     this.cineDark = null; // 0..1 while it plays: the world's darkness (Renderer3D reads it); null otherwise
     this.openingHands = false; // the waking: the hands and the body are shown in state 'intro'
     this._openingHold = null; // debug: hold the film at this time (stills, the trailer)
-    this._openingRig = { skip: 0, hint: 0, lanternBase: 0, lanternRange: 0, light: 'none', fov: 0, exposure: 0 };
+    this._openingRig = { skip: 0, hint: 0, lanternBase: 0, lanternRange: 0, light: 'none', fov: 0, exposure: 0, rays: 0 };
     this.holster = null; // the rope guns' holsters (sim/holster3d.js): out[h], k[h] 0..1, walkMul; the hands view reads it
     this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
     this.nvView = null; // their picture (render/nightVisionView.js)
@@ -2640,6 +2640,8 @@ export class Game3D {
     R.fov = r.baseFov || r.camera.fov;
     R.light = 'none';
     R.exposure = r.renderer ? r.renderer.toneMappingExposure : 0;
+    const gr = r.fx && r.fx.godRays;
+    R.rays = gr && gr.params ? gr.params.gain : 0; // the level's light shafts: the film holds them (no beams seen end-on from above)
     this._openingHold = null;
     this.openingHands = false;
     this.cineDark = op.s.dark;
@@ -2737,6 +2739,8 @@ export class Game3D {
     const R = this._openingRig;
     const gl = r.renderer;
     if (gl && R.exposure > 0) gl.toneMappingExposure = R.exposure * (1 - 0.32 * s.dark); // the film's darkness reaches the haze and the glow too
+    const gr = r.fx && r.fx.godRays;
+    if (gr && gr.params && R.rays > 0) gr.params.gain = R.rays * s.rays;
     if (R.light === 'hero') {
       r.lanternBase = R.lanternBase * 1.35 * s.lantern.light;
       r.lantern.distance = s.lantern.range;
@@ -2765,6 +2769,9 @@ export class Game3D {
       if (R.lanternRange > 0) r.lantern.distance = R.lanternRange;
       if (R.exposure > 0 && r.renderer) r.renderer.toneMappingExposure = R.exposure;
       R.exposure = 0;
+      const gr = r.fx && r.fx.godRays;
+      if (gr && gr.params && R.rays > 0) gr.params.gain = R.rays;
+      R.rays = 0;
       if (!this.xrActive) {
         r.camera.rotation.z = 0;
         if (R.fov > 0 && Math.abs(r.camera.fov - R.fov) > 1e-3) {
@@ -4929,7 +4936,7 @@ export class Game3D {
     const r = this.renderer;
     const cam = r && r.camera;
     const p = this.player;
-    if (!cam || !p || !(r.baseFov > 0)) return;
+    if (!cam || !p || !(r.baseFov > 0) || this.opening) return; // THE LANTERN's film owns the lens while it plays (each shot's FOV)
     const st = this._speedFov || (this._speedFov = { kick: 0, t: 0 });
     const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
     const dt = st.t > 0 ? Math.min(0.1, Math.max(0, now - st.t)) : 0;
@@ -5295,6 +5302,7 @@ export class Game3D {
         opv.update(dt, op.s, {
           xr: !!this.xrActive,
           aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9,
+          px: cv && cv.height > 0 ? cv.height : 720, // the drawing buffer's height (the dust's point size)
           skip: Math.min(1, R.skip / OPENING_SKIP_HOLD),
           skipHint: op.skipping >= 0 ? 0 : hint,
           head: r ? r.headPosition() : null,

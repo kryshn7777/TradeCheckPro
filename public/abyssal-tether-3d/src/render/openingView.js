@@ -29,7 +29,7 @@ const FONT_UI = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
 const _v = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const _qt = new THREE.Quaternion();
+const _w2 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _s = new THREE.Vector3(1, 1, 1);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -93,6 +93,90 @@ function makeFlame() {
   mesh.name = 'AT3D-opening-flame';
   mesh.frustumCulled = false;
   return mesh;
+}
+
+/**
+ * The dust in the lantern's light: one Points draw, every particle placed in the vertex shader from a fixed seed (no CPU per frame,
+ * no Math.random: a seeded LCG at build time). Two kinds: MOTES hang and drift in a 3 m column round the chain; GRIT (mortar shaken
+ * loose by the chain) falls through the world at 3-5 m/s. Both are WORLD-anchored (they wrap in a window that travels with the
+ * lantern, where the inverse-square light has already let them go dark), lit only by the lantern (the same falloff as its light),
+ * so they read as depth round the hero and as speed past it on the way down.
+ */
+const DUST_N = 560;
+function makeDust() {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(DUST_N * 3); // unused by the shader (bounds only)
+  const seed = new Float32Array(DUST_N * 4);
+  let s = 1791;
+  const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < DUST_N; i++) {
+    seed[i * 4] = rnd(); // radius
+    seed[i * 4 + 1] = rnd(); // angle
+    seed[i * 4 + 2] = rnd(); // height phase
+    seed[i * 4 + 3] = i < DUST_N * 0.42 ? rnd() * 0.5 : 0.5 + rnd() * 0.5; // < 0.5: grit, >= 0.5: a mote (size inside the band)
+  }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uLan: { value: new THREE.Vector3() },
+      uI: { value: 1 },
+      uMotes: { value: 0 },
+      uGrit: { value: 0 },
+      uPx: { value: 720 },
+    },
+    vertexShader: `
+      attribute vec4 aSeed;
+      uniform float uTime; uniform vec3 uLan; uniform float uI; uniform float uMotes; uniform float uGrit; uniform float uPx;
+      varying float vA; varying float vGrit;
+      void main() {
+        float grit = step(aSeed.w, 0.4999);
+        vGrit = grit;
+        float r = mix(0.12 + 2.9 * sqrt(aSeed.x), 0.25 + 3.4 * sqrt(aSeed.x), grit);
+        float ang = aSeed.y * 6.2831853 + uTime * mix(0.05, 0.0, grit) * (aSeed.x - 0.5);
+        // the window: 7 m tall, from 5 m under the lantern to 2 m over it; a particle's world height wraps inside it
+        float H = 7.0;
+        float lo = uLan.y - 5.0;
+        float v = mix(0.035 + 0.04 * aSeed.z, 6.0 + 3.0 * aSeed.z, grit); // grit falls faster than the lantern descends: it passes it
+        float yw = aSeed.z * 53.0 - uTime * v;
+        float y = lo + mod(yw - lo, H);
+        float edge = smoothstep(0.0, 0.9, y - lo) * smoothstep(0.0, 0.9, lo + H - y);
+        vec3 p = vec3(uLan.x + cos(ang) * r, y, uLan.z + sin(ang) * r);
+        p.x += (1.0 - grit) * 0.06 * sin(uTime * 0.37 + aSeed.y * 17.0);
+        p.z += (1.0 - grit) * 0.06 * sin(uTime * 0.29 + aSeed.x * 23.0);
+        vec3 d = p - uLan;
+        float lit = uI / (0.12 + dot(d, d) * 1.1); // the lantern's own inverse-square fall-off
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float z = max(0.05, -mv.z);
+        float sizeM = mix(0.0045 + 0.004 * (aSeed.w - 0.5), 0.006 + 0.006 * aSeed.w, grit);
+        float px = sizeM * uPx * projectionMatrix[1][1] * 0.5 / z;
+        float near = smoothstep(0.25, 0.7, z); // nothing on the lens
+        vA = clamp(lit, 0.0, 2.2) * edge * near * mix(uMotes * 0.55, uGrit, grit) * clamp(px / 1.5, 0.25, 1.0);
+        gl_PointSize = clamp(px, 1.5, 9.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      varying float vA; varying float vGrit;
+      void main() {
+        vec2 c = gl_PointCoord * 2.0 - 1.0;
+        float r = dot(c, c);
+        if (r > 1.0 || vA < 0.002) discard;
+        float a = (1.0 - r) * (1.0 - r) * vA;
+        vec3 col = mix(vec3(1.0, 0.74, 0.46), vec3(0.95, 0.66, 0.4), vGrit);
+        gl_FragColor = vec4(col * a, 1.0);
+      }`,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+    toneMapped: false,
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.name = 'AT3D-opening-dust';
+  pts.frustumCulled = false;
+  pts.renderOrder = 55;
+  return pts;
 }
 
 function makeHaloTexture() {
@@ -241,6 +325,11 @@ export class OpeningView {
     this.chain.count = 0;
     this.root.add(this.chain);
 
+    // the dust in its light
+    this.dust = makeDust();
+    this.dust.visible = false;
+    this.root.add(this.dust);
+
     // the letterbox (on the camera): two quads in one mesh
     const bars = new THREE.BufferGeometry();
     bars.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(24), 3));
@@ -374,27 +463,62 @@ export class OpeningView {
     this.halo.scale.set(hs, hs, 1);
     this.halo.visible = show && L.light > 0.01;
 
-    // ---- the chain: straight from the hook up to its top, links alternately turned ----
+    // ---- the chain: from the hook up to its top (the pendulum's pivot), links alternately turned. While it pays out a slow wave
+    // runs up it from the weight (the winch's judder), and the links over the hook lag the swing a little (a chain, not a rod) ----
     if (show) {
       _v.set(L.x, hookY + 0.03, L.z);
       _w.set(L.x - L.swayX * 0.55, s.chainTop, L.z - L.swayZ * 0.55);
       const len = _w.distanceTo(_v);
       const n = Math.min(MAX_LINKS, Math.max(0, Math.floor(len / LINK_PITCH)));
       _w.sub(_v).normalize();
-      _q.setFromUnitVectors(UP, _w);
-      _qt.copy(_q).multiply(TWIST);
+      const pay = Math.min(1, Math.max(0, L.pay || 0));
+      const amp = 0.028 * pay;
+      const lagX = -L.swayX * 0.35;
+      const lagZ = -L.swayZ * 0.35;
+      let px = _v.x;
+      let py = _v.y;
+      let pz = _v.z;
       for (let i = 0; i < n; i++) {
         const k = (i + 0.5) * LINK_PITCH;
-        _m.compose(_v, i & 1 ? _qt : _q, _s);
-        _m.elements[12] = _v.x + _w.x * k;
-        _m.elements[13] = _v.y + _w.y * k;
-        _m.elements[14] = _v.z + _w.z * k;
+        // the bend: a wave (amp, 2.3 m long, running up at 1.6 m/s) and the lag over the first 1.5 m, both gone by the top
+        const env = Math.min(1, k / 0.6) * Math.max(0, 1 - k / Math.max(1, len));
+        const wv = amp * env * Math.sin(k * 2.73 - t * 4.4);
+        const lg = Math.max(0, 1 - k / 1.5) * Math.min(1, k / 0.3);
+        const cx = _v.x + _w.x * k + wv * 0.8 + lagX * lg;
+        const cy = _v.y + _w.y * k;
+        const cz = _v.z + _w.z * k + wv * 0.6 + lagZ * lg;
+        _w2.set(cx - px, cy - py, cz - pz);
+        if (i === 0) _w2.copy(_w);
+        else _w2.normalize();
+        _q.setFromUnitVectors(UP, _w2);
+        if (i & 1) _q.multiply(TWIST);
+        _m.compose(_v, _q, _s);
+        _m.elements[12] = cx;
+        _m.elements[13] = cy;
+        _m.elements[14] = cz;
         this.chain.setMatrixAt(i, _m);
+        px = cx;
+        py = cy;
+        pz = cz;
       }
       this.chain.count = n;
       this.chain.instanceMatrix.needsUpdate = true;
     } else this.chain.count = 0;
     this.chain.visible = show;
+
+    // ---- the dust in its light ----
+    const du = s.dust;
+    const dOn = show && du && (du.motes > 0.01 || du.grit > 0.01);
+    this.dust.visible = !!dOn;
+    if (dOn) {
+      const dm = this.dust.material.uniforms;
+      dm.uTime.value = t;
+      dm.uLan.value.set(L.x, L.y, L.z);
+      dm.uI.value = L.light;
+      dm.uMotes.value = du.motes;
+      dm.uGrit.value = du.grit;
+      dm.uPx.value = xr ? 1600 : o.px > 0 ? o.px : 720;
+    }
 
     // ---- the letterbox (desktop) ----
     const bars = xr ? 0 : s.bars;
@@ -529,6 +653,8 @@ export class OpeningView {
     this.halo.material.dispose();
     this.chain.geometry.dispose();
     this.chain.material.dispose();
+    this.dust.geometry.dispose();
+    this.dust.material.dispose();
     this.bars.geometry.dispose();
     this.bars.material.dispose();
     if (this.titleMat.uniforms.map.value) this.titleMat.uniforms.map.value.dispose();

@@ -46,12 +46,19 @@ export const LANTERN_STOP_AT = 40.4;
 const LANTERN_Y_KEYS = [
   [0, 50.6],
   [17.5, 50.2],
-  [27.0, 25.0],
+  [19.2, 49.5], // the winch takes the weight: the descent eases in (it does not start at speed on the cut)
+  [27.0, 25.0], // past the great girder (y 26, 0.9 m from the chain's line) at 26.6: the lantern grazes it
   [34.0, 15.5],
   [38.6, 6.4],
   [LANTERN_STOP_AT, LANTERN_REST_Y],
   [DURATION, LANTERN_REST_Y],
 ];
+
+/** The lantern passes the great girder (y 26) on the way down at 26.6; the iron's song (audio cue `girder`) swells from 0.55 s before. */
+export const GIRDER_AT = 26.05;
+
+/** The three knocks in the wall (the cue sheet's `knock`s; the grit shakes off at each). */
+const KNOCKS = [49.2, 50.0, 50.8];
 
 /** The well (east of the lip): the Mason rises out of it in shot 7. */
 const WELL = [7.3, -1.2];
@@ -76,9 +83,14 @@ export const SHOTS = Object.freeze([
     [0.55, L(0.45, 0.15, 1.6), L(0, 0.22, 0), 36],
     [1, L(-0.6, 0.25, 1.6), L(0, 0.36, 0), 34],
   ], { cut: true }),
+  // THE LOWERING: high in the shaft, on the open side of the chain, looking down it into the south-west corner. The camera cranes down
+  // 7 m and orbits 25 deg round the chain while the lantern falls 25 m away from it: the two lit walls converge on it, the chain is
+  // the line into the dark, the grit falls past it, and at 26.6 it grazes the great girder. The lens tightens as it goes (a slow
+  // vertigo: the lantern stays readable as it becomes a star).
   S('lowering', 'THE LOWERING', 17.5, 28, [
-    [0, L(2.6, 5.0, 3.4), L(0, -0.6, 0), 50],
-    [1, L(1.8, 3.6, 2.6), L(0, -1.0, 0), 44],
+    [0, A(-2.55, 52.9, 3.85), L(0, -0.7, 0), 46],
+    [0.5, A(-2.85, 50.3, 3.6), L(0, -1.65, 0), 41],
+    [1, A(-3.3, 45.9, 3.4), L(0, -2.6, 0), 36],
   ], { cut: true }),
   S('window', 'THE WINDOW', 28, 38, [
     [0, L(-3.4, 0.8, 2.5), L(4.4, 0.2, -2.6), 40],
@@ -123,14 +135,15 @@ export const CUES = Object.freeze([
   [9.0, 'swell'],
   [15.2, 'gutter'],
   [17.5, 'winch'],
+  [GIRDER_AT, 'girder'],
   [28.0, 'motif2'],
   [38.0, 'chainSlow'],
   [LANTERN_STOP_AT, 'chainStop'],
   [42.0, 'creak'],
   [48.0, 'musicOut'],
-  [49.2, 'knock'],
-  [50.0, 'knock'],
-  [50.8, 'knock'],
+  [KNOCKS[0], 'knock'],
+  [KNOCKS[1], 'knock'],
+  [KNOCKS[2], 'knock'],
   [50.9, 'lean'],
   [51.4, 'heartbeat'],
   [56.5, 'grind'],
@@ -243,7 +256,9 @@ export function newOpeningSnapshot() {
     fade: 1,
     bars: 0,
     dark: 1,
-    lantern: { on: 1, x: LANTERN_X, y: 50, z: LANTERN_Z, swayX: 0, swayZ: 0, light: 1, flame: 1, lean: 0, leanX: 1, leanZ: 0, scale: 2.6, range: 6.5 },
+    rays: 0,
+    dust: { motes: 0, grit: 0 },
+    lantern: { on: 1, x: LANTERN_X, y: 50, z: LANTERN_Z, pay: 0, swayX: 0, swayZ: 0, light: 1, flame: 1, lean: 0, leanX: 1, leanZ: 0, scale: 2.6, range: 6.5 },
     chainTop: 62,
     mason: { on: false, x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 1, eyes: 0, gape: 0, lunge: 0 },
     player: { hands: 0, lantern: 0 },
@@ -284,6 +299,7 @@ export function shotAt(t) {
 /** The hero lantern at t (position, sway, light, flame). */
 function sampleLantern(t, o) {
   o.y = lanternY(t);
+  o.pay = clamp01((o.y - lanternY(t + 0.05)) / 0.05 / 4.5); // how fast the chain pays out (0..1 of its top speed)
   // the sway: a slow pendulum (0.21 Hz) that the descent excites; the stop at LANTERN_STOP_AT kicks it and it dies away
   const moving = t > 17.5 && t < LANTERN_STOP_AT ? 1 : 0;
   const kick = t > LANTERN_STOP_AT ? 0.11 * Math.exp(-(t - LANTERN_STOP_AT) * 0.55) : 0;
@@ -301,7 +317,10 @@ function sampleLantern(t, o) {
   const dying = t > 63.6 ? 1 - smooth(63.6, LANTERN_OUT_AT, t) : 1;
   const flare = 1 + 0.35 * span(t, 64.15, 64.3, 0.05, 0.25); // it flares as the thing comes for it, then it is gone
   o.flame = o.on ? live * gut * fadeIn * dying * flare : 0;
-  o.light = o.on ? (0.25 + 0.75 * fadeIn) * gut * dying * flare * (0.98 + 0.04 * Math.sin(t * 11.3)) : 0;
+  // the descent: the light swells a little as the lantern swings out into the open shaft (it must reach the walls 6-7 m off: it is
+  // the only light there), and settles back as it nears the Threshold
+  const reach = 1 + 0.45 * span(t, 19.5, 36.5, 2.2, 3.2);
+  o.light = o.on ? (0.25 + 0.75 * fadeIn) * gut * dying * flare * reach * (0.98 + 0.04 * Math.sin(t * 11.3)) : 0;
   o.lean = 0.52 * smooth(50.85, 51.7, t) + 0.12 * smooth(56.5, 62, t) + 0.05 * Math.sin(t * 3.1) * smooth(51, 52, t);
   const wx = WELL[0] - LANTERN_X;
   const wz = WELL[1] - LANTERN_Z;
@@ -402,12 +421,28 @@ export function sampleOpening(t, opts, out) {
   // the world: held dark so the lantern is the key; the window shot lets the cold in; the waking gives it all back
   let dark = 0.965;
   dark -= 0.04 * smooth(17.5, 22, t); // the lowering: a little of the shaft
-  dark -= 0.3 * span(t, 29.5, 34.5, 2.2, 2.6); // THE WINDOW: the cold, the god rays
+  dark -= 0.2 * span(t, 29.5, 34.5, 2.2, 2.6); // THE WINDOW: the cold, the god rays (held: the dark grade clips the haze to white past this)
   dark -= 0.1 * span(t, 41.6, 47.6, 0.6, 0.4); // the door: its lamp, a little
   dark += 0.04 * smooth(48, 50, t); // the knock: down again
   if (t >= LANTERN_OUT_AT) dark = 1;
   if (t >= WAKE_AT) dark = 1 - 0.55 * smooth(77.3, 77.9, t) - 0.45 * smooth(78.6, 82.6, t); // the lamp flares, then the rest
   o.dark = clamp01(dark);
+
+  // the level's light shafts and window beams (render/godRays.js, scaled by the game): none at the top and down the shaft (seen from
+  // above a beam is a pale blot, and the lantern must be the only light), the cold pours in at THE WINDOW, a little stays in the
+  // Threshold, and the waking gives them back in full by the hand-off
+  let rays = 0.3 * span(t, 30.0, 35.0, 2.0, 3.5) + 0.3 * span(t, 37.5, 47.5, 1.0, 1.0) + 0.14 * span(t, 48.5, 63.8, 1.0, 0.8);
+  if (t >= LANTERN_OUT_AT) rays = 0;
+  if (t >= WAKE_AT) rays = smooth(78.4, 82.6, t);
+  o.rays = clamp01(rays);
+  // the dust in the lantern's light (render/openingView.js): motes hang round it whenever it burns; grit falls past it on the way
+  // down (the chain grinding through the winch), shakes off the arch at the stop and off the wall at each knock
+  const du = o.dust;
+  du.motes = lan.on ? smooth(0.6, 3.2, t) * (t > 63.6 ? 1 - smooth(63.6, LANTERN_OUT_AT, t) : 1) : 0;
+  let grit = span(t, 18.2, 27.2, 0.9, 1.2) + 0.55 * span(t, 34.0, 38.5, 1.0, 1.4);
+  grit += 0.8 * (t > LANTERN_STOP_AT ? Math.exp(-(t - LANTERN_STOP_AT) * 1.1) : 0);
+  for (let i = 0; i < KNOCKS.length; i++) if (t > KNOCKS[i]) grit += 0.45 * Math.exp(-(t - KNOCKS[i]) * 1.6);
+  du.grit = lan.on ? clamp01(grit) : 0;
 
   // ---- the Mason (shot 7) ----
   const m = o.mason;

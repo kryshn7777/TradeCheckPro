@@ -98,6 +98,33 @@ ok(DURATION >= 75 && DURATION <= 95, `the film runs ${DURATION} s (75-95)`);
   ok(slow.length === 0, 'moves are eased (a fixed-key shot starts and stops at under 20 % of its mid-shot speed: no linear robot moves)', slow);
 }
 
+// ---- THE LOWERING (recomposed for the dark look) ----------------------------------------------------------------------------------
+{
+  const lw = SHOTS.find((s) => s.id === 'lowering');
+  const at = (t) => O.sampleOpening(t, null, O.newOpeningSnapshot());
+  const a = at(lw.t0 + 0.05);
+  const b = at(lw.t1 - 0.05);
+  const dist = (s) => Math.hypot(s.cam.x - s.lantern.x, s.cam.y - s.lantern.y, s.cam.z - s.lantern.z);
+  let steep = true;
+  let over = true;
+  for (let t = lw.t0; t < lw.t1; t += 0.25) {
+    const s = at(t);
+    if (s.cam.pitch > -0.85) steep = false; // looking down the shaft (more than ~49 deg)
+    if (s.cam.y < s.lantern.y + 1.5) over = false;
+  }
+  ok(steep && over && dist(a) < 4.5 && dist(b) > 18, 'THE LOWERING: from above, looking down the chain; the lantern falls away from the lens (close to a star)', { from: +dist(a).toFixed(1), to: +dist(b).toFixed(1) });
+  ok(a.rays === 0 && b.rays === 0 && at(5).rays === 0 && at(31.5).rays > 0.25 && at(O.DURATION).rays === 1, 'the level\'s light shafts are held off at the top and down the shaft (no beam seen end-on), come in at THE WINDOW, and are whole at the hand-off');
+  ok(at(22).dust.grit > 0.9 && at(5).dust.grit === 0 && at(5).dust.motes > 0.9 && at(70).dust.motes === 0, 'grit falls past the lantern on the way down; motes hang in its light; nothing once it is out');
+  // the girder: the lantern passes y 26 (the girder's height) on the pass the cue swells to
+  const ge = O.CUES.find((c) => c[1] === 'girder');
+  let tPass = 0;
+  for (let t = 20; t < 30; t += 0.01) if (at(t).lantern.y <= 26 && !tPass) tPass = t;
+  ok(!!ge && Math.abs(tPass - (ge[0] + 0.55)) < 0.25, `the iron sings as the lantern passes the girder (cue ${ge && ge[0]} s + 0.55, pass ${tPass.toFixed(2)} s)`);
+  let soft = true;
+  for (let t = lw.t0; t < lw.t0 + 0.6; t += 0.05) if (at(t).lantern.pay > 0.12) soft = false;
+  ok(soft, 'the descent eases in on the cut (the winch takes the weight first)');
+}
+
 // ---- the hand-off ---------------------------------------------------------------------------------------------------------------
 for (const ho of [O.DEFAULT_HANDOFF, { x: -3.71, y: 1.83, z: 8.62, yaw: 0.3 }]) {
   const s = O.sampleOpening(DURATION, { handoff: ho }, O.newOpeningSnapshot());
@@ -171,6 +198,9 @@ for (const at of [0.6, 10, 40, 66.5]) {
   ok(i0 > 0 && xrBranch.length > 20 && !/rotation|quaternion|lookAt|fov/.test(xrBranch), 'game.js: the headset branch of _applyOpeningCam only translates the rig (no rotation, no lens)');
   const endBody = src.slice(src.indexOf('  _endOpening(skipped) {'), src.indexOf('\n  }\n', src.indexOf('  _endOpening(skipped) {')));
   ok(/!this\.xrActive\) this\._setLook/.test(endBody), 'game.js: the end of the film never turns a headset (the look is reset on the desktop only)');
+  const sf = src.slice(src.indexOf('  _applySpeedFov() {'), src.indexOf('\n  }\n', src.indexOf('  _applySpeedFov() {')));
+  ok(/\|\| this\.opening\) return/.test(sf), 'game.js: the speed-FOV kick leaves the lens alone while the film plays (each shot keeps its own FOV)');
+  ok(/gr\.params\.gain = R\.rays;/.test(endBody), 'game.js: the end of the film gives the light shafts back their own gain');
   ok(!/prologue|Prologue|storyIntro/.test(src.replace(/storyIntro === false/g, '')), 'game.js: the old opening story (prologue) is gone');
   for (const f of ['src/sim/prologue3d.js', 'src/render/prologueView.js']) ok(!fs.existsSync(path.join(ROOT, f)), `${f} is deleted`);
 }
