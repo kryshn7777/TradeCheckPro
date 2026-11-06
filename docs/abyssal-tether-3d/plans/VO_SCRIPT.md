@@ -161,7 +161,7 @@ Columns: **Id** (the file name), **Sect.** (S1-S8, or *any* = can play anywhere)
 | `s7-hang` | S7 | reaching 296 m in S7 | **The floor unbolts while you hold. So hold, Wren.** | Tense instruction, trying to steady him. (The game makes one word stick; record it clean.) | 5 |  |
 | `s7-stall` | S7 | no progress for 60 s (voiced hint) | **Chain the rings. Fire the next before you let go.** | A practical hint, quick. | 5.3 |  |
 | `s8-probes` | S8 | reaching 500 m in S8 | **Probes all died at five-fifty-six. No pressure, Wren.** | Gallows humour; the voice nearly cracks under the joke. | 5.3 |  |
-| `any-hurt` | any | event health:damage lethal=false | **Vesper says that was minor. I say ow. Easy, Wren.** | Wincing sympathy, joking to cover the worry. | 5.3 |  |
+| `any-hurt` | any | event health:damage lethal=false cause=[object Object] | **Vesper says that was minor. I say ow. Easy, Wren.** | Wincing sympathy, joking to cover the worry. | 5.3 |  |
 | `any-relay` | any | event checkpoint | **That lamp's a relay now. Anything happens, we restore you there.** | An upbeat tech explanation. | 5.7 |  |
 | `any-gaze` | any | 3 s looking at a blood writing (Blood writing on) | **What are you looking at? Your feed's just stone.** | Puzzled, light, a little uneasy. | 5 |  |
 | `back-1` | any | after a restore (first) | **Wren? Wren, sync is holding. Welcome back.** | The first restore: relief, careful, checking he is really there. | 4.2 |  |
