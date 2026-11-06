@@ -170,6 +170,15 @@ export class Eyes {
     this.haloMaterial.size = EYES.halo * (0.85 + 0.3 * g);
   }
 
+  /** Raises the glow to g this frame (MASON SNAKE ATTACK: the lock flare; the same red, the halo swells). */
+  boost(g) {
+    if (!(g > this.glow)) return;
+    this.glow = g;
+    this.material.color.setRGB(0.6 + 0.55 * g, 0.002, 0.001);
+    this.haloMaterial.opacity = clamp(0.4 + 0.45 * g, 0, 1);
+    this.haloMaterial.size = EYES.halo * (0.85 + 0.3 * g);
+  }
+
   /** Draw calls it costs right now. */
   calls() {
     return this.group.visible ? 2 : 0;

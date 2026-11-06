@@ -372,6 +372,10 @@ export const SETTINGS_DEFAULTS = {
   gripMode: 'hold',
   ropeLatch: false,
   weapons: true, // SOLDIER_WEAPONS.md: the dead soldiers' grenades and revolver lie in the shaft (sim/weapons3d.js); off = none found (also ?weapons=off)
+  hitFeedback: 'full', // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'full' | 'gentle' (half the red punch, no fall of the view, a shorter ring)
+  // ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): a name card stands over the collectible you look at (name + what it does + how to
+  // use it on this platform). Off = none; `?itemcards=off` overrides it.
+  itemCards: true,
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -405,6 +409,7 @@ export const UX_LIMITS = {
   touchRopeModes: ['hold', 'latch'],
   lanternHoods: ['hold', 'toggle'], // THE HOOD
   gripModes: ['hold', 'toggle'], // ASSIST PACK
+  hitFeedbacks: ['full', 'gentle'], // HIT FEEDBACK
 };
 
 /** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
@@ -455,12 +460,14 @@ export function sanitizeUxSettings(s) {
   s.roaches = s.roaches !== false; // on unless switched off
   s.radioVoices = s.radioVoices !== false; // on unless switched off
   s.signalGlitches = s.signalGlitches !== false;
+  s.itemCards = s.itemCards !== false; // on unless switched off (itemCardGlue.js)
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   if (L.lanternHoods.indexOf(s.lanternHood) < 0) s.lanternHood = D.lanternHood; // THE HOOD
   if (L.gripModes.indexOf(s.gripMode) < 0) s.gripMode = D.gripMode;
   s.ropeLatch = s.ropeLatch === true;
   s.weapons = s.weapons !== false && s.weapons !== 'off'; // on unless switched off (SOLDIER_WEAPONS.md)
+  if (L.hitFeedbacks.indexOf(s.hitFeedback) < 0) s.hitFeedback = D.hitFeedback; // HIT FEEDBACK
   sanitizeTouchSettings(s);
   return s;
 }

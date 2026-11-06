@@ -48,13 +48,27 @@ GLYPHS = {
     'N': (64, [[(0, 100), (0, 0), (64, 100), (64, 0)]]),
     'R': (62, [[(0, 100), (0, 0), (40, 0), (58, 14), (58, 36), (40, 50), (0, 50)], [(34, 50), (62, 100)]]),
 }
-STROKE = 15.0  # stroke width in glyph units
-TRACK = 24.0  # space between letters
+STROKE = 17.0  # stroke width in glyph units (heavier than the old 15: the stacked LANTERN reads at icon-card sizes)
+TRACK = 34.0  # space between letters (room for the serifs)
+# THE LANTERN's carved capitals carry flat slab serifs (an engraved, old-stone feel; the bare tube letters read as sci-fi):
+# (x0, x1, 't' | 'b') = a bar flush with the top or bottom edge of the letter, SERIF_H thick
+SERIF_H = 0.62
+SERIFS = {
+    'A': [(-14, 16, 'b'), (60, 90, 'b')],
+    'B': [(-14, 0, 't'), (-14, 0, 'b')],
+    'E': [(-14, 0, 't'), (-14, 0, 'b')],
+    'H': [(-14, 14, 't'), (-14, 14, 'b'), (50, 78, 't'), (50, 78, 'b')],
+    'L': [(-14, 14, 't'), (-14, 0, 'b')],
+    'N': [(-14, 0, 't'), (-14, 14, 'b'), (50, 78, 't')],
+    'R': [(-14, 0, 't'), (-14, 14, 'b'), (50, 76, 'b')],
+    'T': [(18, 46, 'b')],
+    'Y': [(-12, 14, 't'), (56, 82, 't'), (21, 49, 'b')],
+}
 WORD_GAP = 80.0
 
 
 def word_width(word):
-    return sum(GLYPHS[c][0] for c in word) + TRACK * (len(word) - 1) + STROKE
+    return sum(GLYPHS[c][0] for c in word) + TRACK * (len(word) - 1) + STROKE + 28  # + the serifs' overhang at both ends
 
 
 def stroke_mask(word, cap_px, pad):
@@ -65,7 +79,7 @@ def stroke_mask(word, cap_px, pad):
     ss = 2
     m = Image.new('L', (w * ss, h * ss), 0)
     d = ImageDraw.Draw(m)
-    x = pad + STROKE * k / 2
+    x = pad + (STROKE / 2 + 14) * k
     lw = max(2, int(STROKE * k * ss))
     for ch in word:
         gw, strokes = GLYPHS[ch]
@@ -77,6 +91,9 @@ def stroke_mask(word, cap_px, pad):
             for (px, py) in pts:
                 r = lw / 2
                 d.regular_polygon((px, py, r * 1.04), 8, rotation=22.5, fill=255)
+        for x0s, x1s, edge in SERIFS.get(ch, []):
+            top = pad + (0 if edge == 't' else 100 + STROKE - STROKE * SERIF_H) * k
+            d.rectangle([(x + x0s * k) * ss, top * ss, (x + x1s * k) * ss, (top + STROKE * SERIF_H * k) * ss], fill=255)
         x += (gw + TRACK) * k
     return m.resize((w, h), Image.LANCZOS)
 
@@ -195,10 +212,22 @@ def darken_band(img, y0, y1, amount=0.55):
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), 'RGB')
 
 
-def compose(bg, cap_px, center, stacked, tether=True, tether_x=None):
-    """Draws the title (and the tether line) onto an RGB background. center = (cx, cy) in pixels."""
+def compose(bg, cap_px, center, stacked, tether=False, tether_x=None):
+    """Draws the title onto an RGB background. center = (cx, cy) in pixels. tether=True adds the old ABYSSAL TETHER ring and line (off: not on brand for THE LANTERN)."""
     W, H = bg.size
-    m = lockup(cap_px, stacked)
+    # the safe area (VRC.Quest.Asset.3): the lettering's INK stays >= 10 % from the sides and >= 20 % from the top and bottom;
+    # a lockup that would not fit is drawn smaller (never moved into the bleed)
+    while True:
+        m = lockup(cap_px, stacked)
+        ix0, iy0, ix1, iy1 = m.getbbox()
+        ax0 = center[0] - m.width / 2 + ix0
+        ax1 = center[0] - m.width / 2 + ix1
+        ay0 = center[1] - m.height / 2 + iy0
+        ay1 = center[1] - m.height / 2 + iy1
+        if ax0 >= W * 0.1 and ax1 <= W * 0.9 and ay0 >= H * 0.2 and ay1 <= H * 0.8:
+            break
+        cap_px *= 0.96
+    print(f'  ink margins: left {ax0 / W:.1%} right {1 - ax1 / W:.1%} top {ay0 / H:.1%} bottom {1 - ay1 / H:.1%} (cap {cap_px:.0f} px)')
     lw, lh = m.size
     x0 = int(center[0] - lw / 2)
     y0 = int(center[1] - lh / 2)
@@ -302,6 +331,10 @@ def main():
     out, box = compose(bg, cap_px=250, center=(1280, 660), stacked=True, tether_x=1280)
     out.save(os.path.join(args.out, 'cover-landscape-2560x1440.png'), optimize=True)
     print('landscape', box)
+    # the landing page's cover (store/site/index.html; build-release.mjs copies it next to the page)
+    site = os.path.join(os.path.dirname(os.path.abspath(args.out)), 'site')  # store/site when --out is store/art
+    if os.path.isdir(site):
+        out.resize((1600, 900), Image.LANCZOS).save(os.path.join(site, 'hero-1600x900.jpg'), 'JPEG', quality=84, optimize=True, progressive=True)
 
     # square 1440 x 1440
     bg = grade(cover_fit(load_render(args.keyart, f'vista-{v}-square.png'), 1440, 1440))

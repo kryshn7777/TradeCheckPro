@@ -207,6 +207,10 @@ const SETTINGS_SCHEMA = [
   { key: 'hintWave', tab: 'access', type: 'toggle', label: 'Hint wave', desc: 'Stuck a long while? The golden mark sends a soft wave through the walls toward you.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'roaches', tab: 'access', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', vr: true },
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): on the desktop's Access list; the VR Access page is full (seven rows +
+  // Reset), so in a headset the same choice sits on the Sound page (below)
+  { key: 'hitFeedback', tab: 'access', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and knocks your view to the ground. Gentle: a softer flash and a shorter ring; the view never falls.', options: [['full', 'Full'], ['gentle', 'Gentle']], desktop: true },
+  { key: 'hitFeedback', tab: 'audio', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and drops you. Gentle: a softer flash and a shorter ring; your view never moves.', options: [['full', 'Full'], ['gentle', 'Gentle']], vr: true },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'masonSight', tab: 'rope', type: 'choice', label: 'Mason sight', desc: 'On: it sees your lantern and gives chase, and you cannot heal while it is close. Off: it hunts by sound alone.', options: [['on', 'On'], ['off', 'Off']] },
@@ -226,6 +230,8 @@ const SETTINGS_SCHEMA = [
   { key: 'gripMode', tab: 'assist', type: 'choice', label: 'Grip', desc: 'Hold: keep squeezing to hold on. Toggle: one squeeze grabs, the next lets go (and pulls your hand free of a hand in the wall).', options: [['hold', 'Hold'], ['toggle', 'Toggle']], vrNote: 'Grip toggle: one squeeze grabs, the next lets go.' },
   { key: 'ropeLatch', tab: 'assist', type: 'toggle', label: 'Rope latch', desc: 'Tap to fire a tether and stay attached, tap again to let go: the triggers and the mouse. Touch has its own Rope behaviour.', vrNote: 'Rope latch: tap to fire and stay on, tap again to let go.' },
   { key: 'weapons', tab: 'rope', type: 'toggle', label: "Soldiers' weapons", desc: 'Grenades and an old revolver lie by the dead soldiers. They hurt the Mason and drive it off for a while. Off: none are found.' },
+  // ITEM CARDS (itemCardGlue.js): on the Rope page in VR (eight rows at 64 px; the other VR pages are full)
+  { key: 'itemCards', tab: 'rope', type: 'toggle', label: 'Item cards', desc: 'Look at something lying on the ground: a small card names it and says what it does.' },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -4355,7 +4361,7 @@ export class UI3D {
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
     // six rows (Comfort since P6's Wind squalls, Display since Blood writing) still fit above the panel's foot: 80 px a row instead of 88
     const keyed = rows.filter((d) => d.key).length; // seven rows (Display since Living flame): 70 px, still above the panel's foot
-    const rowH = keyed > 6 ? 70 : keyed > 5 ? 80 : 88;
+    const rowH = keyed > 7 ? 64 : keyed > 6 ? 70 : keyed > 5 ? 80 : 88; // (eight: Rope since Item cards, 190 + 8 x 64 = 702)
     let y = 190;
     for (const def of rows) {
       if (def.type === 'link') {

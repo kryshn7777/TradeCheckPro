@@ -52,8 +52,9 @@ export function auxDue(frame, plan) {
 
 /**
  * The creature's light for this frame (pure). It is on while the Mason is out and aware of the player, within `reach`, fading in over the
- * last 30 % of the reach; brighter while it hunts or lunges, throbbing with its listening.
- * @param {{visible?: boolean, state?: string, dist?: number, listen?: number, time?: number}} c
+ * last 30 % of the reach; brighter while it hunts or lunges, throbbing with its listening; `flare` (0..1.2, MASON SNAKE ATTACK: a pulse on
+ * the LOCK, a flare on the STRIKE) adds up to +72 % candela (the same light, range and budget).
+ * @param {{visible?: boolean, state?: string, dist?: number, listen?: number, time?: number, flare?: number}} c
  * @param {{enabled: boolean, creatureReach: number}} plan  auxPlan(...)
  * @returns {{on: boolean, k: number, candela: number, range: number, color: number[], flicker: number}}
  */
@@ -68,10 +69,11 @@ export function creatureLightPlan(c, plan) {
   const k = Math.max(0, Math.min(1, (reach - d) / (reach * 0.3)));
   const boost = c.state === 'ATTACK' ? 1.5 : c.state === 'BURST' ? 1.3 : c.state === 'PURSUING' ? 1.1 : c.state === 'OBSERVING' ? 0.8 : 1;
   const listen = Math.max(0, Math.min(1, c.listen || 0));
+  const flare = Math.max(0, Math.min(1.2, c.flare || 0));
   return {
     on: k > 0.01,
     k,
-    candela: 9 * boost * (1 + 0.35 * listen) * k,
+    candela: 9 * boost * (1 + 0.35 * listen) * (1 + 0.6 * flare) * k,
     range: 11,
     color: [1.0, 0.24, 0.1],
     flicker: 0.35,

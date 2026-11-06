@@ -64,6 +64,11 @@ export const RULES = Object.freeze({
   noRecovery: R('[No recovery this close]', 'creature', 0, 'norecovery', 8),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
   skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
+  // MASON SNAKE ATTACK (masonAttackGlue.js 'mason:attack'): the coil's rattle, THE LOCK (the dodge deadline), the lunge, the dash
+  masonRattle: R('[STONE RATTLING]', 'creature', 1, 'mason-rattle', 4),
+  masonLock: R('[IT LOCKS ON]', 'creature', 2, 'mason-lock', 0.8, 1.6),
+  masonLunge: R('[LUNGE]', 'creature', 2, 'mason-lunge', 0.8, 1.6),
+  masonSurge: R('[IT SURGES]', 'creature', 2, 'surge', 2.5),
   skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
   skitBite: R('[A sharp bite]', 'creature', 2, 'skitstrike', 1.2),
   skitMiss: R('[Small jaws snap, missing]', 'creature', 1, 'skitstrike', 1.2),
@@ -157,6 +162,10 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'player:hit' and its ring ('hit:ring')
+  hit: R('[Hit]', 'player', 2, 'hit', 0.9),
+  hitRing: R('[High-pitched ringing]', 'player', 1, 'hitring', 2.5),
+  hitBite: R('[Skitterling bite]', 'creature', 2, 'skitstrike', 1.2),
 });
 
 /**
@@ -298,6 +307,8 @@ export function captionForEvent(type, p, head) {
       return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
     case 'creature:notice':
       return RULES.notice;
+    case 'mason:attack':
+      return e.phase === 'rise' || e.phase === 'stare' ? RULES.masonRattle : e.phase === 'lock' ? RULES.masonLock : e.phase === 'strike' ? RULES.masonLunge : e.phase === 'dash' ? RULES.masonSurge : null;
     case 'creature:near':
       return e.on ? RULES.noRecovery : null;
     case 'creature:step':
@@ -451,6 +462,10 @@ export function captionForEvent(type, p, head) {
       return e.stagger ? WEAPON_RULES.stagger : WEAPON_RULES.flee;
     case 'skitter:killed':
       return WEAPON_RULES.squish;
+    case 'player:hit':
+      return e.source === 'skitter' ? RULES.hitBite : RULES.hit;
+    case 'hit:ring':
+      return e.source === 'skitter' ? null : RULES.hitRing;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -505,6 +520,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:sighting',
   'creature:retreat',
   'creature:notice',
+  'mason:attack',
   'creature:near',
   'creature:step',
   'dresser:tick',
@@ -567,6 +583,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'grenade:blast',
   'creature:frighten',
   'skitter:killed',
+  'player:hit',
+  'hit:ring',
   ...SFX_CAPTION_EVENTS,
 ]);
 

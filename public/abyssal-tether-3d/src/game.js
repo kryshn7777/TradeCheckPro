@@ -58,8 +58,11 @@ import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
+import { ItemCardGlue } from './itemCardGlue.js'; // ITEM CARDS: the name card over the collectible you look at (plans/ITEM_CARDS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
+import { MasonAttackGlue } from './masonAttackGlue.js'; // MASON SNAKE ATTACK: the cobra pose, the light flare, the sounds (plans/MASON_SNAKE_ATTACK.md)
 import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
+import { HitFeedbackGlue } from './hitFeedbackGlue.js'; // HIT FEEDBACK: the red punch, the ring, the fall and the slow get-up (plans/HIT_FEEDBACK.md)
 import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
 import { newTrial, trialSeed } from './meta/trials.js';
 import { WeaponGlue, weaponDebug } from './weaponGlue.js'; // THE SOLDIERS' WEAPONS: the grenade + the service revolver (plans/SOLDIER_WEAPONS.md)
@@ -1179,6 +1182,8 @@ export class Game3D {
     this.focusBeat = null;
     this.hood = null; // THE HOOD (lanternHoodGlue.js -> sim/lanternHood.js): { on, k } the lantern covered; built with the bus
     this._hoodGlue = null;
+    this.hitFeedback = null; // HIT FEEDBACK (hitFeedbackGlue.js): what a hit looks, sounds and feels like; built with the bus
+    this.itemCards = null; // ITEM CARDS (itemCardGlue.js): the name card over the item looked at; its view is built on first use
     this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
     this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
@@ -1318,6 +1323,9 @@ export class Game3D {
     this._setupChase();
     this._setupHood();
     this._setupWeapons();
+    this._setupHitFeedback();
+    this._setupMasonAttack();
+    this._setupItemCards();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -5058,6 +5066,7 @@ export class Game3D {
     this._applyDeathCam();
     this._applyOpeningCam();
     this._applySpeedFov();
+    this._applyHitCam();
   }
 
   /**
@@ -5306,6 +5315,16 @@ export class Game3D {
     }
   }
 
+  /** ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): `game.itemCards`; a failure leaves the game without them. */
+  _setupItemCards() {
+    try {
+      this.itemCards = new ItemCardGlue(this);
+    } catch (err) {
+      this._fault('itemCards', err);
+      this.itemCards = null;
+    }
+  }
+
   /** THE CHASE ARC (chaseGlue.js, plans/CHASE_ARC.md): `game.chase` (its `arc`); a failure leaves the game without it. */
   _setupChase() {
     try {
@@ -5313,6 +5332,16 @@ export class Game3D {
     } catch (err) {
       this._fault('chase', err);
       this.chase = null;
+    }
+  }
+
+  /** MASON SNAKE ATTACK (masonAttackGlue.js, plans/MASON_SNAKE_ATTACK.md): `game.masonAttack`; a failure leaves the plain lunge. */
+  _setupMasonAttack() {
+    try {
+      this.masonAttack = new MasonAttackGlue(this);
+    } catch (err) {
+      this._fault('masonAttack', err);
+      this.masonAttack = null;
     }
   }
 
@@ -5325,6 +5354,25 @@ export class Game3D {
       this._fault('hood', err);
       this._hoodGlue = null;
       this.hood = null;
+    }
+  }
+
+  /** HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): `game.hitFeedback`; a failure leaves hits without the extra feedback. */
+  _setupHitFeedback() {
+    try {
+      this.hitFeedback = new HitFeedbackGlue(this);
+    } catch (err) {
+      this._fault('hitFeedback', err);
+      this.hitFeedback = null;
+    }
+  }
+
+  /** HIT FEEDBACK: the knocked-down eye drop / roll, after the rig is placed and the death / opening cams ran. */
+  _applyHitCam() {
+    try {
+      if (this.hitFeedback) this.hitFeedback.applyCam();
+    } catch (err) {
+      this._fault('hitFeedback', err);
     }
   }
 
@@ -5456,9 +5504,24 @@ export class Game3D {
       this._fault('puzzleFocus', err);
     }
     try {
+      if (this.itemCards) this.itemCards.update(dt); // ITEM CARDS: the gaze pick + the card (reads the pickups, the rig and the camera)
+    } catch (err) {
+      this._fault('itemCards', err);
+    }
+    try {
       if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
     } catch (err) {
       this._fault('chase', err);
+    }
+    try {
+      if (this.hitFeedback) this.hitFeedback.update(dt); // HIT FEEDBACK: before healthFx reads its punch / vignette / tick
+    } catch (err) {
+      this._fault('hitFeedback', err);
+    }
+    try {
+      if (this.masonAttack) this.masonAttack.update(dt); // MASON SNAKE ATTACK: the phase, the cobra pose for the view below, the sounds
+    } catch (err) {
+      this._fault('masonAttack', err);
     }
     this._updateReleaseGuide(dt);
     const fx = this.healthFx;
@@ -6570,6 +6633,10 @@ export class Game3D {
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
       // THE HOOD (sim/lanternHood.js): hood(true) covers the lantern, hood(false) uncovers it, hood(null) gives it back to the input;
       // returns { on, k, mode, lock, forced, stats }
+      // HIT FEEDBACK (hitFeedbackGlue.js): hit('mason' | 'skitter', down) a synthetic player:hit (+ the stand-in knock while the SIM's
+      // game.knock is missing or idle; no damage dealt); hitState() the punch, vignette, camera, knock and stats
+      hit: (source, down) => (this.hitFeedback ? this.hitFeedback.debugHit(source, down) : null),
+      hitState: () => (this.hitFeedback ? this.hitFeedback.debugState() : null),
       hood: (on) => {
         const h = this.hood;
         if (!h) return null;
@@ -6582,11 +6649,21 @@ export class Game3D {
         puzzles: () => (this.puzzleFocus ? this.puzzleFocus.debugPuzzles() : []),
         ready: () => !!(this.puzzleFocus && this.puzzleFocus.debugReady()),
       },
+      // ITEM CARDS (itemCardGlue.js): the gaze target, the card's name / hint and the view (visible, alpha, width, redraws)
+      itemCard: () => (this.itemCards ? this.itemCards.debugState() : null),
       // THE CHASE ARC (chaseGlue.js): state() the arc, start(dist) a chase now, lost() the release now (no 3 s settle)
       chase: {
         state: () => (this.chase ? this.chase.debugState() : null),
         start: (dist) => !!(this.chase && this.chase.debugStart(dist)),
         lost: () => !!(this.chase && this.chase.debugLost()),
+      },
+      // MASON SNAKE ATTACK: masonPhase('stalk'|'dash'|'rise'|'stare'|'lock'|'strike'|'recoil'|'cycle', u | {u, freeze}) forces the attack's look and
+      // sound (u holds it at 0..1; freeze holds the pose); masonPhase('') returns to the sim; masonPhase() reads the state.
+      masonPhase: (phase, o) => {
+        const ma = this.masonAttack;
+        if (!ma) return null;
+        if (phase === undefined) return ma.debugState();
+        return ma.debugPhase(phase, o) ? ma.debugState() : null;
       },
       comms: {
         state: () => {
