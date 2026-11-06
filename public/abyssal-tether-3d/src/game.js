@@ -53,6 +53,7 @@ import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { ObjectiveHint } from './sim/objectiveHint.js';
 import { CatchMoment } from './sim/catch3d.js'; // THE CATCH: the hit-stop on a lifesaving rope bite
 import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line transfers in the air
+import { RunHighlights } from './sim/runHighlights.js'; // RUN HIGHLIGHTS: the run's best moments for the death / victory cards
 import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
@@ -1398,6 +1399,7 @@ export class Game3D {
     this._setupDresserView();
     this._setupHoldfastView();
     this._setupComms();
+    this._setupHighlights();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -1882,6 +1884,17 @@ export class Game3D {
   }
 
   /** The player's body (jacket, harness, legs, boots; no head). Async GLB; a failure leaves the game without a body. */
+  /** RUN HIGHLIGHTS (sim/runHighlights.js): bus-driven, counts only while a run is under way; reset in start(). */
+  _setupHighlights() {
+    if (this.highlights) return;
+    try {
+      this.highlights = new RunHighlights(this.bus, () => this._inRun());
+    } catch (err) {
+      this._fault('highlights', err);
+      this.highlights = null;
+    }
+  }
+
   _setupBodyView() {
     const M = this.modules;
     if (this.bodyView || !M.bodyView || typeof M.bodyView.BodyView !== 'function' || !this.renderer) return;
@@ -2575,6 +2588,7 @@ export class Game3D {
     this.time = 0;
     this._runClock = 0;
     this.catchMoment.reset();
+    if (this.highlights) this.highlights.reset(); // RUN HIGHLIGHTS: a new run, new maxima (a death resets nothing)
     this.deaths = 0;
     this.victoryT = -1;
     this.gateClosed = false;
@@ -5274,6 +5288,8 @@ export class Game3D {
     } catch (err) {
       this._fault('fallPose', err);
     }
+    const hl = this.highlights; // RUN HIGHLIGHTS: top speed (no allocation)
+    if (hl && this.state === 'playing' && this.player && this.player.alive !== false) hl.sample(finiteOr(this.player.vx, 0), finiteOr(this.player.vy, 0), finiteOr(this.player.vz, 0));
     try {
       this._updateObjectiveHint(dt);
     } catch (err) {
@@ -6156,6 +6172,8 @@ export class Game3D {
         arc: () => Array.from(this._kn.arc.subarray(0, this._kn.n * 3)),
       },
       // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
+      // RUN HIGHLIGHTS (tests, QA): the run's maxima, its best() line and all() lines.
+      highlights: () => (this.highlights ? this.highlights.state() : null),
       jet: {
         state: () => {
           const j = this.jet;
