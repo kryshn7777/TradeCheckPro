@@ -34,6 +34,14 @@ player it can see:
   first after a respawn) is only a warning, no chase for `firstHold` s**, and **after a chase ends (lost, a rest, a refuge) it cannot
   commit again for `cooldown` s** (it searches by sound). Sandbox: no creature. `?sight=off` / the setting Off: the old gate (no passes).
 
+**Owner decision (2026-11-06): body sight + the leash wound (MASON_BODY_SIGHT_LEASH.md).** *"If it sees the player directly, it comes
+and attacks. If the player moves too far, it might escape, but it takes damage and comes back."* Within **`bodyRange` 12 / 14 / 16 m**
+in a clear line it sees your BODY whatever the lantern does (lit, hooded, empty): the hood and an empty lantern hide you only beyond
+it. A chase that ends up beyond **`leashFar` 39 / 49 / 60 m**, or whose memory runs out beyond **`leashLost` = sightRange**, is a
+leash escape: it is wounded (`hurt(1, 'leash')`, [It strains after you, then falls back]), withdraws and stays out of play for **12 /
+10 / 8 s**, then comes back hunting (gate on: a prowl pass at once) and needs a fresh notice. A line-of-sight break, the hood, a rest,
+a knocker still cost it nothing. The rules below read "the lantern shows" as "the lantern shows, or the body is within bodyRange".
+
 Code: `src/sim/masonSight.js` (the sense: sight, near, decoy), hooked into `src/sim/creature3d.js`; tests:
 `tools/abyssal-tether-3d/tests/creature/sight.mjs`.
 
@@ -44,7 +52,9 @@ Code: `src/sim/masonSight.js` (the sense: sight, near, decoy), hooked into `src/
 - the crown is within `sightRange` of the player (body centre);
 - a clear line (level.segmentBlocked, active solids, the last 0.3 m at your end ignored) from the crown or the 2nd front block to your
   head (eye height) or your torso, sampled every 0.1 s;
-- your **lantern shows**: charge > 0 and you are alive. An empty lantern (the floor glow only) is invisible to it;
+- your **lantern shows**: charge > 0 and you are alive. An empty lantern (the floor glow only) is invisible to it; **or your body is
+  within `bodyRange` (12 / 14 / 16 m), any lantern** (MASON_BODY_SIGHT_LEASH.md; `sight.by` 'light' | 'body', the caption
+  [It sees you] for a body notice);
 - nothing rules sight out: a Masons' rest (refuge 1) or the S5 lure niche (refuge 2: the keystone rules stay exactly as they were), the
   S4 staged sighting, an objective override (the S7 escape is already a chase), being out of play (between prowl passes), a live decoy
   (below), the game saying the view is blocked (not `playing`, cutscenes), `?sight=off`, the Settings > Rope > **Mason sight** = Off,
@@ -82,6 +92,8 @@ word and the VR wrist badge read **NO RECOVERY** in red. Falls, walls, hazards, 
 | | Normal | Nightmare | Abyss |
 |---|---|---|---|
 | `sightRange` (m) | 30 | 38 | 46 |
+| `bodyRange` (m, the body, any lantern; MASON_BODY_SIGHT_LEASH.md) | 12 | 14 | 16 |
+| `leashFar` / `leashLost` (m) / `heal` (s) | 39 / 30 / 12 | 49 / 38 / 10 | 60 / 46 / 8 |
 | notice commit (s of continuous sight) | 0.5 | 0.5 | 0.5 |
 | `firstHold`: the section's first notice is a warning only (s) | 8 | 8 | 6 |
 | `pursueMul` (x the pursue speed) | 1.0 | 1.0 | 1.05 |
@@ -105,8 +117,11 @@ kill radius) reaches 8.7 m on Normal, just past it. Shared: line of sight sample
 - **Break the line within 0.5 s** of the knock / roar / [It sees your light]: step behind a pillar or a buttress, drop under a ledge
   lip or a floor, swing round the shaft's corner. It does not commit.
 - **A Masons' rest** (refuge 1): it cannot see you there; the chase drops at once; it holds at its stalking distance and listens.
-- **Douse your light**: an empty lantern is invisible to it (the lantern burns down by itself; the game has no off switch for it).
-- **Hood your light** (LANTERN_HOOD.md): a covered lantern is invisible to it too (it still hears you).
+- **Douse your light**: an empty lantern is invisible to it beyond `bodyRange` (the lantern burns down by itself; the game has no off
+  switch for it). Up close (12 / 14 / 16 m) it sees your body anyway.
+- **Hood your light** (LANTERN_HOOD.md): a covered lantern hides you too, from afar (beyond `bodyRange`; it still hears you).
+- **Outrun it** past the leash (39 / 49 / 60 m, or out of every sense when its memory runs out): it tears itself on the stone, falls
+  back for 12 / 10 / 8 s, then comes back (MASON_BODY_SIGHT_LEASH.md).
 - **Out-move it**: the slow chase is 5.2 / 6.4 / 8.6 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17),
   swing and fall far faster. But once it has seen you it DASHES (14 / 16 / 18.5 m/s for up to 2.5 s): the dash is meant to catch you.
   What saves you then is the **dodge** (MASON_STRIKES.md): it rears up, the aim locks where you stand, and anything that moves you more
@@ -175,8 +190,8 @@ built on the hunt gate's withdraw (shared with the parallel Flare work): `Creatu
 - Settings > Rope > **Mason sight** (`masonSight`: `'on'` default | `'off'`).
 - `new Creature3D(level, diff, bus, { sight: false })` for tools; `creature.setSight(on, lit, blocked)` per frame (game.js);
   `creature.sight` / `creature.decoy` read-outs.
-- `AT3D.debug.creature.sight(force?)`: the state (sees, noticing, chasing, lost, near, nearDist, noRecovery, the numbers, the decoy, the
-  stats); `force` `'see'` (always seen when eligible) | `'blind'` | `''`. `AT3D.debug.creature.distract(x, y, z, opts)`.
+- `AT3D.debug.creature.sight(force?)`: the state (sees, by ('light' | 'body'), noticing, chasing, lost, near, nearDist, noRecovery,
+  wound (the leash wound's heal s left), leashWounds, the numbers, the decoy, the stats); `force` `'see'` (always seen when eligible) | `'blind'` | `''`. `AT3D.debug.creature.distract(x, y, z, opts)`.
 
 ## Cost
 

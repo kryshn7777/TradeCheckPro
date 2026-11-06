@@ -24,6 +24,10 @@
  *   ends it is WISE for `wise` s: a new decoy lasts half as long and its listen turn is shorter; a knocker it has inspected is
  *   ignored while wise.
  *
+ *   BODY + LEASH (MASON_BODY_SIGHT_LEASH.md): within `bodyRange` it also sees your BODY (any lantern, the same line-of-sight test);
+ *   `sight.by` reads 'light' | 'body'. A chase that ends up beyond `leashFar`, or whose memory runs out beyond `leashLost`, is a leash
+ *   escape: Creature3D._leashWound (hurt 'leash', withdraw, heal, return).
+ *
  * Deterministic (no Math.random, no clock but dt), allocation-free per frame (event payloads only on the rare events), Node-safe.
  */
 
@@ -35,12 +39,20 @@ import { CONFIG } from './config3d.js';
  *   cooldown   after a chase ends (lost, a rest, a refuge, a decoy) it cannot commit again for this long (it searches by sound)
  *   prowl      the hunt gate (health) no longer keeps it away: while you are well it makes PASSES through a hunting section, in play but
  *              harmless until it sees you: the first `first` s after a section entry / respawn, then every gapMin..gapMax s, `dur` s each
+ * MASON_BODY_SIGHT_LEASH.md:
+ *   bodyRange  it sees your BODY this close in a clear line whatever the lantern does (lit, hooded, empty); beyond it only the light shows
+ *   leashFar   a chase that ends up this far from you is a leash escape (1.3 x sightRange): it is wounded and falls back
+ *   leashLost  ... and so is a chase whose memory runs out while you are farther than this (= sightRange: beyond every sense it has)
+ *   heal       s the leash wound keeps it out of play (its own timer: not the weapons' fright, not their diminishing window)
  */
 export const SIGHT_TUNE = {
-  normal: { sightRange: 30, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 8, decoyOverride: 5, hearRange: 60, firstHold: 8, cooldown: 20, prowl: { first: 20, gapMin: 50, gapMax: 80, dur: 30 } },
-  nightmare: { sightRange: 38, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 9.5, decoyOverride: 6, hearRange: 66, firstHold: 8, cooldown: 18, prowl: { first: 16, gapMin: 40, gapMax: 65, dur: 35 } },
-  abyss: { sightRange: 46, notice: 0.5, pursueMul: 1.05, memory: 4, lethalNear: 11, decoyOverride: 7, hearRange: 72, firstHold: 6, cooldown: 14, prowl: { first: 12, gapMin: 30, gapMax: 50, dur: 40 } },
+  normal: { sightRange: 30, bodyRange: 12, leashFar: 39, leashLost: 30, heal: 12, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 8, decoyOverride: 5, hearRange: 60, firstHold: 8, cooldown: 20, prowl: { first: 20, gapMin: 50, gapMax: 80, dur: 30 } },
+  nightmare: { sightRange: 38, bodyRange: 14, leashFar: 49, leashLost: 38, heal: 10, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 9.5, decoyOverride: 6, hearRange: 66, firstHold: 8, cooldown: 18, prowl: { first: 16, gapMin: 40, gapMax: 65, dur: 35 } },
+  abyss: { sightRange: 46, bodyRange: 16, leashFar: 60, leashLost: 46, heal: 8, notice: 0.5, pursueMul: 1.05, memory: 4, lethalNear: 11, decoyOverride: 7, hearRange: 72, firstHold: 6, cooldown: 14, prowl: { first: 12, gapMin: 30, gapMax: 50, dur: 40 } },
 };
+
+/** MASON_BODY_SIGHT_LEASH.md, shared: the wound a leash escape deals (hurt(amount, 'leash')). */
+export const LEASH = Object.freeze({ amount: 1 });
 
 /** Shared numbers. */
 export const SIGHT_COMMON = Object.freeze({
@@ -79,9 +91,9 @@ export class MasonSense {
     this.lit = true;
     this.blocked = false;
     /** Public read-out (debug / view / tests). */
-    this.sight = { on: true, eligible: false, sees: false, notice: 0, noticing: false, chasing: false, lost: 0, lkx: 0, lky: 0, lkz: 0, near: false, nearDist: 1e9, forced: '' };
+    this.sight = { on: true, eligible: false, sees: false, notice: 0, noticing: false, chasing: false, lost: 0, lkx: 0, lky: 0, lkz: 0, near: false, nearDist: 1e9, forced: '', by: '' };
     this.decoy = { live: false, x: 0, y: 0, z: 0, left: 0, phase: '', t: 0, turn: 0, wise: false, travel: 0, best: 1e9, bestT: 0 };
-    this.stats = { notices: 0, chases: 0, lost: 0, decoys: 0, inspected: 0, timeouts: 0, overridden: 0, refused: 0, nearTime: 0 };
+    this.stats = { notices: 0, chases: 0, lost: 0, decoys: 0, inspected: 0, timeouts: 0, overridden: 0, refused: 0, nearTime: 0, leashes: 0 };
     this.flare = 0;
     this.wiseT = 0;
     this._kx = 0;
@@ -110,6 +122,7 @@ export class MasonSense {
     s.lost = 0;
     s.near = false;
     s.nearDist = 1e9;
+    s.by = '';
     this.decoy.live = false;
     this.decoy.phase = '';
     this.flare = 0;
@@ -183,7 +196,7 @@ export class MasonSense {
     // `canSee`: it can see you at all; `eligible`: it can also notice / commit (not resting). While it rests or cools down it still
     // SEES you (s.sees: the hunt gate keeps its scent window full: health does not send away a Mason that is looking at you).
     const canSee =
-      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && s.forced !== 'blind' && !(c._frightT > 0); // (frightened: SOLDIER_WEAPONS.md)
+      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && s.forced !== 'blind' && !(c._frightT > 0) && !(c._woundT > 0); // (frightened: SOLDIER_WEAPONS.md; leash-wounded)
     const eligible = canSee && !resting;
     s.eligible = eligible;
     if (d.live && !decoyHolds) this.endDecoy('overridden'); // walked up to it: the decoy no longer holds it
@@ -195,6 +208,7 @@ export class MasonSense {
     }
     if (!canSee) {
       s.sees = false;
+      s.by = '';
       this._vis = false;
       return;
     }
@@ -203,7 +217,11 @@ export class MasonSense {
     this._losT -= dt;
     if (this._losT <= 0) {
       this._losT = SIGHT_COMMON.losEvery;
-      this._vis = s.forced === 'see' || (this.lit && pd <= this.tune.sightRange && this._los(player));
+      // the light (lit, within sightRange) or the BODY (within bodyRange, any lantern): one line-of-sight test (MASON_BODY_SIGHT_LEASH.md)
+      const light = this.lit && pd <= this.tune.sightRange;
+      const body = pd <= this.tune.bodyRange;
+      this._vis = s.forced === 'see' || ((light || body) && this._los(player));
+      s.by = this._vis ? (light || s.forced === 'see' ? 'light' : 'body') : '';
     }
     s.sees = this._vis;
     if (!eligible) return;
@@ -225,7 +243,7 @@ export class MasonSense {
           if (this._noticeCd <= 0) {
             this._noticeCd = SIGHT_COMMON.noticeCd;
             this.stats.notices++;
-            c._emit('creature:notice', { x: c.x, y: c.y, z: c.z, distance: pd, commit: this.tune.notice });
+            c._emit('creature:notice', { x: c.x, y: c.y, z: c.z, distance: pd, commit: this.tune.notice, by: s.by });
           }
         }
         s.notice += dt;
@@ -233,11 +251,16 @@ export class MasonSense {
       }
     } else if (s.chasing) {
       s.lost += dt;
-      if (s.lost >= this.tune.memory) this._drop(true);
+      if (s.lost >= this.tune.memory) {
+        // MASON_BODY_SIGHT_LEASH.md: lost beyond every sense it has (to distance, not to a wall or the hood): a leash escape
+        if (pd > this.tune.leashLost) this._leash(pd);
+        else this._drop(true);
+      }
     } else {
       s.noticing = false; // the notice needs continuous sight
       s.notice = 0;
     }
+    if (s.chasing && pd > this.tune.leashFar) this._leash(pd); // the player got too far away: a leash escape
     const was = s.near;
     s.near = s.chasing && c.lethal && nd <= this.tune.lethalNear;
     if (s.near) this.stats.nearTime += dt;
@@ -275,7 +298,7 @@ export class MasonSense {
     c._emit('creature:sight', { on: true, x: c.x, y: c.y, z: c.z, distance: pd });
   }
 
-  _drop(memoryOut, cool = true) {
+  _drop(memoryOut, cool = true, reason = '') {
     const s = this.sight;
     const c = this.c;
     s.chasing = false;
@@ -285,7 +308,27 @@ export class MasonSense {
     s.near = false;
     if (cool) this._coolT = this.tune.cooldown; // it searches by sound for a while before it can commit again (not after a decoy)
     if (memoryOut) this.stats.lost++;
-    c._emit('creature:sight', { on: false, x: c.x, y: c.y, z: c.z, distance: c.distance, reason: memoryOut ? 'lost' : 'blocked' });
+    c._emit('creature:sight', { on: false, x: c.x, y: c.y, z: c.z, distance: c.distance, reason: reason || (memoryOut ? 'lost' : 'blocked') });
+  }
+
+  /**
+   * MASON_BODY_SIGHT_LEASH.md: the chase ends because the player got too far (beyond leashFar, or its memory ran out beyond leashLost).
+   * A scripted beat: a plain 'lost' drop (with its cooldown), no wound. Otherwise the chase drops with reason 'leash' and NO cooldown
+   * (the wound is the cost) and the creature takes the wound (Creature3D._leashWound: hurt, withdraw, heal, return).
+   */
+  _leash(pd) {
+    const c = this.c;
+    if (c.scriptedNow) {
+      c.stats.leashSkips++;
+      this._drop(true);
+      return;
+    }
+    this.stats.leashes++;
+    this._drop(false, false, 'leash');
+    this._vis = false;
+    this.sight.sees = false;
+    this.sight.by = '';
+    c._leashWound(pd);
   }
 
   // ---- the decoy (knocker) ----------------------------------------------------------------------------------------------------

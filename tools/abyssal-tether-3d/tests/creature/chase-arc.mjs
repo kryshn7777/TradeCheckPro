@@ -226,6 +226,7 @@ function rig() {
   const s0 = ev.filter((e) => e.type === 'start').length;
   step(60 * 2);
   c.setSight(true, false, false); // the lantern goes dark: it cannot see you any more
+  c.sense.tune = Object.assign({}, SIGHT_TUNE.normal, { bodyRange: -1 }); // (the lantern rule alone: up close it would see the body, MASON_BODY_SIGHT_LEASH.md)
   step(60 * (SIGHT_TUNE.normal.memory + CHASE.merge + 2));
   const starts = ev.filter((e) => e.type === 'start').length;
   const lost = ev.filter((e) => e.type === 'lost');

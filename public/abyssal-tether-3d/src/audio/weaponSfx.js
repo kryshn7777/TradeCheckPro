@@ -13,6 +13,7 @@
  *   creature:frighten 'mason.pain'      the Mason's pained screech (a stone-throated shriek sweeping down) + 'mason.flee'
  *                                       the withdrawing rumble: masonry grinding away, many limbs scraping, falling off     world
  *                    (a stagger: the screech alone, shorter)
+ *   creature:leash   'mason.pain' + 'mason.flee' (MASON_BODY_SIGHT_LEASH.md: you outran it; it tears itself and falls back)  world
  *   skitter:killed   'skitter.squish'   a wet crunch: the carapace cracking and what is inside it                           world
  * registerWeaponSfx(audio) adds the recipes and the routes through the engine's extension points (audio3d.js registerSfx /
  * registerSfxRoute); without the engine (no audio, a test double) it does nothing. Node-importable.
@@ -177,6 +178,16 @@ export const WEAPON_ROUTES = F({
     const o2 = E.opts();
     place(o2, p);
     o2.delay = 0.35;
+    E.play('mason.flee', 0.5, o2);
+  },
+  // MASON_BODY_SIGHT_LEASH.md: you outran it: it strains after you and tears itself on the stone (the same pained screech + the rumble)
+  'creature:leash'(p, E) {
+    const o = E.opts();
+    if (!place(o, p)) return;
+    E.play('mason.pain', 0.85, o);
+    const o2 = E.opts();
+    place(o2, p);
+    o2.delay = 0.45;
     E.play('mason.flee', 0.5, o2);
   },
   'skitter:killed'(p, E) {

@@ -65,7 +65,7 @@
 
 import { U } from './config3d.js';
 import { surfaceNavFor } from './creatureNav.js';
-import { MasonSense } from './masonSight.js'; // MASON_SIGHT.md: sight -> chase, the near no-recovery radius, the knocker decoy
+import { MasonSense, LEASH } from './masonSight.js'; // MASON_SIGHT.md: sight -> chase, the near no-recovery radius, the knocker decoy
 import { strikeTune, cadenceInterval, segDist, STRIKE_COMMON, STRIKE_DAMAGE } from './strikeZone.js'; // MASON_STRIKES.md
 
 const TAU = Math.PI * 2;
@@ -720,7 +720,7 @@ export class Creature3D {
     if (this._hurt || this.sense.sight.chasing || (this.sense.sight.sees && this._holdT > 0)) this._holdT = T.huntHold;
     else if (this._holdT > 0) this._holdT -= dt;
     const armed = this._override != null || this._holdT > 0;
-    if (!armed && !this._armed && !this._withdraw && !(this._frightT > 0)) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you); not while frightened (SOLDIER_WEAPONS.md)
+    if (!armed && !this._armed && !this._withdraw && !(this._frightT > 0) && !(this._woundT > 0)) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you); not while frightened (SOLDIER_WEAPONS.md)
     if (armed === this._armed) return;
     this._armed = armed;
     this._prowling = false;
@@ -973,7 +973,10 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0, hurts: 0, frights: 0, staggers: 0, heardShots: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0, hurts: 0, frights: 0, staggers: 0, heardShots: 0, leashWounds: 0, leashSkips: 0 };
+    // MASON_BODY_SIGHT_LEASH.md: the leash wound's heal timer (> 0: it is out of play, healing; its own clock, not the fright's)
+    this._woundT = 0;
+    this._woundDur = 0;
     // SOLDIER_WEAPONS.md: hurt / frighten (the grenade, the revolver). Inert until one of them is called (the old behaviour bit for bit).
     this._frightT = 0; // > 0: frightened: it withdraws, then stays out of play (no hunt, no prowl) for this long
     this._frightDur = 0; // the length of the current fright (read-out)
@@ -1018,8 +1021,9 @@ export class Creature3D {
     }
     // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
     if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
-    // SOLDIER_WEAPONS.md: frightened, every hunting mode is the unseen dormant one until the fright is over (a scripted beat only staggers it)
-    else if (this._frightT > 0 && LETHAL_MODES[c.mode]) {
+    // SOLDIER_WEAPONS.md: frightened, every hunting mode is the unseen dormant one until the fright is over (a scripted beat only staggers it);
+    // MASON_BODY_SIGHT_LEASH.md: the same while a leash wound heals
+    else if ((this._frightT > 0 || this._woundT > 0) && LETHAL_MODES[c.mode]) {
       c.mode = 'dormant';
       c.lethal = false;
     }
@@ -1203,6 +1207,56 @@ export class Creature3D {
     return this.wounds;
   }
 
+  /** MASON_BODY_SIGHT_LEASH.md: s left before a leash wound heals (0: none) and that wound's length. */
+  get woundHeal() {
+    return this._woundT > 0 ? this._woundT : 0;
+  }
+
+  /**
+   * MASON_BODY_SIGHT_LEASH.md: the player escaped beyond the leash (the sense calls this; never in a scripted beat). It strains against
+   * the stone and tears itself: 'creature:leash' {x,y,z,distance,heal} (the pained screech + the withdrawing rumble, a caption), a wound
+   * through hurt(LEASH.amount, 'leash'), the recoil and the withdraw climb (harmless), then out of play for `heal` s on its OWN timer (not
+   * the fright: the weapons' diminishing window is untouched). It lost your scent (the gate's hold is cleared). _woundEnd brings it back.
+   */
+  _leashWound(distance) {
+    if (this.v || !this.active) return;
+    const heal = this.sense.tune.heal;
+    this.stats.leashWounds++;
+    this._woundT = heal;
+    this._woundDur = heal;
+    this._holdT = 0;
+    this._prowling = false;
+    if (this.sense.decoy.live) this.sense.endDecoy('overridden');
+    this._emit('creature:leash', { x: this.x, y: this.y, z: this.z, distance: num(distance, this.distance), heal });
+    this.hurt(LEASH.amount, 'leash');
+    if (this.inPlay) {
+      // the recoil, then the hunt gate's withdraw climb (RECOVERING steering, up and away), harmless, out of play once far
+      this._fleeing = true;
+      this._withdraw = true;
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+      this.staring = false;
+      this.burstCommit = false;
+      if (this.state !== S.RECOVERING) this._setState(S.RECOVERING);
+      this.stateTime = 0;
+    }
+  }
+
+  /** The leash wound has healed: back to the section's behaviour (gate off: from above, hunting; gate on: a prowl pass at once). */
+  _woundEnd(player) {
+    this._woundT = 0;
+    this._emit('creature:leash:end', { x: this.x, y: this.y, z: this.z });
+    if (this._frightT > 0) return; // still frightened: the fright's end brings it back
+    this._fleeing = false;
+    if (this._gate && this._prowlTune()) this._prowlT = 0; // the next pass now, not after the long gap
+    const lv = this.level;
+    const si = this.sectionIndex;
+    if (!this.victory && player && lv && lv.sections && si >= 0 && lv.sections[si]) this.setSection(si, lv.sections[si], player);
+  }
+
   /**
    * A shot that did not hit it, fired from (x, y, z): LOUD. In play within FRIGHT.hearRange of the crown it wakes to the shooter (sound,
    * not sight): a live decoy ends, it stops listening / creeping, it counts the shooter as moving and pursues, annoyed (faster for a
@@ -1362,6 +1416,7 @@ export class Creature3D {
     this._annoyCd = 0;
     this.sense.reset(); // MASON_SIGHT.md: a respawn forgets the chase and the decoy
     this._frightT = 0; // SOLDIER_WEAPONS.md: ... and a fright (the diminishing memory stays)
+    this._woundT = 0; // MASON_BODY_SIGHT_LEASH.md: ... and a healing leash wound (the stats stay)
     this._fleeing = false;
     if (this.victory) return;
     const lv = this.level;
@@ -1513,6 +1568,10 @@ export class Creature3D {
     if (this._frightT > 0) {
       this._frightT -= dt; // SOLDIER_WEAPONS.md: the fright runs out: back to the section's behaviour (it arrives from above as a hunt would)
       if (this._frightT <= 0) this._frightEnd(player);
+    }
+    if (this._woundT > 0) {
+      this._woundT -= dt; // MASON_BODY_SIGHT_LEASH.md: the leash wound heals: it comes back to hunt
+      if (this._woundT <= 0) this._woundEnd(player);
     }
     if (!this.victory) this.sense.update(dt, player); // MASON_SIGHT.md: sight first (a chase keeps the gate's scent hold full)
     if (this._gate && !this.victory) this._updateGate(dt, player);
