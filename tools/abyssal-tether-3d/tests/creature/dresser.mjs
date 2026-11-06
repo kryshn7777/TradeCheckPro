@@ -436,7 +436,7 @@ for (const [diff, gap] of [
   const L = new Level3D(LEVEL_DATA_3D, 'normal');
   const bus = new EventBus();
   const h = new Health3D(D, bus);
-  const c = new Creature3D(L, D, bus, { seed: 9 });
+  const c = new Creature3D(L, D, bus, { seed: 9, sight: false }); // the blind gate (MASON_SIGHT: a Mason that sees you keeps hunting; sight.mjs)
   c.setHuntGate(true);
   const d = new Dresser3D(L, D, bus, { seed: 9 });
   d.setGate(true);

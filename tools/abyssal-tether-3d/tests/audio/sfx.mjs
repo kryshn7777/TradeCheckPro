@@ -383,7 +383,7 @@ function rig() {
   };
   try {
     R.run(1);
-    ok(R.audio._sfx && !R.audio._sfx.broken && Object.keys(R.audio._sfx.recipes).length === ids.length, 'the manager builds the designed engine with every recipe');
+    ok(R.audio._sfx && !R.audio._sfx.broken && ids.every((id) => id in R.audio._sfx.recipes) && Object.keys(R.audio._sfx.recipes).length === ids.length + 1 && 'creature.notice' in R.audio._sfx.recipes, 'the manager builds the designed engine with every recipe (+ creature.notice, registered by MASON_SIGHT through registerSfx)');
     R.bus.emit('grapple:attach', { hand: 'right', speed: 9, x: 3, y: 5, z: -4, anchor: { kind: 'surface', solid: { kind: 'metal' }, x: 3, y: 5, z: -4 } });
     ok(R.alive((n) => n === 'hook.metal') === 1 && R.alive((n) => n === 'attach') === 0, 'grapple:attach plays hook.metal at the anchor and not the legacy clank');
     ok(R.alive((n) => n === 'catch') >= 0, 'the legacy body-catch thunk still plays under it');

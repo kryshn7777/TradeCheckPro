@@ -72,6 +72,7 @@ export class WristVitals {
     this._parent = null;
     this._pct = -1;
     this._state = '';
+    this._nr = false;
     this._pulseAt = 0;
     this.stats = { shown: false, pct: -1, redraws: 0 };
   }
@@ -113,9 +114,11 @@ export class WristVitals {
     const alive = !(g.player && g.player.alive === false);
     const st = vitalsState(hp, alive);
     const pct = vitalsPercent(alive ? hp : 0);
+    const nr = alive && !!(g.health && g.health.noRecovery); // MASON_SIGHT.md: the chasing Mason is near, nothing heals
     this._pulseAt += dt;
     const pulse = st === 'low' && this._pulseAt > 0.125;
-    if (pct !== this._pct || st !== this._state || pulse) {
+    if (pct !== this._pct || st !== this._state || pulse || nr !== this._nr) {
+      this._nr = nr;
       if (pulse) this._pulseAt = 0;
       this._pct = pct;
       this._state = st;
@@ -154,11 +157,20 @@ export class WristVitals {
     ctx.font = '700 40px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
     ctx.textAlign = 'left';
     ctx.fillText(st === 'dead' ? '' : '%', W - 54, 92);
-    // the bar
-    ctx.globalAlpha = 0.45;
-    ctx.fillRect(14, H - 24, W - 28, 10);
-    ctx.globalAlpha = beat;
-    ctx.fillRect(14, H - 24, Math.max(0, (W - 28) * (pct / 100)), 10);
+    if (this._nr) {
+      // MASON_SIGHT.md: the chasing Mason is near, nothing heals: NO RECOVERY in red where the bar was
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = COLORS.low;
+      ctx.font = '800 24px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('NO RECOVERY', W / 2, H - 10);
+    } else {
+      // the bar
+      ctx.globalAlpha = 0.45;
+      ctx.fillRect(14, H - 24, W - 28, 10);
+      ctx.globalAlpha = beat;
+      ctx.fillRect(14, H - 24, Math.max(0, (W - 28) * (pct / 100)), 10);
+    }
     ctx.globalAlpha = 1;
     this.texture.needsUpdate = true;
     this.stats.redraws++;

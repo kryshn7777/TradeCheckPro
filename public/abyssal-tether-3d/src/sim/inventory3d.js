@@ -141,6 +141,7 @@ export class Inventory3D {
     if (kind === ITEM.FIRST_AID || kind === ITEM.BANDAGE) {
       if (!health || health.dead) return 'dead';
       if (health.hp >= B.fullHp) return 'full';
+      if (health.noRecovery) return 'norecovery'; // MASON_SIGHT.md: the chasing Mason is near
     } else if (kind === ITEM.ADRENALINE) {
       if (this.adrenaline.active) return 'active';
     } else if (this.lanternCharge >= 1 - B.batteryRestore * 0.2) {
@@ -203,6 +204,7 @@ export class Inventory3D {
     if (a.active) {
       if (health && health.dead) this.cancel('dead');
       else if (health && health.hits !== a.hits) this.cancel('damage');
+      else if (health && health.noRecovery && B.heal[a.kind] > 0 && a.kind !== ITEM.ADRENALINE) this.cancel('norecovery'); // the item is kept
       else {
         a.t += dt;
         if (a.t >= a.dur - 1e-9) this._complete(health);

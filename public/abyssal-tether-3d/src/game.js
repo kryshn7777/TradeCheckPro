@@ -274,6 +274,15 @@ function huntAlways() {
   }
 }
 
+/** MASON_SIGHT.md: `?sight=off` turns the Mason's sight-chase and the near no-recovery rule off (the e2e and the route bots); the knocker decoy still works. */
+function sightOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]sight=off\b/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * THE DRESSER: `?dresser=off` disables it (sim and view); `?dresser=always` turns its health gate off (it hunts whatever your
  * health: captures, tests). `?hunt=always` (the Mason ungated: the e2e and the capture tools) leaves the Dresser out unless a
@@ -2229,7 +2238,7 @@ export class Game3D {
     });
     bus.on('bag:refuse', (e) => {
       if (!this._inRun() || !e) return;
-      const why = { empty: 'None left', full: e.kind === ITEM.BATTERY ? 'Lantern is charged' : 'Nothing to heal', active: 'Already boosted', busy: 'Already applying', dead: '' }[e.reason];
+      const why = { empty: 'None left', full: e.kind === ITEM.BATTERY ? 'Lantern is charged' : 'Nothing to heal', active: 'Already boosted', busy: 'Already applying', dead: '', norecovery: 'No recovery this close' }[e.reason];
       if (why) this._toast(why, 1.3);
     });
     bus.on('lantern:low', () => {
@@ -2252,7 +2261,7 @@ export class Game3D {
     });
     bus.on('checkpoint', () => {
       const h = this.health;
-      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
+      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true, true); // reaching a checkpoint patches you up (even with the Mason near)
       if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
       if (this.hintWave) this.hintWave.progress(); // a checkpoint is progress: the blip-wave ladder restarts
     });
@@ -4597,7 +4606,11 @@ export class Game3D {
       if (typeof c.setRefuge === 'function') c.setRefuge(rk, rb);
       if (this.skitters && typeof this.skitters.setRefuge === 'function') this.skitters.setRefuge(rk, rb);
       if (typeof c.setHurt === 'function') c.setHurt(!!(this.health && this.health.low && this.state === 'playing'));
+      // MASON_SIGHT.md: it sees the lantern-bearer (on: ?sight=off / the masonSight setting; lit: the lantern has charge; blocked: not playing)
+      const sightOn = !sightOff() && !(this.settings && this.settings.masonSight === 'off');
+      if (typeof c.setSight === 'function') c.setSight(sightOn, !!(this.bag && this.bag.lanternCharge > 0), this.state !== 'playing' || !this.player.alive);
       c.update(dt, this.player, this._runClock);
+      if (this.health) this.health.noRecovery = !!(sightOn && c.sight && c.sight.near && this.state === 'playing' && this.player.alive); // no healing while it is near
       if (this._nookPulseT > 0) {
         this._nookPulseT -= dt;
         if (this._nookPulseT <= 0 && this._inRun()) this._hapticBoth(0.3, 40);
@@ -6007,6 +6020,17 @@ export class Game3D {
           view: this.skitterView ? this.skitterView.debug.state() : null,
         }),
         view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
+        // MASON_SIGHT.md: sight(force) reads the sight / near / decoy state; force 'see' | 'blind' | '' (the sim decides) first when given.
+        // distract(x, y, z, opts) is the knocker's entry point (the gadget calls Creature3D.distract itself).
+        sight: (force) => {
+          const c = this.creature;
+          if (!c || !c.sense) return null;
+          if (force !== undefined) c.sense.force(force);
+          const s = c.sight;
+          const d = c.decoy;
+          return { on: s.on, off: sightOff(), setting: this.settings ? this.settings.masonSight : '', eligible: s.eligible, sees: s.sees, noticing: s.noticing, notice: s.notice, chasing: s.chasing, lost: s.lost, near: s.near, nearDist: s.nearDist, forced: s.forced, noRecovery: !!(this.health && this.health.noRecovery), tune: c.sense.tune, decoy: { live: d.live, phase: d.phase, left: d.left, wise: c.sense.wiseT > 0 }, stats: Object.assign({}, c.sense.stats), state: c.state, lethal: c.lethal, inPlay: c.inPlay };
+        },
+        distract: (x, y, z, o) => (this.creature && typeof this.creature.distract === 'function' ? this.creature.distract(x, y, z, o) : false),
       },
       // THE DRESSER (tests, QA, screenshots): state(); place({az, dy, state}) puts it on the wall the ray from you at azimuth az
       // (radians, atan2(dz, dx)) and height dy meets, facing you; measure() starts a measure on your loaded ring now.

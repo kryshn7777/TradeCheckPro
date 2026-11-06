@@ -59,6 +59,9 @@ export const RULES = Object.freeze({
   callFar: R('[A distant call]', 'creature', 1, 'call', 3),
   vast: R('[Something vast passes]', 'creature', 1, 'sighting', 4, 4),
   retreat: R('[It withdraws]', 'creature', 0, 'retreat', 4),
+  // MASON_SIGHT.md: it sees your light (the notice beat), and the near radius where nothing heals
+  notice: R('[It sees your light]', 'creature', 2, 'notice', 3),
+  noRecovery: R('[No recovery this close]', 'creature', 0, 'norecovery', 8),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
   skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
   skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
@@ -264,6 +267,10 @@ export function captionForEvent(type, p) {
       return RULES.retreat;
     case 'hint:wave:pass':
       return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
+    case 'creature:notice':
+      return RULES.notice;
+    case 'creature:near':
+      return e.on ? RULES.noRecovery : null;
     case 'creature:step':
       return finite(e.intensity) && e.intensity > 0.5 && (!finite(e.distance) || e.distance < 38) ? RULES.steps : null;
     case 'dresser:tick':
@@ -456,6 +463,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:call',
   'creature:sighting',
   'creature:retreat',
+  'creature:notice',
+  'creature:near',
   'creature:step',
   'dresser:tick',
   'dresser:hum',

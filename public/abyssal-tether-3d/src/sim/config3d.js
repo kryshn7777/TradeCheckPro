@@ -327,6 +327,7 @@ export const SETTINGS_DEFAULTS = {
   // PUZZLE FOCUS (puzzleFocusGlue.js, plans/PUZZLE_FOCUS.md): at a puzzle a line suggests it and the view glances at it. 'auto' (desktop / touch
   // glance + the cues; a headset never turns: cues only) | 'cues' (the line, the glow and the ping; never turns the view) | 'off'. `?focus=` overrides.
   puzzleFocus: 'auto',
+  masonSight: 'on', // MASON_SIGHT.md: 'on' | 'off' the Mason sees the lantern-bearer and chases; off = the blind sound hunt (no near no-recovery rule)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
   openingCinematic: true, // THE LANTERN's opening film when a new descent begins from the menu (Esc skips it; hold to skip); was storyIntro
