@@ -42,6 +42,7 @@ function triggerOf(line) {
       let s = `event ${w.ev}`;
       if (w.match) s += ` ${Object.entries(w.match).map(([k, v]) => (v && typeof v === 'object' && Array.isArray(v.not) ? `${k}!=${v.not.join('|')}` : Array.isArray(v) ? `${k}=${v.join('|')}` : `${k}=${v}`)).join(' ')}`;
       if (w.text) s += ` (hint about "${w.text}")`;
+      if (w.after) s += ` (+${w.after} s)`;
       out.push(s);
     }
   }

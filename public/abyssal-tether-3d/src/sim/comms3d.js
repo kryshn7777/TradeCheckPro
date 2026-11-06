@@ -211,12 +211,14 @@ function vnoise(x, seed) {
 // ---- the script ----------------------------------------------------------------------------------------------------------
 /**
  * One transmission. `when` (one trigger or a list): { enter, after } first entry of `section` (+after s) · { depth } the
- * player at or below `depth` m in `section` · { ev, match, text } a bus event (payload fields equal / a hint containing
- * `text`) · { chain, gap } `gap` s after the line `chain` ENDS · { stall } no progress in `section` for STALL s · { restore }
+ * player at or below `depth` m in `section` · { ev, match, text, after } a bus event (payload fields equal / a hint containing
+ * `text`; + after s) · { chain, gap } `gap` s after the line `chain` ENDS · { stall } no progress in `section` for STALL s · { restore }
  * after a respawn ('first' | a cause | 'many') · { gaze } 3 s looking at a blood writing (Blood writing ON only) ·
  * { skit } the first skitterling contact. prio 3 (beats, the opening) > 2 (story) > 1 (flavour, voiced hints). `section`
  * -1: anywhere. `kind`: radio | offmic (the hot mic) | notquite (a voice that is not quite the speaker) | echo (the channel
  * plays something back). `glitch`: 'none' keeps it clean, 'repeat' forces the stuck word. `skip`: the opening (continue skips).
+ * `wait`: chain-head ids; the line is held (still queued, its ttl running) while any line of those chains is queued or on air, so a
+ * beat never cuts into another beat's exchange (THE FALL waits for the opening and the slip at the bell).
  */
 function L(id, speaker, text, o) {
   return Object.freeze({
@@ -232,6 +234,7 @@ function L(id, speaker, text, o) {
     glitch: o.glitch || null,
     skip: !!o.skip,
     beat: o.beat || null,
+    wait: Object.freeze(o.wait ? o.wait.slice() : []), // chain heads: hold this line while any line of those chains is queued or on air
   });
 }
 
@@ -244,14 +247,25 @@ export const COMMS_SCRIPT = Object.freeze([
   L('s1-open-3w', 'ELIAS', 'Five bars. Keep them coming, Tick.', { section: 0, when: { chain: 's1-open-3', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
   L('s1-open-4', 'MAREN', "Nobody's stood there since 1791. Read me every board you pass.", { section: 0, when: { chain: 's1-open-3w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
   L('s1-open-4w', 'ELIAS', "Every board, Doctor Soll. You'll hear all of it.", { section: 0, when: { chain: 's1-open-4', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
-  L('s1-open-5', 'ODESSA', "The Ember's dimming, Elias. Bring us a kindling. Take your time.", { section: 0, when: { chain: 's1-open-4w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
-  L('s1-open-5w', 'ELIAS', 'Kindling. Rope by rope. Going down.', { section: 0, when: { chain: 's1-open-5', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  // THE COLLAR (OPENING_V2_THE_COLLAR.md): he is the Line, the rope rescuer sent ahead of the Lighters; the job is small
+  L('s1-open-5', 'ODESSA', 'Clear the ring points. Then ring the bell for the Lighters.', { section: 0, when: { chain: 's1-open-4w', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
+  L('s1-open-5w', 'ELIAS', 'Ring points, then the bell. Copy.', { section: 0, when: { chain: 's1-open-5', gap: 0.4 }, prio: 3, skip: true, glitch: 'none' }),
   L('s1-bell-1', 'ODESSA', "Mind the bell, Elias. It's louder than last time.", { section: 0, when: [{ ev: 'hint', text: 'bell' }, { ev: 'bell:ring' }], prio: 2, ttl: 45, beat: 'the slip' }),
   L('s1-bell-2', 'TICK', 'Last time?', { section: 0, when: { chain: 's1-bell-1', gap: 0.35 }, prio: 2 }),
   L('s1-bell-3', 'ODESSA', 'The probes, Tomasz. Focus.', { section: 0, when: { chain: 's1-bell-2', gap: 0.3 }, prio: 2 }),
+  // THE FALL (OPENING_V2_THE_COLLAR.md section 7): the bell opens the seal (it always did) and his line is released from above. Section
+  // -1: a player who drops at once still hears it. Tick and Maren believe the cover story; Odessa is never surprised.
+  L('s1-fall-1', 'VESPER', 'Line release commanded.', { when: { ev: 'objective:done', match: { verb: 'bell' }, after: 0.6 }, prio: 3, ttl: 45, glitch: 'none', beat: 'the fall', wait: ['s1-open-1', 's1-bell-1'] }),
+  L('s1-fall-2', 'TICK', "Release? Dessa, I didn't send that. Nobody sent that.", { when: { chain: 's1-fall-1', gap: 0.3 }, prio: 3, ttl: 30, glitch: 'none' }),
+  L('s1-fall-3', 'ODESSA', 'Easy, Elias. Grab a ring and go with it.', { when: { chain: 's1-fall-2', gap: 0.4 }, prio: 3, ttl: 30, glitch: 'none' }),
   L('s1-self', 'ELIAS', "Think, Elias. The grating won't open itself. A bell, somewhere.", { section: 0, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s1-stall', 'TICK', 'Fire at the glowing ring and hold. Let the rope work.', { section: 0, when: { stall: true }, prio: 1 }),
   // ---- S2 THE LONG SWING ----
+  // below Lamp Zero: the surprise, performed (the first entry of S2 in a run)
+  L('s2-fall-1', 'TICK', "Wren, you're under Lamp Zero. The line doesn't reach you there.", { section: 1, when: { enter: true, after: 1.0 }, prio: 3, ttl: 60, glitch: 'none', beat: 'below Lamp Zero', wait: ['s1-fall-1'] }),
+  L('s2-fall-2', 'MAREN', "Below Lamp Zero. Nobody's been below Lamp Zero.", { section: 1, when: { chain: 's2-fall-1', gap: 0.5 }, prio: 3, glitch: 'none' }),
+  L('s2-fall-3', 'ODESSA', 'Keep going down, Elias. The Lighters will find you.', { section: 1, when: { chain: 's2-fall-2', gap: 0.4 }, prio: 3, glitch: 'none' }),
+  L('s2-fall-3w', 'ELIAS', "Down, then. I'll find a way.", { section: 1, when: { chain: 's2-fall-3', gap: 0.5 }, prio: 3, glitch: 'none' }),
   L('s2-board', 'MAREN', "'It does not send us back.' Cheerful people, the Lanternwrights.", { section: 1, when: { depth: 24 }, prio: 1 }),
   L('s2-haul', 'MAREN', "That chain's been oiled. Recently. Write that down, Tomasz.", { section: 1, when: { ev: 'objective:done', match: { verb: 'haul' } }, prio: 2 }),
   L('s2-self', 'ELIAS', "A counterweight. Hook it and haul, Elias. Don't just stand here.", { section: 1, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
@@ -388,6 +402,7 @@ export function makeGlitches(seed, line, section, speak, n, voice) {
 
 // ---- the director ----------------------------------------------------------------------------------------------------------
 const QUEUE_MAX = 8;
+const NO_WAIT = Object.freeze([]);
 const LOG_MAX = 64;
 
 /**
@@ -445,6 +460,24 @@ export class CommsDirector {
       }
     }
     for (const list of this.depthBy) if (list) list.sort((a, b) => depthOf(a) - depthOf(b));
+    // the chain groups a `wait` line holds for: the head and every line chained after it
+    this.groups = Object.create(null);
+    for (const line of this.script) {
+      for (const head of line.wait || NO_WAIT) {
+        if (this.groups[head]) continue;
+        const g = new Set();
+        const todo = [head];
+        while (todo.length) {
+          const id = todo.pop();
+          const l = this.byId[id];
+          if (!l || g.has(l)) continue;
+          g.add(l);
+          const ch = this.chainBy[id];
+          if (ch) for (const c of ch) todo.push(c.id);
+        }
+        this.groups[head] = g;
+      }
+    }
     this.queue = [];
     this.log = [];
     this.onStart = null;
@@ -542,7 +575,7 @@ export class CommsDirector {
       if (w.text && !(typeof e.text === 'string' && e.text.toLowerCase().indexOf(w.text) >= 0)) continue;
       if (w.match && !matches(w.match, e)) continue;
       if (line.section >= 0 && line.section !== this.section) continue;
-      this._trigger(line, 0);
+      this._trigger(line, w.after || 0);
     }
   }
 
@@ -691,6 +724,7 @@ export class CommsDirector {
         continue;
       }
       if (e.due > this.clock) continue;
+      if (e.line.wait && e.line.wait.length && this._held(e.line)) continue;
       if (e.prio <= 1 && (x.tense || this.clock - this._lastChatter < CHATTER_GAP)) continue;
       if (best < 0 || e.prio > q[best].prio || (e.prio === q[best].prio && e.due <= q[best].due)) best = i; // ties: the earlier queued
     }
@@ -755,6 +789,17 @@ export class CommsDirector {
       e = null;
     }
     return voiceEntry(e);
+  }
+
+  /** A `wait` line is held while a line of one of its chains is queued or on air. */
+  _held(line) {
+    for (let w = 0; w < line.wait.length; w++) {
+      const g = this.groups[line.wait[w]];
+      if (!g) continue;
+      if (this.current && g.has(this.current.line)) return true;
+      for (let i = 0; i < this.queue.length; i++) if (g.has(this.queue[i].line)) return true;
+    }
+    return false;
   }
 
   _end(tx) {

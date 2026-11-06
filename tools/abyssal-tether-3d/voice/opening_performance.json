@@ -1,90 +1,365 @@
 {
   "about": [
-    "THE LANTERN: the opening cinematic's narration (docs/abyssal-tether-3d/plans/OPENING_CINEMATIC.md section 8).",
+    "THE LANTERN: the opening cinematic's narration (docs/abyssal-tether-3d/plans/OPENING_V2_THE_COLLAR.md section 6.1).",
     "Same format as performance.json `lines` (take = phrases, pauses in ms, {in} breaths, *stress*); the cast (voice blends) is performance.json's.",
     "max_s = the line's slot in the timeline (src/sim/openingCinematic.js VO): the take is fitted inside it.",
-    "Rendered by tools/abyssal-tether-3d/voice/build_opening_vo.py to public/abyssal-tether-3d/assets/audio/opening/<id>.ogg, dry (no radio chain: this is the record, not the uplink)."
+    "Rendered by tools/abyssal-tether-3d/voice/build_opening_vo.py to public/abyssal-tether-3d/assets/audio/opening/<id>.ogg, dry; the game gives the team's briefing lines (VO fx 'radio') the console speaker's colour at play time."
   ],
   "lines": {
-    "op-1": {
-      "speaker": "MAREN",
-      "text": "Seventeen ninety-one. One woman climbed out of this shaft, carrying a flame.",
-      "moment": "shot 1 EMBER: the flame out of black",
-      "emotion": "quiet wonder", "register": "the record, read aloud", "max_s": 6.4,
-      "speed": 0.9, "pitch": -0.2, "fx": ["close"],
-      "take": ["{in:soft}",{"t": "Seventeen ninety-one.", "speed": 0.9, "pitch": -0.2}, 620, "One woman climbed out of this shaft,", 260, {"t": "carrying a *flame*.", "speed": 0.92, "pitch": -0.3, "trail": true}]
-    },
-    "op-2": {
-      "speaker": "MAREN",
-      "text": "It burned nothing. It never went out. Every lamp we have was lit from hers.",
-      "moment": "shot 2: the arc round the lantern, the chain into the dark",
-      "emotion": "reverent, dry", "register": "the record", "max_s": 5.6,
-      "speed": 0.94, "pitch": -0.2, "fx": ["close"],
-      "take": ["It burned nothing.", 360, {"t": "It never went out.", "pitch": -0.2}, 420, {"t": "Every lamp we have was lit from *hers*.", "speed": 0.96, "pitch": -0.35}]
-    },
-    "op-3": {
+    "op-11": {
       "speaker": "ODESSA",
-      "text": "It is dimming.",
-      "moment": "shot 2: the flame gutters",
-      "emotion": "flat, close, the first time aloud", "register": "close", "max_s": 2.4,
-      "speed": 0.82, "pitch": -0.5, "fx": ["close", "hushed"],
-      "take": ["{in:soft}", {"t": "It is *dimming*.", "speed": 0.86, "pitch": -0.3, "trail": true}]
+      "text": "The team's all here, Elias. The Lighters are four hours behind you.",
+      "moment": "THE COLLAR: the cold station, the drones on their pads (from the console speaker: v2)",
+      "emotion": "warm, unhurried, a day she has opened before",
+      "register": "calm professional",
+      "max_s": 4.6,
+      "speed": 0.98,
+      "pitch": -0.3,
+      "fx": [],
+      "take": [
+        "The team's all here, Elias.",
+        300,
+        {
+          "t": "The Lighters are four hours behind you.",
+          "speed": 1.0
+        }
+      ]
+    },
+    "op-12": {
+      "speaker": "ODESSA",
+      "text": "Your job is small. Go down to Lamp Zero, clear the ring points, and wait.",
+      "moment": "THE COLLAR: the rotors spin up",
+      "emotion": "reassuring; small is a gift",
+      "register": "calm professional",
+      "max_s": 5.0,
+      "speed": 1.0,
+      "pitch": -0.3,
+      "fx": [],
+      "take": [
+        "Your job is *small*.",
+        300,
+        {
+          "t": "Go down to Lamp Zero, clear the ring points,",
+          "speed": 1.04
+        },
+        160,
+        {
+          "t": "and wait.",
+          "speed": 0.92,
+          "pitch": -0.3
+        }
+      ]
+    },
+    "op-13": {
+      "speaker": "TICK",
+      "text": "Clamps on. All green.",
+      "moment": "THE MEASURE: the four drones latch on",
+      "emotion": "quick, pleased with his kit",
+      "register": "casual tech",
+      "max_s": 1.8,
+      "speed": 1.1,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "Clamps on.",
+        160,
+        {
+          "t": "All *green*.",
+          "speed": 1.06
+        }
+      ]
+    },
+    "op-14": {
+      "speaker": "VESPER",
+      "text": "Hold still. Measuring.",
+      "moment": "THE MEASURE: the scan line sweeps him, head to boots (the Dresser chalk, word for word)",
+      "emotion": "clinical",
+      "register": "suit readout",
+      "max_s": 2.2,
+      "speed": 0.98,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "Hold still.",
+        300,
+        "Measuring."
+      ]
+    },
+    "op-15": {
+      "speaker": "TICK",
+      "text": "Got you. Head to boots, to the millimetre.",
+      "moment": "THE HALL: the empty chair; the drones take the weight",
+      "emotion": "a grin",
+      "register": "casual tech",
+      "max_s": 2.6,
+      "speed": 1.08,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "Got you.",
+        180,
+        {
+          "t": "Head to boots, to the *millimetre*.",
+          "speed": 1.08
+        }
+      ]
+    },
+    "op-16": {
+      "speaker": "VESPER",
+      "text": "Work order confirmed. Payload one. Return zero.",
+      "moment": "THE IRIS: the iris opens under the cradle (only makes sense on a replay)",
+      "emotion": "clinical, equal stress",
+      "register": "suit readout",
+      "max_s": 4.3,
+      "speed": 0.98,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "Work order confirmed.",
+        340,
+        "Payload, one.",
+        300,
+        "Return, zero."
+      ]
     },
     "op-4": {
       "speaker": "ODESSA",
       "text": "Five hundred and fifty-six metres of cut stone. Every probe we lowered went quiet at the bottom.",
-      "moment": "shot 3 THE LOWERING: the lantern sinks into the shaft",
-      "emotion": "the briefing voice, controlled", "register": "calm professional", "max_s": 6.4,
-      "speed": 0.98, "pitch": -0.3, "fx": [],
-      "take": ["Five hundred and fifty-six metres of cut stone.", 440, "Every probe we lowered", 120, {"t": "went *quiet* at the bottom.", "speed": 0.92, "pitch": -0.2}]
+      "moment": "THE IRIS: the cradle sinks into the shaft under its four drones",
+      "emotion": "the briefing voice, controlled",
+      "register": "calm professional",
+      "max_s": 6.4,
+      "speed": 0.98,
+      "pitch": -0.3,
+      "fx": [],
+      "take": [
+        "Five hundred and fifty-six metres of cut stone.",
+        440,
+        "Every probe we lowered",
+        120,
+        {
+          "t": "went *quiet* at the bottom.",
+          "speed": 0.92,
+          "pitch": -0.2
+        }
+      ]
     },
     "op-5": {
       "speaker": "ODESSA",
       "text": "So we are lowering a person.",
-      "moment": "shot 3: the lantern far below, alone on its chain",
-      "emotion": "calm, procedural", "register": "calm professional", "max_s": 2.6,
-      "speed": 0.92, "pitch": -0.3, "fx": [],
-      "take": [{"t": "So we are lowering a *person*.", "speed": 0.94}]
+      "moment": "THE IRIS -> THE WINDOW: the cradle far below, its lantern lit, nobody in it",
+      "emotion": "calm, procedural",
+      "register": "calm professional",
+      "max_s": 2.6,
+      "speed": 0.92,
+      "pitch": -0.3,
+      "fx": [],
+      "take": [
+        {
+          "t": "So we are lowering a *person*.",
+          "speed": 0.94
+        }
+      ]
+    },
+    "op-1": {
+      "speaker": "MAREN",
+      "text": "Seventeen ninety-one. One woman climbed out of this shaft, carrying a flame.",
+      "moment": "THE WINDOW: the cradle passes the Outer Dark",
+      "emotion": "quiet wonder",
+      "register": "the record, read aloud",
+      "max_s": 6.4,
+      "speed": 0.9,
+      "pitch": -0.2,
+      "fx": [
+        "close"
+      ],
+      "take": [
+        "{in:soft}",
+        {
+          "t": "Seventeen ninety-one.",
+          "speed": 0.9,
+          "pitch": -0.2
+        },
+        620,
+        "One woman climbed out of this shaft,",
+        260,
+        {
+          "t": "carrying a *flame*.",
+          "speed": 0.92,
+          "pitch": -0.3,
+          "trail": true
+        }
+      ]
+    },
+    "op-17": {
+      "speaker": "TICK",
+      "text": "Five metres. Three. Lamp Zero's right under your boots.",
+      "moment": "LAMP ZERO: reading the altimeter as the cradle comes down",
+      "emotion": "focused, slowing with the numbers",
+      "register": "casual tech",
+      "max_s": 3.6,
+      "speed": 1.02,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "Five metres.",
+        280,
+        "Three.",
+        320,
+        {
+          "t": "Lamp Zero's right under your boots.",
+          "speed": 1.06
+        }
+      ]
+    },
+    "op-18": {
+      "speaker": "TICK",
+      "text": "That's as deep as they go. Drones heading home.",
+      "moment": "THE RELEASE: the drones let go and climb away",
+      "emotion": "light, a touch wistful",
+      "register": "casual tech",
+      "max_s": 3.2,
+      "speed": 1.04,
+      "pitch": 0.0,
+      "fx": [],
+      "take": [
+        "That's as deep as they go.",
+        260,
+        {
+          "t": "Drones heading home.",
+          "speed": 0.98,
+          "pitch": -0.2
+        }
+      ]
     },
     "op-6": {
       "speaker": "MAREN",
       "text": "They carved one rule over the door.",
-      "moment": "shot 5 THE THRESHOLD: the statue lit by the passing lantern",
-      "emotion": "dry curiosity", "register": "dry academic", "max_s": 3.0,
-      "speed": 0.94, "pitch": -0.1, "fx": [],
-      "take": [{"t": "They carved *one* rule over the door."}]
+      "moment": "THE RELEASE: the drones climb away, their lights dying",
+      "emotion": "dry curiosity",
+      "register": "dry academic",
+      "max_s": 3.0,
+      "speed": 0.94,
+      "pitch": -0.1,
+      "fx": [],
+      "take": [
+        {
+          "t": "They carved *one* rule over the door."
+        }
+      ]
     },
     "op-7": {
       "speaker": "MAREN",
       "text": "Trust the ring, not the floor. The floor keeps.",
-      "moment": "shot 5: the plaque, lit and readable",
-      "emotion": "quoting, then lower", "register": "dry academic, quoting", "max_s": 4.4,
-      "speed": 0.92, "pitch": -0.2, "fx": [],
-      "take": [{"t": "Trust the ring,", "speed": 0.94}, 160, "not the floor.", 520, {"t": "The floor *keeps*.", "speed": 0.82, "pitch": -0.5, "trail": true}]
+      "moment": "THE DOOR: the push to the plaque over the empty cradle",
+      "emotion": "quoting, then lower",
+      "register": "dry academic, quoting",
+      "max_s": 4.4,
+      "speed": 0.92,
+      "pitch": -0.2,
+      "fx": [],
+      "take": [
+        {
+          "t": "Trust the ring,",
+          "speed": 0.94
+        },
+        160,
+        "not the floor.",
+        520,
+        {
+          "t": "The floor *keeps*.",
+          "speed": 0.82,
+          "pitch": -0.5,
+          "trail": true
+        }
+      ]
     },
     "op-8": {
       "speaker": "MAREN",
       "text": "The record says something was down here before the lamp.",
       "moment": "shot 6 THE KNOCK: after the third knock, the flame leans",
-      "emotion": "careful, near whisper", "register": "hushed", "max_s": 5.0,
-      "speed": 0.9, "pitch": -0.5, "fx": ["hushed", "close"],
-      "take": ["{in:soft}", {"t": "The record says", "speed": 0.92}, 200, {"t": "something was down here", "pitch": -0.2}, 180, {"t": "before the *lamp*.", "speed": 0.86, "pitch": -0.4}]
+      "emotion": "careful, near whisper",
+      "register": "hushed",
+      "max_s": 5.0,
+      "speed": 0.9,
+      "pitch": -0.5,
+      "fx": [
+        "hushed",
+        "close"
+      ],
+      "take": [
+        "{in:soft}",
+        {
+          "t": "The record says",
+          "speed": 0.92
+        },
+        200,
+        {
+          "t": "something was down here",
+          "pitch": -0.2
+        },
+        180,
+        {
+          "t": "before the *lamp*.",
+          "speed": 0.86,
+          "pitch": -0.4
+        }
+      ]
     },
     "op-9": {
       "speaker": "MAREN",
       "text": "Before the first stone was cut. Something we never prepared for.",
       "moment": "shot 7 BEFORE THE LAMP: eyes in the well",
-      "emotion": "a whisper, dread", "register": "hushed", "max_s": 4.8,
-      "speed": 0.88, "pitch": -0.6, "fx": ["hushed", "close", "breathy"],
-      "take": [{"t": "Before the first stone was cut.", "speed": 0.9}, 480, "{in:quick}", {"t": "Something we never *prepared* for.", "speed": 0.9, "pitch": -0.2, "trail": true}]
+      "emotion": "a whisper, dread",
+      "register": "hushed",
+      "max_s": 4.8,
+      "speed": 0.88,
+      "pitch": -0.6,
+      "fx": [
+        "hushed",
+        "close",
+        "breathy"
+      ],
+      "take": [
+        {
+          "t": "Before the first stone was cut.",
+          "speed": 0.9
+        },
+        480,
+        "{in:quick}",
+        {
+          "t": "Something we never *prepared* for.",
+          "speed": 0.9,
+          "pitch": -0.2,
+          "trail": true
+        }
+      ]
     },
     "op-10": {
       "speaker": "MAREN",
       "text": "We confronted it, but",
       "moment": "shot 7: the lunge; the game cuts the line with static",
-      "emotion": "steadying, then nothing", "register": "hushed", "max_s": 2.4,
-      "speed": 0.94, "pitch": -0.4, "fx": ["hushed", "close"],
-      "take": ["{in:quick}", {"t": "We confronted it,", "speed": 0.96}, 140, {"t": "but", "speed": 0.9}]
+      "emotion": "steadying, then nothing",
+      "register": "hushed",
+      "max_s": 2.4,
+      "speed": 0.94,
+      "pitch": -0.4,
+      "fx": [
+        "hushed",
+        "close"
+      ],
+      "take": [
+        "{in:quick}",
+        {
+          "t": "We confronted it,",
+          "speed": 0.96
+        },
+        140,
+        {
+          "t": "but",
+          "speed": 0.9
+        }
+      ]
     }
   }
 }

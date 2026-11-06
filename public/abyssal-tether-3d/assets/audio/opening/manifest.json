@@ -3,7 +3,7 @@
  "generator": "tools/abyssal-tether-3d/voice/build_opening_vo.py",
  "codec": "opus/ogg mono 24000 Hz 32kb/s, -23 LUFS per clip, dry",
  "disclosure": "AI placeholder voices (Kokoro-82M text-to-speech, Apache-2.0), not human actors: to be replaced by recorded performances (tools/abyssal-tether-3d/voice/recordings/<id>.wav overrides a line).",
- "bytes": 157774,
+ "bytes": 226013,
  "lines": {
   "op-1": {
    "f": "op-1.ogg",
@@ -63,100 +63,6 @@
     ]
    ],
    "bytes": 24784
-  },
-  "op-2": {
-   "f": "op-2.ogg",
-   "d": 5.481,
-   "speaker": "MAREN",
-   "src": "ai",
-   "text": "It burned nothing. It never went out. Every lamp we have was lit from hers.",
-   "h": "4cfa918d",
-   "w": [
-    [
-     0.0,
-     0.17
-    ],
-    [
-     0.17,
-     0.59
-    ],
-    [
-     0.59,
-     1.11
-    ],
-    [
-     1.57,
-     1.73
-    ],
-    [
-     1.73,
-     2.09
-    ],
-    [
-     2.09,
-     2.41
-    ],
-    [
-     2.41,
-     2.95
-    ],
-    [
-     3.3,
-     3.65
-    ],
-    [
-     3.65,
-     4.05
-    ],
-    [
-     4.05,
-     4.14
-    ],
-    [
-     4.14,
-     4.26
-    ],
-    [
-     4.26,
-     4.4
-    ],
-    [
-     4.4,
-     4.63
-    ],
-    [
-     4.63,
-     4.81
-    ],
-    [
-     4.81,
-     5.42
-    ]
-   ],
-   "bytes": 21150
-  },
-  "op-3": {
-   "f": "op-3.ogg",
-   "d": 1.846,
-   "speaker": "ODESSA",
-   "src": "ai",
-   "text": "It is dimming.",
-   "h": "32e892cb",
-   "w": [
-    [
-     0.55,
-     0.72
-    ],
-    [
-     0.72,
-     1.04
-    ],
-    [
-     1.04,
-     1.67
-    ]
-   ],
-   "bytes": 7412
   },
   "op-4": {
    "f": "op-4.ogg",
@@ -490,6 +396,362 @@
     ]
    ],
    "bytes": 9008
+  },
+  "op-11": {
+   "f": "op-11.ogg",
+   "d": 4.295,
+   "speaker": "ODESSA",
+   "src": "ai",
+   "text": "The team's all here, Elias. The Lighters are four hours behind you.",
+   "h": "e202c9e5",
+   "w": [
+    [
+     0.0,
+     0.08
+    ],
+    [
+     0.08,
+     0.46
+    ],
+    [
+     0.46,
+     0.63
+    ],
+    [
+     0.63,
+     0.97
+    ],
+    [
+     1.02,
+     1.58
+    ],
+    [
+     1.89,
+     1.97
+    ],
+    [
+     1.97,
+     2.6
+    ],
+    [
+     2.6,
+     2.75
+    ],
+    [
+     2.75,
+     3.21
+    ],
+    [
+     3.21,
+     3.61
+    ],
+    [
+     3.61,
+     4.01
+    ],
+    [
+     4.01,
+     4.24
+    ]
+   ],
+   "bytes": 16939
+  },
+  "op-12": {
+   "f": "op-12.ogg",
+   "d": 4.963,
+   "speaker": "ODESSA",
+   "src": "ai",
+   "text": "Your job is small. Go down to Lamp Zero, clear the ring points, and wait.",
+   "h": "01cd4e90",
+   "w": [
+    [
+     0.0,
+     0.15
+    ],
+    [
+     0.15,
+     0.52
+    ],
+    [
+     0.52,
+     0.62
+    ],
+    [
+     0.62,
+     1.15
+    ],
+    [
+     1.4,
+     1.54
+    ],
+    [
+     1.54,
+     1.83
+    ],
+    [
+     1.83,
+     1.92
+    ],
+    [
+     1.92,
+     2.22
+    ],
+    [
+     2.22,
+     2.74
+    ],
+    [
+     2.93,
+     3.2
+    ],
+    [
+     3.2,
+     3.31
+    ],
+    [
+     3.31,
+     3.53
+    ],
+    [
+     3.53,
+     4.02
+    ],
+    [
+     4.15,
+     4.32
+    ],
+    [
+     4.32,
+     4.9
+    ]
+   ],
+   "bytes": 19546
+  },
+  "op-13": {
+   "f": "op-13.ogg",
+   "d": 1.376,
+   "speaker": "TICK",
+   "src": "ai",
+   "text": "Clamps on. All green.",
+   "h": "0d2d3226",
+   "w": [
+    [
+     0.0,
+     0.29
+    ],
+    [
+     0.29,
+     0.59
+    ],
+    [
+     0.76,
+     0.88
+    ],
+    [
+     0.88,
+     1.32
+    ]
+   ],
+   "bytes": 5445
+  },
+  "op-14": {
+   "f": "op-14.ogg",
+   "d": 2.032,
+   "speaker": "VESPER",
+   "src": "ai",
+   "text": "Hold still. Measuring.",
+   "h": "9b6b2b6b",
+   "w": [
+    [
+     0.0,
+     0.31
+    ],
+    [
+     0.31,
+     0.86
+    ],
+    [
+     1.17,
+     1.8
+    ]
+   ],
+   "bytes": 8004
+  },
+  "op-15": {
+   "f": "op-15.ogg",
+   "d": 2.029,
+   "speaker": "TICK",
+   "src": "ai",
+   "text": "Got you. Head to boots, to the millimetre.",
+   "h": "0d7f093e",
+   "w": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     0.25,
+     0.55
+    ],
+    [
+     0.74,
+     0.86
+    ],
+    [
+     0.86,
+     0.94
+    ],
+    [
+     0.94,
+     1.29
+    ],
+    [
+     1.29,
+     1.37
+    ],
+    [
+     1.37,
+     1.44
+    ],
+    [
+     1.44,
+     1.97
+    ]
+   ],
+   "bytes": 7996
+  },
+  "op-16": {
+   "f": "op-16.ogg",
+   "d": 4.146,
+   "speaker": "VESPER",
+   "src": "ai",
+   "text": "Work order confirmed. Payload one. Return zero.",
+   "h": "7973a7f3",
+   "w": [
+    [
+     0.0,
+     0.26
+    ],
+    [
+     0.26,
+     0.59
+    ],
+    [
+     0.59,
+     1.43
+    ],
+    [
+     1.67,
+     2.14
+    ],
+    [
+     2.14,
+     2.64
+    ],
+    [
+     2.84,
+     3.42
+    ],
+    [
+     3.42,
+     4.09
+    ]
+   ],
+   "bytes": 17163
+  },
+  "op-17": {
+   "f": "op-17.ogg",
+   "d": 3.29,
+   "speaker": "TICK",
+   "src": "ai",
+   "text": "Five metres. Three. Lamp Zero's right under your boots.",
+   "h": "2630541d",
+   "w": [
+    [
+     0.0,
+     0.21
+    ],
+    [
+     0.21,
+     0.72
+    ],
+    [
+     1.01,
+     1.47
+    ],
+    [
+     1.8,
+     1.96
+    ],
+    [
+     1.96,
+     2.34
+    ],
+    [
+     2.34,
+     2.56
+    ],
+    [
+     2.56,
+     2.7
+    ],
+    [
+     2.7,
+     2.81
+    ],
+    [
+     2.81,
+     3.23
+    ]
+   ],
+   "bytes": 12232
+  },
+  "op-18": {
+   "f": "op-18.ogg",
+   "d": 2.409,
+   "speaker": "TICK",
+   "src": "ai",
+   "text": "That's as deep as they go. Drones heading home.",
+   "h": "5c2bf4f8",
+   "w": [
+    [
+     0.0,
+     0.19
+    ],
+    [
+     0.19,
+     0.31
+    ],
+    [
+     0.31,
+     0.51
+    ],
+    [
+     0.51,
+     0.61
+    ],
+    [
+     0.61,
+     0.72
+    ],
+    [
+     0.72,
+     1.12
+    ],
+    [
+     1.39,
+     1.72
+    ],
+    [
+     1.72,
+     1.96
+    ],
+    [
+     1.96,
+     2.36
+    ]
+   ],
+   "bytes": 9476
   }
  }
 }
