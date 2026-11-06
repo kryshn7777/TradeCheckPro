@@ -16,6 +16,23 @@ How that was read (redirect here if it was meant differently):
    at you away (the old "it hunts only while you are hurt" rule now ends only once it has lost you).
 3. **The knocker** (another agent builds the gadget): `Creature3D.distract(x, y, z, {duration, strength})` lures it away for a while.
 
+**Owner decision (2026-11-06): it chases a WELL player too.** *"When the Mason sees the player it chases even if the player is at full
+health."* The hunt gate ("it hunts only while you are hurt", the scent window) no longer keeps it away from, or sends it away from, a
+player it can see:
+
+- **Prowl passes.** While you are well (the gate closed) it no longer simply waits far below: in every hunting section (a lethal mode,
+  lethal in the data for this difficulty) it makes **passes**: the first `prowl.first` s after a section entry / a respawn, then every
+  `gapMin`..`gapMax` s, for `dur` s. A pass comes in from above like a hunt (out of sight, the entry grace), crawls and listens, but is
+  **harmless** (not lethal: it looms and holds off) **until it sees you**: a committed chase fills the scent window, the gate arms and the
+  section's lethal hunt takes over. A pass that sees nobody (or only notices you) withdraws up the masonry and leaves play. The Dresser
+  yields during a pass (one big creature at a time; game.js `setRival`).
+- **Seen = kept.** While it chases you, or (already hunting) still sees you, the scent window is held full: healing does not send it away.
+  Seeing alone never arms a pass: only a committed chase does (the notice beat always comes first).
+- **The fairness levers kept and added**: the 0.5 s notice + roar, a line-of-sight break, the rests (fully safe), the knocker and its 20 s
+  wise rule, the S4 sighting / S5 lure / S7 escape rules, the entry grace, and two new ones: **the first notice of a section (and the
+  first after a respawn) is only a warning, no chase for `firstHold` s**, and **after a chase ends (lost, a rest, a refuge) it cannot
+  commit again for `cooldown` s** (it searches by sound). Sandbox: no creature. `?sight=off` / the setting Off: the old gate (no passes).
+
 Code: `src/sim/masonSight.js` (the sense: sight, near, decoy), hooked into `src/sim/creature3d.js`; tests:
 `tools/abyssal-tether-3d/tests/creature/sight.mjs`.
 
@@ -28,22 +45,26 @@ Code: `src/sim/masonSight.js` (the sense: sight, near, decoy), hooked into `src/
   head (eye height) or your torso, sampled every 0.1 s;
 - your **lantern shows**: charge > 0 and you are alive. An empty lantern (the floor glow only) is invisible to it;
 - nothing rules sight out: a Masons' rest (refuge 1) or the S5 lure niche (refuge 2: the keystone rules stay exactly as they were), the
-  S4 staged sighting, an objective override (the S7 escape is already a chase), the hunt gate keeping it out of play, its own
-  RECOVERING rest or entry / respawn grace (the pacing waves: each wave needs a fresh notice), a live decoy (below), the game saying the
-  view is blocked (not `playing`, cutscenes), `?sight=off`, the Settings > Rope > **Mason sight** = Off, Sandbox (no creature at all).
+  S4 staged sighting, an objective override (the S7 escape is already a chase), being out of play (between prowl passes), a live decoy
+  (below), the game saying the view is blocked (not `playing`, cutscenes), `?sight=off`, the Settings > Rope > **Mason sight** = Off,
+  Sandbox (no creature at all);
+- and to NOTICE / COMMIT (it still sees you for the scent window): not its own RECOVERING rest, not an entry / respawn grace, not the
+  `cooldown` after a chase (the pacing waves: each wave needs a fresh notice).
 
 **The notice beat** (fairness: heard before seen). The first sample that sees you fires `creature:notice {x,y,z,distance,commit}`: a
 designed cue (`creature.notice`: three hard stone knocks of its crown on the wall, a low roar swelling under them, a dry chitter; world
 placed, `audio/masonSightSfx.js` through the SFX engine's `registerSfx` / `registerSfxRoute`), the caption **[It sees your light]**, and
 its red eyes flare (`body.glow` up to 1, the crown unfurls, fading over 0.9 s). It needs **0.5 s of continuous sight** to commit; break
 the line (a pillar, a ledge lip, drop below a floor, let the lantern die) and the count starts over. A broken notice does not roar again
-for 3 s (glimpses do not spam the cue).
+for 3 s (glimpses do not spam the cue). **The first notice of a section** (and the first after a respawn) is only a warning: the cue
+plays, the eyes flare, but it cannot commit for `firstHold` s (if it still sees you then, it commits at once).
 
 **The chase** (`creature:sight {on:true}`). It pursues along the crawl nav at **pursue x `pursueMul`**, does not stop to listen, creep or
 stalk at its menace distance, and attacks by the existing rules: the telegraphed wind-up (0.75 / 0.65 / 0.5 s), never through masonry,
 never into a rest; bursts and stamina as before (out of stamina it rests: the chase ends there). A still player no longer counts as
 silent to a Mason that sees him (a contact attack starts on a still player too: cause `'sight'`). Losing sight, it keeps the chase for
-`memory` s (`creature:sight {on:false, reason:'lost'}`), then it is back to the sound hunt.
+`memory` s (`creature:sight {on:false, reason:'lost'}`), then it is back to the sound hunt and cannot commit again for `cooldown` s
+(the same after a rest or a refuge; not after a knocker drew it off: walk up to it and it takes you).
 
 **Near** (`creature:near {on:true}` when it starts, for the caption **[No recovery this close]**). `sight.near` = chasing AND the hunt is
 lethal AND the nearest of crown / front blocks is within `lethalNear`. game.js sets `health.noRecovery` from it every frame:
@@ -59,9 +80,14 @@ word and the VR wrist badge read **NO RECOVERY** in red. Falls, walls, hazards, 
 |---|---|---|---|
 | `sightRange` (m) | 30 | 38 | 46 |
 | notice commit (s of continuous sight) | 0.5 | 0.5 | 0.5 |
-| `pursueMul` (x the pursue speed) | 1.12 | 1.15 | 1.2 |
-| chase speed in `hunt` mode (m/s) | 5.2 x 1.12 = **5.8** | 6.4 x 1.15 = **7.4** | 8.2 x 1.2 = **9.8** |
-| `memory` after sight is lost (s) | 4 | 5 | 6 |
+| `firstHold`: the section's first notice is a warning only (s) | 8 | 8 | 6 |
+| `pursueMul` (x the pursue speed) | 1.0 | 1.0 | 1.05 |
+| chase speed in `hunt` mode (m/s) | **5.2** | **6.4** | 8.2 x 1.05 = **8.6** |
+| `memory` after sight is lost (s) | 3 | 3 | 4 |
+| `cooldown` after a chase ends (s) | 20 | 18 | 14 |
+| prowl: first pass after an entry / respawn (s) | 20 | 16 | 12 |
+| prowl: gap between passes (s) | 50-80 | 40-65 | 30-50 |
+| prowl: pass length (s) | 30 | 35 | 40 |
 | `lethalNear` (m, to crown / front blocks) | **8** | **9.5** | **11** |
 | its regular strike reach (killRadius x 1.6 + 3.5 nav stretch) | 7.66 | 8.14 | 8.46 |
 | `decoyOverride` (m) | 5 | 6 | 7 |
@@ -77,24 +103,28 @@ kill radius) reaches 8.7 m on Normal, just past it. Shared: line of sight sample
   lip or a floor, swing round the shaft's corner. It does not commit.
 - **A Masons' rest** (refuge 1): it cannot see you there; the chase drops at once; it holds at its stalking distance and listens.
 - **Douse your light**: an empty lantern is invisible to it (the lantern burns down by itself; the game has no off switch for it).
-- **Out-move it**: the chase is 5.8 / 7.4 / 9.8 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17), swing
-  and fall far faster. On Normal a reel or a swing out-runs it; on Abyss only a swing, a fall or a yank does.
-- **Out-wait it**: break the line and it holds the chase only 4 / 5 / 6 s, then it is back to hunting by sound (go still to be silent).
-- **The knocker** (below).
-- The stamina waves: after a strike, or out of stamina, it RESTS and sees nothing; every new wave needs a fresh notice (a new cue).
+- **Out-move it**: the chase is 5.2 / 6.4 / 8.6 m/s; you run 5.5 m/s (11 with adrenaline), reel at up to 12 m/s (a yank 17), swing
+  and fall far faster. On Normal a run, a reel or a swing out-runs it; on Abyss a reel, a swing, a fall or a yank does.
+- **Out-wait it**: break the line and it holds the chase only 3 / 3 / 4 s, then it hunts by sound (go still to be silent) and cannot
+  commit again for 20 / 18 / 14 s.
+- **The knocker** (below): it drops a chase, and while it lives sight is off for anyone beyond 5 / 6 / 7 m.
+- **The grace**: arriving in a section (or after a respawn) you get the entry grace, the first pass waits 20 / 16 / 12 s, and the first
+  notice there is only a warning for 8 / 8 / 6 s.
+- The stamina waves: after a strike, or out of stamina, it RESTS and cannot commit; every new wave needs a fresh notice (a new cue).
 
-**Worked example (Normal).** You stand on a ledge, lantern lit; the Mason rounds a buttress 20 m away. Next 0.1 s sample: the knocks, the
-roar, the caption, its eyes flare. 0.5 s later it commits: 20 -> 10 m (where the wind-up starts) at 5.8 m/s takes about 1.7 s, the
-wind-up 0.75 s, the strike reaches 7.66 m. Doing nothing, you are bitten about 3 s after the cue (the Node sim: 2.6-5 s from 18-26 m).
-At about 8 m the wrist reads NO RECOVERY: a bandage would do nothing now. Answers: inside the first 0.5 s step behind the buttress
-(no chase); after it commits, reel up and away at 12 m/s (the gap grows 6 m/s: in 1 s you are out of its reach, in ~2 s out of the near
-radius), or break the line for 4 s.
+**Worked example (Normal, full health).** You arrive in S6 whole. About 20 s later a pass comes down the far wall, harmless. It rounds a
+buttress 20 m away with your lantern in view: the knocks, the roar, [It sees your light], its eyes flare. It is the section's first
+notice: a warning, no chase for 8 s; you step behind the buttress. Later, a second sighting: 0.5 s after the cue it commits (the gate
+arms: now it can kill): 20 -> 10 m (where the wind-up starts) at 5.2 m/s takes about 2 s, the wind-up 0.75 s, the strike reaches
+7.66 m. Doing nothing you are bitten about 3 s after the cue. At about 8 m the wrist reads NO RECOVERY. Answers: inside the first 0.5 s
+step out of its line (no chase); after it commits, reel up and away at 12 m/s (the gap grows ~7 m/s), or break the line for 3 s: then
+it is 20 s before it can commit to you again; or throw the knocker.
 
 ## The knocker decoy (contract for the gadget)
 
 `Creature3D.distract(x, y, z, opts = { duration: 9, strength: 1 })` -> `true` when accepted.
 
-- **Accepted** only when it is the Mason (skitterlings ignore it), active, IN PLAY (not dormant / out of play by the hunt gate / the S4
+- **Accepted** only when it is the Mason (skitterlings ignore it), active, IN PLAY (a hunt or a prowl pass; not dormant / out of play / the S4
   sighting / an override / the victory / the hunt gate's withdraw), not mid-strike (`ATTACK`: call again a moment later), not in the S5
   lure niche rule (refuge 2), the point within `hearRange x strength` (strength 0.25..2) of its crown, the player not already within
   `decoyOverride`, and not a knocker it inspected less than 20 s ago (within 4 m of it). A rest (refuge 1) does not refuse it.
@@ -129,17 +159,30 @@ every 0.1 s at most. V8's sampling heap profiler still sees short-lived boxed do
 creature samples about 16 KB per update before this change in `tests/creature/allocprof.mjs`, about 21 KB after, the rest from the
 chase keeping the body close and busy).
 
-## Balance note (measured, for the owner)
+## Balance (measured with the pacing sim, 2026-11-06)
 
-The pacing sim (`tests/creature/pacing.mjs`, scripted human-pattern players who never hide or break the line, the hunt gate OFF, 20
-runs on the REAL level) before -> after, deaths per Chapter I run (lethal sections):
+`tests/creature/pacing.mjs` on the REAL level, 20 runs per cell (`LEVEL=real NOSTALL=1 node pacing.mjs 20`): scripted human-pattern
+players that never hide, never break the line on purpose and never throw a knocker. Deaths per Chapter I run (the lethal sections).
+**Hunting** = the Mason hunting all the time (the gate off: the worst case, what a hurt player meets); **Well** = `GATE=1`, the hunt gate
+on and a player who stays well (only the prowl passes and what they see can kill); **Blind** = `SIGHT=off` (the Mason before this work);
+**First cut** = the first sight build (2026-11-05, before the owner's decision and the rebalance).
 
-| | careful | hesitant |
-|---|---|---|
-| Normal | 0.25 -> 0.95 | 2.95 -> 27.6 |
-| Nightmare | 0.95 -> 4.6 | 16.7 -> 53.3 |
+| | Blind | First cut (hunting) | **Final, hunting** | **Final, well (prowl)** | target |
+|---|---|---|---|---|---|
+| Normal expert | 0.00 | 0.00 | **0.00** | **0.00** | ~0 |
+| Normal careful | 0.25 | 0.95 | **0.45** | **0.15** | <= 1.5 |
+| Normal hesitant | 2.95 | 27.6 | **9.20** | **1.45** | worse than careful, not absurd |
+| Nightmare expert | 0.00 | 0.00 | **0.00** | **0.00** | ~0 |
+| Nightmare careful | 0.95 | 4.6 | **1.55** | **0.40** | <= 4 |
+| Nightmare hesitant | 16.7 | 53.3 | **27.7** | **12.25** | worse than careful, not absurd |
+| Abyss expert | 0.10 | - | **0.05** | **0.00** | |
+| Abyss careful | 3.55 | - | **5.35** | **2.60** | |
+| Abyss hesitant | 9.40 | - | **10.30** | **10.40** | |
 
-Expert players (short pauses, fast moves) are unchanged (0 deaths). A player who stands in its view for seconds is now caught, which is
-what was asked; the bots do not use the counterplay above, and in the game the Mason is only out when you are hurt (the hunt gate), so
-the real numbers will be lower. Knobs if it is too harsh: the notice (0.5 s; 0.8 s gives a reaction window like the Normal wind-up),
-`pursueMul` (1.0 = the old pursue speed), `sightRange`.
+How it got there (Normal / Nightmare hesitant, hunting): the first cut 27.6 / 53.3; + the first-sighting warning (6 s) and a 7-8 s
+cooldown: 17.7 / 41.6; pursueMul 1.0 / 1.05, cooldown 12 / 10, memory 3 / 4: 15.0 / 36.7; cooldown 16 / 12: 10.9 / 31.3 (a shorter sight
+range, 24 / 30 m, changed nothing: 11.1 / 34.4); **final** (pursueMul 1.0, cooldown 20 / 18, memory 3, warning 8 s): 9.2 / 27.7. The
+hesitant bot stands still in view for 3-12 s at a time (1100-1300 s in the lethal sections per run against ~250 s for careful); most
+of its remaining deaths are the sound hunt's own creeps and stall lunges plus a chase lunge on a frozen player (`CAUSES=1`). Nightmare
+hesitant was already 16.7 blind. Knobs left: `cooldown`, `firstHold`, the prowl `gapMin`/`gapMax`/`dur` (how often a well player meets
+it), `notice` (0.5 s).

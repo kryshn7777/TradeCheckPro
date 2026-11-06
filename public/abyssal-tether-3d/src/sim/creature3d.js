@@ -672,6 +672,8 @@ export class Creature3D {
     this._hurt = false;
     this._withdraw = false;
     this._armed = !this._gate || this._override != null;
+    this._prowling = false;
+    this._prowlT = this._prowlFirst();
   }
 
   /** The player's health is low right now (Health3D.low); call every frame, it is a flag. */
@@ -681,11 +683,16 @@ export class Creature3D {
 
   /** Per frame while the gate is on: arms / disarms the hunt (see setHuntGate). */
   _updateGate(dt, player) {
-    if (this._hurt || this.sense.sight.chasing) this._holdT = T.huntHold; // MASON_SIGHT.md: while it chases you, health does not send it away
+    // MASON_SIGHT.md: while it chases you (or, already hunting, still sees you) health does not send it away; seeing alone never ARMS it
+    // (a prowl pass arms only through a committed chase: the notice beat first)
+    if (this._hurt || this.sense.sight.chasing || (this.sense.sight.sees && this._holdT > 0)) this._holdT = T.huntHold;
     else if (this._holdT > 0) this._holdT -= dt;
     const armed = this._override != null || this._holdT > 0;
+    if (!armed && !this._armed && !this._withdraw) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you)
     if (armed === this._armed) return;
     this._armed = armed;
+    this._prowling = false;
+    if (!armed) this._prowlT = this._prowlGap();
     const lv = this.level;
     const si = this.sectionIndex;
     if (this.victory || !lv || !lv.sections || si < 0 || !lv.sections[si]) return;
@@ -703,6 +710,71 @@ export class Creature3D {
     } else {
       this.setSection(si, lv.sections[si], player);
     }
+  }
+
+  /** MASON_SIGHT.md: the prowl timings for this difficulty (null: none: sight off, a variant). */
+  _prowlTune() {
+    return this.v || !this.sense.on ? null : this.sense.tune.prowl;
+  }
+
+  _prowlFirst() {
+    const P = this._prowlTune();
+    return P ? P.first : 1e9;
+  }
+
+  _prowlGap() {
+    const P = this._prowlTune();
+    return P ? P.gapMin + this._rand() * (P.gapMax - P.gapMin) : 1e9;
+  }
+
+  /** Is section `sec` a hunting one in its data on this difficulty (a lethal mode, lethal), whatever the gate says? */
+  _huntable(sec) {
+    const cc = sec && sec.creature;
+    if (!cc) return false;
+    const by = cc.by && cc.by[this.tuneKey];
+    const mode = by && by.mode ? by.mode : cc.mode;
+    const lethal = by && by.lethal != null ? by.lethal : cc.lethal;
+    return LETHAL_MODES[mode] === true && lethal === true;
+  }
+
+  /**
+   * MASON_SIGHT.md, the prowl (the gate is closed: the player is well). The hunt gate no longer keeps it away from a player it can see:
+   * in a hunting section it makes passes, in play but harmless (the section's mode, not lethal) until it SEES you (the sense commits a
+   * chase, the chase fills the scent window, the gate arms: lethal). A pass that sees no one withdraws up the masonry (out of sight).
+   */
+  _prowlStep(dt, player) {
+    const P = this._prowlTune();
+    const lv = this.level;
+    const si = this.sectionIndex;
+    const sec = lv && lv.sections && si >= 0 ? lv.sections[si] : null;
+    if (!P || !sec || this.victory) {
+      this._prowling = false;
+      return;
+    }
+    const huntable = this._huntable(sec);
+    if (!this._prowling) {
+      if (!huntable) return;
+      if (this._prowlT > 1e8) this._prowlT = P.first; // sight switched on mid-run
+      this._prowlT -= dt;
+      if (this._prowlT > 0) return;
+      this._prowling = true;
+      this._prowlEnd = P.dur;
+      this.stats.prowls++;
+      this.setSection(si, sec, player); // in play from above, harmless until it sees you
+      return;
+    }
+    this._prowlEnd -= dt;
+    if ((this._prowlEnd > 0 || this.sense.sight.noticing) && huntable && this.inPlay) return;
+    this._prowling = false;
+    this._prowlT = this._prowlGap();
+    if (this.inPlay) {
+      this._withdraw = true; // the pass is over: it climbs away (and leaves play once far)
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+    } else this.setSection(si, sec, player);
   }
 
   /** The withdraw after the scent is lost: climbs away until far, then leaves play (the section's dormant behaviour). */
@@ -772,6 +844,9 @@ export class Creature3D {
     this._withdraw = false;
     this._withdrawT = 0;
     this._armed = !this._gate;
+    this._prowling = false; // MASON_SIGHT.md: a prowl pass (see _prowlStep)
+    this._prowlEnd = 0;
+    this._prowlT = this.sense ? this._prowlFirst() : 1e9;
     this._occBy = null; // _occlusion: what stopped the last lunge line
     if (this.sense) this.sense.reset(); // MASON_SIGHT.md
     this.onSurface = false;
@@ -864,7 +939,7 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0 };
     this._applyScaling(SECTION_DEFAULTS);
     this._tHead = -1;
     this._tCount = 0;
@@ -893,8 +968,11 @@ export class Creature3D {
     // the hunt gate: while the player is not hurt every hunting mode is the unseen, non-lethal dormant one (an objective's override,
     // laid below, is a scripted beat and is never gated)
     if (this._gate && !this._armed && LETHAL_MODES[c.mode]) {
-      c.mode = 'dormant';
-      c.lethal = false;
+      if (this._prowling) c.lethal = false; // MASON_SIGHT.md: a prowl pass: in play, harmless until it sees you
+      else {
+        c.mode = 'dormant';
+        c.lethal = false;
+      }
     }
     // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
     if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
@@ -949,6 +1027,11 @@ export class Creature3D {
 
   get decoy() {
     return this.sense.decoy;
+  }
+
+  /** MASON_SIGHT.md: a prowl pass is in play (the hunt gate closed, it has not seen you yet). */
+  get prowling() {
+    return this._prowling && this.inPlay;
   }
 
   setSection(index, section, player) {
@@ -1009,6 +1092,8 @@ export class Creature3D {
       this._hurt = false;
       this._withdraw = false;
       this._armed = this._override != null;
+      this._prowling = false;
+      this._prowlT = this._prowlFirst(); // the first pass after a respawn waits (MASON_SIGHT.md)
     }
     this.attack.phase = null;
     this.nearMiss = 0;

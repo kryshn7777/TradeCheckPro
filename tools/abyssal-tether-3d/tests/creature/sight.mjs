@@ -46,6 +46,9 @@ function mk(key, seed, opts = {}) {
   w.c = new Creature3D(L, opts.diff || DIFFICULTY[key], bus, { seed, sight: opts.sight });
   w.p = Object.assign({ x: LEDGE.x, y: LEDGE.y, z: LEDGE.z, vx: 0, vy: 0, vz: 0, alive: true }, opts.p || {});
   w.c.reset(w.p);
+  // most checks look at a player the Mason has already been warned about: the section's first notice (a 6 s warning, no chase) is
+  // consumed up front; `first: true` keeps it (the first-sighting checks)
+  if (!opts.first) warned(w.c);
   w.step = (n, each) => {
     for (let i = 0; i < n; i++) {
       w.t += DT;
@@ -58,6 +61,11 @@ function mk(key, seed, opts = {}) {
   w.count = (type, pred) => w.ev.filter((e) => e.type === type && (!pred || pred(e.p))).length;
   return w;
 }
+/** The section's first notice already happened (no firstHold). */
+function warned(c) {
+  c.sense._first = false;
+  c.sense._sec = c.sectionIndex;
+}
 /** Nearest of the crown / front blocks to the player (what lethalNear is measured to). */
 function frontDist(c, p) {
   const sp = c.body.spine;
@@ -68,16 +76,16 @@ function frontDist(c, p) {
 
 // ---- 1. the numbers ------------------------------------------------------------------------------------------------------------
 {
-  const want = { normal: [30, 0.5, 1.12, 4, 8, 5, 60], nightmare: [38, 0.5, 1.15, 5, 9.5, 6, 66], abyss: [46, 0.5, 1.2, 6, 11, 7, 72] };
+  const want = { normal: [30, 0.5, 1.0, 3, 8, 5, 60, 8, 20], nightmare: [38, 0.5, 1.0, 3, 9.5, 6, 66, 8, 18], abyss: [46, 0.5, 1.05, 4, 11, 7, 72, 6, 14] };
   let good = true;
   for (const k of KEYS) {
     const T = SIGHT_TUNE[k];
-    const got = [T.sightRange, T.notice, T.pursueMul, T.memory, T.lethalNear, T.decoyOverride, T.hearRange];
+    const got = [T.sightRange, T.notice, T.pursueMul, T.memory, T.lethalNear, T.decoyOverride, T.hearRange, T.firstHold, T.cooldown];
     if (got.join() !== want[k].join()) good = false;
     const w = mk(k, 1);
     if (w.c.sense.tune !== T) good = false;
   }
-  ok(good, 'per-difficulty numbers: sightRange 30/38/46 m, notice 0.5 s, pursueMul 1.12/1.15/1.2, memory 4/5/6 s, lethalNear 8/9.5/11 m, decoyOverride 5/6/7 m, hearRange 60/66/72 m');
+  ok(good, 'per-difficulty numbers: sightRange 30/38/46 m, notice 0.5 s, pursueMul 1.0/1.0/1.05, memory 3/3/4 s, lethalNear 8/9.5/11 m, decoyOverride 5/6/7 m, hearRange 60/66/72 m, firstHold 8/8/6 s, cooldown 20/18/14 s');
   // every regular strike reach (killRadius x strikeMul + nav.stretch) is inside lethalNear: a connect can only happen in the near radius
   const reach = (k) => DIFFICULTY[k].creature.killRadius * 1.6 + 3.5;
   ok(KEYS.every((k) => reach(k) <= SIGHT_TUNE[k].lethalNear), `strike reach ${KEYS.map((k) => reach(k).toFixed(2)).join(' / ')} m <= lethalNear on every difficulty`);
@@ -246,6 +254,7 @@ function frontDist(c, p) {
     const t0 = w.t;
     let tEnd = -1;
     w.step(60 * 12, (x) => {
+      x.c.stamina = 1; // no rest in the middle of the measurement
       if (!x.c.sight.chasing && tEnd < 0) tEnd = x.t;
     });
     const lost = w.first('creature:sight', (p) => p.on === false);
@@ -253,7 +262,7 @@ function frontDist(c, p) {
     if (!(lost && lost.p.reason === 'lost' && held >= SIGHT_TUNE[k].memory - 1e-6 && held <= SIGHT_TUNE[k].memory + SIGHT_COMMON.losEvery + 3 * DT) || !w.c.inPlay) good = false;
     got.push(`${k} ${f2(held)} s`);
   }
-  ok(good, `sight lost: the chase holds for memory (4 / 5 / 6 s) then decays to the sound hunt (${got.join(', ')})`);
+  ok(good, `sight lost: the chase holds for memory (3 / 3 / 4 s) then decays to the sound hunt (${got.join(', ')})`);
 }
 
 // ---- 7. refuges, the override, the S4 sighting, the S5 lure rules ----------------------------------------------------------------
@@ -545,6 +554,88 @@ function frontDist(c, p) {
   const accOff = wo.c.distract(KNOCK.x, KNOCK.y, KNOCK.z, { duration: 9 });
   wo.step(60 * 10);
   ok(accOff && wo.count('creature:notice') === 0 && wo.first('creature:decoy:end') && !wo.c.sight.near, 'sight off: the knocker still lures it (a sound), no sight, no near rule');
+}
+
+// ---- 12b. the owner's decision: it chases a WELL player too (the hunt gate no longer keeps it away); the fairness levers -----------
+{
+  // the first notice of a section is a warning only: no chase for firstHold s, however long it sees you
+  let good = true;
+  const got = [];
+  for (const k of KEYS) {
+    const w = mk(k, 2, { first: true });
+    w.step(60 * 30, (x) => !x.c.sight.chasing);
+    const n = w.first('creature:notice');
+    const s = w.first('creature:sight', (p) => p.on);
+    const held = n && s ? s.t - n.t : -1;
+    if (!(held >= SIGHT_TUNE[k].firstHold - 1e-6)) good = false;
+    got.push(`${k} ${f2(held)} s`);
+  }
+  ok(good, `the first notice in a section (or after a respawn) is only a warning: no chase for ${SIGHT_TUNE.normal.firstHold} s (committed ${got.join(', ')} after it)`);
+  // the cooldown after a chase ends: it cannot commit again for `cooldown` s, then it can
+  const w = mk('normal', 2);
+  w.step(60 * 25, (x) => !x.c.sight.chasing);
+  w.c.lethal = false;
+  w.c.setSight(true, false, false);
+  w.step(60 * 6, (x) => {
+    x.c.stamina = 1;
+    x.c.lethal = false;
+  });
+  const lost = w.first('creature:sight', (p) => p.on === false);
+  w.c.setSight(true, true, false);
+  let tRe = -1;
+  w.step(60 * 20, (x) => {
+    x.c.stamina = 1;
+    x.c.lethal = false;
+    if (x.c.sight.chasing && tRe < 0) tRe = x.t;
+  });
+  ok(lost && tRe > 0 && tRe - lost.t >= SIGHT_TUNE.normal.cooldown - 1e-6, `after it loses you it cannot commit again for ${SIGHT_TUNE.normal.cooldown} s (re-committed ${tRe > 0 && lost ? f2(tRe - lost.t) : '-'} s after the loss)`);
+  // a respawn gives the warning again
+  w.c.onRespawn(w.p);
+  ok(w.c.sense._first === true && !w.c.sight.chasing, 'a respawn: the chase forgotten, the next notice is a warning again');
+
+  // the prowl: the hunt gate on, the player WELL (setHurt never true), standing in view on the ledge
+  const prowl = (k, seed, opts = {}) => {
+    const r = mk(k, seed, { first: true });
+    r.c.setHuntGate(true);
+    r.c.reset(r.p);
+    if (opts.lit === false) r.c.setSight(true, false, false);
+    if (opts.off) r.c.setSight(false, true, false);
+    let tIn = -1;
+    let tChase = -1;
+    let tLethal = -1;
+    let caught = -1;
+    let left = -1;
+    r.step(60 * (opts.secs || 90), (x) => {
+      x.c.setHurt(false);
+      if (opts.refuge) x.c.setRefuge(1, null);
+      if (x.c.inPlay && tIn < 0) tIn = x.t;
+      if (x.c.sight.chasing && tChase < 0) tChase = x.t;
+      if (x.c.lethal && tLethal < 0) tLethal = x.t;
+      if (tIn > 0 && !x.c.inPlay && left < 0) left = x.t;
+      if (x.c.caughtPlayer) {
+        caught = x.t;
+        return false;
+      }
+    });
+    return { r, tIn, tChase, tLethal, caught, left };
+  };
+  let rows = [];
+  let g = true;
+  for (const k of KEYS) {
+    const P = SIGHT_TUNE[k].prowl;
+    const a = prowl(k, 3);
+    const ok1 = Math.abs(a.tIn - P.first) < 0.1 && a.tChase > a.tIn && a.tLethal >= a.tChase - 1e-6 && a.caught > a.tChase;
+    if (!ok1) g = false;
+    rows.push(`${k}: a pass at ${f2(a.tIn)} s, chase ${f2(a.tChase)} s, caught ${f2(a.caught)} s`);
+  }
+  ok(g, `a WELL player in view: the Mason prowls in (after ${SIGHT_TUNE.normal.prowl.first} / ${SIGHT_TUNE.nightmare.prowl.first} / ${SIGHT_TUNE.abyss.prowl.first} s), harmless until it sees you, then it chases and kills (${rows.join('; ')})`);
+  const dark = prowl('normal', 3, { lit: false, secs: 160 });
+  const P = SIGHT_TUNE.normal.prowl;
+  ok(dark.tIn > 0 && dark.tChase < 0 && dark.tLethal < 0 && dark.caught < 0 && dark.left > dark.tIn + P.dur - 0.1 && dark.r.c.stats.prowls >= 2, `unseen (an empty lantern): a ${P.dur} s pass that never strikes, it withdraws and leaves play (at ${f2(dark.left)} s), then comes back ${P.gapMin}-${P.gapMax} s later (${dark.r.c.stats.prowls} passes in 160 s)`);
+  const rest = prowl('normal', 3, { refuge: true, secs: 120 });
+  ok(rest.tChase < 0 && rest.caught < 0, "hidden in a Masons' rest through the passes: never seen, never touched");
+  const off = prowl('normal', 3, { off: true, secs: 120 });
+  ok(off.tIn < 0 && off.caught < 0, 'sight off: the old gate (a well player is never hunted, no passes)');
 }
 
 // ---- 13. no allocation per frame in the sense --------------------------------------------------------------------------------------

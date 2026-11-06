@@ -27,6 +27,7 @@ function run(seed, variant, secs, sec = 5) {
   c.reset(p);
   c.setSection(sec, L.sections[sec], p);
   let nan = false;
+  const resets = [];
   for (let i = 0; i < secs * 60; i++) {
     t = i / 60;
     // the player climbs slowly down the shaft, a little to and fro: noisy enough to be heard, slow enough to be hunted
@@ -39,11 +40,12 @@ function run(seed, variant, secs, sec = 5) {
     c.update(1 / 60, p, t);
     if (!isFinite(c.x + c.y + c.z)) nan = true;
     if (c.caughtPlayer) {
+      resets.push(t); // a new life: the stare cooldown starts over (reset), the spacing check is per life
       c.reset(p);
       c.setSection(sec, L.sections[sec], p);
     }
   }
-  return { ev, c, nan };
+  return { ev, c, nan, resets };
 }
 
 let stares = 0;
@@ -58,7 +60,8 @@ for (let seed = 1; seed <= 12; seed++) {
     const s = r.ev.stares[i];
     ok(s.d >= S.min - 1 && s.d <= S.max + 1, `seed ${seed}: it stares from ${s.d.toFixed(1)} m (inside ${S.min}-${S.max} m)`);
     if (r.ev.bursts.some((b) => b.reason === 'stare' && b.t >= s.t + S.durMin - 0.1 && b.t <= s.t + S.durMax + 0.5)) followed++;
-    if (i > 0 && s.t - r.ev.stares[i - 1].t < S.cooldown - 0.5) spaced = false;
+    const prev = i > 0 ? r.ev.stares[i - 1].t : -1;
+    if (i > 0 && !r.resets.some((x) => x > prev && x <= s.t) && s.t - prev < S.cooldown - 0.5) spaced = false;
   }
   ok(r.ev.calls.length === r.ev.stares.length, `seed ${seed}: every stare comes with a call`);
 }
