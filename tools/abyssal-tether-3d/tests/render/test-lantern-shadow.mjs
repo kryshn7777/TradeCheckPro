@@ -140,7 +140,7 @@ ok('receiver chunks: installed once in the stock chunks (function, visibility va
   assert.ok(sc.lights_pars_begin.includes('float atLanternShadow('));
   assert.equal(sc.lights_pars_begin.split('float atLanternShadow(').length, 2, 'declared once');
   assert.ok(sc.lights_fragment_begin.startsWith('float atLsVis = 1.0;'));
-  assert.ok(/pointLight\.decay < 1\.8[^\n]*atLanternShadow\(/.test(sc.lights_fragment_begin), 'lantern only (the pooled lamps have decay 2)');
+  assert.ok(/\( pointLight\.decay <= 1\.850 \|\| pointLight\.decay > 2\.005 \)[^\n]*atLanternShadow\(/.test(sc.lights_fragment_begin), 'lantern only (outside the pooled lamps\' decay band 2 and the glow\'s 1.9)');
   assert.ok(sc.lights_pars_begin.includes('sampler2DShadow uLSMapS') && sc.lights_pars_begin.includes('sampler2DShadow uLSMapD'));
   assert.ok(sc.lights_pars_begin.includes('#ifdef AT_LSHADOW'), 'inert in every program that does not define it');
   // the stock chunk text is otherwise unchanged

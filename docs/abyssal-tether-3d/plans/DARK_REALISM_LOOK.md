@@ -176,3 +176,44 @@ Tests: `tools/abyssal-tether-3d/tests/render/test-dark-look.mjs` (63 checks).
 
 Not verified: the headset (the LCD black level, the floor's visibility in a dark room, comfort), the Quest's real ALU timing, readability on
 a real dark display, the `low` tier in pictures (its numbers are unit-tested only).
+
+## 5. Retune (QA pass, 2026-11-06)
+
+### Found: the carried lantern did not light the baked stone at all (fixed, commit 4b20826)
+
+The lit shaders tell the point lights apart by their `decay` (a uniform three already uploads per light): the pooled lamps are 2 (baked
+on lightmapped stone, so their BRDF call is skipped there), the creature's glow 1.9, and the lantern was "decay < 1.8". The dark look set
+the lantern to `lanternDecay` **2.0**, i.e. into the lamps' code. Result, on every lightmapped surface (most of the level): the lantern
+was skipped (no warm pool on the stone, only on the hands, props and characters), its extra baked falloff (`uLMLan`) never applied,
+and the real-time lantern shadow (`atLanternShadow`, the `x0.6` fill under it) never applied anywhere. Proof capture (S2, looking down at
+the hands, 800x450): with the lantern's candela set to 0 the floor pixels did not change at all (only the hands and props went dark).
+
+Fix: decay BANDS (`materials.js` `LAMP_DECAY_BAND` 1.95..2.005, `CREATURE_DECAY_BAND` 1.85..1.95, the lantern = anything else) and
+`lanternDecayOf()` in the renderer, which moves a lantern decay that lands in a band just out of it (dark: 2.0 -> **2.01**, ~2 % at 10 m;
+classic 1.8 unchanged, and classic's lantern shadow now applies too: it was also excluded by `< 1.8`).
+
+This is also the "weak body shadow under the lamp" open item of section 4: the hooded body shadow on the floor in the cel look was the
+LANTERN's shadow, not the aux lamp's. With the fix it is back, hard and dark, in the warm lantern pool. No aux-shadow constant was changed
+(`LAMP_STRENGTH` 0.75 stays).
+
+| S2 hands frame (luma mean / p5 / p50 / p95 / %<8 / %<20) | before | after |
+| --- | --- | --- |
+| lantern on, aux on | 49.8 / 12 / 51 / 78 / 2 / 12 | 51.7 / 9 / 47 / 111 / 5 / 14 |
+| lantern on, aux off | 51.2 / 11 / 52 / 81 / 2 / 12 | 55.0 / 12 / 50 / 115 / 3 / 12 |
+| lantern off (diagnostic) | 44.4 / 3 / 48 / 73 / 10 / 20 | 44.4 / 3 / 48 / 73 / 10 / 19 |
+
+The p95 (the lantern's pool) rises 78 -> 111 and the p50 drops (the body shadow): the "light is life" pool the section 2 table describes
+now actually exists on the stone. Every frame and number in section 4 was taken with this bug, so the deep frames there (S4-S7) are
+darker near the player than the game now is.
+
+Tests: `test-dark-look.mjs` (the lantern of every preset is outside both bands; `lanternDecayOf`), `test-lantern-shadow.mjs` and
+`test-aux-shadow.mjs` (the band expressions in the chunks).
+
+### Not done in this pass (the shared browser lock was the bottleneck; owner asked to wrap up)
+
+Not retuned, numbers unchanged: the Mason (`uStone` lift 0.95, roughness floor 0.86, `uEmber`, the glow 9 cd, the end-face dust in
+`build_mason.py`), the blip wave (`PING_GAIN` 0.9; a fog-pierce term was drafted and reverted unverified), the ghost / release guide /
+knocker / skitterlings / glyphs / fall cue / hint glow, the death and damage overlays, god rays and fog at depth, the wrist map and
+vitals, the HUD, the `quest` / `low` tiers in pictures and the S1..S8 "too black" sweep. All of them must be re-judged AFTER the lantern
+fix, which brightens the near field everywhere on baked stone. Capture tooling for that pass: the scratchpad `opus/cap.mjs` (scenarios
+sections / hands / mason / masonsyn / wave / extras / death / wrist / hud, crash recovery, resume, in-page variants) and `opus/stats.py`.

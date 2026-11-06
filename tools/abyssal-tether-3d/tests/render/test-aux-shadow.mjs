@@ -128,7 +128,7 @@ ok('receiver chunks: atAuxShadow installed once, the pooled-light hook matches b
   const lit = M.patchMaterial(new THREE.MeshStandardMaterial(), { lit: true, grade: true });
   const sh = { uniforms: {}, vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader };
   lit.onBeforeCompile(sh, null);
-  assert.ok(sh.fragmentShader.includes('atLmOn > 0.5 && pointLight.decay > 1.95'), 'the creature glow is evaluated on baked fragments; the lamps (decay 2) are not');
+  assert.ok(sh.fragmentShader.includes('atLmOn > 0.5 && ( pointLight.decay > 1.950 && pointLight.decay <= 2.005 )'), 'the creature glow (1.9) and the lantern (any other decay) are evaluated on baked fragments; the lamps (decay 2) are not');
   assert.ok(!sh.fragmentShader.includes('atLmOn > 0.5 && pointLight.decay > 1.8 )'), 'the old test is gone');
   assert.ok(/uLPK\.x > 0\.002 && uLPK\.w < 0\.5\s*\)\s*atLl \*= atAuxShadow\(/.test(sh.fragmentShader), 'lamp mode darkens the baked lamp term');
   assert.equal(sh.uniforms.uLPMap, M.LSHADOW.uLPMap);

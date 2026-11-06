@@ -46,7 +46,7 @@
  */
 
 import * as THREE from 'three';
-import { FOG_START_FRAC, KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, loadTextureManifest } from './materials.js';
+import { FOG_START_FRAC, KEY_DIR, LOOK, MaterialLibrary, PALETTE, configureTextureLoading, installRadialFog, lanternDecayOf, loadTextureManifest } from './materials.js';
 import { LevelView, glowTexture } from './levelView.js';
 import { RopeView } from './ropeView.js';
 import { FX } from './fx.js';
@@ -284,7 +284,7 @@ export class Renderer3D {
     this.lanternFlare.visible = false; // the fake bloom is OFF (owner's call); the sprite stays so the API and the dispose path are unchanged
     this.lanternGroup.add(this.lanternFlare);
     this.lanternBase = LANTERN_CANDELA * this.look.lantern; // (game.js reads this once as the full-charge base)
-    this.lantern.decay = this.look.lanternDecay;
+    this.lantern.decay = lanternDecayOf(this.look.lanternDecay); // kept out of the pooled lamps' / the glow's decay bands (materials.js: the shaders tell the lights apart by it)
     this.setLanternParent(this.camera);
 
     // Environment light pool.
