@@ -1,11 +1,11 @@
 {
- "file": "/tmp/claude-0/-home-user-TradeCheckPro/bd43b95c-a204-5549-b531-f9f4921c321d/scratchpad/m2/final/raw/mason_rig.glb",
- "bytes": 8417796,
+ "file": "/tmp/claude-0/-home-user-TradeCheckPro/bd43b95c-a204-5549-b531-f9f4921c321d/scratchpad/lantern/s2-rig/mason_rig.glb",
+ "bytes": 8371444,
  "bones": 170,
  "lod0_tris": 63361,
  "lod1_tris": 23239,
  "lod0_verts": 105016,
- "lod1_verts": 46887,
+ "lod1_verts": 46883,
  "primitives_per_lod": [
   4,
   4

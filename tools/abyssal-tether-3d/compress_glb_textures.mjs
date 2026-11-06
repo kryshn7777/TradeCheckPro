@@ -46,7 +46,8 @@ const PLAN = {
   player_arms: { albedo: 2048, normal: 2048, orm: 2048, emissive: 1024 },
   player_body: { albedo: 1024, normal: 1024, orm: 1024, emissive: 1024, etc1s: ['albedo', 'emissive'] },
   mason_rig: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
-  mason_kit: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
+  // the kit is only the rig's fallback view: its linear maps take a stronger RDO (smaller download; keeps the core precache under 80 MiB)
+  mason_kit: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'], linearRdo: 2.0 },
   mason_hero: { albedo: 1024, normal: 1024, orm: 512, emissive: 512, etc1s: ['albedo', 'emissive'] },
   // THE HOLDFAST (build_holdfast.py): baked at 2048, shipped at 1024 (normal / ORM UASTC, ORM B = the vein mask; albedo ETC1S): ~2 MB
   holdfast: { albedo: 1024, normal: 1024, orm: 1024, emissive: 512, etc1s: ['albedo'] },
@@ -75,7 +76,7 @@ const imageDecoder = async (buf) => {
   return { data: new Uint8Array(data), width: info.width, height: info.height };
 };
 
-async function encode(input, { srgb, size, uastc = true }) {
+async function encode(input, { srgb, size, uastc = true, linearRdo = 0.8 }) {
   let png = input;
   const meta = await sharp(input).metadata();
   const edge = Math.max(meta.width, meta.height);
@@ -93,7 +94,7 @@ async function encode(input, { srgb, size, uastc = true }) {
     needSupercompression: uastc, // zstd on UASTC
     uastcLDRQualityLevel: 2,
     enableRDO: uastc,
-    rdoQualityLevel: srgb ? 1.5 : 0.8,
+    rdoQualityLevel: srgb ? 1.5 : linearRdo,
     qualityLevel: 150, // ETC1S
     compressionLevel: 3,
   });
@@ -127,7 +128,7 @@ for (const name of only) {
     const r = role.get(t) || 'albedo';
     const size = PLAN[name][r];
     const t0 = Date.now();
-    const ktx = await encode(Buffer.from(img), { srgb: r === 'albedo' || r === 'emissive', size, uastc: !(PLAN[name].etc1s || []).includes(r) });
+    const ktx = await encode(Buffer.from(img), { srgb: r === 'albedo' || r === 'emissive', size, uastc: !(PLAN[name].etc1s || []).includes(r), linearRdo: PLAN[name].linearRdo || 0.8 });
     t.setImage(ktx).setMimeType('image/ktx2');
     changed++;
     console.log(`    ${t.getName().padEnd(22)} ${r.padEnd(8)} <=${size}  ${(img.length / 1e6).toFixed(2)} MB -> ${(ktx.length / 1e6).toFixed(2)} MB  ${((Date.now() - t0) / 1000).toFixed(0)} s`);

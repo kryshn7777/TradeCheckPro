@@ -533,6 +533,17 @@ export class MasonRigView {
       const emK = (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat);
       this.emissive.emissiveIntensity = this._emBase * Math.min(0.78, 0.14 + 0.28 * emK);
     }
+    if (!o.variant) {
+      // THE LANTERN: the seam ember (masonMaterial.js) breathes with the same beat, brighter while it listens; <= ~0.25 radiance
+      // so the eyes stay the reddest thing on it. reducedEffects: no ember, no wet film.
+      const red = !!o.reducedEffects;
+      const glow = clamp(B.glow == null ? 0.3 : B.glow, 0, 1);
+      const ph = (this._time * (0.65 + 0.5 * glow)) % 1;
+      const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
+      const k = red ? 0 : (0.05 + 0.1 * glow + 0.06 * clamp(B.listen || 0, 0, 1)) * (0.55 + 0.45 * Math.min(beat, 1));
+      this.uniforms.uEmber.value.setRGB(k, k * 0.16, k * 0.035);
+      this.uniforms.uWet.value = red ? 0 : 1;
+    }
 
     // ---- bounds ----
     this._bounds(sp, hs);

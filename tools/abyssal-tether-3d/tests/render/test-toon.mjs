@@ -127,7 +127,7 @@ const read = (f) => fs.readFileSync(path.join(SRCDIR, f), 'utf8');
   const f = shader.fragmentShader;
   ok(shader.uniforms.uToonK === LOOK.uToonK, 'the Mason binds the shared toon uniforms');
   ok(f.indexOf('atToon( max') > f.indexOf('opaque_fragment') && f.indexOf('atToon( max') < f.indexOf('mPreFog'), 'the Mason is banded before its own fog tail (the haze stays smooth)');
-  ok(/mason-rig-v3/.test(mat.customProgramCacheKey()), 'the program cache key changed with the shader');
+  ok(/mason-rig-v5/.test(mat.customProgramCacheKey()), 'the program cache key changed with the shader');
 }
 
 // 4. Every other patch site calls it.
