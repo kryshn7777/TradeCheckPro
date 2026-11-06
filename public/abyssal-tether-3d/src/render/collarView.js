@@ -29,6 +29,9 @@ const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3(1, 1, 1);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
+const _c = new THREE.Color();
+const _st = { spin: 0, clamp: 0, lights: 0, beam: 0 }; // a kit drone's per-frame state (reused)
+const _cst = { spool: 0, lights: 1 }; // the kit cradle's
 
 function canvas(w, h) {
   const c = typeof document !== 'undefined' ? document.createElement('canvas') : null;
@@ -344,14 +347,24 @@ export class CollarView {
       box(13.7, 14.3, D, W + 0.4, CRADLE_Z - 0.3, CRADLE_Z + 0.3),
       box(-14.3, 14.3, W + 0.1, W + 0.5, CRADLE_Z - 0.35, CRADLE_Z + 0.35),
       box(CRADLE_X - 0.45, CRADLE_X + 0.45, W - 0.35, W + 0.1, CRADLE_Z + 0.25, CRADLE_Z + 0.95), // the winch
-      box(cs.x - 0.8, cs.x + 0.8, D, D + 0.74, cs.z - 0.4, cs.z + 0.4), // the desk
-      box(cs.x - 0.06, cs.x + 0.06, D + 0.74, D + 1.0, cs.z - 0.25, cs.z - 0.13), // the screen's stand
-      box(cs.x - 0.28, cs.x + 0.28, D + 0.42, D + 0.5, cs.z + 0.6, cs.z + 1.12), // the chair's seat
-      box(cs.x - 0.28, cs.x + 0.28, D + 0.5, D + 1.15, cs.z + 1.08, cs.z + 1.16), // its back
-      box(cs.x - 0.04, cs.x + 0.04, D, D + 0.42, cs.z + 0.82, cs.z + 0.9), // its post
     ];
     for (const p of COLLAR.pads) parts.push(cyl(0.95, 0.06, p[0], D + 0.03, p[2], 24));
     this.station.add(mesh(merge(parts), this.mats.graphite, 'AT3D-collar-frame'));
+    // the console and its EMPTY chair (ours, kept with the kit: nobody is at the console)
+    if (!this.console) {
+      this.console = mesh(
+        merge([
+          box(cs.x - 0.8, cs.x + 0.8, D, D + 0.74, cs.z - 0.4, cs.z + 0.4), // the desk
+          box(cs.x - 0.06, cs.x + 0.06, D + 0.74, D + 1.0, cs.z - 0.25, cs.z - 0.13), // the screen's stand
+          box(cs.x - 0.28, cs.x + 0.28, D + 0.42, D + 0.5, cs.z + 0.6, cs.z + 1.12), // the chair's seat
+          box(cs.x - 0.28, cs.x + 0.28, D + 0.5, D + 1.15, cs.z + 1.08, cs.z + 1.16), // its back
+          box(cs.x - 0.04, cs.x + 0.04, D, D + 0.42, cs.z + 0.82, cs.z + 0.9), // its post
+        ]),
+        this.mats.graphite,
+        'AT3D-collar-console',
+      );
+      this.root.add(this.console);
+    }
     // the LED strips: round the opening's rim (an octagon of thin bars), along the bay, round each pad
     const leds = [];
     const R = COLLAR.irisR + 0.35;
@@ -468,6 +481,13 @@ export class CollarView {
           }
           this.station.add(c.group);
           this._kitStation = c;
+          if (Array.isArray(c.lights)) {
+            for (const L of c.lights) {
+              if (!L || !Number.isFinite(L.x) || this._kitLights.length >= MAX_GLOWS - 8) continue;
+              _c.set(L.color != null ? L.color : 0xbfe8ff);
+              this._kitLights.push({ x: L.x + c.group.position.x, y: L.y + c.group.position.y, z: L.z + c.group.position.z, r: _c.r * 0.5, g: _c.g * 0.5, b: _c.b * 0.5 });
+            }
+          }
           if (typeof c.setIris === 'function') {
             this._setIris = c.setIris;
             this.iris.visible = false;
@@ -484,6 +504,9 @@ export class CollarView {
         if (g && g.isObject3D) {
           this._stripLights(g, false);
           this._setCradleModel(g);
+          if (typeof g.screenSetText === 'function') g.screenSetText(SCREEN.tag);
+          this.tag.visible = false;
+          this._kitCradle = g;
         }
       }
     } catch (err) {
@@ -505,7 +528,10 @@ export class CollarView {
           g.traverse((o) => {
             if (o !== g && /rotor|prop|fan/i.test(o.name || '')) rotors.push(o);
           });
-          d.userData.rotors = rotors;
+          d.userData.rotors = typeof g.update === 'function' ? [] : rotors; // the kit spins its own
+          d.userData.kit = typeof g.update === 'function' ? g : null;
+          d.userData.cp = g.clampPoint || null;
+          this._kitDrones = true;
         }
       }
     } catch (err) {
@@ -590,6 +616,17 @@ export class CollarView {
     const c = s.cradle;
     this.cradle.visible = !!c.on;
     this.cradle.position.set(c.x, c.y, c.z);
+    if (this.console) this.console.visible = st;
+    const kc = this._kitCradle;
+    if (kc && typeof kc.update === 'function') {
+      _cst.spool = s.line.on && t > 24.5 && t < 51 ? 2.2 : 0; // the line paying out on the way down
+      kc.update(Math.max(0, Math.min(0.1, t - (this._lastT == null ? t : this._lastT))), _cst);
+    }
+    const ks = this._kitStation;
+    if (ks && typeof ks.setLights === 'function' && this._kitLightsK !== (st ? 1 : 0)) {
+      this._kitLightsK = st ? 1 : 0;
+      ks.setLights(this._kitLightsK);
+    }
     // the drones: placed, tilted into their motion (the view's own memory of the last frame), rotors spun
     let ng = 0;
     const gp = this.glows.geometry.attributes.position;
@@ -608,11 +645,20 @@ export class CollarView {
       }
       pv.set(d.x, d.y, d.z);
       const lim = 0.32;
-      g.position.set(d.x, d.y, d.z);
+      const cp = g.userData.cp;
+      g.position.set(d.x, d.y, d.z - (cp ? cp.z : 0));
+      const kd = g.userData.kit;
+      if (kd) {
+        _st.spin = d.rot;
+        _st.clamp = d.clamped ? 1 : 0;
+        _st.lights = d.led;
+        _st.beam = d.beam;
+        kd.update(dt, _st);
+      }
       g.rotation.set(Math.max(-lim, Math.min(lim, vz * 0.06)), 0, Math.max(-lim, Math.min(lim, -vx * 0.06)));
       const rot = g.userData.rotors;
       for (let r = 0; r < rot.length; r++) rot[r].rotation.y += d.rot * 1.9 * (r & 1 ? -1 : 1);
-      if (!d.on) continue;
+      if (!d.on || kd) continue; // a kit drone draws its own LEDs and beam
       // the status LED (cool white) and the lens under the body (its beam's source)
       if (d.led > 0.01) {
         gp.setXYZ(ng, d.x, d.y + 0.14, d.z);
@@ -647,7 +693,7 @@ export class CollarView {
       this.glows.material.uniforms.uPx.value = o && o.xr ? 1600 : o && o.px > 0 ? o.px : 720;
     }
     let anyBeam = false;
-    for (let i = 0; i < 4; i++) if (s.drones[i].on && s.drones[i].beam > 0.01) anyBeam = true;
+    if (!this._kitDrones) for (let i = 0; i < 4; i++) if (s.drones[i].on && s.drones[i].beam > 0.01) anyBeam = true;
     this.beams.visible = anyBeam;
     if (anyBeam) {
       this.beams.instanceMatrix.needsUpdate = true;

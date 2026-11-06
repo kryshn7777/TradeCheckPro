@@ -112,7 +112,7 @@ ok(DURATION >= 90 && DURATION <= 105, `the film runs ${DURATION} s (90-105)`);
     if (!cutHere && (a - b) / 0.02 > 1.0 + 1e-6) fast.push(+t.toFixed(2));
   }
   ok(!up && fast.length === 0, `the cradle descends at <= 1 m/s (${O.DESCENT_SPEED} m/s), never rises, jumps only at the cuts (${O.CUT1}, ${O.CUT2} s)`, fast.slice(0, 5));
-  ok(Math.abs(O.cradleY(0) - (O.COLLAR.deckY + O.CRADLE_PLATE)) < 1e-9 && Math.abs(O.cradleY(O.LAND_AT) - O.CRADLE_LAND_Y) < 1e-9 && O.cradleY(O.LAND_AT - 0.05) - O.CRADLE_LAND_Y < 0.01, 'it stands on the deck, and settles on the Threshold at the landing (eased to rest)');
+  ok(Math.abs(O.cradleY(0) - (O.COLLAR.restY + O.CRADLE_PLATE)) < 1e-9 && Math.abs(O.cradleY(O.LAND_AT) - O.CRADLE_LAND_Y) < 1e-9 && O.cradleY(O.LAND_AT - 0.05) - O.CRADLE_LAND_Y < 0.01, 'it stands on the closed iris, and settles on the Threshold at the landing (eased to rest)');
   const cx = O.CRADLE_X;
   const cz = O.CRADLE_Z;
   ok(cx > -11 + 1.7 && cx < 3 - 1.7 && cz > 4 + 1.7 && cz < 11 - 1.7 && Math.abs(cx + cz) / Math.SQRT2 > 2.5 && Math.hypot(cx - O.DEFAULT_HANDOFF.x, cz - O.DEFAULT_HANDOFF.z) < 1, 'the cradle line: on the Threshold ledge with the drones clear of its edges, 2.5 m clear of the diagonal girder at y 26, by the spawn');
@@ -140,6 +140,15 @@ ok(DURATION >= 90 && DURATION <= 105, `the film runs ${DURATION} s (90-105)`);
   ok(/RETURN 0/.test(O.SCREEN.tag) && /PAYLOAD 1/.test(O.SCREEN.tag) && O.SCREEN.rows.includes('RETURN 0'), 'the replay\'s quiet fact on the console and the cradle tag: PAYLOAD 1 · RETURN 0');
   ok(at(5).rays === 0 && at(28).rays === 0 && at(O.CUT1 + 4.5).rays > 0.25 && at(O.DURATION).rays === 1, 'the level\'s light shafts are held off at the station and down the shaft, come in at THE WINDOW, and are whole at the hand-off');
   ok(at(36).dust.grit > 0.8 && at(5).dust.grit === 0 && at(5).dust.motes > 0.9 && at(O.LANTERN_OUT_AT + 1).dust.motes === 0, 'grit falls past the cradle on the way down; motes hang in the lantern\'s light; nothing once it is out');
+  // the art owner's kit (render/facilityKit.js) and the film agree on where things are
+  const K = await import(srcUrl('render/facilityKit.js'));
+  const F = K.FACILITY;
+  ok(Math.abs(F.deckY - O.COLLAR.deckY) < 1e-9 && Math.abs(F.irisTopY - O.COLLAR.restY) < 1e-9 && Math.abs(F.cradle.skid - O.CRADLE_PLATE) < 1e-9 && Math.abs(F.cradle.anchorY - F.drone.clampY - O.DRONE_UP) < 1e-9 && Math.abs(F.cradle.anchorXZ - O.DRONE_OUT) < 1e-9 && O.COLLAR.irisR === F.irisRadius && Math.abs(F.gantryY - O.COLLAR.winchY) < 1e-9, 'the film\'s COLLAR matches the kit\'s FACILITY (deck, iris, the cradle\'s skid and lift rings, the drones\' clamp point, the gantry)');
+  const col = K.buildCollar();
+  const pads = col.dronePads.map((p) => [p.x, p.z]).sort((a, b) => a[0] - b[0]);
+  ok(pads.every((p, i) => Math.hypot(p[0] - O.COLLAR.pads[i][0], p[1] - O.COLLAR.pads[i][2]) < 0.05), 'the drones take off from the kit\'s four pads');
+  ok(Math.abs(O.CRADLE_X - F.descent.x) < 1e-9 && Math.abs(O.CRADLE_Z - F.descent.z) <= 0.5, `the descent column is the kit's (x ${F.descent.x}; z ${O.CRADLE_Z} vs ${F.descent.z}: 0.5 m north, so the +Z drones clear the Threshold arch's face at z 9.9)`);
+  if (typeof col.dispose === 'function') col.dispose();
   ok(at(10).dark < at(30).dark && at(30).dark > 0.9, 'the station is lit; once the iris opens the world is held dark and the lantern is the key');
 }
 

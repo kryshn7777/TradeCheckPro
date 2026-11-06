@@ -51,16 +51,24 @@ export const DEFAULT_HANDOFF = Object.freeze({ x: -4, y: 2.06, z: 8.5, yaw: 0, f
 
 // ---- THE COLLAR: the choreography's geometry (render/facilityKit.js builds the models; render/openingView.js aligns them to this) ----
 /**
- * The station over the shaft: the deck at y 62 round the S1 chimney's 22 x 22 m mouth (its walls stop at 60), the iris over it, the
- * winch gantry over the cradle line, four drone pads on the south deck, the console (and its empty chair) facing north.
+ * The station over the shaft (render/facilityKit.js FACILITY, the art owner's numbers, mirrored here: the sim cannot import three.js;
+ * tests/ux/opening.mjs checks they agree): the iris over the S1 chimney's mouth (its walls stop at 60) with its top at 60.3, the deck
+ * at 60.45, the gantry ring girder (the line's winch) at 69.45, the four drone pads round the descent column (kit PAD_R 21.6, ordered
+ * west to east here; a docked drone's centre 0.5 m over the deck), the console (and its empty chair) on the deck facing north.
  */
 export const COLLAR = Object.freeze({
-  deckY: 62,
-  iris: Object.freeze({ x: 0, y: 62, z: 0 }),
-  irisR: 11.6,
-  winchY: 66.5,
-  pads: Object.freeze([Object.freeze([-9, 62, 15]), Object.freeze([-5.5, 62, 16.2]), Object.freeze([-2.5, 62, 16.2]), Object.freeze([1, 62, 15])]),
-  console: Object.freeze({ x: -1.2, y: 62, z: 13.6 }),
+  deckY: 60.45,
+  restY: 60.3, // the closed iris' top: the cradle's skids rest on it
+  iris: Object.freeze({ x: 0, y: 60.3, z: 0 }),
+  irisR: 16.0,
+  winchY: 69.45,
+  pads: Object.freeze([
+    Object.freeze([-18.36, 60.45, 11.38]),
+    Object.freeze([-12.76, 60.45, 17.43]),
+    Object.freeze([-5.3, 60.45, 20.94]),
+    Object.freeze([2.93, 60.45, 21.4]),
+  ]),
+  console: Object.freeze({ x: -1.2, y: 60.45, z: 18.6 }), // on the deck, past the collar ring (r 17.2)
 });
 /** The cradle's line: it stands on the iris here, goes straight down, and lands on the Threshold 0.5 m in front of the spawn (clear of
  *  the great diagonal girder at y 26 by 2.8 m, of the arch and of the statues). */
@@ -68,7 +76,7 @@ export const CRADLE_X = -4;
 export const CRADLE_Z = 8.0;
 /** The floor plate's thickness: the cradle's floor point sits this far above what it stands on. */
 export const CRADLE_PLATE = 0.12;
-const Y_REST = COLLAR.deckY + CRADLE_PLATE;
+const Y_REST = COLLAR.restY + CRADLE_PLATE;
 const Y_LIFT = Y_REST + 1.0;
 export const CRADLE_LAND_Y = CRADLE_PLATE; // the Threshold's top is y 0
 /** The descent: 0.9 m/s (a headset rides it: <= 1 m/s), two cuts down the shaft (desktop: on a cue; a headset: inside a black dip). */
@@ -109,12 +117,12 @@ export const LANTERN_REST_Y = CRADLE_LAND_Y + LANTERN_UP;
 export const LANTERN_STOP_AT = LAND_AT;
 export const LANTERN_SCALE = 1.9;
 
-/** The drones: clamped at the cradle's top corners (body centres at these offsets from its floor point). */
-export const DRONE_UP = 2.75;
-export const DRONE_OUT = 1.2;
+/** The drones: clamped at the cradle's lift rings (kit: anchorY 2.51, anchorXZ 1.1, the drone's clamp point 0.375 under its centre). */
+export const DRONE_UP = 2.885;
+export const DRONE_OUT = 1.1;
 /** Which corner each pad's drone takes (pads west to east: NW, SW, SE, NE), so no two paths cross. */
 export const CORNER = Object.freeze([Object.freeze([-1, -1]), Object.freeze([-1, 1]), Object.freeze([1, 1]), Object.freeze([1, -1])]);
-const PAD_LIFT = 0.35; // a drone's body centre over its pad
+const PAD_LIFT = 0.5; // a docked drone's centre over its pad (kit dockY)
 const ARC = Object.freeze([3.2, 2.0, 2.0, 3.2]); // how high each flies over the line to its corner
 export const SPIN_AT = 3.0;
 const FLY_AT = 8.75; // the first lifts off (each 0.25 s after the last)
@@ -158,20 +166,20 @@ const HO = (x, y, z) => ({ hand: [x, y, z] }); // relative to the hand-off eye
 export const SHOTS = Object.freeze([
   // ---- ACT I: THE COLLAR ----
   S('collar', 'THE COLLAR', 0, 9, [
-    [0, A(9.5, 67.6, -8.8), C(0, 1.2, 0), 40],
-    [1, A(7.4, 66.6, -5.6), C(0, 1.3, 0), 36],
+    [0, A(9.5, 66.0, -8.8), C(0, 1.2, 0), 40],
+    [1, A(7.4, 65.0, -5.6), C(0, 1.3, 0), 36],
   ]),
   S('measure', 'THE MEASURE', 9, 17, [
     [0, C(3.4, 2.6, -3.9), C(0, 1.5, 0), 42],
     [1, C(2.6, 2.2, -3.0), C(0, 1.3, 0), 38],
   ], { cut: true }),
   S('hall', 'THE HALL', 17, 21, [
-    [0, A(-0.55, 63.72, 15.35), C(0, 1.55, 0), 34],
-    [1, A(-0.7, 63.68, 15.0), C(0, 1.5, 0), 33],
+    [0, A(-0.55, 62.17, 20.35), C(0, 1.55, 0), 34],
+    [1, A(-0.7, 62.13, 20.0), C(0, 1.5, 0), 33],
   ], { cut: true, track: true }),
   S('iris', 'THE IRIS', 21, CUT1, [
-    [0, A(-1.4, 70.2, 13.4), C(0, 1.0, 0), 46],
-    [1, A(-2.0, 68.4, 12.6), C(0, 0.6, 0), 38],
+    [0, A(-1.4, 68.6, 13.4), C(0, 1.0, 0), 46],
+    [1, A(-2.0, 66.8, 12.6), C(0, 0.6, 0), 38],
   ], { cut: true, track: true }),
   // ---- ACT II: THE DESCENT ----
   S('window', 'THE WINDOW', CUT1, CUT2, [
