@@ -115,6 +115,21 @@ The pads sit on the deck south of it, the control window faces it from the north
 - the only texture is the cradle screen's CanvasTexture (unlit material);
 - grime: seeded hash noise per vertex + a cavity term (faces pointing down darker) + a height term; deterministic, no `Math.random`.
 
+## 4b. As built (numbers from the test)
+
+| Piece | Triangles | Draw calls | Notes |
+| --- | --- | --- | --- |
+| drone LOD0 | 3 978 counting every mesh (3 498 at rest) | 9 at rest (+ beam, scan when on) | hull 1, clamp head 1, jaws 2, rotors 4 (blades or blur), LEDs 1 |
+| drone LOD1 | 868 counting every mesh (764 at rest) | same nodes | 2-blade rotors, no stencils |
+| cradle | 3 502 | 6 | frame, spool drum, spool LED, gate, LEDs, screen |
+| collar | 16 268 | 5 | shell, iris, LEDs, control-room screens, glass |
+
+Film recipe: `drone.position = cradle.localToWorld(anchor) - drone.clampPoint` (all drones yaw 0 with the cradle: their jaws close
+from +-Z under the ring's top bar); docked drones sit at `dronePads[i]` with `rotation.y = yaw`; the cradle starts at `cageAnchor`
+(-4, 60.42, 8.5) on the closed iris; the eye is `cradle.position.y + 1.65`. `collar.lights` are descriptors for the real lights the film
+creates (gantry points, a column spot onto the cradle, pad ambers, a hemisphere fill). Note for the film: the scene fog of S1 will eat
+the hall beyond ~30 m unless the opening sets a longer fog while the camera is at the collar.
+
 ## 5. Verification
 
 `tests/render/test-facility-kit.mjs` (API, nodes, caps, bounds, determinism, iris monotonic coverage, dispose, heap-sampled update
