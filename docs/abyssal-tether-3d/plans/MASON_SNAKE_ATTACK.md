@@ -91,3 +91,11 @@ Adapter (new fields preferred, derivation, every phase incl. dash, the lock wind
 boundaries incl. dash -> rise, bounds, no NaN, link lengths kept, the timers reset on a phase change), sway vs reducedEffects,
 recipes valid + routes + captions + level caps, no per-frame allocation (static + heap sampled), determinism. Contact sheet:
 `docs/abyssal-tether-3d/plans/img/mason-snake-attack.jpg` (stalk, dash, rise/stare, lock, strike, recoil at 6-10 m, a real level).
+
+## 8. Status (hand-back)
+
+In: everything in §1-§7 except the visual capture. Node: `test-mason-attack.mjs` all PASS (incl. heap-sampled 0 B / frame), the rig /
+motion / aux shadow / face / mandibles / sfx / ux / chase tests PASS, the budget harness within budget, lint clean.
+NOT verified: the in-browser look (the contact sheet was never captured: the shared browser lock was blocked), so the coil's height
+(~6 m), the lead legs reaching down from the reared links and the reading in the dark / in a headset still need a look; the capture
+script (forces each phase on a synthetic Mason via `AT3D.debug.creature.place` + `AT3D.debug.masonPhase(phase, u)`) is in the hand-back.
