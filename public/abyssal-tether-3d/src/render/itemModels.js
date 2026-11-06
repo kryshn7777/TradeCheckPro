@@ -33,13 +33,13 @@ export const ITEM_MODEL_CAPS = Object.freeze({ verts: 1300, tris: 1500 });
 
 export const MODEL_REST = Object.freeze({
   // on its back, the lid face up (the cross shows to the lantern)
-  FIRST_AID: Object.freeze({ h: 0.064, euler: Object.freeze([-Math.PI / 2, 0, 0]), body: Object.freeze({ e: 0.26, mu: 0.7, spin: 0.55 }) }),
+  FIRST_AID: Object.freeze({ h: 0.0574, euler: Object.freeze([-Math.PI / 2, 0, 0]), body: Object.freeze({ e: 0.26, mu: 0.7, spin: 0.55 }) }),
   // as modelled: flat on the ground, tails out (cloth: hardly bounces, slides little)
-  BANDAGE: Object.freeze({ h: 0.0175, euler: Object.freeze([0, 0, 0]), body: Object.freeze({ e: 0.06, mu: 0.45, spin: 0.3 }) }),
+  BANDAGE: Object.freeze({ h: 0.0224, euler: Object.freeze([0, 0, 0]), body: Object.freeze({ e: 0.06, mu: 0.45, spin: 0.3 }) }),
   // on its side, the lever up
-  GRENADE: Object.freeze({ h: 0.0315, euler: Object.freeze([0, 0, Math.PI / 2]), body: Object.freeze({ e: 0.3, mu: 0.75, spin: 0.6 }) }),
+  GRENADE: Object.freeze({ h: 0.029, euler: Object.freeze([0, 0, Math.PI / 2]), body: Object.freeze({ e: 0.3, mu: 0.75, spin: 0.6 }) }),
   // on its side, the right-hand face (+Z) up
-  SIDEARM: Object.freeze({ h: 0.0215, euler: Object.freeze([-Math.PI / 2, 0, 0]), body: Object.freeze({ e: 0.22, mu: 0.6, spin: 0.5 }) }),
+  SIDEARM: Object.freeze({ h: 0.0205, euler: Object.freeze([-Math.PI / 2, 0, 0]), body: Object.freeze({ e: 0.22, mu: 0.6, spin: 0.5 }) }),
 });
 
 /** The lying rotation of a MODEL_REST entry as a quaternion (built once by the caller). */
@@ -149,6 +149,28 @@ function mergeModel(parts, tilt = 0, size = 1) {
 const box = (w, h, d, sx = 1, sy = 1, sz = 1) => new THREE.BoxGeometry(w, h, d, sx, sy, sz);
 const cyl = (r0, r1, h, seg = 10, open = false) => new THREE.CylinderGeometry(r0, r1, h, seg, 1, open);
 const sph = (r, ws = 6, hs = 4) => new THREE.SphereGeometry(r, ws, hs);
+
+/** A box with rounded edges and corners (radius r), subdivided (sx, sy, sz) so the paint has vertices inside its faces. */
+function roundBox(w, h, d, r, sx, sy, sz) {
+  const g = new THREE.BoxGeometry(w, h, d, sx, sy, sz);
+  const p = g.attributes.position;
+  const hx = w / 2 - r;
+  const hy = h / 2 - r;
+  const hz = d / 2 - r;
+  const v = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    c.set(Math.max(-hx, Math.min(hx, v.x)), Math.max(-hy, Math.min(hy, v.y)), Math.max(-hz, Math.min(hz, v.z)));
+    v.sub(c);
+    const l = v.length();
+    if (l > 1e-9) v.multiplyScalar(r / l);
+    v.add(c);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 
 /** A slab with rounded corners and bevelled edges, centred, exactly w x h x d (outline in XY, thickness along Z). */
 function roundSlab(w, h, d, r, bevel, curveSeg = 2) {
@@ -312,12 +334,12 @@ export function buildFirstAid(tilt = 0, size = 1) {
     .multiply(new THREE.Matrix4().makeTranslation(0, -HINGE_Y, -HINGE_Z));
   const parts = [];
   // body (back half) and lid (front half): rounded, bevelled enamel shells
-  parts.push({ geo: roundSlab(W, H, 0.068, 0.022, 0.007), pos: [0, 0, -0.021], color: ENAMEL, paint: enamel, crease: 0.7 });
-  parts.push({ geo: roundSlab(W - 0.004, H - 0.004, 0.034, 0.02, 0.007), pos: [0, 0, 0.037], pre: lid, color: ENAMEL, paint: enamel, crease: 0.7 });
+  parts.push({ geo: roundBox(W, H, 0.068, 0.008, 7, 5, 1), pos: [0, 0, -0.021], color: ENAMEL, paint: enamel, crease: 0.9 });
+  parts.push({ geo: roundBox(W - 0.004, H - 0.004, 0.034, 0.008, 7, 5, 1), pos: [0, 0, 0.037], pre: lid, color: ENAMEL, paint: enamel, crease: 0.9 });
   // the steel rim round the body's mouth: a dark line round the case
   parts.push({ geo: roundSlab(W + 0.006, H + 0.006, 0.012, 0.024, 0.002, 2), pos: [0, 0, 0.009], color: RIM, paint: steel, crease: 0.7 });
   // the gauze in the gap at the top (a folded wad and a loose fold hanging over the lid's edge)
-  parts.push({ geo: cushion(0.11, 0.012, 0.012, 0.45, 0.7, 10, 6, 0.25, 1), pos: [-0.02, hh - 0.012, 0.02], color: GAUZE, paint: (c, x, y, z) => c.multiplyScalar(0.85 + 0.2 * vnoise(x, y, z, 50)), crease: 1.4 });
+  parts.push({ geo: cushion(0.11, 0.012, 0.012, 0.45, 0.7, 8, 5, 0.25, 1), pos: [-0.02, hh - 0.012, 0.02], color: GAUZE, paint: (c, x, y, z) => c.multiplyScalar(0.85 + 0.2 * vnoise(x, y, z, 50)), crease: 1.4 });
   parts.push({
     geo: ribbon(
       [
@@ -345,8 +367,9 @@ export function buildFirstAid(tilt = 0, size = 1) {
     [LZ, lid],
     [-0.055 - 0.0012, null],
   ]) {
-    parts.push({ geo: box(0.044, 0.13, 0.0024), pos: [0, 0, z], pre, color: RED, paint: paintRed });
-    parts.push({ geo: box(0.13, 0.044, 0.0024), pos: [0, 0, z], pre, color: RED, paint: paintRed });
+    // three pieces that do not overlap (no z-fight in the middle), each with a few vertices for the wear
+    parts.push({ geo: box(0.044, 0.13, 0.0024, 1, 3, 1), pos: [0, 0, z], pre, color: RED, paint: paintRed });
+    for (const sx of [-1, 1]) parts.push({ geo: box(0.043, 0.044, 0.0024), pos: [sx * 0.0435, 0, z], pre, color: RED, paint: paintRed });
   }
   // riveted steel corner caps: four on the lid's face, four on the back
   const CAP = 0.032;
@@ -364,7 +387,6 @@ export function buildFirstAid(tilt = 0, size = 1) {
     const x = sx * 0.088;
     parts.push({ geo: box(0.024, 0.006, 0.026), pos: [x, hh + 0.002, -0.002], color: BRASS, paint: steel });
     parts.push({ geo: box(0.018, 0.004, 0.03), pos: [x, hh + 0.012, 0.014], rot: [-0.75, 0, 0], color: BRASS, paint: steel });
-    parts.push({ geo: box(0.02, 0.005, 0.012), pos: [x, hh + 0.001, 0.038], pre: lid, color: BRASS, paint: steel });
   }
   // the leather strap handle on two steel brackets
   const strap = torus(0.052, 0.0075, 4, 10, Math.PI);
@@ -380,93 +402,109 @@ export function buildFirstAid(tilt = 0, size = 1) {
 // ---------------------------------------------------------------------------------------------
 
 export function buildBandage(tilt = 0, size = 1) {
-  const LINEN = col(0xcfc4a6);
-  const PAPER = col(0x8a7350);
-  const TWINE = col(0x6b5534);
-  const BLOOD = col(0x4e1a12);
+  const LINEN = col(0xcbc1a6);
+  const GAUZE = col(0xddd4bd);
+  const PAPER = col(0x6e5638);
+  const TWINE = col(0x5e4a2c);
+  const BLOOD = col(0x4a100a);
   const PIN = col(0x9a978e);
   const PX = -0.04; // pad centre
   const A = 0.064;
-  const B = 0.0165;
+  const B = 0.019;
   const C = 0.046;
-  const GROUND = -(B + 0.0028); // the lowest point of the bound pad (the twine): the tails lie on this plane
-  // the stain: dried blood soaked into the +X,+Z corner, ragged
-  const SX = PX + 0.045;
-  const SZ = 0.03;
+  const GROUND = -(B + 0.0026); // the lowest point of the bound pad (the wraps): the tails lie on this plane
+  // the stain: dried blood soaked into the pad's top toward the +X,+Z corner and down into the tails, ragged
+  const SX = PX + 0.05;
+  const SZ = 0.008;
   const stain = (c, x, y, z, k = 1) => {
-    const d = Math.hypot(x - SX, (y - B) * 0.6, z - SZ);
-    const s = smooth(0.042, 0.012, d + (vnoise(x, y, z, 70) - 0.5) * 0.024);
-    mixTo(c, BLOOD, s * k);
-    mixTo(c, _c.set(0x7a5a3a), smooth(0.06, 0.04, d) * (1 - s) * 0.45 * k); // the yellowed rim of the stain
+    const d = Math.hypot(x - SX, (y - B) * 0.5, z - SZ);
+    const s = smooth(0.06, 0.02, d + (vnoise(x, y, z, 70) - 0.5) * 0.03);
+    mixTo(c, BLOOD, s * 0.92 * k);
+    mixTo(c, _c.set(0x6e4a2c), smooth(0.085, 0.06, d) * (1 - s) * 0.5 * k); // the yellowed rim of the stain
   };
   const linen = (c, x, y, z) => {
-    c.multiplyScalar(0.8 + 0.24 * vnoise(x, y, z, 45));
-    mixTo(c, _c.set(0x5d5040), smooth(-0.004, -B, y) * 0.35); // ground dirt underneath
+    // the weave: faint cross-hatch, a soft mottle, dirt underneath
+    c.multiplyScalar(0.84 + 0.1 * Math.sin(x * 900) * Math.sin(z * 900) + 0.16 * (vnoise(x, y, z, 45) - 0.5));
+    mixTo(c, _c.set(0x4d4234), smooth(-0.004, -B, y) * 0.45);
     stain(c, x, y, z);
   };
   const paper = (c, x, y, z) => {
     c.multiplyScalar(0.75 + 0.35 * vnoise(x, y, z, 30));
-    if (vnoise(x + 2, y, z, 22) > 0.62) mixTo(c, _c.set(0x4a3a26), 0.55); // water marks
+    if (vnoise(x + 2, y, z, 22) > 0.6) mixTo(c, _c.set(0x3a2c1c), 0.55); // water marks
   };
   const twine = (c, x, y, z) => c.multiplyScalar(0.7 + 0.5 * ihash(Math.round(x * 900), Math.round(y * 900), Math.round(z * 900)));
   const parts = [];
-  // the pad and the folded top layer
-  parts.push({ geo: cushion(A, B, C, 0.3, 0.55, 16, 8, 0.12, 0), pos: [PX, 0, 0], color: LINEN, paint: linen, crease: 1.4 });
-  parts.push({ geo: cushion(A * 0.8, 0.0055, C * 0.82, 0.3, 0.6, 12, 6, 0.15, 4), pos: [PX + 0.008, B - 0.0015, 0.004], rot: [0, 0.07, 0], color: LINEN, paint: linen, crease: 1.4 });
-  // the kraft wrapper over the -X half, torn across in a ragged line (vertices past the tear are folded back under it)
+  // the pad (a fat folded dressing) and its folded top layer
+  parts.push({ geo: cushion(A, B, C, 0.55, 0.8, 14, 8, 0.2, 0), pos: [PX, 0, 0], color: LINEN, paint: linen, crease: 1.4 });
+  parts.push({ geo: cushion(A * 0.86, 0.006, C * 0.84, 0.6, 0.9, 10, 6, 0.25, 4), pos: [PX + 0.008, B - 0.0032, -0.003], rot: [0, 0.09, 0], color: LINEN, paint: linen, crease: 1.4 });
+  // the kraft wrapper still on the -X third, torn across in a ragged line (vertices past the tear are folded back under it)
   {
-    const g = cushion(A + 0.0022, B + 0.0022, C + 0.0022, 0.3, 0.55, 16, 8, 0.1, 0);
+    const g = cushion(A + 0.002, B + 0.002, C + 0.002, 0.55, 0.8, 14, 8, 0.2, 0);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i);
       const z = p.getZ(i);
-      const tear = -0.004 + 0.012 * (vnoise(0, 0, z, 90) - 0.5) + 0.006 * Math.sin(z * 140);
+      const tear = -0.022 + 0.014 * (vnoise(0, 0, z, 90) - 0.5) + 0.007 * Math.sin(z * 150);
       if (x > tear) p.setX(i, tear - 0.0005);
     }
     g.computeVertexNormals();
     parts.push({ geo: g, pos: [PX, 0, 0], color: PAPER, paint: paper, crease: 1.1 });
   }
-  // twine round it both ways
-  parts.push({ geo: cushion(0.0022, B + 0.0028, C + 0.0035, 0.3, 0.55, 8, 8, 0, 0), pos: [PX - 0.018, 0, 0], color: TWINE, paint: twine, crease: 1.4 });
-  parts.push({ geo: cushion(A + 0.0038, B + 0.0028, 0.0022, 0.3, 0.55, 10, 8, 0, 0), pos: [PX, 0, -0.012], color: TWINE, paint: twine, crease: 1.4 });
-  parts.push({ geo: sph(0.0042, 6, 4), pos: [PX - 0.018, B + 0.0035, -0.012], color: TWINE, paint: twine, crease: 1.4 }); // the knot
-  // the two tails: out of the pad's +X end, down to the ground, lying in loose curves, frayed at the tips
-  const fray = (t) => (t < 0.82 ? 1 : 1 - (t - 0.82) * 2.2);
+  // twine round the wrapper, the knot on top
+  parts.push({ geo: cushion(0.0022, B + 0.0034, C + 0.003, 0.3, 0.6, 6, 7, 0, 0), pos: [PX - 0.042, 0, 0], color: TWINE, paint: twine, crease: 1.4 });
+  parts.push({ geo: sph(0.0045, 6, 4), pos: [PX - 0.042, B + 0.004, -0.008], color: TWINE, paint: twine, crease: 1.4 });
+  // two turns of the bandage strip across the pad, on the diagonal (the tails come out from under the second)
+  for (const [dx, ry] of [
+    [0.004, 0.32],
+    [0.034, -0.26],
+  ])
+    parts.push({ geo: cushion(0.0085, B + 0.0026, C + 0.0026, 0.3, 0.7, 8, 7, 0.15, 7), pos: [PX + dx, 0, 0], rot: [0, ry, 0], color: GAUZE, paint: linen, crease: 1.3 });
+  // the two tails: out of the pad's +X end, down to the ground, lying in loose crumpled curves, frayed at the tips
+  const G = GROUND + 0.0013;
   const tailA = [
-    [PX + A - 0.006, 0.004, 0.014],
-    [PX + A + 0.014, -0.006, 0.02],
-    [PX + A + 0.034, GROUND + 0.0013, 0.028],
-    [0.07, GROUND + 0.0013, 0.04],
-    [0.105, GROUND + 0.0013, 0.036],
-    [0.135, GROUND + 0.0013, 0.014],
-    [0.16, GROUND + 0.0013, -0.002],
+    [PX + A - 0.01, 0.006, 0.012],
+    [PX + A + 0.012, -0.004, 0.02],
+    [PX + A + 0.03, G, 0.03],
+    [0.06, G + 0.005, 0.042],
+    [0.08, G, 0.046],
+    [0.1, G + 0.004, 0.038],
+    [0.12, G, 0.024],
+    [0.142, G + 0.003, 0.01],
+    [0.165, G, 0.004],
   ];
   const tailB = [
-    [PX + A - 0.006, 0.002, -0.016],
-    [PX + A + 0.012, -0.008, -0.024],
-    [PX + A + 0.03, GROUND + 0.0013, -0.036],
-    [0.06, GROUND + 0.0013, -0.054],
-    [0.085, GROUND + 0.0013, -0.058],
-    [0.105, GROUND + 0.0013, -0.05],
+    [PX + A - 0.01, 0.004, -0.016],
+    [PX + A + 0.01, -0.006, -0.026],
+    [PX + A + 0.026, G, -0.038],
+    [0.05, G + 0.004, -0.05],
+    [0.07, G, -0.06],
+    [0.09, G + 0.003, -0.058],
+    [0.108, G, -0.046],
   ];
+  // crumples: the strip narrows where it folds over itself (at the raised points), frays at the tip
+  const crumple = (bumps) => (t) => {
+    let w = t < 0.86 ? 1 : 1 - (t - 0.86) * 3;
+    for (const b of bumps) w *= 1 - 0.32 * Math.exp(-(((t - b) / 0.035) ** 2));
+    return w;
+  };
   const tailPaint = (c, x, y, z) => {
-    c.multiplyScalar(0.78 + 0.25 * vnoise(x, y, z, 55));
-    mixTo(c, _c.set(0x4f4535), smooth(0.08, 0.16, Math.hypot(x, z)) * 0.5); // dragged through the dirt toward the tips
+    c.multiplyScalar(0.8 + 0.22 * vnoise(x, y, z, 55));
+    mixTo(c, _c.set(0x463c2e), smooth(0.08, 0.17, Math.hypot(x, z)) * 0.55); // dragged through the dirt toward the tips
     stain(c, x, y, z, 0.8);
   };
-  parts.push({ geo: ribbon(tailA, 0.021, 0.0026, 16, fray), color: LINEN, paint: tailPaint, crease: 1.2 });
-  parts.push({ geo: ribbon(tailB, 0.019, 0.0026, 13, fray), color: LINEN, paint: tailPaint, crease: 1.2 });
+  parts.push({ geo: ribbon(tailA, 0.024, 0.0026, 19, crumple([0.4, 0.64, 0.86])), color: GAUZE, paint: tailPaint, crease: 1.2 });
+  parts.push({ geo: ribbon(tailB, 0.021, 0.0026, 16, crumple([0.5, 0.78])), color: GAUZE, paint: tailPaint, crease: 1.2 });
   // loose threads at the frayed tips
   for (const [x, z, ry] of [
-    [0.168, -0.004, 0.5],
-    [0.166, 0.004, 0.15],
-    [0.112, -0.05, -0.6],
-    [0.11, -0.043, -0.25],
+    [0.174, 0.0, 0.4],
+    [0.172, 0.008, 0.05],
+    [0.114, -0.04, -0.7],
+    [0.113, -0.047, -0.3],
   ])
-    parts.push({ geo: box(0.016, 0.0012, 0.0012), pos: [x, GROUND + 0.0012, z], rot: [0, ry, 0], color: LINEN, paint: tailPaint });
+    parts.push({ geo: box(0.016, 0.0012, 0.0012), pos: [x, G - 0.0001, z], rot: [0, ry, 0], color: GAUZE, paint: tailPaint });
   // the safety pin through tail A, lying along it
-  parts.push({ geo: torus(0.0095, 0.0011, 3, 12), pos: [0.072, GROUND + 0.0042, 0.039], rot: [Math.PI / 2, 0, 0.12], scale: [1.9, 0.55, 1], color: PIN, crease: 1.3 });
-  parts.push({ geo: box(0.0075, 0.0034, 0.0075), pos: [0.054, GROUND + 0.0042, 0.037], rot: [0, 0.12, 0], color: PIN });
+  parts.push({ geo: torus(0.0095, 0.0011, 3, 12), pos: [0.083, G + 0.003, 0.046], rot: [Math.PI / 2, 0, -0.1], scale: [1.9, 0.55, 1], color: PIN, crease: 1.3 });
+  parts.push({ geo: box(0.0075, 0.0034, 0.0075), pos: [0.065, G + 0.003, 0.047], rot: [0, -0.1, 0], color: PIN });
   return mergeModel(parts, tilt, size);
 }
 
