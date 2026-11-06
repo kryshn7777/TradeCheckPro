@@ -58,6 +58,7 @@ import { ObjectiveHintView } from './render/objectiveHintView.js';
 import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
 import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
+import { ItemCardGlue } from './itemCardGlue.js'; // ITEM CARDS: the name card over the collectible you look at (plans/ITEM_CARDS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
 import { applyPing, originGlow } from './render/hintWaveView.js';
@@ -1167,6 +1168,7 @@ export class Game3D {
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
     this.puzzleFocus = null; // PUZZLE FOCUS (puzzleFocusGlue.js): built with the bus; `focusBeat` is its camera beat (lookTarget for the lantern)
     this.focusBeat = null;
+    this.itemCards = null; // ITEM CARDS (itemCardGlue.js): the name card over the item looked at; its view is built on first use
     this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
     this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
@@ -1298,6 +1300,7 @@ export class Game3D {
     this.bus = new EventBus();
     this._setupPuzzleFocus();
     this._setupChase();
+    this._setupItemCards();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -5183,6 +5186,16 @@ export class Game3D {
     }
   }
 
+  /** ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): `game.itemCards`; a failure leaves the game without them. */
+  _setupItemCards() {
+    try {
+      this.itemCards = new ItemCardGlue(this);
+    } catch (err) {
+      this._fault('itemCards', err);
+      this.itemCards = null;
+    }
+  }
+
   /** THE CHASE ARC (chaseGlue.js, plans/CHASE_ARC.md): `game.chase` (its `arc`); a failure leaves the game without it. */
   _setupChase() {
     try {
@@ -5300,6 +5313,11 @@ export class Game3D {
       if (this.puzzleFocus) this.puzzleFocus.update(dt); // after the 20 s hint (it escalates on it), before the render (the glance)
     } catch (err) {
       this._fault('puzzleFocus', err);
+    }
+    try {
+      if (this.itemCards) this.itemCards.update(dt); // ITEM CARDS: the gaze pick + the card (reads the pickups, the rig and the camera)
+    } catch (err) {
+      this._fault('itemCards', err);
     }
     try {
       if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
@@ -6403,6 +6421,8 @@ export class Game3D {
         puzzles: () => (this.puzzleFocus ? this.puzzleFocus.debugPuzzles() : []),
         ready: () => !!(this.puzzleFocus && this.puzzleFocus.debugReady()),
       },
+      // ITEM CARDS (itemCardGlue.js): the gaze target, the card's name / hint and the view (visible, alpha, width, redraws)
+      itemCard: () => (this.itemCards ? this.itemCards.debugState() : null),
       // THE CHASE ARC (chaseGlue.js): state() the arc, start(dist) a chase now, lost() the release now (no 3 s settle)
       chase: {
         state: () => (this.chase ? this.chase.debugState() : null),

@@ -218,6 +218,8 @@ const SETTINGS_SCHEMA = [
   { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
   { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
   { key: 'dominantHand', tab: 'rope', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
+  // ITEM CARDS (itemCardGlue.js): on the Rope page in VR (eight rows at 64 px; the other VR pages are full)
+  { key: 'itemCards', tab: 'rope', type: 'toggle', label: 'Item cards', desc: 'Look at something lying on the ground: a small card names it and says what it does.' },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -4254,7 +4256,7 @@ export class UI3D {
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
     // six rows (Comfort since P6's Wind squalls, Display since Blood writing) still fit above the panel's foot: 80 px a row instead of 88
     const keyed = rows.filter((d) => d.key).length; // seven rows (Display since Living flame): 70 px, still above the panel's foot
-    const rowH = keyed > 6 ? 70 : keyed > 5 ? 80 : 88;
+    const rowH = keyed > 7 ? 64 : keyed > 6 ? 70 : keyed > 5 ? 80 : 88; // (eight: Rope since Item cards, 190 + 8 x 64 = 702)
     let y = 190;
     for (const def of rows) {
       if (def.type === 'link') {

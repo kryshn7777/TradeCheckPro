@@ -346,6 +346,9 @@ export const SETTINGS_DEFAULTS = {
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
+  // ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): a name card stands over the collectible you look at (name + what it does + how to
+  // use it on this platform). Off = none; `?itemcards=off` overrides it.
+  itemCards: true,
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -427,6 +430,7 @@ export function sanitizeUxSettings(s) {
   s.roaches = s.roaches !== false; // on unless switched off
   s.radioVoices = s.radioVoices !== false; // on unless switched off
   s.signalGlitches = s.signalGlitches !== false;
+  s.itemCards = s.itemCards !== false; // on unless switched off (itemCardGlue.js)
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   sanitizeTouchSettings(s);
