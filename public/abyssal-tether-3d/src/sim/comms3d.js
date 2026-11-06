@@ -296,7 +296,7 @@ export const COMMS_SCRIPT = Object.freeze([
   L('s8-self', 'ELIAS', "The grate. Don't look back. Run for the light.", { section: 7, when: { stall: true }, prio: 2, beat: 'thinking aloud' }),
   L('s8-stall', 'ODESSA', 'The grate, Elias. Run for the light.', { section: 7, when: { stall: true }, prio: 1 }),
   // ---- anywhere: hurt, staging, the first relay, the bare stone ----
-  L('any-hurt', 'TICK', 'Vesper says that was minor. I say ow. Easy, Wren.', { when: { ev: 'health:damage', match: { lethal: false } }, prio: 1, ttl: 8 }),
+  L('any-hurt', 'TICK', 'Vesper says that was minor. I say ow. Easy, Wren.', { when: { ev: 'health:damage', match: { lethal: false, cause: { not: ['creature', 'skitter'] } } }, prio: 1, ttl: 8 }),
   L('any-low', 'ODESSA', 'Vitals red. Staging a restore at the last relay.', { when: { ev: 'health:low' }, prio: 2, ttl: 8, cd: 75 }),
   L('any-relay', 'TICK', "That lamp's a relay now. Anything happens, we restore you there.", { when: { ev: 'checkpoint' }, prio: 2, ttl: 25 }),
   L('any-gaze', 'TICK', "What are you looking at? Your feed's just stone.", { when: { gaze: true }, prio: 2, ttl: 6, beat: 'the camera sees bare stone' }),
@@ -844,7 +844,9 @@ function matches(m, e) {
   for (const k in m) {
     const want = m[k];
     const v = e[k];
-    if (want === false ? !!v : v !== want) return false;
+    if (want && typeof want === 'object' && !Array.isArray(want) && Array.isArray(want.not)) {
+      if (want.not.indexOf(v) >= 0) return false; // { not: [...] }: none of these
+    } else if (Array.isArray(want) ? want.indexOf(v) < 0 : want === false ? !!v : v !== want) return false; // an array = one of
   }
   return true;
 }
