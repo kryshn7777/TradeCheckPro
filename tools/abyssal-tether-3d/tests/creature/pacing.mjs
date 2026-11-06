@@ -5,7 +5,8 @@
 // react (or not) to lunges, die and respawn at checkpoints like the game does.
 //   node pacing.mjs [runs=150] [--root DIR]
 // Env: LEVEL=real (the game's level instead of the stub shaft), ONLY=normal,abyss,
-// PROF=expert,careful, TUNE='{"normal":{…}}' (DIFF_TUNE overrides), NOSTALL=1, CAUSES=1.
+// PROF=expert,careful, TUNE='{"normal":{…}}' (DIFF_TUNE overrides), NOSTALL=1, CAUSES=1,
+// HOOD=1 (THE HOOD: also the hood-camper tables, plans/LANTERN_HOOD.md).
 import { srcUrl, positional } from '../../verify/root.mjs';
 import { makeShaftData } from './stubShaft.mjs';
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
@@ -179,7 +180,11 @@ class Player {
  * One run. Returns stats. mode: 'descent' (complete the run) or 'stall' (stall
  * at a random depth inside the lethal sections and measure time-to-catch).
  */
-export function runOne(diffKey, profileKey, seed, mode = 'descent') {
+export function runOne(diffKey, profileKey, seed, mode = 'descent', opts = null) {
+  // THE HOOD (plans/LANTERN_HOOD.md): opts.hood 'stall' = the lantern covered once the player stalls (the hood camper),
+  // 'still' = covered whenever the player is not moving (pauses, sways, the stall); lit while moving. Default: always lit.
+  const hoodMode = opts && opts.hood ? opts.hood : '';
+  let hoodedT = 0;
   const diff = DIFFICULTY[diffKey];
   const level = makeLevel(diff.levelVariant);
   const firstLethal = level.sections.find((sct) => sct.creature && sct.creature.lethal);
@@ -255,6 +260,11 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
         }
       }
     }
+    if (hoodMode) {
+      const hooded = player.alive && (player.stallMode ? true : hoodMode === 'still' && player.phase !== 'move');
+      if (hooded) hoodedT += DT;
+      creature.setSight(true, !hooded, false);
+    }
     creature.update(DT, player, time);
     threat.update(DT, { player, creature, tethers: null, diff });
     if (creature.caughtPlayer) {
@@ -299,6 +309,7 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
     stallCatch,
     stallMode: player.stallMode,
     stateT,
+    hoodedT,
   };
 }
 
@@ -349,6 +360,37 @@ if (process.argv[1] && process.argv[1].endsWith('pacing.mjs')) {
       const sub = rs.filter((r) => r.stallMode === kind);
       const c = sub.filter((r) => r.stallCatch !== null).map((r) => r.stallCatch);
       console.log(`| ${dk} | ${kind} | ${sub.length} | ${f1(pct(c, 0.5))} | ${f1(mean(c))} | ${f1(pct(c, 0.1))} | ${f1(pct(c, 0.9))} | ${sub.length - c.length} |`);
+    }
+  }
+  if (!process.env.HOOD) process.exit(0);
+  // THE HOOD (plans/LANTERN_HOOD.md): the hood camper. The same stalls with the lantern covered from the stall on (the Mason cannot
+  // see the camper: only the sound hunt and the stall clock find him), and descents covering the lantern at every pause.
+  console.log('\n## Hood camper: seconds from the stall until caught, lantern lit vs covered (careful player, never reacts)');
+  console.log('| diff | stall kind | lantern | n | caught | median | p90 | never caught (400 s) |');
+  console.log('|---|---|---|---|---|---|---|---|');
+  for (const dk of ['normal', 'nightmare', 'abyss']) {
+    if (ONLY && !ONLY.includes(dk)) continue;
+    for (const hood of ['', 'stall']) {
+      const rs = [];
+      for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, 'careful', 1000 + s, 'stall', hood ? { hood } : null));
+      for (const kind of ['still', 'sway']) {
+        const sub = rs.filter((r) => r.stallMode === kind);
+        const c = sub.filter((r) => r.stallCatch !== null).map((r) => r.stallCatch);
+        console.log(`| ${dk} | ${kind} | ${hood ? 'covered' : 'lit'} | ${sub.length} | ${c.length} | ${f1(pct(c, 0.5))} | ${f1(pct(c, 0.9))} | ${sub.length - c.length} |`);
+      }
+    }
+  }
+  console.log('\n## Hood at every pause: deaths per full run, lantern lit vs covered whenever the player is not moving');
+  console.log('| diff | player | lantern | deaths/run | runs finished | covered s/run |');
+  console.log('|---|---|---|---|---|---|');
+  for (const dk of ['normal', 'nightmare']) {
+    if (ONLY && !ONLY.includes(dk)) continue;
+    for (const pk of ['careful', 'hesitant']) {
+      for (const hood of ['', 'still']) {
+        const rs = [];
+        for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, pk, s, 'descent', hood ? { hood } : null));
+        console.log(`| ${dk} | ${pk} | ${hood ? 'covered' : 'lit'} | ${f2(mean(rs.map((r) => r.deaths)))} | ${rs.filter((r) => r.finished).length}/${rs.length} | ${f1(mean(rs.map((r) => r.hoodedT)))} |`);
+      }
     }
   }
 }
