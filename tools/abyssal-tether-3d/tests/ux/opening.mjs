@@ -1,4 +1,4 @@
-// THE LANTERN: the opening cinematic (Node, no browser; docs/abyssal-tether-3d/plans/OPENING_CINEMATIC.md).
+// THE LANTERN: the opening cinematic (Node, no browser; docs/abyssal-tether-3d/plans/OPENING_V2_THE_COLLAR.md, OPENING_CINEMATIC.md).
 //   sim/openingCinematic.js  the shots (contiguous, 75-95 s), continuity inside a shot and cuts only on a cue or through black, eased
 //                            starts and stops, the hand-off (the last frame IS the spawn view), the skip (fade, land, end at the
 //                            hand-off), a headset (no rotation ever, the vantage changes once and only behind black, no letterbox),
@@ -38,7 +38,7 @@ const DT = 1 / 60;
 const angd = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
 
 // ---- the shots -----------------------------------------------------------------------------------------------------------------
-ok(DURATION >= 75 && DURATION <= 95, `the film runs ${DURATION} s (75-95)`);
+ok(DURATION >= 90 && DURATION <= 105, `the film runs ${DURATION} s (90-105)`);
 {
   let good = SHOTS[0].t0 === 0 && SHOTS[SHOTS.length - 1].t1 === DURATION;
   for (let i = 0; i < SHOTS.length; i++) {
@@ -85,7 +85,7 @@ ok(DURATION >= 75 && DURATION <= 95, `the film runs ${DURATION} s (75-95)`);
   // eased: a shot with fixed (world) keys starts and ends slower than it moves in the middle
   const slow = [];
   for (const sh of SHOTS) {
-    if (!sh.keys.every((k) => k[1].abs)) continue;
+    if (sh.track || !sh.keys.every((k) => k[1].abs)) continue; // a tracking shot follows the moving cradle
     const sp = (t) => {
       const a = O.sampleOpening(t, null, O.newOpeningSnapshot()).cam;
       const b = O.sampleOpening(t + 0.05, null, O.newOpeningSnapshot()).cam;
@@ -98,31 +98,49 @@ ok(DURATION >= 75 && DURATION <= 95, `the film runs ${DURATION} s (75-95)`);
   ok(slow.length === 0, 'moves are eased (a fixed-key shot starts and stops at under 20 % of its mid-shot speed: no linear robot moves)', slow);
 }
 
-// ---- THE LOWERING (recomposed for the dark look) ----------------------------------------------------------------------------------
+// ---- THE COLLAR: the cradle, the drones, the iris, the light (v2) -------------------------------------------------------------------
 {
-  const lw = SHOTS.find((s) => s.id === 'lowering');
   const at = (t) => O.sampleOpening(t, null, O.newOpeningSnapshot());
-  const a = at(lw.t0 + 0.05);
-  const b = at(lw.t1 - 0.05);
-  const dist = (s) => Math.hypot(s.cam.x - s.lantern.x, s.cam.y - s.lantern.y, s.cam.z - s.lantern.z);
-  let steep = true;
-  let over = true;
-  for (let t = lw.t0; t < lw.t1; t += 0.25) {
-    const s = at(t);
-    if (s.cam.pitch > -0.85) steep = false; // looking down the shaft (more than ~49 deg)
-    if (s.cam.y < s.lantern.y + 1.5) over = false;
+  // the cradle: on the iris, lifted, down the shaft at <= 1 m/s (the two cuts the only jumps, both downward), at rest on the ledge
+  let fast = [];
+  let up = false;
+  for (let t = O.DESCENT_AT; t < DURATION; t += 0.02) {
+    const a = O.cradleY(t);
+    const b = O.cradleY(t + 0.02);
+    const cutHere = (O.CUT1 > t && O.CUT1 <= t + 0.02) || (O.CUT2 > t && O.CUT2 <= t + 0.02);
+    if (b > a + 1e-9) up = true;
+    if (!cutHere && (a - b) / 0.02 > 1.0 + 1e-6) fast.push(+t.toFixed(2));
   }
-  ok(steep && over && dist(a) < 4.5 && dist(b) > 18, 'THE LOWERING: from above, looking down the chain; the lantern falls away from the lens (close to a star)', { from: +dist(a).toFixed(1), to: +dist(b).toFixed(1) });
-  ok(a.rays === 0 && b.rays === 0 && at(5).rays === 0 && at(31.5).rays > 0.25 && at(O.DURATION).rays === 1, 'the level\'s light shafts are held off at the top and down the shaft (no beam seen end-on), come in at THE WINDOW, and are whole at the hand-off');
-  ok(at(22).dust.grit > 0.9 && at(5).dust.grit === 0 && at(5).dust.motes > 0.9 && at(70).dust.motes === 0, 'grit falls past the lantern on the way down; motes hang in its light; nothing once it is out');
-  // the girder: the lantern passes y 26 (the girder's height) on the pass the cue swells to
-  const ge = O.CUES.find((c) => c[1] === 'girder');
-  let tPass = 0;
-  for (let t = 20; t < 30; t += 0.01) if (at(t).lantern.y <= 26 && !tPass) tPass = t;
-  ok(!!ge && Math.abs(tPass - (ge[0] + 0.55)) < 0.25, `the iron sings as the lantern passes the girder (cue ${ge && ge[0]} s + 0.55, pass ${tPass.toFixed(2)} s)`);
-  let soft = true;
-  for (let t = lw.t0; t < lw.t0 + 0.6; t += 0.05) if (at(t).lantern.pay > 0.12) soft = false;
-  ok(soft, 'the descent eases in on the cut (the winch takes the weight first)');
+  ok(!up && fast.length === 0, `the cradle descends at <= 1 m/s (${O.DESCENT_SPEED} m/s), never rises, jumps only at the cuts (${O.CUT1}, ${O.CUT2} s)`, fast.slice(0, 5));
+  ok(Math.abs(O.cradleY(0) - (O.COLLAR.deckY + O.CRADLE_PLATE)) < 1e-9 && Math.abs(O.cradleY(O.LAND_AT) - O.CRADLE_LAND_Y) < 1e-9 && O.cradleY(O.LAND_AT - 0.05) - O.CRADLE_LAND_Y < 0.01, 'it stands on the deck, and settles on the Threshold at the landing (eased to rest)');
+  const cx = O.CRADLE_X;
+  const cz = O.CRADLE_Z;
+  ok(cx > -11 + 1.7 && cx < 3 - 1.7 && cz > 4 + 1.7 && cz < 11 - 1.7 && Math.abs(cx + cz) / Math.SQRT2 > 2.5 && Math.hypot(cx - O.DEFAULT_HANDOFF.x, cz - O.DEFAULT_HANDOFF.z) < 1, 'the cradle line: on the Threshold ledge with the drones clear of its edges, 2.5 m clear of the diagonal girder at y 26, by the spawn');
+  // the drones: on their pads, clamped to the cradle's corners from the clamp to the release, then only climbing
+  let clampOk = true;
+  let climbOk = true;
+  for (let i = 0; i < 4; i++) {
+    for (let t = O.CLAMPS[i]; t < O.RELEASES[i]; t += 0.5) {
+      const s = at(t);
+      const d = s.drones[i];
+      if (!d.clamped || Math.abs(d.y - s.cradle.y - O.DRONE_UP) > 1e-6 || Math.abs(Math.abs(d.x - s.cradle.x) - O.DRONE_OUT) > 1e-6) clampOk = false;
+    }
+    let last = -1e9;
+    for (let t = O.RELEASES[i] + 0.1; t < O.ACT3; t += 0.1) {
+      const d = at(t).drones[i];
+      if (d.y < last - 1e-9 || d.clamped) climbOk = false;
+      last = d.y;
+    }
+  }
+  ok(clampOk && climbOk, 'the four drones hold the cradle by its corners from the clamps to the release, then only climb');
+  const dies = O.LIGHTS_DIE.map((t) => at(t + 0.6).drones.findIndex((d) => d.beam < 0.01 && d.led < 0.01));
+  ok(at(O.BEAMS_AT + 1).drones.every((d) => d.beam > 0.9) && O.LIGHTS_DIE.every((t, i) => at(t + 0.6).drones[i].beam < 0.01 && at(t - 0.5).drones[i].beam > 0.5) && at(O.ACT3 + 0.1).drones.every((d) => !d.on), 'their lights come on over the shaft and die one by one on the climb home; then they are gone', dies);
+  ok(at(O.IRIS_AT - 0.1).iris.open === 0 && at(O.IRIS_AT + 4.1).iris.open === 1 && at(O.SCAN_AT + 1).scan.a > 0.9 && at(O.SCAN_AT + 5).scan.a === 0, 'the iris opens under the lifted cradle; the measuring line sweeps it once');
+  ok(at(5).collar.on && !at(O.CUT2 + 0.1).collar.on && at(70).line.on && !at(DURATION).line.on && !at(DURATION).cradle.on, 'the station is drawn only while it can be seen; the cradle and the line are gone at the waking (the memory does not come with you)');
+  ok(/RETURN 0/.test(O.SCREEN.tag) && /PAYLOAD 1/.test(O.SCREEN.tag) && O.SCREEN.rows.includes('RETURN 0'), 'the replay\'s quiet fact on the console and the cradle tag: PAYLOAD 1 · RETURN 0');
+  ok(at(5).rays === 0 && at(28).rays === 0 && at(O.CUT1 + 4.5).rays > 0.25 && at(O.DURATION).rays === 1, 'the level\'s light shafts are held off at the station and down the shaft, come in at THE WINDOW, and are whole at the hand-off');
+  ok(at(36).dust.grit > 0.8 && at(5).dust.grit === 0 && at(5).dust.motes > 0.9 && at(O.LANTERN_OUT_AT + 1).dust.motes === 0, 'grit falls past the cradle on the way down; motes hang in the lantern\'s light; nothing once it is out');
+  ok(at(10).dark < at(30).dark && at(30).dark > 0.9, 'the station is lit; once the iris opens the world is held dark and the lantern is the key');
 }
 
 // ---- the hand-off ---------------------------------------------------------------------------------------------------------------
@@ -131,7 +149,7 @@ for (const ho of [O.DEFAULT_HANDOFF, { x: -3.71, y: 1.83, z: 8.62, yaw: 0.3 }]) 
   const c = s.cam;
   const same = Math.abs(c.x - ho.x) < 1e-6 && Math.abs(c.y - ho.y) < 1e-6 && Math.abs(c.z - ho.z) < 1e-6 && angd(c.yaw, ho.yaw) < 1e-9 && Math.abs(c.pitch) < 1e-9 && c.roll === 0 && c.fov === 70;
   ok(same, `the last frame is the spawn view (position, yaw ${ho.yaw}, pitch 0, no roll, the game's 70 deg lens)`, c);
-  ok(s.fade === 0 && s.bars === 0 && s.dark === 0 && s.player.lantern === 1 && s.player.hands === 1 && !s.lantern.on && !s.mason.on && s.title.a === 0 && s.caption.a === 0, 'and the frame is clean: no black, no bars, the world lit, your lantern burning, no prop, no creature, no title');
+  ok(s.fade === 0 && s.bars === 0 && s.dark === 0 && s.player.lantern === 1 && s.player.hands === 1 && !s.lantern.on && !s.mason.on && !s.cradle.on && !s.collar.on && s.drones.every((d) => !d.on) && s.title.a === 0 && s.caption.a === 0, 'and the frame is clean: no black, no bars, the world lit, your lantern burning, no prop, no cradle, no drone, no creature, no title');
   // the last second does not move (the hand-off cannot pop even a frame early)
   const a = O.sampleOpening(DURATION - 1, { handoff: ho }, O.newOpeningSnapshot()).cam;
   ok(Math.hypot(a.x - c.x, a.y - c.y, a.z - c.z) < 1e-6 && Math.abs(a.pitch - c.pitch) < 0.002, 'the camera is already at rest a second before the hand-off');
@@ -166,29 +184,33 @@ for (const at of [0.6, 10, 40, 66.5]) {
 
 // ---- a headset ---------------------------------------------------------------------------------------------------------------------
 {
+  const ho = { x: -4, y: 1.71, z: 8.5, yaw: 0, floor: 0.02 };
   const s = O.newOpeningSnapshot();
   const p = O.newOpeningSnapshot();
-  O.sampleOpening(0, { xr: true }, p);
-  let changes = 0;
+  O.sampleOpening(0, { xr: true, handoff: ho }, p);
+  let jumps = 0;
   let unsafe = 0;
+  let sideways = 0;
   let bars = 0;
   for (let i = 1; i <= DURATION * 60; i++) {
-    O.sampleOpening(i * DT, { xr: true }, s);
-    const moved = Math.hypot(s.vr.x - p.vr.x, s.vr.y - p.vr.y, s.vr.z - p.vr.z) > 1e-9;
-    if (moved) {
-      changes++;
+    O.sampleOpening(i * DT, { xr: true, handoff: ho }, s);
+    const mv = Math.hypot(s.vr.x - p.vr.x, s.vr.y - p.vr.y, s.vr.z - p.vr.z);
+    if (mv > 1.0 * DT + 1e-9) {
+      jumps++;
       if (s.fade < 0.98 || p.fade < 0.98) unsafe++;
-    }
+    } else if (Math.hypot(s.vr.x - p.vr.x, s.vr.z - p.vr.z) > 1e-9) sideways++;
     if (s.bars > 0) bars++;
-    O.sampleOpening(i * DT, { xr: true }, p);
+    O.sampleOpening(i * DT, { xr: true, handoff: ho }, p);
   }
-  ok(changes === 1 && unsafe === 0, 'a headset: the vantage changes once, while the view is black (no translation the player sees)', { changes, unsafe });
+  ok(jumps === 3 && unsafe === 0 && sideways === 0, 'a headset rides the cradle: vertical only, <= 1 m/s; its three jumps (two cuts down the shaft, home to the spawn) happen in black', { jumps, unsafe, sideways });
   ok(bars === 0 && !('yaw' in s.vr) && !('pitch' in s.vr), 'a headset: no letterbox; the vantage carries no rotation');
-  const top = O.sampleOpening(5, { xr: true }, O.newOpeningSnapshot());
+  const top = O.sampleOpening(5, { xr: true, handoff: ho }, O.newOpeningSnapshot());
   const dz = top.lantern.z - top.vr.z;
-  ok(dz < -0.5 && dz > -1.3 && Math.abs(top.lantern.y - top.vr.y) < 0.3, 'a headset at the top: the lantern hangs 0.5-1.3 m straight ahead (-Z, the spawn heading) at eye height', { dz: +dz.toFixed(2) });
-  const end = O.sampleOpening(DURATION, { xr: true }, O.newOpeningSnapshot());
-  ok(end.vr.x === O.DEFAULT_HANDOFF.x && end.vr.y === O.DEFAULT_HANDOFF.y && end.vr.z === O.DEFAULT_HANDOFF.z && end.fade === 0, 'a headset ends on the spawn too');
+  ok(dz < -0.4 && dz > -1.0 && Math.abs(top.vr.y - (top.cradle.y + ho.y - ho.floor)) < 1e-9, 'in the cradle at the station: your own eye height over its floor, the lantern 0.4-1.0 m straight ahead (-Z)', { dz: +dz.toFixed(2) });
+  const end = O.sampleOpening(DURATION, { xr: true, handoff: ho }, O.newOpeningSnapshot());
+  ok(end.vr.x === ho.x && end.vr.y === ho.y && end.vr.z === ho.z && end.fade === 0, 'a headset ends on the spawn too');
+  const lunge = O.sampleOpening(O.LANTERN_OUT_AT, { xr: true, handoff: ho }, O.newOpeningSnapshot());
+  ok(Math.hypot(lunge.mason.x - O.CRADLE_X, lunge.mason.z - O.CRADLE_Z) > 2.5, 'the lunge stops well short of a headset standing in the cradle');
 }
 {
   const src = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
@@ -210,7 +232,7 @@ for (const at of [0.6, 10, 40, 66.5]) {
   const a = JSON.stringify(Array.from({ length: 200 }, (_, i) => O.sampleOpening(i * 0.421, { xr: i % 2 === 1 }, O.newOpeningSnapshot())));
   const b = JSON.stringify(Array.from({ length: 200 }, (_, i) => O.sampleOpening(i * 0.421, { xr: i % 2 === 1 }, O.newOpeningSnapshot())));
   ok(a === b, 'sampling is a pure function of t');
-  for (const f of ['src/sim/openingCinematic.js', 'src/audio/openingSfx.js', 'src/render/openingView.js']) {
+  for (const f of ['src/sim/openingCinematic.js', 'src/audio/openingSfx.js', 'src/render/openingView.js', 'src/render/collarView.js']) {
     const txt = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, ''); // the code, not its comments
     ok(!/Math\.random|Date\.now|performance\.now/.test(txt), `${f}: no Math.random, no wall clock (designed, not random)`);
   }
@@ -221,10 +243,9 @@ for (const at of [0.6, 10, 40, 66.5]) {
     if (s.fade < 0 || s.fade > 1 || s.dark < 0 || s.dark > 1) finite = false;
   }
   ok(finite, 'every value is finite and every 0..1 stays in 0..1');
-  const hold = O.sampleOpening(45, null, O.newOpeningSnapshot());
-  ok(Math.abs(hold.lantern.y - O.LANTERN_REST_Y) < 0.01 && O.sampleOpening(20, null, O.newOpeningSnapshot()).lantern.y > 30, 'the lantern comes down the chimney and stops over the Threshold');
+  ok(Math.abs(O.sampleOpening(60, null, O.newOpeningSnapshot()).lantern.y - O.LANTERN_REST_Y) < 0.01 && O.sampleOpening(20, null, O.newOpeningSnapshot()).lantern.y > 60, 'the lantern rides the cradle down the chimney and rests on the Threshold');
   let mono = true;
-  for (let t = 17.5; t < O.LANTERN_STOP_AT; t += 0.05) if (O.sampleOpening(t + 0.05, null, O.newOpeningSnapshot()).lantern.y > O.sampleOpening(t, null, O.newOpeningSnapshot()).lantern.y + 1e-9) mono = false;
+  for (let t = O.DESCENT_AT; t < O.LANTERN_STOP_AT; t += 0.05) if (O.sampleOpening(t + 0.05, null, O.newOpeningSnapshot()).lantern.y > O.sampleOpening(t, null, O.newOpeningSnapshot()).lantern.y + 1e-9) mono = false;
   ok(mono, 'it never rises on the way down (monotone)');
 }
 
@@ -237,19 +258,20 @@ for (const at of [0.6, 10, 40, 66.5]) {
     const e = man.lines[l.id];
     if (!e || !fs.existsSync(path.join(ROOT, 'assets/audio/opening', e.f)) || e.text !== l.text) missing.push(l.id);
     else if (!l.cut && e.d > l.slot + 0.05) long.push(`${l.id} ${e.d}>${l.slot}`);
-    else if (l.cut && l.at + e.d < 64.0 - 0.6) long.push(`${l.id} ends before the tear`);
+    else if (l.cut && l.at + e.d < O.TEAR_AT - 0.6) long.push(`${l.id} ends before the tear`);
   }
   ok(missing.length === 0, `every line has its clip (assets/audio/opening/, the same text): ${VO.length} lines`, missing);
   ok(long.length === 0, 'every clip fits its slot (the torn line runs into the tear)', long);
   let overlap = false;
   for (let i = 1; i < VO.length; i++) if (VO[i].at < VO[i - 1].at + VO[i - 1].slot) overlap = true;
   ok(!overlap, 'no two lines overlap');
+  ok(VO.every((l) => l.fx === 'radio' || l.fx === 'close') && VO.filter((l) => l.fx === 'radio').length >= 6, 'every line has its colour: the team on the uplink (radio) or the record (close)');
   const bytes = Object.values(man.lines).reduce((a, e) => a + e.bytes, 0);
   ok(bytes < 400000 && /AI placeholder/.test(man.disclosure || ''), `the clips are small (${(bytes / 1024).toFixed(0)} KB, precache core) and disclosed as AI placeholders`);
-  const banned = /\b(restore|restored|copy|continuity|mason|dresser|fitting|still one|still flame|keeper|keepers|wren|elias|perennial|horror|evil|demon|scream|abyss|doom|nightmare)\b/i;
+  const banned = /\b(restore|restored|copy|continuity|mason|dresser|fitting|still one|still flame|keeper|keepers|perennial|horror|evil|demon|scream|abyss|doom|nightmare)\b/i; // (v2: the crew may say his name)
   const leaks = VO.filter((l) => banned.test(l.text)).map((l) => l.id);
-  ok(leaks.length === 0, 'the film gives nothing away (no names, no creatures, no mechanism, no cheap shock words)', leaks);
-  const cs = O.sampleOpening(64.1, null, O.newOpeningSnapshot());
+  ok(leaks.length === 0, 'the film gives nothing away (no creatures, no mechanism, no cheap shock words)', leaks);
+  const cs = O.sampleOpening(O.TEAR_AT + 0.1, null, O.newOpeningSnapshot());
   ok(cs.caption.a === 0, 'the torn line\'s caption is torn off with it');
 }
 
@@ -335,7 +357,7 @@ function mockCtx() {
   const vo = a.starts.filter(([k]) => k === 'buf').length;
   ok(vo >= VO.length, 'the narration is scheduled with the score (offline render: the trailer)');
   const T = A.OPENING_TABLES;
-  ok(T.crackle.length > 10 && T.clinks.length > 25 && T.clinks[T.clinks.length - 1][0] < O.LANTERN_STOP_AT, `the fixed tables: ${T.crackle.length} crackles, ${T.clinks.length} chain links (all before the stop), ${T.dust.length} dust grains`);
+  ok(T.ratchet.length > 10 && T.ratchet[T.ratchet.length - 1][0] < O.LAND_AT - O.DESCENT_AT && T.dust.length > 10 && T.grind.length > 10, `the fixed tables: ${T.ratchet.length} line ratchet ticks (all before the landing), ${T.dust.length} grit grains, ${T.grind.length} grinding grains`);
 }
 
 // ---- the setting -----------------------------------------------------------------------------------------------------------------------

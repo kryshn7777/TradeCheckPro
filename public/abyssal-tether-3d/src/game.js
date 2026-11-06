@@ -2675,7 +2675,8 @@ export class Game3D {
     r.rig.updateMatrixWorld(true);
     r.camera.getWorldPosition(_dcV);
     const yaw = r.rig.rotation.y;
-    const op = (this.opening = new OpeningCinematic({ xr: !!this.xrActive, handoff: { x: _dcV.x, y: _dcV.y, z: _dcV.z, yaw } }));
+    // floor: the rig's floor under the head (a headset rides the cradle at its own eye height over the floor: OPENING_V2_THE_COLLAR.md)
+    const op = (this.opening = new OpeningCinematic({ xr: !!this.xrActive, handoff: { x: _dcV.x, y: _dcV.y, z: _dcV.z, yaw, floor: this.xrActive ? r.rig.position.y : 0 } }));
     const R = this._openingRig;
     R.skip = 0;
     R.hint = 0;

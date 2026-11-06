@@ -1,11 +1,13 @@
 /* THE LANTERN — render/openingView.js
  * The picture of the opening cinematic (sim/openingCinematic.js is the film; this draws its snapshot on the live scene):
  *
- *   the hero lantern   the gauntlet lantern's own model (player_arms.glb `Lantern`, cloned from HandsView) at 2.6x on a pivot that
- *                      sways from its hook; a procedural FLAME (one additive lathe, bent by the lean, shrunk by the gutter); a HALO
+ *   THE COLLAR         the station, the iris, the cradle, the four hoist drones, their beams, the scan and the line: render/collarView.js
+ *                      (v2, OPENING_V2_THE_COLLAR.md; it loads render/facilityKit.js's models, a box placeholder until then)
+ *   the hero lantern   the gauntlet lantern's own model (player_arms.glb `Lantern`, cloned from HandsView) at LANTERN_SCALE on a pivot
+ *                      that sways from the cradle's rail hook; a procedural FLAME (one additive lathe, bent by the lean, shrunk by the gutter); a HALO
  *                      (one sprite: the lantern reads as a star 30 m away). The game's own lantern LIGHT (Renderer3D.lanternGroup) is
  *                      borrowed into its glass for the film (attach / release are the game's job: OpeningView.socket is the target).
- *   the chain          one InstancedMesh of iron links from the hook up into the dark (<= 240 links, 48 tris each)
+ *   the chain          one InstancedMesh of iron links from the glass up to the rail hook (<= 240 links, 48 tris each)
  *   the letterbox      2.39:1 bars on the desktop (one quad pair, on the camera)
  *   the title          THE LANTERN + I · THE UNDERSPIRE, ember gold, a canvas texture on a plate (desktop: on the camera; a headset:
  *                      world-locked 6 m ahead of the vantage), lit from inside by the hit
@@ -16,12 +18,13 @@
  * No per-frame allocation: scratch objects are module constants.
  */
 import * as THREE from 'three';
-import { TITLE } from '../sim/openingCinematic.js';
+import { TITLE, LANTERN_SCALE } from '../sim/openingCinematic.js';
+import { CollarView } from './collarView.js';
 
 const ORDER = { bars: 926, title: 930, caption: 931, ring: 933 };
 const MAX_LINKS = 240;
 const LINK_PITCH = 0.118; // m between link centres
-const SCALE = 2.6;
+const SCALE = LANTERN_SCALE; // a work lamp on the cradle's rail (the first film's prop on a chain was 2.6)
 const SOCKET_Y = -0.068; // the glass centre below the hook (player_arms.glb Lantern_Socket), model units
 const FONT_DISPLAY = "Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Noto Serif', 'DejaVu Serif', serif";
 const FONT_UI = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif";
@@ -307,7 +310,7 @@ export class OpeningView {
     this.pivot.add(this.socket);
     this.flame = makeFlame();
     this.flame.position.set(0, SOCKET_Y * SCALE - 0.03, 0);
-    this.flame.scale.set(0.036, 0.085, 0.036);
+    this.flame.scale.set(0.036, 0.085, 0.036).multiplyScalar(SCALE / 2.6);
     this.pivot.add(this.flame);
     const ht = makeHaloTexture();
     this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: ht, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
@@ -391,6 +394,9 @@ export class OpeningView {
     this.ringLabel.scale.set(2.6, 2.6, 1);
     camera.add(this.ring);
 
+    // THE COLLAR (v2): the station, the cradle, the drones (render/collarView.js)
+    this.collar = new CollarView(this.root);
+
     this.active = false;
     this._time = 0;
   }
@@ -441,6 +447,9 @@ export class OpeningView {
     const t = s.t;
     const L = s.lantern;
     const xr = !!o.xr;
+
+    // ---- THE COLLAR: the station, the cradle, the drones ----
+    if (s.cradle) this.collar.update(s, o);
 
     // ---- the hero lantern ----
     const show = L.on > 0;
@@ -647,6 +656,7 @@ export class OpeningView {
     this.setActive(false);
     if (this.root.parent) this.root.parent.remove(this.root);
     for (const m of [this.bars, this.caption, this.ring, this.title]) if (m.parent) m.parent.remove(m);
+    this.collar.dispose();
     this.flame.geometry.dispose();
     this.flame.material.dispose();
     if (this.halo.material.map) this.halo.material.map.dispose();
