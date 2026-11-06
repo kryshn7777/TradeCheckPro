@@ -68,9 +68,10 @@ export const STEPS = Object.freeze([
   // ---- TUTORIAL v2 ----
   Object.freeze({
     id: 'sight',
-    text: 'It sees your LIGHT; a hit costs 30% health. Break the line or [Grip] your hand over the lantern.',
-    desktop: 'It sees your LIGHT; a hit costs 30% health. Break the line or hold [V] to cover the lantern.',
-    touch: 'It sees your LIGHT; a hit costs 30% health. Break the line or hold [HOOD] to cover the lantern.',
+    // MASON_BODY_SIGHT_LEASH.md: the light from afar, the body up close; the hood hides you only from afar
+    text: 'It sees your LIGHT, up close YOU; 30% health a hit. Break the line; [Grip] the lantern to hide afar.',
+    desktop: 'It sees your LIGHT, up close YOU; 30% health a hit. Break the line; hold [V] to hide from afar.',
+    touch: 'It sees your LIGHT, up close YOU; 30% health a hit. Break the line; hold [HOOD] to hide from afar.',
     seconds: 6,
   }),
   Object.freeze({

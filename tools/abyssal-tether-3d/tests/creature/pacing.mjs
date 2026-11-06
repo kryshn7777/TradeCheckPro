@@ -12,6 +12,7 @@
 // MASON_STRIKES: a strike costs 30 % (Health3D + PlayerHits + the Knockdown, the bot lies still while down), the bots DODGE a striking
 // rise (creature:attack) after a profile reaction time (expert 0.2 s, careful 0.4 s, hesitant 0.9 s; a stalled bot never), moving
 // off the line at 5 m/s. STRIKES=1 prints the strikes table (blind / hunting / healthy gate) and the frozen camper.
+// MASON_BODY_SIGHT_LEASH: the strikes table's leash/run = the leash wounds per run (a chase the player outran).
 import { srcUrl, positional } from '../../verify/root.mjs';
 import { makeShaftData } from './stubShaft.mjs';
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
@@ -426,8 +427,8 @@ if (process.argv[1] && process.argv[1].endsWith('pacing.mjs')) {
   if (process.env.STRIKES) {
     // MASON_STRIKES.md: hits / HP lost / deaths per run, blind vs hunting vs the healthy gate, and the frozen camper
     console.log(`MASON STRIKES — ${RUNS} runs per cell, ${REAL ? 'REAL level' : 'stub shaft'}; a strike = 30 %, bots dodge a striking rise (expert 0.2 s / careful 0.4 s / hesitant 0.9 s)\n`);
-    console.log('| diff | player | mode | hits/run | HP lost/run | deaths/run | runs w/o death | max deaths | dodges/run | strikes/run | finished |');
-    console.log('|---|---|---|---|---|---|---|---|---|---|---|');
+    console.log('| diff | player | mode | hits/run | HP lost/run | deaths/run | runs w/o death | max deaths | dodges/run | strikes/run | leash/run | finished |');
+    console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
     const MODES = { blind: { sight: false, gate: false }, hunting: { sight: true, gate: false }, gate: { sight: true, gate: true } };
     for (const dk of ['normal', 'nightmare', 'abyss']) {
       if (ONLY && !ONLY.includes(dk)) continue;
@@ -436,7 +437,7 @@ if (process.argv[1] && process.argv[1].endsWith('pacing.mjs')) {
           const rs = [];
           for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, pk, s, 'descent', MODES[mk]));
           const d = rs.map((r) => r.deaths);
-          console.log(`| ${dk} | ${pk} | ${mk} | ${f2(mean(rs.map((r) => r.strikes.hits)))} | ${(100 * mean(rs.map((r) => r.strikes.hpLost))).toFixed(0)} % | ${f2(mean(d))} | ${((100 * rs.filter((r) => r.deaths === 0).length) / rs.length).toFixed(0)}% | ${Math.max(...d)} | ${f1(mean(rs.map((r) => r.dodges)))} | ${f1(mean(rs.map((r) => r.stats.attacks)))} | ${rs.filter((r) => r.finished).length}/${rs.length} |`);
+          console.log(`| ${dk} | ${pk} | ${mk} | ${f2(mean(rs.map((r) => r.strikes.hits)))} | ${(100 * mean(rs.map((r) => r.strikes.hpLost))).toFixed(0)} % | ${f2(mean(d))} | ${((100 * rs.filter((r) => r.deaths === 0).length) / rs.length).toFixed(0)}% | ${Math.max(...d)} | ${f1(mean(rs.map((r) => r.dodges)))} | ${f1(mean(rs.map((r) => r.stats.attacks)))} | ${f2(mean(rs.map((r) => r.stats.leashWounds || 0)))} | ${rs.filter((r) => r.finished).length}/${rs.length} |`);
         }
       }
     }

@@ -2,7 +2,9 @@
 
 Light keeps you alive (you read the holds by it), but light draws the Mason: since MASON_SIGHT.md it **sees the lantern-bearer** and
 chases. The lantern has no off switch, and breaking the line of sight was the only counterplay. The hood puts one in your hands: cover
-the flame and it stops SEEING you. It does not stop HEARING you.
+the flame and it stops SEEING you **from afar**. It does not stop HEARING you, and since MASON_BODY_SIGHT_LEASH.md (2026-11-06) it
+**sees your body up close** (within `bodyRange` 12 / 14 / 16 m in a clear line) whatever the lantern does: the hood hides you only
+beyond that.
 
 ## What the player does
 
@@ -36,9 +38,10 @@ registered with `registerSfx` / `registerSfxRoute`, at the left hand).
 
 ## What it does to the hunters
 
-- **The Mason** (`game.js` `_updateCreature`): `lit = charge > 0 && !hood.on` goes into `setSight`. Unlit, `MasonSense` never sees you:
-  a notice in progress breaks at the next 0.1 s line-of-sight sample (no commit), a chase in progress keeps only its `memory` (4 / 5 /
-  6 s) and drops back to the sound hunt. It **still hears you**: the sound hunt, the stall clock, listening, stall lunges all work.
+- **The Mason** (`game.js` `_updateCreature`): `lit = charge > 0 && !hood.on` goes into `setSight`. Unlit, `MasonSense` never sees you
+  **beyond `bodyRange`** (12 / 14 / 16 m; inside it it sees the body: MASON_BODY_SIGHT_LEASH.md): a notice in progress from farther
+  breaks at the next 0.1 s line-of-sight sample (no commit), a chase in progress keeps only its `memory` (3 / 3 / 4 s) and drops back
+  to the sound hunt; with the Mason within bodyRange covering changes nothing (it keeps the chase). It **still hears you**: the sound hunt, the stall clock, listening, stall lunges all work.
   Uncovered again, it notices you at the next sample (0.10-0.17 s after the release in the tests at ~20 m).
 - **The swarm** (`render/roachView.js`): it only fled your light; the light ratio is multiplied by `(1 - hood.k)` explicitly (the ratio
   is taken against the already-hooded `lanternBase`, so the hood would cancel out). Covered, the tiny red ones stop fleeing and creep up.
@@ -86,6 +89,11 @@ only 0-2 s later at the median: the stall clock and the sound hunt find him. Hoo
 (MASON_SIGHT.md: hesitant Normal 2.95 -> 27.6 deaths with sight; covered at every pause 10.25; careful Nightmare 4.6 -> 2.55): that is
 the intended counterplay (cover the light while you stand and read the route), and it still costs the light you read the route by,
 which the bots do not model. Nightmare hesitant players still do not finish (40 deaths a run). No counter was tuned.
+
+**With body sight (MASON_BODY_SIGHT_LEASH.md, measured 2026-11-06, same commands):** hooding at every pause takes back less:
+Normal hesitant 6.80 lit -> 3.25 covered (2.50 before body sight), Nightmare hesitant 24.95 -> 20.00 (12.45 before), careful 0.00 /
+0.05; the covered camper is caught as often as the lit one (covered / lit: Normal 13/20 / 13/20, Nightmare 14/20 / 12/20, Abyss 13/19 /
+13/19).
 
 `tests/creature/hood.mjs` keeps a smaller version (stub shaft, 16 stallers per difficulty, Normal + Nightmare) as a pass/fail guard:
 covered campers must be caught nearly as often as lit ones, with a median under 60 s.

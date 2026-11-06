@@ -6514,7 +6514,7 @@ export class Game3D {
           if (force !== undefined) c.sense.force(force);
           const s = c.sight;
           const d = c.decoy;
-          return { on: s.on, off: sightOff(), setting: this.settings ? this.settings.masonSight : '', eligible: s.eligible, sees: s.sees, noticing: s.noticing, notice: s.notice, chasing: s.chasing, lost: s.lost, near: s.near, nearDist: s.nearDist, forced: s.forced, noRecovery: !!(this.health && this.health.noRecovery), tune: c.sense.tune, decoy: { live: d.live, phase: d.phase, left: d.left, wise: c.sense.wiseT > 0 }, stats: Object.assign({}, c.sense.stats), state: c.state, lethal: c.lethal, inPlay: c.inPlay };
+          return { on: s.on, off: sightOff(), setting: this.settings ? this.settings.masonSight : '', eligible: s.eligible, sees: s.sees, noticing: s.noticing, notice: s.notice, chasing: s.chasing, lost: s.lost, near: s.near, nearDist: s.nearDist, forced: s.forced, by: s.by, wound: c.woundHeal || 0, leashWounds: c.stats.leashWounds || 0, noRecovery: !!(this.health && this.health.noRecovery), tune: c.sense.tune, decoy: { live: d.live, phase: d.phase, left: d.left, wise: c.sense.wiseT > 0 }, stats: Object.assign({}, c.sense.stats), state: c.state, lethal: c.lethal, inPlay: c.inPlay };
         },
         distract: (x, y, z, o) => (this.creature && typeof this.creature.distract === 'function' ? this.creature.distract(x, y, z, o) : false),
       },

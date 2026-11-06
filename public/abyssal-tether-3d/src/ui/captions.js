@@ -61,6 +61,9 @@ export const RULES = Object.freeze({
   retreat: R('[It withdraws]', 'creature', 0, 'retreat', 4),
   // MASON_SIGHT.md: it sees your light (the notice beat), and the near radius where nothing heals
   notice: R('[It sees your light]', 'creature', 2, 'notice', 3),
+  // MASON_BODY_SIGHT_LEASH.md: up close it sees YOU (any lantern); outrun it and it strains after you, tears, and falls back
+  noticeBody: R('[It sees you]', 'creature', 2, 'notice', 3),
+  leash: R('[It strains after you, then falls back]', 'creature', 1, 'leash', 3, 4),
   noRecovery: R('[No recovery this close]', 'creature', 0, 'norecovery', 8),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
   skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
@@ -306,7 +309,9 @@ export function captionForEvent(type, p, head) {
     case 'hint:wave:pass':
       return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
     case 'creature:notice':
-      return RULES.notice;
+      return e.by === 'body' ? RULES.noticeBody : RULES.notice;
+    case 'creature:leash':
+      return RULES.leash;
     case 'mason:attack':
       return e.phase === 'rise' || e.phase === 'stare' ? RULES.masonRattle : e.phase === 'lock' ? RULES.masonLock : e.phase === 'strike' ? RULES.masonLunge : e.phase === 'dash' ? RULES.masonSurge : null;
     case 'creature:near':
@@ -520,6 +525,7 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:sighting',
   'creature:retreat',
   'creature:notice',
+  'creature:leash',
   'mason:attack',
   'creature:near',
   'creature:step',

@@ -122,6 +122,37 @@ AFTER: `LEVEL=real node pacing.mjs 20`, `STRIKES=1`, `HOOD=1`, `GATE=1`. The STR
 
 Knobs if a target is missed: `bodyRange`, `leashFar` / `leashLost`, `heal`. Not the 30 % / 10 % damage, not the cadence.
 
+### Measured (2026-11-06, REAL level, 20 runs per cell): every target met with the numbers above, nothing tuned
+
+`STRIKES=1` (hits / HP lost / deaths per run; **hunting** = the Mason hunting all the time (gate off: what a hurt player meets),
+**gate** = a player who stays well (the prowl passes); BEFORE -> AFTER; `leash` = leash wounds per run after):
+
+| diff | player | hunting: hits | HP lost | deaths | gate: hits | HP lost | deaths | leash (hunt / gate) |
+|---|---|---|---|---|---|---|---|---|
+| Normal | expert | 0.00 -> 0.00 | 0 -> 0 % | 0.00 -> 0.00 | 0.00 -> 0.00 | 0 -> 0 % | 0.00 -> 0.00 | 0.00 / 0.00 |
+| Normal | careful | 0.65 -> 0.60 | 20 -> 18 % | 0.00 -> 0.00 | 0.40 -> 0.45 | 12 -> 14 % | 0.00 -> 0.00 | 0.70 / 0.15 |
+| Normal | hesitant | 34.25 -> 27.85 | 902 -> 736 % | 6.80 -> 5.35 | 3.65 -> 4.90 | 97 -> 131 % | 0.70 -> 0.90 | 2.35 / 1.00 |
+| Nightmare | expert | 0.00 -> 0.00 | 0 -> 0 % | 0.00 -> 0.00 | 0.00 -> 0.00 | 0 -> 0 % | 0.00 -> 0.00 | 0.00 / 0.00 |
+| Nightmare | careful | 1.05 -> 1.15 | 32 -> 35 % | 0.00 -> 0.00 | 0.45 -> 0.45 | 14 -> 14 % | 0.00 -> 0.00 | 0.85 / 0.30 |
+| Nightmare | hesitant | 113.55 -> 107.60 | 2900 -> 2750 % | 26.40 -> 24.95 | 35.75 -> 35.15 | 919 -> 903 % | 7.95 -> 7.95 | 2.60 / 2.35 |
+| Abyss | expert | 0.15 -> 0.15 | 5 -> 5 % | 0.00 -> 0.00 | 0.00 -> 0.00 | 0 -> 0 % | 0.00 -> 0.00 | 0.05 / 0.15 |
+| Abyss | careful | 1.75 -> 1.65 | 53 -> 50 % | 0.00 -> 0.00 | 2.00 -> 1.95 | 58 -> 55 % | 0.10 -> 0.15 | 0.60 / 0.90 |
+| Abyss | hesitant | 42.65 -> 42.90 | 1080 -> 1087 % | 10.30 -> 10.35 | 39.65 -> 39.25 | 1006 -> 994 % | 9.70 -> 9.65 | 0.20 / 0.20 |
+
+(The blind column is byte-for-byte unchanged: no sight, no chase, no leash.) The plain descent table (hunting) and `GATE=1` give the
+same deaths as the STRIKES hunting / gate columns.
+
+`HOOD=1`, hood at every pause (deaths per run, lit -> covered): Normal careful 0.00 -> 0.00 (before 0.00 -> 0.00), Normal hesitant
+5.35 -> 3.25 (before 6.80 -> 2.50), Nightmare careful 0.00 -> 0.05 (before 0.00 -> 0.00), Nightmare hesitant 24.95 -> 20.00 (before
+26.40 -> 12.45): covering at every pause now takes back about 40 % / 20 % of the deaths instead of 63 % / 53 %: **the hood is weaker up
+close**, as asked. The covered staller is caught as often as the lit one (Normal 13 / 13 of 20, Nightmare 14 / 12, Abyss 13 / 13 of 19).
+
+Read: the targets hold (expert 0 deaths, < 1 hit; careful 0 deaths on Normal and Nightmare). The leash is a small RELIEF for players
+who flee (Normal hesitant hunting 6.80 -> 5.35 deaths), not a free escape: it fires 0.15-2.6 times a run, and the Mason is back 8-12 s
+later. A well hesitant player on Normal meets it a little more (gate 0.70 -> 0.90 deaths, 3.65 -> 4.90 hits): after a leash wound the
+next prowl pass comes at the heal instead of 50-80 s later (the owner's "comes back"). The cell-to-cell noise of 20 runs is about
++-0.3 deaths for hesitant players.
+
 ## 5. Test plan
 
 `tests/creature/body-sight.mjs` (the REAL Creature3D + MasonSense, the stub shaft, 60 Hz, seeded):

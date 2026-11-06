@@ -2,8 +2,8 @@
 //   the pure sim/lanternHood.js: the slew (in 0.25 s, out 0.2 s), on = k > 0.6, the 0.6 s re-hood lock-out, hold / toggle modes,
 //          not live = off at once, 'lantern:hood' {on} once per change, the debug force, the light / range / drain factors
 //   the bag: Inventory3D.update's drain multiplier (x0.3 covered)
-//   the REAL Creature3D + MasonSense (lit = false while covered): a covered player is never `sees` (no notice, no chase) while it still
-//          hunts him by sound; covering during the notice beat breaks the count (no commit); an uncovered player at ~20 m in a clear
+//   the REAL Creature3D + MasonSense (lit = false while covered): a covered player is never `sees` beyond bodyRange (MASON_BODY_SIGHT_LEASH.md:
+//          up close it sees the body) while it still hunts him by sound; covering during the notice beat breaks the count (no commit); an uncovered player at ~20 m in a clear
 //          line is noticed within 0.6 s of the uncover; a chase loses a covered player after its memory
 //   the hood camper (tests/creature/pacing.mjs runOne with opts.hood, the REAL level): covered stallers are still found (sound + stall clock)
 //   the input: desktop V held, touch HOOD, VR right grip at the lantern (not elsewhere, not while the right hand climbs), a quick left
@@ -163,7 +163,7 @@ const EVENTS = ['creature:notice', 'creature:sight', 'creature:attack', 'creatur
 function mk(key, seed, opts = {}) {
   const L = opts.real ? new Level3D(undefined, DIFFICULTY[key].levelVariant) : new Level3D(makeShaftData(), key);
   const bus = new EventBus();
-  const w = { L, bus, t: 0, ev: [], seen: 0, chased: 0 };
+  const w = { L, bus, t: 0, ev: [], seen: 0, seenFar: 0, chased: 0 };
   for (const e of EVENTS) bus.on(e, (p) => w.ev.push({ t: w.t, type: e, p }));
   w.c = new Creature3D(L, DIFFICULTY[key], bus, { seed });
   w.hood = new LanternHood(bus);
@@ -179,6 +179,7 @@ function mk(key, seed, opts = {}) {
       w.c.setSight(true, !w.hood.on, false);
       w.c.update(DT, w.p, w.t);
       if (w.c.sight.sees) w.seen++;
+      if (w.c.sight.sees && (w.c.sight.by !== 'body' || w.c.distance > w.c.sense.tune.bodyRange + 1)) w.seenFar++; // (sampled every 0.1 s: +1 m slack)
       if (w.c.sight.chasing) w.chased++;
     }
     return true;
@@ -206,13 +207,14 @@ function mk(key, seed, opts = {}) {
           x.c.onRespawn(x.p);
         }
       });
-      if (w.seen > 0 || w.count('creature:notice') > 0 || w.count('creature:sight') > 0) good = false;
+      // MASON_BODY_SIGHT_LEASH.md: covered, it never sees you BEYOND bodyRange (up close it sees your body: every sighting is 'body')
+      if (w.seenFar > 0 || w.count('creature:notice', (p) => p.by !== 'body' || p.distance > SIGHT_TUNE[k].bodyRange + 0.5) > 0) good = false;
       const hunted = w.count('creature:attack') > 0 || caught > 0;
       if (hunted) found++;
       if (seed === 1) line.push(`${k}: ${w.count('creature:attack')} attacks, first catch ${caught > 0 ? caught.toFixed(1) + ' s' : 'none'}`);
     }
   }
-  ok(good, 'the REAL MasonSense with the lantern covered (lit = false): never `sees`, no notice, no chase in 60 s x 3 seeds x 3 difficulties');
+  ok(good, 'the REAL MasonSense with the lantern covered (lit = false): never `sees` by the light, never beyond bodyRange (12 / 14 / 16 m), in 60 s x 3 seeds x 3 difficulties');
   ok(found >= 7, `... but it still hunts the covered player by sound: ${found}/9 runs it attacked or caught him (${line.join('; ')})`);
 }
 
@@ -230,12 +232,14 @@ function mk(key, seed, opts = {}) {
       });
       const n = w.first('creature:notice');
       w.step(60 * 6);
-      const committed = w.count('creature:sight', (p) => p.on);
-      if (!n || committed > 0 || w.c.sight.chasing) good = false;
+      // MASON_BODY_SIGHT_LEASH.md: the light notice never commits; a later commit can only come from the body sight, within bodyRange
+      const committed = w.count('creature:sight', (p) => p.on && p.distance > SIGHT_TUNE[k].bodyRange + 1);
+      const bodyFirst = w.ev.filter((e) => e.type === 'creature:sight' && e.p.on).every((e) => w.ev.some((q) => q.type === 'creature:notice' && q.p.by === 'body' && q.t <= e.t && q.t > n.t));
+      if (!n || n.p.by !== 'light' || committed > 0 || !bodyFirst) good = false;
       if (seed === 1) line.push(`${k} noticed at ${n ? n.p.distance.toFixed(1) : '-'} m, covered ${w.hood.on ? 'in time' : 'late'}`);
     }
   }
-  ok(good, `covering inside the 0.5 s notice beat breaks the count: no commit, no chase (${line.join('; ')})`);
+  ok(good, `covering inside the 0.5 s notice beat breaks the count: no commit from the light (only a later body sighting within bodyRange can) (${line.join('; ')})`);
 
   let good2 = true;
   let counted = 0;
@@ -289,6 +293,8 @@ function mk(key, seed, opts = {}) {
     }
     w.c.lethal = false; // keep the player alive through the chase
     w.held = true;
+    // MASON_BODY_SIGHT_LEASH.md: the light's rule alone (up close it would keep seeing the body: body-sight.mjs checks that side)
+    w.c.sense.tune = Object.assign({}, SIGHT_TUNE[k], { bodyRange: -1 });
     const t0 = w.t;
     w.step(60 * 12, (x) => {
       x.c.lethal = false;

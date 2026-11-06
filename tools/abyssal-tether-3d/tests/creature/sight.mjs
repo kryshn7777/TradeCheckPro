@@ -117,7 +117,14 @@ function frontDist(c, p) {
   const w = mk('normal', 2);
   w.c.setSight(true, false, false);
   w.step(60 * 30);
-  ok(w.count('creature:notice') === 0 && !w.c.sight.chasing && w.c.inPlay, 'an empty lantern: never seen in 30 s (it still hunts by sound)');
+  // MASON_BODY_SIGHT_LEASH.md: an empty lantern hides you only beyond bodyRange (up close it sees your body: body-sight.mjs)
+  const darkN = w.ev.filter((e) => e.type === 'creature:notice');
+  ok(darkN.every((e) => e.p.by === 'body' && e.p.distance <= SIGHT_TUNE.normal.bodyRange + 0.5) && w.c.inPlay, `an empty lantern: never seen beyond bodyRange in 30 s (${darkN.length} body notices, all within ${SIGHT_TUNE.normal.bodyRange} m; it still hunts by sound)`);
+  const wb = mk('normal', 2);
+  wb.c.sense.tune = Object.assign({}, SIGHT_TUNE.normal, { bodyRange: -1 }); // the lantern rule alone
+  wb.c.setSight(true, false, false);
+  wb.step(60 * 30);
+  ok(wb.count('creature:notice') === 0 && !wb.c.sight.chasing && wb.c.inPlay, 'the lantern rule alone (bodyRange off): an empty lantern is never seen in 30 s (it still hunts by sound)');
   const w2 = mk('normal', 2);
   w2.c.setSight(false, true, false);
   w2.step(60 * 30);
@@ -314,6 +321,7 @@ function frontDist(c, p) {
   });
   ok(chasing && !withdrew && w.c.sight.chasing, 'hunt gate: healed while it keeps seeing you, it never withdraws (30 s): the scent hold is kept full by the chase');
   w.c.setSight(true, false, false); // the light is gone
+  w.c.sense.tune = Object.assign({}, SIGHT_TUNE.normal, { bodyRange: -1 }); // (the lantern rule alone: up close it would see the body, MASON_BODY_SIGHT_LEASH.md)
   let tW = -1;
   const t0 = w.t;
   w.step(60 * 30, (x) => {
@@ -599,6 +607,7 @@ function frontDist(c, p) {
     r.c.setHuntGate(true);
     r.c.reset(r.p);
     if (opts.lit === false) r.c.setSight(true, false, false);
+    if (opts.noBody) r.c.sense.tune = Object.assign({}, SIGHT_TUNE[k], { bodyRange: -1 }); // the lantern rule alone (MASON_BODY_SIGHT_LEASH.md)
     if (opts.off) r.c.setSight(false, true, false);
     let tIn = -1;
     let tChase = -1;
@@ -629,9 +638,9 @@ function frontDist(c, p) {
     rows.push(`${k}: a pass at ${f2(a.tIn)} s, chase ${f2(a.tChase)} s, caught ${f2(a.caught)} s`);
   }
   ok(g, `a WELL player in view: the Mason prowls in (after ${SIGHT_TUNE.normal.prowl.first} / ${SIGHT_TUNE.nightmare.prowl.first} / ${SIGHT_TUNE.abyss.prowl.first} s), harmless until it sees you, then it chases and kills (${rows.join('; ')})`);
-  const dark = prowl('normal', 3, { lit: false, secs: 160 });
+  const dark = prowl('normal', 3, { lit: false, noBody: true, secs: 160 });
   const P = SIGHT_TUNE.normal.prowl;
-  ok(dark.tIn > 0 && dark.tChase < 0 && dark.tLethal < 0 && dark.caught < 0 && dark.left > dark.tIn + P.dur - 0.1 && dark.r.c.stats.prowls >= 2, `unseen (an empty lantern): a ${P.dur} s pass that never strikes, it withdraws and leaves play (at ${f2(dark.left)} s), then comes back ${P.gapMin}-${P.gapMax} s later (${dark.r.c.stats.prowls} passes in 160 s)`);
+  ok(dark.tIn > 0 && dark.tChase < 0 && dark.tLethal < 0 && dark.caught < 0 && dark.left > dark.tIn + P.dur - 0.1 && dark.r.c.stats.prowls >= 2, `unseen (an empty lantern, the lantern rule alone: bodyRange off): a ${P.dur} s pass that never strikes, it withdraws and leaves play (at ${f2(dark.left)} s), then comes back ${P.gapMin}-${P.gapMax} s later (${dark.r.c.stats.prowls} passes in 160 s)`);
   const rest = prowl('normal', 3, { refuge: true, secs: 120 });
   ok(rest.tChase < 0 && rest.caught < 0, "hidden in a Masons' rest through the passes: never seen, never touched");
   const off = prowl('normal', 3, { off: true, secs: 120 });
