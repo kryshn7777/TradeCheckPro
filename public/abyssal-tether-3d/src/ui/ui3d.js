@@ -48,6 +48,7 @@ import { Tutorial } from './tutorial.js';
 import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
 import { AHEAD_COLOR, MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, splitTone, tallyLine, targetText } from './medals.js';
 import { PAR_3D } from '../data/par-3d.js';
+import { trialRows, trialCard } from './trialCard.js'; // SECTION TRIALS: the Records' Practise rows and the result card (plans/SECTION_TRIALS.md)
 
 // =============================================================================
 // Constants
@@ -593,9 +594,9 @@ const MARKUP = `
     <div class="panel-head">${backBtn()}<h2 id="at3d-rec-title">Section records</h2></div>
     <div class="panel-body">
       <div class="rec-tabs" role="group" aria-label="Difficulty"></div>
-      <table class="rec-table"><thead><tr><th scope="col"><span class="sr">Section number</span></th><th scope="col">Section</th><th scope="col">Best</th><th scope="col">Medal</th><th scope="col">Next</th></tr></thead><tbody></tbody></table>
+      <table class="rec-table"><thead><tr><th scope="col"><span class="sr">Section number</span></th><th scope="col">Section</th><th scope="col">Best</th><th scope="col">Medal</th><th scope="col">Next</th><th scope="col" class="rec-trial-h"><span class="sr">Practise</span></th></tr></thead><tbody></tbody></table>
       <p class="panel-note rec-tally"></p>
-      <p class="panel-note">Medals per section: gold within the par (the time of the verified route), silver within 1.4 × par, brass within 2 ×. Whole sections only, from entering one to entering the next; falls count.</p>
+      <p class="panel-note">Practise: any section you have reached, from its checkpoint; the clock runs from your first move to the next section, and trial times are kept apart from these records. Medals per section: gold within the par (the time of the verified route), silver within 1.4 × par, brass within 2 ×. Whole sections only, from entering one to entering the next; falls count.</p>
     </div>
   </div>
 </section>
@@ -628,7 +629,7 @@ const MARKUP = `
     <div class="death-actions">
       <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
       <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">restore at the last relay</span></button>
-      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
+      <button class="btn death-restart" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
     </div>
     <p class="death-prompt"><kbd>Enter</kbd> continue · <kbd>R</kbd> restart</p>
@@ -895,6 +896,9 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .rec-table td{padding:.45em .4em;border-bottom:1px solid var(--line);font-size:.9em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .at3d-ui .rec-table td:first-child{font:700 1em var(--fd);color:var(--amber)}
 .at3d-ui .rec-table td.is-empty{color:var(--ink-4)}
+.at3d-ui .rec-table th.rec-trial-h{width:7.4em}
+.at3d-ui .rec-table td.rec-trial{padding:.2em;overflow:visible}
+.at3d-ui .rec-table .rec-trial .btn{min-height:max(var(--tap),2.2em);width:100%;align-items:center;text-align:center;padding:.2em .5em}
 .at3d-ui .medal{display:inline-flex;align-items:center;gap:.4em;font-weight:650}
 .at3d-ui .medal i{flex:none;width:.7em;height:.7em;border-radius:50%;background:var(--mc,#666);box-shadow:0 0 0 2px rgba(0,0,0,.4) inset}
 .at3d-ui .v-splits-wrap{width:100%;margin-top:.9em;text-align:left}
@@ -2290,7 +2294,46 @@ export class UI3D {
     };
   }
 
+  /** SECTION TRIALS: the death screen is the trial card while game.trial is set (a death in the trial, or its section done). */
+  _trialOn() {
+    const g = this.game || {};
+    return !!(g.trial && typeof g.trial === 'object');
+  }
+
+  _trialCardText() {
+    const g = this.game || {};
+    const tr = g.trial;
+    const secs = this._sections();
+    const s = tr && secs ? secs[tr.idx | 0] : null;
+    return trialCard(tr, s && s.name ? s.name : '');
+  }
+
+  /** DOM: the trial card in the death screen's own elements (no new screen): Again (Enter / R), Records, Menu. */
+  _fillTrial() {
+    const d = this.dom;
+    const c = this._trialCardText();
+    this._deathInfo = Object.assign(this._deathFrom(null), { canRespawn: true, trial: c });
+    d.deathKicker.textContent = c.kicker;
+    d.deathMsg.textContent = c.title;
+    d.deathStats.textContent = `${c.line1} · ${c.line2}`;
+    d.deathContinue.querySelector('.btn-label').textContent = 'Again';
+    d.deathContinueSub.textContent = 'the same section, from its checkpoint';
+    const rb = this.screens && this.screens.death ? this.screens.death.querySelector('.death-restart') : null;
+    if (rb) {
+      rb.dataset.action = 'trial-records';
+      rb.querySelector('.btn-label').textContent = 'Records';
+    }
+    d.deathPrompt.textContent = '';
+    d.deathPrompt.append(make('kbd', null, 'Enter'), ' or ', make('kbd', null, 'R'), ' again');
+  }
+
   _fillDeath(info) {
+    if (this._trialOn()) return this._fillTrial();
+    const rb = this.screens && this.screens.death ? this.screens.death.querySelector('.death-restart') : null;
+    if (rb && rb.dataset.action !== 'restart') {
+      rb.dataset.action = 'restart';
+      rb.querySelector('.btn-label').textContent = 'Restart descent';
+    }
     const i = this._deathFrom(info);
     this._deathInfo = i;
     const copy = DEATH_COPY[i.cause] || DEATH_COPY.impact;
@@ -2549,6 +2592,32 @@ export class UI3D {
     return recordRows(secs, this._records(diff), PAR_3D[diff] || null);
   }
 
+  /** SECTION TRIALS (ui/trialCard.js): per row, reached (Practise shown) and the trial best. Never throws. */
+  _trialRowsFor(diff, rows) {
+    const g = this.game || {};
+    try {
+      return trialRows(rows, this._sections(), g.save || null, diff, g.chapter === 2 ? 2 : 1, this._trialStorage || null);
+    } catch {
+      return [];
+    }
+  }
+
+  /** SECTION TRIALS: the Records' Practise action (DOM button / VR row): the trial starts at once. */
+  _startTrial(diff, section, fromVR) {
+    const g = this.game || {};
+    const i = parseInt(section, 10);
+    if (!isFinite(i) || !DIFFICULTY[diff] || typeof g.startTrial !== 'function') return false;
+    let ok = false;
+    try {
+      ok = g.startTrial(diff, i);
+    } catch (err) {
+      if (typeof console !== 'undefined') console.error('[AT3D] game.startTrial failed', err);
+    }
+    if (ok && (g.state === 'playing' || g.state === 'intro') && this.current !== null) this.show(null);
+    if (ok && !fromVR) this._lockPointer();
+    return !!ok;
+  }
+
   /** DOM: the Records screen (difficulty buttons, one row per section, the medal tally). */
   _fillRecords() {
     const d = this.dom;
@@ -2570,6 +2639,7 @@ export class UI3D {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     const rows = this._recordRowsFor(diff);
+    const trials = this._trialRowsFor(diff, rows);
     d.recBody.textContent = '';
     for (const r of rows) {
       const tr = make('tr');
@@ -2583,6 +2653,21 @@ export class UI3D {
         medal.appendChild(m);
       } else medal.textContent = '—';
       tr.append(make('td', null, r.numeral), make('td', null, r.name), best, medal, make('td', null, targetText(r)));
+      // SECTION TRIALS: a Practise action on each reached row (its trial best under the label)
+      const trc = make('td', 'rec-trial');
+      const tri = trials[r.index];
+      if (tri && tri.reached) {
+        const b = make('button', 'btn rec-practise');
+        b.type = 'button';
+        b.dataset.action = 'trial';
+        b.dataset.diff = diff;
+        b.dataset.section = String(r.index);
+        b.setAttribute('aria-label', `Practise section ${r.numeral}, ${r.name}`);
+        b.append(make('span', 'btn-label', 'Practise'));
+        if (tri.best) b.append(make('span', 'btn-sub', `${fmtSplit(tri.best)}${tri.untouched ? ' · untouched' : ''}`));
+        trc.appendChild(b);
+      }
+      tr.appendChild(trc);
       d.recBody.appendChild(tr);
     }
     d.recTally.textContent = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet.`;
@@ -2778,6 +2863,13 @@ export class UI3D {
       case 'about':
       case 'records':
         this.show(action);
+        break;
+      case 'trial':
+        this._startTrial(d.diff, d.section, fromVR);
+        break;
+      case 'trial-records':
+        this._call('quitToMenu');
+        this.show('records');
         break;
       case 'rec-tab':
         if (DIFFICULTY_ORDER.indexOf(d.diff) >= 0) {
@@ -4396,12 +4488,14 @@ export class UI3D {
       this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 62, 'rec-tab', { diff: k }), DIFFICULTY[k].label, null, { primary: k === diff, size: 28 });
     });
     const rows = this._recordRowsFor(diff);
+    const trials = this._trialRowsFor(diff, rows); // SECTION TRIALS: a Practise button on each reached row (x 804..980)
     const y0 = 200;
     const rh = Math.min(62, Math.floor(470 / Math.max(1, rows.length)));
     const hf = `650 28px ${F_UI}`;
-    txt(ctx, 'BEST', 520, y0, hf, COL.ink3, 'left', 0.12);
-    txt(ctx, 'MEDAL', 652, y0, hf, COL.ink3, 'left', 0.12);
-    txt(ctx, 'NEXT', 812, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'BEST', 308, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'MEDAL', 416, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'NEXT', 556, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'TRIAL', 804, y0, hf, COL.ink3, 'left', 0.12);
     const vf = `650 30px ${F_UI}`;
     const nf = `500 28px ${F_UI}`;
     rows.forEach((r, i) => {
@@ -4411,18 +4505,20 @@ export class UI3D {
         ctx.fillStyle = 'rgba(255,240,210,0.03)';
         ctx.fillRect(36, y, CW - 72, rh);
       }
-      txt(ctx, r.numeral, 50, by, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
-      txt(ctx, ellipsize(ctx, r.name, 380, nf), 128, by, nf, COL.ink2, 'left', 0);
-      txt(ctx, r.best == null ? '—' : fmtSplit(r.best), 520, by, vf, r.best == null ? COL.ink4 : COL.ink, 'left', 0);
+      txt(ctx, r.numeral, 46, by, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
+      txt(ctx, ellipsize(ctx, r.name, 175, nf), 122, by, nf, COL.ink2, 'left', 0);
+      txt(ctx, r.best == null ? '—' : fmtSplit(r.best), 308, by, vf, r.best == null ? COL.ink4 : COL.ink, 'left', 0);
       if (r.medal) {
         ctx.beginPath();
-        ctx.arc(664, by - 10, 11, 0, Math.PI * 2);
+        ctx.arc(428, by - 10, 11, 0, Math.PI * 2);
         ctx.fillStyle = MEDAL_COLOR[r.medal];
         ctx.fill();
-        txt(ctx, MEDAL_LABEL[r.medal], 684, by, `650 28px ${F_UI}`, COL.ink, 'left', 0);
-      } else txt(ctx, '—', 652, by, vf, COL.ink4, 'left', 0);
+        txt(ctx, MEDAL_LABEL[r.medal], 448, by, `650 28px ${F_UI}`, COL.ink, 'left', 0);
+      } else txt(ctx, '—', 416, by, vf, COL.ink4, 'left', 0);
       const t = targetText(r);
-      txt(ctx, ellipsize(ctx, t, CW - 44 - 812, `500 28px ${F_UI}`), 812, by, `500 28px ${F_UI}`, r.next ? COL.ink3 : COL.ink4, 'left', 0);
+      txt(ctx, ellipsize(ctx, t, 236, `500 28px ${F_UI}`), 556, by, `500 28px ${F_UI}`, r.next ? COL.ink3 : COL.ink4, 'left', 0);
+      const tri = trials[i];
+      if (tri && tri.reached) this._btn(ctx, this._region(804, y + 4, 176, rh - 8, 'trial', { diff, section: String(r.index) }), 'Practise', null, { size: 28, vr: !!tri.best });
     });
     const tally = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet`;
     txt(ctx, ellipsize(ctx, tally, CW - 88, `500 28px ${F_UI}`), CW / 2, 710, `500 28px ${F_UI}`, COL.ink2, 'center', 0.02);
@@ -4473,7 +4569,37 @@ export class UI3D {
     if (this._xr) this._btn(ctx, this._region(CW - 168, 18, 148, 60, 'exit-vr'), 'Exit VR', null, { ghost: true, size: 28 });
   }
 
+  /** VR: the trial card on the death panel's canvas (no new draw call): the time, the medal, the delta, Untouched; Again / Records / Menu. */
+  _paintTrial(ctx) {
+    this._frame(ctx, 'death');
+    const c = this._trialCardText();
+    const cx = CW / 2;
+    txt(ctx, ellipsize(ctx, c.kicker.toUpperCase(), CW - 120, `400 28px ${F_DISPLAY}`), cx, 120, `400 28px ${F_DISPLAY}`, c.tone === 'fail' ? COL.rust : COL.amber, 'center', 0.2);
+    const tf = `650 ${c.tone === 'fail' ? 56 : 84}px ${F_UI}`;
+    txt(ctx, c.title, cx, 222, tf, c.tone === 'fail' ? COL.phosphor : COL.warm, 'center', 0.02, CW - 120);
+    if (c.medal) {
+      const lf = `650 34px ${F_UI}`;
+      const w = measure(ctx, c.line1, lf, 0.02);
+      ctx.beginPath();
+      ctx.arc(cx - w / 2 - 22, 278, 13, 0, Math.PI * 2);
+      ctx.fillStyle = MEDAL_COLOR[c.medal];
+      ctx.fill();
+      txt(ctx, c.line1, cx + 8, 290, lf, COL.ink, 'center', 0.02, CW - 160);
+    } else txt(ctx, ellipsize(ctx, c.line1, CW - 120, `600 30px ${F_UI}`), cx, 290, `600 30px ${F_UI}`, COL.ink2, 'center', 0.02);
+    const col = c.tone === 'new' || c.tone === 'ahead' ? AHEAD_COLOR : c.tone === 'behind' ? COL.amber : COL.ink3;
+    txt(ctx, ellipsize(ctx, c.line2, CW - 100, `600 28px ${F_UI}`), cx, 340, `600 28px ${F_UI}`, col, 'center', 0.04);
+    const bw = 540;
+    const bx = (CW - bw) / 2;
+    const by = 380;
+    this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), 'Again', 'the same section, from its checkpoint', { primary: true, size: 34 });
+    const hw = (bw - 16) / 2;
+    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'trial-records'), 'Records', null, {});
+    this._btn(ctx, this._region(bx + hw + 16, by + 118, hw, 80, 'quit'), 'Menu', null, { ghost: true });
+    txt(ctx, 'A (or point + trigger) again · hold X again', cx, by + 250, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02, CW - 80);
+  }
+
   _paintDeath(ctx) {
+    if (this._trialOn()) return this._paintTrial(ctx); // SECTION TRIALS: the same panel, the trial card
     this._frame(ctx, 'death');
     const i = this._deathInfo || this._deathFrom(null);
     const copy = DEATH_COPY[i.cause] || DEATH_COPY.impact;

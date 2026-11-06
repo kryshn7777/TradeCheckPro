@@ -60,6 +60,8 @@ import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
 import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
+import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
+import { newTrial, trialSeed } from './meta/trials.js';
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
 import { applyPing, originGlow } from './render/hintWaveView.js';
 import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
@@ -1228,6 +1230,10 @@ export class Game3D {
     this._ghost = null;
     this._ghostView = null;
     this._ghostLast = null;
+    // SECTION TRIALS (trialGlue.js): the live trial (meta/trials.js newTrial) or null; the glue is built by the first startTrial
+    this.trial = null;
+    this._trials = null;
+    this._trialStarting = false;
     this._frozen = false;
     this._override = null;
     this._ovIntent = blankIntent();
@@ -2575,6 +2581,7 @@ export class Game3D {
     const fromMenu = this.state === 'menu';
     const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.openingCinematic !== false;
     if (this._runActive()) this._recordDepth();
+    if (!this._trialStarting) this.trial = null; // SECTION TRIALS: any other start leaves the trial
     try {
       this.difficultyKey = key;
       this.diff = DIFFICULTY[key];
@@ -2621,8 +2628,10 @@ export class Game3D {
     this._try('holdfast', () => this.holdfast.reset(p));
     this._face(finiteOr(sp.yaw, 0));
 
-    this.settings.lastDifficulty = key;
-    Storage.saveSettings(this.settings);
+    if (!this.trial) {
+      this.settings.lastDifficulty = key;
+      Storage.saveSettings(this.settings);
+    }
     if (this.chapter === 1) this._bumpStat(`runs.${key}`);
 
     this._setState(intro ? 'intro' : 'playing');
@@ -2809,6 +2818,7 @@ export class Game3D {
 
   /** Instant restart of the current difficulty from the top. */
   restart() {
+    if (this.trial) return this.startTrial(this.trial.diff, this.trial.idx, this.trial.ch); // SECTION TRIALS: R / Again = the same trial
     const key = DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal';
     this.bus.emit('game:restart', { difficulty: key });
     return this.start(key);
@@ -2840,6 +2850,43 @@ export class Game3D {
     return ok;
   }
 
+  /**
+   * SECTION TRIALS (trialGlue.js, plans/SECTION_TRIALS.md): practise section `idx` from its checkpoint on `diffKey`, the Mason live,
+   * the supplies on a fixed seed (meta/trials.js trialSeed). Modelled on continueRun. The game.trial guard keeps every run write
+   * away (meta/save.js SaveService, the v1 stats, the ghost): a trial never touches the main save, its splits, medals or ghost.
+   */
+  startTrial(diffKey, idx, chapter) {
+    if (!this.booted || !DIFFICULTY[diffKey]) return false;
+    const ch = Number(chapter) === 2 ? 2 : Number(chapter) === 1 ? 1 : this.chapter === 2 ? 2 : 1;
+    if (!this.setChapter(ch)) return false;
+    const prev = this.trial;
+    const lvl = this.level;
+    const i = U.clamp(idx | 0, 0, Math.max(0, lvl && lvl.sections ? lvl.sections.length - 1 : 0));
+    const sec = lvl && lvl.sections ? lvl.sections[i] : null;
+    if (!this._trials) this._trials = new TrialGlue(this);
+    this.trial = newTrial(i, diffKey, ch, sec && sec.id);
+    if (prev && prev.idx === i && prev.diff === diffKey && prev.ch === ch) this.trial.attempt = (prev.attempt | 0) + 1;
+    this._trialStarting = true;
+    let ok = false;
+    try {
+      ok = this.start(diffKey);
+      if (this._ghostRec) this._ghostRec.invalidate(); // a trial is never a whole run: no ghost
+      const s = ok && this.level && this.level.sections ? this.level.sections[i] : null; // (the level of the chapter just built)
+      if (s && s.id) this.trial.id = s.id;
+      if (ok && i > 0) ok = this._warp(i);
+    } finally {
+      this._trialStarting = false;
+    }
+    if (!ok) {
+      this.trial = null;
+      return false;
+    }
+    if (this.splits) this.splits.partial(); // (S1 from the top: not a whole run either)
+    this.time = 0;
+    this.bus.emit('trial:start', { idx: i, id: this.trial.id, diff: diffKey, ch, attempt: this.trial.attempt });
+    return true;
+  }
+
   _resumeAt(info) {
     const lvl = this.level;
     const cp = info.checkpoint;
@@ -2863,6 +2910,7 @@ export class Game3D {
   respawn() {
     if (this.state !== 'dead' && this.state !== 'paused') return false;
     if (this.victoryT >= 0 || !this.player) return false;
+    if (this.trial) return this.restart(); // SECTION TRIALS: rising again is the next attempt (no relay, no restore)
     if (!this.diff || this.diff.checkpoints === 'none') return this.restart();
     const cp = this.checkpoint;
     const p = this.player;
@@ -2931,6 +2979,7 @@ export class Game3D {
   /** Abandons the run and returns to the main menu (attract mode). */
   quitToMenu() {
     if (this._runActive()) this._recordDepth();
+    this.trial = null; // SECTION TRIALS: the menu leaves the trial
     try {
       this._enterAttract();
     } catch (err) {
@@ -3212,10 +3261,11 @@ export class Game3D {
     }
     if (this.pickups) this.pickups.knockers = kOn;
     if (this.pickups) {
-      const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
-      Storage.set('supplyRuns', n);
+      const tr = this.trial; // SECTION TRIALS: the same supplies every attempt (0x7a1a1 + section), the run counter untouched
+      const n = tr ? 0 : (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
+      if (!tr) Storage.set('supplyRuns', n);
       this.pickups.setLevel(this.level);
-      const seed = (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
+      const seed = tr ? trialSeed(tr.idx) : (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
       this.pickups.reset(seed);
       this.pickups.snapshot();
       // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
@@ -3973,6 +4023,7 @@ export class Game3D {
     this._runClock += dt;
     if (this.victoryT < 0) this.time += dt; // counts while playing or dead
     if (this._ghostRec && this.victoryT < 0) this._ghostRec.sample(this.time, p.x, p.y, p.z); // GHOST LANTERN: 10 Hz on the run clock
+    if (this.trial && this._trials) this._trials.tick(intent); // SECTION TRIALS: the trial clock (held at 0 until the first input / movement)
 
     if (this.knocker && this.state === 'playing') {
       // the flight and the clack run with the run's clock (never while paused); only the Mason answers it
@@ -4215,6 +4266,7 @@ export class Game3D {
     const lvl = this.level;
     const sec = lvl.sections[idx];
     if (!sec) return;
+    if (this.trial && this._trials && this._trials.sectionEntered(idx, mode)) return; // SECTION TRIALS: the next section ends the trial
     this.sectionIndex = idx;
     const first = !this._seen[idx];
     this._seen[idx] = true;
@@ -4327,6 +4379,7 @@ export class Game3D {
   }
 
   _beginVictory() {
+    if (this.trial && this._trials && this._trials.complete()) return; // SECTION TRIALS: the last section's trial ends at the goal
     if (this.splits) this._split(this.splits.goal(this.time)); // the last section's split ends at the goal
     this._try('ghost', () => this._ghostVictory());
     this.victoryT = 0; // timer stops; deaths are vetoed from here on
@@ -4401,7 +4454,10 @@ export class Game3D {
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._recordDepth();
-    this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
+    if (this.trial && this._trials) {
+      this._trials.died(cause); // SECTION TRIALS: no restore, no relay: the death scene, then the trial card
+      this.restore = null;
+    } else this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
     this._beginDeathScene(cause);
   }
 
@@ -5161,7 +5217,7 @@ export class Game3D {
   /** The ghost's sprite on the run clock (hidden off a run, with the setting off, or without a ghost). */
   _updateGhost(dt) {
     const g = this._ghost && this._ghost.player;
-    const on = !!g && !!this.player && !!this.settings && this.settings.ghost !== false && (this.state === 'playing' || this.state === 'dead' || this.state === 'paused');
+    const on = !!g && !this.trial && !!this.player && !!this.settings && this.settings.ghost !== false && (this.state === 'playing' || this.state === 'dead' || this.state === 'paused');
     if (!on && !this._ghostView) return;
     if (!this._ghostView && this.renderer && this.renderer.scene) this._ghostView = new GhostView(this.renderer.scene);
     if (this._ghostView) this._ghostView.update(dt, on ? g : null, this.time, this.renderer.camera, !!this.settings.reducedEffects);
@@ -5752,6 +5808,7 @@ export class Game3D {
   }
 
   _recordDepth() {
+    if (this.trial) return; // SECTION TRIALS: a trial records nothing of the run
     try {
       Storage.recordDepth(this.difficultyKey, U.depthMeters(this.deepest));
     } catch (err) {
@@ -5760,6 +5817,7 @@ export class Game3D {
   }
 
   _bumpStat(key) {
+    if (this.trial) return; // SECTION TRIALS: not a run
     try {
       const v = Storage.get(key, 0);
       Storage.set(key, (typeof v === 'number' && isFinite(v) ? v : 0) + 1);
@@ -6363,6 +6421,11 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // SECTION TRIALS: trial(i[, diff]) practises section i (default: the current difficulty); trial() reads the live trial
+      trial: (i, diff) => {
+        if (i === undefined) return this.trial ? JSON.parse(JSON.stringify(this.trial)) : null;
+        return this.startTrial(diff || (DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal'), i);
+      },
       // GHOST LANTERN: state() reads the recorder / the ghost / the sprite; clear() deletes this chapter + difficulty's ghost; load(b64) plays a recorded one
       ghost: {
         state: () => this.debugGhost(),
