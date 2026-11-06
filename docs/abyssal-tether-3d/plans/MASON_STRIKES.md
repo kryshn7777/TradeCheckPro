@@ -161,3 +161,30 @@ The route bots (`verify/`) never face the creature (they count catches, not appl
 - Death during a knockdown (a fall, another creature): cancelled on `player:death`.
 - Respawn / restart / menu / pause: knockdown cancelled, immunity cleared.
 - Allocation: Knockdown and PlayerHits preallocate; event payloads only on the rare hit events.
+
+## 10. Measured (2026-11-06)
+
+`STRIKES=1 LEVEL=real node tools/abyssal-tether-3d/tests/creature/pacing.mjs 20` (20 runs per cell, the real Chapter I level, the
+scripted human-pattern bots; blind = `sight: false`, hunting = sight on and the gate off (the worst case), gate = the hunt gate on with
+a player who starts well; hits = Mason strikes that connected; HP lost per run as a % of a full bar; a death = the bar emptied).
+
+| diff | player | blind: hits / HP / deaths | hunting: hits / HP / deaths | gate: hits / HP / deaths | target |
+|---|---|---|---|---|---|
+| Normal | expert | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | ~0 deaths, < 1 hit |
+| Normal | careful | 0.10 / 3 % / 0.00 | 0.65 / 20 % / 0.00 | 0.40 / 12 % / 0.00 | <= 0.5 deaths |
+| Normal | hesitant | 12.1 / 357 % / 2.00 | 34.3 / 902 % / 6.80 | 3.65 / 97 % / 0.70 | (worse than careful) |
+| Nightmare | expert | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | 0.00 / 0 % / 0.00 | ~0 deaths, < 1 hit |
+| Nightmare | careful | 0.35 / 11 % / 0.00 | 1.05 / 32 % / 0.00 | 0.45 / 14 % / 0.00 | <= 2 deaths |
+| Nightmare | hesitant | 46.8 / 1228 % / 9.40 | 113.6 / 2900 % / 26.4 | 35.8 / 919 % / 7.95 | |
+| Abyss | expert | 0.05 / 2 % / 0.00 | 0.15 / 5 % / 0.00 | 0.00 / 0 % / 0.00 | |
+| Abyss | careful | 0.85 / 26 % / 0.00 | 1.75 / 53 % / 0.00 | 2.00 / 58 % / 0.10 | |
+| Abyss | hesitant | 36.8 / 958 % / 7.95 | 42.7 / 1080 % / 10.3 | 39.7 / 1006 % / 9.70 | |
+
+For comparison the one-hit-kill Mason (MASON_SIGHT.md, hunting): Normal careful 0.45 / hesitant 9.20, Nightmare careful 1.55 /
+hesitant 27.7, Abyss careful 5.35 / hesitant 10.3 deaths per run. The careful player no longer dies to it at all on Normal and
+Nightmare (it takes 1-2 strikes a run on the hard difficulties); the hesitant bot (it stands still in view for 3-12 s at a time
+and never reacts inside a 0.4-0.5 s rise) is about where it was: the dodge is the skill.
+
+The frozen camper (a careful bot that stops at a random depth in the lethal sections, lit, never moves again; 40 runs, the "still"
+ones): dies in **4 strikes, 18.1 s** (Normal, 18.1-18.2 s) / **17.9 s** (Nightmare) / **17.6 s** (Abyss) from the first strike
+(fewer strikes when already hurt); 4 / 3 / 7 stalls sit where it cannot reach them at all (under masonry: it relocates; as before).

@@ -51,6 +51,12 @@
  *   frozen, it holds at its stalking distance and listens; 2 the S5 lure niche: it attacks, no strike hits); a strike never
  *   hits through an active solid; setOverride(cfg, section) lays a mode over a section (S7: escape once the iris opens).
  *   All event payloads carry world z as well as x, y.
+ *   MASON_STRIKES.md (the Mason; skitterlings keep the old wind-up): a strike no longer kills, it costs 30 % (game.js -> PlayerHits).
+ *   The snake: seen / near it DASHES (BURST 'dash'), then in ATTACK it holds a stand-off, rises, LOCKS on where you stand, lunges,
+ *   recoils and stares, every 3-5 s (strikeZone.js STRIKE_TUNE, its own seeded stream). Read-outs: attackPhase ('stalk' | 'dash' |
+ *   'rise' | 'stare' | 'lock' | 'strike' | 'recoil' | ''), attackT01, aimX/Y/Z, strikeSrc, strikeStats, coiledFree; input: immune;
+ *   events creature:phase {phase, t, dur, tx, ty, tz, x, y, z}, creature:attack (each striking rise: + interval, radius, strike,
+ *   coiled), creature:strike (+ zone). attack.phase keeps the rig's names: rise / lock / stare = 'windup', 'strike', 'recoil'.
  * Section data: creature.spawnOffsetY is read as metres ABOVE the player
  * (sign-agnostic), clamped to 28–80 m (beyond ~70 m the out-of-sight rubber
  * band closes the gap at catch-up speed anyway). Sighting trigger data:
