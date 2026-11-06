@@ -52,11 +52,11 @@ rig's yaw (the headset pose in XR). The glue only reads the camera: it never tur
 * **Icon**: in an accent-tinted block on the left: case + cross (first aid), roll + tail (bandage), syringe, cell + bolt (battery),
   cog rattle (knocker), pineapple grenade, revolver, fuel can, a crate for an unknown kind.
 * **Name**: Georgia bold, upper case, 56 px on the canvas on one line, or two lines at 48 px for a long name ("LANTERN / BATTERY").
-* **Hint**: one line, 27 px (shrinks to 21 px, then condenses, to fit): what it does, a middle dot, how to use it on this platform.
+* **Hint**: one line, 31 px (shrinks to 24 px, then condenses, to fit): what it does, a middle dot, how to use it on this platform.
 * **Stake**: a 7 mm iron wire from the prop's top to a clip at the card's lower edge (same geometry, sampled from a strip below the card
   on the same canvas).
-* **Size**: width = 0.22 x distance within [0.24, 0.8] m, so the name keeps >= 28 px on a Quest 3 (25 px per degree) at 0.8 to 2 m
-  (47 / 34 / 34 / 34 px at 0.8 / 1.2 / 1.5 / 2 m). The lower edge stands 0.24 m above the item centre; the card leans back 0.12 rad.
+* **Size**: width = 0.26 x distance within [0.26, 0.9] m, so the name keeps >= 28 px on a Quest 3 (25 px per degree) at 0.8 to 2 m
+  (51 / 41 / 41 / 41 px at 0.8 / 1.2 / 1.5 / 2 m; a two-line name at 48 px: 35 px). The lower edge stands 0.24 m above the item centre; the card leans back 0.12 rad.
 * **Orientation**: a yaw toward the eye only, a small settled roll per item (deterministic from its id, under 2 degrees), a slight
   breathing sway that stops with Reduced effects.
 * **Material**: `MeshBasicMaterial` (unlit: no lit sampler is added, the Quest's 16-sampler limit is untouched), `toneMapped: false` so the
@@ -100,3 +100,7 @@ test fails for any ITEM enum kind without its own entry.
   against a stand-in game (pickups + fuel cans, platform hints, busy states, the camera never written, no allocation) and the setting.
 * The captures (`img/item-cards-*.png`) come from the real game in software GL: the player 1.5 m from a bandage, a first aid kit and
   a battery spawned on the stone floor (`AT3D.debug.bag.spawn` / `pickups.spawnAt`), frozen, the lantern on, in S1 and a deep section.
+
+The contact sheet (S1 x3, S7 x2, and a zoom on the first aid card) was captured BEFORE the last sizing pass (k 0.22 to 0.26, wmin 0.24 to
+0.26, wmax 0.8 to 0.9, hint 27 to 31 px): in the game today the card is about 18 % wider and the hint line larger than shown. The S7
+shots are lit by the lantern close up; a capture in a truly dark section is still to do.

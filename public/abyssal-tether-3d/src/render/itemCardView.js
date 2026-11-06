@@ -26,9 +26,9 @@ export const CARD = Object.freeze({
   cw: 512, // canvas
   ch: 256,
   rows: 208, // canvas rows of the card (the rest: the wire's strip)
-  k: 0.22, // card width per metre of distance
-  wmin: 0.24, // m
-  wmax: 0.8,
+  k: 0.26, // card width per metre of distance
+  wmin: 0.26, // m
+  wmax: 0.9,
   lift: 0.24, // m: the card's lower edge above the item centre
   stakeFrom: 0.11, // m: the wire starts at the prop's top
   stakeW: 0.007, // m
@@ -400,7 +400,7 @@ export function drawCard(g, card, hint, seed) {
   g.fillStyle = rgba(acc, 0.35);
   g.fillRect(tx + 68, nameBottom + 15, tw - 68, 1);
   // ---- the hint ----
-  const hf = fit(g, hint, 400, 27, 21, tw);
+  const hf = fit(g, hint, 400, 31, 24, tw);
   g.font = `400 ${hf[0]}px ${FONT}`;
   g.fillStyle = 'rgba(196,188,170,1)';
   fillSquashed(g, hint, tx, Math.max(nameBottom + 50, 166), hf[1]);
