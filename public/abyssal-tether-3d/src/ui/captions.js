@@ -157,6 +157,10 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'player:hit' and its ring ('hit:ring')
+  hit: R('[Hit]', 'player', 2, 'hit', 0.9),
+  hitRing: R('[High-pitched ringing]', 'player', 1, 'hitring', 2.5),
+  hitBite: R('[Skitterling bite]', 'creature', 2, 'skitstrike', 1.2),
 });
 
 /**
@@ -434,6 +438,10 @@ export function captionForEvent(type, p, head) {
       return e.idx === 0 ? knockerCaption(head, e.x, e.z) : null; // the start of a bar (the group's cooldown keeps it to one line)
     case 'knocker:end':
       return e.reason === 'lost' ? KNOCKER_RULES.lost : null;
+    case 'player:hit':
+      return e.source === 'skitter' ? RULES.hitBite : RULES.hit;
+    case 'hit:ring':
+      return e.source === 'skitter' ? null : RULES.hitRing;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -546,6 +554,8 @@ export const CAPTION_EVENTS = Object.freeze([
   'hint:wave:pass',
   'knocker:clack',
   'knocker:end',
+  'player:hit',
+  'hit:ring',
   ...SFX_CAPTION_EVENTS,
 ]);
 

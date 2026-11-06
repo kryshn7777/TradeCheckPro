@@ -205,6 +205,10 @@ const SETTINGS_SCHEMA = [
   { key: 'hintWave', tab: 'access', type: 'toggle', label: 'Hint wave', desc: 'Stuck a long while? The golden mark sends a soft wave through the walls toward you.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
   { key: 'roaches', tab: 'access', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', vr: true },
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): on the desktop's Access list; the VR Access page is full (seven rows +
+  // Reset), so in a headset the same choice sits on the Sound page (below)
+  { key: 'hitFeedback', tab: 'access', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and knocks your view to the ground. Gentle: a softer flash and a shorter ring; the view never falls.', options: [['full', 'Full'], ['gentle', 'Gentle']], desktop: true },
+  { key: 'hitFeedback', tab: 'audio', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and drops you. Gentle: a softer flash and a shorter ring; your view never moves.', options: [['full', 'Full'], ['gentle', 'Gentle']], vr: true },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
   { key: 'masonSight', tab: 'rope', type: 'choice', label: 'Mason sight', desc: 'On: it sees your lantern and gives chase, and you cannot heal while it is close. Off: it hunts by sound alone.', options: [['on', 'On'], ['off', 'Off']] },

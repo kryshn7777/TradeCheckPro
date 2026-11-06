@@ -347,6 +347,7 @@ export const SETTINGS_DEFAULTS = {
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
   lanternHood: 'hold', // THE HOOD (sim/lanternHood.js, plans/LANTERN_HOOD.md): 'hold' (covered while the input is held) | 'toggle' (each press flips it)
+  hitFeedback: 'full', // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'full' | 'gentle' (half the red punch, no fall of the view, a shorter ring)
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -379,6 +380,7 @@ export const UX_LIMITS = {
   touchLaunchers: ['two', 'toggle'],
   touchRopeModes: ['hold', 'latch'],
   lanternHoods: ['hold', 'toggle'], // THE HOOD
+  hitFeedbacks: ['full', 'gentle'], // HIT FEEDBACK
 };
 
 /** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
@@ -432,6 +434,7 @@ export function sanitizeUxSettings(s) {
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
   if (L.lanternHoods.indexOf(s.lanternHood) < 0) s.lanternHood = D.lanternHood; // THE HOOD
+  if (L.hitFeedbacks.indexOf(s.hitFeedback) < 0) s.hitFeedback = D.hitFeedback; // HIT FEEDBACK
   sanitizeTouchSettings(s);
   return s;
 }

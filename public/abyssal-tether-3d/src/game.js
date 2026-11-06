@@ -60,6 +60,7 @@ import { GhostView } from './render/ghostView.js';
 import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
 import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
 import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
+import { HitFeedbackGlue } from './hitFeedbackGlue.js'; // HIT FEEDBACK: the red punch, the ring, the fall and the slow get-up (plans/HIT_FEEDBACK.md)
 import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
 import { newTrial, trialSeed } from './meta/trials.js';
 import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
@@ -1172,6 +1173,7 @@ export class Game3D {
     this.focusBeat = null;
     this.hood = null; // THE HOOD (lanternHoodGlue.js -> sim/lanternHood.js): { on, k } the lantern covered; built with the bus
     this._hoodGlue = null;
+    this.hitFeedback = null; // HIT FEEDBACK (hitFeedbackGlue.js): what a hit looks, sounds and feels like; built with the bus
     this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
     this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
@@ -1308,6 +1310,7 @@ export class Game3D {
     this._setupPuzzleFocus();
     this._setupChase();
     this._setupHood();
+    this._setupHitFeedback();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -4999,6 +5002,7 @@ export class Game3D {
     this._applyDeathCam();
     this._applyOpeningCam();
     this._applySpeedFov();
+    this._applyHitCam();
   }
 
   /**
@@ -5269,6 +5273,25 @@ export class Game3D {
     }
   }
 
+  /** HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): `game.hitFeedback`; a failure leaves hits without the extra feedback. */
+  _setupHitFeedback() {
+    try {
+      this.hitFeedback = new HitFeedbackGlue(this);
+    } catch (err) {
+      this._fault('hitFeedback', err);
+      this.hitFeedback = null;
+    }
+  }
+
+  /** HIT FEEDBACK: the knocked-down eye drop / roll, after the rig is placed and the death / opening cams ran. */
+  _applyHitCam() {
+    try {
+      if (this.hitFeedback) this.hitFeedback.applyCam();
+    } catch (err) {
+      this._fault('hitFeedback', err);
+    }
+  }
+
   /** THE HOOD, once a run frame before the bag (the drain reads hood.k). */
   _updateHood(dt, intent) {
     try {
@@ -5390,6 +5413,11 @@ export class Game3D {
       if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
     } catch (err) {
       this._fault('chase', err);
+    }
+    try {
+      if (this.hitFeedback) this.hitFeedback.update(dt); // HIT FEEDBACK: before healthFx reads its punch / vignette / tick
+    } catch (err) {
+      this._fault('hitFeedback', err);
     }
     this._updateReleaseGuide(dt);
     const fx = this.healthFx;
@@ -6491,6 +6519,10 @@ export class Game3D {
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
       // THE HOOD (sim/lanternHood.js): hood(true) covers the lantern, hood(false) uncovers it, hood(null) gives it back to the input;
       // returns { on, k, mode, lock, forced, stats }
+      // HIT FEEDBACK (hitFeedbackGlue.js): hit('mason' | 'skitter', down) a synthetic player:hit (+ the stand-in knock while the SIM's
+      // game.knock is missing or idle; no damage dealt); hitState() the punch, vignette, camera, knock and stats
+      hit: (source, down) => (this.hitFeedback ? this.hitFeedback.debugHit(source, down) : null),
+      hitState: () => (this.hitFeedback ? this.hitFeedback.debugState() : null),
       hood: (on) => {
         const h = this.hood;
         if (!h) return null;
