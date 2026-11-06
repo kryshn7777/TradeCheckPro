@@ -11,7 +11,8 @@
  *         A = jump (+ confirm)   B = pause (+ back while a panel is up)
  *         hold X = restart while paused / dead (never mid-run)
  *         hold Y = recenter (horizontal only: the player-height calibration is kept)
- *         left stick click = brake
+ *         left stick click = brake (held); a quick tap toggles THE HOOD (plans/LANTERN_HOOD.md)
+ *         right grip with the right hand at the lantern (left bracer) = THE HOOD (held)
  *         Both controllers are required: losing one (put down → tracked hands,
  *         battery, disconnect) for ctrlLostPauseS mid-run raises a pause edge.
  * Desktop: see desktopInput.js (LMB right tether, RMB left tether, WASD, …).
@@ -58,6 +59,9 @@ export const INPUT_TUNING = {
   gripDeadzone: 0.25, // a resting finger on the grip is not a yank
   recenterHoldS: 0.8, // hold Y this long to recenter
   restartHoldS: 1.0, // hold X this long to restart (a tap would throw away the whole descent)
+  hoodReach: 0.12, // THE HOOD: the right grip pose within this of the lantern starts covering it (m)
+  hoodKeep: 0.18, // ... and keeps covering it while within this (hysteresis, m)
+  hoodTapS: 0.3, // a left stick click released within this toggles the hood (longer = the brake only)
   ctrlLostPauseS: 0.5, // a run pauses once a controller has been missing (or is a tracked hand) this long
   eyeCalMin: VIEW.measureMin, // plausible eye heights (m above the real floor) for a measurement …
   eyeCalMax: VIEW.measureMax, // … outside this the reading is ignored
@@ -115,6 +119,10 @@ export function makeIntent() {
     // THE KNOCKER (sim/knocker3d.js): desktop G: pressed / released edges and held (the charge); touch KNOCK: tap = pressed +
     // released. VR throws it with the hand (intent.bag.vr: the bag gesture's draw / throw edges, handVelocity()).
     knocker: { pressed: false, held: false, released: false },
+    // THE HOOD (sim/lanternHood.js, plans/LANTERN_HOOD.md): hood = the cover input held (VR: right grip with the right hand at the
+    // lantern; desktop V; touch HOOD), hoodToggle = a toggle edge (VR: a quick left stick click).
+    hood: false,
+    hoodToggle: false,
     // Grip climbing (WP-CLIMB): VR grip per hand + the palm points; desktop F + the view axes (see makeClimbIntent).
     climb: makeClimbIntent(),
     // extras (not in the contract; harmless to ignore)
@@ -203,7 +211,7 @@ function applyOverride(I, o) {
   }
   if (typeof o.reel === 'number') I.reel = o.reel;
   if (typeof o.turnRate === 'number') I.turnRate = o.turnRate;
-  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed', 'anyPressed']) {
+  for (const k of ['hood', 'hoodToggle', 'jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed', 'anyPressed']) {
     if (k in o) I[k] = !!o[k];
   }
   if (o.hands) {
@@ -271,7 +279,13 @@ export class InputManager {
     this.lastError = null;
 
     this.intent = makeIntent();
-    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false };
+    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false, hoodToggle: false };
+    /** THE HOOD: the cover input is held this frame (VR right grip at the lantern / desktop V / touch HOOD); see _updateHoodXR. */
+    this.hood = false;
+    this._hoodXR = false; // VR: the right grip is covering the lantern (hysteresis + latched until the grip opens)
+    this._hoodGrip = false; // VR: the right grip squeezed (hysteresis)
+    this._l3T = 0; // VR: how long the left stick has been clicked (a short click toggles the hood, a hold is the brake)
+    this._hv = new Vector3();
     this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
     this._knock = { down: false, up: false, held: false };
     this._handVel = [makeHandVel(), makeHandVel()]; // VR: each hand's world velocity (the knocker's throw)
@@ -417,6 +431,8 @@ export class InputManager {
     I.backPressed = E.back;
     I.anyPressed = E.any;
     I.ui.click = E.click;
+    I.hood = this.hood && !this.uiMode;
+    I.hoodToggle = E.hoodToggle && !this.uiMode;
     const BE = this._bagEdges;
     const IB = I.bag;
     IB.slot = BE.slot;
@@ -447,6 +463,7 @@ export class InputManager {
     E.holster = false;
     E.jet = false;
     E.map = false;
+    E.hoodToggle = false;
     const BE = this._bagEdges;
     BE.slot = -1;
     BE.use = false;
@@ -1189,6 +1206,12 @@ export class InputManager {
       this._xLatched = false;
     }
     I.brake = B.l3.down;
+    // THE HOOD: a quick click of the left stick (released within hoodTapS) toggles it; holding it stays the brake
+    if (B.l3.down) this._l3T += dt;
+    else {
+      if (this._l3T > 0 && this._l3T <= T.hoodTapS && !this.uiMode) this._edges.hoodToggle = true;
+      this._l3T = 0;
+    }
 
     // Both controllers are needed (move, reel, turn, jump, pause): when one goes missing or
     // becomes a tracked hand mid-run (put down, battery, disconnect), pause the run.
@@ -1247,6 +1270,8 @@ export class InputManager {
 
     // 5c. climbing: a squeezed grip is a grab (the Game decides whether a hold is in reach), the palm points in world space
     this._updateClimbXR(I, readable);
+    // 5d. THE HOOD: the right hand over the lantern + grip covers it (that grip is not a climb grab nor a yank)
+    this._updateHoodXR(I, readable);
 
     // 6. aim rays (world space, from each controller's target ray)
     for (const h of HANDS) I.hands[h].aim = this._xrAim(h, this._aim[h]) ? this._aim[h] : null;
@@ -1297,6 +1322,67 @@ export class InputManager {
         hi.z = this._v.z;
       }
     }
+  }
+
+  /**
+   * THE HOOD in a headset (plans/LANTERN_HOOD.md): the right grip squeezed while the right grip pose is within hoodReach of the
+   * lantern (Renderer3D.lanternGroup, which hangs from the left bracer; the left grip socket without it), and the right hand is not
+   * already holding on (climb3d gripping with it last frame). Once covering it holds while the grip stays squeezed and the hand stays
+   * within hoodKeep; meanwhile the right grip is neither a climb grab nor a rope yank. No allocation (one reused vector).
+   */
+  _updateHoodXR(I, readable) {
+    const T = this.tuning;
+    const K = CONFIG.climb;
+    const grip = this.xrIn.hands.right.grip;
+    this._hoodGrip = this._hoodGrip ? grip > K.gripOff : grip > K.gripOn;
+    let on = false;
+    const sock = this.sockets.right;
+    if (readable && !this.uiMode && this._hoodGrip && this._handTracked('right') && sock && sock.parent) {
+      const lp = this._lanternWorld(this._hv);
+      if (lp) {
+        sock.updateWorldMatrix(true, false);
+        const e = sock.matrixWorld.elements;
+        const dx = e[12] - lp.x;
+        const dy = e[13] - lp.y;
+        const dz = e[14] - lp.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (this._hoodXR) on = d2 <= T.hoodKeep * T.hoodKeep;
+        else {
+          const g = this.game;
+          const cl = g && g.physics ? g.physics.climb : null;
+          const holding = !!(cl && cl.hands && cl.hands.right && cl.hands.right.gripping);
+          const bag = this._bagGesture;
+          on = d2 <= T.hoodReach * T.hoodReach && !holding && !(bag.open && bag.hand === 1) && bag.knocker !== 1;
+        }
+      }
+    }
+    if (on && !this._hoodXR) this.haptic('right', 0.22, 30); // the palm closes over the hot glass
+    this._hoodXR = on;
+    this.hood = on;
+    if (on) {
+      I.climb.grab.right = false;
+      this._gripOn[1] = false;
+      I.hands.right.yank = 0;
+    }
+  }
+
+  /** World position of the carried lantern into `out` (a Vector3), or null. */
+  _lanternWorld(out) {
+    const g = this.game;
+    const r = g && g.renderer;
+    const lg = r && r.lanternGroup;
+    if (lg && lg.parent) {
+      lg.updateWorldMatrix(true, false);
+      const e = lg.matrixWorld.elements;
+      return out.set(e[12], e[13], e[14]);
+    }
+    const ls = this.sockets.left;
+    if (ls && ls.parent && this._handTracked('left')) {
+      ls.updateWorldMatrix(true, false);
+      const e = ls.matrixWorld.elements;
+      return out.set(e[12], e[13] - 0.08, e[14]); // the lantern hangs a hand's breadth under the left grip
+    }
+    return null;
   }
 
   /** Feeds the bag gesture with this frame's head / hand poses and turns its edges into intent.bag (+ no yank at the bag). */
@@ -1406,6 +1492,7 @@ export class InputManager {
     I.reel = (D.key('Space') ? 1 : 0) - (shift ? 1 : 0);
     if (tOn) I.reel = U.clamp(I.reel + TI.reel, -1, 1);
     I.brake = D.key('KeyC');
+    this.hood = !this.uiMode && (D.key('KeyV') || (tOn && TI.hoodHeld)); // THE HOOD: V held / touch HOOD held
     I.turnRate = 0;
     const yank = D.key('KeyF') || (tOn && TI.gripHeld) ? 1 : 0;
 

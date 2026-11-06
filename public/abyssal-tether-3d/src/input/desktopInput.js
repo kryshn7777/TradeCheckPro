@@ -16,6 +16,7 @@
  *   mouse wheel             → bag: select the previous / next item      B → apply the selected item
  *   X                       → bag: stop applying (taking damage stops it too)
  *   G                       → THE KNOCKER (sim/knocker3d.js): hold to charge (an aim arc shows), release to throw; a tap lobs it
+ *   V                       → THE HOOD (sim/lanternHood.js): hold to cover the lantern (Settings: Hold / Toggle)
  *
  * Losing pointer lock during play (the browser's own Esc handling) counts as
  * one pause press. Window blur / tab hide release every key and button.
@@ -80,6 +81,7 @@ const KEY_TO_CODE = {
   g: 'KeyG',
   b: 'KeyB',
   x: 'KeyX',
+  v: 'KeyV',
   1: 'Digit1',
   2: 'Digit2',
   3: 'Digit3',
@@ -108,6 +110,7 @@ const GAME_KEYS = {
   Numpad3: 1,
   Numpad4: 1,
   KeyG: 1,
+  KeyV: 1, // THE HOOD (held; read by the InputManager each frame)
   KeyB: 1,
   KeyX: 1,
   KeyW: 1,
@@ -373,6 +376,7 @@ export class DesktopInput {
     this.keys[code] = true;
     if (e.repeat || wasDown) return;
     // The bag keys act on the run only (the Game ignores them elsewhere); they are not a "press any key".
+    if (code === 'KeyV') return; // THE HOOD: a held key, read each frame (not a "press any key")
     if (code === 'KeyG') {
       if (!ui && !xr) im._knockEdge(true); // the knocker: held = charging, the release throws (inputManager.js)
       return;
