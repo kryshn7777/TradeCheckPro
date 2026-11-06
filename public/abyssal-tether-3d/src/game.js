@@ -3328,7 +3328,7 @@ export class Game3D {
     const c = this._kn.ctx;
     const p = this.player;
     c.dead = !p || p.alive === false || this.state === 'dead';
-    c.busy = this.state !== 'playing' || this.victoryT >= 0 || !!this.prologue || !!(this.deathScene && this.deathScene.active);
+    c.busy = this.state !== 'playing' || this.victoryT >= 0 || !!this.opening || !!(this.deathScene && this.deathScene.active);
     return c;
   }
 
