@@ -50,7 +50,7 @@ s8-warm,live,S8,ODESSA,notquite,reaching 526 m in S8,"Keep coming down, Elias. I
 s8-lost,live,S8,VESPER,radio,reaching 538 m in S8,Uplink lost.,,"Suit readout. Two words, flat, final.",3,0.96,0,
 s8-self,live,S8,ELIAS,radio,no progress for 60 s (voiced hint),The grate. Don't look back. Run for the light.,,"Out of breath, low, urgent but controlled. Not a shout.",5,1.04,-0.2,
 s8-stall,live,S8,ODESSA,radio,no progress for 60 s (voiced hint),"The grate, Elias. Run for the light.",,"Urgent, controlled.",4.2,1.04,0,
-any-hurt,live,any,TICK,radio,event health:damage lethal=false cause=[object Object],"Vesper says that was minor. I say ow. Easy, Wren.",,"Wincing sympathy, joking to cover the worry.",5.3,1,0,
+any-hurt,live,any,TICK,radio,event health:damage lethal=false cause!=creature|skitter,"Vesper says that was minor. I say ow. Easy, Wren.",,"Wincing sympathy, joking to cover the worry.",5.3,1,0,
 any-low,live,any,ODESSA,radio,event health:low,Vitals red. Staging a restore at the last relay.,,"Procedural and calm, reading a checklist while he is dying. Cold in its calm.",5,1,0,
 any-relay,live,any,TICK,radio,event checkpoint,"That lamp's a relay now. Anything happens, we restore you there.",,An upbeat tech explanation.,5.7,1,0,
 any-gaze,live,any,TICK,radio,3 s looking at a blood writing (Blood writing on),What are you looking at? Your feed's just stone.,,"Puzzled, light, a little uneasy.",5,1,0,

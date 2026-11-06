@@ -40,7 +40,7 @@ function triggerOf(line) {
     else if (w.skit) out.push('first skitterling contact');
     else if (w.ev) {
       let s = `event ${w.ev}`;
-      if (w.match) s += ` ${Object.entries(w.match).map(([k, v]) => `${k}=${v}`).join(' ')}`;
+      if (w.match) s += ` ${Object.entries(w.match).map(([k, v]) => (v && typeof v === 'object' && Array.isArray(v.not) ? `${k}!=${v.not.join('|')}` : Array.isArray(v) ? `${k}=${v.join('|')}` : `${k}=${v}`)).join(' ')}`;
       if (w.text) s += ` (hint about "${w.text}")`;
       out.push(s);
     }
