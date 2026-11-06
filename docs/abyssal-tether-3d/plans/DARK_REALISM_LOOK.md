@@ -136,9 +136,43 @@ branches (skipped on Quest). Net on Quest: roughly -16 ALU per lit world fragmen
 ink hulls are gone (hands, sleeves and launchers on both hands, the body, the Mason's hull, two tusks and the stinger, one per Usher),
 measured in the captures below.
 
-## 4. Verification
+## 4. Verification (software GL captures, 960x540, desktop `high` tier unless noted)
 
-Captures, stats and the contact sheet: see the hand-back (scratchpad `dark/`). Tests: `tools/abyssal-tether-3d/tests/render/test-dark-look.mjs`.
+Same frames before (the cel look, base `aebfe29`) and after, through `AT3D.debug` (warp, freeze, god mode). Luma (sRGB 0..255, Rec.709):
+mean / p5 / p50 / p95 / % of pixels under 8 / under 20.
 
-Not verified: the headset (LCD black level, the floor's visibility in a dark room), the Quest's real ALU timing, readability on a
-real dark display.
+| frame | before (cel) | after (dark, final) |
+| --- | --- | --- |
+| S1 threshold | 129 / 34 / 127 / 241 / 0 / 2 | 90 / 20 / 85 / 192 / 1 / 5 |
+| hands + launchers in the lantern (S2) | 83 / 26 / 91 / 133 / 0 / 3 | 48 / 10 / 49 / 76 / 4 / 13 |
+| lamp ledge (S4) | 39 / 17 / 36 / 67 / 0 / 8 | 15 / 4 / 12 / 33 / 26 / 80 |
+| deep, lantern only (S7) | 36 / 13 / 30 / 90 / 1 / 35 | 15 / 1 / 8 / 46 / 50 / 68 |
+| same, night vision on | 34 / 3 / 18 / 110 / 22 / 54 | 21 / 0 / 6 / 76 / 54 / 68 |
+| anchor (ring) at 6.1 m in the dark (S6) | 31 / 16 / 30 / 59 / 0 / 14 | 18 / 2 / 18 / 35 / 10 / 66 |
+| fall cue (S3, falling 22 m/s) | 44 / 12 / 38 / 98 / 1 / 18 | 28 / 5 / 19 / 98 / 8 / 52 |
+| the Mason at 17 m | 38 / 16 / 35 / 61 / 2 / 9 | 25 / 4 / 17 / 63 / 15 / 58 |
+| the Mason at 8 m | 37 / 5 / 29 / 92 / 6 / 25 | 14 / 0 / 10 / 41 / 42 / 83 |
+| quest tier: S1 / lamp ledge / S7 / S6 warp view | 126 / 39 / 34 / 32 | 88 / 15 / 13 / 18 |
+
+Read: the picture is 1.5-2.5x darker in the mean, the p95 (the lantern pool, the lamps, the eyes, the glyphs) holds up much better than the
+mean (the light still reads as light), and the dark mass sits in the deep frames. The anchor glyph, the fall-cue markers, the Mason's red
+glow and the night vision lift all read; the anchor frame has only 10 % of its pixels under 8.
+
+Look-dev history: pass 1 (toe 0.5, contrast +0.14, baked exposure 1.25, the depth darkness on the baked light in full) put S4-S6 at a mean
+of 5-9 with 56-85 % of the frame under 8: a black screen, not a dark place. Pass 2 (more fill, floor, lantern) barely moved it: the
+lightmapped stone takes its fill from the baked light, which the depth darkness cut to 0.39x at S6. Pass 3 (`bakedDark` 0.55, contrast
++0.04 with the toe doing the crushing, exposure 1.0) is the shipped one.
+
+Draw calls (desktop, mono, the frame's `renderer.info`): S1 71 -> 56, hands 73 -> 67, lamp ledge 75 -> 69, S7 67 -> 62, the fall 75 -> 61,
+the Mason at 17 m 95 -> 77 (its hull, the two tusks', the stinger's, the hands' and the body's hulls are gone). In stereo on Quest every
+level object counts twice: about -10 to -36 calls a frame.
+
+Open: in the hands frame the body's shadow from the overhead lamp (the aux shadow) reads much weaker than under the cel bands, which had
+cut it into a hard dark band. Both shadow systems were checked running identically before and after (`lanternShadow.stats`: enabled,
+strength ~1, 6 casters; the aux in lamp mode, ready); the brighter inverse-square lantern now fills the floor where that shadow falls. A
+lower lantern fill under the aux shadow is the next tuning step if it is missed in the headset.
+
+Tests: `tools/abyssal-tether-3d/tests/render/test-dark-look.mjs` (63 checks).
+
+Not verified: the headset (the LCD black level, the floor's visibility in a dark room, comfort), the Quest's real ALU timing, readability on
+a real dark display, the `low` tier in pictures (its numbers are unit-tested only).
