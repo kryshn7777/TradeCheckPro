@@ -25,7 +25,7 @@
   hunts by sound, knocks from inside the walls because every body in it is still knocking to be named, and comes for the
   lantern-bearers because every piece of it walks toward the light. A Mason kill leaves no stone body: it wears you.
   It is blind to the dark but not to the light: it **sees the lantern-bearer's light** and, once it has, it walks straight at it
-  (an empty lantern, a wall between you or a Masons' rest hides you; see MASON_SIGHT.md).
+  (whole or hurt: health does not hide you from it; an empty lantern, a wall between you or a Masons' rest does; see MASON_SIGHT.md).
 - **The menders.** The Keepers sent nine Masons (the guild of menders) down to mend the deep course. The wall mended
   itself, with them. The Keepers' boards say only *THEY WERE NOT RETURNED*. The nine wrote the rest on the walls in their
   own blood on the way down: those are the blood writings.

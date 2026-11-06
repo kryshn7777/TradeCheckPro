@@ -29,12 +29,18 @@
 
 import { CONFIG } from './config3d.js';
 
-/** Per-difficulty numbers (metres, seconds). Unknown keys use normal. */
-export const SIGHT_TUNE = Object.freeze({
-  normal: Object.freeze({ sightRange: 30, notice: 0.5, pursueMul: 1.12, memory: 4, lethalNear: 8, decoyOverride: 5, hearRange: 60 }),
-  nightmare: Object.freeze({ sightRange: 38, notice: 0.5, pursueMul: 1.15, memory: 5, lethalNear: 9.5, decoyOverride: 6, hearRange: 66 }),
-  abyss: Object.freeze({ sightRange: 46, notice: 0.5, pursueMul: 1.2, memory: 6, lethalNear: 11, decoyOverride: 7, hearRange: 72 }),
-});
+/**
+ * Per-difficulty numbers (metres, seconds). Unknown keys use normal. (Plain objects: the pacing tool's SIGHT env patches them.)
+ *   firstHold  the first notice in a section (and after a respawn) is only a warning: no chase for this long
+ *   cooldown   after a chase ends (lost, a rest, a refuge, a decoy) it cannot commit again for this long (it searches by sound)
+ *   prowl      the hunt gate (health) no longer keeps it away: while you are well it makes PASSES through a hunting section, in play but
+ *              harmless until it sees you: the first `first` s after a section entry / respawn, then every gapMin..gapMax s, `dur` s each
+ */
+export const SIGHT_TUNE = {
+  normal: { sightRange: 30, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 8, decoyOverride: 5, hearRange: 60, firstHold: 8, cooldown: 20, prowl: { first: 20, gapMin: 50, gapMax: 80, dur: 30 } },
+  nightmare: { sightRange: 38, notice: 0.5, pursueMul: 1.0, memory: 3, lethalNear: 9.5, decoyOverride: 6, hearRange: 66, firstHold: 8, cooldown: 18, prowl: { first: 16, gapMin: 40, gapMax: 65, dur: 35 } },
+  abyss: { sightRange: 46, notice: 0.5, pursueMul: 1.05, memory: 4, lethalNear: 11, decoyOverride: 7, hearRange: 72, firstHold: 6, cooldown: 14, prowl: { first: 12, gapMin: 30, gapMax: 50, dur: 40 } },
+};
 
 /** Shared numbers. */
 export const SIGHT_COMMON = Object.freeze({
@@ -85,6 +91,10 @@ export class MasonSense {
     this._losT = 0;
     this._vis = false;
     this._noticeCd = 0;
+    this._firstT = 0; // > 0: the section's first notice holds the chase off (SIGHT_TUNE.firstHold)
+    this._first = true; // the next notice is the section's first (a new section or a respawn)
+    this._sec = -1;
+    this._coolT = 0; // > 0: no commit (SIGHT_TUNE.cooldown after a chase)
     this._proxy = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, alive: true };
     this.reset();
   }
@@ -108,6 +118,9 @@ export class MasonSense {
     this._losT = 0;
     this._vis = false;
     this._noticeCd = 0;
+    this._firstT = 0;
+    this._first = true;
+    this._coolT = 0;
   }
 
   /** game.js per frame: on = sight switched on (?sight=off / setting), lit = the lantern shows, blocked = no view now (cutscene, not playing). */
@@ -132,6 +145,12 @@ export class MasonSense {
     if (this.wiseT > 0) this.wiseT -= dt;
     if (this._knownT > 0) this._knownT -= dt;
     if (this._noticeCd > 0) this._noticeCd -= dt;
+    if (this._firstT > 0) this._firstT -= dt;
+    if (this._coolT > 0) this._coolT -= dt;
+    if (c.sectionIndex !== this._sec) {
+      this._sec = c.sectionIndex; // a new section: its first notice is a warning only
+      this._first = true;
+    }
     if (this.flare > 0) this.flare = Math.max(0, this.flare - dt / SIGHT_COMMON.flareTime);
     if (d.live && (!c.inPlay || c.victory || c._withdraw || c._override || c.refuge === 2 || c.sighting)) this.endDecoy('overridden');
 
@@ -160,17 +179,22 @@ export class MasonSense {
     const decoyHolds = d.live && pd > this.tune.decoyOverride;
     // the pacing waves: it does not see you while it RECOVERS (after a strike, or out of stamina) nor in an entry / respawn grace; the
     // chase ends there and must be noticed again (a fresh warning each wave). The hunt gate's withdraw (also RECOVERING) can still see.
-    const resting = (c.state === 'RECOVERING' && !c._withdraw) || c.grace > 0;
-    const eligible =
-      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && !resting && s.forced !== 'blind';
+    const resting = (c.state === 'RECOVERING' && !c._withdraw) || c.grace > 0 || this._coolT > 0;
+    // `canSee`: it can see you at all; `eligible`: it can also notice / commit (not resting). While it rests or cools down it still
+    // SEES you (s.sees: the hunt gate keeps its scent window full: health does not send away a Mason that is looking at you).
+    const canSee =
+      this.on && !this.blocked && alive && c.active && c.inPlay && !c.victory && !c.sighting && !c._override && c.refuge === 0 && !decoyHolds && s.forced !== 'blind';
+    const eligible = canSee && !resting;
     s.eligible = eligible;
     if (d.live && !decoyHolds) this.endDecoy('overridden'); // walked up to it: the decoy no longer holds it
     if (!eligible) {
       if (s.chasing) this._drop(false);
-      s.sees = false;
       s.notice = 0;
       s.noticing = false;
       s.near = false;
+    }
+    if (!canSee) {
+      s.sees = false;
       this._vis = false;
       return;
     }
@@ -182,6 +206,7 @@ export class MasonSense {
       this._vis = s.forced === 'see' || (this.lit && pd <= this.tune.sightRange && this._los(player));
     }
     s.sees = this._vis;
+    if (!eligible) return;
 
     if (s.sees) {
       s.lkx = px;
@@ -193,6 +218,10 @@ export class MasonSense {
           s.noticing = true;
           s.notice = 0;
           this.flare = 1;
+          if (this._first) {
+            this._first = false;
+            this._firstT = this.tune.firstHold; // you just arrived: a warning, not yet a chase
+          }
           if (this._noticeCd <= 0) {
             this._noticeCd = SIGHT_COMMON.noticeCd;
             this.stats.notices++;
@@ -200,7 +229,7 @@ export class MasonSense {
           }
         }
         s.notice += dt;
-        if (s.notice >= this.tune.notice) this._commit(pd);
+        if (s.notice >= this.tune.notice && this._firstT <= 0) this._commit(pd);
       }
     } else if (s.chasing) {
       s.lost += dt;
@@ -246,7 +275,7 @@ export class MasonSense {
     c._emit('creature:sight', { on: true, x: c.x, y: c.y, z: c.z, distance: pd });
   }
 
-  _drop(memoryOut) {
+  _drop(memoryOut, cool = true) {
     const s = this.sight;
     const c = this.c;
     s.chasing = false;
@@ -254,6 +283,7 @@ export class MasonSense {
     s.notice = 0;
     s.lost = 0;
     s.near = false;
+    if (cool) this._coolT = this.tune.cooldown; // it searches by sound for a while before it can commit again (not after a decoy)
     if (memoryOut) this.stats.lost++;
     c._emit('creature:sight', { on: false, x: c.x, y: c.y, z: c.z, distance: c.distance, reason: memoryOut ? 'lost' : 'blocked' });
   }
@@ -311,7 +341,7 @@ export class MasonSense {
     d.bestT = 0;
     this.stats.decoys++;
     const s = this.sight;
-    if (s.chasing) this._drop(false);
+    if (s.chasing) this._drop(false, false);
     s.noticing = false;
     s.notice = 0;
     c.creeping = false;

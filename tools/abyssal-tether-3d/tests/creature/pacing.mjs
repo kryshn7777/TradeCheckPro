@@ -6,6 +6,8 @@
 //   node pacing.mjs [runs=150] [--root DIR]
 // Env: LEVEL=real (the game's level instead of the stub shaft), ONLY=normal,abyss,
 // PROF=expert,careful, TUNE='{"normal":{…}}' (DIFF_TUNE overrides), NOSTALL=1, CAUSES=1.
+// MASON_SIGHT: SIGHT=off (the blind Mason), SIGHT='{"normal":{…}}' (SIGHT_TUNE overrides, `prowl` merged), GATE=1 (the hunt gate on
+// with a player who stays WELL: only the prowl passes and what they see can kill).
 import { srcUrl, positional } from '../../verify/root.mjs';
 import { makeShaftData } from './stubShaft.mjs';
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
@@ -13,6 +15,18 @@ const { DIFFICULTY, EventBus, U } = await import(srcUrl('sim/config3d.js'));
 const { Creature3D, DIFF_TUNE } = await import(srcUrl('sim/creature3d.js'));
 const { ThreatSystem3D } = await import(srcUrl('sim/threat3d.js'));
 if (process.env.TUNE) { const o = JSON.parse(process.env.TUNE); for (const k in o) Object.assign(DIFF_TUNE[k], o[k]); }
+const { SIGHT_TUNE } = await import(srcUrl('sim/masonSight.js'));
+const SIGHT_OFF = process.env.SIGHT === 'off';
+if (process.env.SIGHT && !SIGHT_OFF) {
+  const o = JSON.parse(process.env.SIGHT);
+  for (const k in o) {
+    const pr = o[k].prowl;
+    delete o[k].prowl;
+    Object.assign(SIGHT_TUNE[k], o[k]);
+    if (pr) SIGHT_TUNE[k].prowl = Object.assign({}, SIGHT_TUNE[k].prowl, pr);
+  }
+}
+const GATE = process.env.GATE === '1';
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 
 const RUNS = +(positional(process.argv.slice(2))[0] || 150);
@@ -202,7 +216,8 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
     else missBy[p.reason] = (missBy[p.reason] || 0) + 1;
   });
   const rand = U.rng(seed * 7919 + 13);
-  const creature = new Creature3D(level, diff, bus, { seed: seed * 31 + 7 });
+  const creature = new Creature3D(level, diff, bus, { seed: seed * 31 + 7, sight: !SIGHT_OFF });
+  if (GATE) creature.setHuntGate(true); // a player who stays well (setHurt never true)
   const threat = new ThreatSystem3D();
   const player = new Player(PROFILES[profileKey], rand, level);
   const start = mode === 'stall' ? (level.sections.find((sct) => sct.creature && sct.creature.lethal) || level.sections[4]).checkpoint : level.spawn;

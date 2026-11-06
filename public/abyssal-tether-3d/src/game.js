@@ -4852,7 +4852,7 @@ export class Game3D {
       // the Mason has your scent (its gate armed by low health / the scent window, or still withdrawing) or is making its staged
       // pass (the S4 sighting): the Dresser gives way and leaves play (one big creature at a time, in the story and in the budget)
       const c = this.creature;
-      d.setRival(!!(c && !c.isNull && ((c._gate && (c._armed || c._withdraw)) || c.sighting)));
+      d.setRival(!!(c && !c.isNull && ((c._gate && (c._armed || c._withdraw || c.prowling)) || c.sighting))); // (MASON_SIGHT: a prowl pass too)
       const cam = this.renderer && this.renderer.camera;
       if (cam && typeof cam.getWorldPosition === 'function') {
         cam.getWorldPosition(this._camPos);
