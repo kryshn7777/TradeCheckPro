@@ -59,8 +59,16 @@ export const RULES = Object.freeze({
   callFar: R('[A distant call]', 'creature', 1, 'call', 3),
   vast: R('[Something vast passes]', 'creature', 1, 'sighting', 4, 4),
   retreat: R('[It withdraws]', 'creature', 0, 'retreat', 4),
+  // MASON_SIGHT.md: it sees your light (the notice beat), and the near radius where nothing heals
+  notice: R('[It sees your light]', 'creature', 2, 'notice', 3),
+  noRecovery: R('[No recovery this close]', 'creature', 0, 'norecovery', 8),
   steps: R('[Scraping, closing in]', 'creature', 1, 'steps', 5),
   skitSteps: R('[Fast skittering, close]', 'creature', 1, 'skitter', 4),
+  // MASON SNAKE ATTACK (masonAttackGlue.js 'mason:attack'): the coil's rattle, THE LOCK (the dodge deadline), the lunge, the dash
+  masonRattle: R('[STONE RATTLING]', 'creature', 1, 'mason-rattle', 4),
+  masonLock: R('[IT LOCKS ON]', 'creature', 2, 'mason-lock', 0.8, 1.6),
+  masonLunge: R('[LUNGE]', 'creature', 2, 'mason-lunge', 0.8, 1.6),
+  masonSurge: R('[IT SURGES]', 'creature', 2, 'surge', 2.5),
   skitLunge: R('[Something small lunges]', 'creature', 2, 'skitlunge', 1.4),
   skitBite: R('[A sharp bite]', 'creature', 2, 'skitstrike', 1.2),
   skitMiss: R('[Small jaws snap, missing]', 'creature', 1, 'skitstrike', 1.2),
@@ -86,6 +94,11 @@ export const RULES = Object.freeze({
   dthSwarm: R('[Small jaws, everywhere]', 'creature', 2, 'dth', 1.4),
   dthSigh: R('[A last, long breath]', 'creature', 1, 'dthbreath', 3),
   dthDark: R('[A low pressure builds]', 'creature', 1, 'dthdark', 4, 4),
+  // the swarm skitterlings (sim/roaches.js; 'roach' is only their code name): low priority, long cooldowns, never push another line off (low: true)
+  roachSkit: Object.freeze({ ...R('[Dry ticking, close]', 'world', 0, 'roachskit', 20), low: true }),
+  roachScatter: Object.freeze({ ...R('[Tiny legs scattering]', 'world', 0, 'roachscat', 10), low: true }),
+  roachSquish: Object.freeze({ ...R('[A wet crunch]', 'world', 0, 'roachsquish', 3), low: true }),
+  roachBurst: Object.freeze({ ...R('[Skittering pours out of the wall]', 'world', 1, 'roachburst', 8), low: true }),
   // the jetpack (sim/jetpack3d.js)
   windWhoosh: R('[Wind whooshing past]', 'world', 0, 'whoosh', 6),
   jetOn: R('[Jetpack roaring]', 'creature', 1, 'jet', 2),
@@ -149,7 +162,39 @@ export const RULES = Object.freeze({
   lantern: R('[Lantern dimming]', 'player', 0, 'lantern', 12),
   nvOn: R('[Goggles whine up]', 'player', 0, 'nv', 0.8),
   nvOff: R('[Goggles whine down]', 'player', 0, 'nv', 0.8),
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'player:hit' and its ring ('hit:ring')
+  hit: R('[Hit]', 'player', 2, 'hit', 0.9),
+  hitRing: R('[High-pitched ringing]', 'player', 1, 'hitring', 2.5),
+  hitBite: R('[Skitterling bite]', 'creature', 2, 'skitstrike', 1.2),
 });
+
+/**
+ * THE KNOCKER (sim/knocker3d.js): '[A brass knocking, to your left]' with the side worded from the head's yaw when the knocking
+ * starts (and again at the third bar). Low severity, one group with a cooldown longer than its life: it never stacks.
+ */
+const KNOCK_SIDES = Object.freeze(['ahead', 'ahead to your right', 'to your right', 'behind you, right', 'behind you', 'behind you, left', 'to your left', 'ahead to your left']);
+export const KNOCKER_RULES = Object.freeze({
+  dir: Object.freeze(KNOCK_SIDES.map((w) => R(`[A brass knocking, ${w}]`, 'world', 0, 'knocker', 4.5))),
+  near: R('[A brass knocking, close by]', 'world', 0, 'knocker', 4.5),
+  any: R('[A brass knocking]', 'world', 0, 'knocker', 4.5),
+  lost: R('[A faint clack, far below]', 'world', 0, 'knocker-lost', 3),
+});
+
+/** THE SOLDIERS' WEAPONS (sim/weapons3d.js, plans/SOLDIER_WEAPONS.md): the fuse, the blast, the Mason hurt, a hunter killed. */
+export const WEAPON_RULES = Object.freeze({
+  fuse: R('[A fuse hissing]', 'world', 1, 'fuse', 2.4, 2.4),
+  blast: R('[A blast]', 'world', 2, 'blast', 0.6),
+  flee: R('[It screams and flees up the shaft]', 'creature', 1, 'frighten', 3, 4),
+  stagger: R('[It recoils, screaming]', 'creature', 1, 'frighten', 2),
+  squish: R('[A wet crunch]', 'creature', 0, 'squish', 1.5),
+});
+
+/** The knocker's caption for a source at (x, z) heard from `head` {x,z,yaw,ok} (null / not ok: no side). Pure. */
+export function knockerCaption(head, x, z) {
+  if (!head || head.ok === false || !finite(head.x) || !finite(head.z) || !finite(head.yaw) || !finite(x) || !finite(z)) return KNOCKER_RULES.any;
+  const sec = sectorOf(head.x, head.z, head.yaw, x, z);
+  return sec < 0 ? KNOCKER_RULES.near : KNOCKER_RULES.dir[sec];
+}
 
 export const DEATH_BEAT_RULES = Object.freeze({
   drop: RULES.dthFall,
@@ -198,12 +243,32 @@ const CLIP_RULES = Object.freeze({
 
 const finite = (v) => typeof v === 'number' && isFinite(v);
 
+// ---- THE GOLDEN MARK's blip wave (sim/hintWave.js): '[A soft golden blip, to your left]', the direction from the head's yaw when the
+// wave reached the player (game.js puts sector / vert in the hint:wave:pass payload). Low priority, one group: never stacks.
+const BLIP_DIR = ['ahead', 'ahead, to your right', 'to your right', 'behind you, to the right', 'behind you', 'behind you, to the left', 'to your left', 'ahead, to your left'];
+const BLIP_SHORT = ['ahead', 'ahead right', 'right', 'behind right', 'behind', 'behind left', 'left', 'ahead left'];
+/** The words of the blip's direction: sector 0..7 (sectorOf; -1 = on top of you), vert 1 above / -1 below / 0 level. Pure. */
+export function hintBlipDirection(sector, vert) {
+  const s = sector >= 0 && sector < 8 ? sector | 0 : -1;
+  if (vert > 0 || vert < 0) return (vert > 0 ? 'above you' : 'below you') + (s >= 0 ? `, ${BLIP_SHORT[s]}` : '');
+  return s >= 0 ? BLIP_DIR[s] : 'all around you';
+}
+const BLIP_RULES = [];
+for (let v = -1; v <= 1; v++) for (let s = -1; s < 8; s++) BLIP_RULES.push(R(`[A soft golden blip, ${hintBlipDirection(s, v)}]`, 'world', 0, 'hintblip', 6, 3));
+/** The frozen caption rule for a blip from `sector` / `vert` (no string built per event). */
+export function hintBlipRule(sector, vert) {
+  const s = sector >= 0 && sector < 8 ? sector | 0 : -1;
+  const v = vert > 0 ? 1 : vert < 0 ? -1 : 0;
+  return BLIP_RULES[(v + 1) * 9 + s + 1];
+}
+
 /**
  * The caption rule for a bus event, or null (not captioned, or below the threshold that makes it audible). Pure.
  * @param {string} type bus event name
  * @param {object} [p]  payload
+ * @param {{x,z,yaw,ok}} [head] the listener's head (the knocker words its side from it)
  */
-export function captionForEvent(type, p) {
+export function captionForEvent(type, p, head) {
   const e = p || {};
   if (e.skit) {
     // WP-SKITTER: the small red hunters share the creature events, tagged skit:true
@@ -238,6 +303,14 @@ export function captionForEvent(type, p) {
       return RULES.vast;
     case 'creature:retreat':
       return RULES.retreat;
+    case 'hint:wave:pass':
+      return hintBlipRule(finite(e.sector) ? e.sector : -1, finite(e.vert) ? e.vert : 0);
+    case 'creature:notice':
+      return RULES.notice;
+    case 'mason:attack':
+      return e.phase === 'rise' || e.phase === 'stare' ? RULES.masonRattle : e.phase === 'lock' ? RULES.masonLock : e.phase === 'strike' ? RULES.masonLunge : e.phase === 'dash' ? RULES.masonSurge : null;
+    case 'creature:near':
+      return e.on ? RULES.noRecovery : null;
     case 'creature:step':
       return finite(e.intensity) && e.intensity > 0.5 && (!finite(e.distance) || e.distance < 38) ? RULES.steps : null;
     case 'dresser:tick':
@@ -250,6 +323,14 @@ export function captionForEvent(type, p) {
       return DEATH_BEAT_RULES[e.beat] || null;
     case 'wind:whoosh':
       return e.strength > 0.8 ? RULES.windWhoosh : null;
+    case 'roach:skitter':
+      return finite(e.n) && e.n >= 2 ? RULES.roachSkit : null;
+    case 'roach:scatter':
+      return finite(e.n) && e.n >= 3 ? RULES.roachScatter : null;
+    case 'roach:squish':
+      return RULES.roachSquish;
+    case 'roach:burst':
+      return RULES.roachBurst;
     case 'jetpack:ignite':
       return RULES.jetOn;
     case 'jetpack:cut':
@@ -369,6 +450,22 @@ export function captionForEvent(type, p) {
       return RULES.strain;
     case 'lane:on':
       return RULES.debris;
+    case 'knocker:clack':
+      return e.idx === 0 ? knockerCaption(head, e.x, e.z) : null; // the start of a bar (the group's cooldown keeps it to one line)
+    case 'knocker:end':
+      return e.reason === 'lost' ? KNOCKER_RULES.lost : null;
+    case 'grenade:throw':
+      return WEAPON_RULES.fuse;
+    case 'grenade:blast':
+      return WEAPON_RULES.blast;
+    case 'creature:frighten':
+      return e.stagger ? WEAPON_RULES.stagger : WEAPON_RULES.flee;
+    case 'skitter:killed':
+      return WEAPON_RULES.squish;
+    case 'player:hit':
+      return e.source === 'skitter' ? RULES.hitBite : RULES.hit;
+    case 'hit:ring':
+      return e.source === 'skitter' ? null : RULES.hitRing;
     default:
       return SFX_CAPTIONS[type] || null;
   }
@@ -422,12 +519,19 @@ export const CAPTION_EVENTS = Object.freeze([
   'creature:call',
   'creature:sighting',
   'creature:retreat',
+  'creature:notice',
+  'mason:attack',
+  'creature:near',
   'creature:step',
   'dresser:tick',
   'dresser:hum',
   'dresser:step',
   'death:beat',
   'wind:whoosh',
+  'roach:skitter',
+  'roach:scatter',
+  'roach:squish',
+  'roach:burst',
   'jetpack:ignite',
   'jetpack:cut',
   'jetpack:empty',
@@ -472,6 +576,15 @@ export const CAPTION_EVENTS = Object.freeze([
   'arena:pause',
   'health:damage',
   'pickup:collect',
+  'hint:wave:pass',
+  'knocker:clack',
+  'knocker:end',
+  'grenade:throw',
+  'grenade:blast',
+  'creature:frighten',
+  'skitter:killed',
+  'player:hit',
+  'hit:ring',
   ...SFX_CAPTION_EVENTS,
 ]);
 
@@ -511,6 +624,7 @@ export class CaptionTracker {
     this.clock = 0;
     this._groups = Object.create(null); // group -> clock of its last caption
     this._dirT = 0;
+    this._head = null; // the last head pose update() was given (the knocker words its side from it)
     this._offs = [];
   }
 
@@ -539,7 +653,7 @@ export class CaptionTracker {
   push(type, p) {
     let out = null;
     if (this.wantCaptions()) {
-      const rule = captionForEvent(type, p);
+      const rule = captionForEvent(type, p, this._head);
       if (rule) out = this._take(rule, type, p) || out;
     }
     if (this.wantStatus()) {
@@ -557,6 +671,7 @@ export class CaptionTracker {
     let slot = null;
     for (const l of this.lines) if (l.on && l.rule === rule) slot = l;
     if (!slot) for (const l of this.lines) if (!l.on) { slot = l; break; }
+    if (!slot && rule.low) return null; // a low-priority caption (the swarm skitterlings) never pushes another line off
     if (!slot) {
       let worst = -1;
       for (const l of this.lines) {
@@ -593,6 +708,7 @@ export class CaptionTracker {
   /** Ages the lines and refreshes their directions from the head pose {x,y,z,yaw,ok}. */
   update(dt, head) {
     this.clock += dt;
+    if (head) this._head = head;
     let any = false;
     for (const l of this.lines) {
       if (!l.on) continue;

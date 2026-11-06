@@ -183,9 +183,9 @@ export const CONFIG = {
   // Player bag (sim/inventory3d.js, sim/pickups3d.js): consumables, the adrenaline speed boost and the lantern charge.
   // Arrays are indexed by item: 0 FIRST_AID, 1 BANDAGE, 2 ADRENALINE, 3 BATTERY.
   bag: {
-    caps: [1, 5, 2, 3], // how many of each the bag holds
-    applyTime: [5, 1.5, 0.6, 1], // s a use is channelled (cancelled by damage / death / the cancel input)
-    heal: [1, 0.2, 0.1, 0], // fraction of full health restored when the channel completes
+    caps: [1, 5, 2, 3, 3, 3, 12], // how many of each the bag holds (4: the KNOCKER, sim/knocker3d.js; 5: GRENADE, 6: SIDEARM rounds, sim/weapons3d.js)
+    applyTime: [5, 1.5, 0.6, 1, 0, 0, 0], // s a use is channelled (cancelled by damage / death / the cancel input); the knocker / grenade are thrown, the revolver fired
+    heal: [1, 0.2, 0.1, 0, 0, 0, 0], // fraction of full health restored when the channel completes
     adrenalineTime: 10, // s of the speed boost
     adrenalineMul: 2, // x run / air speed caps, acceleration, reel and pump speed (gravity and fall damage unchanged)
     batteryRestore: 0.5, // lantern charge a battery restores (0..1)
@@ -203,6 +203,23 @@ export const CONFIG = {
   },
 };
 
+/**
+ * FALL TOUGHNESS (owner, 2026-11-06: "make him 2 times stronger", falls killed too easily). The same fall now costs 1/FALL_TOUGHNESS of the
+ * hp it did (and so does a wall hit), with the free-drop threshold SPEED unchanged: the damage curve ((v/L - t)/(1 - t))^fallExp keeps its
+ * shape but is divided by FALL_TOUGHNESS, so it reaches 1 (dead) at a higher speed L' = L * k, k = t + (1 - t) * FALL_TOUGHNESS^(1/fallExp),
+ * and the threshold fraction becomes t' = t / k (t' * L' == t * L). Every consumer reads lethalImpact / health.fallThreshold from the
+ * difficulty (health, release guide, fall cue, audio, bots), so they all move together. Normal: lethal 17 -> 20.17 m/s (a free fall of
+ * 14.7 m -> 20.8 m kills), the 8 m drop that cost 80 hp costs 40. `fallK` / `fallToughness` ride along for the wall rule (sim/health3d.js).
+ */
+export const FALL_TOUGHNESS = 2;
+export function toughFall(lethal, threshold, T = FALL_TOUGHNESS, exp = 2) {
+  const k = threshold + (1 - threshold) * Math.pow(T, 1 / exp);
+  return { lethal: +(lethal * k).toFixed(4), threshold: +(threshold / k).toFixed(5), k: +k.toFixed(5), T };
+}
+const FALL_NORMAL = toughFall(17, 0.55);
+const FALL_NIGHTMARE = toughFall(15.5, 0.5);
+const FALL_ABYSS = toughFall(14.5, 0.45);
+
 export const DIFFICULTY = {
   normal: {
     key: 'normal',
@@ -214,14 +231,14 @@ export const DIFFICULTY = {
     aimConeDeg: 12,
     rayAssist: 2.4, // metres from the aim ray that still count as "aimed at"
     moverAssist: 0.6, // + metres of ray assist on a moving ring (LEVEL_FUN_PLAN item 7, sim/movers3d.js)
-    lethalImpact: 17,
+    lethalImpact: FALL_NORMAL.lethal, // 17 x FALL_TOUGHNESS (see toughFall)
     impactsLethal: true,
     fragileTime: 1.5,
     crumbleTime: 0.9,
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
-    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55: a drop under ~3.3 m costs nothing (it was 0.35: ~1.3 m already hurt)
+    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55 of the OLD lethal speed (a drop under ~3.2 m costs nothing): see toughFall
     climb: { drainMul: 1, reelDrain: 0 },
   },
   nightmare: {
@@ -234,14 +251,14 @@ export const DIFFICULTY = {
     aimConeDeg: 8,
     rayAssist: 1.8,
     moverAssist: 0.4,
-    lethalImpact: 15.5,
+    lethalImpact: FALL_NIGHTMARE.lethal, // 15.5 x FALL_TOUGHNESS
     impactsLethal: true,
     fragileTime: 1.05,
     crumbleTime: 0.65,
     checkpoints: 'alternate',
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
-    health: { fallThreshold: 0.5, regenDelay: 8, regenRate: 0.035, hazardDamage: 0.75, wallScale: 1.1 },
+    health: { fallThreshold: FALL_NIGHTMARE.threshold, fallK: FALL_NIGHTMARE.k, fallToughness: FALL_NIGHTMARE.T, regenDelay: 8, regenRate: 0.035, hazardDamage: 0.75, wallScale: 1.1 },
     climb: { drainMul: 1.1, reelDrain: 0.03 },
   },
   abyss: {
@@ -254,14 +271,14 @@ export const DIFFICULTY = {
     aimConeDeg: 6,
     rayAssist: 1.3,
     moverAssist: 0.2,
-    lethalImpact: 14.5,
+    lethalImpact: FALL_ABYSS.lethal, // 14.5 x FALL_TOUGHNESS
     impactsLethal: true,
     fragileTime: 0.8,
     crumbleTime: 0.5,
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
-    health: { fallThreshold: 0.45, regenDelay: 11, regenRate: 0.022, hazardDamage: 1, wallScale: 1.25 },
+    health: { fallThreshold: FALL_ABYSS.threshold, fallK: FALL_ABYSS.k, fallToughness: FALL_ABYSS.T, regenDelay: 11, regenRate: 0.022, hazardDamage: 1, wallScale: 1.25 },
     climb: { drainMul: 1.25, reelDrain: 0.05 },
   },
   sandbox: {
@@ -274,23 +291,27 @@ export const DIFFICULTY = {
     aimConeDeg: 12,
     rayAssist: 2.4,
     moverAssist: 0.6,
-    lethalImpact: 17,
+    lethalImpact: FALL_NORMAL.lethal,
     impactsLethal: false,
     fragileTime: 1.5,
     crumbleTime: 0.9,
     checkpoints: 'all',
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
-    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 1, wallScale: 1 },
+    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 1, wallScale: 1 },
     climb: { drainMul: 0.5 },
   },
 };
 for (const key of Object.keys(DIFFICULTY)) DIFFICULTY[key].aimCone = DIFFICULTY[key].aimConeDeg * DEG;
 export const DIFFICULTY_ORDER = ['normal', 'nightmare', 'abyss'];
+/** plans/MASON_STRIKES.md (the owner's numbers, every difficulty): hp fraction a Mason strike / a hunter-skitterling bite takes. */
+export const STRIKE_DAMAGE = Object.freeze({ mason: 0.3, skitter: 0.1 });
 
 export const SETTINGS_DEFAULTS = {
   volume: 0.8,
   aimAssist: 1.0, // 0.6..1.4 scales cone + ray assist
+  releaseGuide: true, // the dotted arc + ring of where a full let-go lands, while hanging on a line (render/releaseGuide.js)
+  speedFov: true, // desktop only: the fov widens up to 7 degrees at speed on a rope or in a fall (render/speedFov.js; never in XR, off with reducedEffects)
   ropeCooldown: 1.5, // s a hand's rope launcher takes to recharge after a shot (0 = no cooldown); shown on the wrist screen (sim/physics3d.js TetherSystem)
   turnSpeed: 1.0, // smooth-turn rate multiplier (0.5..2)
   mouseSensitivity: 1.0, // desktop look (0.3..3)
@@ -320,11 +341,22 @@ export const SETTINGS_DEFAULTS = {
   brightnessChecked: false, // the calibration screen has been seen (the menu stops suggesting it)
   reducedEffects: false, // fog cards, dust, debris and the wet film thinned; the frame-rate governor never goes below its level 3 (platform/governor.js)
   tutorialHints: true, // the short first-run hints (grip, reel, bag) that fade once learned (ui/tutorial.js)
+  hintWave: true, // THE GOLDEN MARK's blip wave when you are stuck long in a section (sim/hintWave.js); off = the 20 s mark only
   hitStop: true, // THE CATCH (sim/catch3d.js): the world holds a beat when the rope saves a near-lethal fall; the head never moves
+  // PUZZLE FOCUS (puzzleFocusGlue.js, plans/PUZZLE_FOCUS.md): at a puzzle a line suggests it and the view glances at it. 'auto' (desktop / touch
+  // glance + the cues; a headset never turns: cues only) | 'cues' (the line, the glow and the ping; never turns the view) | 'off'. `?focus=` overrides.
+  puzzleFocus: 'auto',
+  masonSight: 'on', // MASON_SIGHT.md: 'on' | 'off' the Mason sees the lantern-bearer and chases; off = the blind sound hunt (no near no-recovery rule)
+  knocker: true, // THE KNOCKER (sim/knocker3d.js): the thrown clockwork decoy that distracts the Mason (off = none carried or found; also ?knocker=off)
   windSqualls: true, // LEVEL_FUN_PLAN P6: the S6 throat's wind squalls push a body in the air (sim/objectives3d.js); off = still air
   swingLag: 0.5, // 0..1: the camera trails the body a little while you swing on a tether (render/swingLag.js); capped small in a headset
-  storyIntro: true, // the opening story when a new descent begins from the menu (any key moves it on, Esc skips it)
+  openingCinematic: true, // THE LANTERN's opening film when a new descent begins from the menu (Esc skips it; hold to skip); was storyIntro
+  ghost: true, // the GHOST LANTERN: a pale light drifting down on your best run's pace (meta/ghost.js, render/ghostView.js)
   bloodWriting: false, // opt-in content: the Masons' messages in blood on the walls (data/blood-writing-3d.js, render/bloodWriting.js); off by default
+  livingFlame: true, // the lantern's flame reacts to danger (render/lanternMood.js): gutters in a fall, leans in a squall, shrinks blue-white with the threat, shudders when the Mason commits, still in a rest; off = the plain flicker
+  // the swarm skitterlings (sim/roaches.js, plans/SKITTERLINGS.md): the tiny harmless red ones scuttling near you; off = none ever (some players
+  // hate bugs; the hunter skitterlings that bite are gameplay and stay). The storage key keeps its first name 'roaches': saved settings carry over.
+  roaches: true,
   // EXPEDITION (sim/comms3d.js, docs/abyssal-tether-3d/plans/COMMS.md): the team on the radio. radioVoices: the synthesised voices
   // (audio/radio3d.js; off = silent, the subtitles still show every line). signalGlitches: the failing signal's static and flicker on
   // the subtitle panel (off = a plain panel, the radio static lowered). Both on by default.
@@ -333,6 +365,17 @@ export const SETTINGS_DEFAULTS = {
   // WP-GFX-PARITY: the headset frame rate. '72' (default) | '90' | 'auto' (90 Hz when the session supports it, back to 72 on the first
   // sustained overrun). platform/governor.js reads it at session start and on settings:changed (setFrameRate); UX row hook = `frameRate`.
   frameRate: '72',
+  lanternHood: 'hold', // THE HOOD (sim/lanternHood.js, plans/LANTERN_HOOD.md): 'hold' (covered while the input is held) | 'toggle' (each press flips it)
+  // ASSIST PACK (plans/TUTORIAL_ASSIST.md, input/assistLatch.js): for players with RSI or seated. gripMode 'toggle': one squeeze
+  // grabs, the next lets go (and pulls a Holdfast hand free); ropeLatch: tap to fire-and-attach, tap again to let go (VR triggers
+  // and the desktop mouse / keys; touch keeps touchRopeMode)
+  gripMode: 'hold',
+  ropeLatch: false,
+  weapons: true, // SOLDIER_WEAPONS.md: the dead soldiers' grenades and revolver lie in the shaft (sim/weapons3d.js); off = none found (also ?weapons=off)
+  hitFeedback: 'full', // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): 'full' | 'gentle' (half the red punch, no fall of the view, a shorter ring)
+  // ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): a name card stands over the collectible you look at (name + what it does + how to
+  // use it on this platform). Off = none; `?itemcards=off` overrides it.
+  itemCards: true,
   // ---- WP-TOUCH (input/touchLogic.js + input/touchInput.js): the phone / tablet touch layer ----
   touchControls: 'auto', // 'auto' (coarse pointer, or the first touch on a hybrid) | 'on' | 'off'
   touchLookSens: 1.0, // 0.3..3 drag-to-look and gyro sensitivity
@@ -364,6 +407,9 @@ export const UX_LIMITS = {
   touchScale: [0.9, 1.5],
   touchLaunchers: ['two', 'toggle'],
   touchRopeModes: ['hold', 'latch'],
+  lanternHoods: ['hold', 'toggle'], // THE HOOD
+  gripModes: ['hold', 'toggle'], // ASSIST PACK
+  hitFeedbacks: ['full', 'gentle'], // HIT FEEDBACK
 };
 
 /** Clamps / snaps the WP-TOUCH keys of a settings object in place. Returns the object. */
@@ -401,15 +447,27 @@ export function sanitizeUxSettings(s) {
   s.colorSafe = s.colorSafe === true;
   s.brightnessChecked = s.brightnessChecked === true;
   s.tutorialHints = s.tutorialHints !== false;
+  s.knocker = s.knocker !== false;
   s.reducedEffects = s.reducedEffects === true;
   s.windSqualls = s.windSqualls !== false;
   s.hitStop = s.hitStop !== false;
-  s.storyIntro = s.storyIntro !== false; // on unless explicitly off
+  s.openingCinematic = s.openingCinematic !== false; // on unless explicitly off
+  s.ghost = s.ghost !== false; // the ghost lantern: on unless switched off
+  if (s.puzzleFocus !== 'cues' && s.puzzleFocus !== 'off') s.puzzleFocus = 'auto';
+  s.hintWave = s.hintWave !== false && s.hintWave !== 'off'; // on unless switched off
   s.bloodWriting = s.bloodWriting === true; // opt-in: anything but true is off
+  s.livingFlame = s.livingFlame !== false; // on unless switched off (render/lanternMood.js)
+  s.roaches = s.roaches !== false; // on unless switched off
   s.radioVoices = s.radioVoices !== false; // on unless switched off
   s.signalGlitches = s.signalGlitches !== false;
+  s.itemCards = s.itemCards !== false; // on unless switched off (itemCardGlue.js)
   s.swingLag = typeof s.swingLag === 'number' && isFinite(s.swingLag) ? Math.min(1, Math.max(0, s.swingLag)) : 0.5;
   s.frameRate = s.frameRate === 'auto' ? 'auto' : String(s.frameRate) === '90' ? '90' : '72';
+  if (L.lanternHoods.indexOf(s.lanternHood) < 0) s.lanternHood = D.lanternHood; // THE HOOD
+  if (L.gripModes.indexOf(s.gripMode) < 0) s.gripMode = D.gripMode;
+  s.ropeLatch = s.ropeLatch === true;
+  s.weapons = s.weapons !== false && s.weapons !== 'off'; // on unless switched off (SOLDIER_WEAPONS.md)
+  if (L.hitFeedbacks.indexOf(s.hitFeedback) < 0) s.hitFeedback = D.hitFeedback; // HIT FEEDBACK
   sanitizeTouchSettings(s);
   return s;
 }
@@ -633,6 +691,7 @@ export const Storage = {
       }
     }
     if (!DIFFICULTY[out.lastDifficulty]) out.lastDifficulty = 'normal';
+    if (saved && typeof saved === 'object' && saved.storyIntro === false && typeof saved.openingCinematic !== 'boolean') out.openingCinematic = false; // the old Story intro setting, switched off, stays off
     sanitizeHeightSettings(out);
     sanitizeUxSettings(out);
     return out;

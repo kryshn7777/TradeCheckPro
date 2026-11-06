@@ -436,7 +436,7 @@ for (const [diff, gap] of [
   const L = new Level3D(LEVEL_DATA_3D, 'normal');
   const bus = new EventBus();
   const h = new Health3D(D, bus);
-  const c = new Creature3D(L, D, bus, { seed: 9 });
+  const c = new Creature3D(L, D, bus, { seed: 9, sight: false }); // the blind gate (MASON_SIGHT: a Mason that sees you keeps hunting; sight.mjs)
   c.setHuntGate(true);
   const d = new Dresser3D(L, D, bus, { seed: 9 });
   d.setGate(true);
@@ -756,7 +756,7 @@ for (const [diff, gap] of [
   const game = fs.readFileSync(path.join(SRC_DIR, 'game.js'), 'utf8');
   ok(/dm !== 'off' && typeof DresserCls === 'function'/.test(game) && /dresserMode\(\) === 'off'/.test(game), 'game.js builds neither the sim nor the view when it is off');
   ok(/setGate\(dm !== 'always'\)/.test(game), "game.js turns the health gate on unless ?dresser=always");
-  ok(/d\.setRival\(!!\(c && !c\.isNull && \(\(c\._gate && \(c\._armed \|\| c\._withdraw\)\) \|\| c\.sighting\)\)\)/.test(game), 'game.js: it gives way to the Mason (its gate armed, withdrawing, or its staged S4 pass)');
+  ok(/d\.setRival\(!!\(c && !c\.isNull && \(\(c\._gate && \(c\._armed \|\| c\._withdraw \|\| c\.prowling\)\) \|\| c\.sighting\)\)\)/.test(game), 'game.js: it gives way to the Mason (its gate armed, withdrawing, a MASON_SIGHT prowl pass, or its staged S4 pass)');
   const verifyDir = path.join(TOOLS_DIR, 'verify');
   const usesIt = fs.readdirSync(verifyDir).filter((f) => f.endsWith('.mjs') && /dresser3d|Dresser3D/.test(fs.readFileSync(path.join(verifyDir, f), 'utf8')));
   ok(usesIt.length === 0, 'the verify harness (route bots, baselines) never builds it');

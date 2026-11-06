@@ -18,7 +18,9 @@ const SEC = 4; // S5: a hunting section on every difficulty
 function make(seed, { gate = true, diff = 'normal', variant } = {}) {
   const L = new Level3D(LEVEL_DATA_3D, DIFFICULTY[diff].levelVariant);
   const bus = new EventBus();
-  const c = new Creature3D(L, DIFFICULTY[diff], bus, { seed, variant });
+  // sight: false: these checks pin the BLIND gate (the player waits at the checkpoint in plain view; with MASON_SIGHT a Mason that sees
+  // you keeps the scent hold full and does not withdraw: creature/sight.mjs covers the gate with sight on)
+  const c = new Creature3D(L, DIFFICULTY[diff], bus, { seed, variant, sight: false });
   if (gate) c.setHuntGate(true);
   const cp = L.sections[SEC].checkpoint;
   const p = { x: cp.x, y: cp.y, z: cp.z, vx: 0, vy: 0, vz: 0, alive: true, grounded: false };

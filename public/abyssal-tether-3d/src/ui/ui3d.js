@@ -46,8 +46,9 @@ import { CaptionTracker, KIND_SHAPE, SECTOR_NAMES } from './captions.js';
 import { ComfortOverlay, applyDisplay } from './comfort.js';
 import { Tutorial } from './tutorial.js';
 import { fmtMul, fmtOff, fmtPct, textScaleOf } from './uxLogic.js';
-import { MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, tallyLine, targetText } from './medals.js';
+import { AHEAD_COLOR, MEDAL_COLOR, MEDAL_LABEL, fmtSplit, medalTally, recordRows, splitLine, splitTone, tallyLine, targetText } from './medals.js';
 import { PAR_3D } from '../data/par-3d.js';
+import { trialRows, trialCard } from './trialCard.js'; // SECTION TRIALS: the Records' Practise rows and the result card (plans/SECTION_TRIALS.md)
 
 // =============================================================================
 // Constants
@@ -141,6 +142,8 @@ const TABS = [
   { id: 'audio', label: 'Sound', title: 'Sound and haptics' },
   { id: 'access', label: 'Access', title: 'Accessibility' },
   { id: 'rope', label: 'Rope', title: 'Rope and hands' },
+  // ASSIST PACK (plans/TUTORIAL_ASSIST.md): its own page; the VR Comfort, Access and Rope pages already hold their rows
+  { id: 'assist', label: 'Assist', title: 'Assist (no button held down)' },
   { id: 'touch', label: 'Touch', title: 'Touch controls (phone and tablet)', desktopOnly: true },
 ];
 /** The VR panel has no touch page. */
@@ -170,14 +173,19 @@ const SETTINGS_SCHEMA = [
   { type: 'height', tab: 'comfort', page: 'height' },
   { type: 'link', tab: 'comfort', vr: true, label: 'Player height', action: 'height-page', value: 1 },
   { key: 'swingLag', tab: 'comfort', type: 'range', label: 'Swing camera lag', desc: 'The view trails your body a little while you swing on a tether. 0 = none. In VR it is fixed very small, and Reduced effects turns it off.', min: 0, max: 1, step: 0.05, fmt: pct, desktop: true },
+  { key: 'speedFov', tab: 'comfort', type: 'toggle', label: 'Speed field of view', desc: 'The view widens a little at high speed on a rope or in a fall. Never in VR; Reduced effects turns it off.', desktop: true },
+  { key: 'lanternHood', tab: 'comfort', type: 'choice', label: 'Lantern hood', desc: 'Cover your lantern so the Mason cannot see you (it still hears you). Hold: covered while held. Toggle: each press.', options: [['hold', 'Hold'], ['toggle', 'Toggle']] },
 
   { key: 'qualityTier', tab: 'display', type: 'choice', label: 'Graphics quality', desc: 'Auto lets the headset keep 72 frames a second. Pick Low for the lightest picture.', options: [['auto', 'Auto'], ['low', 'Low'], ['quest', 'Quest'], ['high', 'High']] },
   { key: 'renderScale', tab: 'display', type: 'range', label: 'Render scale', desc: 'Sharper or lighter. Applies when you next enter VR.', min: 0.7, max: 1.3, step: 0.05, fmt: pct },
   { key: 'reducedEffects', tab: 'display', type: 'toggle', label: 'Reduced effects', desc: 'Thinner fog, dust and debris; a calmer picture.' },
   { key: 'textScale', tab: 'display', type: 'range', label: 'Text size', desc: 'Makes menus, hints and captions larger.', min: 0.9, max: 1.5, step: 0.05, fmt: pct },
   { key: 'showBody', tab: 'display', type: 'toggle', label: 'Show body', desc: 'Your own body and backpack when you look down.' },
-  { key: 'storyIntro', tab: 'display', type: 'toggle', label: 'Story intro', desc: 'The opening story when a new descent begins. Any key moves it on; Esc skips it.', desktop: true },
+  { key: 'livingFlame', tab: 'display', type: 'toggle', label: 'Living flame', desc: 'The lantern flame reacts to danger: it gutters in a fall, shrinks and pales as the threat rises, and steadies when you are safe.' },
+  { key: 'openingCinematic', tab: 'display', type: 'toggle', label: 'Opening cinematic', desc: 'The opening film when a new descent begins. Esc skips it; or hold a button for a second.', desktop: true },
   { key: 'bloodWriting', tab: 'display', type: 'toggle', label: 'Blood writing', desc: 'Darker, personal messages written in blood on the walls. Disturbing.' },
+  // (the VR Display page is full: in a headset the same switch sits on the Access page, below)
+  { key: 'roaches', tab: 'display', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', desktop: true },
   { key: 'brightness', tab: 'display', type: 'range', label: 'Brightness', desc: 'Overall exposure of the world.', page: 'calibrate', min: 0.6, max: 1.6, step: 0.05, fmt: pct },
   { key: 'blackLevel', tab: 'display', type: 'range', label: 'Black level', desc: 'Lifts the darkest shadows. Raise it until square 2 below is just visible.', page: 'calibrate', min: 0, max: 1, step: 0.05, fmt: fmtOff },
   { type: 'patches', tab: 'display', page: 'calibrate' },
@@ -194,10 +202,21 @@ const SETTINGS_SCHEMA = [
   { key: 'captions', tab: 'access', type: 'toggle', label: 'Captions', desc: 'Text for the sounds that warn you: where it came from, how close.' },
   { key: 'colorSafe', tab: 'access', type: 'toggle', label: 'Colour-safe cues', desc: 'Shapes and words next to colour for health, grip, the bag and warnings.' },
   { key: 'tutorialHints', tab: 'access', type: 'toggle', label: 'Tutorial hints', desc: 'Short hints for grip, reel and the bag until you have used them.' },
+  // GHOST LANTERN (meta/ghost.js): here, not Comfort / Display, because those VR pages already hold their six rows
+  { key: 'ghost', tab: 'access', type: 'toggle', label: 'Ghost lantern', desc: 'A pale light drifts down on the pace of your best whole run. Beat it to the bottom to replace it.' },
+  { key: 'hintWave', tab: 'access', type: 'toggle', label: 'Hint wave', desc: 'Stuck a long while? The golden mark sends a soft wave through the walls toward you.' },
   { key: 'signalGlitches', tab: 'access', type: 'toggle', label: 'Signal glitches', desc: 'Static and flicker on the radio subtitles as the signal fails. Off: a plain panel.' },
+  { key: 'roaches', tab: 'access', type: 'toggle', label: 'Tiny skitterlings', desc: 'The swarm of tiny red skitterlings that scuttle near you (harmless). Off: none, ever. The big ones that bite still hunt.', vr: true },
+  // HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): on the desktop's Access list; the VR Access page is full (seven rows +
+  // Reset), so in a headset the same choice sits on the Sound page (below)
+  { key: 'hitFeedback', tab: 'access', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and knocks your view to the ground. Gentle: a softer flash and a shorter ring; the view never falls.', options: [['full', 'Full'], ['gentle', 'Gentle']], desktop: true },
+  { key: 'hitFeedback', tab: 'audio', type: 'choice', label: 'Hit effects', desc: 'Full: a hit flashes red, rings in your ears and drops you. Gentle: a softer flash and a shorter ring; your view never moves.', options: [['full', 'Full'], ['gentle', 'Gentle']], vr: true },
   { key: 'ropeCooldown', tab: 'rope', type: 'range', label: 'Rope recharge', desc: 'How long a rope launcher takes to recharge after a shot (the bars on your wrist). No wait = shoot as fast as you like.', min: 0, max: 4, step: 0.25, fmt: secTxt },
   { key: 'aimAssist', tab: 'rope', type: 'range', label: 'Aim assist', desc: 'How generously a tether picks an anchor near your aim.', min: 0.6, max: 1.4, step: 0.05, fmt: pct },
+  { key: 'masonSight', tab: 'rope', type: 'choice', label: 'Mason sight', desc: 'On: it sees your lantern and gives chase, and you cannot heal while it is close. Off: it hunts by sound alone.', options: [['on', 'On'], ['off', 'Off']] },
   { key: 'hitStop', tab: 'rope', type: 'toggle', label: 'Catch pause', desc: 'The world holds for a moment when your rope saves you from a deadly fall. Your view never moves.' },
+  { key: 'puzzleFocus', tab: 'rope', type: 'choice', label: 'Puzzle focus', desc: 'At a puzzle someone suggests it and the view glances at it. Cues: a glow and a sound, the view never turns. In VR it never turns.', options: [['auto', 'Glance'], ['cues', 'Cues'], ['off', 'Off']] },
+  { key: 'releaseGuide', tab: 'rope', type: 'toggle', label: 'Release guide', desc: 'While you hang on one line, a dotted arc shows where you land if you let go now. Red: that landing kills.' },
   { key: 'touchControls', tab: 'touch', type: 'choice', label: 'Touch controls', desc: 'Auto shows the on-screen controls on phones and tablets (and on the first touch on a laptop).', options: [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']], desktop: true },
   { key: 'touchLookSens', tab: 'touch', type: 'range', label: 'Look sensitivity', desc: 'Dragging the right side of the screen, and the gyroscope.', min: 0.3, max: 3, step: 0.05, fmt: mul, desktop: true },
   { key: 'touchInvertY', tab: 'touch', type: 'toggle', label: 'Invert vertical look', desc: 'Drag up to look down.', desktop: true },
@@ -207,6 +226,12 @@ const SETTINGS_SCHEMA = [
   { key: 'touchMirror', tab: 'touch', type: 'toggle', label: 'Left-handed layout', desc: 'Mirrors the screen: stick on the right, buttons on the left.', desktop: true },
   { key: 'touchScale', tab: 'touch', type: 'range', label: 'Button size', desc: 'Scales every on-screen button.', min: 0.9, max: 1.5, step: 0.05, fmt: pct, desktop: true },
   { key: 'dominantHand', tab: 'rope', type: 'choice', label: 'Dominant hand', desc: 'The hand that points at menus, and the side of your bag.', options: [['left', 'Left'], ['right', 'Right']] },
+  // ASSIST PACK (plans/TUTORIAL_ASSIST.md; vrNote: the one line the VR Assist page shows under its rows)
+  { key: 'gripMode', tab: 'assist', type: 'choice', label: 'Grip', desc: 'Hold: keep squeezing to hold on. Toggle: one squeeze grabs, the next lets go (and pulls your hand free of a hand in the wall).', options: [['hold', 'Hold'], ['toggle', 'Toggle']], vrNote: 'Grip toggle: one squeeze grabs, the next lets go.' },
+  { key: 'ropeLatch', tab: 'assist', type: 'toggle', label: 'Rope latch', desc: 'Tap to fire a tether and stay attached, tap again to let go: the triggers and the mouse. Touch has its own Rope behaviour.', vrNote: 'Rope latch: tap to fire and stay on, tap again to let go.' },
+  { key: 'weapons', tab: 'rope', type: 'toggle', label: "Soldiers' weapons", desc: 'Grenades and an old revolver lie by the dead soldiers. They hurt the Mason and drive it off for a while. Off: none are found.' },
+  // ITEM CARDS (itemCardGlue.js): on the Rope page in VR (eight rows at 64 px; the other VR pages are full)
+  { key: 'itemCards', tab: 'rope', type: 'toggle', label: 'Item cards', desc: 'Look at something lying on the ground: a small card names it and says what it does.' },
 ];
 const DIR_ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 const PATCH_LEVELS = [0.004, 0.012, 0.02, 0.03, 0.045, 0.065, 0.09, 0.13]; // fractions of white
@@ -226,7 +251,7 @@ const CONTROLS_QUEST = [
   [['Stick click'], 'Left: brake on the ground. Right: stow / draw both rope guns (they start holstered on your hips: a trigger press draws that hand’s gun; walking with a gun out is 20 % slower).', 'L: brake · R: holsters'],
   [['Both triggers'], 'Falling with no rope? Squeeze BOTH triggers together: the jetpack lights for a moment, brakes the fall and settles you down gently. The tank is small (half full at the start); a fuel can on a hard-to-reach ledge adds half. Dying does not refill it. Squeeze both again to cut it early and keep what is left.', 'Falling: both triggers = jetpack'],
   [['Raise the right wrist'], 'Lift your right wrist toward your face (right gun holstered) and look at the watch: a 3D hologram of the whole descent opens above it: green where you started, amber at the gate you are heading for, white where you are now. The watch face shows your depth and the jetpack fuel.', 'Wrist up: map · depth · fuel'],
-  [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop.', 'Hip + grip: bag · tap X: stop'],
+  [['Hand to hip + Grip'], 'Reach a hand to your right hip (below the chest) and squeeze the grip: a ring of bag items opens. Point at one and let go to apply it. Squeeze again at the hip, or tap X, to stop. To take a KNOCKER, pull the hand up and out of the bag with the grip held, swing and let go: it lands, knocks the Mason’s own rhythm for 9 s and the Mason goes to answer it.', 'Hip + grip: bag · tap X: stop'],
 ];
 const CONTROLS_DESKTOP = [
   [['Mouse'], 'Look around. Click the view first to capture the mouse.'],
@@ -245,8 +270,10 @@ const CONTROLS_DESKTOP = [
   [['R'], 'Restart the run.'],
   [['Enter'], 'Confirm · continue after a fall.'],
   [['1', '2', '3', '4'], 'Bag: apply the first aid kit, bandage, adrenaline shot or lantern battery.'],
-  [['Wheel', 'G'], 'Bag: select the previous / next item · apply the selected item.'],
+  [['Wheel', 'B'], 'Bag: select the previous / next item · apply the selected item.'],
+  [['G'], 'The knocker: hold to aim (an arc shows; longer is farther), release to throw. Where it lands it knocks the Mason’s own rhythm for 9 s and the Mason goes to answer it. One at a time, rare, 3 at most.'],
   [['X'], 'Stop applying a bag item (taking damage stops it too).'],
+  [['5', '6', '7', 'T'], 'What G uses: 5 the knocker, 6 a grenade, 7 the service revolver (T cycles). A grenade is thrown like the knocker and goes off 2.2 s later: it drives the Mason off and kills skitterlings, and it kills you too within 2 m. The revolver fires a round at the crosshair on a tap: loud, it brings the Mason if you miss.'],
 ];
 
 const CONTROLS_TOUCH = [
@@ -256,9 +283,10 @@ const CONTROLS_TOUCH = [
   [['REEL', 'LET OUT'], 'Hold to reel every attached tether in / let rope out.'],
   [['JUMP'], 'Jump. While clinging: hop off, or climb over a ledge lip. In a fall with no rope: lights the jetpack (a short brake; a small tank).'],
   [['GRIP'], 'Hold near chalk marks or a ledge edge to cling, then use the stick to climb or traverse. Elsewhere: yank the ropes.'],
-  [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying.'],
+  [['BAG'], 'Open the bag, tap an item to apply it, tap X to stop applying. KNOCK throws a knocker: the Mason goes to answer its knocking.'],
   [['NV'], 'Night vision goggles on / off. The deeper sections are dark on purpose.'],
   [['II'], 'Pause.'],
+  [['GREN', 'GUN'], 'In the bag: GREN lobs a grenade along the view (it goes off 2.2 s later, deadly within 2 m of you too), GUN fires a round of the service revolver. Both drive the Mason off for a while.'],
 ];
 
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]';
@@ -580,9 +608,9 @@ const MARKUP = `
     <div class="panel-head">${backBtn()}<h2 id="at3d-rec-title">Section records</h2></div>
     <div class="panel-body">
       <div class="rec-tabs" role="group" aria-label="Difficulty"></div>
-      <table class="rec-table"><thead><tr><th scope="col"><span class="sr">Section number</span></th><th scope="col">Section</th><th scope="col">Best</th><th scope="col">Medal</th><th scope="col">Next</th></tr></thead><tbody></tbody></table>
+      <table class="rec-table"><thead><tr><th scope="col"><span class="sr">Section number</span></th><th scope="col">Section</th><th scope="col">Best</th><th scope="col">Medal</th><th scope="col">Next</th><th scope="col" class="rec-trial-h"><span class="sr">Practise</span></th></tr></thead><tbody></tbody></table>
       <p class="panel-note rec-tally"></p>
-      <p class="panel-note">Medals per section: gold within the par (the time of the verified route), silver within 1.4 × par, brass within 2 ×. Whole sections only, from entering one to entering the next; falls count.</p>
+      <p class="panel-note">Practise: any section you have reached, from its checkpoint; the clock runs from your first move to the next section, and trial times are kept apart from these records. Medals per section: gold within the par (the time of the verified route), silver within 1.4 × par, brass within 2 ×. Whole sections only, from entering one to entering the next; falls count.</p>
     </div>
   </div>
 </section>
@@ -615,7 +643,7 @@ const MARKUP = `
     <div class="death-actions">
       <button class="btn btn-vr btn-vr-return" type="button" data-action="enter-vr" hidden><span class="btn-vr-icon" aria-hidden="true">${HEADSET_SVG}</span><span class="btn-label">Return to VR</span><span class="btn-sub">Put the headset back on</span></button>
       <button class="btn btn-primary death-continue" type="button" data-action="continue" data-autofocus><span class="btn-label">Continue</span><span class="btn-sub death-continue-sub">restore at the last relay</span></button>
-      <button class="btn" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
+      <button class="btn death-restart" type="button" data-action="restart"><span class="btn-label">Restart descent</span></button>
       <button class="btn btn-ghost" type="button" data-action="quit"><span class="btn-label">Menu</span></button>
     </div>
     <p class="death-prompt"><kbd>Enter</kbd> continue · <kbd>R</kbd> restart</p>
@@ -872,6 +900,7 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .section-sub{font:italic 400 1em/1.3 var(--fd);color:var(--ink-2);text-shadow:0 2px 12px rgba(0,0,0,.95)}
 .at3d-ui .section-sub:empty,.at3d-ui .section-num:empty,.at3d-ui .section-split:empty{display:none}
 .at3d-ui .section-split{margin-top:.2em;font:650 .82em var(--fu);letter-spacing:.16em;font-variant-numeric:tabular-nums;color:var(--amber);text-shadow:0 2px 12px rgba(0,0,0,.95)}
+.at3d-ui .section-split[data-tone=ahead]{color:${AHEAD_COLOR}}
 .at3d-ui .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .at3d-ui .rec-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5em;margin-bottom:.8em}
 .at3d-ui .rec-tabs .btn{align-items:center;text-align:center;min-height:max(var(--tap),2.4em)}
@@ -881,6 +910,9 @@ html.touch-on .at3d-ui .ctl-cols{grid-template-columns:1fr 1fr}
 .at3d-ui .rec-table td{padding:.45em .4em;border-bottom:1px solid var(--line);font-size:.9em;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .at3d-ui .rec-table td:first-child{font:700 1em var(--fd);color:var(--amber)}
 .at3d-ui .rec-table td.is-empty{color:var(--ink-4)}
+.at3d-ui .rec-table th.rec-trial-h{width:7.4em}
+.at3d-ui .rec-table td.rec-trial{padding:.2em;overflow:visible}
+.at3d-ui .rec-table .rec-trial .btn{min-height:max(var(--tap),2.2em);width:100%;align-items:center;text-align:center;padding:.2em .5em}
 .at3d-ui .medal{display:inline-flex;align-items:center;gap:.4em;font-weight:650}
 .at3d-ui .medal i{flex:none;width:.7em;height:.7em;border-radius:50%;background:var(--mc,#666);box-shadow:0 0 0 2px rgba(0,0,0,.4) inset}
 .at3d-ui .v-splits-wrap{width:100%;margin-top:.9em;text-align:left}
@@ -2276,14 +2308,54 @@ export class UI3D {
     };
   }
 
+  /** SECTION TRIALS: the death screen is the trial card while game.trial is set (a death in the trial, or its section done). */
+  _trialOn() {
+    const g = this.game || {};
+    return !!(g.trial && typeof g.trial === 'object');
+  }
+
+  _trialCardText() {
+    const g = this.game || {};
+    const tr = g.trial;
+    const secs = this._sections();
+    const s = tr && secs ? secs[tr.idx | 0] : null;
+    return trialCard(tr, s && s.name ? s.name : '');
+  }
+
+  /** DOM: the trial card in the death screen's own elements (no new screen): Again (Enter / R), Records, Menu. */
+  _fillTrial() {
+    const d = this.dom;
+    const c = this._trialCardText();
+    this._deathInfo = Object.assign(this._deathFrom(null), { canRespawn: true, trial: c });
+    d.deathKicker.textContent = c.kicker;
+    d.deathMsg.textContent = c.title;
+    d.deathStats.textContent = `${c.line1} · ${c.line2}`;
+    d.deathContinue.querySelector('.btn-label').textContent = 'Again';
+    d.deathContinueSub.textContent = 'the same section, from its checkpoint';
+    const rb = this.screens && this.screens.death ? this.screens.death.querySelector('.death-restart') : null;
+    if (rb) {
+      rb.dataset.action = 'trial-records';
+      rb.querySelector('.btn-label').textContent = 'Records';
+    }
+    d.deathPrompt.textContent = '';
+    d.deathPrompt.append(make('kbd', null, 'Enter'), ' or ', make('kbd', null, 'R'), ' again');
+  }
+
   _fillDeath(info) {
+    if (this._trialOn()) return this._fillTrial();
+    const rb = this.screens && this.screens.death ? this.screens.death.querySelector('.death-restart') : null;
+    if (rb && rb.dataset.action !== 'restart') {
+      rb.dataset.action = 'restart';
+      rb.querySelector('.btn-label').textContent = 'Restart descent';
+    }
     const i = this._deathFrom(info);
     this._deathInfo = i;
     const copy = DEATH_COPY[i.cause] || DEATH_COPY.impact;
     const d = this.dom;
     d.deathKicker.textContent = copy.kicker;
     d.deathMsg.textContent = i.message || copy.message;
-    d.deathStats.textContent = `Deaths ${i.deaths} · ${fmtMeters(i.depthMeters)} · ${fmtTime(i.time)}`;
+    const hl = this._highlightBest(); // RUN HIGHLIGHTS: the run's best moment, so a death reads as a story
+    d.deathStats.textContent = `Deaths ${i.deaths} · ${fmtMeters(i.depthMeters)} · ${fmtTime(i.time)}${hl ? ` · ${hl}` : ''}`;
     d.deathContinue.querySelector('.btn-label').textContent = i.canRespawn ? 'Continue' : 'Begin again';
     d.deathContinueSub.textContent = i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty';
     if (i.prompt) setRichText(d.deathPrompt, i.prompt);
@@ -2353,6 +2425,80 @@ export class UI3D {
     if (i.names != null) d.vNote.textContent = `${d.vNote.textContent ? `${d.vNote.textContent} ` : ''}Names found ${i.names} of 5.`;
     this._fillVictorySplits();
     this._fillVictoryChapter();
+    this._fillVictoryHighlights(i);
+  }
+
+  /** RUN HIGHLIGHTS: the death card's one line ('' without a highlights module or a highlight). */
+  _highlightBest() {
+    const h = (this.game || {}).highlights;
+    try {
+      return h && typeof h.best === 'function' ? h.best() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  /** RUN HIGHLIGHTS: every line of the run (the victory block) and the share line ({lines, share}). */
+  _highlightsOf(i) {
+    const g = this.game || {};
+    const h = g.highlights;
+    if (!h || typeof h.all !== 'function') return { lines: [], share: '' };
+    try {
+      const share = h.shareLine({ chapter: g.chapter === 2 ? 2 : 1, label: i.label, time: i.time, deaths: i.falls != null ? i.falls : i.deaths, splits: this._runSplits });
+      return { lines: h.all(), share };
+    } catch {
+      return { lines: [], share: '' };
+    }
+  }
+
+  /** RUN HIGHLIGHTS on the DOM victory card: a list under the note and a desktop "Copy result" button (hidden in XR). Built once, lazily. */
+  _fillVictoryHighlights(i) {
+    const d = this.dom;
+    if (!d || !d.vNote || !d.vNote.parentNode) return;
+    if (!d.vHl) {
+      const wrap = make('div', 'v-hl-wrap');
+      wrap.style.cssText = 'width:100%;margin-top:.9em;text-align:left';
+      wrap.append(make('h3', 'group-title', 'Highlights'));
+      const ul = make('ul', 'v-hl');
+      ul.style.cssText = 'margin:.3em 0;padding-left:1.2em;color:var(--ink-2)';
+      const share = make('p', 'v-share');
+      share.style.cssText = 'margin:.4em 0;font-size:.82em;color:var(--ink-3);user-select:text;-webkit-user-select:text';
+      const btn = make('button', 'btn btn-ghost v-copy');
+      btn.type = 'button';
+      btn.append(make('span', 'btn-label', 'Copy result'));
+      btn.addEventListener('click', () => this._copyResult());
+      wrap.append(ul, share, btn);
+      d.vNote.parentNode.insertBefore(wrap, d.vNote.nextSibling);
+      Object.assign(d, { vHl: wrap, vHlList: ul, vShare: share, vCopy: btn });
+    }
+    const r = this._highlightsOf(i);
+    this._shareLine = r.share;
+    d.vHlList.textContent = '';
+    for (const ln of r.lines) d.vHlList.appendChild(make('li', null, ln));
+    d.vShare.textContent = r.share;
+    d.vHl.hidden = !r.share;
+    d.vCopy.hidden = !!this._xr || !r.share;
+    d.vCopy.querySelector('.btn-label').textContent = 'Copy result';
+  }
+
+  /** Desktop: the share line to the clipboard (a failure leaves the line on the card to select by hand). */
+  _copyResult() {
+    const text = this._shareLine;
+    const btn = this.dom && this.dom.vCopy;
+    const say = (s) => {
+      if (btn) btn.querySelector('.btn-label').textContent = s;
+    };
+    if (!text || this._xr) return;
+    try {
+      const cb = typeof navigator !== 'undefined' && navigator.clipboard;
+      if (!cb || typeof cb.writeText !== 'function') return say('Select the line to copy');
+      cb.writeText(text).then(
+        () => say('Copied'),
+        () => say('Select the line to copy'),
+      );
+    } catch {
+      say('Select the line to copy');
+    }
   }
 
   /** The end card's purchase line: { label, enabled } or null when there is nothing to sell (owned, or no entitlement module). Loads the store price once. */
@@ -2423,10 +2569,13 @@ export class UI3D {
   _onSplit(p) {
     const index = num(p.index, -1);
     if (index < 0 || !(p.time > 0)) return;
-    const prev = p.recorded ? this._records(p.difficulty)[p.section] : null;
+    // the previous best: game.js reads it into the event BEFORE the save's own 'split' listener keeps the new one (that listener
+    // is bound first at boot, so reading the save here would see this very split); the save read is the fallback
+    const prev = !p.recorded ? null : p.prevBest !== undefined ? { best: num(p.prevBest, 0) } : this._records(p.difficulty)[p.section];
     const isNew = !!p.recorded && (!prev || !(prev.best > 0) || p.time < prev.best - 1e-6);
     const medal = p.recorded ? p.medal || null : null;
-    const line = splitLine(index, p.time, medal, isNew && !!prev);
+    const had = !!prev && prev.best > 0;
+    const line = splitLine(index, p.time, medal, isNew && had, had ? prev.best : null);
     const sp = { index, id: p.section, time: p.time, medal, par: num(p.par, 0) || null, isNew, line };
     this._runSplits[index] = sp;
     const secs = this._sections();
@@ -2457,6 +2606,32 @@ export class UI3D {
     return recordRows(secs, this._records(diff), PAR_3D[diff] || null);
   }
 
+  /** SECTION TRIALS (ui/trialCard.js): per row, reached (Practise shown) and the trial best. Never throws. */
+  _trialRowsFor(diff, rows) {
+    const g = this.game || {};
+    try {
+      return trialRows(rows, this._sections(), g.save || null, diff, g.chapter === 2 ? 2 : 1, this._trialStorage || null);
+    } catch {
+      return [];
+    }
+  }
+
+  /** SECTION TRIALS: the Records' Practise action (DOM button / VR row): the trial starts at once. */
+  _startTrial(diff, section, fromVR) {
+    const g = this.game || {};
+    const i = parseInt(section, 10);
+    if (!isFinite(i) || !DIFFICULTY[diff] || typeof g.startTrial !== 'function') return false;
+    let ok = false;
+    try {
+      ok = g.startTrial(diff, i);
+    } catch (err) {
+      if (typeof console !== 'undefined') console.error('[AT3D] game.startTrial failed', err);
+    }
+    if (ok && (g.state === 'playing' || g.state === 'intro') && this.current !== null) this.show(null);
+    if (ok && !fromVR) this._lockPointer();
+    return !!ok;
+  }
+
   /** DOM: the Records screen (difficulty buttons, one row per section, the medal tally). */
   _fillRecords() {
     const d = this.dom;
@@ -2478,6 +2653,7 @@ export class UI3D {
       b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
     const rows = this._recordRowsFor(diff);
+    const trials = this._trialRowsFor(diff, rows);
     d.recBody.textContent = '';
     for (const r of rows) {
       const tr = make('tr');
@@ -2491,6 +2667,21 @@ export class UI3D {
         medal.appendChild(m);
       } else medal.textContent = '—';
       tr.append(make('td', null, r.numeral), make('td', null, r.name), best, medal, make('td', null, targetText(r)));
+      // SECTION TRIALS: a Practise action on each reached row (its trial best under the label)
+      const trc = make('td', 'rec-trial');
+      const tri = trials[r.index];
+      if (tri && tri.reached) {
+        const b = make('button', 'btn rec-practise');
+        b.type = 'button';
+        b.dataset.action = 'trial';
+        b.dataset.diff = diff;
+        b.dataset.section = String(r.index);
+        b.setAttribute('aria-label', `Practise section ${r.numeral}, ${r.name}`);
+        b.append(make('span', 'btn-label', 'Practise'));
+        if (tri.best) b.append(make('span', 'btn-sub', `${fmtSplit(tri.best)}${tri.untouched ? ' · untouched' : ''}`));
+        trc.appendChild(b);
+      }
+      tr.appendChild(trc);
       d.recBody.appendChild(tr);
     }
     d.recTally.textContent = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet.`;
@@ -2592,7 +2783,10 @@ export class UI3D {
       d.sectionNum.textContent = t.num;
       d.sectionName.textContent = t.name;
       d.sectionSub.textContent = t.sub;
-      if (d.sectionSplit) d.sectionSplit.textContent = t.split;
+      if (d.sectionSplit) {
+        d.sectionSplit.textContent = t.split;
+        d.sectionSplit.dataset.tone = splitTone(t.split) || ''; // green ahead of the best, amber behind (the sign + word say it too)
+      }
       d.sectionCard.classList.remove('is-cut');
       restartAnimation(d.sectionCard, 'is-on');
     }
@@ -2683,6 +2877,13 @@ export class UI3D {
       case 'about':
       case 'records':
         this.show(action);
+        break;
+      case 'trial':
+        this._startTrial(d.diff, d.section, fromVR);
+        break;
+      case 'trial-records':
+        this._call('quitToMenu');
+        this.show('records');
         break;
       case 'rec-tab':
         if (DIFFICULTY_ORDER.indexOf(d.diff) >= 0) {
@@ -4159,7 +4360,8 @@ export class UI3D {
     const tab = VR_TABS[this._vrTab] || VR_TABS[0];
     const rows = SETTINGS_SCHEMA.filter((d) => d.tab === tab.id && !d.desktop && !d.page && (d.key || d.type === 'link'));
     // six rows (Comfort since P6's Wind squalls, Display since Blood writing) still fit above the panel's foot: 80 px a row instead of 88
-    const rowH = rows.filter((d) => d.key).length > 5 ? 80 : 88;
+    const keyed = rows.filter((d) => d.key).length; // seven rows (Display since Living flame): 70 px, still above the panel's foot
+    const rowH = keyed > 7 ? 64 : keyed > 6 ? 70 : keyed > 5 ? 80 : 88; // (eight: Rope since Item cards, 190 + 8 x 64 = 702)
     let y = 190;
     for (const def of rows) {
       if (def.type === 'link') {
@@ -4171,6 +4373,12 @@ export class UI3D {
       }
     }
     if (tab.id === 'access') this._btn(ctx, this._region(CW / 2 - 200, y + 14, 400, 70, 'reset-settings'), 'Reset to defaults', null, { ghost: true, size: 28 });
+    // ASSIST PACK: the page's short explanations, one 28 px line per row
+    for (const def of rows) {
+      if (!def.vrNote) continue;
+      y += 44;
+      txt(ctx, def.vrNote, 44, y + 12, `italic 400 28px ${F_DISPLAY}`, COL.ink3, 'left', 0, CW - 88);
+    }
   }
 
   /** One settings row at y: label + value, then a − slider + for ranges or option buttons (rows of 80 px are squeezed). */
@@ -4178,11 +4386,11 @@ export class UI3D {
     const v = def.key in s ? s[def.key] : SETTINGS_DEFAULTS[def.key];
     const tight = rowH < 88;
     const bt = tight ? 8 : 14; // button top within the row
-    const bh = tight ? 64 : 68;
+    const bh = tight ? Math.min(64, rowH - 14) : 68;
     txt(ctx, def.label, 44, y + (tight ? 38 : 42), `600 30px ${F_UI}`, COL.ink, 'left', 0);
     if (def.type === 'range') {
       const val = U.clamp(num(v, def.min), def.min, def.max);
-      txt(ctx, def.fmt(val), 44, y + (tight ? 72 : 78), `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
+      txt(ctx, def.fmt(val), 44, y + (tight ? Math.min(72, rowH - 4) : 78), `650 28px ${F_UI}`, COL.phosphor, 'left', 0);
       this._btn(ctx, this._region(500, y + bt, 68, bh, 'nudge', { key: def.key, value: -1 }), '−', null, { size: 36 });
       const tx = 588;
       const tw = 280;
@@ -4300,12 +4508,14 @@ export class UI3D {
       this._btn(ctx, this._region(44 + i * (tw + gap), 112, tw, 62, 'rec-tab', { diff: k }), DIFFICULTY[k].label, null, { primary: k === diff, size: 28 });
     });
     const rows = this._recordRowsFor(diff);
+    const trials = this._trialRowsFor(diff, rows); // SECTION TRIALS: a Practise button on each reached row (x 804..980)
     const y0 = 200;
     const rh = Math.min(62, Math.floor(470 / Math.max(1, rows.length)));
     const hf = `650 28px ${F_UI}`;
-    txt(ctx, 'BEST', 520, y0, hf, COL.ink3, 'left', 0.12);
-    txt(ctx, 'MEDAL', 652, y0, hf, COL.ink3, 'left', 0.12);
-    txt(ctx, 'NEXT', 812, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'BEST', 308, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'MEDAL', 416, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'NEXT', 556, y0, hf, COL.ink3, 'left', 0.12);
+    txt(ctx, 'TRIAL', 804, y0, hf, COL.ink3, 'left', 0.12);
     const vf = `650 30px ${F_UI}`;
     const nf = `500 28px ${F_UI}`;
     rows.forEach((r, i) => {
@@ -4315,18 +4525,20 @@ export class UI3D {
         ctx.fillStyle = 'rgba(255,240,210,0.03)';
         ctx.fillRect(36, y, CW - 72, rh);
       }
-      txt(ctx, r.numeral, 50, by, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
-      txt(ctx, ellipsize(ctx, r.name, 380, nf), 128, by, nf, COL.ink2, 'left', 0);
-      txt(ctx, r.best == null ? '—' : fmtSplit(r.best), 520, by, vf, r.best == null ? COL.ink4 : COL.ink, 'left', 0);
+      txt(ctx, r.numeral, 46, by, `700 30px ${F_DISPLAY}`, COL.amber, 'left', 0);
+      txt(ctx, ellipsize(ctx, r.name, 175, nf), 122, by, nf, COL.ink2, 'left', 0);
+      txt(ctx, r.best == null ? '—' : fmtSplit(r.best), 308, by, vf, r.best == null ? COL.ink4 : COL.ink, 'left', 0);
       if (r.medal) {
         ctx.beginPath();
-        ctx.arc(664, by - 10, 11, 0, Math.PI * 2);
+        ctx.arc(428, by - 10, 11, 0, Math.PI * 2);
         ctx.fillStyle = MEDAL_COLOR[r.medal];
         ctx.fill();
-        txt(ctx, MEDAL_LABEL[r.medal], 684, by, `650 28px ${F_UI}`, COL.ink, 'left', 0);
-      } else txt(ctx, '—', 652, by, vf, COL.ink4, 'left', 0);
+        txt(ctx, MEDAL_LABEL[r.medal], 448, by, `650 28px ${F_UI}`, COL.ink, 'left', 0);
+      } else txt(ctx, '—', 416, by, vf, COL.ink4, 'left', 0);
       const t = targetText(r);
-      txt(ctx, ellipsize(ctx, t, CW - 44 - 812, `500 28px ${F_UI}`), 812, by, `500 28px ${F_UI}`, r.next ? COL.ink3 : COL.ink4, 'left', 0);
+      txt(ctx, ellipsize(ctx, t, 236, `500 28px ${F_UI}`), 556, by, `500 28px ${F_UI}`, r.next ? COL.ink3 : COL.ink4, 'left', 0);
+      const tri = trials[i];
+      if (tri && tri.reached) this._btn(ctx, this._region(804, y + 4, 176, rh - 8, 'trial', { diff, section: String(r.index) }), 'Practise', null, { size: 28, vr: !!tri.best });
     });
     const tally = tallyLine(medalTally(rows)) || `No whole section played on ${DIFFICULTY[diff].label} yet`;
     txt(ctx, ellipsize(ctx, tally, CW - 88, `500 28px ${F_UI}`), CW / 2, 710, `500 28px ${F_UI}`, COL.ink2, 'center', 0.02);
@@ -4377,7 +4589,37 @@ export class UI3D {
     if (this._xr) this._btn(ctx, this._region(CW - 168, 18, 148, 60, 'exit-vr'), 'Exit VR', null, { ghost: true, size: 28 });
   }
 
+  /** VR: the trial card on the death panel's canvas (no new draw call): the time, the medal, the delta, Untouched; Again / Records / Menu. */
+  _paintTrial(ctx) {
+    this._frame(ctx, 'death');
+    const c = this._trialCardText();
+    const cx = CW / 2;
+    txt(ctx, ellipsize(ctx, c.kicker.toUpperCase(), CW - 120, `400 28px ${F_DISPLAY}`), cx, 120, `400 28px ${F_DISPLAY}`, c.tone === 'fail' ? COL.rust : COL.amber, 'center', 0.2);
+    const tf = `650 ${c.tone === 'fail' ? 56 : 84}px ${F_UI}`;
+    txt(ctx, c.title, cx, 222, tf, c.tone === 'fail' ? COL.phosphor : COL.warm, 'center', 0.02, CW - 120);
+    if (c.medal) {
+      const lf = `650 34px ${F_UI}`;
+      const w = measure(ctx, c.line1, lf, 0.02);
+      ctx.beginPath();
+      ctx.arc(cx - w / 2 - 22, 278, 13, 0, Math.PI * 2);
+      ctx.fillStyle = MEDAL_COLOR[c.medal];
+      ctx.fill();
+      txt(ctx, c.line1, cx + 8, 290, lf, COL.ink, 'center', 0.02, CW - 160);
+    } else txt(ctx, ellipsize(ctx, c.line1, CW - 120, `600 30px ${F_UI}`), cx, 290, `600 30px ${F_UI}`, COL.ink2, 'center', 0.02);
+    const col = c.tone === 'new' || c.tone === 'ahead' ? AHEAD_COLOR : c.tone === 'behind' ? COL.amber : COL.ink3;
+    txt(ctx, ellipsize(ctx, c.line2, CW - 100, `600 28px ${F_UI}`), cx, 340, `600 28px ${F_UI}`, col, 'center', 0.04);
+    const bw = 540;
+    const bx = (CW - bw) / 2;
+    const by = 380;
+    this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), 'Again', 'the same section, from its checkpoint', { primary: true, size: 34 });
+    const hw = (bw - 16) / 2;
+    this._btn(ctx, this._region(bx, by + 118, hw, 80, 'trial-records'), 'Records', null, {});
+    this._btn(ctx, this._region(bx + hw + 16, by + 118, hw, 80, 'quit'), 'Menu', null, { ghost: true });
+    txt(ctx, 'A (or point + trigger) again · hold X again', cx, by + 250, `500 28px ${F_UI}`, COL.ink3, 'center', 0.02, CW - 80);
+  }
+
   _paintDeath(ctx) {
+    if (this._trialOn()) return this._paintTrial(ctx); // SECTION TRIALS: the same panel, the trial card
     this._frame(ctx, 'death');
     const i = this._deathInfo || this._deathFrom(null);
     const copy = DEATH_COPY[i.cause] || DEATH_COPY.impact;
@@ -4392,9 +4634,11 @@ export class UI3D {
     ctx.restore();
     const sy = 212 + lines.length * 64 + 8;
     txt(ctx, `Deaths ${i.deaths}  ·  ${fmtMeters(i.depthMeters)}  ·  ${fmtTime(i.time)}`, cx, sy, `500 28px ${F_UI}`, COL.ink3, 'center', 0.06);
+    const hl = this._highlightBest(); // RUN HIGHLIGHTS: one more row on the same canvas (no new draw call)
+    if (hl) txt(ctx, hl, cx, sy + 40, `600 28px ${F_UI}`, COL.amber, 'center', 0.04, CW - 80);
     const bw = 540;
     const bx = (CW - bw) / 2;
-    const by = sy + 40;
+    const by = sy + (hl ? 80 : 40);
     this._btn(ctx, this._region(bx, by, bw, 104, 'continue'), i.canRespawn ? 'Continue' : 'Begin again', i.canRespawn ? 'restore at the last relay' : 'no relays on this difficulty', {
       primary: true,
       size: 34,
@@ -4458,16 +4702,24 @@ export class UI3D {
     const g1 = this.game || {};
     const nextCh = g1.chapter !== 2 && typeof g1.isChapterPlayable === 'function' && g1.isChapterPlayable(2);
     const kick = g1.chapter === 2 ? 'CHAPTERS III–V · THE FULL VERSION' : nextCh ? 'CHAPTER II · LAMPHOLD · THE TOWN BELOW' : 'CHAPTERS II–V · COMING SOON';
+    // RUN HIGHLIGHTS: one text row under the cells (same canvas: no new draw call); the rows below move down 32 px.
+    const hls = this._highlightsOf(i).lines.slice(0, 3).join('  ·  ');
+    const dy = hls ? 32 : 0;
+    if (hls) {
+      const hf = `600 ${fitSize(ctx, hls, CW - 64, 30, 28, (px) => `600 ${px}px ${F_UI}`, 0.02)}px ${F_UI}`;
+      txt(ctx, ellipsize(ctx, hls, CW - 64, hf), cx, 496, hf, COL.amber, 'center', 0.02);
+    }
     if (splits.length) {
-      this._paintVictorySplits(ctx, splits, 478);
-      txt(ctx, kick, cx, 640, `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
-      this._victoryButtons(ctx, 676, 76, nextCh);
+      this._paintVictorySplits(ctx, splits, 478 + dy);
+      txt(ctx, kick, cx, 640 + dy - (hls ? 6 : 0), `400 28px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+      this._victoryButtons(ctx, 676 + dy - (hls ? 18 : 0), hls ? 68 : 76, nextCh);
       return;
     }
     // The hook.
-    const ty = 484;
-    rr(ctx, 24, ty, CW - 48, 168, 8);
-    const tg = ctx.createLinearGradient(0, ty, 0, ty + 168);
+    const ty = 484 + dy;
+    const th = hls ? 150 : 168;
+    rr(ctx, 24, ty, CW - 48, th, 8);
+    const tg = ctx.createLinearGradient(0, ty, 0, ty + th);
     tg.addColorStop(0, 'rgba(255,240,210,0.07)');
     tg.addColorStop(1, 'rgba(255,240,210,0.015)');
     ctx.fillStyle = tg;
@@ -4475,12 +4727,13 @@ export class UI3D {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(224,160,80,0.45)';
     ctx.stroke();
-    txt(ctx, kick, cx, ty + 46, `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
+    const hk = hls ? 0.9 : 1; // (the hook squeezed under a highlights row)
+    txt(ctx, kick, cx, ty + Math.round(46 * hk), `400 32px ${F_DISPLAY}`, COL.amber, 'center', 0.2, CW - 100);
     const names = g1.chapter === 2 ? 'III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME' : 'II  LAMPHOLD    III  THE MERE    IV  THE KEEPING    V  THE STILL FLAME';
     const nf = fitSize(ctx, names, CW - 80, 30, 28, (px) => `700 ${px}px ${F_DISPLAY}`, 0.04);
-    txt(ctx, names, cx, ty + 98, `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
-    txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + 142, `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
-    this._victoryButtons(ctx, 670, 82, nextCh);
+    txt(ctx, names, cx, ty + Math.round(98 * hk), `700 ${nf}px ${F_DISPLAY}`, COL.phosphor, 'center', 0.04, CW - 80);
+    txt(ctx, 'Uplink lost below the Mark. Expedition 42 on standby.', cx, ty + Math.round(142 * hk), `italic 400 28px ${F_DISPLAY}`, COL.ink2, 'center', 0, CW - 80); // the Expedition frame
+    this._victoryButtons(ctx, 670 + dy - (hls ? 14 : 0), hls ? 76 : 82, nextCh);
   }
 
   /** The end card's buttons: [Chapter II] (Chapter I, when Lamphold is playable), Descend again, Menu. */
@@ -4807,7 +5060,7 @@ export class UI3D {
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,0.95)';
       ctx.shadowBlur = 12;
-      txt(ctx, t.split, cx, 262, `650 30px ${F_UI}`, COL.amber, 'center', 0.14, c.cw - 60);
+      txt(ctx, t.split, cx, 262, `650 30px ${F_UI}`, splitTone(t.split) === 'ahead' ? AHEAD_COLOR : COL.amber, 'center', 0.14, c.cw - 60);
       ctx.restore();
     }
     c.tex.needsUpdate = true;

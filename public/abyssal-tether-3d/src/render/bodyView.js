@@ -35,9 +35,8 @@ import { CONFIG } from '../sim/config3d.js';
 import { buildGearEnvironment } from './handsView.js';
 import { loadGLB } from './glbLoad.js';
 import { patchGearSurface } from './gearSurface.js';
-import { injectToon } from './materials.js';
-import { addOutline, removeOutline } from './outline.js';
 import { FALL_POSE, flutter } from './fallPose.js'; // the free-fall pose (the weight comes from game.fallPose)
+import { HIT } from './hitFeedback.js'; // HIT FEEDBACK: the knocked-down body (the weight comes from game.hitFeedback.pose)
 
 const BODY_URL = new URL('../../assets/models/player_body.glb', import.meta.url).href;
 
@@ -192,7 +191,6 @@ export class BodyView {
     this.bones = bones;
     this.mesh = mesh;
     mesh.frustumCulled = false; // bind-pose bounds are wrong for a posed skin
-    this._hull = addOutline(mesh); // the ink outline (outline.js)
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -218,7 +216,6 @@ export class BodyView {
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uBodyLight;')
           .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uBodyLight;\n\treflectedLight.directSpecular *= uBodyLight;');
-        injectToon(shader);
       };
       m.customProgramCacheKey = () => 'at3d-body-light';
       patchGearSurface(m); // cloth weave + sheen, leather pores, dust (gearSurface.js)
@@ -307,7 +304,6 @@ export class BodyView {
 
   dispose() {
     this._disposed = true;
-    removeOutline(this._hull);
     if (this.root.parent) this.root.parent.remove(this.root);
     if (this._ownEnv && this._ownEnv.dispose) this._ownEnv.dispose();
     if (this.mesh) {
@@ -324,7 +320,7 @@ export class BodyView {
     const s = game.settings;
     if (s && s.showBody === false) return false;
     const st = game.state;
-    if (st !== 'playing' && st !== 'paused' && st !== 'dead' && st !== 'victory') return false;
+    if (st !== 'playing' && st !== 'paused' && st !== 'dead' && st !== 'victory' && !(st === 'intro' && game.openingHands)) return false; // (the opening film's waking)
     return !!game.player;
   }
 
@@ -540,6 +536,10 @@ export class BodyView {
     // ---- neck base target ----
     const back = T.neckBack + (T.neckBackDown - T.neckBack) * sstep(0.3, 1.1, pitchDown);
     _Nt.set(_H.x + Math.sin(headYaw) * back, _H.y - T.neckDrop - 0.02 * sstep(0.3, 1.1, pitchDown), _H.z + Math.cos(headYaw) * back);
+    // HIT FEEDBACK (hitFeedbackGlue.js `pose`, 0..1): knocked down in a headset the head stays where it is (never moved), the body
+    // drops under it: the neck target lowers and the pelvis / leg IK below crouches it (on the desktop the camera itself drops)
+    const hf = game.hitFeedback;
+    if (xr && hf && hf.pose > 0) _Nt.y -= HIT.bodyDrop * Math.min(1, hf.pose);
     // pelvis under it
     const Ls = (this.len.spine1 + this.len.spine2) * k;
     _S.set(root.position.x, 0, root.position.z);

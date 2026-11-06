@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""ABYSSAL TETHER 3D: app icon generator (original art, no external assets).
+"""THE LANTERN (ABYSSAL TETHER 3D): app icon generator (original art, no external assets).
 
-Draws the game's own glyph (the phosphor anchor ring, the taut tether and the amber lantern, as in the favicon in
-index.html) between two stone piers, with a soft lantern glow, and writes:
+Draws the game's glyph, a lit lantern (carrying loop, cap, a barred glass cage with the flame inside) hanging on a short
+chain between two stone piers, with a soft amber glow, and writes:
 
   icons/icon-1024.png            1024 master, purpose "any" (rounded corners, transparent outside)
   icons/icon-512.png             512, "any"
@@ -77,52 +77,84 @@ def add(a, b):
     return ImageChops.add(a, b)
 
 
+def lantern_shapes(N, cx, cy, h, scale):
+    """The lantern glyph at centre (cx, cy), total height h: hanging loop, cap, a glass cage with bars, flame, base."""
+    w = h * 0.52
+    g = {}
+    g['loop'] = (cx - w * 0.30, cy - h * 0.62, cx + w * 0.30, cy - h * 0.30)  # the carrying loop (ellipse box)
+    g['cap'] = [(cx - w * 0.18, cy - h * 0.40), (cx + w * 0.18, cy - h * 0.40), (cx + w * 0.50, cy - h * 0.28), (cx - w * 0.50, cy - h * 0.28)]
+    g['rim'] = (cx - w * 0.52, cy - h * 0.29, cx + w * 0.52, cy - h * 0.24)
+    g['glass'] = (cx - w * 0.40, cy - h * 0.24, cx + w * 0.40, cy + h * 0.26)
+    g['base'] = [(cx - w * 0.52, cy + h * 0.26), (cx + w * 0.52, cy + h * 0.26), (cx + w * 0.40, cy + h * 0.36), (cx - w * 0.40, cy + h * 0.36)]
+    g['foot'] = (cx - w * 0.30, cy + h * 0.36, cx + w * 0.30, cy + h * 0.40)
+    fh = h * 0.30
+    fy = cy + h * 0.14
+    g['flame'] = [(cx, fy - fh)] + [(cx + math.sin(t) * w * 0.13 * (1 - math.cos(t)) * 0.9, fy - fh + fh * (1 - math.cos(t)) / 2) for t in np.linspace(0.15, math.pi, 12)] + \
+        [(cx - math.sin(t) * w * 0.13 * (1 - math.cos(t)) * 0.9, fy - fh + fh * (1 - math.cos(t)) / 2) for t in np.linspace(math.pi, 0.15, 12)]
+    g['bars'] = [cx - w * 0.40, cx - w * 0.14, cx + w * 0.14, cx + w * 0.40]
+    g['w'] = w
+    return g
+
+
 def glyph_image(S, scale=1.0):
-    """The whole icon art at S x S (opaque RGB)."""
+    """The whole icon art at S x S (opaque RGB): a lit lantern hanging on a short chain between two stone piers."""
     ss = 2  # supersample
     N = S * ss
     img = vignette_bg(N).convert('RGBA')
     img.alpha_composite(piers(N, scale, 0))
 
     cx = N / 2
-    ring_cy = N * (0.5 - 0.30 * scale)
-    ring_r = N * 0.105 * scale
-    ring_w = max(2, int(N * 0.028 * scale))
-    lamp_cy = N * (0.5 + 0.20 * scale)
-    lamp_h = N * 0.155 * scale
-    lamp_w = N * 0.105 * scale
+    cy = N * (0.5 + 0.10 * scale)
+    h = N * 0.56 * scale
+    g = lantern_shapes(N, cx, cy, h, scale)
+    w = g['w']
+    iron = (46, 40, 34)
+    brass = (150, 112, 62)
+    lw = max(2, int(N * 0.012 * scale))
 
-    # emissive layer (glow source)
+    # emissive layer (glow source): the glass and the flame
     em = Image.new('RGB', (N, N), (0, 0, 0))
     ed = ImageDraw.Draw(em)
-    ed.ellipse([cx - ring_r, ring_cy - ring_r, cx + ring_r, ring_cy + ring_r], outline=PHOSPHOR, width=ring_w)
-    ed.line([(cx, ring_cy + ring_r), (cx, lamp_cy - lamp_h)], fill=PHOSPHOR, width=max(2, int(N * 0.011 * scale)))
-    diamond = [(cx, lamp_cy - lamp_h), (cx + lamp_w, lamp_cy), (cx, lamp_cy + lamp_h), (cx - lamp_w, lamp_cy)]
-    ed.polygon(diamond, fill=AMBER)
-    glow_a = glow(em, N * 0.035, 1.2)
-    glow_b = glow(em, N * 0.11, 1.4)
+    ed.rounded_rectangle(g['glass'], radius=w * 0.10, fill=AMBER)
+    ed.polygon(g['flame'], fill=(255, 236, 190))
     base = img.convert('RGB')
-    base = add(base, glow_b.point(lambda v: int(v * 0.55)))
-    base = add(base, glow_a.point(lambda v: int(v * 0.5)))
+    base = add(base, glow(em, N * 0.12, 1.6).point(lambda v: int(v * 0.75)))
+    base = add(base, glow(em, N * 0.04, 1.2).point(lambda v: int(v * 0.5)))
 
     d = ImageDraw.Draw(base)
-    # anchor plate above the ring
-    plate_w = N * 0.085 * scale
-    d.rectangle([cx - plate_w / 2, ring_cy - ring_r - N * 0.045 * scale, cx + plate_w / 2, ring_cy - ring_r - N * 0.012 * scale], fill=(70, 76, 78))
-    # ring + tether crisp on top
-    d.ellipse([cx - ring_r, ring_cy - ring_r, cx + ring_r, ring_cy + ring_r], outline=PHOSPHOR, width=ring_w)
-    d.line([(cx, ring_cy + ring_r), (cx, lamp_cy - lamp_h)], fill=PHOSPHOR, width=max(2, int(N * 0.011 * scale)))
-    # lantern: dark cage lines over a bright core
-    d.polygon(diamond, fill=(238, 170, 84))
-    inner = [(cx, lamp_cy - lamp_h * 0.62), (cx + lamp_w * 0.55, lamp_cy), (cx, lamp_cy + lamp_h * 0.62), (cx - lamp_w * 0.55, lamp_cy)]
-    d.polygon(inner, fill=(255, 226, 160))
-    cage = (96, 62, 28)
-    cw = max(2, int(N * 0.006 * scale))
-    d.line([(cx, lamp_cy - lamp_h), (cx, lamp_cy + lamp_h)], fill=cage, width=cw)
-    d.line([(cx - lamp_w, lamp_cy), (cx + lamp_w, lamp_cy)], fill=cage, width=cw)
-    d.polygon(diamond, outline=(120, 78, 36), width=max(2, int(N * 0.008 * scale)))
-    # cap and ring loop above the lantern
-    d.rectangle([cx - N * 0.014 * scale, lamp_cy - lamp_h - N * 0.022 * scale, cx + N * 0.014 * scale, lamp_cy - lamp_h], fill=(150, 130, 100))
+    # the chain from the top edge to the loop: alternating links
+    top = g['loop'][1]
+    link_h = N * 0.05 * scale
+    y = -link_h * 0.3
+    k = 0
+    while y < top - link_h * 0.2:
+        lwid = N * (0.026 if k % 2 == 0 else 0.008) * scale
+        d.rounded_rectangle([cx - lwid, y, cx + lwid, y + link_h], radius=max(1, lwid * 0.9), outline=(96, 86, 72), width=max(2, int(N * 0.009 * scale)))
+        y += link_h * 0.78
+        k += 1
+    d.ellipse(g['loop'], outline=brass, width=max(3, int(N * 0.014 * scale)))
+    # glass: warm gradient (bright core, deeper amber at the edges)
+    x0, y0, x1, y1 = [int(v) for v in g['glass']]
+    gy, gx = np.mgrid[y0:y1, x0:x1].astype(np.float32)
+    r = np.sqrt(((gx - cx) / (w * 0.42)) ** 2 + ((gy - (cy + h * 0.06)) / (h * 0.30)) ** 2)
+    t = np.clip(1 - r, 0, 1)[..., None]
+    col = np.array([196, 112, 40], np.float32) * (1 - t) + np.array([255, 214, 140], np.float32) * t
+    gm = Image.new('L', (N, N), 0)
+    ImageDraw.Draw(gm).rounded_rectangle(g['glass'], radius=w * 0.10, fill=255)
+    gl = Image.fromarray(np.clip(col, 0, 255).astype(np.uint8), 'RGB')
+    base.paste(gl, (x0, y0), gm.crop((x0, y0, x1, y1)))
+    d = ImageDraw.Draw(base)
+    d.polygon(g['flame'], fill=(255, 246, 220))
+    # the cage: iron bars and frame over the glass
+    for bx in g['bars']:
+        d.line([(bx, g['glass'][1]), (bx, g['glass'][3])], fill=iron, width=lw)
+    d.rounded_rectangle(g['glass'], radius=w * 0.10, outline=iron, width=lw)
+    d.polygon(g['cap'], fill=(64, 54, 44))
+    d.line([g['cap'][3], g['cap'][0], g['cap'][1], g['cap'][2]], fill=brass, width=max(2, int(N * 0.006 * scale)))
+    d.rectangle(g['rim'], fill=brass)
+    d.polygon(g['base'], fill=(64, 54, 44))
+    d.line([g['base'][0], g['base'][1]], fill=brass, width=max(2, int(N * 0.008 * scale)))
+    d.rectangle(g['foot'], fill=(52, 44, 36))
     return base.resize((S, S), Image.LANCZOS)
 
 

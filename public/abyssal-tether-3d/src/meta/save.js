@@ -976,6 +976,8 @@ export class SaveService {
     const on = (t, fn) =>
       this._offs.push(
         bus.on(t, (e) => {
+          // SECTION TRIALS (trialGlue.js): a trial never writes the run save, its splits, medals, deaths or play time
+          if (g.trial && t !== 'settings:changed' && t !== 'game:menu') return;
           try {
             fn(e || {});
           } catch (err) {
@@ -1047,7 +1049,7 @@ export class SaveService {
     // lifecycle: a dying page must not lose the checkpoint
     if (typeof document !== 'undefined') {
       const hide = () => {
-        if (saves() && g._runActive && g._runActive()) this.store.runProgress({ time: g.time, deaths: g.deaths, deepest: g.deepest });
+        if (!g.trial && saves() && g._runActive && g._runActive()) this.store.runProgress({ time: g.time, deaths: g.deaths, deepest: g.deepest });
         this.store.flush({ sync: true });
       };
       const vis = () => {

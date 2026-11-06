@@ -115,20 +115,17 @@ export const LOOK = {
   // Height-based blending in cracks and joints: x grime, y moss, z standing water (× wetness).
   uCrevK: { value: new THREE.Vector4(0.55, 0.55, 0.7, 0) },
   // In-shader filmic grade (no post pass): x contrast about mid grey, y saturation, z extra desaturation at depth
-  // (0 at y = 0 m .. full at y = -300 m), w unused; uGradeTint multiplies the linear colour (per-section warmth).
+  // (0 at y = 0 m .. full at y = -300 m), w the toe (how hard the unlit shadow is pressed toward black, 0..1);
+  // uGradeTint multiplies the linear colour (per-section warmth).
   uGradeK: { value: new THREE.Vector4(1.1, 1.0, 0.2, 0) },
   uGradeTint: { value: new THREE.Color(1, 1, 1) },
-  // The horror look (renderer3d.js LOOK_PRESETS): x film grain, y vignette (from the view axis, so both eyes agree), z split toning
-  // (cold crushed shadows, sickly warm lights), w time (s, wrapped) for the grain. All zero = the classic grade.
-  uHorrorK: { value: new THREE.Vector4(0, 0, 0, 0) },
-  // The stylised ("3D anime") look (renderer3d.js LOOK_PRESETS.anime; GLSL atToon below): x strength (0 = off, the realistic grade),
-  // y number of light bands, z edge softness in pixels (anti-aliased band edges), w gain applied to the lighting before it is banded.
-  uToonK: { value: new THREE.Vector4(0, 5, 1.2, 0.55) },
-  // Shadow side of the cel: rgb = the tint the albedo takes in the darkest band (a cool violet, never black), a = how much of it is added.
-  uToonShade: { value: new THREE.Vector4(0.58, 0.66, 1.0, 0.15) },
-  // Ink outlines: x strength of the line on the masonry's box edges (the bevel band darkened to the ink colour; 0 = off), yzw unused.
-  // (The silhouette outlines of the hero meshes are inverted hulls: render/outline.js.)
-  uInkK: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // The dark realism look (render/lookPresets.js, docs/abyssal-tether-3d/plans/DARK_REALISM_LOOK.md): x film grain (desktop only:
+  // 0 in XR, where a per-frame noise shimmers), y vignette (desktop only, static), z split toning strength (uSplitLo in the shadows,
+  // uSplitHi in the lit parts), w time (s, wrapped) for the grain. All zero = the neutral grade.
+  uFilmK: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // Split toning: the shadow multiplier (neutral-cool, never violet or green) and the light multiplier (the lantern's warm pool).
+  uSplitLo: { value: new THREE.Color(1, 1, 1) },
+  uSplitHi: { value: new THREE.Color(1, 1, 1) },
   // LCD black point (VR polish): linear colour added to the lit surfaces after the contrast curve, before the tone mapper (the haze
   // colour at a fraction, driven per section by Renderer3D): the pits keep a trace of colour instead of crushing to OLED black.
   uBlack: { value: new THREE.Color(0, 0, 0) },
@@ -164,6 +161,29 @@ export const LSHADOW = {
   uLPK: { value: new THREE.Vector4(0, 0.006, 12, 0) },
   uLPPos: { value: new THREE.Vector3() },
 };
+
+/**
+ * THE GOLDEN MARK's blip wave (sim/hintWave.js, driven by render/hintWaveView.js): a world-space golden shell expanding from the
+ * objective mark through the level, added to the lit surfaces' emissive (so the radial fog after it attenuates it like any light).
+ * uPing: xyz origin (world), w front radius (m). uPingK: x band half width (m), y strength (0 = idle: the whole chunk is skipped by
+ * one uniform branch), z wake length (m: the ripples behind the front fade over it), w ripple frequency (rad / m). No sampler.
+ */
+export const PING = {
+  uPing: { value: new THREE.Vector4(0, -1e5, 0, 0) },
+  uPingK: { value: new THREE.Vector4(1, 0, 7, 1.6) },
+};
+const PING_DECL = 'uniform vec4 uPing;\nuniform vec4 uPingK;\n';
+const PING_FRAG = `
+  if ( uPingK.y > 0.0 ) {
+    // the hint blip wave (PING): a thin bright leading edge + a fainter rippled wake, strongest on faces turned to the mark
+    vec3 atPd = vAtW - uPing.xyz;
+    float atPr = length( atPd );
+    float atPx = ( atPr - uPing.w ) / uPingK.x;
+    float atPb = max( uPing.w - atPr, 0.0 );
+    float atPw = step( atPr, uPing.w ) * exp( - atPb / uPingK.z ) * ( 0.5 + 0.5 * cos( atPb * uPingK.w ) );
+    float atPf = 0.35 + 0.65 * clamp( dot( inverseTransformDirection( normal, viewMatrix ), - atPd ) / max( atPr, 0.001 ), 0.0, 1.0 );
+    totalEmissiveRadiance += vec3( 1.0, 0.68, 0.26 ) * ( uPingK.y * atPf * ( exp( - atPx * atPx ) + 0.15 * atPw ) );
+  }`;
 
 /** Default texture tile (metres) when a set does not say. */
 export const DEFAULT_TILE = 4;
@@ -936,8 +956,25 @@ float atSpecOcc( const in float nv, const in float ao, const in float rough ) {
 // -----------------------------------------------------------------------------
 
 /**
+ * The lit shaders tell the point lights apart by their decay (a per-light uniform three already uploads): the pooled lamps are 2
+ * (baked on lightmapped stone: their BRDF call is skipped there), the creature's glow is 1.9 (never baked), and the carried lantern is
+ * ANY OTHER value (its shadow, its extra falloff on lightmapped stone). The bands, not the old "lantern < 1.8": the dark look's
+ * inverse-square lantern (decay 2) fell into the lamps' band, so the lantern was skipped on every lightmapped surface and its shadow
+ * never applied (DARK_REALISM_LOOK.md, retune). lanternDecayOf() moves a lantern decay that lands inside the reserved bands just out of them.
+ */
+export const LAMP_DECAY_BAND = Object.freeze([1.95, 2.005]);
+export const CREATURE_DECAY_BAND = Object.freeze([1.85, 1.95]);
+const GLSL_IS_LAMP = `( pointLight.decay > ${LAMP_DECAY_BAND[0].toFixed(3)} && pointLight.decay <= ${LAMP_DECAY_BAND[1].toFixed(3)} )`;
+const GLSL_IS_LANTERN = `( pointLight.decay <= ${CREATURE_DECAY_BAND[0].toFixed(3)} || pointLight.decay > ${LAMP_DECAY_BAND[1].toFixed(3)} )`;
+/** The decay the carried lantern is given for a wanted falloff `d`: unchanged outside the reserved bands (1.85..2.005), else 2.01. */
+export function lanternDecayOf(d) {
+  const v = Number.isFinite(d) ? d : 1.6;
+  return v > CREATURE_DECAY_BAND[0] && v <= LAMP_DECAY_BAND[1] ? 2.01 : v;
+}
+
+/**
  * Declared in lights_pars_begin under AT_LSHADOW (defined per program by patchLanternShadow(), so every other program compiles to
- * exactly the stock code). The lantern is the point light with decay < 1.8 (the pooled lamps have 2): atLanternShadow() returns its
+ * exactly the stock code). The lantern is the point light outside the lamp / creature decay bands (GLSL_IS_LANTERN): atLanternShadow() returns its
  * visibility 0..1 for the fragment, from the view-space position / normal / light position:
  *  - the point is moved off the surface along the geometric normal (normal-offset bias, scaled by the texel size at this distance and
  *    by the grazing angle) and a little toward the light (slope-scaled depth bias), then projected into the cached static map and the
@@ -1050,7 +1087,7 @@ function installLanternShadowChunks() {
     SC.lights_fragment_begin.replace(
       mPoint,
       mPoint +
-        '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }' +
+        '\n#ifdef AT_LSHADOW\n\t\tif ( ' + GLSL_IS_LANTERN + ' && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }' +
         '\n\t\telse if ( uLPK.x > 0.002 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 && distance( pointLight.position, atLpV ) < 0.06 ) { directLight.color *= atAuxShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); }\n#endif',
     );
   // a body in the lantern's shadow is dark, not just unlit by the lantern: the fill (baked lightmap / GI / ambient) loses 40 % under a full shadow, so a shadow
@@ -1114,10 +1151,10 @@ function buildLightsBeginGI() {
   // the lantern's range was stretched (decay 1.6) to stand in for the missing ambient: on lightmapped surfaces, where the
   // baked light supplies the far field, it gets an extra distance falloff (d^-uLMLan.y) so it reads as a pool, not a wash
   if (c.includes(mPoint)) {
-    c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && pointLight.decay <= 1.8 ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
+    c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && ' + GLSL_IS_LANTERN + ' ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
   }
   // (the creature's glow, decay 1.9, is the one pooled light that is NOT baked: it is evaluated on lightmapped fragments too)
-  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && pointLight.decay > 1.95 )');
+  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && ' + GLSL_IS_LAMP + ' )');
   c = skipNext(c, mDir, 'atLmOn < 0.5');
   c = c.replace(
     mTail,
@@ -1404,78 +1441,15 @@ const SPEC_AA = `  {
   }
 `;
 
+const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uFilmK;\nuniform vec3 uSplitLo;\nuniform vec3 uSplitHi;\n';
 /**
- * Cel shading, the shared GLSL (lit surfaces: the grade below; the creature, hands, body and props: injectToon). The LIGHTING is
- * banded, not the picture: the lit colour is divided by the surface's own albedo luminance (so the stone's texture and the paint on
- * the gear stay intact), the ratio goes through a few soft-edged steps in a perceptual (square-root) space, and the colour is rebuilt
- * with the albedo again; the colour keeps its hue (the gain is uniform over rgb). Above the top band the light stays continuous (a
- * lantern flare or a glow is still HDR), and the darkest band is lifted to a cool tint of the albedo (an anime shadow is violet, not
- * black). Band edges are one pixel wide (fwidth of the banded value), so they never crawl or alias; uToonK.x = 0 skips it all.
- * JS twin: toonBand().
- */
-const TOON_DECL = `uniform vec4 uToonK;
-uniform vec4 uToonShade;
-vec3 atToon( vec3 c, vec3 albedo ) {
-  float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
-  float a = max( dot( albedo, vec3( 0.2126, 0.7152, 0.0722 ) ), 0.03 );
-  float lit = l / a;
-  float x = sqrt( max( lit * uToonK.w, 0.0 ) ) * uToonK.y;
-  float xc = min( x, uToonK.y );
-  float f = floor( xc );
-  float w = clamp( fwidth( xc ) * uToonK.z, 0.02, 0.45 );
-  float q = f + smoothstep( 0.5 - w, 0.5 + w, xc - f );
-  float b = q / uToonK.y;
-  float band = b * b / uToonK.w + max( lit - 1.0 / uToonK.w, 0.0 );
-  vec3 t = c * ( min( band * a / max( l, 0.002 ), 10.0 ) );
-  t += albedo * uToonShade.rgb * uToonShade.a;
-  return mix( c, t, uToonK.x );
-}
-`;
-const TOON_FRAG = '  if ( uToonK.x > 0.001 ) gl_FragColor.rgb = atToon( max( gl_FragColor.rgb, vec3( 0.0 ) ), diffuseColor.rgb );\n';
-
-/**
- * Adds the toon step to a shader that is being patched elsewhere (call from onBeforeCompile, after the material's own patch):
- * binds the shared uniforms, declares atToon and bands the lit colour right where the lit colour is final, before tone mapping and fog.
- */
-export function injectToon(shader) {
-  shader.uniforms.uToonK = LOOK.uToonK;
-  shader.uniforms.uToonShade = LOOK.uToonShade;
-  shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\n' + TOON_DECL)
-    .replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + TOON_FRAG);
-  return shader;
-}
-
-/** JS twin of atToon's band curve on a lighting value (lit / albedo luminance): `w` is the edge half-width in band units (the shader's fwidth term). */
-export function toonBand(lit, bands = LOOK.uToonK.value.y, gain = LOOK.uToonK.value.w, w = 0.02) {
-  const x = Math.sqrt(Math.max(lit * gain, 0)) * bands;
-  const xc = Math.min(x, bands);
-  const f = Math.floor(xc);
-  const e = Math.min(1, Math.max(0, (xc - f - (0.5 - w)) / (2 * w)));
-  const q = f + e * e * (3 - 2 * e);
-  const b = q / bands;
-  return (b * b) / gain + Math.max(lit - 1 / gain, 0);
-}
-
-/**
- * Ink on the masonry's box edges (the stylised look's line art for the level, no extra pass): the bevel band (BEVEL_FRAG: atBev is 1 on the
- * edge and falls off to 0 across the 3.5 cm bevel, already faded out when it is narrower than a pixel and beyond uBevelK.z metres) is
- * darkened toward black in its inner part, so every block carries a thin dark line along its edges, the way a drawn background has. Only the
- * materials that have the bevel (masonry, rock, metal, crumbling blocks) get it. JS twin: inkEdge().
- */
-const INK_EDGE_FRAG = '    if ( uInkK.x > 0.001 ) atC *= 1.0 - 0.94 * uInkK.x * smoothstep( 0.26, 0.5, atBev );\n';
-
-/** JS twin of the edge ink: the multiplier on the colour for a bevel-band value `bev` (0..1) at ink strength `k` (0..1). */
-export function inkEdge(bev, k = 1) {
-  const t = Math.min(1, Math.max(0, (bev - 0.26) / (0.5 - 0.26)));
-  return 1 - 0.94 * k * (t * t * (3 - 2 * t));
-}
-
-const GRADE_DECL = 'uniform vec4 uGradeK;\nuniform vec3 uGradeTint;\nuniform vec3 uBlack;\nuniform vec4 uHorrorK;\nuniform vec4 uInkK;\n' + TOON_DECL;
-/**
- * Filmic grade on the lit linear colour, before tone mapping: contrast about mid grey, saturation, extra desaturation with depth,
- * then (VR / LCD) a black-point lift and a soft knee on the highlights: the lantern's wet glints and hot pools roll off into the
- * tone mapper's shoulder instead of clipping to a white blob (the knee bounds the HDR input at ~5).
+ * Filmic grade on the lit linear colour, before tone mapping (the dark realism look, render/lookPresets.js): saturation with extra
+ * desaturation at depth, contrast about mid grey, the section tint, then the split tone (neutral-cool shadows, a warm lantern pool),
+ * the TOE (what the light does not reach is pressed toward black: the falloff of the lantern ends in a real dark, not a grey veil),
+ * the desktop-only vignette (static, from the view axis) and film grain (luminance-weighted, dies in the blacks), then the black
+ * floor (uBlack: an LCD panel never reaches OLED black, so the pits keep a trace of the haze instead of a hole in the picture) and a
+ * soft knee on the highlights (the lantern's wet glints roll into the tone mapper's shoulder instead of clipping; input bounded ~5).
+ * JS twin: gradeColor().
  */
 const GRADE_FRAG = `  {
     vec3 atC = max( gl_FragColor.rgb, vec3( 0.0 ) );
@@ -1483,26 +1457,59 @@ const GRADE_FRAG = `  {
     float atSat = uGradeK.y * ( 1.0 - uGradeK.z * smoothstep( 0.0, - 300.0, vAtW.y ) );
     atC = mix( vec3( atL ), atC, atSat );
     atC = pow( atC * ( 1.0 / 0.18 ), vec3( uGradeK.x ) ) * 0.18;
-    atC = atC * uGradeTint + uBlack;
-    if ( uToonK.x > 0.001 ) atC = atToon( atC, diffuseColor.rgb );
-/*AT_INK*/
-    if ( uHorrorK.z > 0.001 ) {
-      // the horror look: shadows go cold and green-grey and crush toward a soft toe, the lit parts stay a sickly warm, a vignette
-      // from the view axis and a luminance-weighted grain that dies in the blacks (no raised noise floor in a dark headset)
+    atC = atC * uGradeTint;
+    if ( uFilmK.z > 0.001 || uGradeK.w > 0.001 ) {
       float atHl = dot( atC, vec3( 0.2126, 0.7152, 0.0722 ) );
-      float atSh = 1.0 - smoothstep( 0.0, 0.3, atHl );
-      atC *= mix( vec3( 1.0 ), vec3( 0.74, 0.97, 1.03 ), atSh * uHorrorK.z );
-      atC *= mix( vec3( 1.0 ), vec3( 1.07, 0.99, 0.84 ), ( 1.0 - atSh ) * 0.7 * uHorrorK.z );
-      atC *= mix( 1.0, smoothstep( 0.0, 0.05, atHl ), 0.5 * uHorrorK.z );
-      float atAx = normalize( vViewPosition ).z;
-      atC *= 1.0 - uHorrorK.y * ( 1.0 - smoothstep( 0.55, 0.92, atAx ) );
-      float atGn = fract( sin( dot( gl_FragCoord.xy + uHorrorK.w * vec2( 37.0, 17.0 ), vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5;
-      atC *= 1.0 + atGn * uHorrorK.x * smoothstep( 0.003, 0.08, atHl );
+      float atSh = 1.0 - smoothstep( 0.0, 0.25, atHl );
+      atC *= mix( vec3( 1.0 ), mix( uSplitHi, uSplitLo, atSh ), uFilmK.z );
+      atC *= mix( 1.0, smoothstep( 0.0, 0.04, atHl ), uGradeK.w );
+      if ( uFilmK.y > 0.001 ) atC *= 1.0 - uFilmK.y * ( 1.0 - smoothstep( 0.55, 0.92, normalize( vViewPosition ).z ) );
+      if ( uFilmK.x > 0.001 ) {
+        float atGn = fract( sin( dot( gl_FragCoord.xy + uFilmK.w * vec2( 37.0, 17.0 ), vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ) - 0.5;
+        atC *= 1.0 + atGn * uFilmK.x * smoothstep( 0.003, 0.08, atHl );
+      }
     }
+    atC += uBlack;
     float atHi = max( atC.r, max( atC.g, atC.b ) );
     if ( atHi > 3.0 ) atC *= ( 3.0 + 2.0 * ( 1.0 - exp( 0.5 * ( 3.0 - atHi ) ) ) ) / atHi;
     gl_FragColor.rgb = atC;
   }`;
+
+/**
+ * JS twin of GRADE_FRAG for one linear colour (tests, tuning): `c` [r, g, b] linear, before tone mapping; `o` the uniforms as plain
+ * values (defaults: the live LOOK uniforms); `depthY` world height (m) for the depth desaturation; no vignette / grain (screen terms).
+ */
+export function gradeColor(c, o = {}, depthY = 0) {
+  const G = o.gradeK || LOOK.uGradeK.value;
+  const T = o.tint || LOOK.uGradeTint.value;
+  const F = o.filmK || LOOK.uFilmK.value;
+  const lo = o.splitLo || LOOK.uSplitLo.value;
+  const hi = o.splitHi || LOOK.uSplitHi.value;
+  const B = o.black || LOOK.uBlack.value;
+  const sm = (e0, e1, x) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const lum = (v) => v[0] * 0.2126 + v[1] * 0.7152 + v[2] * 0.0722;
+  let v = c.map((x) => Math.max(x, 0));
+  const L = lum(v);
+  const sat = G.y * (1 - G.z * sm(0, -300, depthY));
+  v = v.map((x) => L + (x - L) * sat);
+  v = v.map((x) => Math.pow(x / 0.18, G.x) * 0.18);
+  v = [v[0] * T.r, v[1] * T.g, v[2] * T.b];
+  if (F.z > 0.001 || G.w > 0.001) {
+    const hl = lum(v);
+    const sh = 1 - sm(0, 0.25, hl);
+    const sp = [hi.r + (lo.r - hi.r) * sh, hi.g + (lo.g - hi.g) * sh, hi.b + (lo.b - hi.b) * sh];
+    v = v.map((x, i) => x * (1 + (sp[i] - 1) * F.z));
+    const toe = 1 + (sm(0, 0.04, hl) - 1) * G.w;
+    v = v.map((x) => x * toe);
+  }
+  v = [v[0] + B.r, v[1] + B.g, v[2] + B.b];
+  const h = Math.max(v[0], v[1], v[2]);
+  if (h > 3) v = v.map((x) => (x * (3 + 2 * (1 - Math.exp(0.5 * (3 - h))))) / h);
+  return v;
+}
 
 /**
  * Shader edge bevel for the unit-box solids (no geometry): the box-local position gives the distance to each edge of the face in
@@ -1845,11 +1852,15 @@ ${
     totalEmissiveRadiance += uRimColor * ( atPud * 0.1 ); // standing water carries the haze's colour even when it mirrors a dark wall
   }`,
       );
+      // the hint blip wave (PING above, sim/hintWave.js): shared uniforms, one uniform branch when idle
+      Object.assign(shader.uniforms, PING);
+      fDecl += PING_DECL;
+      fs = fs.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + PING_FRAG);
     }
 
     if (grade) {
       fDecl += GRADE_DECL;
-      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG.replace('/*AT_INK*/', bevel ? INK_EDGE_FRAG : ''));
+      fs = fs.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n' + GRADE_FRAG);
     }
 
     if (shade) {

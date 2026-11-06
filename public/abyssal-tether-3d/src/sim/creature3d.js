@@ -51,6 +51,12 @@
  *   frozen, it holds at its stalking distance and listens; 2 the S5 lure niche: it attacks, no strike hits); a strike never
  *   hits through an active solid; setOverride(cfg, section) lays a mode over a section (S7: escape once the iris opens).
  *   All event payloads carry world z as well as x, y.
+ *   MASON_STRIKES.md (the Mason; skitterlings keep the old wind-up): a strike no longer kills, it costs 30 % (game.js -> PlayerHits).
+ *   The snake: seen / near it DASHES (BURST 'dash'), then in ATTACK it holds a stand-off, rises, LOCKS on where you stand, lunges,
+ *   recoils and stares, every 3-5 s (strikeZone.js STRIKE_TUNE, its own seeded stream). Read-outs: attackPhase ('stalk' | 'dash' |
+ *   'rise' | 'stare' | 'lock' | 'strike' | 'recoil' | ''), attackT01, aimX/Y/Z, strikeSrc, strikeStats, coiledFree; input: immune;
+ *   events creature:phase {phase, t, dur, tx, ty, tz, x, y, z}, creature:attack (each striking rise: + interval, radius, strike,
+ *   coiled), creature:strike (+ zone). attack.phase keeps the rig's names: rise / lock / stare = 'windup', 'strike', 'recoil'.
  * Section data: creature.spawnOffsetY is read as metres ABOVE the player
  * (sign-agnostic), clamped to 28–80 m (beyond ~70 m the out-of-sight rubber
  * band closes the gap at catch-up speed anyway). Sighting trigger data:
@@ -59,6 +65,8 @@
 
 import { U } from './config3d.js';
 import { surfaceNavFor } from './creatureNav.js';
+import { MasonSense } from './masonSight.js'; // MASON_SIGHT.md: sight -> chase, the near no-recovery radius, the knocker decoy
+import { strikeTune, cadenceInterval, segDist, STRIKE_COMMON, STRIKE_DAMAGE } from './strikeZone.js'; // MASON_STRIKES.md
 
 const TAU = Math.PI * 2;
 const FAR = 99999;
@@ -215,6 +223,26 @@ export const CREATURE_TUNING = {
 const T = CREATURE_TUNING;
 
 /**
+ * SOLDIER_WEAPONS.md: the Mason hurt and frightened (hurt / frighten / hearShot below; the weapons are sim/weapons3d.js, which own the
+ * withdraw lengths: 40 / 32 / 24 s for a grenade, x0.7 for a round). It never dies.
+ *   window     s: frights closer together than this diminish: x decay per earlier one (dimFloor at least: never a free removal, never 0)
+ *   minFright  s: the shortest fright
+ *   stagger    s of recoil (the RECOVERING retreat) where a hit cannot send it away: a scripted section (setScripted, the override, the
+ *              S4 sighting, the S5 lure niche, an `escape` section, the victory)
+ *   hearRange  m: a shot that misses wakes it to the shooter from this far (sound, not sight); out of play it brings the next prowl
+ *              pass to within `rouse` s
+ */
+export const FRIGHT = Object.freeze({
+  window: 90,
+  decay: 0.6,
+  dimFloor: 0.3,
+  minFright: 5,
+  stagger: 1.2,
+  hearRange: 55,
+  rouse: 4,
+});
+
+/**
  * Per-difficulty hunting tuning (Normal / Nightmare / Abyss), metres and seconds.
  *   approach/pursue/burst  m/s (far / near / surge)
  *   menace     stalking distance it presses to while you keep moving
@@ -271,7 +299,7 @@ export const CREATURE_VARIANTS = {
     windupMul: 1 / 1.5,
     killRadiusMul: 0.62,
     steerMul: 1.5,
-    hitDamage: { normal: 0.26, nightmare: 0.32, abyss: 0.4 },
+    hitDamage: { normal: STRIKE_DAMAGE.skitter, nightmare: STRIKE_DAMAGE.skitter, abyss: STRIKE_DAMAGE.skitter }, // MASON_STRIKES.md: 10 % on every difficulty
   },
 };
 
@@ -583,6 +611,9 @@ export class Creature3D {
     this.k = Object.assign({ burstRate: 0, commit: 0 }, DIFF_TUNE[key]);
     this.seed = options && isFinite(options.seed) ? options.seed | 0 : (Math.random() * 1e9) | 0;
     this._rand = U.rng(this.seed);
+    // MASON_STRIKES.md: the strike cadence draws from its own seeded stream (the behaviour stream above is unchanged)
+    this.strikeK = strikeTune(key);
+    this._cadRand = U.rng((this.seed ^ 0x57c1ade) >>> 0);
 
     // ---- body (preallocated) ----
     this._segOff = new Float64Array(SEG); // arc length from the head
@@ -618,7 +649,9 @@ export class Creature3D {
     this._tCount = 0;
 
     this.audio = { x: 0, y: 0, z: 0, distance: FAR, intensity: 0, movement: 0, state: S.DORMANT };
-    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, hit: false, cause: '' };
+    // MASON_STRIKES.md: px/py/pz the strike point locked at the wind-up start, radius the zone around the swept line, interval the
+    // cadence drawn at this attack's start
+    this.attack = { phase: null, t: 0, windup: 0.5, sx: 0, sy: 0, sz: 0, lx: 0, ly: 0, lz: 0, px: 0, py: 0, pz: 0, radius: 0, interval: 0, sp: '', st: 0, sd: 1, rx: 0, ry: 0, rz: 0, riseDur: 0, armed: false, coiled: false, stop: '', hit: false, cause: '' };
     this._solids = [];
     this._grip = [];
     this._surf = { x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0 };
@@ -650,6 +683,10 @@ export class Creature3D {
     this.navStats = { replans: 0, noPath: 0, leashes: 0, snaps: 0 };
 
     if (!this.v) linkBus(this.bus, this); // variants ignore the sighting / call triggers
+    // MASON_SIGHT.md: sight / near / decoy (Mason only; options.sight === false switches sight off, the decoy still works)
+    this._decoyGo = false;
+    this.sense = new MasonSense(this);
+    if (options && options.sight === false) this.sense.setInput(false, true, false);
     this._gate = false; // setHuntGate: the Mason hunts only while the player is hurt (off = the sim as ever: the tests and the route bots)
     this.reset(null);
   }
@@ -667,6 +704,8 @@ export class Creature3D {
     this._hurt = false;
     this._withdraw = false;
     this._armed = !this._gate || this._override != null;
+    this._prowling = false;
+    this._prowlT = this._prowlFirst();
   }
 
   /** The player's health is low right now (Health3D.low); call every frame, it is a flag. */
@@ -676,11 +715,16 @@ export class Creature3D {
 
   /** Per frame while the gate is on: arms / disarms the hunt (see setHuntGate). */
   _updateGate(dt, player) {
-    if (this._hurt) this._holdT = T.huntHold;
+    // MASON_SIGHT.md: while it chases you (or, already hunting, still sees you) health does not send it away; seeing alone never ARMS it
+    // (a prowl pass arms only through a committed chase: the notice beat first)
+    if (this._hurt || this.sense.sight.chasing || (this.sense.sight.sees && this._holdT > 0)) this._holdT = T.huntHold;
     else if (this._holdT > 0) this._holdT -= dt;
     const armed = this._override != null || this._holdT > 0;
+    if (!armed && !this._armed && !this._withdraw && !(this._frightT > 0)) this._prowlStep(dt, player); // MASON_SIGHT.md: well, it still prowls (and may see you); not while frightened (SOLDIER_WEAPONS.md)
     if (armed === this._armed) return;
     this._armed = armed;
+    this._prowling = false;
+    if (!armed) this._prowlT = this._prowlGap();
     const lv = this.level;
     const si = this.sectionIndex;
     if (this.victory || !lv || !lv.sections || si < 0 || !lv.sections[si]) return;
@@ -700,6 +744,71 @@ export class Creature3D {
     }
   }
 
+  /** MASON_SIGHT.md: the prowl timings for this difficulty (null: none: sight off, a variant). */
+  _prowlTune() {
+    return this.v || !this.sense.on ? null : this.sense.tune.prowl;
+  }
+
+  _prowlFirst() {
+    const P = this._prowlTune();
+    return P ? P.first : 1e9;
+  }
+
+  _prowlGap() {
+    const P = this._prowlTune();
+    return P ? P.gapMin + this._rand() * (P.gapMax - P.gapMin) : 1e9;
+  }
+
+  /** Is section `sec` a hunting one in its data on this difficulty (a lethal mode, lethal), whatever the gate says? */
+  _huntable(sec) {
+    const cc = sec && sec.creature;
+    if (!cc) return false;
+    const by = cc.by && cc.by[this.tuneKey];
+    const mode = by && by.mode ? by.mode : cc.mode;
+    const lethal = by && by.lethal != null ? by.lethal : cc.lethal;
+    return LETHAL_MODES[mode] === true && lethal === true;
+  }
+
+  /**
+   * MASON_SIGHT.md, the prowl (the gate is closed: the player is well). The hunt gate no longer keeps it away from a player it can see:
+   * in a hunting section it makes passes, in play but harmless (the section's mode, not lethal) until it SEES you (the sense commits a
+   * chase, the chase fills the scent window, the gate arms: lethal). A pass that sees no one withdraws up the masonry (out of sight).
+   */
+  _prowlStep(dt, player) {
+    const P = this._prowlTune();
+    const lv = this.level;
+    const si = this.sectionIndex;
+    const sec = lv && lv.sections && si >= 0 ? lv.sections[si] : null;
+    if (!P || !sec || this.victory) {
+      this._prowling = false;
+      return;
+    }
+    const huntable = this._huntable(sec);
+    if (!this._prowling) {
+      if (!huntable) return;
+      if (this._prowlT > 1e8) this._prowlT = P.first; // sight switched on mid-run
+      this._prowlT -= dt;
+      if (this._prowlT > 0) return;
+      this._prowling = true;
+      this._prowlEnd = P.dur;
+      this.stats.prowls++;
+      this.setSection(si, sec, player); // in play from above, harmless until it sees you
+      return;
+    }
+    this._prowlEnd -= dt;
+    if ((this._prowlEnd > 0 || this.sense.sight.noticing) && huntable && this.inPlay) return;
+    this._prowling = false;
+    this._prowlT = this._prowlGap();
+    if (this.inPlay) {
+      this._withdraw = true; // the pass is over: it climbs away (and leaves play once far)
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+    } else this.setSection(si, sec, player);
+  }
+
   /** The withdraw after the scent is lost: climbs away until far, then leaves play (the section's dormant behaviour). */
   _withdrawStep(dt, player, dist, below) {
     this._withdrawT += dt;
@@ -707,6 +816,7 @@ export class Creature3D {
     this.stateTime = Math.min(this.stateTime, 0.6); // keeps the recover pace from decaying
     if (dist > T.withdrawFar || this._withdrawT > T.withdrawMax) {
       this._withdraw = false;
+      this._fleeing = false; // SOLDIER_WEAPONS.md: a fright's flee climb is over (setSection takes it out of play while frightened)
       const lv = this.level;
       const si = this.sectionIndex;
       if (lv && lv.sections && lv.sections[si]) this.setSection(si, lv.sections[si], player);
@@ -767,12 +877,17 @@ export class Creature3D {
     this._withdraw = false;
     this._withdrawT = 0;
     this._armed = !this._gate;
+    this._prowling = false; // MASON_SIGHT.md: a prowl pass (see _prowlStep)
+    this._prowlEnd = 0;
+    this._prowlT = this.sense ? this._prowlFirst() : 1e9;
     this._occBy = null; // _occlusion: what stopped the last lunge line
+    if (this.sense) this.sense.reset(); // MASON_SIGHT.md
     this.onSurface = false;
     this.distance = FAR;
     this.lethal = false;
     this.caughtPlayer = false;
     this.hitPlayer = false;
+    this._resetStrikes();
     this.sighting = null;
     this.sightingDone = false;
     this.inPlay = false;
@@ -858,7 +973,15 @@ export class Creature3D {
     this._lunge = 0;
     this._rear = 0;
     this.attack.phase = null;
-    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0 };
+    this.stats = { bursts: 0, attacks: 0, hits: 0, nearMisses: 0, retreats: 0, listens: 0, stallLunges: 0, relocations: 0, stares: 0, noises: 0, prowls: 0, hurts: 0, frights: 0, staggers: 0, heardShots: 0 };
+    // SOLDIER_WEAPONS.md: hurt / frighten (the grenade, the revolver). Inert until one of them is called (the old behaviour bit for bit).
+    this._frightT = 0; // > 0: frightened: it withdraws, then stays out of play (no hunt, no prowl) for this long
+    this._frightDur = 0; // the length of the current fright (read-out)
+    this._fleeing = false; // the flee climb is running (a section re-apply keeps it climbing instead of popping it out of view)
+    this._frightN = 0; // frights in a row within FRIGHT.window s (the diminishing rule)
+    this._frightLast = -1e9; // this._t of the last fright
+    this._scripted = false; // setScripted: a scripted section (the S5 keystone, the S7 arena): a hit only staggers it
+    this.wounds = 0;
     this._applyScaling(SECTION_DEFAULTS);
     this._tHead = -1;
     this._tCount = 0;
@@ -887,11 +1010,19 @@ export class Creature3D {
     // the hunt gate: while the player is not hurt every hunting mode is the unseen, non-lethal dormant one (an objective's override,
     // laid below, is a scripted beat and is never gated)
     if (this._gate && !this._armed && LETHAL_MODES[c.mode]) {
-      c.mode = 'dormant';
-      c.lethal = false;
+      if (this._prowling) c.lethal = false; // MASON_SIGHT.md: a prowl pass: in play, harmless until it sees you
+      else {
+        c.mode = 'dormant';
+        c.lethal = false;
+      }
     }
     // LEVEL_FUN_PLAN P5: an objective's override (setOverride) for that section, laid over by[difficulty]
     if (this._override && sec && sec.index === this._overrideSec) Object.assign(c, this._override);
+    // SOLDIER_WEAPONS.md: frightened, every hunting mode is the unseen dormant one until the fright is over (a scripted beat only staggers it)
+    else if (this._frightT > 0 && LETHAL_MODES[c.mode]) {
+      c.mode = 'dormant';
+      c.lethal = false;
+    }
     return c;
   }
 
@@ -924,6 +1055,234 @@ export class Creature3D {
   setRefuge(kind, block) {
     this.refuge = kind === 1 || kind === 2 ? kind : 0;
     this._refBlock = this.refuge && block && isFinite(block.minX) ? block : null;
+  }
+
+  /** MASON_SIGHT.md, per frame from game.js: sight on (?sight=off / setting), the lantern lit, the view blocked (not playing, a cutscene). */
+  setSight(on, lit, blocked) {
+    this.sense.setInput(on, lit, blocked);
+  }
+
+  /** MASON_SIGHT.md, the knocker: lure it to (x, y, z) for opts.duration s (strength scales its hearing reach). Returns whether it was accepted. */
+  distract(x, y, z, opts) {
+    return this.sense.distract(x, y, z, opts);
+  }
+
+  /** MASON_SIGHT.md read-outs: the sight state ({chasing, sees, near, nearDist, ...}) and the live decoy. */
+  get sight() {
+    return this.sense.sight;
+  }
+
+  get decoy() {
+    return this.sense.decoy;
+  }
+
+  /** MASON_SIGHT.md: a prowl pass is in play (the hunt gate closed, it has not seen you yet). */
+  get prowling() {
+    return this._prowling && this.inPlay;
+  }
+
+  // ===========================================================================
+  // SOLDIER_WEAPONS.md: hurt / frighten / hearShot / rayHit (the grenade and the revolver: sim/weapons3d.js; the Flare reuses them).
+  // Inert until called: nothing here runs, draws a random number or changes a field on its own.
+  // ===========================================================================
+
+  /** game.js / the weapons glue, per frame: a scripted section (the S5 keystone, the S7 arena) where a hit only staggers it. */
+  setScripted(on) {
+    this._scripted = !!on;
+  }
+
+  /** A hit here only staggers it (a recoil), never sends it away: a scripted beat must keep its flow. */
+  get scriptedNow() {
+    return this._scripted || this._override != null || this.victory != null || this.mode === 'sighting' || this.mode === 'escape' || this.sighting != null || this.refuge === 2;
+  }
+
+  /** Frightened right now (s left, 0 none) and the length of that fright. */
+  get frightened() {
+    return this._frightT > 0 ? this._frightT : 0;
+  }
+
+  /** The withdraw a fright of `duration` s would get now (the diminishing rule; deterministic: the run clock). */
+  frightFor(duration) {
+    const base = num(duration, 0);
+    if (!(base > 0)) return 0;
+    const n = this._t - this._frightLast < FRIGHT.window ? this._frightN : 0;
+    const mul = Math.max(FRIGHT.dimFloor, Math.pow(FRIGHT.decay, n));
+    return Math.max(FRIGHT.minFright, base * mul);
+  }
+
+  /**
+   * Frightened by a blast or a round from (fromX, fromZ): it screeches, recoils and WITHDRAWS (the hunt gate's climb away, up the masonry
+   * and out of sight), then stays out of play (no hunt, no prowl) for the diminished `duration` (frightFor). A live chase and a decoy end;
+   * a later hit extends it (the longer wins). In a scripted beat (scriptedNow) it only staggers: a short recoil, nothing else changes.
+   * Returns the withdraw it got (s), 0 for a stagger, -1 refused (not the Mason, not active). Event 'creature:frighten'.
+   */
+  frighten(duration, source, fromX, fromZ) {
+    if (this.v || !this.active) return -1;
+    const src = typeof source === 'string' ? source : 'blast';
+    const P = this._evFright || (this._evFright = { x: 0, y: 0, z: 0, source: '', withdraw: 0, stagger: false, count: 0, fromX: 0, fromZ: 0 });
+    P.x = this.x;
+    P.y = this.y;
+    P.z = this.z;
+    P.source = src;
+    P.fromX = num(fromX, this.x);
+    P.fromZ = num(fromZ, this.z);
+    if (this.scriptedNow) {
+      this.stats.staggers++;
+      if (this.inPlay && !this.victory) this._stagger();
+      P.withdraw = 0;
+      P.stagger = true;
+      P.count = this._frightN;
+      this._emit('creature:frighten', P);
+      return 0;
+    }
+    const dur = this.frightFor(duration);
+    if (!(dur > 0)) return -1;
+    this._frightN = this._t - this._frightLast < FRIGHT.window ? this._frightN + 1 : 1;
+    this._frightLast = this._t;
+    this.stats.frights++;
+    if (dur > this._frightT) this._frightT = dur;
+    this._frightDur = this._frightT;
+    if (this.sense.decoy.live) this.sense.endDecoy('overridden');
+    if (this.sense.sight.chasing) this.sense._drop(false);
+    this._prowling = false;
+    if (this.inPlay) {
+      // the flee: the hunt gate's withdraw (RECOVERING steering, up and away), harmless, then out of play once far
+      this._fleeing = true;
+      this._withdraw = true;
+      this._withdrawT = 0;
+      this.lethal = false;
+      this.attack.phase = null;
+      this.listening = false;
+      this.creeping = false;
+      this.staring = false;
+      this.burstCommit = false;
+      if (this.state !== S.RECOVERING) this._setState(S.RECOVERING);
+      this.stateTime = 0;
+    }
+    P.withdraw = this._frightT;
+    P.stagger = false;
+    P.count = this._frightN;
+    this._emit('creature:frighten', P);
+    return this._frightT;
+  }
+
+  /** A recoil: the strike or surge is broken off, it retreats a moment (RECOVERING) and comes on again. */
+  _stagger() {
+    this.attack.phase = null;
+    this.burstCommit = false;
+    this.creeping = false;
+    this.listening = false;
+    this.staring = false;
+    this._setState(S.RECOVERING);
+    this.stateDur = FRIGHT.stagger;
+    this.stateTime = 0;
+  }
+
+  _frightEnd(player) {
+    this._frightT = 0;
+    this._fleeing = false;
+    const P = this._prowlTune();
+    if (this._gate && P) this._prowlT = P.first; // the next pass waits as after an entry
+    this.sense._first = true; // its next notice is a warning again
+    this._emit('creature:frighten:end', { x: this.x, y: this.y, z: this.z });
+    const lv = this.level;
+    const si = this.sectionIndex;
+    if (!this.victory && player && lv && lv.sections && si >= 0 && lv.sections[si]) this.setSection(si, lv.sections[si], player);
+  }
+
+  /**
+   * A wound (the weapons call frighten first, then this): stats.hurts, this.wounds, 'creature:hurt' {x,y,z,source,withdraw,amount}. It never
+   * dies (a level fixture). Returns the wounds so far, -1 refused.
+   */
+  hurt(amount, source) {
+    if (this.v || !this.active) return -1;
+    const a = Math.max(0, num(amount, 1));
+    this.stats.hurts++;
+    this.wounds += a;
+    this._emit('creature:hurt', { x: this.x, y: this.y, z: this.z, source: typeof source === 'string' ? source : 'blast', withdraw: this.frightened, amount: a, stagger: this.scriptedNow });
+    return this.wounds;
+  }
+
+  /**
+   * A shot that did not hit it, fired from (x, y, z): LOUD. In play within FRIGHT.hearRange of the crown it wakes to the shooter (sound,
+   * not sight): a live decoy ends, it stops listening / creeping, it counts the shooter as moving and pursues, annoyed (faster for a
+   * moment) when its annoy cooldown allows. Out of play in a hunting section, the next prowl pass comes within FRIGHT.rouse s. Frightened:
+   * nothing. Returns 'heard' | 'roused' | ''.
+   */
+  hearShot(x, y, z) {
+    if (this.v || !this.active || this.victory || this._frightT > 0 || !isFinite(x) || !isFinite(y) || !isFinite(z)) return '';
+    if (this.inPlay) {
+      if (this._withdraw) return '';
+      const d = len3(x - this.x, y - this.y, z - this.z);
+      if (d > FRIGHT.hearRange) return '';
+      this.stats.heardShots++;
+      if (this.sense.decoy.live) this.sense.endDecoy('overridden');
+      this._noiseT = T.noiseDur * 3;
+      this.listening = false;
+      this.creeping = false;
+      if (this.state === S.OBSERVING || this.state === S.APPROACHING) this._setState(S.PURSUING);
+      if (this._annoyCd <= 0) {
+        this._annoyCd = T.annoy.cooldown;
+        this._annoyT = 0;
+        this.annoyCount++;
+        this._emit('creature:annoyed', { x: this.x, y: this.y, z: this.z, distance: d, dur: T.annoy.dur, burstDur: T.annoy.burstDur, count: this.annoyCount, shot: true });
+      }
+      this._emit('creature:call', { x: this.x, y: this.y, z: this.z, distance: d, intensity: 1, annoyed: true });
+      return 'heard';
+    }
+    const lv = this.level;
+    const sec = lv && lv.sections && this.sectionIndex >= 0 ? lv.sections[this.sectionIndex] : null;
+    if (this._gate && !this._prowling && this._huntable(sec) && this._prowlT > FRIGHT.rouse) {
+      this.stats.heardShots++;
+      this._prowlT = FRIGHT.rouse;
+      return 'roused';
+    }
+    return '';
+  }
+
+  /**
+   * The ray (ox,oy,oz) + t (dx,dy,dz) (unit) against the body, t in 0..range: the distance to the nearest block it passes within reach of,
+   * -1 none. Generous volumes (a hit volume, not the mesh): each spine block's annoy radius x `pad` (the crown and the front blocks x 1.6).
+   * Masonry is not tested here (the caller compares with its own level ray). Only while it is in play and shown.
+   */
+  rayHit(ox, oy, oz, dx, dy, dz, range, pad = 1.15) {
+    if (!this.active || !(this.inPlay || this.sighting) || this.body.visible === false) return -1;
+    const sp = this.body.spine;
+    const A = T.annoy;
+    let best = -1;
+    for (let i = 0; i < SEG; i++) {
+      const cx = sp[i * 3] - ox;
+      const cy = sp[i * 3 + 1] - oy;
+      const cz = sp[i * 3 + 2] - oz;
+      const t = cx * dx + cy * dy + cz * dz;
+      if (t < 0 || t > range) continue;
+      const ex = cx - dx * t;
+      const ey = cy - dy * t;
+      const ez = cz - dz * t;
+      const r = (A.radius * this.body.scale[i] * this._scale + A.pad) * pad * (i < 3 ? 1.6 : 1);
+      if (ex * ex + ey * ey + ez * ez <= r * r && (best < 0 || t < best)) best = t;
+    }
+    return best;
+  }
+
+  /** The nearest body point to (x, y, z) into `out` {x,y,z,d} (the blast's measure). Returns out. */
+  nearestPoint(x, y, z, out) {
+    const sp = this.body.spine;
+    let bd = Infinity;
+    for (let i = 0; i < SEG; i++) {
+      const ex = sp[i * 3] - x;
+      const ey = sp[i * 3 + 1] - y;
+      const ez = sp[i * 3 + 2] - z;
+      const q = ex * ex + ey * ey + ez * ez;
+      if (q < bd) {
+        bd = q;
+        out.x = sp[i * 3];
+        out.y = sp[i * 3 + 1];
+        out.z = sp[i * 3 + 2];
+      }
+    }
+    out.d = Math.sqrt(bd);
+    return out;
   }
 
   setSection(index, section, player) {
@@ -959,6 +1318,10 @@ export class Creature3D {
       }
     } else {
       this.lethal = false;
+      if (this.inPlay && this._fleeing) {
+        this._withdraw = true; // SOLDIER_WEAPONS.md: frightened mid-climb: it keeps climbing away (never a pop out of view)
+        return;
+      }
       if (this.inPlay) this._leavePlay();
       this._sightTrigger = null;
       this._sightAuto = -1;
@@ -984,8 +1347,11 @@ export class Creature3D {
       this._hurt = false;
       this._withdraw = false;
       this._armed = this._override != null;
+      this._prowling = false;
+      this._prowlT = this._prowlFirst(); // the first pass after a respawn waits (MASON_SIGHT.md)
     }
     this.attack.phase = null;
+    this._resetStrikes(true);
     this.nearMiss = 0;
     this.stillTime = 0;
     this.stallTime = 0;
@@ -994,6 +1360,9 @@ export class Creature3D {
     this._introT = 0;
     this._annoyT = -1;
     this._annoyCd = 0;
+    this.sense.reset(); // MASON_SIGHT.md: a respawn forgets the chase and the decoy
+    this._frightT = 0; // SOLDIER_WEAPONS.md: ... and a fright (the diminishing memory stays)
+    this._fleeing = false;
     if (this.victory) return;
     const lv = this.level;
     const i = lv.sectionIndexAt(player.y);
@@ -1141,6 +1510,11 @@ export class Creature3D {
       const si = lv.sectionIndexAt(player.y);
       if (si !== this.sectionIndex) this.setSection(si, lv.sections[si], player);
     }
+    if (this._frightT > 0) {
+      this._frightT -= dt; // SOLDIER_WEAPONS.md: the fright runs out: back to the section's behaviour (it arrives from above as a hunt would)
+      if (this._frightT <= 0) this._frightEnd(player);
+    }
+    if (!this.victory) this.sense.update(dt, player); // MASON_SIGHT.md: sight first (a chase keeps the gate's scent hold full)
     if (this._gate && !this.victory) this._updateGate(dt, player);
 
     this.stateTime += dt;
@@ -1151,6 +1525,7 @@ export class Creature3D {
     else if (this.mode === 'sighting') this._updateSighting(dt, player);
     else this._updateDormant(dt, player);
 
+    if (!this.v) this._phaseTick(player);
     this.speed = len3(this.vx, this.vy, this.vz);
     if (this.inPlay || this.sighting) {
       this.distance = len3(player.x - this.x, player.y - this.y, player.z - this.z);
@@ -1197,6 +1572,8 @@ export class Creature3D {
     const below = this.y - player.y; // > 0: the player is below it
     this.distance = dist;
     this.grace = Math.max(0, this.grace - dt);
+    if (this._atkCd > 0) this._atkCd -= dt; // MASON_STRIKES.md: the cadence clock
+    if (this._dashCd > 0) this._dashCd -= dt;
     this.listenCd -= dt;
     this.burstTimer -= dt;
     this.routeTimer -= dt;
@@ -1216,6 +1593,9 @@ export class Creature3D {
       this._shift(0, -below - K.maxGap, 0);
       this._snapToNav(T.nav.snapRange);
     }
+    // MASON_SIGHT.md: a live knocker decoy runs the frame (listen turn, crawl to it, inspect); `chase` = it has seen you
+    if (this.sense.decoyStep(dt)) return;
+    const chase = this.sense.sight.chasing;
 
     // A surface-bound hunter reaches you only from the masonry, so its telegraphed lunge may begin `nav.stretch` m farther out than a free-flying
     // one's (the wind-up still closes part of the gap; the strike's own reach is unchanged).
@@ -1226,6 +1606,9 @@ export class Creature3D {
     const still = alive && this.stillTime > T.stillDebounce;
     const moving = alive && (this.playerSpeed > T.moveSpeed || this._noiseT > 0);
     const stalled = canAttack && this.stallTime >= K.stallCommit;
+    // MASON_STRIKES.md: engaged = it chases you or you are in its reach (a lethal hunt, not in a rest): the cadence drives the attacks,
+    // the stamina does not drain and a missed strike goes straight back to the pursuit (no withdraw wave in between)
+    this._engaged = !this.v && this.lethal && alive && !hidden && (chase || dist <= engage + STRIKE_COMMON.engagePad);
     const st = this.state;
     if (st !== S.APPROACHING) this.creeping = false;
 
@@ -1243,6 +1626,7 @@ export class Creature3D {
               break;
             }
           }
+          if (chase) this.creeping = false; // it has seen you: no creeping in on a sound
           if (this.creeping) {
             // Closing on a silent player after listening.
             if (moving) {
@@ -1253,19 +1637,20 @@ export class Creature3D {
             break;
           }
           if (st === S.PURSUING) this._drain(K.drain * dt);
-          if (canAttack && dist < engage && !still) this._startAttack('contact');
+          if (this._dashOk(dist, chase, canAttack, engage)) this._startBurst(true, 'dash'); // MASON_STRIKES.md: seen / near: it surges in
+          else if (canAttack && dist < engage && (!still || chase)) this._startAttack(chase && still ? 'sight' : 'contact');
           else if (stalled && this.stamina > 0.15 && dist < T.burstMax) this._stallLunge();
           else if (this.stamina <= 0) this._setState(S.RECOVERING);
-          else if (this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
-          else if (still && this.stillTime >= K.listenDelay + K.listenDur && dist <= this._menace() + 3) {
+          else if (!chase && this._shouldListen(dist, alive)) this._enterObserve(K.listenDur, true);
+          else if (!chase && still && this.stillTime >= K.listenDelay + K.listenDur && dist <= this._menace() + 3) {
             // Already listened recently: go straight to creeping in.
             this.creeping = true;
             if (st !== S.APPROACHING) this._setState(S.APPROACHING);
-          } else if (this.burstTimer <= 0 && !still && this.stamina > 0.3) this._tryBurst(dist);
+          } else if (this.burstTimer <= 0 && (!still || chase) && this.stamina > 0.3) this._tryBurst(dist);
           else {
-            if (st === S.APPROACHING && dist < T.pursueRange) {
-              if (!this._tryStare(dist)) this._setState(S.PURSUING);
-            } else if (st === S.PURSUING && dist > T.loseRange) this._setState(S.APPROACHING);
+            if (st === S.APPROACHING && (chase || dist < T.pursueRange)) {
+              if (chase || !this._tryStare(dist)) this._setState(S.PURSUING);
+            } else if (st === S.PURSUING && dist > T.loseRange && !chase) this._setState(S.APPROACHING);
             if (this.routeTimer <= 0) this._maybeChangeRoute(player, below);
             if (this.callTimer <= 0) this._ambientCall(dist);
           }
@@ -1282,7 +1667,9 @@ export class Creature3D {
           } else if (dist <= this._menace() * 0.9) end = true; // pressure surge stops short
           // A committed surge runs along the masonry, which is longer than the straight line it used to take through the air: it
           // keeps going (up to nav.burstExtend x its time, while it has the stamina) until it is in range to strike.
-          if (end && this.burstCommit && canAttack && this._nav && T.nav.enabled && this.stateTime < this.stateDur * T.nav.burstExtend && this.stamina > 0.08) end = false;
+          if (end && this.burstCommit && canAttack && this._nav && T.nav.enabled && this.burstReason !== 'dash' && this.stateTime < this.stateDur * T.nav.burstExtend && this.stamina > 0.08) end = false;
+          // MASON_STRIKES.md: a dash is capped and a rest, a decoy or a lost hunt calls it off (it holds at its stand-off point)
+          if (this.burstReason === 'dash' && (hidden || this.sense.decoy.live || !canAttack)) end = true;
           if (end) {
             if (this.burstCommit) this._lungeFails++; // never got in reach (see _watchdog)
             if (this.stamina <= 0) this._setState(S.RECOVERING);
@@ -1292,7 +1679,10 @@ export class Creature3D {
         }
         case S.OBSERVING:
           this._regen(T.regenObserve * dt);
-          if (this.listening && moving && this.stateTime > 0.25) {
+          if (chase && !this.staring && !hidden) {
+            this.listening = false;
+            this._setState(S.PURSUING); // MASON_SIGHT.md: it sees you: no more waiting
+          } else if (this.listening && moving && this.stateTime > 0.25) {
             this.listening = false;
             this._heard(dist); // it heard you move
           } else if (stalled && !this.listening && this.stamina > 0.15 && dist < T.burstMax) {
@@ -1631,11 +2021,14 @@ export class Creature3D {
           break;
         }
         const base = this.state === S.PURSUING ? K.pursue : K.approach;
-        speed = base * noise * this._hitch * (intro ? T.introSpeed : 1) + catchUp;
+        // MASON_SIGHT.md: a chase runs at pursue x pursueMul and does not hold at the menace distance; a decoy run (_decoyGo) neither
+        const chase = this.sense.sight.chasing;
+        const go = chase || this._decoyGo;
+        speed = (chase ? K.pursue * this.sense.tune.pursueMul : base) * noise * this._hitch * (intro ? T.introSpeed : 1) + catchUp;
         // Stalking distance: it presses to `menace`, not into you, unless it
         // commits to a lunge or has listened to your silence.
         const m = this._menace();
-        if (dist < m + 6) {
+        if (dist < m + 6 && !go) {
           if (still) {
             // Hovers at the edge of the light while deciding whether you are there.
             speed = Math.min(speed, T.speed.observe * (0.5 + 0.5 * noise) + Math.max(0, dist - m) * 0.8);
@@ -1657,7 +2050,7 @@ export class Creature3D {
             }
           }
         }
-        if (!this.lethal) {
+        if (!this.lethal && !this._decoyGo) {
           // Non-lethal hunting (data-driven): it looms but holds off.
           const hold = Math.max(m, this.cfg.killRadius * T.engageMul * 1.6);
           speed *= U.clamp((dist - hold * 0.75) / (hold * 0.25), 0, 1);
@@ -1716,6 +2109,19 @@ export class Creature3D {
       ty = this._nty;
       tz = this._ntz;
       stick = 1;
+    }
+    if (this.state === S.BURST && this.burstReason === 'dash') {
+      // MASON_STRIKES.md DASH: the same way, at full surge speed (the soft arrival at each near waypoint would hold it to a crawl)
+      const ex = tx - this.x;
+      const ey = ty - this.y;
+      const ez = tz - this.z;
+      const el = len3(ex, ey, ez);
+      const want = speed / 2.5;
+      if (el > 1e-3 && el < want) {
+        tx = this.x + (ex / el) * want;
+        ty = this.y + (ey / el) * want;
+        tz = this.z + (ez / el) * want;
+      }
     }
     if (!navOn && !this.v && this.lethal && !this.creeping) {
       // It aims where you will be: a swing across the shaft does not shake it off.
@@ -2101,6 +2507,30 @@ export class Creature3D {
 
   // ---- attack ----------------------------------------------------------------------
 
+  /** MASON_STRIKES.md: no attack yet (the cadence clock), no strike stats, no hit memory: a new run, a respawn. */
+  _resetStrikes(keepStats) {
+    this._atkCd = 0;
+    this._lastHitT = -1e9;
+    this._engaged = false;
+    /** set by the game every frame (sim/playerHits.js): the player cannot be struck right now (after a hit) */
+    this.immune = false;
+    /** where the last Mason lunge left from (the crown before the strike): player:hit's attacker position */
+    if (!this.strikeSrc) this.strikeSrc = { x: 0, y: 0, z: 0 };
+    if (!keepStats || !this.strikeStats) this.strikeStats = { attacks: 0, hits: 0, misses: 0, dashes: 0 };
+    this._dashCd = 0;
+    /** read-only for the views: 'stalk' | 'dash' | 'rise' | 'stare' | 'lock' | 'strike' | 'recoil' | '' (out of the hunt) */
+    this.attackPhase = '';
+    this.attackT01 = 0; // 0..1 through the phase
+    this.aimX = 0; // where the crown looks (the player; the locked point from the lock to the impact)
+    this.aimY = 0;
+    this.aimZ = 0;
+    if (this.attack) {
+      this.attack.sp = '';
+      this.attack.phase = null;
+    }
+  }
+
+  /** Returns false (nothing changes but the stall bookkeeping of a blocked line) when no attack starts. */
   _startAttack(cause) {
     if (this._losBlocked(null)) {
       // Masonry between you (it is above the floor you hang under): no strike
@@ -2108,7 +2538,7 @@ export class Creature3D {
       this._lungeFails++;
       this.creeping = false;
       this._setState(S.PURSUING);
-      return;
+      return false;
     }
     const a = this.attack;
     a.cause = cause || 'contact';
@@ -2127,15 +2557,25 @@ export class Creature3D {
       this.vy *= cap / sp;
       this.vz *= cap / sp;
     }
+    if (!this.v) {
+      this._setState(S.ATTACK);
+      this._snakeEnter(); // MASON_STRIKES.md: the snake (rise / stare / lock / strike / recoil, the cadence inside)
+      return true;
+    }
     this.stats.attacks++;
     this._setState(S.ATTACK);
     this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, windup: a.windup, distance: this.distance, cause: a.cause });
+    return true;
   }
 
   _updateAttack(dt, player) {
     const a = this.attack;
     if (!a.phase) {
       this._setState(S.RECOVERING);
+      return;
+    }
+    if (!this.v) {
+      this._updateSnake(dt, player);
       return;
     }
     a.t += dt;
@@ -2251,6 +2691,313 @@ export class Creature3D {
     // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); refuge: 0 / 1 / 2
     this._emit('creature:strike', { x: a.lx, y: a.ly, z: a.lz, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge });
     this._emitStep(a.lx, a.ly, a.lz, 1, md, true);
+  }
+
+  // ---- MASON_STRIKES.md: the snake ------------------------------------------------------------------------------------------
+  // In reach the Mason does not run through you: it holds a standing-off distance, rears up and stares (RISE), the aim freezes on
+  // where you stand (LOCK), a fast straight lunge (STRIKE) that connects only within the strike radius of its swept line, it snaps
+  // back into the coil (RECOIL) and stares again (STARE) until the cadence clock lets it rise for the next strike: every 3-5 s
+  // start to start while you stay in its reach. `attack.phase` keeps the rig's old names: rise / stare / lock = 'windup' (a.t /
+  // a.windup = the rear), strike = 'strike', recoil = 'recoil'.
+
+  /** The lunge's reach (m) from the head. */
+  _reach() {
+    return this.cfg.killRadius * T.strikeMul * (this.burstReason === 'stall' ? 1.25 : 1) + (T.nav.enabled && this._nav ? T.nav.stretch : 0);
+  }
+
+  /** Entering ATTACK (the Mason): the first rise; the strike itself waits for the cadence clock. */
+  _snakeEnter() {
+    const a = this.attack;
+    a.hit = false;
+    a.coiled = false;
+    this._snakeRise();
+  }
+
+  /** A rise: the first (longer) or a re-rise from the coil. `armed` when the cadence allows a strike at its end. */
+  _snakeRise() {
+    const a = this.attack;
+    const SK = this.strikeK;
+    const dur = a.coiled ? SK.riseAgain : SK.riseFirst;
+    a.armed = this._atkCd <= 0;
+    a.riseDur = dur;
+    a.windup = dur + SK.lock;
+    a.radius = SK.radius;
+    a.phase = 'windup';
+    a.t = 0;
+    a.hit = false;
+    this._snakePhase('rise', dur, this._px, this._py, this._pz);
+    if (a.armed) {
+      a.interval = cadenceInterval(SK, this._cadRand());
+      this._atkCd = a.interval;
+      this.stats.attacks++;
+      this.strikeStats.attacks++;
+      this._emit('creature:attack', { x: this.x, y: this.y, z: this.z, windup: a.windup, distance: this.distance, cause: a.cause, interval: a.interval, radius: a.radius, strike: SK.strike, coiled: a.coiled });
+    }
+  }
+
+  /** Sets the snake phase (rare: one event per phase). */
+  _snakePhase(name, dur, tx, ty, tz) {
+    const a = this.attack;
+    a.sp = name;
+    a.st = 0;
+    a.sd = dur > 0.05 ? dur : 0.05;
+    this._setPhase(name, a.sd, tx, ty, tz);
+  }
+
+  /** The public phase for the views (attackPhase / creature:phase); events only on a change. */
+  _setPhase(name, dur, tx, ty, tz) {
+    this.attackT01 = 0;
+    if (name === this.attackPhase && name !== 'rise' && name !== 'stare') return;
+    this.attackPhase = name;
+    this._emit('creature:phase', { phase: name, t: 0, dur, tx, ty, tz, x: this.x, y: this.y, z: this.z });
+  }
+
+  /** Holds the standing-off distance (it sways, the crown on you): it backs off inside standOff - 0.4 m, never running through you. */
+  _snakeHold(dt, player) {
+    const so = this.strikeK.standOff;
+    const d = this.distance > 1e-3 ? this.distance : 1e-3;
+    const ux = (player.x - this.x) / d;
+    const uy = (player.y - this.y) / d;
+    const uz = (player.z - this.z) / d;
+    const sw = Math.sin(this._t * 2.1 + this.seed) * 0.5;
+    let sp = 0;
+    let tx = this.x + this._tanX() * sw;
+    let ty = this.y;
+    let tz = this.z + this._tanZ() * sw;
+    if (d > so + 0.6) {
+      sp = this.k.windupAdv;
+      tx += ux * (d - so);
+      ty += uy * (d - so);
+      tz += uz * (d - so);
+    } else if (d < so - 0.4) {
+      sp = 2.5;
+      tx -= ux * (so - d);
+      ty -= uy * (so - d);
+      tz -= uz * (so - d);
+    } else sp = 0.6;
+    this._moveToward(tx, ty, tz, sp, 5, dt, 0.3);
+    this._surfaceStep(dt, 0.3);
+  }
+
+  /** MASON_STRIKES.md: the view phase outside the snake: 'dash' (the surge), 'stalk' (the lethal hunt closing in), '' otherwise. */
+  _phaseTick(player) {
+    if (this.state === S.ATTACK && this.attack.sp) return;
+    let ph = '';
+    let dur = 0;
+    if (this.inPlay && this.lethal && !this.victory && !this._withdraw) {
+      if (this.state === S.BURST && this.burstReason === 'dash') {
+        ph = 'dash';
+        dur = this.stateDur;
+        this.attackT01 = U.clamp(this.stateTime / Math.max(0.05, this.stateDur), 0, 1);
+      } else if (this.state === S.APPROACHING || this.state === S.PURSUING || this.state === S.OBSERVING || this.state === S.BURST) ph = 'stalk';
+    }
+    this.aimX = player.x;
+    this.aimY = player.y;
+    this.aimZ = player.z;
+    if (ph !== this.attackPhase) {
+      if (ph !== 'dash') this.attackT01 = 0;
+      this.attackPhase = ph;
+      this._emit('creature:phase', { phase: ph, t: 0, dur, tx: player.x, ty: player.y, tz: player.z, x: this.x, y: this.y, z: this.z });
+    }
+  }
+
+  /** MASON_STRIKES.md: coiled with no strike under way (stare, or a rise that will not strike): a knocker may still draw it off. */
+  get coiledFree() {
+    const a = this.attack;
+    return this.state === S.ATTACK && !this.v && (a.sp === 'stare' || (a.sp === 'rise' && !a.armed));
+  }
+
+  /** Leaves the coil (you went out of reach, into a rest, died, a decoy): back to the hunt. */
+  _snakeExit(hidden, alive) {
+    const a = this.attack;
+    a.phase = null;
+    a.sp = '';
+    if (!alive) this._enterObserve(2.5, false);
+    else if (hidden) this._enterObserve(this.k.listenDur, true);
+    else this._setState(S.PURSUING);
+  }
+
+  _updateSnake(dt, player) {
+    const a = this.attack;
+    const SK = this.strikeK;
+    const alive = player.alive !== false;
+    const hidden = this.refuge === 1;
+    a.st += dt;
+    const free = a.sp === 'stare' || (a.sp === 'rise' && !a.armed);
+    if (free && (hidden || !alive || !this.lethal || this.sense.decoy.live || this._withdraw || this.distance > this._reach() + STRIKE_COMMON.leave)) {
+      this._snakeExit(hidden, alive);
+      return;
+    }
+    if (a.sp === 'rise') {
+      this._snakeHold(dt, player);
+      a.t = Math.min(a.st, a.riseDur);
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (a.st >= a.sd) {
+        if (a.armed) {
+          // LOCK: the aim freezes where you stand (a hair of lead): the dodge deadline
+          let lx = this._pvx * SK.lead;
+          let ly = this._pvy * SK.lead;
+          let lz = this._pvz * SK.lead;
+          const ll = len3(lx, ly, lz);
+          if (ll > STRIKE_COMMON.leadMax) {
+            lx *= STRIKE_COMMON.leadMax / ll;
+            ly *= STRIKE_COMMON.leadMax / ll;
+            lz *= STRIKE_COMMON.leadMax / ll;
+          }
+          a.px = player.x + lx;
+          a.py = player.y + ly;
+          a.pz = player.z + lz;
+          this._snakePhase('lock', SK.lock, a.px, a.py, a.pz);
+        } else {
+          a.coiled = true;
+          this._snakePhase('stare', this._atkCd, player.x, player.y, player.z);
+        }
+      }
+    } else if (a.sp === 'stare') {
+      this._snakeHold(dt, player);
+      a.t = a.riseDur; // the rig holds the full coil
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (this._atkCd <= 0) this._snakeRise();
+    } else if (a.sp === 'lock') {
+      // frozen on the point, a shiver of the coil (no advance)
+      this._moveToward(this.x, this.y, this.z, 0, 8, dt, 0.3);
+      this._surfaceStep(dt, 0.3);
+      a.t = a.riseDur + a.st;
+      this.aimX = a.px;
+      this.aimY = a.py;
+      this.aimZ = a.pz;
+      if (a.st >= a.sd) this._snakeLunge();
+    } else if (a.sp === 'strike') {
+      const k = Math.min(1, a.st / a.sd);
+      const e = 1 - (1 - k) * (1 - k);
+      const nx = U.lerp(a.sx, a.lx, e);
+      const ny = U.lerp(a.sy, a.ly, e);
+      const nz = U.lerp(a.sz, a.lz, e);
+      this.vx = (nx - this.x) / dt;
+      this.vy = (ny - this.y) / dt;
+      this.vz = (nz - this.z) / dt;
+      this.x = nx;
+      this.y = ny;
+      this.z = nz;
+      a.t = a.st;
+      if (a.st >= a.sd) this._snakeImpact(player);
+    } else if (a.sp === 'recoil') {
+      // the snap back into the coil: eased from the lunge's end to where it struck from, exactly in the recoil time
+      const k = Math.min(1, a.st / a.sd);
+      const e = k * k * (3 - 2 * k);
+      const nx = U.lerp(a.rx, a.sx, e);
+      const ny = U.lerp(a.ry, a.sy, e);
+      const nz = U.lerp(a.rz, a.sz, e);
+      this.vx = (nx - this.x) / dt;
+      this.vy = (ny - this.y) / dt;
+      this.vz = (nz - this.z) / dt;
+      this.x = nx;
+      this.y = ny;
+      this.z = nz;
+      a.t = a.st;
+      this.aimX = player.x;
+      this.aimY = player.y;
+      this.aimZ = player.z;
+      if (a.st >= a.sd) {
+        a.coiled = true;
+        a.phase = 'windup';
+        this._snakePhase('stare', this._atkCd, player.x, player.y, player.z);
+      }
+    } else this._snakeExit(hidden, alive);
+    this.attackT01 = U.clamp(a.st / a.sd, 0, 1);
+  }
+
+  /** LOCK -> STRIKE: the lunge line from the head toward the locked point, at most the reach, stopped short of the first solid. */
+  _snakeLunge() {
+    const a = this.attack;
+    let ux = a.px - this.x;
+    let uy = a.py - this.y;
+    let uz = a.pz - this.z;
+    const ul = len3(ux, uy, uz) || 1;
+    ux /= ul;
+    uy /= ul;
+    uz /= ul;
+    let ext = Math.min(ul, this._reach());
+    const occ = this._occlusion(ux, uy, uz, 1, ext);
+    a.stop = '';
+    if (occ < ext) {
+      ext = Math.max(0, occ - 0.8);
+      const by = this._occBy;
+      a.stop = by === 'rest' ? 'rest' : by && by.id ? by.id : '';
+    }
+    a.sx = this.x;
+    a.sy = this.y;
+    a.sz = this.z;
+    const sr = this.strikeSrc;
+    sr.x = this.x;
+    sr.y = this.y;
+    sr.z = this.z;
+    a.lx = this.x + ux * ext;
+    a.ly = this.y + uy * ext;
+    a.lz = this.z + uz * ext;
+    a.phase = 'strike';
+    a.t = 0;
+    this._snakePhase('strike', this.strikeK.strike, a.px, a.py, a.pz);
+  }
+
+  /**
+   * The impact (the end of the lunge): a connect only with a player within the strike radius of the swept segment, on a clear line,
+   * not in a refuge, not in grace, not immune, and never twice within STRIKE_COMMON.minHitGap s. A connect sets caughtPlayer (the
+   * game takes 30 % of the health and knocks you down: sim/playerHits.js), never a kill from any hp.
+   */
+  _snakeImpact(player) {
+    const a = this.attack;
+    const zone = segDist(player.x, player.y, player.z, a.sx, a.sy, a.sz, a.lx, a.ly, a.lz);
+    const dx = player.x - a.sx;
+    const dy = player.y - a.sy;
+    const dz = player.z - a.sz;
+    const d = len3(dx, dy, dz) || 1;
+    // the line to you must be clear too (a strike never hits through stone: LEVEL_FUN_PLAN P5), measured from where the lunge began
+    const hx = this.x;
+    const hy = this.y;
+    const hz = this.z;
+    this.x = a.sx;
+    this.y = a.sy;
+    this.z = a.sz;
+    const occ = this._occlusion(dx, dy, dz, d, d);
+    this.x = hx;
+    this.y = hy;
+    this.z = hz;
+    const hit =
+      this.lethal && player.alive !== false && this.grace <= 0 && !this.immune && this.refuge === 0 && zone <= a.radius && occ >= d - 0.35 && this._t - this._lastHitT >= STRIKE_COMMON.minHitGap;
+    let stop = a.stop;
+    if (hit) {
+      stop = '';
+      this.caughtPlayer = true;
+      this.stats.hits++;
+      this.strikeStats.hits++;
+      this._lastHitT = this._t;
+      this._atkCd = Math.max(this._atkCd, STRIKE_COMMON.afterHit); // you are down: it holds the coil and stares, it does not pile on
+    } else {
+      this.nearMiss = d < this._reach() * 2.2 ? 1 : 0.6;
+      this.stats.nearMisses++;
+      this.strikeStats.misses++;
+      this._hunger = Math.min(T.hunger.max, this._hunger + T.hunger.step); // a miss makes it hungrier, for the rest of the section
+    }
+    a.hit = hit;
+    a.phase = 'recoil';
+    a.t = 0;
+    this._drain(T.drainLunge);
+    const ex = hit ? player.x : a.lx;
+    const ey = hit ? player.y : a.ly;
+    const ez = hit ? player.z : a.lz;
+    const md = len3(player.x - a.lx, player.y - a.ly, player.z - a.lz);
+    // stop: the id of the solid the lunge stopped at ('rest' = the refuge's mouth; '' = open air); zone: m from the swept line
+    this._emit('creature:strike', { x: ex, y: ey, z: ez, hit, distance: md, cause: a.cause, reason: this.burstReason, stop, refuge: this.refuge, zone });
+    this._emitStep(ex, ey, ez, 1, md, true);
+    a.rx = this.x; // the recoil leaves from the lunge's end
+    a.ry = this.y;
+    a.rz = this.z;
+    this._snakePhase('recoil', this.strikeK.recoil, a.px, a.py, a.pz);
   }
 
   // ---- victory ---------------------------------------------------------------------
@@ -2548,6 +3295,11 @@ export class Creature3D {
       // too (it launches itself off the masonry at you) — within reason.
       const need = (this.distance - this.cfg.killRadius * T.engageMul) / Math.max(1, this.k.burst) + 0.5;
       this.stateDur = U.clamp(Math.max(this.stateDur, need), this.stateDur, 3.5);
+      if (this.burstReason === 'dash') {
+        this.stateDur = Math.min(this.stateDur, STRIKE_COMMON.dashMax); // MASON_STRIKES.md: the dash is capped
+        this._dashCd = STRIKE_COMMON.dashCooldown;
+        this.strikeStats.dashes++;
+      }
     }
     if (this._snapping()) this.stateDur += this.k.snap;
     this._drain(T.drainBurstEntry);
@@ -2555,6 +3307,14 @@ export class Creature3D {
     this.stats.bursts++;
     this._setState(S.BURST);
     this._emit('creature:burst', { x: this.x, y: this.y, z: this.z, distance: this.distance, commit: this.burstCommit, reason: this.burstReason, snap: this._snapping() ? this.k.snap : 0 });
+  }
+
+  /**
+   * MASON_STRIKES.md DASH: it has seen you (the committed chase, after the notice roar) or you are within dashNear: the slow stalk
+   * becomes a surge at burst speed along its path to its stand-off point (harmless: only the telegraphed strike hurts).
+   */
+  _dashOk(dist, chase, canAttack, engage) {
+    return !this.v && canAttack && this._dashCd <= 0 && (chase || dist <= STRIKE_COMMON.dashNear) && dist > engage && dist < T.burstMax;
   }
 
   /** Bursts that open with the crown snapping toward you (see DIFF_TUNE.snap). */
@@ -2568,6 +3328,7 @@ export class Creature3D {
   }
 
   _drain(amount) {
+    if (this._engaged) return; // MASON_STRIKES.md: engaged, the cadence (not the stamina) paces it
     this.stamina = Math.max(0, this.stamina - amount * this.cfg.staminaDrain);
   }
 
@@ -4062,6 +4823,11 @@ export class Creature3D {
       // The snap: the crown flares wide and the pits blaze before it surges.
       glowTarget = 1;
       unfurl = 1.45;
+    }
+    const fl = this.sense.flare; // MASON_SIGHT.md: the notice beat, the red eyes flare
+    if (fl > 0) {
+      glowTarget = Math.max(glowTarget, fl);
+      unfurl = Math.max(unfurl, 1 + 0.4 * fl);
     }
     const k = dt > 0 ? 1 - Math.exp(-6 * dt) : 1;
     this._glow += (glowTarget - this._glow) * k;

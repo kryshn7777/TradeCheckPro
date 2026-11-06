@@ -37,6 +37,10 @@
  *   'health:recover'{ hp, full }                low ended (hp >= lowExit) or hp back to full
  *   'health:heal'   { amount, hp }              a bag item (heal()) restored health
  *
+ * MASON_SIGHT.md, NO RECOVERY: game.js sets `noRecovery` every frame while the Mason chases you within its lethalNear radius: no
+ * regeneration, the regen clock (sinceHurt) does not run, heal() restores nothing unless `force` (a checkpoint patch-up) and the bag
+ * refuses / cancels heals (inventory3d.js). Damage is unchanged.
+ *
  * Read-only for the presentation: hp, low, dead, heartbeatRate (bpm; 60 calm .. 140 near zero,
  * 0 once dead), adrenaline (0..1 after a hit), sinceHurt (s), lastDamage, totalDamage, hits, minHp.
  */
@@ -94,12 +98,17 @@ export class Health3D {
     this.regenDelay = typeof d.regenDelay === 'number' ? d.regenDelay : 6;
     this.regenRate = typeof d.regenRate === 'number' ? d.regenRate : 0.05;
     this.hazardDamage = typeof d.hazardDamage === 'number' ? d.hazardDamage : 0.6;
-    this.wallScale = typeof d.wallScale === 'number' ? d.wallScale : 1;
+    // FALL TOUGHNESS (config3d.js toughFall): a wall hit is read against the OLD lethal speed and costs 1/fallToughness of what it did.
+    const tough = typeof d.fallToughness === 'number' && d.fallToughness > 0 ? d.fallToughness : 1;
+    this.wallScale = (typeof d.wallScale === 'number' ? d.wallScale : 1) / tough;
     this.lethal = diff && diff.lethalImpact > 0 ? diff.lethalImpact : 17;
+    this.wallRef = this.lethal / (typeof d.fallK === 'number' && d.fallK > 0 ? d.fallK : 1);
     /** Falls and wall hits hurt (Sandbox: impactsLethal false -> they do not). */
     this.fallsEnabled = !diff || diff.impactsLethal !== false;
     /** Debug / victory: no damage at all. */
     this.god = false;
+    /** MASON_SIGHT.md: set per frame by the game while the chasing Mason is near: no healing of any kind. */
+    this.noRecovery = false;
     this.lastDamage = { amount: 0, cause: '', speed: 0, t: 0 };
     this.reset();
   }
@@ -109,6 +118,7 @@ export class Health3D {
     this.hp = 1;
     this.low = false;
     this.dead = false;
+    this.noRecovery = false;
     this.wounded = false; // damaged since the last time hp was full
     this.clock = 0;
     this.sinceHurt = 1e9;
@@ -140,7 +150,7 @@ export class Health3D {
   step(dt) {
     if (this.dead) return;
     this.clock += dt;
-    this.sinceHurt += dt;
+    if (!this.noRecovery) this.sinceHurt += dt; // MASON_SIGHT.md: the regen clock is frozen while it is near
     if (this.impactCd > 0) {
       this.impactCd -= dt;
       if (this.impactCd <= 0) {
@@ -150,7 +160,7 @@ export class Health3D {
     }
     if (this.hazardCd > 0) this.hazardCd = Math.max(0, this.hazardCd - dt);
     if (this.adrenaline > 0) this.adrenaline = Math.max(0, this.adrenaline - dt / H.adrenalineTime);
-    if (this.hp < 1 && this.sinceHurt >= this.regenDelay && this.regenRate > 0 && !this.god) {
+    if (this.hp < 1 && this.sinceHurt >= this.regenDelay && this.regenRate > 0 && !this.god && !this.noRecovery) {
       this.hp = Math.min(1, this.hp + this.regenRate * dt);
       this._settle();
     }
@@ -167,7 +177,7 @@ export class Health3D {
   /** A side impact with normal-component speed `speed`. Returns true when it killed. */
   wallHit(speed) {
     if (!this.fallsEnabled || this.god || this.dead) return false;
-    return this._impact(wallDamage(speed, this.lethal, this.wallScale), 'wall', speed);
+    return this._impact(wallDamage(speed, this.wallRef, this.wallScale), 'wall', speed);
   }
 
   /** Spikes / blades / rebar contact. Returns true when it killed. */
@@ -183,6 +193,7 @@ export class Health3D {
     if (this.god || this.dead || !(amount > 0)) return false;
     const taken = Math.min(this.hp, amount);
     this.hp = Math.max(0, this.hp - amount);
+    if (this.hp < 1e-6) this.hp = 0; // MASON_STRIKES.md: four 0.30 strikes / ten 0.10 bites are exactly lethal (no float residue)
     this.sinceHurt = 0;
     this.wounded = true;
     this.hits++;
@@ -230,8 +241,8 @@ export class Health3D {
    * gained (0 when dead or already full). Emits 'health:heal' { amount, hp } for a real gain unless `silent`
    * ('health:low' ends / 'health:recover' come from _settle as usual).
    */
-  heal(fraction = 1, silent = false) {
-    if (this.dead || !(fraction > 0)) return 0;
+  heal(fraction = 1, silent = false, force = false) {
+    if (this.dead || !(fraction > 0) || (this.noRecovery && !force)) return 0;
     const before = this.hp;
     this.hp = Math.min(1, this.hp + fraction);
     const gained = this.hp - before;

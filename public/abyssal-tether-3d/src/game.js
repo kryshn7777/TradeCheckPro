@@ -26,7 +26,7 @@ import { CONFIG, DIFFICULTY, SETTINGS_DEFAULTS, U, EventBus, Storage, eyeAboveBo
 import { makeSnapState, snapTurnStep, SNAP_FULL_RATE } from './ui/uxLogic.js';
 import { Player3D, TetherSystem, Physics3D, HANDS } from './sim/physics3d.js';
 import { Inventory3D, ITEM, ITEM_NAMES, lanternLevel as lanternLevelOf } from './sim/inventory3d.js';
-import { Prologue3D } from './sim/prologue3d.js'; // the opening story (render/prologueView.js)
+import { OpeningCinematic, GRACE as OPENING_GRACE, SKIP_HOLD as OPENING_SKIP_HOLD, WAKE_AT as OPENING_WAKE } from './sim/openingCinematic.js'; // THE LANTERN: the opening cinematic (render/openingView.js, audio/openingSfx.js)
 import { DeathScene } from './sim/deathScene.js'; // the death scenes: the collapse + the eyelids, the Mason eating you (render/deathOverlay.js)
 import { WristVitals } from './render/wristVitals.js'; // the big health badge on the left wrist (VR)
 import { WristMap } from './sim/wristMap.js'; // the watch on the right wrist: raise it (or press M) and a 3D hologram of the descent blooms
@@ -36,8 +36,12 @@ import { RopePull } from './sim/ropePull.js'; // VR: drawing a hand back from it
 import { RemainsView } from './render/remainsView.js'; // skeletons (bones.glb) and old blood (blood_atlas.png) through Chapter I
 import { WaterView } from './render/waterView.js'; // water falling down the wall faces, streams over the ledges, mist at the foot (Chapter I)
 import { nearestWater } from './sim/waterPlan.js';
+import { Roaches } from './sim/roaches.js'; // the SWARM skitterlings: tiny harmless red cockroaches near you, out of camera (plans/SKITTERLINGS.md)
+import { RoachView } from './render/roachView.js'; // ... one InstancedMesh, one draw call
+import { SkitterlingView } from './render/skitterlingView.js'; // the HUNTER skitterlings: the same red cockroach, bigger (plans/SKITTERLINGS.md)
 import { VistaWind } from './sim/vistaWind.js'; // wind whooshing where there is scenery to look at (the S4 catwalk, the big caverns) + a little more haze there
 import { Jetpack3D, JET } from './sim/jetpack3d.js'; // the jetpack: both triggers while falling = a brief burst (low fuel, rare cans, no refill on death)
+import { Knocker3D, KNOCKER, startCount as knockerStart, throwVelocity as knockerThrowVel, vrThrowVelocity as knockerVrVel, predictArc as knockerArc } from './sim/knocker3d.js'; // THE KNOCKER: the thrown clockwork decoy the Mason answers
 import { Holster3D } from './sim/holster3d.js'; // the rope guns in a holster on each hip (walk 20 % slower with one out)
 import { NightVision3D, depthDarknessAt, lanternFadeAt } from './sim/nightVision3d.js'; // the night vision goggles + the dark that is made on purpose
 import { Pickups3D } from './sim/pickups3d.js';
@@ -49,10 +53,29 @@ import { swingLagTarget, stepSwingLag } from './render/swingLag.js';
 import { ObjectiveHint } from './sim/objectiveHint.js';
 import { CatchMoment } from './sim/catch3d.js'; // THE CATCH: the hit-stop on a lifesaving rope bite
 import { Flow3D, FLOW } from './sim/flow3d.js'; // SWING CHAINS: line-to-line transfers in the air
+import { RunHighlights } from './sim/runHighlights.js'; // RUN HIGHLIGHTS: the run's best moments for the death / victory cards
 import { ObjectiveHintView } from './render/objectiveHintView.js';
+import { GhostRecorder, loadGhost, saveGhost, clearGhost, decodeGhost, GhostPlayer, ghostKey } from './meta/ghost.js'; // the GHOST LANTERN of your best run
+import { GhostView } from './render/ghostView.js';
+import { PuzzleFocusGlue } from './puzzleFocusGlue.js'; // PUZZLE FOCUS: a glance + a line at every puzzle (plans/PUZZLE_FOCUS.md)
+import { ItemCardGlue } from './itemCardGlue.js'; // ITEM CARDS: the name card over the collectible you look at (plans/ITEM_CARDS.md)
+import { ChaseGlue } from './chaseGlue.js'; // THE CHASE ARC: a Mason chase's heartbeat and release (plans/CHASE_ARC.md)
+import { MasonAttackGlue } from './masonAttackGlue.js'; // MASON SNAKE ATTACK: the cobra pose, the light flare, the sounds (plans/MASON_SNAKE_ATTACK.md)
+import { LanternHoodGlue } from './lanternHoodGlue.js'; // THE HOOD: cover the lantern, the Mason stops seeing you (plans/LANTERN_HOOD.md)
+import { HitFeedbackGlue } from './hitFeedbackGlue.js'; // HIT FEEDBACK: the red punch, the ring, the fall and the slow get-up (plans/HIT_FEEDBACK.md)
+import { TrialGlue } from './trialGlue.js'; // SECTION TRIALS: practise one section (plans/SECTION_TRIALS.md)
+import { newTrial, trialSeed } from './meta/trials.js';
+import { WeaponGlue, weaponDebug } from './weaponGlue.js'; // THE SOLDIERS' WEAPONS: the grenade + the service revolver (plans/SOLDIER_WEAPONS.md)
+import { HintWave, hintWaveEnabled, ladderScale } from './sim/hintWave.js'; // THE GOLDEN MARK's blip wave when stuck long (stage 2 / 3 above the 20 s mark)
+import { applyPing, originGlow } from './render/hintWaveView.js';
+import { HINT_BLIP_ID, HINT_BLIP_EVENT, HINT_BLIP_RECIPE, hintBlipRoute } from './audio/hintWaveSfx.js';
+import { sectorOf } from './ui/captions.js';
+import { ReleaseGuide } from './render/releaseGuide.js';
+import { speedFovTarget, stepSpeedFov } from './render/speedFov.js';
 import { maxPixelRatio } from './platform/deviceProfile.js';
 import { LOADPROF_ON, lpAttachGame, lpAttachRenderer, lpMark } from './platform/loadProfile.js'; // ?loadprof=1 only (LOADING_OPTIMIZATION.md)
 import { LOADOPT } from './render/levelBuildFast.js';
+import { PlayerHits } from './sim/playerHits.js'; // MASON STRIKES: a hit costs 30 % / 10 % and knocks you down (game.knock)
 
 const C = CONFIG;
 // LEVEL_FUN_PLAN P3: on a screen the lantern rides the view: the probe is the point of the view ray (at most this far out)
@@ -109,19 +132,13 @@ const LEVEL_CACHE_WAIT_MS = 4000; // the level build waits this long at most for
 
 const KIT_URL = new URL('../assets/models/mason_kit.glb', import.meta.url).href;
 const RIG_URL = new URL('../assets/models/mason_rig.glb', import.meta.url).href;
-// the small hunters keep the ORIGINAL Mason model (the big one was redesigned): their own glb, loaded after the Mason's
-const SKITTER_RIG_URL = new URL('../assets/models/skitter_rig.glb', import.meta.url).href;
 // The Mason's LOD0 -> LOD1 switch (nearest spine point -> camera, m; MasonRigView keeps LOD0 until it is 5 m closer again). Owner's
 // rule: the full mesh whenever it is close. On Quest LOD0 (63 k tris x 2 eyes = 127 k stereo, skinned) is kept within 20-25 m only,
 // LOD1 (~23 k) beyond, where the haze has already eaten the fine carving (perf pass, Quest budget harness: S6 + the Mason at 30 m
 // 383 k -> 293 k stereo triangles; past the fog only its glow mesh draws, MasonRigView fogHide). Desktop (high) keeps LOD0 at every
-// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k). The small hunters keep their
-// own short LOD (SKITTER_VIEW in masonRigView.js).
+// distance. Quest 12 (was 25): the Mason up close cost 381 k stereo triangles in S6 (budget 350 k); 12-25 m away it now draws LOD1 (-80 k).
+// The hunter skitterlings are red cockroaches now (render/skitterlingView.js: 156 / 27 triangles, <= 2 calls for all of them, its own LOD table).
 const CREATURE_LOD = { low: 10, quest: 12, high: Infinity };
-// The skitterlings' LOD0 (57 k triangles, x2 eyes) -> LOD1 (21 k) switch, m. They are 0.45 scale: LOD1 reads the same from 3-4 m. Quest budget
-// harness, S6: Normal / Nightmare / Abyss show 1 / 2 / 3 of them at once and each LOD1 one costs ~40 k stereo triangles, so a LOD0 one on
-// top of you (it bites at 2-3 m) must not cost another ~70 k.
-const SKITTER_LOD = { low: 2.5, quest: 3.5, high: 6 };
 const TEXTURE_MANIFEST_URL = new URL('../assets/textures/manifest.json', import.meta.url).href;
 
 /** Optional subsystem modules (dynamic imports; a missing/broken file → stand-in). */
@@ -140,11 +157,13 @@ const MODULES = {
   masonRigView: './render/masonRigView.js',
   handsView: './render/handsView.js',
   healthFx: './render/healthFx.js',
-  prologueView: './render/prologueView.js', // the opening story's page (one canvas quad)
+  openingView: './render/openingView.js', // the opening cinematic's picture (the hero lantern, the title, the letterbox)
   nightVisionView: './render/nightVisionView.js', // the goggles' picture: a green tint + a glow, two head-locked triangles
   bodyView: './render/bodyView.js',
   pickupsView: './render/pickupsView.js',
   jetpackView: './render/jetpackView.js', // the fuel cans + the flame
+  knockerView: './render/knockerView.js', // THE KNOCKER in the world (one instanced mesh) + its aim arc
+  weaponView: './render/weaponView.js', // THE SOLDIERS' WEAPONS in the world (one instanced mesh; weaponGlue.js builds it)
   bagFx: './render/bagFx.js',
   climbView: './render/climbView.js',
   dresserView: './render/dresserView.js',
@@ -206,6 +225,8 @@ function blankHand() {
 }
 
 /** The grip-climbing part of an intent (sim/climb3d.js): grab per hand, desktop climb axes + view axes, palm points. */
+const NV_DARK_EV = Object.freeze({}); // TUTORIAL v2: 'nv:dark' (the first time the shaft is too dark for the lantern alone)
+
 function blankClimb() {
   const hand = () => ({ ok: false, x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 });
   return { vr: false, grab: { left: false, right: false }, fwd: 0, side: 0, rx: 1, rz: 0, fx: 0, fz: -1, hands: { left: hand(), right: hand() } };
@@ -230,6 +251,7 @@ export function blankIntent() {
     mapPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    knocker: { pressed: false, held: false, released: false }, // THE KNOCKER's key (desktop G / touch KNOCK)
     climb: blankClimb(),
   };
 }
@@ -263,6 +285,15 @@ function scopedBus(bus) {
 function huntAlways() {
   try {
     return typeof location !== 'undefined' && /[?&]hunt=always/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** MASON_SIGHT.md: `?sight=off` turns the Mason's sight-chase and the near no-recovery rule off (the e2e and the route bots); the knocker decoy still works. */
+function sightOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]sight=off\b/.test(location.search || '');
   } catch {
     return false;
   }
@@ -314,7 +345,7 @@ function holdfastMode() {
   }
 }
 
-/** `?intro=off` skips the opening story (tests, captures; the setting Story intro does the same for a player). */
+/** `?intro=off` skips the opening cinematic (tests, captures; the setting Opening cinematic does the same for a player). */
 function introOff() {
   try {
     return typeof location !== 'undefined' && /[?&]intro=off/.test(location.search || '');
@@ -337,6 +368,15 @@ function hitstopOff() {
 function jetOff() {
   try {
     return typeof location !== 'undefined' && /[?&]jet=off/.test(location.search || '');
+  } catch {
+    return false;
+  }
+}
+
+/** `?knocker=off` leaves THE KNOCKER out (none carried, none in the supplies, G does nothing): the route bots / e2e. */
+function knockerOff() {
+  try {
+    return typeof location !== 'undefined' && /[?&]knocker=off/.test(location.search || '');
   } catch {
     return false;
   }
@@ -1083,8 +1123,10 @@ export class Game3D {
     this._deathHold = null; // debug: freeze the scene at this time
     this._deathCam = { pitch0: 0, exposure0: 0, faceYaw: 0, haveFace: false, rx: 0, ry: 0, rz: 0 };
     this.creatureView = null;
-    this.skitters = null; // WP-SKITTER: SkitterGroup (sim) + skitterViews (rig clones sharing the one GLB)
-    this.skitterViews = [];
+    this.skitters = null; // WP-SKITTER: SkitterGroup (sim: the hunter skitterlings)
+    this.hits = null; // MASON STRIKES (sim/playerHits.js): applies creature hits; this.knock = its Knockdown (the views read k / phase / moveMul)
+    this.knock = null;
+    this.skitterView = null; // render/skitterlingView.js: every hunter skitterling, two instanced LODs (made on first use)
     this.dresser = nullDresser(); // THE DRESSER (sim/dresser3d.js): hunts only while you are whole
     this.dresserView = null; // render/dresserView.js
     this._dresserBuzzT = 0;
@@ -1111,9 +1153,12 @@ export class Game3D {
     this.wristComputer = null; // render/wristComputer.js (built with the renderer)
     this.wristVitals = new WristVitals(this); // "HP 87 %" on the back of the left wrist (VR; ?wristvitals=on on the desktop)
     this.fallPose = new FallPose(this); // free-fall pose weight, read by the body view; flails the desktop virtual hands
-    this.prologue = null; // the opening story while it plays (sim/prologue3d.js; state 'intro')
-    this.prologueView = null; // its page (render/prologueView.js)
-    this._introGrace = 0; // s: presses are ignored right after the click that began the run
+    this.opening = null; // THE LANTERN: the opening cinematic while it plays (sim/openingCinematic.js; state 'intro')
+    this.openingView = null; // its picture (render/openingView.js)
+    this.cineDark = null; // 0..1 while it plays: the world's darkness (Renderer3D reads it); null otherwise
+    this.openingHands = false; // the waking: the hands and the body are shown in state 'intro'
+    this._openingHold = null; // debug: hold the film at this time (stills, the trailer)
+    this._openingRig = { skip: 0, hint: 0, lanternBase: 0, lanternRange: 0, light: 'none', fov: 0, exposure: 0, rays: 0 };
     this.holster = null; // the rope guns' holsters (sim/holster3d.js): out[h], k[h] 0..1, walkMul; the hands view reads it
     this.nv = null; // the night vision goggles (sim/nightVision3d.js): on, charge, k; the renderer lifts the dark with k
     this.nvView = null; // their picture (render/nightVisionView.js)
@@ -1121,13 +1166,26 @@ export class Game3D {
     this.bag = null; // the player's bag (sim/inventory3d.js): counts, selected, applying {kind,t,dur}, adrenaline, lanternCharge
     this.pickups = null; // supplies lying in the level (sim/pickups3d.js)
     this.jet = null; // the jetpack + its fuel cans (sim/jetpack3d.js)
+    this.knocker = null; // THE KNOCKER (sim/knocker3d.js): the thrown decoy; its slots are read by the creature tests (live decoys)
+    this.knockerView = null; // render/knockerView.js
+    this._kn = { aiming: false, held: 0, arc: new Float32Array(48 * 3), n: 0, v: { vx: 0, vy: 0, vz: 0, speed: 0, charge: 0 }, o: { x: 0, y: 0, z: 0 }, hv: { x: 0, y: 0, z: 0 }, ctx: { dead: false, busy: false }, firstPick: true, emptyT: -1e9 };
     this.vista = null; // sim/vistaWind.js
     this.waterView = null; // render/waterView.js (Chapter I)
     this.remainsView = null; // render/remainsView.js (Chapter I)
+    this.roaches = null; // sim/roaches.js: the swarm skitterlings (per run; settings.roaches off = none)
+    this.roachView = null; // render/roachView.js
     this.waterNear = { k: 0, pan: 0, bright: 0.5 }; // the nearest fall / stream's sound (audio3d reads it)
     this.objectives = null; // the section seals and the objectives that open them (sim/objectives3d.js, LEVEL_FUN_PLAN P1)
     this.objectiveHint = null; // the 20 s trigger highlight (sim/objectiveHint.js)
     this._hintView = null; // its glow (render/objectiveHintView.js, built on first use)
+    this.puzzleFocus = null; // PUZZLE FOCUS (puzzleFocusGlue.js): built with the bus; `focusBeat` is its camera beat (lookTarget for the lantern)
+    this.focusBeat = null;
+    this.hood = null; // THE HOOD (lanternHoodGlue.js -> sim/lanternHood.js): { on, k } the lantern covered; built with the bus
+    this._hoodGlue = null;
+    this.hitFeedback = null; // HIT FEEDBACK (hitFeedbackGlue.js): what a hit looks, sounds and feels like; built with the bus
+    this.itemCards = null; // ITEM CARDS (itemCardGlue.js): the name card over the item looked at; its view is built on first use
+    this.hintWave = new HintWave(); // the blip wave from the mark when stuck 45 s / 90 s+ (sim/hintWave.js; render/hintWaveView.js drives the lit shader)
+    this._hintWaveCtx = { section: 0, px: 0, py: 0, pz: 0, playing: false, dead: false, blocked: false, enabled: true, scale: 1, reduced: false };
     this._nookPulseT = 0; // LEVEL_FUN_PLAN P5: the second haptic pulse on entering a Masons' rest
     this.splits = null; // section split clock (sim/splits3d.js, LEVEL_FUN_PLAN item 12): 'split' events, the save keeps the best
     this.bagFx = null; // icon strip texture for the wrist / HUD + the VR radial (render/bagFx.js)
@@ -1179,6 +1237,15 @@ export class Game3D {
     this._frameErrors = 0;
     this._renderFaults = 0;
     this._godMode = false;
+    // GHOST LANTERN (meta/ghost.js): this run's recorder, the ghost played ({ key, player }), its sprite, the last save result
+    this._ghostRec = null;
+    this._ghost = null;
+    this._ghostView = null;
+    this._ghostLast = null;
+    // SECTION TRIALS (trialGlue.js): the live trial (meta/trials.js newTrial) or null; the glue is built by the first startTrial
+    this.trial = null;
+    this._trials = null;
+    this._trialStarting = false;
     this._frozen = false;
     this._override = null;
     this._ovIntent = blankIntent();
@@ -1250,6 +1317,15 @@ export class Game3D {
   async _bootMinimal() {
     this.settings = Storage.loadSettings();
     this.bus = new EventBus();
+    this.hits = new PlayerHits(this.bus); // MASON STRIKES (resets itself on game:* / player:death)
+    this.knock = this.hits.knock;
+    this._setupPuzzleFocus();
+    this._setupChase();
+    this._setupHood();
+    this._setupWeapons();
+    this._setupHitFeedback();
+    this._setupMasonAttack();
+    this._setupItemCards();
     this.container = this.options.container || document.getElementById('stage') || document.body;
     this.uiRoot = this.options.uiRoot || document.getElementById('ui-root') || null;
     this.ui = nullUI(); // placeholder: XR hooks and the loop may run before the real UI exists
@@ -1318,6 +1394,11 @@ export class Game3D {
     await progress(0.25, 'Lowering the lantern');
 
     this.audio = this._optional('audio', () => new M.audio.AudioManager3D(this.bus, this.settings), nullAudio, !!(M.audio && M.audio.AudioManager3D));
+    this._try('audio', () => {
+      // THE GOLDEN MARK's blip (audio/hintWaveSfx.js) through the designed-SFX extension points
+      if (typeof this.audio.registerSfx === 'function') this.audio.registerSfx(HINT_BLIP_ID, HINT_BLIP_RECIPE);
+      if (typeof this.audio.registerSfxRoute === 'function') this.audio.registerSfxRoute(HINT_BLIP_EVENT, hintBlipRoute);
+    });
     this.threat = this._optional('threat', () => new M.threat.ThreatSystem3D(this.bus), nullThreat, !!(M.threat && M.threat.ThreatSystem3D));
     await this._saveReadyBounded(); // restored settings (if localStorage was wiped) are in before the UI reads them
     await progress(0.4, 'Lowering the lantern');
@@ -1340,12 +1421,13 @@ export class Game3D {
     this._setupHandsView();
     this._setupHealthFx();
     this._setupNightVisionView();
-    this._setupPrologueView();
+    this._setupOpeningView();
     this._setupBodyView();
     this._setupBagViews();
     this._setupDresserView();
     this._setupHoldfastView();
     this._setupComms();
+    this._setupHighlights();
     this._loadCreatureKit(); // async; the creature view attaches when the GLB arrives
 
     // UI last: it may read any game field during init.
@@ -1610,15 +1692,15 @@ export class Game3D {
     }
   }
 
-  /** The opening story's page (one canvas quad); optional (a failure skips the story). */
-  _setupPrologueView() {
+  /** The opening cinematic's picture; optional (a failure skips the film). */
+  _setupOpeningView() {
     const M = this.modules;
-    if (this.prologueView || !M.prologueView || typeof M.prologueView.PrologueView !== 'function' || !this.renderer) return;
+    if (this.openingView || !M.openingView || typeof M.openingView.OpeningView !== 'function' || !this.renderer) return;
     try {
-      this.prologueView = new M.prologueView.PrologueView(this.renderer.camera, this.renderer.scene);
+      this.openingView = new M.openingView.OpeningView(this.renderer.scene, this.renderer.camera);
     } catch (err) {
-      this._fault('prologueView', err);
-      this.prologueView = null;
+      this._fault('openingView', err);
+      this.openingView = null;
     }
   }
 
@@ -1811,6 +1893,14 @@ export class Game3D {
         this.jetpackView = null;
       }
     }
+    if (!this.knockerView && M.knockerView && typeof M.knockerView.KnockerView === 'function') {
+      try {
+        this.knockerView = new M.knockerView.KnockerView(this);
+      } catch (err) {
+        this._fault('knockerView', err);
+        this.knockerView = null;
+      }
+    }
     if (!this.pickupsView && M.pickupsView && typeof M.pickupsView.PickupsView === 'function') {
       try {
         this.pickupsView = new M.pickupsView.PickupsView(this);
@@ -1822,6 +1912,17 @@ export class Game3D {
   }
 
   /** The player's body (jacket, harness, legs, boots; no head). Async GLB; a failure leaves the game without a body. */
+  /** RUN HIGHLIGHTS (sim/runHighlights.js): bus-driven, counts only while a run is under way; reset in start(). */
+  _setupHighlights() {
+    if (this.highlights) return;
+    try {
+      this.highlights = new RunHighlights(this.bus, () => this._inRun());
+    } catch (err) {
+      this._fault('highlights', err);
+      this.highlights = null;
+    }
+  }
+
   _setupBodyView() {
     const M = this.modules;
     if (this.bodyView || !M.bodyView || typeof M.bodyView.BodyView !== 'function' || !this.renderer) return;
@@ -1923,7 +2024,6 @@ export class Game3D {
             this.creatureView = rig;
             this._precompile(); // both LOD programs + atlases, on the menu
             this.bus.emit('assets:rig', { ok: true });
-            this._loadSkitterRig(loader, rig, dust);
           } catch (err) {
             this._fault('masonRigView', err);
           }
@@ -1933,60 +2033,6 @@ export class Game3D {
       );
     } catch (err) {
       this._fault('masonRigAsset', err);
-    }
-  }
-
-  /**
-   * The small hunters keep the original Mason model (skitter_rig.glb): loaded in the background once the big one is in. A failure
-   * leaves the sim running without their views (nothing to see, the kill radius still applies).
-   */
-  _loadSkitterRig(loader, rig, dust) {
-    if (skitterOff()) return;
-    try {
-      loader.load(
-        SKITTER_RIG_URL,
-        (gltf) => {
-          if (this.creatureView !== rig) return;
-          try {
-            const clones = this._cloneSkitterScenes(gltf); // before any view takes the meshes out of the glTF scene
-            this.skitterViews = this._buildSkitterViews(gltf, clones);
-            for (const v of this.skitterViews) v.bindDust(dust);
-            this._precompile();
-            this.bus.emit('assets:skitterRig', { ok: true });
-          } catch (err) {
-            this._fault('skitterView', err);
-          }
-        },
-        undefined,
-        (err) => this._fault('skitterAsset', err),
-      );
-    } catch (err) {
-      this._fault('skitterAsset', err);
-    }
-  }
-
-  /**
-   * WP-SKITTER: one rig view per skitterling slot, cloned from the loaded skitter_rig.glb (geometry, textures and clips are shared
-   * between the clones; each clone has its own skeleton, mixer and a red 'skitter' material set). `?skitter=off` skips them.
-   */
-  _cloneSkitterScenes(gltf) {
-    const M = this.modules;
-    if (skitterOff() || !M.masonRigView || typeof M.masonRigView.cloneSkitterScenes !== 'function') return [];
-    try {
-      return M.masonRigView.cloneSkitterScenes(gltf, 3); // one per skitterling slot (SKITTER.maxAlive: two from the data, one from below)
-    } catch (err) {
-      this._fault('skitterView', err);
-      return [];
-    }
-  }
-
-  _buildSkitterViews(gltf, clones) {
-    if (!clones || !clones.length) return [];
-    try {
-      return this.modules.masonRigView.makeSkitterViews(this.renderer.scene, gltf, clones);
-    } catch (err) {
-      this._fault('skitterView', err);
-      return [];
     }
   }
 
@@ -2178,6 +2224,11 @@ export class Game3D {
     bus.on('holdfast:grip', (e) => {
       if (this._inRun() && e && e.hand) this._haptic(e.hand, 0.3, 60);
     });
+    // ASSIST PACK (gripMode 'toggle', input/assistLatch.js): the squeeze that lets a latched grip go counts as the pull that frees a
+    // Holdfast hand (its out-pull: no cost)
+    bus.on('input:gripRelease', (e) => {
+      if (e && e.hand && this._inRun() && this.holdfast && typeof this.holdfast.assistPull === 'function') this.holdfast.assistPull(e.hand);
+    });
     bus.on('holdfast:close', (e) => {
       if (this._inRun() && e && e.hand) this._haptic(e.hand, e.low ? 1 : 0.9, 180);
       if (this._inRun() && !this._hfHinted) {
@@ -2239,7 +2290,10 @@ export class Game3D {
     bus.on('pickup:collect', (e) => {
       if (!this._inRun()) return;
       this._hapticBoth(e && e.hand ? 0.5 : 0.3, 45);
-      this._toast(`${ITEM_NAMES[e.kind] || 'Supplies'} taken`, 1.6);
+      if (e && e.kind === ITEM.KNOCKER && this._kn.firstPick) {
+        this._kn.firstPick = false; // the first knocker of a run says what it is for
+        this._toast('A knocker. Throw it far: it answers for you.', 3.2);
+      } else this._toast(`${ITEM_NAMES[e.kind] || 'Supplies'} taken`, 1.6);
     });
     bus.on('pickup:full', (e) => {
       if (this._inRun()) this._toast(`${ITEM_NAMES[e && e.kind] || 'Bag'}: bag is full`, 1.6);
@@ -2258,7 +2312,7 @@ export class Game3D {
     });
     bus.on('bag:refuse', (e) => {
       if (!this._inRun() || !e) return;
-      const why = { empty: 'None left', full: e.kind === ITEM.BATTERY ? 'Lantern is charged' : 'Nothing to heal', active: 'Already boosted', busy: 'Already applying', dead: '' }[e.reason];
+      const why = { empty: 'None left', full: e.kind === ITEM.BATTERY ? 'Lantern is charged' : 'Nothing to heal', active: 'Already boosted', busy: 'Already applying', dead: '', norecovery: 'No recovery this close' }[e.reason];
       if (why) this._toast(why, 1.3);
     });
     bus.on('lantern:low', () => {
@@ -2281,8 +2335,9 @@ export class Game3D {
     });
     bus.on('checkpoint', () => {
       const h = this.health;
-      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true); // reaching a checkpoint patches you up
+      if (h && this.state === 'playing') h.heal(C.health.checkpointHeal, true, true); // reaching a checkpoint patches you up (even with the Mason near)
       if (this.state === 'playing') this._snapshotBag(); // ... and a respawn returns to this bag
+      if (this.hintWave) this.hintWave.progress(); // a checkpoint is progress: the blip-wave ladder restarts
     });
     // Seals (LEVEL_FUN_PLAN P1): the grating grinds open below when its ring is hooked; standing on a closed one says so
     // through the caption (ui/captions.js) only.
@@ -2536,7 +2591,7 @@ export class Game3D {
    * Starts a fresh run (call from a click handler: unlocks audio).
    * @param {string} diffKey 'normal' | 'nightmare' | 'abyss' | 'sandbox'
    */
-  /** A new descent from the menu: the opening story first (when the setting is on), then the run. */
+  /** A new descent from the menu: THE LANTERN's opening cinematic first (when the setting is on), then the run. */
   startNewGame(diffKey) {
     return this.start(diffKey, { intro: true });
   }
@@ -2547,8 +2602,9 @@ export class Game3D {
     const key = DIFFICULTY[diffKey] ? diffKey : fallbackKey;
     this._unlockAudio();
     const fromMenu = this.state === 'menu';
-    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.storyIntro !== false;
+    const intro = !!(opts && opts.intro) && this.chapter === 1 && fromMenu && !this._continuing && !introOff() && !!this.settings && this.settings.openingCinematic !== false;
     if (this._runActive()) this._recordDepth();
+    if (!this._trialStarting) this.trial = null; // SECTION TRIALS: any other start leaves the trial
     try {
       this.difficultyKey = key;
       this.diff = DIFFICULTY[key];
@@ -2566,6 +2622,7 @@ export class Game3D {
     this.time = 0;
     this._runClock = 0;
     this.catchMoment.reset();
+    if (this.highlights) this.highlights.reset(); // RUN HIGHLIGHTS: a new run, new maxima (a death resets nothing)
     this.deaths = 0;
     this.victoryT = -1;
     this.gateClosed = false;
@@ -2585,6 +2642,7 @@ export class Game3D {
     this._pendingJump = false;
     this._resetProgress();
     this._resetBag();
+    this._ghostStart(key);
 
     this._try('threat', () => this.threat.reset && this.threat.reset());
     this._try('creature', () => this.creature.reset(p));
@@ -2593,60 +2651,205 @@ export class Game3D {
     this._try('holdfast', () => this.holdfast.reset(p));
     this._face(finiteOr(sp.yaw, 0));
 
-    this.settings.lastDifficulty = key;
-    Storage.saveSettings(this.settings);
+    if (!this.trial) {
+      this.settings.lastDifficulty = key;
+      Storage.saveSettings(this.settings);
+    }
     if (this.chapter === 1) this._bumpStat(`runs.${key}`);
 
     this._setState(intro ? 'intro' : 'playing');
     this._try('ui', () => this.ui.show(null));
     this._try('audio', () => this.audio.setPaused(false));
     this.bus.emit('game:start', { difficulty: key, diff: this.diff });
-    if (intro) this._beginIntro();
+    if (intro) this._beginOpening();
     else this._enterSection(this.sectionIndex, 'initial');
     return true;
   }
 
-  /** The opening story: the world waits under the black fade, nothing is simulated, the first section is entered when it ends. */
-  _beginIntro() {
-    this.prologue = new Prologue3D((type, arg) => this._onIntroEvent(type, arg));
-    this._introGrace = 0.45;
-    this.fade = 1;
-  }
-
-  _onIntroEvent(type, arg) {
-    if (type === 'page') this.bus.emit('intro:page', { page: arg });
-    else if (type === 'dark') this.bus.emit('intro:dark', {});
-    else if (type === 'cut') this.bus.emit('intro:cut', {});
-    else if (type === 'end') this._endIntro(!!arg);
-  }
-
-  _updateIntro(dt, intent) {
-    const pro = this.prologue;
-    if (!pro || pro.done) {
-      this._endIntro(false);
+  /**
+   * THE LANTERN (sim/openingCinematic.js): the opening cinematic plays in the real Threshold. Nothing is simulated (state 'intro'); the
+   * camera, the world's darkness, the hero lantern (which borrows the game's own lantern light), the Mason and the sound follow the
+   * film; its last frame is the spawn view, so the run starts with no pop. A headset never has its view rotated (two static vantages).
+   */
+  _beginOpening() {
+    const r = this.renderer;
+    if (!r || !this.openingView) {
+      this._enterSection(this.sectionIndex, 'initial'); // no picture: no film
+      this._setState('playing');
       return;
     }
-    this.fade = 1; // the black behind the page
-    if (this._introGrace > 0) this._introGrace -= dt;
-    else if (intent) {
-      if (intent.pausePressed || intent.backPressed) pro.skipAll();
-      else if (intent.confirmPressed || intent.jumpPressed || intent.anyPressed || this._anyHandPressed(intent) || (intent.ui && intent.ui.click)) pro.advance();
-    }
-    if (!pro.done) pro.update(dt);
+    // the hand-off: where the camera is when the run starts (the spawn eye, the spawn yaw)
+    this._placeRig();
+    r.rig.updateMatrixWorld(true);
+    r.camera.getWorldPosition(_dcV);
+    const yaw = r.rig.rotation.y;
+    // floor: the rig's floor under the head (a headset rides the cradle at its own eye height over the floor: OPENING_V2_THE_COLLAR.md)
+    const op = (this.opening = new OpeningCinematic({ xr: !!this.xrActive, handoff: { x: _dcV.x, y: _dcV.y, z: _dcV.z, yaw, floor: this.xrActive ? r.rig.position.y : 0 } }));
+    const R = this._openingRig;
+    R.skip = 0;
+    R.hint = 0;
+    R.lanternBase = r.lanternBase;
+    R.lanternRange = r.lantern.distance;
+    R.fov = r.baseFov || r.camera.fov;
+    R.light = 'none';
+    R.exposure = r.renderer ? r.renderer.toneMappingExposure : 0;
+    const gr = r.fx && r.fx.godRays;
+    R.rays = gr && gr.params ? gr.params.gain : 0; // the level's light shafts: the film holds them (no beams seen end-on from above)
+    this._openingHold = null;
+    this.openingHands = false;
+    this.cineDark = op.s.dark;
+    this.fade = 1;
+    const hv = this.handsView;
+    if (hv && hv.lantern) this._try('openingView', () => this.openingView.attachModel(hv.lantern));
+    this.openingView.setActive(true);
+    this._openingLight('hero');
+    this.bus.emit('opening:begin', { xr: !!this.xrActive });
   }
 
-  _endIntro(skipped) {
+  /** Who holds the game's lantern light: 'hero' (the film's lantern), 'player' (the gauntlet / the camera, as in play). */
+  _openingLight(who) {
+    const r = this.renderer;
+    const R = this._openingRig;
+    if (!r || R.light === who) return;
+    R.light = who;
+    if (who === 'hero' && this.openingView) {
+      this._try('renderer', () => r.setLanternParent(this.openingView.socket, { x: 0, y: 0, z: 0 }, { bulb: false }));
+      return;
+    }
+    const hv = this.handsView;
+    if (hv && hv.manageLantern) hv._lanternMode = ''; // the hands view re-parents it into the gauntlet (or onto the camera) next frame
+    else this._try('renderer', () => r.setLanternParent(r.camera));
+  }
+
+  _updateOpening(dt, intent) {
+    const op = this.opening;
+    if (!op || op.done) {
+      this._endOpening(false);
+      return;
+    }
+    op.setXR(!!this.xrActive);
+    const R = this._openingRig;
+    if (this._openingHold != null) op.seek(this._openingHold);
+    else {
+      // the skip: Esc / B at once; hold a trigger / a mouse button / Space / Enter (a headset: both triggers) for OPENING_SKIP_HOLD s
+      const live = op.t >= OPENING_GRACE && op.skipping < 0;
+      const h = intent && intent.hands;
+      const lh = !!(h && h.left && h.left.held);
+      const rh = !!(h && h.right && h.right.held);
+      const dk = this.input && this.input.desktop && typeof this.input.desktop.key === 'function' ? this.input.desktop : null;
+      const keys = !this.xrActive && !!dk && (dk.key('Space') || dk.key('Enter'));
+      const held = live && (this.xrActive ? lh && rh : lh || rh || keys);
+      R.skip = held ? R.skip + dt : Math.max(0, R.skip - dt * 3);
+      if (live && intent && (intent.anyPressed || this._anyHandPressed(intent))) R.hint = 2.5;
+      if (live && intent && (intent.pausePressed || intent.backPressed || R.skip >= OPENING_SKIP_HOLD)) {
+        if (op.skip()) this.bus.emit('opening:skip', {});
+        R.skip = 0;
+      }
+      const cues = op.update(dt);
+      for (let i = 0; i < cues.length; i++) {
+        this.bus.emit('opening:cue', { name: cues[i], t: op.t });
+        if (cues[i] === 'titleHit' || cues[i] === 'knock') this._hapticBoth(cues[i] === 'titleHit' ? 0.7 : 0.35, cues[i] === 'titleHit' ? 240 : 90);
+      }
+      for (let i = 0; i < op.voStarted.length; i++) this.bus.emit('opening:vo', { id: op.voStarted[i].id, t: op.t });
+    }
+    R.hint = Math.max(0, R.hint - dt);
+    const s = op.s;
+    this.fade = s.fade;
+    this.cineDark = s.dark;
+    this.openingHands = s.player.hands > 0;
+    if (s.t >= OPENING_WAKE) this._openingLight('player');
+    else this._openingLight('hero');
+    if (op.done) this._endOpening(op.skippedAt >= 0);
+  }
+
+  /**
+   * After the rig is placed (every frame of the film): the camera (desktop: the film's camera; a headset: the vantage, never a
+   * rotation), the lantern's light, the Mason's head.
+   */
+  _applyOpeningCam() {
+    const op = this.opening;
+    const r = this.renderer;
+    if (!op || !r || this.state !== 'intro') return;
+    const s = op.s;
+    const rig = r.rig;
+    const cam = r.camera;
+    if (this.xrActive) {
+      const ho = op.handoff;
+      rig.position.x += s.vr.x - ho.x;
+      rig.position.y += s.vr.y - ho.y;
+      rig.position.z += s.vr.z - ho.z;
+    } else {
+      const c = s.cam;
+      rig.position.set(c.x, c.y, c.z);
+      rig.rotation.y = c.yaw;
+      cam.rotation.set(c.pitch, 0, this.settings && this.settings.reducedEffects ? 0 : c.roll);
+      if (Math.abs(cam.fov - c.fov) > 1e-3) {
+        cam.fov = c.fov;
+        cam.updateProjectionMatrix();
+      }
+    }
+    // the light: the hero lantern's (the film's), then the gauntlet's catching at the waking
+    const R = this._openingRig;
+    const gl = r.renderer;
+    if (gl && R.exposure > 0) gl.toneMappingExposure = R.exposure * (1 - 0.32 * s.dark); // the film's darkness reaches the haze and the glow too
+    const gr = r.fx && r.fx.godRays;
+    if (gr && gr.params && R.rays > 0) gr.params.gain = R.rays * s.rays;
+    if (R.light === 'hero') {
+      r.lanternBase = R.lanternBase * 1.35 * s.lantern.light;
+      r.lantern.distance = s.lantern.range;
+    } else {
+      r.lanternBase = R.lanternBase * s.player.lantern;
+      r.lantern.distance = R.lanternRange;
+    }
+    const cv = this.creatureView;
+    if (cv && typeof cv.cine === 'function') {
+      const m = s.mason;
+      if (m.on) cv.cine({ x: m.x, y: m.y, z: m.z, fx: m.fx, fy: m.fy, fz: m.fz, gape: m.gape, eyes: m.eyes, lunge: m.lunge, bite: false });
+      else if (cv._cine) cv.cine(null);
+    }
+  }
+
+  _endOpening(skipped) {
+    const op = this.opening;
+    const r = this.renderer;
+    this.opening = null;
+    this._openingHold = null;
+    this.cineDark = null;
+    this.openingHands = false;
+    const R = this._openingRig;
+    if (r) {
+      if (R.lanternBase > 0) r.lanternBase = R.lanternBase;
+      if (R.lanternRange > 0) r.lantern.distance = R.lanternRange;
+      if (R.exposure > 0 && r.renderer) r.renderer.toneMappingExposure = R.exposure;
+      R.exposure = 0;
+      const gr = r.fx && r.fx.godRays;
+      if (gr && gr.params && R.rays > 0) gr.params.gain = R.rays;
+      R.rays = 0;
+      if (!this.xrActive) {
+        r.camera.rotation.z = 0;
+        if (R.fov > 0 && Math.abs(r.camera.fov - R.fov) > 1e-3) {
+          r.camera.fov = R.fov;
+          r.camera.updateProjectionMatrix();
+        }
+      }
+    }
+    this._openingLight('player');
+    R.light = 'none';
+    const cv = this.creatureView;
+    if (cv && typeof cv.cine === 'function' && cv._cine) this._try('creatureView', () => cv.cine(null));
+    if (this.openingView) this._try('openingView', () => this.openingView.setActive(false));
     if (this.state !== 'intro') return;
-    this.bus.emit('intro:end', { skipped: !!skipped });
-    this.prologue = null;
+    this.bus.emit('opening:end', { skipped: !!skipped });
+    if (op && !this.xrActive) this._setLook(op.handoff.yaw, 0); // (a headset keeps whatever turn the player made)
     this._acc = 0;
     this._setState('playing');
-    this.fade = 1; // the page's black eases away into the first section
+    this.fade = op ? op.s.fade : 0; // the film's last frame is the spawn view: no fade, no pop
     this._enterSection(this.sectionIndex, 'initial');
   }
 
   /** Instant restart of the current difficulty from the top. */
   restart() {
+    if (this.trial) return this.startTrial(this.trial.diff, this.trial.idx, this.trial.ch); // SECTION TRIALS: R / Again = the same trial
     const key = DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal';
     this.bus.emit('game:restart', { difficulty: key });
     return this.start(key);
@@ -2669,12 +2872,50 @@ export class Game3D {
     let ok = false;
     try {
       ok = this.start(info.difficulty);
+      if (this._ghostRec) this._ghostRec.invalidate(); // a continued run is not a whole run: its ghost is never saved
       if (ok) ok = this._resumeAt(info);
     } finally {
       this._continuing = null;
     }
     if (ok) this.bus.emit('game:continue', { info });
     return ok;
+  }
+
+  /**
+   * SECTION TRIALS (trialGlue.js, plans/SECTION_TRIALS.md): practise section `idx` from its checkpoint on `diffKey`, the Mason live,
+   * the supplies on a fixed seed (meta/trials.js trialSeed). Modelled on continueRun. The game.trial guard keeps every run write
+   * away (meta/save.js SaveService, the v1 stats, the ghost): a trial never touches the main save, its splits, medals or ghost.
+   */
+  startTrial(diffKey, idx, chapter) {
+    if (!this.booted || !DIFFICULTY[diffKey]) return false;
+    const ch = Number(chapter) === 2 ? 2 : Number(chapter) === 1 ? 1 : this.chapter === 2 ? 2 : 1;
+    if (!this.setChapter(ch)) return false;
+    const prev = this.trial;
+    const lvl = this.level;
+    const i = U.clamp(idx | 0, 0, Math.max(0, lvl && lvl.sections ? lvl.sections.length - 1 : 0));
+    const sec = lvl && lvl.sections ? lvl.sections[i] : null;
+    if (!this._trials) this._trials = new TrialGlue(this);
+    this.trial = newTrial(i, diffKey, ch, sec && sec.id);
+    if (prev && prev.idx === i && prev.diff === diffKey && prev.ch === ch) this.trial.attempt = (prev.attempt | 0) + 1;
+    this._trialStarting = true;
+    let ok = false;
+    try {
+      ok = this.start(diffKey);
+      if (this._ghostRec) this._ghostRec.invalidate(); // a trial is never a whole run: no ghost
+      const s = ok && this.level && this.level.sections ? this.level.sections[i] : null; // (the level of the chapter just built)
+      if (s && s.id) this.trial.id = s.id;
+      if (ok && i > 0) ok = this._warp(i);
+    } finally {
+      this._trialStarting = false;
+    }
+    if (!ok) {
+      this.trial = null;
+      return false;
+    }
+    if (this.splits) this.splits.partial(); // (S1 from the top: not a whole run either)
+    this.time = 0;
+    this.bus.emit('trial:start', { idx: i, id: this.trial.id, diff: diffKey, ch, attempt: this.trial.attempt });
+    return true;
   }
 
   _resumeAt(info) {
@@ -2700,6 +2941,7 @@ export class Game3D {
   respawn() {
     if (this.state !== 'dead' && this.state !== 'paused') return false;
     if (this.victoryT >= 0 || !this.player) return false;
+    if (this.trial) return this.restart(); // SECTION TRIALS: rising again is the next attempt (no relay, no restore)
     if (!this.diff || this.diff.checkpoints === 'none') return this.restart();
     const cp = this.checkpoint;
     const p = this.player;
@@ -2722,6 +2964,7 @@ export class Game3D {
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.roaches) this.roaches.clear(); // a respawn / warp wakes to an empty floor
     if (this.c2) this._try('chapter2', () => this.c2.onRespawn()); // CHAPTER II: the phase of the lamp you wake at
     this._applyCreatureOverride(); // (P5: S7 respawned into after its iris opened: escape again)
     this._try('threat', () => this.threat.reset && this.threat.reset());
@@ -2767,6 +3010,7 @@ export class Game3D {
   /** Abandons the run and returns to the main menu (attract mode). */
   quitToMenu() {
     if (this._runActive()) this._recordDepth();
+    this.trial = null; // SECTION TRIALS: the menu leaves the trial
     try {
       this._enterAttract();
     } catch (err) {
@@ -2795,6 +3039,7 @@ export class Game3D {
     const idx = U.clamp(i | 0, 0, Math.max(0, lvl.sections.length - 1));
     const cp = lvl.checkpointFor(idx, 'all');
     const p = this.player;
+    if (this._ghostRec) this._ghostRec.invalidate(); // a warped run is not a whole run: no ghost
     // Sandbox warp / Continue: every seal above the section warped to is open (objectives below stay as they are).
     if (this.objectives) this.objectives.markDoneThrough(idx);
     p.reset(cp.x, cp.y, cp.z);
@@ -2812,12 +3057,16 @@ export class Game3D {
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._enterSection(idx, 'warp');
+    this.hintWave.reset();
     this._try('creature', () => this.creature.onRespawn(p));
     this._try('skitter', () => this.skitters && this.skitters.onRespawn(p));
     this._try('dresser', () => this.dresser.onRespawn(p));
     this._try('holdfast', () => this.holdfast.onRespawn(p));
+    if (this.roaches) this.roaches.clear(); // a respawn / warp wakes to an empty floor
     this._applyCreatureOverride();
     this._try('threat', () => this.threat.reset && this.threat.reset());
+    if (this.knocker) this.knocker.reset(); // (a warp: no knocker left knocking where you were)
+    this._kn.aiming = false;
     this._face(cp.yaw);
     this.fade = Math.max(this.fade, RESTART_FADE);
     this._setState('playing');
@@ -2958,10 +3207,16 @@ export class Game3D {
     this.holster = new Holster3D(this._runBus);
     this.holster.setEnabled(!holsterOff());
     this.jet = new Jetpack3D(this._runBus);
+    this.knocker = new Knocker3D(this._runBus);
+    this.knocker.enabled = this._knockerOn();
     this.vista = new VistaWind(this._runBus);
     this.vista.enabled = !windOff();
     this.vista.reset(lvl);
+    if (this.roaches) this.roaches.destroy();
+    this.roaches = attract ? null : new Roaches(this._runBus, { seed: (0x2545f491 * (this._runCount + 1)) >>> 0 });
+    if (this.roaches) this.roaches.reset(lvl);
     this.pickups = new Pickups3D(lvl, this._runBus);
+    this.pickups.knockers = this._knockerOn(); // the rare extra knockers in the supplies
     // The seals (LEVEL_FUN_PLAN P1): a new run closes every one (the constructor resets); the menu's attract camera flies
     // down the shaft through all of them open.
     this.flow = new Flow3D(this._runBus, this.player); // SWING CHAINS (sim/flow3d.js): bus-driven, rebuilt (= reset) with each world
@@ -2976,6 +3231,7 @@ export class Game3D {
       this.physics.wind = this.objectives;
       if (attract) this.objectives.openAll();
       this.objectiveHint = new ObjectiveHint(); // the 20 s trigger highlight (sim/objectiveHint.js)
+      this.hintWave.reset(); // ... and its blip-wave ladder
     } catch (err) {
       this._fault('objectives', err);
       if (lvl.sealSolids) for (const s of lvl.sealSolids) s.active = false; // no objectives: every seal open, today's level
@@ -3024,11 +3280,24 @@ export class Game3D {
   _resetBag() {
     if (!this.bag) return;
     this.bag.reset();
+    // THE KNOCKER: a new run starts with 1 (Sandbox 2, Nightmare 1, Abyss 0) and none in the world
+    const kOn = this._knockerOn();
+    this.bag.seed(ITEM.KNOCKER, kOn ? knockerStart(this.difficultyKey) : 0);
+    this.bag.snapshot();
+    this._kn.firstPick = true;
+    this._kn.aiming = false;
+    if (this.knocker) {
+      this.knocker.enabled = kOn;
+      this.knocker.reset();
+    }
+    if (this.pickups) this.pickups.knockers = kOn;
+    if (this.pickups) this.pickups.weaponDiff = this.weapons ? this.weapons.pickupDiff() : ''; // SOLDIER_WEAPONS.md: the soldiers' kit
     if (this.pickups) {
-      const n = (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
-      Storage.set('supplyRuns', n);
+      const tr = this.trial; // SECTION TRIALS: the same supplies every attempt (0x7a1a1 + section), the run counter untouched
+      const n = tr ? 0 : (finiteOr(Storage.get('supplyRuns', 0), 0) | 0) + 1;
+      if (!tr) Storage.set('supplyRuns', n);
       this.pickups.setLevel(this.level);
-      const seed = (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
+      const seed = tr ? trialSeed(tr.idx) : (Math.imul(n, 0x9e3779b1) ^ 0x85ebca6b) >>> 0;
       this.pickups.reset(seed);
       this.pickups.snapshot();
       // a NEW run: the starting fuel and every can back. (A respawn does neither: the tank stays as the death left it.)
@@ -3051,6 +3320,8 @@ export class Game3D {
     if (this.nv) this.nv.restore();
     if (this.holster) this.holster.reset(); // a respawn: both guns back in their holsters
     if (this.jet) this.jet.onRespawn(); // ... but the fuel does NOT come back, and a can that was taken stays taken
+    if (this.knocker) this.knocker.reset(); // the knockers lying about are gone; the bag KEEPS its knocker count (like the fuel)
+    this._kn.aiming = false;
     if (this.pickups) this.pickups.restore();
     if (this.player) this.player.speedMul = 1;
   }
@@ -3075,7 +3346,7 @@ export class Game3D {
         } else if (ib.use) bag.use(bag.selected, health);
       }
     }
-    bag.update(dt, health, live);
+    bag.update(dt, health, live, this.hood ? this.hood.drainMul : 1); // THE HOOD: a covered flame burns slower
     p.speedMul = bag.speedMul;
     if (live && this.pickups) {
       let a = null;
@@ -3147,6 +3418,125 @@ export class Game3D {
     if (live && intent && intent.mapPressed) wm.toggle();
     const gunOut = !!(this.holster && this.holster.out && this.holster.out[1]);
     wm.update(dt, { live: !!live && !!this.player && this.player.alive !== false, xr, head, hand, handOk: ok, gunOut });
+  }
+
+  /** THE KNOCKER is on: the setting (default on) and not ?knocker=off. */
+  _knockerOn() {
+    return !knockerOff() && !(this.settings && this.settings.knocker === false);
+  }
+
+  /** The knocker's refusal context: dead / not live (paused, a cutscene, the intro, the victory). */
+  _knockerCtx() {
+    const c = this._kn.ctx;
+    const p = this.player;
+    c.dead = !p || p.alive === false || this.state === 'dead';
+    c.busy = this.state !== 'playing' || this.victoryT >= 0 || !!this.opening || !!(this.deathScene && this.deathScene.active);
+    return c;
+  }
+
+  /** Not in play: no aiming, no knocker in a hand (back in the bag), no arc. */
+  _knockerIdle() {
+    this._kn.aiming = false;
+    if (this.knocker) {
+      this.knocker.drawable = false;
+      this.knocker.putBack();
+    }
+  }
+
+  /**
+   * THE KNOCKER's input (sim/knocker3d.js), once per live run frame. Desktop: G held charges (0..1 s: a tap lobs ~6 m, a full
+   * charge ~19 m along the view, lofted), an aim arc shows, the release throws. Touch: the KNOCK button throws a tap lob. VR: the
+   * bag gesture's draw puts one in the hand, the grip's release throws it with the hand's velocity (too gentle: back in the bag).
+   */
+  _updateKnockerInput(dt, intent) {
+    const k = this.knocker;
+    const bag = this.bag;
+    const p = this.player;
+    const K = this._kn;
+    if (!k || !bag || !p) return;
+    k.enabled = this._knockerOn();
+    const ctx = this._knockerCtx();
+    const count = bag.counts[ITEM.KNOCKER];
+    k.drawable = k.refusal(count, ctx) === '';
+    const r = this.renderer;
+    const ki = intent && intent.knocker;
+    const vr = intent && intent.bag ? intent.bag.vr : null;
+    if (this.xrActive && vr) {
+      K.aiming = false;
+      const input = this.input;
+      const poseOk = !!input && typeof input.handPose === 'function';
+      if (vr.drawRefused) k._refuse(k.refusal(count, ctx) || 'busy');
+      if (vr.drawn >= 0 && poseOk) {
+        const hp = input.handPose(HANDS[vr.drawn]);
+        k.hold(HANDS[vr.drawn], hp.x, hp.y, hp.z, count, ctx);
+      }
+      if (k.held >= 0 && poseOk) {
+        const hs = k.slots[k.held];
+        const hp = input.handPose(hs.hand);
+        k.moveHeld(hp.x, hp.y, hp.z, r && r.rig ? r.rig.rotation.y : NaN);
+      }
+      if (vr.thrown >= 0 && k.held >= 0) {
+        const hand = HANDS[vr.thrown];
+        const hv = input && typeof input.handVelocity === 'function' ? input.handVelocity(hand, K.hv) : K.hv;
+        const v = knockerVrVel(hv.x, hv.y, hv.z, K.v);
+        const hs = k.slots[k.held];
+        if (v.speed > 0 && k.tryThrow(bag, ctx, hs.x, hs.y, hs.z, v.vx, v.vy, v.vz)) this._haptic(hand, 0.55, 70);
+        else if (k.putBack()) {
+          k._refuse('gentle'); // let go without a throw: it is back in the bag
+          this._haptic(hand, 0.15, 25);
+        }
+      }
+      return;
+    }
+    if (!ki || !r || !r.camera) return;
+    if (ki.pressed) {
+      const why = k.refusal(count, ctx);
+      if (why) {
+        k._refuse(why);
+        if (why === 'empty' && this.realTime - K.emptyT > 3) {
+          K.emptyT = this.realTime;
+          this._toast('No knocker left', 1.4);
+        }
+      } else {
+        K.aiming = true;
+        K.held = 0;
+      }
+    }
+    if (!K.aiming) return;
+    if (!ki.held && !ki.released) {
+      K.aiming = false; // the key went up while the run was not taking input (a pause, a menu): no throw
+      K.n = 0;
+      return;
+    }
+    K.held += dt;
+    // the throw's origin: the right hand, just ahead of the eye (the eye itself if that is inside a solid)
+    const cam = r.camera;
+    cam.updateWorldMatrix(true, false);
+    cam.getWorldPosition(_dcV);
+    cam.getWorldDirection(_dcW);
+    const e = cam.matrixWorld.elements;
+    const o = K.o;
+    o.x = _dcV.x + _dcW.x * 0.35 + e[0] * 0.14 - e[4] * 0.12;
+    o.y = _dcV.y + _dcW.y * 0.35 + e[1] * 0.14 - e[5] * 0.12;
+    o.z = _dcV.z + _dcW.z * 0.35 + e[2] * 0.14 - e[6] * 0.12;
+    const lv = this.level;
+    if (lv && (lv.pointInSolid(o.x, o.y, o.z) || lv.segmentBlocked(_dcV.x, _dcV.y, _dcV.z, o.x, o.y, o.z, 0))) {
+      o.x = _dcV.x;
+      o.y = _dcV.y;
+      o.z = _dcV.z;
+    }
+    const v = knockerThrowVel(K.held, _dcW.x, _dcW.y, _dcW.z, K.v);
+    // the body's own motion goes with the throw
+    const bvx = finiteOr(p.vx, 0);
+    const bvy = finiteOr(p.vy, 0);
+    const bvz = finiteOr(p.vz, 0);
+    if (ki.released) {
+      K.aiming = false;
+      K.n = 0;
+      k.tryThrow(bag, ctx, o.x, o.y, o.z, v.vx + bvx, v.vy + bvy, v.vz + bvz);
+      return;
+    }
+    K.n = knockerArc(lv, o.x, o.y, o.z, v.vx + bvx, v.vy + bvy, v.vz + bvz, K.arc, 40, 0.05);
   }
 
   /**
@@ -3295,7 +3685,9 @@ export class Game3D {
     // the first time the world is dark enough that the lantern alone will not do (depth darkness >= 0.18, ~ the third section)
     if (live && this._nvHint === 0 && this.renderer && depthDarknessAt(this.renderer.depthF || 0) >= 0.18) {
       this._nvHint = 1;
-      this._toast(this.xrActive ? 'Too dark. Tap Y: night vision' : 'Too dark. Press N: night vision', 5);
+      // TUTORIAL v2 (ui/tutorial.js 'nv'): with the hints on, the tutorial shows it at a quiet moment (until learned on nv:on)
+      if (this.settings && this.settings.tutorialHints !== false) this.bus.emit('nv:dark', NV_DARK_EV);
+      else this._toast(this.xrActive ? 'Too dark. Tap Y: night vision' : 'Too dark. Press N: night vision', 5);
     }
   }
 
@@ -3315,9 +3707,11 @@ export class Game3D {
       const t = this.realTime;
       f *= 1 - 0.14 * Math.max(0, Math.sin(t * 13.1) * Math.sin(t * 4.3 + 1));
     }
+    const hood = inRun && this.hood && this.hood.k > 0 ? this.hood : null; // THE HOOD: the flame pinched to a slit, the shaft goes black
+    if (hood) f *= hood.lightMul; // x(1 - 0.93 k)
     if (L.base === L.base) r.lanternBase = L.base * f;
     else r.lantern.intensity *= f;
-    if (L.range > 0) r.lantern.distance = L.range * (0.6 + 0.4 * f);
+    if (L.range > 0) r.lantern.distance = L.range * (0.6 + 0.4 * f) * (hood ? hood.rangeMul : 1); // x(0.25 + 0.75 (1 - k))
   }
 
   /** Menu background: the level of the last difficulty, the view drifting down the shaft. */
@@ -3492,7 +3886,7 @@ export class Game3D {
         case 'paused':
           break;
         case 'intro':
-          this._updateIntro(dt, intent);
+          this._updateOpening(dt, intent);
           break;
         case 'victory':
           this._updateVictoryScene(dt);
@@ -3542,6 +3936,10 @@ export class Game3D {
         }
       }
       if (o.ui) o.ui.click = false;
+      if (o.knocker) {
+        o.knocker.pressed = false;
+        o.knocker.released = false;
+      }
     }
     this._endState = this.state;
     this._endUi = this._uiScreen();
@@ -3627,12 +4025,21 @@ export class Game3D {
   _updateRun(dt, intent) {
     const p = this.player;
     const t = this.tethers;
+    this._updateHood(dt, intent); // THE HOOD (before the bag: the drain reads it)
     this._updateBag(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     this._updateNightVision(dt, intent, this.state === 'playing' && p.alive && this.victoryT < 0);
     if (this.state === 'playing' && p.alive) {
       this._updateHolster(dt, intent, true);
       this._updateJetpack(intent);
       this._updateWristMap(dt, intent, true);
+      if (this.weapons) {
+        try {
+          this.weapons.input(dt, intent); // SOLDIER_WEAPONS.md: before the knocker (it takes G / the VR draw when a weapon is selected)
+        } catch (err) {
+          this._fault('weapons', err);
+        }
+      }
+      this._updateKnockerInput(dt, intent);
       if (this.vista) this.vista.update(dt, p);
       t.updateTargets(p, intent);
       t.handleInput(p, intent, dt);
@@ -3656,7 +4063,21 @@ export class Game3D {
 
     this._runClock += dt;
     if (this.victoryT < 0) this.time += dt; // counts while playing or dead
+    if (this._ghostRec && this.victoryT < 0) this._ghostRec.sample(this.time, p.x, p.y, p.z); // GHOST LANTERN: 10 Hz on the run clock
+    if (this.trial && this._trials) this._trials.tick(intent); // SECTION TRIALS: the trial clock (held at 0 until the first input / movement)
 
+    if (this.knocker && this.state === 'playing') {
+      // the flight and the clack run with the run's clock (never while paused); only the Mason answers it
+      this.knocker.update(dt, this.level, this.creature && !this.creature.isNull ? this.creature : null);
+    }
+    if (this.knocker && (this.state !== 'playing' || !p.alive)) this._knockerIdle();
+    if (this.weapons) {
+      try {
+        this.weapons.step(dt); // SOLDIER_WEAPONS.md: the grenades fly and go off (the run's clock), the blast's own damage
+      } catch (err) {
+        this._fault('weapons', err);
+      }
+    }
     this._updateCreature(dt);
     this._updateThreat(dt);
     this._updateComms(dt, intent);
@@ -3681,6 +4102,9 @@ export class Game3D {
     si.move.z = mv ? U.clamp(finiteOr(mv.z, 0), -1, 1) : 0;
     si.reel = U.clamp(finiteOr(intent.reel, 0), -1, 1);
     si.brake = !!intent.brake;
+    // MASON STRIKES: knocked down / getting up / staggered: the step intent is scaled (it is rebuilt from the raw input every frame, so
+    // nothing latches); a jump pressed while down is dropped, not buffered
+    if (this.hits && this.hits.applyIntent(si)) this._pendingJump = false;
     const ih = intent.hands;
     si.hands.left.yank = ih && ih.left ? U.clamp(finiteOr(ih.left.yank, 0), 0, 1) : 0;
     si.hands.right.yank = ih && ih.right ? U.clamp(finiteOr(ih.right.yank, 0), 0, 1) : 0;
@@ -3893,6 +4317,7 @@ export class Game3D {
     const lvl = this.level;
     const sec = lvl.sections[idx];
     if (!sec) return;
+    if (this.trial && this._trials && this._trials.sectionEntered(idx, mode)) return; // SECTION TRIALS: the next section ends the trial
     this.sectionIndex = idx;
     const first = !this._seen[idx];
     this._seen[idx] = true;
@@ -3993,11 +4418,21 @@ export class Game3D {
     const key = this.difficultyKey;
     const par = PAR_3D && PAR_3D[key] ? PAR_3D[key][sp.id] || null : null;
     const recorded = !!(this.diff && this.diff.recordTimes) && !this._godMode;
-    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key });
+    // the section's best BEFORE this split: meta/save.js's 'split' listener (bound first) keeps the new one, so the UI's delta reads this
+    let prevBest = null;
+    if (recorded) {
+      this._try('save', () => {
+        const r = this.save && typeof this.save.sectionRecords === 'function' ? this.save.sectionRecords(key)[sp.id] : null;
+        prevBest = r && r.best > 0 ? r.best : null;
+      });
+    }
+    this.bus.emit('split', { index: sp.index, section: sp.id, time: sp.time, par, medal: medalFor(sp.time, par), recorded, difficulty: key, prevBest });
   }
 
   _beginVictory() {
+    if (this.trial && this._trials && this._trials.complete()) return; // SECTION TRIALS: the last section's trial ends at the goal
     if (this.splits) this._split(this.splits.goal(this.time)); // the last section's split ends at the goal
+    this._try('ghost', () => this._ghostVictory());
     this.victoryT = 0; // timer stops; deaths are vetoed from here on
     this.gateClosed = true;
     this._hintQueue.length = 0;
@@ -4070,7 +4505,10 @@ export class Game3D {
     this._lastHint = null;
     this._try('ui', () => this.ui.hideHint && this.ui.hideHint());
     this._recordDepth();
-    this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
+    if (this.trial && this._trials) {
+      this._trials.died(cause); // SECTION TRIALS: no restore, no relay: the death scene, then the trial card
+      this.restore = null;
+    } else this._restoreBegin(cause); // EXPEDITION: a restore, not a death panel (comms on)
     this._beginDeathScene(cause);
   }
 
@@ -4471,14 +4909,25 @@ export class Game3D {
       if (typeof c.setRefuge === 'function') c.setRefuge(rk, rb);
       if (this.skitters && typeof this.skitters.setRefuge === 'function') this.skitters.setRefuge(rk, rb);
       if (typeof c.setHurt === 'function') c.setHurt(!!(this.health && this.health.low && this.state === 'playing'));
+      // MASON_SIGHT.md: it sees the lantern-bearer (on: ?sight=off / the masonSight setting; lit: the lantern has charge; blocked: not playing)
+      const sightOn = !sightOff() && !(this.settings && this.settings.masonSight === 'off');
+      const lit = !!(this.bag && this.bag.lanternCharge > 0) && !(this.hood && this.hood.on); // THE HOOD: a covered lantern does not show
+      if (typeof c.setSight === 'function') c.setSight(sightOn, lit, this.state !== 'playing' || !this.player.alive);
+      const hits = this.hits;
+      if (hits) {
+        if (this.state === 'playing') hits.update(dt, this.player, this.level); // (held while paused; game:* / player:death reset it)
+        c.immune = hits.immune; // MASON STRIKES: no strike lands while you are down / just up
+      }
       c.update(dt, this.player, this._runClock);
+      if (this.health) this.health.noRecovery = !!(sightOn && c.sight && c.sight.near && this.state === 'playing' && this.player.alive); // no healing while it is near
       if (this._nookPulseT > 0) {
         this._nookPulseT -= dt;
         if (this._nookPulseT <= 0 && this._inRun()) this._hapticBoth(0.3, 40);
       }
       if (c.caughtPlayer) {
         c.caughtPlayer = false;
-        if (this.player.alive && this.state === 'playing') this.physics.kill(this.player, this.tethers, 'creature');
+        // MASON STRIKES: 30 % of the health and a knockdown (a stagger off the floor); an empty bar is the devour death
+        if (this.player.alive && this.state === 'playing' && hits) hits.mason(c.strikeSrc || c, this.player, this._hitCtx());
       }
     } catch (err) {
       this._fault('creature', err);
@@ -4540,7 +4989,7 @@ export class Game3D {
       // the Mason has your scent (its gate armed by low health / the scent window, or still withdrawing) or is making its staged
       // pass (the S4 sighting): the Dresser gives way and leaves play (one big creature at a time, in the story and in the budget)
       const c = this.creature;
-      d.setRival(!!(c && !c.isNull && ((c._gate && (c._armed || c._withdraw)) || c.sighting)));
+      d.setRival(!!(c && !c.isNull && ((c._gate && (c._armed || c._withdraw || c.prowling)) || c.sighting))); // (MASON_SIGHT: a prowl pass too)
       const cam = this.renderer && this.renderer.camera;
       if (cam && typeof cam.getWorldPosition === 'function') {
         cam.getWorldPosition(this._camPos);
@@ -4580,13 +5029,23 @@ export class Game3D {
       const dmg = g.takeDamage();
       const grip = g.takeGripDamage();
       if (grip > 0 && this.climb && typeof this.climb.bite === 'function') this.climb.bite(grip); // a bite costs grip too
-      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health) {
-        const h = this.physics.health;
-        if (h.damage(dmg, 'skitter', 0)) this.physics.kill(this.player, this.tethers, 'creature');
+      if (dmg > 0 && this.player.alive && this.state === 'playing' && this.physics && this.physics.health && this.hits) {
+        this.hits.skitter(dmg, g.lastBite, this.player, this._hitCtx()); // MASON STRIKES: 10 % a bite, a stumble; an empty bar kills
       }
     } catch (err) {
       this._fault('skitter', err);
     }
+  }
+
+  /** MASON STRIKES: the context a creature hit is applied with (sim/playerHits.js); one object, reused. */
+  _hitCtx() {
+    const x = this._hitCtxObj || (this._hitCtxObj = { health: null, level: null, gripping: false, god: false, kill: (cause) => this.physics.kill(this.player, this.tethers, cause) });
+    x.health = this.physics ? this.physics.health : null;
+    x.level = this.level;
+    const cl = this.climb;
+    x.gripping = !!(this.player.climbing || (cl && cl.gripCount > 0));
+    x.god = !!this._godMode;
+    return x;
   }
 
   _updateThreat(dt) {
@@ -4605,6 +5064,37 @@ export class Game3D {
     this._placeRig();
     this._applySwingLag();
     this._applyDeathCam();
+    this._applyOpeningCam();
+    this._applySpeedFov();
+    this._applyHitCam();
+  }
+
+  /**
+   * Desktop speed FOV kick (render/speedFov.js, settings.speedFov): the fov widens by up to 7 degrees at 25 m/s on a rope or in a
+   * fall. Never in XR (the headset owns the projection; resize() restores baseFov after a session), never with Reduced effects.
+   */
+  _applySpeedFov() {
+    const r = this.renderer;
+    const cam = r && r.camera;
+    const p = this.player;
+    if (!cam || !p || !(r.baseFov > 0) || this.opening) return; // THE LANTERN's film owns the lens while it plays (each shot's FOV)
+    const st = this._speedFov || (this._speedFov = { kick: 0, t: 0 });
+    const now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
+    const dt = st.t > 0 ? Math.min(0.1, Math.max(0, now - st.t)) : 0;
+    st.t = now;
+    if (this.xrActive) {
+      st.kick = 0;
+      return;
+    }
+    const s = this.settings;
+    const falling = !p.grounded && (p.vy || 0) < -4;
+    const active = this.state === 'playing' && p.alive !== false && (!!(this.tethers && this.tethers.attached) || falling);
+    const speed = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vy || 0) * (p.vy || 0) + (p.vz || 0) * (p.vz || 0));
+    st.kick = stepSpeedFov(st.kick, speedFovTarget(speed, active, false, !!(s && s.reducedEffects), !(s && s.speedFov === false)), dt);
+    const fov = r.baseFov + st.kick;
+    if (Math.abs(cam.fov - fov) < 1e-4) return;
+    cam.fov = fov;
+    cam.updateProjectionMatrix();
   }
 
   /**
@@ -4771,6 +5261,140 @@ export class Game3D {
     }
   }
 
+  // ---- GHOST LANTERN (meta/ghost.js, render/ghostView.js) -------------------------------------------------------------
+  /** A run begins: a fresh recorder (valid only for a whole run that records times: never Sandbox) and this chapter + difficulty's ghost. */
+  _ghostStart(key) {
+    if (!this._ghostRec) this._ghostRec = new GhostRecorder();
+    this._ghostRec.reset();
+    if (!(this.diff && this.diff.recordTimes) || this._continuing) this._ghostRec.invalidate();
+    const k = ghostKey(this.chapter, key);
+    if (!this._ghost || this._ghost.key !== k) this._ghost = { key: k, player: loadGhost(this.chapter, key) };
+  }
+
+  /** The goal: a valid whole run (not in god mode) faster than the saved ghost becomes the ghost. */
+  _ghostVictory() {
+    const r = this._ghostRec;
+    if (!r || !r.valid || this._godMode) return;
+    r.sample(this.time, this.player.x, this.player.y, this.player.z);
+    const res = saveGhost(this.chapter, this.difficultyKey, r, this.time);
+    this._ghostLast = res;
+    if (res === 'saved') this._ghost = null; // reloaded at the next start
+    this.bus.emit('ghost:result', { result: res, time: this.time });
+  }
+
+  /** The ghost's sprite on the run clock (hidden off a run, with the setting off, or without a ghost). */
+  _updateGhost(dt) {
+    const g = this._ghost && this._ghost.player;
+    const on = !!g && !this.trial && !!this.player && !!this.settings && this.settings.ghost !== false && (this.state === 'playing' || this.state === 'dead' || this.state === 'paused');
+    if (!on && !this._ghostView) return;
+    if (!this._ghostView && this.renderer && this.renderer.scene) this._ghostView = new GhostView(this.renderer.scene);
+    if (this._ghostView) this._ghostView.update(dt, on ? g : null, this.time, this.renderer.camera, !!this.settings.reducedEffects);
+  }
+
+  debugGhost() {
+    const r = this._ghostRec;
+    const g = this._ghost && this._ghost.player;
+    const v = this._ghostView;
+    return {
+      key: ghostKey(this.chapter, this.difficultyKey),
+      recording: r ? { valid: r.valid, samples: r.count, seconds: r.duration } : null,
+      ghost: g ? { time: g.time, samples: g.count } : null,
+      sprite: v ? { visible: v.sprite.visible, opacity: v.alpha, x: v.sprite.position.x, y: v.sprite.position.y, z: v.sprite.position.z } : null,
+      last: this._ghostLast || null,
+    };
+  }
+
+  /** PUZZLE FOCUS (puzzleFocusGlue.js, plans/PUZZLE_FOCUS.md): the trigger + the beat; a failure leaves the game without it. */
+  _setupPuzzleFocus() {
+    try {
+      this.puzzleFocus = new PuzzleFocusGlue(this);
+      this.focusBeat = this.puzzleFocus.beat;
+    } catch (err) {
+      this._fault('puzzleFocus', err);
+      this.puzzleFocus = null;
+    }
+  }
+
+  /** ITEM CARDS (itemCardGlue.js, plans/ITEM_CARDS.md): `game.itemCards`; a failure leaves the game without them. */
+  _setupItemCards() {
+    try {
+      this.itemCards = new ItemCardGlue(this);
+    } catch (err) {
+      this._fault('itemCards', err);
+      this.itemCards = null;
+    }
+  }
+
+  /** THE CHASE ARC (chaseGlue.js, plans/CHASE_ARC.md): `game.chase` (its `arc`); a failure leaves the game without it. */
+  _setupChase() {
+    try {
+      this.chase = new ChaseGlue(this);
+    } catch (err) {
+      this._fault('chase', err);
+      this.chase = null;
+    }
+  }
+
+  /** MASON SNAKE ATTACK (masonAttackGlue.js, plans/MASON_SNAKE_ATTACK.md): `game.masonAttack`; a failure leaves the plain lunge. */
+  _setupMasonAttack() {
+    try {
+      this.masonAttack = new MasonAttackGlue(this);
+    } catch (err) {
+      this._fault('masonAttack', err);
+      this.masonAttack = null;
+    }
+  }
+
+  /** THE HOOD (lanternHoodGlue.js, plans/LANTERN_HOOD.md): `game.hood` { on, k }; a failure leaves the lantern uncovered for good. */
+  _setupHood() {
+    try {
+      this._hoodGlue = new LanternHoodGlue(this);
+      this.hood = this._hoodGlue.hood;
+    } catch (err) {
+      this._fault('hood', err);
+      this._hoodGlue = null;
+      this.hood = null;
+    }
+  }
+
+  /** HIT FEEDBACK (hitFeedbackGlue.js, plans/HIT_FEEDBACK.md): `game.hitFeedback`; a failure leaves hits without the extra feedback. */
+  _setupHitFeedback() {
+    try {
+      this.hitFeedback = new HitFeedbackGlue(this);
+    } catch (err) {
+      this._fault('hitFeedback', err);
+      this.hitFeedback = null;
+    }
+  }
+
+  /** HIT FEEDBACK: the knocked-down eye drop / roll, after the rig is placed and the death / opening cams ran. */
+  _applyHitCam() {
+    try {
+      if (this.hitFeedback) this.hitFeedback.applyCam();
+    } catch (err) {
+      this._fault('hitFeedback', err);
+    }
+  }
+
+  /** THE HOOD, once a run frame before the bag (the drain reads hood.k). */
+  _updateHood(dt, intent) {
+    try {
+      if (this._hoodGlue) this._hoodGlue.update(dt, intent);
+    } catch (err) {
+      this._fault('hood', err);
+    }
+  }
+
+  /** THE SOLDIERS' WEAPONS (weaponGlue.js, plans/SOLDIER_WEAPONS.md): `game.weapons` (its `sim`); a failure leaves the game without them. */
+  _setupWeapons() {
+    try {
+      this.weapons = new WeaponGlue(this);
+    } catch (err) {
+      this._fault('weapons', err);
+      this.weapons = null;
+    }
+  }
+
   /** The 20 s trigger highlight: after 20 s in a section with its seal shut and no sign the trigger was found, glow the trigger. */
   _updateObjectiveHint(dt) {
     let view = this._hintView;
@@ -4778,6 +5402,8 @@ export class Game3D {
     const p = this.player;
     if (!h || !this.objectives || !p || hintsOff() || this.state === 'menu') {
       if (view) view.update(dt, null, false);
+      if (this.hintWave) this.hintWave.clear();
+      applyPing(null);
       return;
     }
     const playing = this.state === 'playing' && p.alive !== false;
@@ -4788,7 +5414,74 @@ export class Game3D {
       const words = { bell: 'Something here answers a strike', hook: 'Something here wants a rope', haul: 'Something here wants hauling', winch: 'Something here wants a rope', lamp: 'A dead lamp: hold your light to it', breach: 'The keystone holds the grating' };
       if (words[h.kind]) this._toast(words[h.kind], 3.2);
     }
-    if (view) view.update(dt, h, !!(this.settings && this.settings.reducedEffects));
+    const reduced = !!(this.settings && this.settings.reducedEffects);
+    const w = this._updateHintWave(dt, h, p, playing, reduced);
+    if (view) view.update(dt, h, reduced, w && w.active ? w.origin : -1, originGlow(w));
+  }
+
+  /**
+   * THE GOLDEN MARK's blip wave (sim/hintWave.js): the ladder above the 20 s mark, stepped with the frame dt; on a launch the bus
+   * hears `hint:wave` {x, y, z, stage} (for a comms line / the puzzle focus beats), when the front reaches the player
+   * `hint:wave:pass` (the blip from the mark: audio/hintWaveSfx.js; the caption: ui/captions.js; a tick on the nearer hand in VR).
+   * Writes the lit shader's PING uniforms (render/hintWaveView.js). Returns the wave.
+   */
+  _updateHintWave(dt, h, p, playing, reduced) {
+    const hw = this.hintWave;
+    if (!hw) return null;
+    const x = this._hintWaveCtx;
+    const c = this.creature;
+    let blocked = !!(c && ((c.attack && c.attack.phase) || c.state === 'BURST' || c.state === 'ATTACK')); // a wind-up / burst
+    const g = this.skitters;
+    if (g && g.slots) for (let i = 0; i < g.slots.length; i++) if (g.slots[i].on && g.slots[i].attack && g.slots[i].attack.phase) blocked = true;
+    if (!p.grounded && !p.tethered && p.vy < -7) blocked = true; // a fall
+    if (this.victoryT >= 0 || (this.deathScene && this.deathScene.active) || (this.catchMoment && this.catchMoment.active)) blocked = true; // a cutscene / the hit-stop
+    x.section = this.sectionIndex;
+    x.px = p.x;
+    x.py = p.y;
+    x.pz = p.z;
+    x.playing = playing;
+    x.dead = p.alive === false || this.state === 'dead';
+    x.blocked = blocked;
+    x.enabled = hintWaveEnabled(this.settings, typeof location !== 'undefined' ? location.search || '' : '');
+    x.scale = ladderScale(this.difficultyKey);
+    x.reduced = reduced;
+    hw.update(dt, h, x);
+    const w = hw.wave;
+    if (hw.launched) this.bus.emit('hint:wave', { x: w.x, y: w.y, z: w.z, stage: w.stage, n: hw.fired });
+    if (hw.passedNow) {
+      const cam = this.renderer && this.renderer.camera;
+      let sector = -1;
+      let vert = 0;
+      let right = 0;
+      if (cam) {
+        const e = cam.matrixWorld.elements;
+        const yaw = Math.atan2(e[8], e[10]);
+        sector = sectorOf(e[12], e[14], yaw, w.x, w.z);
+        const dy = w.y - e[13];
+        vert = dy > 6 ? 1 : dy < -6 ? -1 : 0;
+        right = Math.cos(yaw) * (w.x - e[12]) - Math.sin(yaw) * (w.z - e[14]);
+      }
+      this.bus.emit('hint:wave:pass', { x: w.x, y: w.y, z: w.z, stage: w.stage, sector, vert, distance: w.passDist });
+      if (this.xrActive) this._haptic(right >= 0 ? 'right' : 'left', 0.16, 35); // one tiny tick on the hand nearer the mark
+    }
+    applyPing(w);
+    return w;
+  }
+
+  /** The release guide, "if I let go now" (render/releaseGuide.js): the arc + ring of a full let-go while hanging on a line. */
+  _updateReleaseGuide(dt) {
+    const scene = this.renderer && this.renderer.scene;
+    let g = this._releaseGuide;
+    try {
+      if (g && g.parent !== scene) {
+        g.dispose(); // the renderer was swapped (fallback): rebuild on the new scene
+        g = this._releaseGuide = null;
+      }
+      if (!g && scene && this.state === 'playing') g = this._releaseGuide = new ReleaseGuide(scene);
+      if (g) g.update(dt, this);
+    } catch (err) {
+      this._fault('releaseGuide', err);
+    }
   }
 
   _updateViews(dt) {
@@ -4797,11 +5490,40 @@ export class Game3D {
     } catch (err) {
       this._fault('fallPose', err);
     }
+    const hl = this.highlights; // RUN HIGHLIGHTS: top speed (no allocation)
+    if (hl && this.state === 'playing' && this.player && this.player.alive !== false) hl.sample(finiteOr(this.player.vx, 0), finiteOr(this.player.vy, 0), finiteOr(this.player.vz, 0));
     try {
       this._updateObjectiveHint(dt);
     } catch (err) {
       this._fault('objectiveHint', err);
     }
+    this._try('ghostView', () => this._updateGhost(dt));
+    try {
+      if (this.puzzleFocus) this.puzzleFocus.update(dt); // after the 20 s hint (it escalates on it), before the render (the glance)
+    } catch (err) {
+      this._fault('puzzleFocus', err);
+    }
+    try {
+      if (this.itemCards) this.itemCards.update(dt); // ITEM CARDS: the gaze pick + the card (reads the pickups, the rig and the camera)
+    } catch (err) {
+      this._fault('itemCards', err);
+    }
+    try {
+      if (this.chase) this.chase.update(dt); // THE CHASE ARC: the heartbeat while it chases, the release when it loses you
+    } catch (err) {
+      this._fault('chase', err);
+    }
+    try {
+      if (this.hitFeedback) this.hitFeedback.update(dt); // HIT FEEDBACK: before healthFx reads its punch / vignette / tick
+    } catch (err) {
+      this._fault('hitFeedback', err);
+    }
+    try {
+      if (this.masonAttack) this.masonAttack.update(dt); // MASON SNAKE ATTACK: the phase, the cobra pose for the view below, the sounds
+    } catch (err) {
+      this._fault('masonAttack', err);
+    }
+    this._updateReleaseGuide(dt);
     const fx = this.healthFx;
     if (fx) {
       try {
@@ -4810,20 +5532,29 @@ export class Game3D {
         this._fault('healthFx', err);
       }
     }
-    const prv = this.prologueView;
-    if (prv) {
+    const opv = this.openingView;
+    if (opv && this.opening && this.state === 'intro') {
       try {
-        const cv = this.renderer && this.renderer.renderer ? this.renderer.renderer.domElement : null;
-        prv.update(dt, this.prologue, { xr: !!this.xrActive, reduced: !!(this.settings && this.settings.reducedEffects), aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9 });
+        const r = this.renderer;
+        const cv = r && r.renderer ? r.renderer.domElement : null;
+        const hv = this.handsView;
+        if (hv && hv.lantern && hv.gearState === 'ready') opv.attachModel(hv.lantern);
+        const R = this._openingRig;
+        const op = this.opening;
+        const hint = Math.max(R.hint > 0 ? Math.min(1, R.hint / 0.6) : 0, op.t > 1.2 && op.t < 5.5 ? Math.min(1, (op.t - 1.2) / 0.8, (5.5 - op.t) / 0.8) * 0.7 : 0);
+        opv.update(dt, op.s, {
+          xr: !!this.xrActive,
+          aspect: cv && cv.clientHeight > 0 ? cv.clientWidth / cv.clientHeight : 16 / 9,
+          px: cv && cv.height > 0 ? cv.height : 720, // the drawing buffer's height (the dust's point size)
+          skip: Math.min(1, R.skip / OPENING_SKIP_HOLD),
+          skipHint: op.skipping >= 0 ? 0 : hint,
+          head: r ? r.headPosition() : null,
+        });
       } catch (err) {
-        this._fault('prologueView', err);
-        this.prologue = null;
-        if (this.state === 'intro') this._endIntro(true);
+        this._fault('openingView', err);
+        if (this.state === 'intro') this._endOpening(true);
       }
-    } else if (this.state === 'intro' && this.prologue && !this._introNoView) {
-      this._introNoView = true; // no view (it failed to load): the story cannot be shown, so it does not hold the run
-      this._endIntro(true);
-    }
+    } else if (this.state === 'intro' && this.opening && !opv) this._endOpening(true); // no picture: the film cannot hold the run
     const nvv = this.nvView;
     if (nvv) {
       try {
@@ -4904,11 +5635,37 @@ export class Game3D {
         this.waterView = null;
       }
     }
+    if (this.roaches || this.roachView) {
+      try {
+        if (!this.roachView && this.renderer) this.roachView = new RoachView(this);
+        this.roachView.update(dt, this);
+      } catch (err) {
+        this._fault('roachView', err);
+        if (this.roaches) this.roaches.enabled = false;
+      }
+    }
     if (this.jetpackView) {
       try {
         this.jetpackView.update(dt, this);
       } catch (err) {
         this._fault('jetpackView', err);
+      }
+    }
+    if (this.knockerView) {
+      try {
+        this.knockerView.update(dt, this);
+        const K = this._kn;
+        this.knockerView.setArc(K.aiming && !this.xrActive && this.state === 'playing' ? K.arc : null, K.aiming ? K.n : 0);
+      } catch (err) {
+        this._fault('knockerView', err);
+        this.knockerView = null;
+      }
+    }
+    if (this.weapons) {
+      try {
+        this.weapons.update(dt); // SOLDIER_WEAPONS.md: the grenades / the VR revolver, the grenade's aim arc (after the knocker's)
+      } catch (err) {
+        this._fault('weapons', err);
       }
     }
     if (this.c2) {
@@ -4967,26 +5724,21 @@ export class Game3D {
       try {
         // LOD0 (63 k triangles, x2 eyes) only within CREATURE_LOD on Quest / low: LOD1 (~23 k) beyond; high keeps LOD0 at every range
         if (cv.opts && !cv.opts.variant) cv.opts.lodDistance = CREATURE_LOD[this.renderer && this.renderer.qualityTier] || CREATURE_LOD.high;
+        if (cv.opts) cv.opts.reducedEffects = !!this.settings.reducedEffects; // the Mason's seam ember and wet film
         cv.update(this.creature, dt, this.renderer && this.renderer.camera); // camera drives LOD / far hiding
       } catch (err) {
         this._fault('creatureView', err);
         if (cv.isRig) this._fallbackToKit(cv);
       }
     }
-    const sv = this.skitterViews;
-    if (sv.length && this.skitters) {
-      const cam = this.renderer && this.renderer.camera;
-      const skLod = SKITTER_LOD[this.renderer && this.renderer.qualityTier] || SKITTER_LOD.high;
-      for (let i = 0; i < sv.length; i++) {
-        try {
-          if (sv[i].opts) sv[i].opts.lodDistance = skLod;
-          sv[i].update(this.skitters.slots[i] || null, dt, cam);
-        } catch (err) {
-          this._fault('skitterView', err);
-          sv[i].root.visible = false;
-          sv.splice(i, 1); // a broken view retires; the sim keeps running (no visuals, only sound)
-          i--;
-        }
+    if ((this.skitters || this.skitterView) && this.renderer && !skitterOff() && this._skitterViewOk !== false) {
+      try {
+        if (!this.skitterView) this.skitterView = new SkitterlingView(this.renderer.scene);
+        this.skitterView.update(this.skitters, dt, this.renderer.camera, this.renderer.qualityTier);
+      } catch (err) {
+        this._fault('skitterView', err);
+        this._skitterViewOk = false; // a broken view retires; the sim keeps running (no visuals, only sound)
+        if (this.skitterView) for (const m of this.skitterView.lods) m.visible = false;
       }
     }
     // A HandsView the input manager created is updated by the input manager.
@@ -5196,6 +5948,7 @@ export class Game3D {
   }
 
   _recordDepth() {
+    if (this.trial) return; // SECTION TRIALS: a trial records nothing of the run
     try {
       Storage.recordDepth(this.difficultyKey, U.depthMeters(this.deepest));
     } catch (err) {
@@ -5204,6 +5957,7 @@ export class Game3D {
   }
 
   _bumpStat(key) {
+    if (this.trial) return; // SECTION TRIALS: not a run
     try {
       const v = Storage.get(key, 0);
       Storage.set(key, (typeof v === 'number' && isFinite(v) ? v : 0) + 1);
@@ -5217,6 +5971,7 @@ export class Game3D {
     const prev = this.state;
     this.state = s;
     if (prev === 'dead' && s !== 'dead') this._endDeathScene();
+    if (prev === 'intro' && this.opening) this._endOpening(true); // left the film another way (the menu, a fault): give everything back
     this._syncUIMode();
     const body = typeof document !== 'undefined' ? document.body : null;
     if (body) {
@@ -5279,6 +6034,11 @@ export class Game3D {
     ic.rz = 0;
     ic.fx = 0;
     ic.fz = -1;
+    // THE KNOCKER's key: { pressed, held, released } (tests, QA, captures)
+    const ok = o.knocker || null;
+    it.knocker.pressed = !!(ok && ok.pressed);
+    it.knocker.held = !!(ok && ok.held);
+    it.knocker.released = !!(ok && ok.released);
     const ui = o.ui || {};
     it.ui.ray = ui.ray || null;
     it.ui.click = !!ui.click;
@@ -5342,6 +6102,7 @@ export class Game3D {
     const o = Object.assign({}, partial);
     if (partial.move) o.move = Object.assign({}, partial.move);
     if (partial.ui) o.ui = Object.assign({}, partial.ui);
+    if (partial.knocker) o.knocker = Object.assign({}, partial.knocker); // (a copy: the frame end clears its edges)
     o.hands = {};
     for (let k = 0; k < 2; k++) {
       const h = HANDS[k];
@@ -5376,6 +6137,7 @@ export class Game3D {
     // A teleport plays the level as if every objective down to the target's own section were done (its seal open too).
     if (this.objectives && this.level) this.objectives.markDoneThrough(this.level.sectionIndexAt(+y) + 1);
     if (this.splits) this.splits.partial(); // and the section left was not played whole: no split for it
+    if (this._ghostRec) this._ghostRec.invalidate(); // a teleported run never saves a ghost
     p.x = p.prevX = p.rx = +x;
     p.y = p.prevY = p.ry = +y;
     p.z = p.prevZ = p.rz = +z;
@@ -5453,6 +6215,7 @@ export class Game3D {
       perf: Object.assign({}, this.perf),
       health: this.health ? { hp: r(this.health.hp), low: this.health.low, dead: this.health.dead, bpm: r(this.health.heartbeatRate), damage: r(this.health.totalDamage), hits: this.health.hits } : null,
       bag: this.bag ? this.debugBag() : null,
+      knocker: this.knocker ? Object.assign(this.knocker.debugState(), { count: this.bag ? this.bag.counts[ITEM.KNOCKER] : 0, aiming: this._kn.aiming }) : null,
       catches: this.catchMoment.count, // THE CATCH (sim/catch3d.js): lifesaving bites this run (the run highlights read it)
       flow: this.flow ? { n: this.flow.n, best: this.flow.best, links: this.flow.links, chains: this.flow.chains, flare: r(this.flow.flare) } : null,
       climb: this.climb ? { stamina: r(this.climb.stamina), warn: r(this.climb.warn), holding: this.climb.holding, mode: this.climb.mode, exhausted: this.climb.exhausted, left: this.climb.hands.left.gripping, right: this.climb.hands.right.gripping } : null,
@@ -5544,7 +6307,7 @@ export class Game3D {
 
   /** The window.AT3D.debug object (contract §8). */
   debugApi() {
-    return {
+    const api = {
       // Bag (tests, QA, screenshots): give(kind, n) adds items (kind 0 FIRST_AID .. 3 BATTERY), use(kind) starts applying, cancel(),
       // lantern(charge 0..1), spawn(kind, dx, dy, dz) drops a pickup near the player, pickups() lists the supplies of the run.
       bag: {
@@ -5567,7 +6330,79 @@ export class Game3D {
         },
         pickups: () => (this.pickups ? this.pickups.items.map((i) => ({ id: i.id, kind: i.kind, x: i.x, y: i.y, z: i.z, taken: i.taken, section: i.section })) : []),
       },
+      // THE GOLDEN MARK's blip wave (sim/hintWave.js; tests, captures): state() reads the ladder + the wave; fire(o) starts one now at
+      // o = {x, y, z, stage} or a fixture index, else at the shown mark / the section's first pending trigger (manual: outlives a hidden
+      // mark); hold(r) freezes the front at r metres (null = run on); clear() ends it.
+      hintWave: {
+        state: () => (this.hintWave ? this.hintWave.state() : null),
+        fire: (o) => {
+          const hw = this.hintWave;
+          const O = this.objectives;
+          if (!hw) return false;
+          let t = null;
+          if (o && typeof o === 'object') t = o;
+          else if (typeof o === 'number' && O && O.fixtures[o | 0]) t = O.fixtures[o | 0];
+          else if (this.objectiveHint && this.objectiveHint.on) t = this.objectiveHint.targets[0];
+          else if (O) {
+            for (const ob of O.objectives) {
+              if (ob.section !== this.sectionIndex || O.done[ob.index]) continue;
+              for (const fi of ob.fx) if (!O.fixtureDone(fi) && !O.fixtures[fi].hidden) t = t || O.fixtures[fi];
+            }
+          }
+          if (!t) return false;
+          const stage = o && typeof o === 'object' && o.stage >= 3 ? 3 : 2;
+          return hw.fire(+t.x, +t.y, +t.z, stage, !!(this.settings && this.settings.reducedEffects), -1, true, true) ? { x: +t.x, y: +t.y, z: +t.z } : false;
+        },
+        hold: (r) => {
+          if (this.hintWave) this.hintWave.hold = typeof r === 'number' && r >= 0 ? r : -1;
+          return this.hintWave ? this.hintWave.hold : null;
+        },
+        clear: () => {
+          if (this.hintWave) {
+            this.hintWave.hold = -1;
+            this.hintWave.clear();
+          }
+          applyPing(null);
+          return true;
+        },
+      },
+      // THE SOLDIERS' WEAPONS (weaponGlue.js debugApi): state(), give(grenades, rounds), select(kind), throw({...}), fire({...}), blast(x, y, z)
+      weapons: weaponDebug(() => this.weapons),
+      // THE KNOCKER (tests, QA, screenshots): state() reads it; throw({charge, yaw, pitch, dx, dy, dz, x, y, z, vx, vy, vz, free}) throws one
+      // from the eye along the view (or the given direction / velocity; free = without taking one from the bag); give(n) sets the bag's
+      // count; clear() removes every knocker from the world; arc() reads the aim preview.
+      knocker: {
+        state: () => (this.knocker ? Object.assign(this.knocker.debugState(), { count: this.bag ? this.bag.counts[ITEM.KNOCKER] : 0 }) : null),
+        throw: (o) => {
+          const k = this.knocker;
+          const r = this.renderer;
+          if (!k || !r || !r.camera) return false;
+          const a = o || {};
+          r.camera.updateWorldMatrix(true, false);
+          r.camera.getWorldPosition(_dcV);
+          r.camera.getWorldDirection(_dcW);
+          if (typeof a.yaw === 'number' || typeof a.pitch === 'number') {
+            const yaw = finiteOr(a.yaw, Math.atan2(-_dcW.x, -_dcW.z));
+            const pitch = finiteOr(a.pitch, 0);
+            _dcW.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+          }
+          if (typeof a.dx === 'number') _dcW.set(a.dx, finiteOr(a.dy, 0), finiteOr(a.dz, 0)).normalize();
+          const v = knockerThrowVel(KNOCKER.tapTime + finiteOr(a.charge, 0) * (KNOCKER.chargeTime - KNOCKER.tapTime), _dcW.x, _dcW.y, _dcW.z, this._kn.v);
+          const x = finiteOr(a.x, _dcV.x + _dcW.x * 0.35);
+          const y = finiteOr(a.y, _dcV.y + _dcW.y * 0.35 - 0.1);
+          const z = finiteOr(a.z, _dcV.z + _dcW.z * 0.35);
+          return k.tryThrow(a.free ? null : this.bag, this._knockerCtx(), x, y, z, finiteOr(a.vx, v.vx), finiteOr(a.vy, v.vy), finiteOr(a.vz, v.vz));
+        },
+        give: (n) => (this.bag ? this.bag.seed(ITEM.KNOCKER, finiteOr(n, 1)) : 0),
+        clear: () => {
+          if (this.knocker) this.knocker.reset();
+          return true;
+        },
+        arc: () => Array.from(this._kn.arc.subarray(0, this._kn.n * 3)),
+      },
       // the jetpack (tests, QA, screenshots): state() reads it, fuel(v) sets the tank, ignite() lights it as the chord would, cans() lists them.
+      // RUN HIGHLIGHTS (tests, QA): the run's maxima, its best() line and all() lines.
+      highlights: () => (this.highlights ? this.highlights.state() : null),
       jet: {
         state: () => {
           const j = this.jet;
@@ -5608,6 +6443,35 @@ export class Game3D {
           return { active: sc.active, kind: sc.kind, t: sc.t, done: sc.done, lead: this.deathLead, lids: s.lids, black: s.black, blood: s.blood, dark: s.dark, drop: s.camDrop, face: Object.assign({}, s.face), fade: this.fade, deathShown: this._deathShown };
         },
       },
+      // THE LANTERN's opening cinematic (tests, stills, tools/abyssal-tether-3d/release/render-opening.mjs): play(diff) begins a new descent
+      // with the film (whatever the setting); hold(t) freezes it at t seconds (null = play on); skip(); state() reads it.
+      opening: {
+        play: (diff) => {
+          if (this.state !== 'menu') this.quitToMenu();
+          const was = this.settings.openingCinematic;
+          this.settings.openingCinematic = true;
+          try {
+            return this.startNewGame(diff || 'normal') && this.state === 'intro';
+          } finally {
+            this.settings.openingCinematic = was;
+          }
+        },
+        hold: (t) => {
+          this._openingHold = t == null ? null : +t;
+          return !!this.opening;
+        },
+        skip: () => {
+          if (!this.opening || !this.opening.skip()) return false;
+          this.bus.emit('opening:skip', {});
+          return true;
+        },
+        state: () => {
+          const op = this.opening;
+          if (!op) return { active: false, state: this.state };
+          const s = op.s;
+          return { active: true, state: this.state, t: op.t, shot: s.shot, fade: s.fade, dark: s.dark, cam: Object.assign({}, s.cam), vr: Object.assign({}, s.vr), lantern: { y: s.lantern.y, light: s.lantern.light }, mason: s.mason.on, title: s.title.a, caption: s.caption.id, skipping: op.skipping, handoff: Object.assign({}, op.handoff) };
+        },
+      },
       // WP-CREATURE-RIG (tests, QA, screenshots): place({distance, height, yaw, up, state}) puts a synthetic Mason near the player facing
       // them; play(clip) / pose(u, clip) force a clip (pose freezes it at normalised time u); stop() / clear() return to the sim; state() reads the rig.
       creature: {
@@ -5621,24 +6485,11 @@ export class Game3D {
         clear: () => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.clear()),
         set: (patch) => !!(this.creatureView && this.creatureView.debug && this.creatureView.debug.set(patch)),
         state: () => (this.creatureView && this.creatureView.debug ? this.creatureView.debug.state() : { rig: false }),
-        // WP-SKITTER: placeSkitter({distance, height, yaw, up, state, count}) puts synthetic skitterlings near the player (screenshots);
-        // clearSkitter() returns them to the sim; spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
-        placeSkitter: (o) => {
-          const sv = this.skitterViews;
-          const out = [];
-          const n = Math.max(1, Math.min(sv.length, (o && o.count) | 0 || 1));
-          for (let i = 0; i < n; i++) {
-            const oo = Object.assign({ player: this.player, camera: this.renderer && this.renderer.camera }, o || {});
-            if (i) oo.yaw = (oo.yaw || 0) + 38 * i;
-            if (i) oo.distance = (oo.distance == null ? 4 : oo.distance) + 1.5 * i;
-            out.push(sv[i].debug.place(oo));
-          }
-          return out;
-        },
-        clearSkitter: () => {
-          for (const v of this.skitterViews) v.debug.clear();
-          return true;
-        },
+        // WP-SKITTER (the hunter skitterlings): placeSkitter([{x, y, z (a point on a surface), ux, uy, uz, fx, fy, fz, speed, rear, leap}]) puts
+        // synthetic hunters there (screenshots; render/skitterlingView.js debug.place); clearSkitter() returns the view to the sim;
+        // spawnSkitter(n) puts n REAL sim skitterlings in play above the player; skitter() reads state.
+        placeSkitter: (o) => (this.skitterView ? this.skitterView.debug.place(o) : 0),
+        clearSkitter: () => !!(this.skitterView && this.skitterView.debug.clear()),
         spawnSkitter: (n) => {
           const g = this.skitters;
           return g && g.enabled ? g.force(Math.max(1, Math.min(2, n | 0 || 1)), this.player) : 0;
@@ -5646,15 +6497,26 @@ export class Game3D {
         skitter: () => ({
           enabled: !!(this.skitters && this.skitters.enabled),
           off: skitterOff(),
-          views: this.skitterViews.length,
+          views: this.skitterView ? 1 : 0,
           alive: this.skitters ? this.skitters.aliveCount : 0,
           hits: this.skitters ? this.skitters.hits : 0,
           slots: this.skitters
             ? this.skitters.slots.map((c) => ({ on: c.on, state: c.state, distance: Math.round(c.distance), speed: +c.speed.toFixed(2), visible: c.body.visible }))
             : [],
-          views_: this.skitterViews.map((v) => ({ visible: v.root.visible, lod: v._lod, calls: v.info.drawCalls, tris: v.info.triangles })),
+          view: this.skitterView ? this.skitterView.debug.state() : null,
         }),
         view: () => (this.creatureView && this.creatureView.isRig ? 'rig' : this.creatureView && this.creatureView.isStandIn ? 'standin' : this.creatureView ? 'kit' : 'none'),
+        // MASON_SIGHT.md: sight(force) reads the sight / near / decoy state; force 'see' | 'blind' | '' (the sim decides) first when given.
+        // distract(x, y, z, opts) is the knocker's entry point (the gadget calls Creature3D.distract itself).
+        sight: (force) => {
+          const c = this.creature;
+          if (!c || !c.sense) return null;
+          if (force !== undefined) c.sense.force(force);
+          const s = c.sight;
+          const d = c.decoy;
+          return { on: s.on, off: sightOff(), setting: this.settings ? this.settings.masonSight : '', eligible: s.eligible, sees: s.sees, noticing: s.noticing, notice: s.notice, chasing: s.chasing, lost: s.lost, near: s.near, nearDist: s.nearDist, forced: s.forced, noRecovery: !!(this.health && this.health.noRecovery), tune: c.sense.tune, decoy: { live: d.live, phase: d.phase, left: d.left, wise: c.sense.wiseT > 0 }, stats: Object.assign({}, c.sense.stats), state: c.state, lethal: c.lethal, inPlay: c.inPlay };
+        },
+        distract: (x, y, z, o) => (this.creature && typeof this.creature.distract === 'function' ? this.creature.distract(x, y, z, o) : false),
       },
       // THE DRESSER (tests, QA, screenshots): state(); place({az, dy, state}) puts it on the wall the ray from you at azimuth az
       // (radians, atan2(dz, dx)) and height dy meets, facing you; measure() starts a measure on your loaded ring now.
@@ -5701,6 +6563,24 @@ export class Game3D {
         return this._godMode;
       },
       warp: (i) => this._warp(i),
+      // SECTION TRIALS: trial(i[, diff]) practises section i (default: the current difficulty); trial() reads the live trial
+      trial: (i, diff) => {
+        if (i === undefined) return this.trial ? JSON.parse(JSON.stringify(this.trial)) : null;
+        return this.startTrial(diff || (DIFFICULTY[this.difficultyKey] ? this.difficultyKey : 'normal'), i);
+      },
+      // GHOST LANTERN: state() reads the recorder / the ghost / the sprite; clear() deletes this chapter + difficulty's ghost; load(b64) plays a recorded one
+      ghost: {
+        state: () => this.debugGhost(),
+        clear: () => {
+          this._ghost = null;
+          return clearGhost(this.chapter, this.difficultyKey);
+        },
+        load: (b64) => {
+          const rec = decodeGhost(b64);
+          this._ghost = rec ? { key: ghostKey(this.chapter, this.difficultyKey), player: new GhostPlayer(rec) } : null;
+          return !!rec;
+        },
+      },
       // The lantern probe (LEVEL_FUN_PLAN P3, the e2e bots): { x, y, z } replaces the hand / view probe until probe(null).
       probe: (q) => {
         this._debugProbe = q && isFinite(q.x) && isFinite(q.y) && isFinite(q.z) ? { x: +q.x, y: +q.y, z: +q.z, on: q.on !== false } : null;
@@ -5737,8 +6617,54 @@ export class Game3D {
       loseContext: () => !!(this.resilience && this.resilience.loseContext()),
       restoreContext: () => !!(this.resilience && this.resilience.restoreContext()),
       governorLevel: (n) => (this.governor ? this.governor.setLevel(n, 'debug') : -1),
+      // THE SKITTERLINGS. The swarm (sim/roaches.js, the tiny harmless ones): state() = alive / cap / by state / stats + the view's instances;
+      // burst() pours a stream out of the wall nearest the right hand (or the head); clear() empties the floor. The hunters: hunters() = the
+      // hunter view's state (debug.creature.placeSkitter / spawnSkitter stage them). AT3D.debug.roaches is the same object (the old name).
+      skitterlings: {
+        state: () => (this.roaches ? Object.assign(this.roaches.state(), { view: this.roachView ? { ...this.roachView.stats } : null }) : { enabled: false }),
+        burst: () => {
+          const o = this.handOrigin('right', {});
+          return !!(this.roaches && this.roaches.burstAt(o.x, o.y, o.z, true));
+        },
+        clear: () => (this.roaches ? (this.roaches.clear(), true) : false),
+        hunters: () => (this.skitterView ? this.skitterView.debug.state() : null),
+      },
       // EXPEDITION (sim/comms3d.js): state() = the signal, the line on air, the queue, the log; say(id, {glitch, at, t}) puts a script
       // line on air now; die(cause, count) ends this life for real (god mode off) so the CONTINUITY restore plays as restore `count`.
+      // THE HOOD (sim/lanternHood.js): hood(true) covers the lantern, hood(false) uncovers it, hood(null) gives it back to the input;
+      // returns { on, k, mode, lock, forced, stats }
+      // HIT FEEDBACK (hitFeedbackGlue.js): hit('mason' | 'skitter', down) a synthetic player:hit (+ the stand-in knock while the SIM's
+      // game.knock is missing or idle; no damage dealt); hitState() the punch, vignette, camera, knock and stats
+      hit: (source, down) => (this.hitFeedback ? this.hitFeedback.debugHit(source, down) : null),
+      hitState: () => (this.hitFeedback ? this.hitFeedback.debugState() : null),
+      hood: (on) => {
+        const h = this.hood;
+        if (!h) return null;
+        if (on !== undefined) h.force(on);
+        return { on: h.on, k: h.k, mode: h.mode, lock: h.lock, forced: h.forced, stats: { ...h.stats } };
+      },
+      // PUZZLE FOCUS (puzzleFocusGlue.js): state() the beat and its log, puzzles() the ratchet, ready() clears the 25 s cooldown
+      focus: {
+        state: () => (this.puzzleFocus ? this.puzzleFocus.debugState() : null),
+        puzzles: () => (this.puzzleFocus ? this.puzzleFocus.debugPuzzles() : []),
+        ready: () => !!(this.puzzleFocus && this.puzzleFocus.debugReady()),
+      },
+      // ITEM CARDS (itemCardGlue.js): the gaze target, the card's name / hint and the view (visible, alpha, width, redraws)
+      itemCard: () => (this.itemCards ? this.itemCards.debugState() : null),
+      // THE CHASE ARC (chaseGlue.js): state() the arc, start(dist) a chase now, lost() the release now (no 3 s settle)
+      chase: {
+        state: () => (this.chase ? this.chase.debugState() : null),
+        start: (dist) => !!(this.chase && this.chase.debugStart(dist)),
+        lost: () => !!(this.chase && this.chase.debugLost()),
+      },
+      // MASON SNAKE ATTACK: masonPhase('stalk'|'dash'|'rise'|'stare'|'lock'|'strike'|'recoil'|'cycle', u | {u, freeze}) forces the attack's look and
+      // sound (u holds it at 0..1; freeze holds the pose); masonPhase('') returns to the sim; masonPhase() reads the state.
+      masonPhase: (phase, o) => {
+        const ma = this.masonAttack;
+        if (!ma) return null;
+        if (phase === undefined) return ma.debugState();
+        return ma.debugPhase(phase, o) ? ma.debugState() : null;
+      },
       comms: {
         state: () => {
           const cm = this.comms;
@@ -5778,6 +6704,8 @@ export class Game3D {
         stinger: (kind) => !!(this.audio && this.audio._music && (this.audio._music.stinger(kind || 'sighting'), true)),
       },
     };
+    api.roaches = api.skitterlings; // the swarm skitterlings' first name (scripts and docs that still say roaches)
+    return api;
   }
 }
 

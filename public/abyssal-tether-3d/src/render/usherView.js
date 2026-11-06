@@ -27,7 +27,7 @@
  *                                            by distance, moves the spheres and the line, hides the unused pool members
  *   v.setTier('low'|'quest'|'high'|null)     LOD distances (null = the renderer's qualityTier, like DresserView)
  *   v.setReducedEffects(bool)                the spheres become thin outlines, no pulsing (comfort: CHAPTER_II_DIRECTION 3.10)
- *   v.stats                                  { shown, drawCalls, triangles, sphereShown, poolSize, lods:[n0,n1,n2,glint], hulls }
+ *   v.stats                                  { shown, drawCalls, triangles, sphereShown, poolSize, lods:[n0,n1,n2,glint] }
  *   v.dispose()
  *
  * THE LONG THROAT. The chain is rotation-only in the clips and the weights were authored for a fixed length: each throat vertex was
@@ -49,13 +49,10 @@
  *
  * Levels of detail (the GLB ships one): LOD0 = the model (6 draws), LOD1 / LOD2 = vertex-clustered copies of suit + shirt + skin + shoe
  * (the veins are dropped) merged into ONE draw with baked vertex colours, plus the shared glow mesh (2 draws), beyond that ONLY a ring
- * glint (one shared quad batch, a pale dot is what a coat in the dark is from the Gallery). The ink outline (outline.js) is one hull
- * from the cheap geometry, near and far. The head is judged at distance / 1.8.
+ * glint (one shared quad batch, a pale dot is what a coat in the dark is from the Gallery). The head is judged at distance / 1.8.
  */
 import * as THREE from 'three';
 import { loadGLB } from './glbLoad.js';
-import { injectToon } from './materials.js';
-import { OUTLINE, addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 export const USHER_URL = new URL('../../assets/models/usher.glb', import.meta.url).href;
 
@@ -68,7 +65,7 @@ export const STRETCH_MAX = 8;
 export const LOD_DIST = { low: [8, 22, 55], quest: [12, 30, 70], high: [24, 50, 100] };
 export const GLINT_FAR = 320; // m: beyond this nothing of him is drawn
 const LOD_HYST = 2;
-const CLUSTER_CELL = [0.05, 0.034, 0.075]; // m: the vertex-clustering cell of the far ink hull, LOD1 and LOD2 (real units, before the 1.8 x)
+const CLUSTER_CELL = [0.05, 0.034, 0.075]; // m: the vertex-clustering cell of LOD1 and LOD2 ([1], [2]; [0] unused since the ink hull went) (real units, before the 1.8 x)
 const FADE = 0.2; // s: clip crossfade
 const RING_LIP = 0.1; // m: from the Maw bone's head to the lip of the ring along the bone (build_usher.py: ring_len 0.11)
 const NECKS = 14;
@@ -358,7 +355,6 @@ function patchBody(mat) {
   reflectedLight.directSpecular += uRim * ( uFr * uFr * uFr );
 }`,
       );
-    injectToon(shader); // the cel bands: the lit colour is final here, before tone mapping and the fog
   };
   mat.customProgramCacheKey = () => 'at3d-usher-body' + (mat.vertexColors ? '-vc' : '');
   mat.needsUpdate = true;
@@ -452,8 +448,6 @@ class Member {
     this.glow = null;
     this.body1 = null;
     this.body2 = null;
-    this.hullNear = null;
-    this.hullFar = null;
     this.bs = new THREE.Sphere(new THREE.Vector3(0, 1.7, 0.2), 3);
     // state (copied from the sim's object in setStates)
     this.used = false;
@@ -523,9 +517,9 @@ export class UsherView {
     this._clipNames = [];
     this._clipIdx = Object.create(null);
     this._done = new Uint8Array(64);
-    this.info = { triangles: [0, 0, 0], hull: [0, 0], bones: 0, clips: 0 };
+    this.info = { triangles: [0, 0, 0], bones: 0, clips: 0 };
     this.collarLocal = [0, 1.62, 0.08]; // m, model space: the head of Neck01 (set from the file)
-    this._stats = { shown: 0, drawCalls: 0, triangles: 0, sphereShown: false, poolSize: 0, lods: [0, 0, 0, 0], hulls: 0 };
+    this._stats = { shown: 0, drawCalls: 0, triangles: 0, sphereShown: false, poolSize: 0, lods: [0, 0, 0, 0] };
     this._owned = []; // geometries and materials this view disposes
     this.spheres = [];
     this._buildTorch();
@@ -650,23 +644,6 @@ export class UsherView {
     const geo1 = clusterSkinned(parts, D, CLUSTER_CELL[1]);
     const geo2 = clusterSkinned(parts, D, CLUSTER_CELL[2]);
     this._owned.push(geo1, geo2);
-    // the ink hulls: near = the real surface without the veins, far = a coarser copy of it
-    let hullNearGeo = null;
-    const hullSources = ['suit', 'shirt', 'skin', 'shoe'].filter((n) => prim[n]).map((n) => prim[n]);
-    try {
-      hullNearGeo = mergedHullGeometry(hullSources);
-      if (hullNearGeo) this._owned.push(hullNearGeo);
-    } catch {
-      hullNearGeo = null;
-    }
-    let hullFarGeo = null;
-    try {
-      // the far hull is a coarser copy still (cell 5 cm: within the line's width from 12 m on)
-      hullFarGeo = mergedHullGeometry([{ geometry: clusterSkinned(parts, D, CLUSTER_CELL[0]) }]);
-      if (hullFarGeo) this._owned.push(hullFarGeo);
-    } catch {
-      hullFarGeo = null;
-    }
 
     const tri = (g) => (g.index ? g.index.count / 3 : g.attributes.position.count / 3);
     let t0 = 0;
@@ -674,7 +651,6 @@ export class UsherView {
     if (glowMesh) t0 += tri(glowMesh.geometry);
     const tg = glowMesh ? tri(glowMesh.geometry) : 0;
     this.info.triangles = [t0, tri(geo1) + tg, tri(geo2) + tg];
-    this.info.hull = [hullNearGeo ? tri(hullNearGeo) : 0, hullFarGeo ? tri(hullFarGeo) : 0];
     this.info.bones = tb.length;
 
     // the clips: every track resolved to (bone, kind, interpolant) once
@@ -745,9 +721,6 @@ export class UsherView {
       if (glowMesh) m.glow = make(glowMesh.geometry, glowMat, 'usher_glow', false);
       m.body1 = make(geo1, farMat, 'usher_lod1', false);
       m.body2 = make(geo2, farMat, 'usher_lod2', false);
-      const nearSources = m.lod0.filter((s) => /usher_(suit|shirt|skin|shoe)$/.test(s.name));
-      if (hullNearGeo && nearSources.length) m.hullNear = addOutline(nearSources, { geometry: hullNearGeo });
-      if (hullFarGeo) m.hullFar = addOutline([m.body1], { geometry: hullFarGeo });
       m.root.scale.setScalar(m.head ? HEAD_SCALE : 1);
       this.root.add(m.root);
       this.members.push(m);
@@ -944,7 +917,6 @@ export class UsherView {
     st.shown = 0;
     st.drawCalls = 0;
     st.triangles = 0;
-    st.hulls = 0;
     st.lods[0] = st.lods[1] = st.lods[2] = st.lods[3] = 0;
     const P = this.members;
     for (let i = 0; i < P.length; i++) {
@@ -1028,14 +1000,6 @@ export class UsherView {
       st.lods[lod]++;
       st.drawCalls += lod === 0 ? m.lod0.length + (m.glow ? 1 : 0) : 1 + (m.glow ? 1 : 0);
       st.triangles += this.info.triangles[lod];
-      if (OUTLINE.on) {
-        const hull = lod === 0 ? m.hullNear : lod === 1 ? m.hullFar : null;
-        if (hull) {
-          st.drawCalls++;
-          st.hulls++;
-          st.triangles += this.info.hull[lod];
-        }
-      }
     } else if (m.vis && lod === 3) {
       st.shown++;
       st.lods[3]++;
@@ -1051,9 +1015,6 @@ export class UsherView {
       m.body1.visible = lod === 1;
       m.body2.visible = lod === 2;
     }
-    const on = OUTLINE.on;
-    if (m.hullNear) m.hullNear.visible = on && lod === 0;
-    if (m.hullFar) m.hullFar.visible = on && lod === 1;
   }
 
   /** Samples the clip (crossfading from the previous one), then the head's throat stretch and the ring's scale. */
@@ -1274,8 +1235,6 @@ export class UsherView {
     this._disposed = true;
     this.ready = false;
     for (const m of this.members) {
-      removeOutline(m.hullNear);
-      removeOutline(m.hullFar);
       if (m.skeleton) m.skeleton.dispose();
       if (m.root.parent) m.root.parent.remove(m.root);
     }

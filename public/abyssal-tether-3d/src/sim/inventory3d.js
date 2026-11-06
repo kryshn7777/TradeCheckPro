@@ -9,6 +9,15 @@
  *   2     ADRENALINE   2   0.6 s   +10 hp and the movement speed x2 for 10 s (run / air speed caps, accelerations,
  *                                  reel and pump speed; gravity and fall damage are unchanged)
  *   3     BATTERY      3   1.0 s   +50 % lantern charge
+ *   4     KNOCKER      3   thrown  not applied: a clockwork rattle thrown with G / pulled from the bag and thrown in VR
+ *                                  (sim/knocker3d.js). It is not a numbered slot (ITEM_COUNT stays 4: keys 1-4, the
+ *                                  radial, the icon cells); take() removes one when it is thrown. A respawn KEEPS the
+ *                                  knocker count (like the jetpack's fuel: a knocker thrown is gone), a new run resets it.
+ *   5     GRENADE      3   thrown  SOLDIER_WEAPONS.md: a fused iron grenade off a dead soldier (sim/weapons3d.js), thrown like the
+ *                                  knocker. Not applied; a respawn keeps the count (a thrown one is gone).
+ *   6     SIDEARM     12   fired   the old service revolver: the count is its ROUNDS (found with 6). Fired, not applied; kept
+ *                                  through a respawn like the grenades.
+ * Old count arrays (5 kinds, before the weapons) migrate: migrateCounts pads them with zeros (importCounts / restore).
  *
  * Applying is a channel. It starts with use() and completes after `dur` seconds, when the item is consumed and its
  * effect lands. It is CANCELLED, and the item is kept, when the player takes damage (health.hits changes), dies, the
@@ -34,11 +43,30 @@ import { CONFIG, U } from './config3d.js';
 const B = CONFIG.bag;
 
 /** Slot order = the number keys 1..4 = the order of the icons. */
-export const ITEM = Object.freeze({ FIRST_AID: 0, BANDAGE: 1, ADRENALINE: 2, BATTERY: 3 });
+export const ITEM = Object.freeze({ FIRST_AID: 0, BANDAGE: 1, ADRENALINE: 2, BATTERY: 3, KNOCKER: 4, GRENADE: 5, SIDEARM: 6 });
+/** The four APPLIED consumables (number keys, radial slots, icon cells). */
 export const ITEM_COUNT = 4;
-export const ITEM_KEYS = Object.freeze(['FIRST_AID', 'BANDAGE', 'ADRENALINE', 'BATTERY']);
-export const ITEM_NAMES = Object.freeze(['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery']);
-export const ITEM_SHORT = Object.freeze(['AID KIT', 'BANDAGE', 'ADRENALINE', 'BATTERY']);
+/** Every kind the bag counts: the four consumables + the knocker + the soldiers' grenade and revolver rounds. counts.length === BAG_KINDS. */
+export const BAG_KINDS = 7;
+export const ITEM_KEYS = Object.freeze(['FIRST_AID', 'BANDAGE', 'ADRENALINE', 'BATTERY', 'KNOCKER', 'GRENADE', 'SIDEARM']);
+export const ITEM_NAMES = Object.freeze(['First aid kit', 'Bandage', 'Adrenaline shot', 'Lantern battery', 'Knocker', 'Grenade', 'Service revolver']);
+export const ITEM_SHORT = Object.freeze(['AID KIT', 'BANDAGE', 'ADRENALINE', 'BATTERY', 'KNOCKER', 'GRENADE', 'REVOLVER']);
+/** The kinds a respawn keeps as the death left them (thrown / fired: gone; picked up: kept): the knocker and the weapons. */
+const KEPT = [ITEM.KNOCKER, ITEM.GRENADE, ITEM.SIDEARM];
+
+/**
+ * A bag count array of any older length (a save or a checkpoint from before the weapons: 5 kinds) as a BAG_KINDS Int8Array: missing
+ * kinds are 0, each count is clamped to its cap, garbage is 0. Writes into `out` when given. Pure.
+ */
+export function migrateCounts(arr, out) {
+  const o = out && out.length === BAG_KINDS ? out : new Int8Array(BAG_KINDS);
+  for (let i = 0; i < BAG_KINDS; i++) {
+    const v = arr && i < arr.length ? Number(arr[i]) : 0;
+    const cap = B.caps[i] | 0;
+    o[i] = v > 0 && isFinite(v) ? Math.min(cap, v | 0) : 0;
+  }
+  return o;
+}
 
 /** Light factor of the lantern for a charge: 1 above lanternDimFrom, falling smoothly to lanternFloor at zero. */
 export function lanternLevel(charge) {
@@ -50,7 +78,7 @@ export class Inventory3D {
   /** @param {EventBus|null} bus */
   constructor(bus) {
     this.bus = bus || null;
-    this.counts = new Int8Array(ITEM_COUNT);
+    this.counts = new Int8Array(BAG_KINDS);
     this.selected = ITEM.BANDAGE;
     this.applying = { active: false, kind: -1, t: 0, dur: 0, hits: 0 };
     this.adrenaline = { active: false, t: 0, dur: B.adrenalineTime };
@@ -60,8 +88,8 @@ export class Inventory3D {
     this.lanternLow = false;
     this.lanternEmpty = false;
     this.lastRefusal = '';
-    this.stats = { picked: new Int16Array(ITEM_COUNT), used: new Int16Array(ITEM_COUNT), cancelled: 0 };
-    this._cp = { counts: new Int8Array(ITEM_COUNT), selected: ITEM.BANDAGE, charge: 1 };
+    this.stats = { picked: new Int16Array(BAG_KINDS), used: new Int16Array(BAG_KINDS), cancelled: 0 };
+    this._cp = { counts: new Int8Array(BAG_KINDS), selected: ITEM.BANDAGE, charge: 1 };
     this.reset();
   }
 
@@ -105,12 +133,12 @@ export class Inventory3D {
 
   /** Room for one more of this item? */
   canAdd(kind) {
-    return kind >= 0 && kind < ITEM_COUNT && this.counts[kind] < B.caps[kind];
+    return kind >= 0 && kind < BAG_KINDS && this.counts[kind] < B.caps[kind];
   }
 
   /** Puts up to n items in the bag (capped). Returns how many went in. */
   add(kind, n = 1) {
-    if (!(kind >= 0 && kind < ITEM_COUNT)) return 0;
+    if (!(kind >= 0 && kind < BAG_KINDS)) return 0;
     const room = B.caps[kind] - this.counts[kind];
     const put = Math.max(0, Math.min(room, n | 0));
     if (put > 0) {
@@ -119,6 +147,23 @@ export class Inventory3D {
       this._emit('bag:change', { kind, count: this.counts[kind] });
     }
     return put;
+  }
+
+  /** Sets a kind's count outright (capped; the run's starting knockers): no pickup statistics, one 'bag:change'. */
+  seed(kind, n) {
+    if (!(kind >= 0 && kind < BAG_KINDS)) return 0;
+    this.counts[kind] = Math.max(0, Math.min(B.caps[kind], n | 0));
+    this._emit('bag:change', { kind, count: this.counts[kind] });
+    return this.counts[kind];
+  }
+
+  /** Takes one item out without applying it (a thrown knocker). Returns false when there is none. */
+  take(kind) {
+    if (!(kind >= 0 && kind < BAG_KINDS) || this.counts[kind] <= 0) return false;
+    this.counts[kind]--;
+    this.stats.used[kind]++;
+    this._emit('bag:change', { kind, count: this.counts[kind] });
+    return true;
   }
 
   select(kind) {
@@ -135,12 +180,13 @@ export class Inventory3D {
 
   /** Why an item cannot be used right now ('' when it can). */
   refusal(kind, health) {
-    if (!(kind >= 0 && kind < ITEM_COUNT)) return 'invalid';
+    if (!(kind >= 0 && kind < ITEM_COUNT)) return kind === ITEM.KNOCKER || kind === ITEM.GRENADE ? 'thrown' : kind === ITEM.SIDEARM ? 'fired' : 'invalid'; // thrown / fired, not applied
     if (this.applying.active) return 'busy';
     if (this.counts[kind] <= 0) return 'empty';
     if (kind === ITEM.FIRST_AID || kind === ITEM.BANDAGE) {
       if (!health || health.dead) return 'dead';
       if (health.hp >= B.fullHp) return 'full';
+      if (health.noRecovery) return 'norecovery'; // MASON_SIGHT.md: the chasing Mason is near
     } else if (kind === ITEM.ADRENALINE) {
       if (this.adrenaline.active) return 'active';
     } else if (this.lanternCharge >= 1 - B.batteryRestore * 0.2) {
@@ -191,8 +237,9 @@ export class Inventory3D {
    * @param {number} dt seconds
    * @param {Health3D|null} health the player's health model (heal target, damage / death detection)
    * @param {boolean} live false while the run is not live (paused, dead, menu): the channel is cancelled and nothing drains
+   * @param {number} [drainMul] x the lantern drain (THE HOOD, sim/lanternHood.js: 0.3 while the lantern is covered); default 1
    */
-  update(dt, health, live = true) {
+  update(dt, health, live = true, drainMul = 1) {
     const a = this.applying;
     if (!live) {
       if (a.active) this.cancel('inactive');
@@ -203,6 +250,7 @@ export class Inventory3D {
     if (a.active) {
       if (health && health.dead) this.cancel('dead');
       else if (health && health.hits !== a.hits) this.cancel('damage');
+      else if (health && health.noRecovery && B.heal[a.kind] > 0 && a.kind !== ITEM.ADRENALINE) this.cancel('norecovery'); // the item is kept
       else {
         a.t += dt;
         if (a.t >= a.dur - 1e-9) this._complete(health);
@@ -223,7 +271,8 @@ export class Inventory3D {
     // The lantern never goes dark but it does burn down.
     const before = this.lanternCharge;
     if (before > 0) {
-      this.lanternCharge = Math.max(0, before - B.lanternDrain * dt);
+      const dm = drainMul >= 0 && drainMul <= 1 ? drainMul : 1;
+      this.lanternCharge = Math.max(0, before - B.lanternDrain * dm * dt);
       this._lantern();
       if (before > B.lanternLow && this.lanternCharge <= B.lanternLow) {
         this.lanternLow = true;
@@ -309,13 +358,36 @@ export class Inventory3D {
   /** Back to the last snapshot: effects and any channel are gone. */
   restore() {
     const c = this._cp;
+    // a respawn keeps the knockers and the weapons as the death left them (a thrown one / a fired round is gone)
+    const k0 = this.counts[KEPT[0]];
+    const k1 = this.counts[KEPT[1]];
+    const k2 = this.counts[KEPT[2]];
     this.counts.set(c.counts);
+    this.counts[KEPT[0]] = k0;
+    this.counts[KEPT[1]] = k1;
+    this.counts[KEPT[2]] = k2;
     this.selected = c.selected;
     this.lanternCharge = c.charge;
     this._clearTransient();
     this._lantern();
     this.lanternLow = this.lanternCharge <= B.lanternLow;
     this.lanternEmpty = this.lanternCharge <= 0;
+  }
+
+  /** The counts as a plain array (a save). */
+  exportCounts() {
+    return Array.from(this.counts);
+  }
+
+  /** Counts from a save of any older length (migrateCounts): one 'bag:change' per kind that changed. */
+  importCounts(arr) {
+    const m = migrateCounts(arr);
+    for (let i = 0; i < BAG_KINDS; i++) {
+      if (this.counts[i] === m[i]) continue;
+      this.counts[i] = m[i];
+      this._emit('bag:change', { kind: i, count: m[i] });
+    }
+    return this.counts;
   }
 
   /** Active effects for the presentation: { adrenaline: {active,t,dur}, speedMul }. The same object every call. */
@@ -325,10 +397,10 @@ export class Inventory3D {
     return f;
   }
 
-  /** Total of all items in the bag. */
+  /** Total of all items in the bag (the knockers included). */
   get total() {
     let n = 0;
-    for (let i = 0; i < ITEM_COUNT; i++) n += this.counts[i];
+    for (let i = 0; i < BAG_KINDS; i++) n += this.counts[i];
     return n;
   }
 

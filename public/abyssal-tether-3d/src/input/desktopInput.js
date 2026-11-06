@@ -13,8 +13,12 @@
  *   Shift                   → reel out          C → brake          F → yank both ropes
  *   Esc / P                 → pause             R → restart         Enter → confirm
  *   1 2 3 4                 → bag: apply first aid kit / bandage / adrenaline / battery (quick use)
- *   mouse wheel             → bag: select the previous / next item      G → apply the selected item
+ *   mouse wheel             → bag: select the previous / next item      B → apply the selected item
  *   X                       → bag: stop applying (taking damage stops it too)
+ *   G                       → THE KNOCKER (sim/knocker3d.js): hold to charge (an aim arc shows), release to throw; a tap lobs it
+ *   V                       → THE HOOD (sim/lanternHood.js): hold to cover the lantern (Settings: Hold / Toggle)
+ *   5 6 7 / T               → SOLDIER_WEAPONS.md: G uses the knocker / a grenade (thrown the same way) / the revolver (fires along the
+ *                             view centre); T cycles them
  *
  * Losing pointer lock during play (the browser's own Esc handling) counts as
  * one pause press. Window blur / tab hide release every key and button.
@@ -77,11 +81,17 @@ const KEY_TO_CODE = {
   n: 'KeyN',
   h: 'KeyH',
   g: 'KeyG',
+  b: 'KeyB',
   x: 'KeyX',
+  v: 'KeyV',
   1: 'Digit1',
   2: 'Digit2',
   3: 'Digit3',
   4: 'Digit4',
+  5: 'Digit5',
+  6: 'Digit6',
+  7: 'Digit7',
+  t: 'KeyT',
 };
 
 export function codeOf(e) {
@@ -105,7 +115,13 @@ const GAME_KEYS = {
   Numpad2: 1,
   Numpad3: 1,
   Numpad4: 1,
+  Digit5: 1,
+  Digit6: 1,
+  Digit7: 1,
+  KeyT: 1,
   KeyG: 1,
+  KeyV: 1, // THE HOOD (held; read by the InputManager each frame)
+  KeyB: 1,
   KeyX: 1,
   KeyW: 1,
   KeyA: 1,
@@ -370,9 +386,22 @@ export class DesktopInput {
     this.keys[code] = true;
     if (e.repeat || wasDown) return;
     // The bag keys act on the run only (the Game ignores them elsewhere); they are not a "press any key".
-    if (code in BAG_SLOT_KEYS || code === 'KeyG' || code === 'KeyX') {
+    if (code === 'KeyV') return; // THE HOOD: a held key, read each frame (not a "press any key")
+    if (code === 'KeyG') {
+      if (!ui && !xr) im._knockEdge(true); // the knocker: held = charging, the release throws (inputManager.js)
+      return;
+    }
+    if (code === 'Digit5' || code === 'Digit6' || code === 'Digit7' || code === 'KeyT') {
+      // SOLDIER_WEAPONS.md: which item G uses (weaponGlue.js reads intent.bag.gadget / gadgetCycle)
       if (!ui && !xr) {
-        if (code === 'KeyG') im._bagEdge('use');
+        if (code === 'KeyT') im._bagEdge('gcycle', 1);
+        else im._bagEdge('gadget', code === 'Digit5' ? 4 : code === 'Digit6' ? 5 : 6);
+      }
+      return;
+    }
+    if (code in BAG_SLOT_KEYS || code === 'KeyB' || code === 'KeyX') {
+      if (!ui && !xr) {
+        if (code === 'KeyB') im._bagEdge('use');
         else if (code === 'KeyX') im._bagEdge('cancel');
         else im._bagEdge('slot', BAG_SLOT_KEYS[code]);
       }
@@ -428,6 +457,7 @@ export class DesktopInput {
     const code = codeOf(e);
     if (!code) return;
     delete this.keys[code];
+    if (code === 'KeyG' && typeof this.im._knockEdge === 'function') this.im._knockEdge(false);
     if (code === 'ShiftLeft' || code === 'ShiftRight') {
       // Some layouts swallow the second Shift's keyup; both sides release together.
       delete this.keys.ShiftLeft;

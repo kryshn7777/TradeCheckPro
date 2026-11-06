@@ -32,7 +32,6 @@
 
 import * as THREE from 'three';
 import { computeFrames } from './mason/masonPose.js';
-import { injectToon } from './materials.js';
 
 const KIT_REQUIRED = ['Mason_Head', 'Mason_Tail', 'Mason_Pit', 'Mason_LimbUpper', 'Mason_LimbLower', 'Mason_Hook'];
 const KIT_OPTIONAL = ['Mason_Jaw', 'Mason_Spine', 'Mason_Membrane'];
@@ -337,7 +336,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 #endif`,
       );
     shader.fragmentShader = frag;
-    injectToon(shader);
   };
   mat.customProgramCacheKey = () => 'mason-view-v3-' + (vertexOverrides ? 'vc' : 'tex') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }
@@ -753,13 +751,15 @@ export class CreatureView {
     const snapFrames = !this._frames;
     const F = this._frames || (this._frames = new Float32Array(this.SEG * 12));
     computeFrames(B, SEG, F, dt, snapFrames); // shared with the rigged view: the roll about the facing is rate limited (no flips at corners)
+    const snk = this.snake && this.snake.active ? this.snake : null; // MASON SNAKE ATTACK (masonAttackGlue.js): the cobra over the frames
+    if (snk) snk.apply(F, null, SEG, B.size || 1);
 
     // ---- blocks, head, tail ----
     for (let i = SEG; i < this.SEG; i++) this._hideBone(this.bSpine[i].index);
     for (let i = 0; i < SEG; i++) {
       const b = this.bSpine[i];
       const o = i * 12;
-      const sc = (kBase * (B.scale ? B.scale[i] : 1)) / (i === SEG - 1 ? D.tailRatio : 1);
+      const sc = ((kBase * (B.scale ? B.scale[i] : 1)) / (i === SEG - 1 ? D.tailRatio : 1)) * (snk ? snk.scaleOf(i) : 1);
       let px = F[o];
       let py = F[o + 1];
       let pz = F[o + 2];

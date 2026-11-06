@@ -3,15 +3,19 @@
  * ORM). Adds, on top of the standard lighting (the lantern lights it like everything else):
  *   - the radial fog curve of the level (atFogFactor when materials.js installed it), a fog CAP for the far sighting (a dark
  *     silhouette against the haze, not a fogged-out blur) and a little emissive glint that pierces the fog;
- *   - a wet film from the baked per-vertex mask (_MASK.g: flesh and mortar glisten, stone barely): roughness drops where wet;
+ *   - MATTE STONE (THE LANTERN art pass): the blocks are the dressed dead under centuries of soot, not lacquer. Stone (_MASK.r = 0)
+ *     gets a roughness floor (0.86), a damped direct specular, no cool rim, a lifted albedo with the baked AO crushing the cavities, and
+ *     no metal (env reflection ~0.14 instead of the glTF default 0.55); only the flesh / sinew discs between the blocks (_MASK.r = 1)
+ *     keep a wet film (roughness down to 0.32) and the grazing rim;
  *   - the near-eye dissolve: fragments closer than ~1.3 m to the eye dither away (interleaved gradient noise), so the crown can
  *     never fill the headset or clip the near plane;
  *   - a faint cold ambient (x albedo) + a grazing fresnel rim so the mostly unlit mass keeps its form and its outline against the haze;
  *   - the sensory glow level and the stone ramp live in uniforms (no recompiles).
  * `reduced` (settings.reducedEffects) drops the wet film.
+ * SEAM EMBER (matte only): the flesh / sinew between the blocks (_MASK.r) smoulders where it is deepest (baked AO), pulsed by the
+ * view's heartbeat and listening (uEmber.rgb = colour x level, kept well under the red eyes; 0 with reducedEffects).
  */
 import * as THREE from 'three';
-import { injectToon } from '../materials.js';
 
 export function makeMasonUniforms() {
   return {
@@ -21,12 +25,24 @@ export function makeMasonUniforms() {
     uNear: { value: new THREE.Vector2(0.55, 1.3) }, // dissolve starts at x metres, fully solid beyond y
     uTint: { value: new THREE.Color(1, 1, 1) },
     uAmb: { value: new THREE.Color(0.12, 0.15, 0.17) }, // a faint cold ambient so the unlit mass keeps its form (x albedo)
-    uRim: { value: new THREE.Color(0.12, 0.16, 0.18) }, // grazing rim that separates the outline from the haze
+    uRim: { value: new THREE.Color(0, 0, 0) }, // grazing rim: off for the Mason (no cool sheen: the lantern alone shapes it); the skitterlings set their own
+    uStone: { value: new THREE.Vector4(0.95, 0.7, 0.86, 0.3) }, // stone (the re-baked atlas is already lit-stone value; was 1.8 / 0.35 on the black v2 bake): albedo lift, cavity floor (x AO), roughness floor, direct specular kept
+    uEmber: { value: new THREE.Color(0, 0, 0) }, // seam ember radiance (masonRigView sets it per frame)
+    uAoLo: { value: 0.15 }, // the ORM's AO floor (packed lo + (1 - lo) x ao): the shader reads the raw occlusion back
   };
 }
 
-export function patchMasonMaterial(mat, U) {
+/**
+ * @param {object} [opts] opts.matte = false keeps the old all-over wet look (the skitterlings' crimson chitin, skitterMaterial.js).
+ */
+export function patchMasonMaterial(mat, U, opts = {}) {
+  const matte = opts.matte !== false;
   mat.userData.masonUniforms = U;
+  // dielectric stone: the shared reflection probe sizes envMapIntensity from these factors (lighting.js applyLookTo): 0.14, not 0.55
+  if (matte && !/Emissive/i.test(mat.name || '')) {
+    mat.metalness = 0;
+    mat.roughness = 1;
+  }
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, U);
     const fogExpr = /atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment)
@@ -50,7 +66,10 @@ uniform float uWet;
 uniform vec2 uNear;
 uniform vec3 uTint;
 uniform vec3 uAmb;
-uniform vec3 uRim;`,
+uniform vec3 uRim;
+uniform vec4 uStone;
+uniform vec3 uEmber;
+uniform float uAoLo;`,
       )
       .replace(
         '#include <clipping_planes_fragment>',
@@ -70,16 +89,50 @@ uniform vec3 uRim;`,
 {
   float mFr = 1.0 - clamp( dot( normal, normalize( vViewPosition ) ), 0.0, 1.0 );
   reflectedLight.indirectDiffuse += diffuseColor.rgb * uAmb;
-  reflectedLight.directSpecular += uRim * ( mFr * mFr * mFr ) * ( 0.45 + 0.55 * vMasonMask.g );
+${
+  matte
+    ? `  reflectedLight.directSpecular *= mix( uStone.w, 1.0, vMasonMask.r ); // dry stone: the lantern's highlight is a dull sheen
+  reflectedLight.directSpecular += uRim * ( mFr * mFr * mFr ) * 0.5 * vMasonMask.r;`
+    : '  reflectedLight.directSpecular += uRim * ( mFr * mFr * mFr ) * ( 0.45 + 0.55 * vMasonMask.g );'
+}
 }`,
       )
       .replace(
         '#include <color_fragment>',
-        '#include <color_fragment>\ndiffuseColor.rgb *= uTint;',
+        `#include <color_fragment>
+diffuseColor.rgb *= uTint;
+${matte ? '' : '#if 0'}
+{
+  // stone: lift the near-black albedo toward weathered stone, crush the baked cavities (AO packed 0.4 + 0.6 ao)
+  float mAo = 1.0;
+#ifdef USE_AOMAP
+  mAo = smoothstep( uAoLo, 1.0, texture2D( aoMap, vAoMapUv ).r );
+#endif
+  diffuseColor.rgb *= mix( uStone.x * mix( uStone.y, 1.0, mAo ), 1.0, vMasonMask.r );
+}
+${matte ? '' : '#endif'}`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
-        '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, min( roughnessFactor, 0.22 ), clamp( vMasonMask.g * uWet, 0.0, 1.0 ) );',
+        matte
+          ? `#include <roughnessmap_fragment>
+roughnessFactor = mix( max( roughnessFactor, uStone.z ), roughnessFactor, vMasonMask.r );
+roughnessFactor = mix( roughnessFactor, min( roughnessFactor, 0.32 ), clamp( vMasonMask.r * uWet, 0.0, 1.0 ) );`
+          : '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, min( roughnessFactor, 0.22 ), clamp( vMasonMask.g * uWet, 0.0, 1.0 ) );',
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        matte
+          ? `#include <emissivemap_fragment>
+{
+  // seam ember: only the flesh, only where it is deep in the joint
+  float mOcc = 1.0;
+#ifdef USE_AOMAP
+  mOcc = clamp( ( texture2D( aoMap, vAoMapUv ).r - uAoLo ) / ( 1.0 - uAoLo ), 0.0, 1.0 );
+#endif
+  totalEmissiveRadiance += uEmber * vMasonMask.r * ( 1.0 - smoothstep( 0.2, 0.65, mOcc ) );
+}`
+          : '#include <emissivemap_fragment>',
       )
       .replace(
         '#include <fog_fragment>',
@@ -94,7 +147,6 @@ vec3 mPreFog = gl_FragColor.rgb;
 }
 #endif`,
       );
-    injectToon(shader); // the cel bands (materials.js atToon): the lit colour is final here, before tone mapping and the fog tail above
   };
-  mat.customProgramCacheKey = () => 'mason-rig-v3' + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
+  mat.customProgramCacheKey = () => (matte ? 'mason-rig-v5' : 'mason-rig-v3') + (/atFogFactor/.test(THREE.ShaderChunk.fog_pars_fragment) ? '-rf' : '');
 }

@@ -4,7 +4,8 @@
  *   BagFx(game)              game: { renderer.scene, bag (Inventory3D), input, intent, settings, state, hidePlayer, xrActive }
  *   .update(dt, game)        once per frame (Game3D._updateViews)
  *   .makeIconTexture()       THREE.CanvasTexture 256x128 (mipmapped): four item icons (first aid kit, bandage, adrenaline
- *                            syringe, battery) with their counts, the selected slot framed, the lantern charge bar, the
+ *                            syringe, battery) with their counts, the selected slot framed, the lantern charge bar (with
+ *                            THE KNOCKER's glyph and count at its right end when the knocker is on), the
  *                            apply progress bar and the active adrenaline timer. The same instance every call. Redrawn
  *                            at <= 20 Hz and only when something it shows changed, only while a run is on screen.
  *   .iconCanvas, .iconFrame  the canvas behind it and a counter that changes on every redraw (the DOM HUD copies it)
@@ -13,7 +14,7 @@
  *                            the scene: four icons around the hand, the one under the hand lit
  *   .dispose()
  *
- * The icons are drawn as SILHOUETTES (a cross-box kit, a roll with a tail, a syringe, a cell) in one phosphor colour:
+ * The icons are drawn as SILHOUETTES (a cross-box kit, a bound dressing with two tails, a syringe, a cell) in one phosphor colour:
  * readable without colour, the same shapes as the world props (pickupsView.js).
  */
 
@@ -61,22 +62,23 @@ export function drawItemIcon(ctx, kind, cx, cy, s, col, lw = 3) {
     ctx.fillRect(-3.5, -6, 7, 22);
     ctx.fillRect(-11, 1.5, 22, 7);
   } else if (kind === ITEM.BANDAGE) {
-    // a roll seen end-on with a loose tail
+    // the field dressing (itemModels.js): a folded pad bound with twine, two long tails trailing out of one end
     ctx.beginPath();
-    ctx.arc(-8, -2, 15, 0, Math.PI * 2);
+    ctx.roundRect(-26, -16, 32, 22, 4);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(-8, -2, 6, 0, Math.PI * 2);
+    ctx.moveTo(-23, -8);
+    ctx.lineTo(3, -8); // the fold
+    ctx.moveTo(-12, -16);
+    ctx.lineTo(-12, 6); // the twine
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-8, 13);
-    ctx.lineTo(22, 13);
-    ctx.lineTo(22, 21);
-    ctx.lineTo(-8, 21);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(14, 13);
-    ctx.lineTo(14, 21);
+    ctx.moveTo(6, -6);
+    ctx.bezierCurveTo(16, -6, 12, 10, 22, 12);
+    ctx.lineTo(28, 14);
+    ctx.moveTo(6, 2);
+    ctx.bezierCurveTo(12, 4, 4, 18, 14, 22);
+    ctx.lineTo(20, 22);
     ctx.stroke();
   } else if (kind === ITEM.ADRENALINE) {
     // a syringe on the diagonal: needle down-left, plunger up-right
@@ -93,7 +95,43 @@ export function drawItemIcon(ctx, kind, cx, cy, s, col, lw = 3) {
     ctx.fillRect(27, -8, 4, 16); // thumb plate
     ctx.fillRect(-16, -10, 3.5, 20); // finger flange
     ctx.fillRect(-6, -2, 14, 4); // liquid
-  } else {
+  } else if (kind === ITEM.GRENADE) {
+    // SOLDIER_WEAPONS.md: the iron grenade: a ball, a band round its waist, the collar and the fuse cord curling off it
+    ctx.beginPath();
+    ctx.arc(0, 4, 17, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-17, 4);
+    ctx.lineTo(17, 4);
+    ctx.stroke();
+    ctx.fillRect(-6, -19, 12, 6);
+    ctx.beginPath();
+    ctx.moveTo(0, -19);
+    ctx.quadraticCurveTo(4, -28, 13, -25);
+    ctx.stroke();
+  } else if (kind === ITEM.SIDEARM) {
+    // the service revolver side-on: the barrel, the drum, the hammer, the grip raking back, the trigger guard
+    ctx.beginPath();
+    ctx.moveTo(-28, -10);
+    ctx.lineTo(10, -10);
+    ctx.lineTo(10, 0);
+    ctx.lineTo(-28, 0);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(-4, -14, 14, 18, 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(10, -6);
+    ctx.lineTo(16, -14);
+    ctx.moveTo(10, 0);
+    ctx.lineTo(24, 22);
+    ctx.lineTo(14, 24);
+    ctx.lineTo(4, 4);
+    ctx.moveTo(-2, 4);
+    ctx.quadraticCurveTo(0, 12, 6, 10);
+    ctx.stroke();
+  } else if (kind !== ITEM.KNOCKER) {
     // a cell with a terminal and a bolt
     ctx.beginPath();
     ctx.roundRect(-13, -16, 26, 40, 4);
@@ -108,6 +146,22 @@ export function drawItemIcon(ctx, kind, cx, cy, s, col, lw = 3) {
     ctx.lineTo(1, 0);
     ctx.closePath();
     ctx.fill();
+  } else if (kind === ITEM.KNOCKER) {
+    // THE KNOCKER: a squat drum, the striker arm over its lid, the wind-up key on its flank
+    ctx.beginPath();
+    ctx.roundRect(-18, -4, 30, 22, 4);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-12, -4);
+    ctx.lineTo(-12, -11);
+    ctx.lineTo(6, -11);
+    ctx.moveTo(6, -11);
+    ctx.lineTo(12, -18);
+    ctx.moveTo(12, 7);
+    ctx.lineTo(20, 7);
+    ctx.moveTo(20, 1);
+    ctx.lineTo(20, 13);
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -179,6 +233,23 @@ export class BagFx {
     return m;
   }
 
+  /** THE KNOCKER is on (the strip shows its count; the radial its draw hint). */
+  _knockOn() {
+    const k = this.game && this.game.knocker;
+    return !!k && k.enabled !== false;
+  }
+
+  /** SOLDIER_WEAPONS.md: the gadget G / the VR pull-up uses (weaponGlue.js): ITEM.KNOCKER, GRENADE or SIDEARM. */
+  _gadget() {
+    const w = this.game && this.game.weapons;
+    return w && w.gadget >= ITEM.KNOCKER ? w.gadget : ITEM.KNOCKER;
+  }
+
+  /** The gadget slot is shown (the knocker on, or a weapon selected). */
+  _gadgetOn() {
+    return this._knockOn() || this._gadget() !== ITEM.KNOCKER;
+  }
+
   update(dt, game) {
     const g = game || this.game;
     const bag = g.bag;
@@ -213,11 +284,12 @@ export class BagFx {
       mesh.lookAt(hp.x, hp.y, hp.z);
       mesh.visible = true;
       this._rAcc += dt;
-      const key = `${vr.hover}|${bag.selected}|${bag.counts[0]}${bag.counts[1]}${bag.counts[2]}${bag.counts[3]}`;
+      const gk = this._gadget();
+      const key = `${vr.hover}|${bag.selected}|${bag.counts[0]}${bag.counts[1]}${bag.counts[2]}${bag.counts[3]}${bag.counts[ITEM.KNOCKER]}|${gk}:${bag.counts[gk]}:${bag.counts[ITEM.GRENADE]}${bag.counts[ITEM.SIDEARM]}|${Math.round((vr.drawK || 0) * 8)}`;
       if (key !== this._rKey && this._rAcc >= 1 / 30) {
         this._rKey = key;
         this._rAcc = 0;
-        this._drawRadial(vr.hover, bag);
+        this._drawRadial(vr.hover, bag, vr.drawK || 0);
         this.radialTexture.needsUpdate = true;
       }
     } else if (mesh.visible) {
@@ -247,7 +319,7 @@ export class BagFx {
     const gBlink = showGrip && cl.warn > 0.25 ? Math.floor(this._t * 4) & 1 : 0;
     const key = idle
       ? 'idle'
-      : `${counts[0]}${counts[1]}${counts[2]}${counts[3]}|${sel}|${ap.active ? ap.kind + ':' + Math.round(prog * 64) : '-'}|${ef.active ? Math.ceil(ef.t * 10) : '-'}|${Math.round(charge * 200)}|${blink}|${this.game.state}|${showGrip ? Math.round(gs * 100) + ':' + (cl.exhausted ? 1 : 0) + gBlink : '-'}`;
+      : `${counts[0]}${counts[1]}${counts[2]}${counts[3]}${this._gadgetOn() ? this._gadget() + ':' + counts[this._gadget()] : '-'}|${sel}|${ap.active ? ap.kind + ':' + Math.round(prog * 64) : '-'}|${ef.active ? Math.ceil(ef.t * 10) : '-'}|${Math.round(charge * 200)}|${blink}|${this.game.state}|${showGrip ? Math.round(gs * 100) + ':' + (cl.exhausted ? 1 : 0) + gBlink : '-'}`;
     if (key === this._key) return;
     this._key = key;
 
@@ -288,10 +360,20 @@ export class BagFx {
     ctx.fillText(charge <= 0.001 ? 'LAMP DIM' : charge <= B.lanternLow ? 'LAMP LOW' : 'LAMP', 6, 87);
     ctx.strokeStyle = lowCol;
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(78.5, 77.5, 128, 11);
-    ctx.fillRect(80, 79, Math.max(0, 125 * U.clamp(charge, 0, 1)), 8);
+    const kOn = !idle && this._gadgetOn();
+    const barW = kOn ? 84 : 128; // THE KNOCKER's glyph + count (or the selected weapon's: SOLDIER_WEAPONS.md) take the row's right end
+    ctx.strokeRect(78.5, 77.5, barW, 11);
+    ctx.fillRect(80, 79, Math.max(0, (barW - 3) * U.clamp(charge, 0, 1)), 8);
     ctx.textAlign = 'right';
-    ctx.fillText(`${Math.round(charge * 100)}%`, W - 6, 87);
+    ctx.fillText(`${Math.round(charge * 100)}%`, kOn ? 196 : W - 6, 87);
+    if (kOn) {
+      const gk = this._gadget();
+      const kn = counts[gk] | 0;
+      drawItemIcon(ctx, gk, 216, 82, 22, kn > 0 ? AMBER : PHOS_DIM, 3);
+      ctx.fillStyle = kn > 0 ? AMBER : PHOS_DIM;
+      ctx.textAlign = 'right';
+      ctx.fillText(`${kn}`, W - 6, 87);
+    }
     // status: applying / adrenaline
     ctx.textAlign = 'left';
     let y = 106;
@@ -352,7 +434,7 @@ export class BagFx {
   // The radial
   // -----------------------------------------------------------------------------------------------
 
-  _drawRadial(hover, bag) {
+  _drawRadial(hover, bag, drawK = 0) {
     const ctx = this._rg;
     ctx.clearRect(0, 0, RS, RS);
     const c = RS / 2;
@@ -396,6 +478,29 @@ export class BagFx {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(hover >= 0 ? ITEM_NAMES[hover].toUpperCase() : 'POINT + RELEASE', c, c);
+    // THE KNOCKER: pull the hand up and out of the bag (grip held) to take one, then throw it
+    // SOLDIER_WEAPONS.md: the pull-up draws the selected gadget (X with the ring open switches it)
+    const gk = this._gadget();
+    const kn = bag && this._gadgetOn() ? bag.counts[gk] | 0 : 0;
+    const w = this.game && this.game.weapons;
+    const swap = !!(w && typeof w.on === 'function' && w.on() && bag && (bag.counts[ITEM.GRENADE] > 0 || bag.counts[ITEM.SIDEARM] > 0));
+    if (swap) {
+      ctx.fillStyle = 'rgba(143,255,180,0.75)';
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillText('X: SWITCH', c, c - 17);
+    }
+    if (kn > 0) {
+      ctx.fillStyle = drawK > 0.5 ? AMBER : 'rgba(255,189,94,0.7)';
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillText(`PULL UP: ${gk === ITEM.GRENADE ? 'GRENADE' : gk === ITEM.SIDEARM ? 'REVOLVER' : 'KNOCKER'} x${kn}`, c, c + 17);
+      if (drawK > 0) {
+        ctx.strokeStyle = AMBER;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(c, c, 112, -Math.PI / 2 - drawK * Math.PI, -Math.PI / 2 + drawK * Math.PI);
+        ctx.stroke();
+      }
+    }
     ctx.textBaseline = 'alphabetic';
   }
 

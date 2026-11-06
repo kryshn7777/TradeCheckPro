@@ -11,7 +11,8 @@
  *         A = jump (+ confirm)   B = pause (+ back while a panel is up)
  *         hold X = restart while paused / dead (never mid-run)
  *         hold Y = recenter (horizontal only: the player-height calibration is kept)
- *         left stick click = brake
+ *         left stick click = brake (held); a quick tap toggles THE HOOD (plans/LANTERN_HOOD.md)
+ *         right grip with the right hand at the lantern (left bracer) = THE HOOD (held)
  *         Both controllers are required: losing one (put down → tracked hands,
  *         battery, disconnect) for ctrlLostPauseS mid-run raises a pause edge.
  * Desktop: see desktopInput.js (LMB right tether, RMB left tether, WASD, …).
@@ -37,7 +38,8 @@
 
 import { Group, Matrix4, Quaternion, Vector3 } from 'three';
 import { CONFIG, U, VIEW } from '../sim/config3d.js';
-import { XRInput, tetherDown } from './xrInput.js';
+import { makeGripToggle, resetGripToggle, stepGripToggle, makeRopeLatch, ropeLatchRise } from './assistLatch.js'; // ASSIST PACK
+import { XRInput, tetherDown, makeHandVel, trackHandVel, handVelOf } from './xrInput.js';
 import { DesktopInput } from './desktopInput.js';
 import { TouchInput } from './touchInput.js';
 import { makeBagGesture, updateBagGesture } from './bagGesture.js';
@@ -58,6 +60,9 @@ export const INPUT_TUNING = {
   gripDeadzone: 0.25, // a resting finger on the grip is not a yank
   recenterHoldS: 0.8, // hold Y this long to recenter
   restartHoldS: 1.0, // hold X this long to restart (a tap would throw away the whole descent)
+  hoodReach: 0.12, // THE HOOD: the right grip pose within this of the lantern starts covering it (m)
+  hoodKeep: 0.18, // ... and keeps covering it while within this (hysteresis, m)
+  hoodTapS: 0.3, // a left stick click released within this toggles the hood (longer = the brake only)
   ctrlLostPauseS: 0.5, // a run pauses once a controller has been missing (or is a tracked hand) this long
   eyeCalMin: VIEW.measureMin, // plausible eye heights (m above the real floor) for a measurement …
   eyeCalMax: VIEW.measureMax, // … outside this the reading is ignored
@@ -111,7 +116,16 @@ export function makeIntent() {
     // The bag (WP-BAG): slot 0..3 = quick-use that item (desktop 1-4, VR radial release), use = apply the selected one
     // (G), cycle = wheel steps since last frame, cancel = stop applying (X; VR: X tap or grip at the bag), vr = the
     // hip-bag gesture state (bagGesture.js; null on the desktop).
-    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    // gadget / gadgetCycle (SOLDIER_WEAPONS.md): select the thrown / fired item G uses (desktop 5 6 7 = knocker / grenade / revolver,
+    // T cycles; touch: the bag's KNOCK / GRENADE / REVOLVER buttons; VR: X tapped with the bag ring open cycles, weaponGlue.js)
+    bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null, gadget: -1, gadgetCycle: 0 },
+    // THE KNOCKER (sim/knocker3d.js): desktop G: pressed / released edges and held (the charge); touch KNOCK: tap = pressed +
+    // released. VR throws it with the hand (intent.bag.vr: the bag gesture's draw / throw edges, handVelocity()).
+    knocker: { pressed: false, held: false, released: false },
+    // THE HOOD (sim/lanternHood.js, plans/LANTERN_HOOD.md): hood = the cover input held (VR: right grip with the right hand at the
+    // lantern; desktop V; touch HOOD), hoodToggle = a toggle edge (VR: a quick left stick click).
+    hood: false,
+    hoodToggle: false,
     // Grip climbing (WP-CLIMB): VR grip per hand + the palm points; desktop F + the view axes (see makeClimbIntent).
     climb: makeClimbIntent(),
     // extras (not in the contract; harmless to ignore)
@@ -200,7 +214,7 @@ function applyOverride(I, o) {
   }
   if (typeof o.reel === 'number') I.reel = o.reel;
   if (typeof o.turnRate === 'number') I.turnRate = o.turnRate;
-  for (const k of ['jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed', 'anyPressed']) {
+  for (const k of ['hood', 'hoodToggle', 'jumpPressed', 'brake', 'pausePressed', 'restartPressed', 'confirmPressed', 'backPressed', 'nvPressed', 'holsterPressed', 'jetPressed', 'mapPressed', 'anyPressed']) {
     if (k in o) I[k] = !!o[k];
   }
   if (o.hands) {
@@ -212,6 +226,10 @@ function applyOverride(I, o) {
       if (typeof src.yank === 'number') dst.yank = src.yank;
       if ('aim' in src) dst.aim = src.aim;
     }
+  }
+  if (o.knocker) {
+    // THE KNOCKER's key (desktop G) for bots / tests / captures: pressed, held, released
+    for (const k of ['pressed', 'held', 'released']) if (k in o.knocker) I.knocker[k] = !!o.knocker[k];
   }
   if (o.ui) {
     if ('ray' in o.ui) I.ui.ray = o.ui.ray;
@@ -264,16 +282,29 @@ export class InputManager {
     this.lastError = null;
 
     this.intent = makeIntent();
-    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false };
-    this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false };
+    this._edges = { jump: false, pause: false, restart: false, confirm: false, back: false, any: false, click: false, nv: false, holster: false, jet: false, map: false, hoodToggle: false };
+    /** THE HOOD: the cover input is held this frame (VR right grip at the lantern / desktop V / touch HOOD); see _updateHoodXR. */
+    this.hood = false;
+    this._hoodXR = false; // VR: the right grip is covering the lantern (hysteresis + latched until the grip opens)
+    this._hoodGrip = false; // VR: the right grip squeezed (hysteresis)
+    this._l3T = 0; // VR: how long the left stick has been clicked (a short click toggles the hood, a hold is the brake)
+    this._hv = new Vector3();
+    this._bagEdges = { slot: -1, use: false, cycle: 0, cancel: false, gadget: -1, gcycle: 0 };
+    this._knock = { down: false, up: false, held: false };
+    this._handVel = [makeHandVel(), makeHandVel()]; // VR: each hand's world velocity (the knocker's throw)
     this._gripOn = [false, false]; // climb grab per hand (grip squeeze with hysteresis)
+    // ASSIST PACK (input/assistLatch.js): gripMode 'toggle' (VR per hand; [2] = the desktop / touch cling) and ropeLatch per hand
+    this._gripTog = [makeGripToggle(), makeGripToggle(), makeGripToggle()];
+    this._ropeLatch = { left: makeRopeLatch(), right: makeRopeLatch() };
+    this._gripRelEv = { left: { hand: 'left' }, right: { hand: 'right' } };
     this._bagGesture = makeBagGesture();
     this._bagHands = [
       { ok: false, x: 0, y: 0, z: 0, grip: 0 },
       { ok: false, x: 0, y: 0, z: 0, grip: 0 },
     ];
     this._bagState = { live: false, applying: false, hx: 0, hy: 0, hz: 0, yaw: 0, hands: this._bagHands, counts: null };
-    this._noCounts = new Int8Array(4);
+    this._noCounts = new Int8Array(5);
+    this._bagDt = 0;
     this._ht = { left: makeTrigger(), right: makeTrigger() };
     this._btn = { a: makeButton(), b: makeButton(), x: makeButton(), y: makeButton(), l3: makeButton(), r3: makeButton() };
     this._aim = { left: makeRay(), right: makeRay() };
@@ -306,6 +337,16 @@ export class InputManager {
       });
       on('player:death', () => {
         this._playerDead = true;
+      });
+      // ASSIST PACK: a latched rope whose line ended on its own (a miss, a break, a cut, a cancel) unlatches: the next tap fires
+      const drop = (p) => this._ropeLatchDrop(p && p.hand);
+      on('grapple:miss', drop);
+      on('grapple:break', drop);
+      on('rope:cancel', (p) => {
+        if (p && p.reason !== 'input') drop(p);
+      });
+      on('grapple:release', (p) => {
+        if (p && p.reason !== 'input') drop(p);
       });
       for (const t of ['game:start', 'game:restart', 'game:respawn', 'game:menu']) {
         on(t, () => {
@@ -382,6 +423,7 @@ export class InputManager {
     const step = isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 0;
     const xr = this.xrActive;
     if ((xr ? 'xr' : 'desktop') !== this.mode) this._setMode(xr ? 'xr' : 'desktop');
+    this._bagDt = step;
     const I = this.intent;
     I.source = this.mode;
     if (xr) this._updateXR(step);
@@ -406,13 +448,22 @@ export class InputManager {
     I.backPressed = E.back;
     I.anyPressed = E.any;
     I.ui.click = E.click;
+    I.hood = this.hood && !this.uiMode;
+    I.hoodToggle = E.hoodToggle && !this.uiMode;
     const BE = this._bagEdges;
     const IB = I.bag;
     IB.slot = BE.slot;
     IB.use = BE.use;
     IB.cycle = BE.cycle;
     IB.cancel = BE.cancel;
+    IB.gadget = BE.gadget;
+    IB.gadgetCycle = BE.gcycle;
     IB.vr = xr ? this._bagGesture : null;
+    const KN = this._knock;
+    const IK = I.knocker;
+    IK.pressed = KN.down && !this.uiMode;
+    IK.released = KN.up;
+    IK.held = KN.held && !this.uiMode && !xr;
     if (this._override) applyOverride(I, this._override);
     return I;
   }
@@ -431,11 +482,16 @@ export class InputManager {
     E.holster = false;
     E.jet = false;
     E.map = false;
+    E.hoodToggle = false;
     const BE = this._bagEdges;
     BE.slot = -1;
     BE.use = false;
     BE.cycle = 0;
     BE.cancel = false;
+    BE.gadget = -1;
+    BE.gcycle = 0;
+    this._knock.down = false;
+    this._knock.up = false;
     for (const h of HANDS) {
       const ht = this._ht[h];
       ht.pressEdge = false;
@@ -860,6 +916,26 @@ export class InputManager {
     else if (name === 'use') B.use = true;
     else if (name === 'cancel') B.cancel = true;
     else if (name === 'cycle') B.cycle += value < 0 ? -1 : 1;
+    else if (name === 'gadget') B.gadget = value | 0; // SOLDIER_WEAPONS.md: the item G uses (4 knocker, 5 grenade, 6 revolver)
+    else if (name === 'gcycle') B.gcycle += value < 0 ? -1 : 1;
+  }
+
+  /** The knocker key (desktop G down / up, touch KNOCK tap): edges for this frame + the held state. */
+  _knockEdge(down) {
+    const K = this._knock;
+    if (down) {
+      if (!K.held) K.down = true;
+      K.held = true;
+    } else if (K.held) {
+      K.held = false;
+      K.up = true;
+    }
+  }
+
+  /** VR: a hand's world velocity (m/s) over the last ~70 ms into `out` {x,y,z} (the knocker's release velocity). */
+  handVelocity(hand, out) {
+    const o = out || { x: 0, y: 0, z: 0 };
+    return handVelOf(this._handVel[hand === 'left' ? 0 : 1], o);
   }
 
   /**
@@ -869,7 +945,22 @@ export class InputManager {
   _handPhysical(hand, down, source) {
     const ht = this._ht[hand];
     if (!ht) return;
-    const d = !!down;
+    let d = !!down;
+    if (this._ropeLatchOn(source)) {
+      // ASSIST PACK rope latch: only a fresh press counts; it flips the tether (fire-and-stay / let go). A press over a panel clicks.
+      if (!ropeLatchRise(this._ropeLatch[hand], d)) return;
+      if (this.uiMode) {
+        this._edges.any = true;
+        if (source !== 'desktop') {
+          this.uiHand = hand;
+          this._edges.click = true;
+        }
+        return;
+      }
+      ht.reblock = false;
+      ht.blocked = false;
+      d = !ht.phys;
+    }
     if (ht.reblock) {
       ht.reblock = false;
       if (d) {
@@ -905,6 +996,35 @@ export class InputManager {
         ht.releaseEdge = true;
       }
     }
+  }
+
+  /** ASSIST PACK: the rope latch applies to this source (settings.ropeLatch; VR triggers and the mouse / keys, not the touch layer). */
+  _ropeLatchOn(source) {
+    if (!this.settings || this.settings.ropeLatch !== true || source === 'touch') return false;
+    return !(source === 'desktop' && this.touch && this.touch.active); // (touch keeps its own touchRopeMode latch)
+  }
+
+  /** ASSIST PACK: a latched tether whose line ended by itself lets go of its latch. */
+  _ropeLatchDrop(hand) {
+    const ht = hand ? this._ht[hand] : null;
+    if (!ht || !this._ropeLatchOn(this.mode === 'xr' ? 'xr' : 'desktop') || !ht.game) return;
+    ht.game = false;
+    ht.phys = false;
+    ht.pressEdge = false;
+    ht.pendingRelease = false;
+    ht.releaseEdge = true;
+  }
+
+  /** ASSIST PACK: climb3d holds on with this hand (last frame). */
+  _climbHolding(hand) {
+    const g = this.game;
+    const cl = g && g.physics ? g.physics.climb : null;
+    return !!(cl && cl.hands && cl.hands[hand] && cl.hands[hand].gripping);
+  }
+
+  /** ASSIST PACK: settings.gripMode 'toggle'. */
+  get gripToggle() {
+    return !!this.settings && this.settings.gripMode === 'toggle';
   }
 
   /** Releases every held input (blur, tab hidden, XR blur, mode switch). */
@@ -1153,6 +1273,12 @@ export class InputManager {
       this._xLatched = false;
     }
     I.brake = B.l3.down;
+    // THE HOOD: a quick click of the left stick (released within hoodTapS) toggles it; holding it stays the brake
+    if (B.l3.down) this._l3T += dt;
+    else {
+      if (this._l3T > 0 && this._l3T <= T.hoodTapS && !this.uiMode) this._edges.hoodToggle = true;
+      this._l3T = 0;
+    }
 
     // Both controllers are needed (move, reel, turn, jump, pause): when one goes missing or
     // becomes a tracked hand mid-run (put down, battery, disconnect), pause the run.
@@ -1211,6 +1337,8 @@ export class InputManager {
 
     // 5c. climbing: a squeezed grip is a grab (the Game decides whether a hold is in reach), the palm points in world space
     this._updateClimbXR(I, readable);
+    // 5d. THE HOOD: the right hand over the lantern + grip covers it (that grip is not a climb grab nor a yank)
+    this._updateHoodXR(I, readable);
 
     // 6. aim rays (world space, from each controller's target ray)
     for (const h of HANDS) I.hands[h].aim = this._xrAim(h, this._aim[h]) ? this._aim[h] : null;
@@ -1247,9 +1375,18 @@ export class InputManager {
       let on = this._gripOn[i] ? grip > K.gripOff : grip > K.gripOn;
       if (!readable || this.uiMode) on = false;
       // A grip at the hip belongs to the bag.
-      if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) on = false;
+      const bagHand = (g.open && g.hand === i) || g.knocker === i;
+      if (bagHand || (g.zone === i && g.gripDown[i])) on = false; // (a hand holding a knocker does not climb)
       this._gripOn[i] = on;
-      C.grab[h] = on;
+      if (this.gripToggle) {
+        // ASSIST PACK: one squeeze grabs, the next lets go (a squeeze that is the bag's toggles nothing)
+        const T = this._gripTog[i];
+        const raw = readable && !this.uiMode && grip > (T.raw ? K.gripOff : K.gripOn);
+        const blocked = !readable || this.uiMode || bagHand || (g.zone === i && g.gripDown[i]);
+        const latched = stepGripToggle(T, raw, this._bagDt, this._climbHolding(h), blocked);
+        if (T.released) this._emit('input:gripRelease', this._gripRelEv[h]);
+        C.grab[h] = latched && readable && !this.uiMode && !bagHand;
+      } else C.grab[h] = on;
       const hi = C.hands[h];
       const sock = this.sockets[h];
       hi.ok = this._handTracked(h) && !!sock && !!sock.parent;
@@ -1263,6 +1400,68 @@ export class InputManager {
     }
   }
 
+  /**
+   * THE HOOD in a headset (plans/LANTERN_HOOD.md): the right grip squeezed while the right grip pose is within hoodReach of the
+   * lantern (Renderer3D.lanternGroup, which hangs from the left bracer; the left grip socket without it), and the right hand is not
+   * already holding on (climb3d gripping with it last frame). Once covering it holds while the grip stays squeezed and the hand stays
+   * within hoodKeep; meanwhile the right grip is neither a climb grab nor a rope yank. No allocation (one reused vector).
+   */
+  _updateHoodXR(I, readable) {
+    const T = this.tuning;
+    const K = CONFIG.climb;
+    const grip = this.xrIn.hands.right.grip;
+    this._hoodGrip = this._hoodGrip ? grip > K.gripOff : grip > K.gripOn;
+    let on = false;
+    const sock = this.sockets.right;
+    if (readable && !this.uiMode && this._hoodGrip && this._handTracked('right') && sock && sock.parent) {
+      const lp = this._lanternWorld(this._hv);
+      if (lp) {
+        sock.updateWorldMatrix(true, false);
+        const e = sock.matrixWorld.elements;
+        const dx = e[12] - lp.x;
+        const dy = e[13] - lp.y;
+        const dz = e[14] - lp.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (this._hoodXR) on = d2 <= T.hoodKeep * T.hoodKeep;
+        else {
+          const g = this.game;
+          const cl = g && g.physics ? g.physics.climb : null;
+          const holding = !!(cl && cl.hands && cl.hands.right && cl.hands.right.gripping);
+          const bag = this._bagGesture;
+          on = d2 <= T.hoodReach * T.hoodReach && !holding && !(bag.open && bag.hand === 1) && bag.knocker !== 1;
+        }
+      }
+    }
+    if (on && !this._hoodXR) this.haptic('right', 0.22, 30); // the palm closes over the hot glass
+    this._hoodXR = on;
+    this.hood = on;
+    if (on) {
+      I.climb.grab.right = false;
+      this._gripOn[1] = false;
+      if (this._gripTog[1].on && !this._gripTog[1].held) resetGripToggle(this._gripTog[1]); // (ASSIST PACK: the squeeze was the hood's)
+      I.hands.right.yank = 0;
+    }
+  }
+
+  /** World position of the carried lantern into `out` (a Vector3), or null. */
+  _lanternWorld(out) {
+    const g = this.game;
+    const r = g && g.renderer;
+    const lg = r && r.lanternGroup;
+    if (lg && lg.parent) {
+      lg.updateWorldMatrix(true, false);
+      const e = lg.matrixWorld.elements;
+      return out.set(e[12], e[13], e[14]);
+    }
+    const ls = this.sockets.left;
+    if (ls && ls.parent && this._handTracked('left')) {
+      ls.updateWorldMatrix(true, false);
+      const e = ls.matrixWorld.elements;
+      return out.set(e[12], e[13] - 0.08, e[14]); // the lantern hangs a hand's breadth under the left grip
+    }
+    return null;
+  }
+
   /** Feeds the bag gesture with this frame's head / hand poses and turns its edges into intent.bag (+ no yank at the bag). */
   _updateBagGesture() {
     const I = this.intent;
@@ -1273,6 +1472,11 @@ export class InputManager {
     S.applying = !!(bag && bag.applying && bag.applying.active);
     S.left = !!(this.settings && this.settings.dominantHand === 'left');
     S.counts = bag && bag.counts ? bag.counts : this._noCounts;
+    const kn = this.game ? this.game.knocker : null;
+    // SOLDIER_WEAPONS.md: the pull-up draws the selected gadget (the knocker, a grenade, the revolver: weaponGlue.js sets gadget / drawable)
+    const wp = this.game ? this.game.weapons : null;
+    S.gadget = wp && wp.gadget >= 4 ? wp.gadget : 4;
+    S.knocker = S.gadget === 4 ? !!(kn && kn.drawable) : !!wp.drawable; // a knocker may be pulled out of the bag now (the game sets it each frame)
     const hm = this._m3.elements; // the head matrix of this frame (set for the left stick)
     S.hx = hm[12];
     S.hy = hm[13];
@@ -1290,7 +1494,8 @@ export class InputManager {
         o.x = e[12];
         o.y = e[13];
         o.z = e[14];
-      }
+        trackHandVel(this._handVel[i], o.x, o.y, o.z, this._bagDt);
+      } else this._handVel[i].n = 0;
     }
     updateBagGesture(g, S);
     const BE = this._bagEdges;
@@ -1298,7 +1503,8 @@ export class InputManager {
     if (g.cancel) BE.cancel = true;
     if (g.entered) this.haptic(HANDS[g.zone] || 'right', 0.18, 25);
     // A grip at the bag is not a rope yank.
-    for (let i = 0; i < 2; i++) if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i])) I.hands[HANDS[i]].yank = 0;
+    for (let i = 0; i < 2; i++) if ((g.open && g.hand === i) || (g.zone === i && g.gripDown[i]) || g.knocker === i || g.thrown === i) I.hands[HANDS[i]].yank = 0;
+    if (g.drawn >= 0) this.haptic(HANDS[g.drawn], 0.35, 40); // the knocker comes out of the bag into the hand
   }
 
   // ---- desktop frame ----------------------------------------------------------
@@ -1366,13 +1572,23 @@ export class InputManager {
     I.reel = (D.key('Space') ? 1 : 0) - (shift ? 1 : 0);
     if (tOn) I.reel = U.clamp(I.reel + TI.reel, -1, 1);
     I.brake = D.key('KeyC');
+    this.hood = !this.uiMode && (D.key('KeyV') || (tOn && TI.hoodHeld)); // THE HOOD: V held / touch HOOD held
     I.turnRate = 0;
     const yank = D.key('KeyF') || (tOn && TI.gripHeld) ? 1 : 0;
 
     // climbing: F clings to a marked surface in reach, W/S climb, A/D traverse (view relative), Space hops off
     const C = I.climb;
     C.vr = false;
-    const cling = !!yank && !this.uiMode;
+    let cling = !!yank && !this.uiMode;
+    if (this.gripToggle) {
+      // ASSIST PACK: F / GRIP once clings, once more lets go (and pulls a Holdfast hand free)
+      const T = this._gripTog[2];
+      cling = stepGripToggle(T, !!yank, this._bagDt, this._climbHolding('left') || this._climbHolding('right'), this.uiMode) && !this.uiMode;
+      if (T.released) {
+        this._emit('input:gripRelease', this._gripRelEv.right);
+        this._emit('input:gripRelease', this._gripRelEv.left);
+      }
+    }
     C.grab.left = cling;
     C.grab.right = cling;
     C.fwd = (D.key('KeyW') ? 1 : 0) - (D.key('KeyS') ? 1 : 0);

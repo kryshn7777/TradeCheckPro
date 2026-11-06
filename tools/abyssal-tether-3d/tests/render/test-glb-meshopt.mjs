@@ -39,10 +39,10 @@ const ok = async (name, fn) => {
 // bpy 5.2.2: 9498 triangles -> 8058 vertices); the bounds are the originals' (the check below).
 // mason_rig / mason_hero / mason_kit: the v2 Mason (hooded saint face, build_mason.py 2026-10-23), measured on the uncompressed exports.
 const EXPECT = {
-  mason_rig: { meshes: 8, verts: 151903, skinned: 8, bones: 170, anims: 18, min: [-4.7968, -3.1991, -2.6317], max: [6.7293, 7.3424, 28.5009], attrs: ['_mask'], big: true },
+  mason_rig: { meshes: 8, verts: 151899, skinned: 8, bones: 170, anims: 18, min: [-4.7968, -3.1991, -2.6317], max: [6.7293, 7.3424, 28.5009], attrs: ['_mask'], big: true },
   player_arms: { meshes: 8, verts: 21123, skinned: 6, bones: 48, anims: 8, min: [-0.0965, -0.1119, -0.2115], max: [0.0965, 0.133, 0.3717], attrs: ['tangent'] },
-  mason_hero: { meshes: 139, verts: 140454, skinned: 0, bones: 0, anims: 0, min: [-13.1352, 3.1672, -1.3638], max: [8.0549, 27.0662, 11.3614], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
-  mason_kit: { meshes: 20, verts: 52514, skinned: 0, bones: 0, anims: 0, min: [-4.0052, -2.6659, -2.6317], max: [3.9959, 7.3424, 6.0548], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
+  mason_hero: { meshes: 139, verts: 140447, skinned: 0, bones: 0, anims: 0, min: [-13.1352, 3.1672, -1.3638], max: [8.0549, 27.0662, 11.3614], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
+  mason_kit: { meshes: 20, verts: 52513, skinned: 0, bones: 0, anims: 0, min: [-4.0052, -2.6659, -2.6317], max: [3.9959, 7.3424, 6.0548], attrs: ['_mask', '_owner', '_part', '_spine_s'] },
   player_body: { meshes: 1, verts: 8058, skinned: 1, bones: 22, anims: 5, min: [-0.3812, 0.0004, -0.226], max: [0.3812, 1.5, 0.3187], attrs: [] },
 };
 

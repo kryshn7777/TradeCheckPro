@@ -133,11 +133,11 @@ const run = (c, p, secs, f) => { for (let i = 0; i < secs * 60; i++) { if (f) f(
   for (let i = 0; i < 600; i++) { s.c.update(1 / 60, p, 0); th2.update(1 / 60, { player: p, creature: s.c, tethers: null, diff: DIFFICULTY.sandbox }); }
   ok(maxV > 0.8 && th.heartRate > 120 && beats > 10 && th2.value === 0, `threat: peaks ${maxV.toFixed(2)}, heart ${th.heartRate.toFixed(0)} bpm, ${beats} beats; sandbox ${th2.value}`);
   const fall = new ThreatSystem3D();
-  const pf = Object.assign(player(0, -100, 0), { grounded: false, vy: -15 });
+  const pf = Object.assign(player(0, -100, 0), { grounded: false, vy: -17.5 }); // FALL TOUGHNESS x2: the lethal speed is 20.2 m/s on Normal now (it was 17)
   for (let i = 0; i < 120; i++) fall.update(1 / 60, { player: pf, creature: null, tethers: { attached: false }, diff: DIFFICULTY.normal });
   const held = new ThreatSystem3D();
   for (let i = 0; i < 120; i++) held.update(1 / 60, { player: pf, creature: null, tethers: { attached: true }, diff: DIFFICULTY.normal });
-  ok(fall.components.falling > 0.5 && held.components.falling === 0, `threat: free fall at 15 m/s → ${fall.components.falling.toFixed(2)}, 0 while a tether holds`);
+  ok(fall.components.falling > 0.5 && held.components.falling === 0, `threat: free fall at 17.5 m/s → ${fall.components.falling.toFixed(2)}, 0 while a tether holds`);
 }
 // 11. Determinism with a seed.
 {

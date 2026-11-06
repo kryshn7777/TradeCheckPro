@@ -6,13 +6,33 @@
 //   node pacing.mjs [runs=150] [--root DIR]
 // Env: LEVEL=real (the game's level instead of the stub shaft), ONLY=normal,abyss,
 // PROF=expert,careful, TUNE='{"normal":{…}}' (DIFF_TUNE overrides), NOSTALL=1, CAUSES=1.
+// MASON_SIGHT: SIGHT=off (the blind Mason), SIGHT='{"normal":{…}}' (SIGHT_TUNE overrides, `prowl` merged), GATE=1 (the hunt gate on
+// with a player who stays WELL: only the prowl passes and what they see can kill).
+// HOOD=1 (THE HOOD: also the hood-camper tables, plans/LANTERN_HOOD.md).
+// MASON_STRIKES: a strike costs 30 % (Health3D + PlayerHits + the Knockdown, the bot lies still while down), the bots DODGE a striking
+// rise (creature:attack) after a profile reaction time (expert 0.2 s, careful 0.4 s, hesitant 0.9 s; a stalled bot never), moving
+// off the line at 5 m/s. STRIKES=1 prints the strikes table (blind / hunting / healthy gate) and the frozen camper.
 import { srcUrl, positional } from '../../verify/root.mjs';
 import { makeShaftData } from './stubShaft.mjs';
 const { Level3D } = await import(srcUrl('sim/level3d.js'));
 const { DIFFICULTY, EventBus, U } = await import(srcUrl('sim/config3d.js'));
 const { Creature3D, DIFF_TUNE } = await import(srcUrl('sim/creature3d.js'));
 const { ThreatSystem3D } = await import(srcUrl('sim/threat3d.js'));
+const { Health3D } = await import(srcUrl('sim/health3d.js'));
+const { PlayerHits } = await import(srcUrl('sim/playerHits.js'));
 if (process.env.TUNE) { const o = JSON.parse(process.env.TUNE); for (const k in o) Object.assign(DIFF_TUNE[k], o[k]); }
+const { SIGHT_TUNE } = await import(srcUrl('sim/masonSight.js'));
+const SIGHT_OFF = process.env.SIGHT === 'off';
+if (process.env.SIGHT && !SIGHT_OFF) {
+  const o = JSON.parse(process.env.SIGHT);
+  for (const k in o) {
+    const pr = o[k].prowl;
+    delete o[k].prowl;
+    Object.assign(SIGHT_TUNE[k], o[k]);
+    if (pr) SIGHT_TUNE[k].prowl = Object.assign({}, SIGHT_TUNE[k].prowl, pr);
+  }
+}
+const GATE = process.env.GATE === '1';
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 
 const RUNS = +(positional(process.argv.slice(2))[0] || 150);
@@ -24,9 +44,10 @@ let FINISH_Y = -556;
 
 export const PROFILES = {
   // pause range (s), long-look chance + range, sway chance, drop range (m), move speed (m/s), react prob, react delay, backtrack chance
-  expert: { pause: [0.3, 1.8], longP: 0.02, long: [3, 5], sway: 0.1, drop: [10, 22], speed: [9, 13], react: 0.92, delay: [0.3, 0.45], back: 0 },
-  careful: { pause: [1.5, 6], longP: 0.12, long: [7, 10], sway: 0.25, drop: [7, 16], speed: [6, 10], react: 0.75, delay: [0.4, 0.65], back: 0.03 },
-  hesitant: { pause: [3, 8], longP: 0.2, long: [8, 12], sway: 0.35, drop: [5, 12], speed: [4.5, 8], react: 0.55, delay: [0.5, 0.9], back: 0.08 },
+  // MASON_STRIKES: dodge = the reaction time (s) to a striking rise, dodgeP = the chance the player sees it at all
+  expert: { pause: [0.3, 1.8], longP: 0.02, long: [3, 5], sway: 0.1, drop: [10, 22], speed: [9, 13], react: 0.92, delay: [0.3, 0.45], back: 0, dodge: 0.2, dodgeP: 0.97 },
+  careful: { pause: [1.5, 6], longP: 0.12, long: [7, 10], sway: 0.25, drop: [7, 16], speed: [6, 10], react: 0.75, delay: [0.4, 0.65], back: 0.03, dodge: 0.4, dodgeP: 0.9 },
+  hesitant: { pause: [3, 8], longP: 0.2, long: [8, 12], sway: 0.35, drop: [5, 12], speed: [4.5, 8], react: 0.55, delay: [0.5, 0.9], back: 0.08, dodge: 0.9, dodgeP: 0.75 },
 };
 
 class Player {
@@ -49,6 +70,8 @@ class Player {
     this.z = z;
     this.vx = this.vy = this.vz = 0;
     this.alive = true;
+    this.dodgeT = -1;
+    this.linear = false;
     this._pause();
   }
   _pause(forceDur) {
@@ -82,6 +105,7 @@ class Player {
       tz = cz(this.z + away.z * 8);
     }
     this.phase = 'move';
+    this.linear = false;
     this.t = 0;
     this.p0 = [this.x, this.y, this.z];
     this.p1 = [tx, ty, tz];
@@ -109,16 +133,54 @@ class Player {
     const l = Math.hypot(dx, dz) || 1;
     this._move(0.9, { x: dx / l, z: dz / l }, true);
   }
-  update(dt, creature, time) {
+  /** MASON_STRIKES: a striking rise began (creature:attack): after the reaction time, move off the line (a frozen / stalled bot never). */
+  onRise(creature) {
+    if (this.stallMode || !this.alive) return;
+    if (this.r() >= this.P.dodgeP) return; // did not see it
+    this.dodgeT = this.P.dodge;
+    this.dodgeFrom = creature;
+  }
+  _dodge(creature) {
+    // sideways to the Mason, horizontally, 5 m/s for 1 s (a step / a run off the line; a hanging player swings the same way)
+    let dx = this.x - creature.x;
+    let dz = this.z - creature.z;
+    const l = Math.hypot(dx, dz) || 1;
+    dx /= l;
+    dz /= l;
+    const side = this.r() < 0.5 ? 1 : -1;
+    const sh = (this.level.shaftAt && this.level.shaftAt(this.y)) || { minX: -16, maxX: 16, minZ: -16, maxZ: 16 };
+    let tx = this.x - dz * side * 5;
+    let tz = this.z + dx * side * 5;
+    if (tx < sh.minX + 1 || tx > sh.maxX - 1 || tz < sh.minZ + 1 || tz > sh.maxZ - 1) {
+      tx = this.x + dz * side * 5;
+      tz = this.z - dx * side * 5;
+    }
+    this.phase = 'move';
+    this.t = 0;
+    this.p0 = [this.x, this.y, this.z];
+    this.p1 = [tx, this.y, tz];
+    this.pc = [(this.x + tx) / 2, this.y, (this.z + tz) / 2];
+    this.dur = 1.0;
+    this.linear = true;
+    this.dodges = (this.dodges || 0) + 1;
+  }
+  update(dt, creature, time, knock) {
     if (!this.alive) return;
     const ox = this.x;
     const oy = this.y;
     const oz = this.z;
-    // Reaction to a telegraphed lunge / a surge at you: flee (after a human delay),
-    // or freeze (some players do).
-    const threatened =
-      creature.distance < 24 &&
-      ((creature.state === 'ATTACK' && creature.attack.phase === 'windup') || (creature.state === 'BURST' && creature.burstCommit));
+    if (knock && knock.active) {
+      // MASON_STRIKES: down / getting up: the bot lies still (pessimistic: a real player starts moving at 35 % mid-rise)
+      this.vx = this.vy = this.vz = 0;
+      this.dodgeT = -1;
+      return;
+    }
+    if (this.dodgeT >= 0) {
+      this.dodgeT -= dt;
+      if (this.dodgeT < 0 && this.phase !== 'move') this._dodge(this.dodgeFrom);
+    }
+    // Reaction to a committed surge at you: flee (after a human delay), or freeze (some players do).
+    const threatened = creature.distance < 24 && creature.state === 'BURST' && creature.burstCommit;
     if (!threatened) this.decided = false;
     else if (!this.stallMode && !this.decided) {
       this.decided = true;
@@ -141,7 +203,7 @@ class Player {
       this.y = this.cy - Math.abs(Math.cos(this.t * this.sw)) * 0.15 * this.samp;
     } else if (this.phase === 'move') {
       const k = Math.min(1, this.t / this.dur);
-      const e = k * k * (3 - 2 * k);
+      const e = this.linear ? k : k * k * (3 - 2 * k);
       const a = (1 - e) * (1 - e);
       const b = 2 * (1 - e) * e;
       const c = e * e;
@@ -153,6 +215,7 @@ class Player {
         this.y = this.p1[1];
         this.z = this.p1[2];
         this.phase = 'done';
+        this.linear = false;
       }
     }
     if (this.phase === 'done' && this.fleeAfter && creature.distance < 24 && creature.state !== 'RECOVERING') {
@@ -179,7 +242,11 @@ class Player {
  * One run. Returns stats. mode: 'descent' (complete the run) or 'stall' (stall
  * at a random depth inside the lethal sections and measure time-to-catch).
  */
-export function runOne(diffKey, profileKey, seed, mode = 'descent') {
+export function runOne(diffKey, profileKey, seed, mode = 'descent', opts = null) {
+  // THE HOOD (plans/LANTERN_HOOD.md): opts.hood 'stall' = the lantern covered once the player stalls (the hood camper),
+  // 'still' = covered whenever the player is not moving (pauses, sways, the stall); lit while moving. Default: always lit.
+  const hoodMode = opts && opts.hood ? opts.hood : '';
+  let hoodedT = 0;
   const diff = DIFFICULTY[diffKey];
   const level = makeLevel(diff.levelVariant);
   const firstLethal = level.sections.find((sct) => sct.creature && sct.creature.lethal);
@@ -202,7 +269,19 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
     else missBy[p.reason] = (missBy[p.reason] || 0) + 1;
   });
   const rand = U.rng(seed * 7919 + 13);
-  const creature = new Creature3D(level, diff, bus, { seed: seed * 31 + 7 });
+  const sightOff = opts && opts.sight != null ? !opts.sight : SIGHT_OFF;
+  const gate = opts && opts.gate != null ? opts.gate : GATE;
+  const creature = new Creature3D(level, diff, bus, { seed: seed * 31 + 7, sight: !sightOff });
+  if (gate) creature.setHuntGate(true); // a player who stays well (setHurt only from the real health below: hurt arms it)
+  // MASON_STRIKES: real health, the real hit rules and knockdown
+  const health = new Health3D(diff, bus);
+  const hitsK = new PlayerHits(bus);
+  const sk = { hits: 0, hpLost: 0, firstHitT: -1, firstFrozenT: -1, deathT: -1, hitsToDeath: 0, frozenHits: 0 };
+  let killFlag = false;
+  const ctx = { health, level: null, gripping: false, god: false, kill: () => (killFlag = true) };
+  bus.on('creature:attack', (p) => {
+    if (!p.gate && p.interval) player.onRise(creature);
+  });
   const threat = new ThreatSystem3D();
   const player = new Player(PROFILES[profileKey], rand, level);
   const start = mode === 'stall' ? (level.sections.find((sct) => sct.creature && sct.creature.lethal) || level.sections[4]).checkpoint : level.spawn;
@@ -231,11 +310,20 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
         const i = level.sectionIndexAt(player.deathY);
         const cp = level.checkpointFor(i, diff.checkpoints);
         player.place(cp.x, cp.y, cp.z);
+        health.reset();
+        hitsK.reset();
         creature.onRespawn(player);
         threat.reset();
       }
     } else {
-      player.update(DT, creature, time);
+      player.update(DT, creature, time, hitsK.knock);
+    }
+    if (player.alive) {
+      hitsK.update(DT, player, null);
+      creature.immune = hitsK.immune;
+      health.noRecovery = !!(creature.sight && creature.sight.near);
+      health.step(DT);
+      if (gate) creature.setHurt(health.low);
     }
     const si = level.sectionIndexAt(player.y);
     if (si !== lastSection) {
@@ -255,11 +343,30 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
         }
       }
     }
+    if (hoodMode) {
+      const hooded = player.alive && (player.stallMode ? true : hoodMode === 'still' && player.phase !== 'move');
+      if (hooded) hoodedT += DT;
+      creature.setSight(true, !hooded, false);
+    }
     creature.update(DT, player, time);
     threat.update(DT, { player, creature, tethers: null, diff });
     if (creature.caughtPlayer) {
       creature.caughtPlayer = false;
+      killFlag = false;
       if (player.alive) {
+        const hp0 = health.hp;
+        hitsK.mason(creature.strikeSrc, player, ctx);
+        sk.hits++;
+        sk.hpLost += hp0 - health.hp;
+        if (sk.firstHitT < 0) sk.firstHitT = time;
+        if (player.stallMode) {
+          if (sk.frozenHits === 0) sk.firstFrozenT = time;
+          sk.frozenHits++;
+        }
+      }
+      if (player.alive && killFlag) {
+        sk.deathT = time;
+        sk.hitsToDeath = sk.hits;
         player.alive = false;
         player.deathY = player.y;
         deaths++;
@@ -299,6 +406,9 @@ export function runOne(diffKey, profileKey, seed, mode = 'descent') {
     stallCatch,
     stallMode: player.stallMode,
     stateT,
+    hoodedT,
+    strikes: sk,
+    dodges: player.dodges || 0,
   };
 }
 
@@ -313,6 +423,39 @@ const f1 = (v) => (isFinite(v) ? v.toFixed(1) : '-');
 const f2 = (v) => (isFinite(v) ? v.toFixed(2) : '-');
 
 if (process.argv[1] && process.argv[1].endsWith('pacing.mjs')) {
+  if (process.env.STRIKES) {
+    // MASON_STRIKES.md: hits / HP lost / deaths per run, blind vs hunting vs the healthy gate, and the frozen camper
+    console.log(`MASON STRIKES — ${RUNS} runs per cell, ${REAL ? 'REAL level' : 'stub shaft'}; a strike = 30 %, bots dodge a striking rise (expert 0.2 s / careful 0.4 s / hesitant 0.9 s)\n`);
+    console.log('| diff | player | mode | hits/run | HP lost/run | deaths/run | runs w/o death | max deaths | dodges/run | strikes/run | finished |');
+    console.log('|---|---|---|---|---|---|---|---|---|---|---|');
+    const MODES = { blind: { sight: false, gate: false }, hunting: { sight: true, gate: false }, gate: { sight: true, gate: true } };
+    for (const dk of ['normal', 'nightmare', 'abyss']) {
+      if (ONLY && !ONLY.includes(dk)) continue;
+      for (const pk of (process.env.PROF ? process.env.PROF.split(',') : ['expert', 'careful', 'hesitant'])) {
+        for (const mk of (process.env.MODE ? process.env.MODE.split(',') : Object.keys(MODES))) {
+          const rs = [];
+          for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, pk, s, 'descent', MODES[mk]));
+          const d = rs.map((r) => r.deaths);
+          console.log(`| ${dk} | ${pk} | ${mk} | ${f2(mean(rs.map((r) => r.strikes.hits)))} | ${(100 * mean(rs.map((r) => r.strikes.hpLost))).toFixed(0)} % | ${f2(mean(d))} | ${((100 * rs.filter((r) => r.deaths === 0).length) / rs.length).toFixed(0)}% | ${Math.max(...d)} | ${f1(mean(rs.map((r) => r.dodges)))} | ${f1(mean(rs.map((r) => r.stats.attacks)))} | ${rs.filter((r) => r.finished).length}/${rs.length} |`);
+        }
+      }
+    }
+    if (process.env.NOSTALL) process.exit(0);
+    console.log('\n## The frozen camper: a careful player stops in reach at a random depth (lit, never moves again)');
+    console.log('| diff | n (still) | hits to death | s first hit -> death (median) | min | max | never died (400 s) |');
+    console.log('|---|---|---|---|---|---|---|');
+    for (const dk of ['normal', 'nightmare', 'abyss']) {
+      if (ONLY && !ONLY.includes(dk)) continue;
+      const rs = [];
+      for (let s = 1; s <= RUNS * 2; s++) rs.push(runOne(dk, 'careful', 1000 + s, 'stall'));
+      const sub = rs.filter((r) => r.stallMode === 'still');
+      const died = sub.filter((r) => r.strikes.deathT >= 0 && r.strikes.frozenHits >= 1);
+      const span = died.map((r) => r.strikes.deathT - r.strikes.firstFrozenT);
+      const fh = died.map((r) => r.strikes.frozenHits);
+      console.log(`| ${dk} | ${sub.length} | ${fh.length ? Math.min(...fh) + '-' + Math.max(...fh) : '-'} | ${f1(pct(span, 0.5))} | ${f1(Math.min(...span))} | ${f1(Math.max(...span))} | ${sub.length - died.length} |`);
+    }
+    process.exit(0);
+  }
   console.log(REAL ? `Creature3D human-pacing sim — ${RUNS} runs per cell, REAL level (level agent's LEVEL_DATA_3D, lethal sections 5–8 = ${-LETHAL_TOP_REAL()} m)\n` : `Creature3D human-pacing sim — ${RUNS} runs per cell, stub shaft (560 m, lethal sections 5–8 = 330 m)\n`);
   console.log('## Descent: deaths per full run (lethal sections 5–8)');
   console.log('| diff | player | deaths/run | runs w/o death | p90 deaths | lethal time (s) | mean dist (m) | ≤menace | mean threat | threat>0.7 | relocations/run | bursts/run | lunges/run | near misses/run | retreats/run | listens/run | stall lunges/run |');
@@ -349,6 +492,37 @@ if (process.argv[1] && process.argv[1].endsWith('pacing.mjs')) {
       const sub = rs.filter((r) => r.stallMode === kind);
       const c = sub.filter((r) => r.stallCatch !== null).map((r) => r.stallCatch);
       console.log(`| ${dk} | ${kind} | ${sub.length} | ${f1(pct(c, 0.5))} | ${f1(mean(c))} | ${f1(pct(c, 0.1))} | ${f1(pct(c, 0.9))} | ${sub.length - c.length} |`);
+    }
+  }
+  if (!process.env.HOOD) process.exit(0);
+  // THE HOOD (plans/LANTERN_HOOD.md): the hood camper. The same stalls with the lantern covered from the stall on (the Mason cannot
+  // see the camper: only the sound hunt and the stall clock find him), and descents covering the lantern at every pause.
+  console.log('\n## Hood camper: seconds from the stall until caught, lantern lit vs covered (careful player, never reacts)');
+  console.log('| diff | stall kind | lantern | n | caught | median | p90 | never caught (400 s) |');
+  console.log('|---|---|---|---|---|---|---|---|');
+  for (const dk of ['normal', 'nightmare', 'abyss']) {
+    if (ONLY && !ONLY.includes(dk)) continue;
+    for (const hood of ['', 'stall']) {
+      const rs = [];
+      for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, 'careful', 1000 + s, 'stall', hood ? { hood } : null));
+      for (const kind of ['still', 'sway']) {
+        const sub = rs.filter((r) => r.stallMode === kind);
+        const c = sub.filter((r) => r.stallCatch !== null).map((r) => r.stallCatch);
+        console.log(`| ${dk} | ${kind} | ${hood ? 'covered' : 'lit'} | ${sub.length} | ${c.length} | ${f1(pct(c, 0.5))} | ${f1(pct(c, 0.9))} | ${sub.length - c.length} |`);
+      }
+    }
+  }
+  console.log('\n## Hood at every pause: deaths per full run, lantern lit vs covered whenever the player is not moving');
+  console.log('| diff | player | lantern | deaths/run | runs finished | covered s/run |');
+  console.log('|---|---|---|---|---|---|');
+  for (const dk of ['normal', 'nightmare']) {
+    if (ONLY && !ONLY.includes(dk)) continue;
+    for (const pk of ['careful', 'hesitant']) {
+      for (const hood of ['', 'still']) {
+        const rs = [];
+        for (let s = 1; s <= RUNS; s++) rs.push(runOne(dk, pk, s, 'descent', hood ? { hood } : null));
+        console.log(`| ${dk} | ${pk} | ${hood ? 'covered' : 'lit'} | ${f2(mean(rs.map((r) => r.deaths)))} | ${rs.filter((r) => r.finished).length}/${rs.length} | ${f1(mean(rs.map((r) => r.hoodedT)))} |`);
+      }
     }
   }
 }

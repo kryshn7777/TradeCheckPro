@@ -20,6 +20,9 @@
  *                                                  off = silent, the subtitles (render/commsView.js) still show every line
  *   signalGlitches                     bool        on by default: static / flicker of the failing signal on the subtitle
  *                                                  panel; off = a plain panel and the radio static lowered
+ *   lanternHood                        'hold' | 'toggle'   THE HOOD (sim/lanternHood.js): cover the lantern while held / per press
+ *   itemCards                          bool        on by default: the name card over the collectible you look at
+ *                                                  (itemCardGlue.js, plans/ITEM_CARDS.md); `?itemcards=off` overrides it
  *   showBody, dominantHand, haptics, aimAssist, turnSpeed, mouseSensitivity, heightMode/heightOffset... (existing)
  */
 import { UX_LIMITS } from '../sim/config3d.js';

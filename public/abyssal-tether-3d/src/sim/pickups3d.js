@@ -20,11 +20,25 @@
  * it is ('pickup:full' once per approach). Checkpoint snapshots return items collected after the checkpoint on a
  * respawn.
  *
- * Bus events: 'pickup:collect' {kind,x,y,z,id,hand}, 'pickup:full' {kind}.
+ * KNOCKERS (sim/knocker3d.js): pickKnockers adds rare extra knockers (ITEM.KNOCKER) on spots the supplies left free: one in every
+ * second section (sections 1, 3, 5, 7 counted from 1: the jetpack's cans take the others), never on a 'slow' spot, never in a
+ * quiet zone (within 4 m of the spawn or a checkpoint, inside a Masons' rest), alcoves first. Deterministic per seed. A knocker
+ * taken stays taken through a respawn (the bag keeps its knocker count, like the jetpack's fuel).
+ *
+ * SOLDIER WEAPONS (sim/weapons3d.js, plans/SOLDIER_WEAPONS.md): pickWeapons lays the dead soldiers' kit on spots left free by the
+ * supplies and the knockers: a GRENADE in every `every`-th section (Normal / Sandbox every 2nd from section 2, Nightmare every 3rd,
+ * Abyss every 4th from section 3) and one SERVICE REVOLVER per chapter (6 rounds; Abyss 4) in a seeded middle section. Same rules as
+ * the knockers (never slow / taken / quiet / a rest) plus never inside or within 1 m of a hazard and never within 1.5 m of another
+ * pick; risky perches and alcoves first, and spots with a fallen body (sim/remainsPlan.js, not a hanging one) within 6 m weigh x4.
+ * A weapon taken stays taken through a respawn (the bag keeps its count). An item's `amount` is what the bag gets (the rounds).
+ * Only when `weaponDiff` is set (the game, from the setting): the route bots / tools see the supplies as ever.
+ *
+ * Bus events: 'pickup:collect' {kind,x,y,z,id,hand,amount}, 'pickup:full' {kind}.
  */
 
 import { CONFIG, U } from './config3d.js';
 import { ITEM, ITEM_COUNT } from './inventory3d.js';
+import { planRemains } from './remainsPlan.js';
 
 const B = CONFIG.bag;
 const TIER_PICK = { ledge: 1, alcove: 1, risk: 0.7, slow: 1.3 };
@@ -171,6 +185,170 @@ export function pickSupplies(spots, seed, opts = {}) {
   return chosen;
 }
 
+const KNOCK_W = { alcove: 3, risk: 2, ledge: 1 };
+const KNOCK_QUIET = 4; // m around the spawn and the checkpoints
+
+/**
+ * The extra knockers of one run: one spot in every second section (0, 2, 4 ...), never a 'slow' spot, never a spot in `taken`,
+ * never in a quiet zone. `quiet` = [{x,y,z}] points (spawn, checkpoints) and `rests` = [{minX..maxZ}] boxes (the Masons' rests).
+ * @returns {number[]} spot indices, top of the descent first
+ */
+export function pickKnockers(spots, seed, opts = {}) {
+  const rng = U.rng((seed >>> 0) ^ 0x2545f491);
+  const nSec = opts.sections || spots.reduce((m, sp) => Math.max(m, (sp.section | 0) + 1), 0);
+  const every = opts.every || 2;
+  const taken = opts.taken || null;
+  const quiet = opts.quiet || [];
+  const rests = opts.rests || [];
+  const hush = (sp) => {
+    for (const q of quiet) {
+      const dx = q.x - sp.x;
+      const dy = q.y - sp.y;
+      const dz = q.z - sp.z;
+      if (dx * dx + dy * dy + dz * dz < KNOCK_QUIET * KNOCK_QUIET) return true;
+    }
+    for (const b of rests) if (sp.x > b.minX - 1 && sp.x < b.maxX + 1 && sp.y > b.minY - 1 && sp.y < b.maxY + 1 && sp.z > b.minZ - 1 && sp.z < b.maxZ + 1) return true;
+    return false;
+  };
+  const out = [];
+  for (let s = 0; s < nSec; s += every) {
+    const here = [];
+    let total = 0;
+    for (let i = 0; i < spots.length; i++) {
+      const sp = spots[i];
+      if ((sp.section | 0) !== s || sp.tier === 'slow' || (taken && taken[i]) || hush(sp)) continue;
+      here.push(i);
+      total += KNOCK_W[sp.tier] || 1;
+    }
+    const r = rng() * total; // drawn for every section, so one section's spots never shift another's pick
+    if (!here.length) continue;
+    let acc = 0;
+    let pick = here[here.length - 1];
+    for (const i of here) {
+      acc += KNOCK_W[spots[i].tier] || 1;
+      if (r < acc) {
+        pick = i;
+        break;
+      }
+    }
+    out.push(pick);
+  }
+  out.sort((a, b) => spots[b].y - spots[a].y);
+  return out;
+}
+
+/** How many soldiers' weapons a run lays out, per difficulty key (Sandbox = Normal). */
+export const WEAPON_SPAWN = Object.freeze({
+  normal: Object.freeze({ every: 2, first: 1, revolver: 1, rounds: 6 }),
+  sandbox: Object.freeze({ every: 2, first: 1, revolver: 1, rounds: 6 }),
+  nightmare: Object.freeze({ every: 3, first: 1, revolver: 1, rounds: 6 }),
+  abyss: Object.freeze({ every: 4, first: 2, revolver: 1, rounds: 4 }),
+});
+const WEAPON_W = { risk: 3, alcove: 2, ledge: 1 };
+const WEAPON_BODY = 6; // m: a fallen body this close makes a spot x4 likelier
+const WEAPON_GAP = 1.5; // m: never this close to another pick (no stacking)
+const HAZARD_CLEAR = 1; // m around a hazard box
+
+function inBox(b, x, y, z, pad) {
+  return x > b.minX - pad && x < b.maxX + pad && y > b.minY - pad && y < b.maxY + pad && z > b.minZ - pad && z < b.maxZ + pad;
+}
+
+/**
+ * The soldiers' weapons of one run (WEAPON_SPAWN[diff]): a grenade in sections first, first + every, ... and one revolver in a seeded
+ * section of the middle (2 .. n-3), each on a free spot (see the file header). opts: { sections, diff, taken (Uint8Array over spots),
+ * quiet [{x,y,z}], rests [box], hazards [box], bodies [{x,y,z}], others [{x,y,z}] (picks already made: no stacking) }.
+ * @returns {Array<{spot:number, kind:number, amount:number}>} top of the descent first
+ */
+export function pickWeapons(spots, seed, opts = {}) {
+  const rng = U.rng((seed >>> 0) ^ 0x5f3759df);
+  const R = WEAPON_SPAWN[opts.diff] || WEAPON_SPAWN.normal;
+  const nSec = opts.sections || spots.reduce((m, sp) => Math.max(m, (sp.section | 0) + 1), 0);
+  const taken = opts.taken || null;
+  const quiet = opts.quiet || [];
+  const rests = opts.rests || [];
+  const hazards = opts.hazards || [];
+  const bodies = opts.bodies || [];
+  const placed = (opts.others || []).slice();
+  const bad = (sp) => {
+    for (const q of quiet) if (sq3(q, sp) < KNOCK_QUIET * KNOCK_QUIET) return true;
+    for (const b of rests) if (inBox(b, sp.x, sp.y, sp.z, 1)) return true;
+    for (const h of hazards) if (inBox(h, sp.x, sp.y, sp.z, HAZARD_CLEAR)) return true;
+    for (const o of placed) if (sq3(o, sp) < WEAPON_GAP * WEAPON_GAP) return true;
+    return false;
+  };
+  const weight = (sp) => {
+    const w = WEAPON_W[sp.tier] || 1;
+    for (const b of bodies) if (sq3(b, sp) < WEAPON_BODY * WEAPON_BODY) return w * 4;
+    return w;
+  };
+  const used = new Uint8Array(spots.length);
+  const pickIn = (s) => {
+    const here = [];
+    const ws = [];
+    let total = 0;
+    for (let i = 0; i < spots.length; i++) {
+      const sp = spots[i];
+      if ((sp.section | 0) !== s || sp.tier === 'slow' || used[i] || (taken && taken[i]) || bad(sp)) continue;
+      const w = weight(sp);
+      here.push(i);
+      ws.push(w);
+      total += w;
+    }
+    const r = rng() * total; // drawn for every section: one section's spots never shift another's draw
+    if (!here.length) return -1;
+    let acc = 0;
+    for (let j = 0; j < here.length; j++) {
+      acc += ws[j];
+      if (r < acc) return here[j];
+    }
+    return here[here.length - 1];
+  };
+  const out = [];
+  const put = (si, kind, amount) => {
+    used[si] = 1;
+    placed.push(spots[si]);
+    out.push({ spot: si, kind, amount });
+  };
+  // the revolver's section first (drawn before the grenades: it never depends on them)
+  const lo = Math.min(2, Math.max(0, nSec - 1));
+  const hi = Math.max(lo, nSec - 3);
+  const revSec = lo + Math.floor(rng() * (hi - lo + 1));
+  if (R.revolver > 0 && nSec > 0) {
+    const si = pickIn(revSec);
+    if (si >= 0) put(si, ITEM.SIDEARM, R.rounds);
+  }
+  for (let s = R.first; s < nSec; s += R.every) {
+    const si = pickIn(s);
+    if (si >= 0) put(si, ITEM.GRENADE, 1);
+  }
+  out.sort((a, b) => spots[b.spot].y - spots[a.spot].y);
+  return out;
+}
+
+/** Problems with a weapons pick (empty = fair): the exclusions pickWeapons keeps. opts as pickWeapons'. For tests and tools. */
+export function checkWeaponFairness(spots, picks, opts = {}) {
+  const problems = [];
+  const quiet = opts.quiet || [];
+  const rests = opts.rests || [];
+  const hazards = opts.hazards || [];
+  const taken = opts.taken || null;
+  const all = picks.map((c) => spots[c.spot]).concat(opts.others || []);
+  for (const c of picks) {
+    const sp = spots[c.spot];
+    if (!sp) {
+      problems.push(`bad spot ${c.spot}`);
+      continue;
+    }
+    if (sp.tier === 'slow') problems.push(`${sp.id}: on a slow spot`);
+    if (taken && taken[c.spot]) problems.push(`${sp.id}: on a spot already taken`);
+    for (const q of quiet) if (sq3(q, sp) < KNOCK_QUIET * KNOCK_QUIET) problems.push(`${sp.id}: in a quiet zone`);
+    for (const b of rests) if (inBox(b, sp.x, sp.y, sp.z, 1)) problems.push(`${sp.id}: in a Masons' rest`);
+    for (const h of hazards) if (inBox(h, sp.x, sp.y, sp.z, HAZARD_CLEAR)) problems.push(`${sp.id}: in / by a hazard`);
+    for (const o of all) if (o !== sp && sq3(o, sp) < WEAPON_GAP * WEAPON_GAP) problems.push(`${sp.id}: stacked on another pick`);
+  }
+  return problems;
+}
+
 /** Does a pick satisfy the fairness rules? Returns a list of problems (empty = fair). For tests and tools. */
 export function checkFairness(spots, picks, nSec) {
   const problems = [];
@@ -201,6 +379,9 @@ export class Pickups3D {
     this.time = 0;
     this.version = 0; // bumps whenever items appear / are taken / return (the view re-syncs)
     this.seed = 0;
+    this.knockers = true; // seed the rare extra knockers (sim/knocker3d.js); false leaves them out
+    this.weaponDiff = ''; // SOLDIER_WEAPONS.md: the difficulty key whose soldiers' weapons to lay out ('' = none: the default, the bots)
+    this._bodies = null; // the fallen bodies of this level (sim/remainsPlan.js), planned once
     this._cp = new Uint8Array(0);
     this.setLevel(level);
   }
@@ -216,7 +397,33 @@ export class Pickups3D {
       this.spots.push({ id: s.id || `sup-${i}`, x: s.x, y: s.y, z: s.z, section, tier: s.tier || 'ledge', w: s.w || [0, 1, 0, 0] });
     }
     this.items.length = 0;
+    this._bodies = null;
     this.version++;
+  }
+
+  /** The quiet points, the rests and the hazards of the level (the exclusion zones of the soldiers' weapons). */
+  zones() {
+    const lv = this.level;
+    const quiet = [];
+    if (lv && lv.spawn) quiet.push(lv.spawn);
+    if (lv && lv.sections) for (const sc of lv.sections) if (sc.checkpoint) quiet.push(sc.checkpoint);
+    const rests = [];
+    if (lv && lv.data && Array.isArray(lv.data.nooks)) for (const nk of lv.data.nooks) if (nk.block || nk.box) rests.push(nk.block || nk.box);
+    const hazards = lv && Array.isArray(lv.hazards) ? lv.hazards : [];
+    return { quiet, rests, hazards };
+  }
+
+  /** The level's fallen bodies lying on a floor (not the hanging ones): the soldiers the weapons are found beside. */
+  bodies() {
+    if (this._bodies) return this._bodies;
+    let sk = [];
+    try {
+      if (this.level && typeof this.level.raycast === 'function') sk = planRemains(this.level).skeletons;
+    } catch {
+      sk = [];
+    }
+    this._bodies = sk.filter((b) => b.kind !== 'hanging');
+    return this._bodies;
   }
 
   /** A new run: pick the supplies for `seed`. */
@@ -225,6 +432,30 @@ export class Pickups3D {
     this.time = 0;
     const nSec = this.level && this.level.sections ? this.level.sections.length : 0;
     const picks = pickSupplies(this.spots, this.seed, { sections: nSec });
+    // the rare extra knockers, on spots the supplies left free (opts: knockers false = none, e.g. ?knocker=off)
+    if (this.knockers !== false) {
+      const taken = new Uint8Array(this.spots.length);
+      for (let i = 0; i < picks.length; i++) taken[picks[i].spot] = 1;
+      const lv = this.level;
+      const quiet = [];
+      if (lv && lv.spawn) quiet.push(lv.spawn);
+      if (lv && lv.sections) for (const sc of lv.sections) if (sc.checkpoint) quiet.push(sc.checkpoint);
+      const rests = [];
+      if (lv && lv.data && Array.isArray(lv.data.nooks)) for (const nk of lv.data.nooks) if (nk.block || nk.box) rests.push(nk.block || nk.box);
+      const ks = pickKnockers(this.spots, this.seed, { sections: nSec, taken, quiet, rests });
+      for (let i = 0; i < ks.length; i++) picks.push({ spot: ks[i], kind: ITEM.KNOCKER });
+      picks.sort((a, b) => this.spots[b.spot].y - this.spots[a.spot].y);
+    }
+    // SOLDIER_WEAPONS.md: the dead soldiers' grenades and revolver, on spots everything above left free
+    if (this.weaponDiff) {
+      const taken = new Uint8Array(this.spots.length);
+      for (let i = 0; i < picks.length; i++) taken[picks[i].spot] = 1;
+      const z = this.zones();
+      const others = picks.map((c) => this.spots[c.spot]);
+      const ws = pickWeapons(this.spots, this.seed, { sections: nSec, diff: this.weaponDiff, taken, quiet: z.quiet, rests: z.rests, hazards: z.hazards, bodies: this.bodies(), others });
+      for (let i = 0; i < ws.length; i++) picks.push(ws[i]);
+      picks.sort((a, b) => this.spots[b.spot].y - this.spots[a.spot].y);
+    }
     this.items.length = 0;
     for (let i = 0; i < picks.length; i++) {
       const sp = this.spots[picks[i].spot];
@@ -235,6 +466,7 @@ export class Pickups3D {
         y: sp.y,
         z: sp.z,
         kind: picks[i].kind,
+        amount: picks[i].amount > 0 ? picks[i].amount : 1, // what the bag gets (a revolver: its rounds)
         section: sp.section,
         taken: false,
         takenAt: -1e9,
@@ -287,12 +519,12 @@ export class Pickups3D {
         }
         continue;
       }
-      inv.add(it.kind, 1);
+      inv.add(it.kind, it.amount > 0 ? it.amount : 1);
       it.taken = true;
       it.takenAt = this.time;
       got++;
       this.version++;
-      if (this.bus) this.bus.emit('pickup:collect', { kind: it.kind, x: it.x, y: it.y, z: it.z, id: it.id, hand: by === 2 ? 1 : 0 });
+      if (this.bus) this.bus.emit('pickup:collect', { kind: it.kind, x: it.x, y: it.y, z: it.z, id: it.id, hand: by === 2 ? 1 : 0, amount: it.amount > 0 ? it.amount : 1 });
     }
     return got;
   }
@@ -310,7 +542,8 @@ export class Pickups3D {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const was = i < this._cp.length ? this._cp[i] === 1 : false;
-      if (it.taken && !was) {
+      if (it.taken && !was && it.kind !== ITEM.KNOCKER && it.kind !== ITEM.GRENADE && it.kind !== ITEM.SIDEARM) {
+        // (a knocker taken stays taken: the bag keeps its knockers through a respawn)
         it.taken = false;
         it.takenAt = -1e9;
       }
@@ -328,7 +561,7 @@ export class Pickups3D {
 
   /** Debug / tests: drops an item of `kind` at a position (appended; it joins the snapshots from the next one). */
   spawnAt(kind, x, y, z) {
-    const it = { id: `dbg-${this.items.length}`, spot: -1, x, y, z, kind, section: this.level && this.level.sectionIndexAt ? Math.max(0, this.level.sectionIndexAt(y)) : 0, taken: false, takenAt: -1e9, blocked: false, phase: 0 };
+    const it = { id: `dbg-${this.items.length}`, spot: -1, x, y, z, kind, amount: kind === ITEM.SIDEARM ? WEAPON_SPAWN.normal.rounds : 1, section: this.level && this.level.sectionIndexAt ? Math.max(0, this.level.sectionIndexAt(y)) : 0, taken: false, takenAt: -1e9, blocked: false, phase: 0 };
     this.items.push(it);
     this.version++;
     return it;

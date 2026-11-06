@@ -60,7 +60,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CONFIG } from '../sim/config3d.js';
 import { GEAR_TUNING, GEAR_URL, HandGear, loadGearGLTF, readPoses } from './handsGear.js';
 import { getGlassMaterial, patchGearSurface } from './gearSurface.js';
-import { injectToon } from './materials.js';
 
 const HANDS = ['left', 'right'];
 
@@ -316,7 +315,6 @@ function makeLauncherMaterial() {
         '#include <emissivemap_fragment>',
         '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += vColor.rgb * (vGlow.x * uGlowA + vGlow.y * uGlowB + uSelf);',
       );
-    injectToon(shader);
   };
   mat.customProgramCacheKey = () => 'at3d-launcher-glow';
   mat.userData.glow = uniforms;
@@ -869,7 +867,6 @@ export class HandsView {
             '#include <lights_fragment_end>',
             '#include <lights_fragment_end>\n\treflectedLight.directDiffuse *= uGearLight;\n\treflectedLight.directSpecular *= uGearLight;',
           );
-        injectToon(shader);
       };
       m.customProgramCacheKey = () => 'at3d-gear-light';
       // fingerprints / scratches / dust / grain, cloth sheen, skin response (gearSurface.js; not on the brass lantern)
@@ -1334,7 +1331,7 @@ export class HandsView {
     }
     const xr = inp.xrActive;
     const state = game && game.state ? game.state : 'playing';
-    const inRun = state === 'playing' || state === 'paused' || state === 'dead';
+    const inRun = state === 'playing' || state === 'paused' || state === 'dead' || (state === 'intro' && !!game.openingHands); // (the opening film's waking)
     const showHands = this.visible && (xr || inRun);
     const gear = this.gear;
     // "Show body" off = gloves only: the canvas sleeve (the arm cover) runs up from the wrist as part of the body, so it goes with it
@@ -1474,7 +1471,8 @@ export class HandsView {
     L.quaternion.multiplyQuaternions(this._q2, this._q);
     // Flicker the glass a little.
     const t = this._time;
-    const fl = 0.86 + 0.08 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3);
+    const lm = this.r3.lanternMood; // the living flame (lanternMood.js): the glass matches the light
+    const fl = (0.86 + (0.08 * Math.sin(t * 13.1) + 0.06 * Math.sin(t * 29.7 + 1.3)) * (lm ? 1 - lm.still : 1)) * (lm ? lm.intensityMul * lm.scale : 1);
     this.lanternMaterial.userData.glow.uGlowB.value = 2.4 * fl;
     if (this._gearMats) this._gearMats.lantern.emissiveIntensity = 1.5 * fl;
   }

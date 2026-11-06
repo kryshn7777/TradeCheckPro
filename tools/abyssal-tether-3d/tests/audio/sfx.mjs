@@ -149,6 +149,13 @@ const SAMPLES = {
   'holdfast:aware': [{ ...P, distance: 4 }],
   'holdfast:outpull': [{ hand: 'left', ...P }],
   'dresser:appear': [{ ...P, distance: 40 }],
+  // THE KNOCKER (audio/knockerSfx.js; physics/knocker.mjs tests it in full)
+  'knocker:throw': [{ ...P, speed: 9 }, { ...P, speed: 18.5 }],
+  'knocker:bounce': [{ ...P, speed: 4, kind: 'stone' }, { ...P, speed: 6, kind: 'metal' }],
+  'knocker:land': [{ ...P }],
+  'knocker:clack': [{ ...P, beat: 0, idx: 0, accent: 1 }, { ...P, beat: 4, idx: 4, accent: 0.65 }],
+  'knocker:end': [{ ...P, reason: 'done' }, { ...P, reason: 'lost' }],
+  'knocker:refuse': [{ reason: 'cooldown' }],
 };
 
 {
@@ -383,7 +390,7 @@ function rig() {
   };
   try {
     R.run(1);
-    ok(R.audio._sfx && !R.audio._sfx.broken && Object.keys(R.audio._sfx.recipes).length === ids.length, 'the manager builds the designed engine with every recipe');
+    ok(R.audio._sfx && !R.audio._sfx.broken && ids.every((id) => id in R.audio._sfx.recipes) && Object.keys(R.audio._sfx.recipes).length === ids.length + 1 && 'creature.notice' in R.audio._sfx.recipes, 'the manager builds the designed engine with every recipe (+ creature.notice, registered by MASON_SIGHT through registerSfx)');
     R.bus.emit('grapple:attach', { hand: 'right', speed: 9, x: 3, y: 5, z: -4, anchor: { kind: 'surface', solid: { kind: 'metal' }, x: 3, y: 5, z: -4 } });
     ok(R.alive((n) => n === 'hook.metal') === 1 && R.alive((n) => n === 'attach') === 0, 'grapple:attach plays hook.metal at the anchor and not the legacy clank');
     ok(R.alive((n) => n === 'catch') >= 0, 'the legacy body-catch thunk still plays under it');

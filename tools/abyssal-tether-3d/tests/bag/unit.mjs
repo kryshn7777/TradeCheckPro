@@ -142,7 +142,7 @@ const hurt = (health, hp) => {
 {
   const { health, inv } = mk();
   const added = [inv.add(ITEM.FIRST_AID, 5), inv.add(ITEM.BANDAGE, 9), inv.add(ITEM.ADRENALINE, 4), inv.add(ITEM.BATTERY, 7)];
-  ok(added.join() === '1,5,2,3' && Array.from(inv.counts).join() === '1,5,2,3', 'bag capacities: first aid 1, bandage 5, adrenaline 2, battery 3');
+  ok(added.join() === '1,5,2,3' && Array.from(inv.counts).join() === '1,5,2,3,0,0,0', 'bag capacities: first aid 1, bandage 5, adrenaline 2, battery 3 (the knocker, kind 4, is thrown: physics/knocker.mjs; 5 / 6 the soldiers\' weapons: sim/test-weapon-pickups.mjs)');
   ok(!inv.canAdd(ITEM.FIRST_AID) && inv.add(ITEM.FIRST_AID) === 0, 'a full slot takes no more');
   ok(inv.use(ITEM.BANDAGE, health) === false && inv.lastRefusal === 'full', 'no bandage is wasted at full health');
   ok(inv.use(ITEM.BATTERY, health) === false && inv.lastRefusal === 'full', 'no battery is wasted on a full lantern');

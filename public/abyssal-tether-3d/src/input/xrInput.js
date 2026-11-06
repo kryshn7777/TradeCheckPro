@@ -41,6 +41,48 @@ function axis(v) {
   return typeof v === 'number' && isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0;
 }
 
+// ---- hand velocity (THE KNOCKER's VR throw: sim/knocker3d.js vrThrowVelocity) ------------------------------------------
+/** Samples kept per hand: a short ring of world positions with their frame times. */
+export const HAND_VEL_SAMPLES = 8;
+/** Seconds of history the release velocity is measured over (the last flick of the wrist, not the whole wind-up). */
+export const HAND_VEL_WINDOW = 0.07;
+
+/** A hand-velocity tracker (plain data, fixed size). */
+export function makeHandVel() {
+  return { x: new Float64Array(HAND_VEL_SAMPLES), y: new Float64Array(HAND_VEL_SAMPLES), z: new Float64Array(HAND_VEL_SAMPLES), dt: new Float64Array(HAND_VEL_SAMPLES), head: 0, n: 0 };
+}
+
+/** Records this frame's hand position (world m) after a frame of `dt` s. Allocation-free. */
+export function trackHandVel(v, x, y, z, dt) {
+  if (!(x === x && y === y && z === z)) return;
+  const i = (v.head + 1) % HAND_VEL_SAMPLES;
+  v.x[i] = x;
+  v.y[i] = y;
+  v.z[i] = z;
+  v.dt[i] = dt > 0 ? dt : 0;
+  v.head = i;
+  if (v.n < HAND_VEL_SAMPLES) v.n++;
+}
+
+/** The hand's velocity over the last HAND_VEL_WINDOW s into `out` {x,y,z} (0 with fewer than two samples). Allocation-free. */
+export function handVelOf(v, out) {
+  out.x = out.y = out.z = 0;
+  if (!v || v.n < 2) return out;
+  const h = v.head;
+  let j = h;
+  let t = 0;
+  for (let k = 1; k < v.n; k++) {
+    t += v.dt[j];
+    j = (j - 1 + HAND_VEL_SAMPLES) % HAND_VEL_SAMPLES;
+    if (t >= HAND_VEL_WINDOW) break;
+  }
+  if (!(t > 1e-4)) return out;
+  out.x = (v.x[h] - v.x[j]) / t;
+  out.y = (v.y[h] - v.y[j]) / t;
+  out.z = (v.z[h] - v.z[j]) / t;
+  return out;
+}
+
 /** Per-hand raw controller state (plain data). */
 export function makeXRHand(hand) {
   return {

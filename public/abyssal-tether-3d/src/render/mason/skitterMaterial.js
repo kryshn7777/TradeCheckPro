@@ -27,7 +27,7 @@ export function makeSkitterUniforms() {
 }
 
 export function patchSkitterMaterial(mat, U) {
-  patchMasonMaterial(mat, U);
+  patchMasonMaterial(mat, U, { matte: false }); // the old wet film all over: the skitterling is wet chitin, not the Mason's dry stone
   const base = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader) => {
     base(shader);

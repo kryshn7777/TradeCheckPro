@@ -28,10 +28,8 @@ import { GAIT_MASON, GAIT_SKITTER, MasonLegs } from './mason/masonLegs.js';
 import { BodyMotion, MOTION_MASON, MOTION_SKITTER } from './mason/masonMotion.js';
 import { sectionWet, boostOf } from './creatureDust.js';
 import { makeMasonUniforms, patchMasonMaterial } from './mason/masonMaterial.js';
-import { cloneRigged } from './mason/skitterClone.js';
 import { makeSkitterUniforms, patchSkitterMaterial } from './mason/skitterMaterial.js';
 import { blockScales, clamp, computeFrames, mul3, quat3, sectionHeadScale } from './mason/masonPose.js';
-import { addOutline, mergedHullGeometry, removeOutline } from './outline.js';
 
 const DEFAULTS = {
   lodDistance: 38, // nearest spine point -> camera: beyond this the LOD1 mesh shows
@@ -134,6 +132,7 @@ export class MasonRigView {
     this._cine = false;
     this._level = null;
     this._lastCreature = null;
+    this.snake = null; // MASON SNAKE ATTACK: a SnakePose (masonAttackGlue.js sets it each frame)
     this.debug = this._makeDebug();
     if (this.scene) this.scene.add(this.root);
   }
@@ -242,23 +241,6 @@ export class MasonRigView {
         }
       }
     }
-    this._buildOutline();
-  }
-
-  /**
-   * The ink outline (outline.js): ONE hull draw call for the whole creature, built from the cheap LOD1 geometry (the extruded back faces only
-   * need the silhouette; 63 k triangles of LOD0 twice over would not fit the Quest budget), shown with either LOD. The emissive eye meshes are
-   * left out (they are glow, not body).
-   */
-  _buildOutline() {
-    const isBody = (m) => !(Array.isArray(m.material) ? m.material : [m.material]).includes(this.emissive);
-    const far = this.meshes[1] !== this.meshes[0] ? this.meshes[1] : this.meshes[0];
-    const hullFrom = far.filter(isBody);
-    const sources = [...this.meshes[0], ...(far !== this.meshes[0] ? far : [])].filter(isBody);
-    if (!hullFrom.length || !sources.length) return;
-    const geo = mergedHullGeometry(hullFrom);
-    if (!geo) return;
-    this._hull = addOutline(sources, { geometry: geo });
   }
 
   _buildRig(meta) {
@@ -347,7 +329,7 @@ export class MasonRigView {
     }
     this.info.lod = lod;
     this._baseCalls = calls;
-    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0) + (this._hull && this._hull.visible ? 1 : 0);
+    this.info.drawCalls = calls + (this.mandibles && this.mandibles.group.visible ? 2 : 0);
   }
 
   // ---------------------------------------------------------------------------------------------------------------
@@ -454,6 +436,10 @@ export class MasonRigView {
       const wind = sn.phase === 'windup' ? clamp(sn.atkT / Math.max(sn.atkWindup, 0.05), 0, 1) : sn.phase === 'strike' ? -0.5 : 0;
       this.motion.update(dt, F, sp, size, gs.freeze ? 0 : this._speed, this.legs.cycle, this.legs.loadL, this.legs.loadR, wind, B.jitter || 0);
     }
+    // MASON SNAKE ATTACK (mason/snakePose.js, set by masonAttackGlue.js): the cobra rear / sway / strike stretch / dash over the frames
+    const sn = !o.variant && this.snake && this.snake.active ? this.snake : null;
+    if (sn) sn.apply(F, null, SEG, size);
+    else if (this.snake) this.snake.headOk = false;
     const level = C.level || this._level;
     if (C.level) this._level = C.level;
     const cap = sectionHeadScale(C);
@@ -478,6 +464,7 @@ export class MasonRigView {
     const bs = o.bodyScale / P0;
     S[0] = hs;
     blockScales(B, sp, bs, size < 1 ? 0.08 : 0.4, S);
+    if (sn) sn.scaleBlocks(S);
     if (o.twitch > 0) this._twitch(F, S, o.twitch, B);
 
     // ---- crown aim (spring) ----
@@ -502,15 +489,20 @@ export class MasonRigView {
         camera.getWorldPosition(_v1).applyMatrix4(_m4aim);
         this.mandibles.setTarget(_v1.x, _v1.y, _v1.z);
       } else this.mandibles.setTarget(null);
+      // the snake's jaw (the gape on the lock, the snap on the strike) unless a cinematic / debug hold has the mandibles
+      const hold0 = this.mandibles.hold;
+      if (sn && hold0 == null && sn.jaw > -0.9) this.mandibles.hold = sn.jaw;
       this.mandibles.update(dt, this.graph.snapshot, this._time, show);
+      this.mandibles.hold = hold0;
       // the face: eyes at full detail, the maw follows the jaw, the stinger rides the last spine bone
       this.eyes.follow(nw, rw);
       this.eyes.update(this.graph.snapshot, this._time, true);
+      if (sn && sn.eyes > this.eyes.glow) this.eyes.boost(sn.eyes); // the LOCK flare: the red eyes blaze for ~0.3 s
       this.maw.follow(nw, rw);
       this.maw.update(dt, this.mandibles.open, show); // (it was LOD0-only: on Quest, beyond 12 m, the open mouth was not drawn at all)
       this.stinger.follow(this.spine[SEG - 1].matrixWorld, rw);
       this.stinger.update(show);
-      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0) + (this._hull && this._hull.visible ? 1 : 0) + (show ? this.mandibles.hullCalls() + this.stinger.hullCalls() : 0);
+      this.info.drawCalls = this._baseCalls + (show ? 2 : 0) + this.eyes.calls() + this.maw.calls() + (show ? 1 : 0);
     }
     this._poseLegs(dt, B, F, S, level, g, lodFar);
     if (this.dust) this._wake(dt, C, B, F, size);
@@ -533,6 +525,17 @@ export class MasonRigView {
       // so the swing is squeezed into 0.24 .. 0.78 of the base (radiance ~0.4 .. 1.25): it stays red, the slit eyes (unlit) and the halo carry the brightness
       const emK = (0.5 + 1.1 * glow) * (0.72 + 0.45 * beat);
       this.emissive.emissiveIntensity = this._emBase * Math.min(0.78, 0.14 + 0.28 * emK);
+    }
+    if (!o.variant) {
+      // THE LANTERN: the seam ember (masonMaterial.js) breathes with the same beat, brighter while it listens; <= ~0.25 radiance
+      // so the eyes stay the reddest thing on it. reducedEffects: no ember, no wet film.
+      const red = !!o.reducedEffects;
+      const glow = clamp(B.glow == null ? 0.3 : B.glow, 0, 1);
+      const ph = (this._time * (0.65 + 0.5 * glow)) % 1;
+      const beat = Math.exp(-((ph - 0.08) * (ph - 0.08)) / 0.0018) + 0.6 * Math.exp(-((ph - 0.27) * (ph - 0.27)) / 0.0025);
+      const k = red ? 0 : (0.05 + 0.1 * glow + 0.06 * clamp(B.listen || 0, 0, 1)) * (0.55 + 0.45 * Math.min(beat, 1));
+      this.uniforms.uEmber.value.setRGB(k, k * 0.16, k * 0.035);
+      this.uniforms.uWet.value = red ? 0 : 1;
     }
 
     // ---- bounds ----
@@ -686,7 +689,7 @@ export class MasonRigView {
     let ty = 0;
     let tp = 0;
     let gt = 0; // the wanted focus gain
-    const attacking = this.graph.snapshot.phase !== null;
+    const attacking = this.graph.snapshot.phase !== null || !!(this.snake && this.snake.active && this.snake.coil > 0.05); // the coil aims the head itself
     if (foc && !attacking) {
       const dx = foc.x - F[0];
       const dy = foc.y - F[1];
@@ -1097,10 +1100,6 @@ export class MasonRigView {
 
   dispose() {
     if (this.root.parent) this.root.parent.remove(this.root);
-    if (this._hull) {
-      this._hull.geometry.dispose();
-      removeOutline(this._hull);
-    }
     if (this.mandibles) this.mandibles.dispose();
     for (const k of ['eyes', 'maw', 'stinger']) if (this[k]) this[k].dispose();
     const seen = new Set();
@@ -1305,44 +1304,5 @@ function advanceSynthetic(C, dt) {
   }
 }
 
-// ---------------------------------------------------------------------------------------------------------------------
-// WP-SKITTER: clones of the loaded rig for the skitterlings (one GLB download, shared geometry / textures / clips)
-// ---------------------------------------------------------------------------------------------------------------------
-export const SKITTER_VIEW = {
-  variant: 'skitter',
-  size: 0.45,
-  clipRate: 1.5, // clips play 1.5x speed
-  twitch: 0.025, // procedural quiver (m of sideways shiver per vertebra at full agitation, before the size); the body spring chain adds the rest
-  lodDistance: 6, // LOD1 (20k tris) beyond 6 m; LOD0 only when it is on top of you
-  lodHysteresis: 1,
-  farDistance: 34, // beyond this the pose refreshes every 2nd frame
-  fogHide: 0, // the red veins glow on every mesh and pierce the fog: no glow-only mode
-  // 110 -> 75 m (perf pass): past the haze only the hair-thin veins show (sub-pixel beyond ~70 m), yet LOD1 is 20 k tris x 2 eyes,
-  // skinned, plus its mixer and leg IK every 2nd frame
-  hideDistance: 75,
-  glowPierce: 0.6,
-  bodyScale: 0.98,
-  headK: 0.55, // the crown at 55 % of the Mason's proportion: a worm's head, not a skull on a thread (owner: "their head is so big")
-};
-
-/** Clones the glTF scene `n` times. Call BEFORE the Mason's own view is built (it moves the meshes out of gltf.scene). */
-export function cloneSkitterScenes(gltf, n) {
-  const out = [];
-  for (let i = 0; i < n; i++) out.push(cloneRigged(gltf.scene));
-  return out;
-}
-
-/**
- * Builds the skitterling views from the clones of skitter_rig.glb (the original Mason model, kept for the small hunters). The
- * clips of that glTF are shared by its clones: the first view makes the additive ones additive, the others reuse them
- * (`clipsReady` = the caller already did it, e.g. the clips are those of another view).
- */
-export function makeSkitterViews(scene, gltf, clones, clipsReady = false) {
-  const views = [];
-  for (let i = 0; i < clones.length; i++) {
-    const v = new MasonRigView(scene, { parser: gltf.parser, scene: clones[i], animations: gltf.animations, sharedClips: clipsReady || i > 0 }, SKITTER_VIEW);
-    v.root.name = 'SkitterRigView' + i;
-    views.push(v);
-  }
-  return views;
-}
+// The hunter skitterlings no longer clone this rig: they are red cockroaches (render/skitterlingView.js, plans/SKITTERLINGS.md). The
+// `variant` option above is kept for now (unused by the game).

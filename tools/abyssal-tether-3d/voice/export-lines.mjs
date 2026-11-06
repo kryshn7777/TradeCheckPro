@@ -40,13 +40,17 @@ function triggerOf(line) {
     else if (w.skit) out.push('first skitterling contact');
     else if (w.ev) {
       let s = `event ${w.ev}`;
-      if (w.match) s += ` ${Object.entries(w.match).map(([k, v]) => `${k}=${v}`).join(' ')}`;
+      if (w.match) s += ` ${Object.entries(w.match).map(([k, v]) => (v && typeof v === 'object' && Array.isArray(v.not) ? `${k}!=${v.not.join('|')}` : Array.isArray(v) ? `${k}=${v.join('|')}` : `${k}=${v}`)).join(' ')}`;
       if (w.text) s += ` (hint about "${w.text}")`;
+      if (w.after) s += ` (+${w.after} s)`;
       out.push(s);
     }
   }
   return out.join(' or ');
 }
+
+/** PUZZLE FOCUS: the lines.csv section of each puzzle type (the voice bank loads a section's clips first; 'any' = anywhere). */
+export const FOCUS_SECTION = Object.freeze({ bell: 'S1', haul: 'S2', winch: 'S3', lamp: 'S4', rest: 'any', breach: 'S5', lure: 'S5', fork: 'S6', survive: 'S7', swing: 'any', lift: 'II-S2', knocker: 'II-S2', name: 'any', peal: 'II-S5', clapper: 'II-S6', pawl: 'II-S6', lever: 'II-S6' });
 
 export async function buildRows(opts = {}) {
   const comms = await import(pathToFileURL(path.join(GAME, 'src/sim/comms3d.js')).href);
@@ -109,6 +113,16 @@ export async function buildRows(opts = {}) {
     const sec = Math.max(0, CHAPTER2_BEATS.findIndex((b) => b.id === r.beat));
     rows.push({ id: r.id, status: 'ch2', section: `II-S${sec + 1}`, speaker: r.speaker, kind: 'radio', trigger: d && d.trigger ? d.trigger : `Chapter II, beat ${r.beat}`, text: r.text, say, direction: d ? d.dir : '', max_s: maxS(r.text, say), ai_pace: 1, ai_pitch: 0, pickup: pickupOf(r.id, r.text), _sec: sec });
   }
+  // PUZZLE FOCUS (data/puzzle-focus-text.js, said by puzzleFocusGlue.js through CommsDirector.focus): status 'focus'; the direction is the
+  // data's own `dir`; the section is the puzzle type's (FOCUS_SECTION: 'any' for a type in several sections)
+  const { PUZZLE_FOCUS_LINES } = await import(pathToFileURL(path.join(GAME, 'src/data/puzzle-focus-text.js')).href);
+  const STEP = { first: 'first sight', nudge: '40 s later, still pending', hint: 'the 20 s highlight comes on' };
+  for (const v of PUZZLE_FOCUS_LINES) {
+    if (live.has(v.id)) problems.push(`${v.id}: a focus line id is already used`);
+    live.add(v.id);
+    const section = FOCUS_SECTION[v.type] || 'any';
+    rows.push({ id: v.id, status: 'focus', section, speaker: v.speaker, kind: 'radio', trigger: `puzzle focus: ${v.type}, ${STEP[v.step] || v.step}`, text: v.text, say: '', direction: v.dir || '', max_s: maxS(v.text, ''), ai_pace: 1, ai_pitch: 0, pickup: pickupOf(v.id, v.text), _sec: -1 });
+  }
   for (const id of Object.keys(DIRECTION)) if (!live.has(id)) problems.push(`${id}: direction for a line that is not in the script`);
   // the AI performance (voice/performance.json): every voiced line has one; its line speed / pitch fill ai_pace / ai_pitch
   let perf = null;
@@ -147,12 +161,14 @@ function toMarkdown(rows) {
   const head = '| Id | Sect. | Trigger | Line (subtitle) | Direction | Max s | Pickup |\n|---|---|---|---|---|---|---|';
   const row = (r) => `| \`${r.id}\` | ${r.section} | ${md(r.trigger)} | **${md(r.text)}**${r.say ? `<br>*say:* ${md(r.say.replace(/_/g, ' '))}` : ''}${r.kind !== 'radio' ? ` *(${r.kind})*` : ''} | ${md(r.direction)} | ${r.max_s} | ${r.pickup || ''} |`;
   for (const sp of ['ODESSA', 'TICK', 'MAREN', 'VESPER', 'ELIAS', 'UPLINK']) {
-    const mine = rows.filter((r) => r.speaker === sp && r.status !== 'spec' && r.status !== 'ch2');
+    const mine = rows.filter((r) => r.speaker === sp && r.status !== 'spec' && r.status !== 'ch2' && r.status !== 'focus');
     if (!mine.length) continue;
     out.push(`#### ${sp} (${mine.length} line${mine.length > 1 ? 's' : ''}) — ${CAST[sp].who}`, '', head, ...mine.map(row), '');
   }
   const ch2 = rows.filter((r) => r.status === 'ch2');
   if (ch2.length) out.push(`#### CHAPTER II · LAMPHOLD (${ch2.length} lines; data/chapter2-text.js radio, said by chapter2Glue.js radioScript)`, '', head, ...ch2.map((r) => row({ ...r, text: `${r.speaker}: ${r.text}` })), '');
+  const focus = rows.filter((r) => r.status === 'focus');
+  if (focus.length) out.push(`#### PUZZLE FOCUS (${focus.length} lines; data/puzzle-focus-text.js, said by puzzleFocusGlue.js when the player reaches a puzzle: plans/PUZZLE_FOCUS.md)`, '', head, ...focus.map((r) => row({ ...r, text: `${r.speaker}: ${r.text}` })), '');
   const spec = rows.filter((r) => r.status === 'spec');
   if (spec.length) out.push(`#### Specified, not in the game yet (DARK_STORY_BIBLE.md §4.3: ${spec.length} lines; record them in the same session)`, '', head, ...spec.map((r) => row({ ...r, text: `${r.speaker}: ${r.text}` })), '');
   return out.join('\n');
@@ -193,7 +209,7 @@ async function main() {
   fs.writeFileSync(CSV_PATH, csv);
   if (newDoc != null && newDoc !== doc) fs.writeFileSync(DOC_PATH, newDoc);
   const n = (s) => rows.filter((r) => r.status === s).length;
-  console.log(`export-lines: ${rows.length} rows (${n('live')} live, ${n('ch2')} Chapter II, ${n('no-vo')} no VO, ${n('spec')} specified) -> ${path.relative(REPO, CSV_PATH)}${newDoc != null ? ' + VO_SCRIPT.md' : ''}`);
+  console.log(`export-lines: ${rows.length} rows (${n('live')} live, ${n('ch2')} Chapter II, ${n('focus')} puzzle focus, ${n('no-vo')} no VO, ${n('spec')} specified) -> ${path.relative(REPO, CSV_PATH)}${newDoc != null ? ' + VO_SCRIPT.md' : ''}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

@@ -95,7 +95,7 @@ stone, two hearts, "it's us", not quite Odessa).
 | `s1-open-2` | S1 Threshold | ODESSA | after `s1-open-1` +0.4 s | 3 | First descent, Elias. History. | glitch: none · skippable |
 | `s1-open-3` | S1 Threshold | TICK | after `s1-open-2` +0.5 s | 3 | Uplink's clean, five bars. I've got your eyes and your heart. | glitch: none · skippable |
 | `s1-open-4` | S1 Threshold | MAREN | after `s1-open-3` +0.5 s | 3 | Nobody's stood there since 1791. Read me every board you pass. | glitch: none · skippable |
-| `s1-open-5` | S1 Threshold | ODESSA | after `s1-open-4` +0.5 s | 3 | The Ember's dimming, Elias. Bring us a kindling. Take your time. | glitch: none · skippable |
+| `s1-open-5` | S1 Threshold | ODESSA | after `s1-open-4` +0.5 s | 3 | Clear the ring points. Then ring the bell for the Lighters. | glitch: none · skippable (v2: the small job; THE FALL lines `s1-fall-*` / `s2-fall-*`: OPENING_V2_THE_COLLAR.md §6.2) |
 | `s1-bell-1` | S1 Threshold | ODESSA | `hint` (hint with "bell") or `bell:ring` | 2 | Mind the bell, Elias. It's louder than last time. | **the slip** |
 | `s1-bell-2` | S1 Threshold | TICK | after `s1-bell-1` +0.35 s | 2 | Last time? |  |
 | `s1-bell-3` | S1 Threshold | ODESSA | after `s1-bell-2` +0.3 s | 2 | The probes, Tomasz. Focus. |  |
@@ -234,3 +234,10 @@ not-quite voice from no direction), the restore overlay over the real death fade
 The player character is a speaker now: **ELIAS** (pale blue-white, ring), in the suit like Vesper but not the suit AI: his lines play **dry**, with no radio chain, squelch or chime, close and a little breathy, with no latency or glitch (`SPEAKERS.ELIAS.local`). 12 lines (voiced by the AI placeholder `am_michael`; a human actor replaces them via `voice/recordings/<id>.wav`, see VO_SCRIPT.md):
 - **The opening** (he answers each of the four crew lines, the chain now alternates crew / Elias): *First. Right. Copy, Odessa.* / *Five bars. Keep them coming, Tick.* / *Every board, Doctor Soll. You'll hear all of it.* / *Kindling. Rope by rope. Going down.*
 - **One minute in a puzzle** (`STALL_TIME` = 60 s without progress in a section, once per section, S1-S8): he mutters the puzzle to himself (`sN-self`: the bell, the counterweight, the gear's ring, the cold lamps, the keystone, the fork, the rings, the grate), then the crew's existing stall hint follows.
+
+## Puzzle focus (a new trigger kind)
+When the player reaches a puzzle, someone suggests it and the desktop view glances at it ([PUZZLE_FOCUS.md](PUZZLE_FOCUS.md)). Its 81 lines
+(`src/data/puzzle-focus-text.js`, voiced like the rest: status `focus` in `voice/lines.csv`) reach the radio through
+`CommsDirector.focus(line)`: priority `FOCUS_PRIO` = 1.5 (above the flavour lines, below the story and the beats), a 7 s ttl (stale, never
+late), once per run, never during danger, one transmission at a time like every line. Uplink voices only where the signal carries them
+(>= 0.4); Elias and Vesper everywhere.

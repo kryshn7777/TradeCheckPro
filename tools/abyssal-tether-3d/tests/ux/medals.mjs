@@ -64,6 +64,17 @@ ok(
   M.splitLine(0, 72.44, 'silver') === 'I · 1:12.4 · SILVER' && M.splitLine(7, 23.4, null) === 'VIII · 0:23.4' && M.splitLine(2, 17, 'gold', true) === 'III · 0:17.0 · GOLD · NEW BEST',
   'splitLine: "I · 1:12.4 · SILVER" (no medal: the time only; a new best says so)',
 );
+// SPLIT DELTA against your best: a word and a sign, not colour alone
+ok(
+  M.fmtDelta(41.2, 43.5) === '-2.3 vs best' && M.fmtDelta(44.6, 43.5) === '+1.1 vs best' && M.fmtDelta(10, 10.04) === '±0.0 vs best' && M.fmtDelta(10, 9.95) === '+0.1 vs best' && M.fmtDelta(9.95, 10) === '-0.1 vs best',
+  'fmtDelta: "-2.3 vs best" faster, "+1.1 vs best" slower, rounded to tenths symmetrically, "±0.0 vs best" level',
+);
+ok(M.fmtDelta(10, null) === null && M.fmtDelta(10, 0) === null && M.fmtDelta(10, undefined) === null && M.fmtDelta(NaN, 10) === null && M.fmtDelta(0, 10) === null, 'fmtDelta: no previous best (the first time) or no time -> null');
+ok(
+  M.splitLine(2, 41.2, null, false, 43.5) === 'III · 0:41.2 · -2.3 vs best' && M.splitLine(2, 41.2, 'gold', true, 43.5) === 'III · 0:41.2 · -2.3 vs best · GOLD · NEW BEST' && M.splitLine(0, 44.6, 'silver', false, 43.5) === 'I · 0:44.6 · +1.1 vs best · SILVER' && M.splitLine(0, 44.6, 'silver', false, null) === 'I · 0:44.6 · SILVER',
+  'splitLine with the previous best: "III · 0:41.2 · -2.3 vs best" (no previous best: unchanged)',
+);
+ok(M.splitTone('III · 0:41.2 · -2.3 vs best') === 'ahead' && M.splitTone('I · 0:44.6 · +1.1 vs best · SILVER') === 'behind' && M.splitTone('I · 0:44.6 · ±0.0 vs best') === null && M.splitTone('I · 0:44.6 · SILVER') === null, 'splitTone: green ahead / amber behind / neither level or without a delta');
 
 // ---- the save → the rows the Records screen shows -----------------------------------------------------------------------
 const store = new S.SaveStore({ primary: new S.MemoryAdapter(), secondary: null, legacyGetItem: null, debounceMs: 10 });
@@ -92,7 +103,7 @@ function rec2d() {
     get(t, k) {
       if (k === 'texts') return texts;
       if (k === 'measureText') return (s) => ({ width: String(s).length * (parseFloat(/(\d+(?:\.\d+)?)px/.exec(t.font)?.[1] || 10) * 0.56) });
-      if (k === 'fillText') return (s, x, y, maxW) => texts.push({ s: String(s), x, y, font: t.font, maxW });
+      if (k === 'fillText') return (s, x, y, maxW) => texts.push({ s: String(s), x, y, font: t.font, maxW, fill: t.fillStyle });
       if (k === 'createLinearGradient' || k === 'createRadialGradient') return () => ({ addColorStop() {} });
       if (k in t) return t[k];
       return () => {};
@@ -125,7 +136,8 @@ const glyphs = (p) => p.ctx.texts.every((t) => pxOf(t.font) >= 28);
   // S1 played whole: the split arrives, then the S2 section:enter (game.js _enterSection emits both in this order)
   bus.emit('split', { index: 0, section: 's1', time: 12.9, par: PAR_3D.normal.s1, medal: medalFor(12.9, PAR_3D.normal.s1), recorded: true, difficulty: 'normal' });
   bus.emit('section:enter', { index: 1, section: L.sections[1], first: true, mode: 'progress' });
-  ok(ui._title.name === L.sections[1].name && ui._title.split === 'I · 0:12.9 · GOLD · NEW BEST', `section end: the next title card carries "${ui._title.split}"`);
+  // (the save holds 13.5 s for S1 and the event carries no prevBest here: the UI falls back to reading the save)
+  ok(ui._title.name === L.sections[1].name && ui._title.split === 'I · 0:12.9 · -0.6 vs best · GOLD · NEW BEST', `section end: the next title card carries "${ui._title.split}"`);
   const t = paint(function (ctx) {
     this._vr = { titleC: { ctx, cw: 1024, ch: 288, tex: {} } };
     this._paintTitle();
@@ -170,8 +182,48 @@ const glyphs = (p) => p.ctx.texts.every((t) => pxOf(t.font) >= 28);
   ok(set.regions.some((r) => r.act === 'set' && r.key === 'windSqualls') && set.regions.some((r) => r.act === 'height-page') && inPanel(set) && glyphs(set), 'VR Settings › Comfort: six rows (Wind squalls On / Off) and the Player height link still fit the panel');
   ui._vrTab = 1;
   const disp = paint(ui._paintSettings);
-  ok(disp.regions.some((r) => r.act === 'set' && r.key === 'bloodWriting') && disp.regions.some((r) => r.act === 'calibrate') && inPanel(disp) && glyphs(disp), 'VR Settings › Display: six rows (Blood writing On / Off) and the Brightness link still fit the panel');
+  ok(disp.regions.some((r) => r.act === 'set' && r.key === 'bloodWriting') && disp.regions.some((r) => r.act === 'set' && r.key === 'livingFlame') && disp.regions.some((r) => r.act === 'calibrate') && inPanel(disp) && glyphs(disp), 'VR Settings › Display: seven rows (Blood writing, Living flame On / Off) and the Brightness link still fit the panel');
+  ui._vrTab = 3;
+  const acc = paint(ui._paintSettings);
+  ok(acc.regions.some((r) => r.act === 'set' && r.key === 'ghost') && acc.regions.some((r) => r.act === 'reset-settings') && inPanel(acc) && glyphs(acc), 'VR Settings › Access: the Ghost lantern On / Off row and Reset still fit the panel');
+  ui._vrTab = 4;
+  const rope = paint(ui._paintSettings);
+  ok(rope.regions.some((r) => r.act === 'set' && r.key === 'puzzleFocus') && rope.regions.some((r) => r.act === 'set' && r.key === 'hitStop') && inPanel(rope) && glyphs(rope), 'VR Settings › Rope: Puzzle focus (Glance / Cues / Off) beside Catch pause, inside the panel');
   ui._vrTab = 0;
+}
+
+// ---- SPLIT DELTA: the listener order (meta/save.js binds its 'split' listener at boot, BEFORE the UI) ------------------------
+{
+  const bus2 = new EventBus();
+  const store2 = new S.SaveStore({ primary: new S.MemoryAdapter(), secondary: null, legacyGetItem: null, debounceMs: 10 });
+  await store2.load();
+  store2.sectionSplit({ difficulty: 'normal', section: 's4', time: 50, medal: null });
+  // SaveService._wire's listener, bound first (game.js awaits the save before it builds the UI)
+  bus2.on('split', (e) => e.recorded && store2.sectionSplit({ difficulty: e.difficulty, section: e.section, time: e.time, medal: e.medal }));
+  const game2 = { bus: bus2, level: L, settings, difficultyKey: 'normal', diff: DIFFICULTY.normal, save: { sectionRecords: (d) => store2.sectionRecords(d), continueInfo: () => null }, state: 'playing', time: 0, deaths: 0 };
+  const ui2 = new UI3D(game2);
+  ui2._bindBus();
+  ui2._xr = true;
+  // game.js _split: reads the previous best into the event, then emits
+  const emitSplit = (time) => {
+    const r = store2.sectionRecords('normal').s4;
+    bus2.emit('split', { index: 3, section: 's4', time, par: PAR_3D.normal.s4, medal: medalFor(time, PAR_3D.normal.s4), recorded: true, difficulty: 'normal', prevBest: r && r.best > 0 ? r.best : null });
+    bus2.emit('section:enter', { index: 4, section: L.sections[4], first: true, mode: 'progress' });
+    ui2._lastTitle.text = '';
+    return ui2._title.split;
+  };
+  const a = emitSplit(45);
+  ok(/^IV · 0:45\.0 · -5\.0 vs best\b/.test(a) && /NEW BEST$/.test(a) && store2.sectionRecords('normal').s4.best === 45, `the save kept the new best first, the card still reads the delta against the OLD best ("${a}")`);
+  const t = paint(function (ctx) {
+    ui2._vr = { titleC: { ctx, cw: 1024, ch: 288, tex: {} } };
+    ui2._paintTitle.call(ui2);
+  });
+  ok(t.ctx.texts.some((x) => x.s === a && x.fill === M.AHEAD_COLOR), 'VR: a faster split is drawn green on the title card (the sign and the word say it too)');
+  const b = emitSplit(46.1);
+  ok(/^IV · 0:46\.1 · \+1\.1 vs best/.test(b) && !/NEW BEST/.test(b) && M.splitTone(b) === 'behind', `a slower split reads "+1.1 vs best" in amber ("${b}")`);
+  // the old path (no prevBest in the event) shows why the event carries it: the save already holds this very split
+  bus2.emit('split', { index: 3, section: 's4', time: 44, par: PAR_3D.normal.s4, medal: null, recorded: true, difficulty: 'normal' });
+  ok(!/-1\.0 vs best/.test(ui2._pendingSplit.line), `without prevBest the UI would read the overwritten best ("${ui2._pendingSplit.line}"): game.js must send it`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');

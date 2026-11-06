@@ -13,6 +13,15 @@
 > `tablet` decor of `src/data/level-data-3d.js`; the blood is `src/data/blood-writing-3d.js`, drawn by
 > `src/render/bloodWriting.js` only while **Settings › Display › Blood writing** is on (off by default).
 
+## 0. The opening's cover story (2026-11-06, [OPENING_V2_THE_COLLAR.md](OPENING_V2_THE_COLLAR.md))
+
+What the player is told: Elias Wren is **the Line**, Expedition 42's rope rescuer, lowered 62 m from **the Collar** (the station on the
+Cap) by four hoist drones to **Lamp Zero** (the Threshold) to clear the ring points and ring the bell for **the Lighters**, the
+relighting crew four hours behind him. The bell opens the seal under him, his line is released from above (*"Line release
+commanded."* / Tick: *"I didn't send that."*) and he goes below Lamp Zero (*"Keep going down. The Lighters will find you."*). What is
+true is unchanged (DARK_STORY_BIBLE §2.3): the drop was the plan; the work order reads PAYLOAD 1 · RETURN 0; the drones' scan is the
+measuring; the cradle we watch come down is empty and nobody sits at the console.
+
 ## 1. What happened (the team's version; the player only ever pieces it together)
 
 - **The Lanternwrights** built the Underspire downward toward the Still Flame. Its light wakes whoever carries it, so dying
@@ -24,6 +33,8 @@
 - **The deep course** (the oldest dressed dead) woke when its lamps failed and moved as one: **the Mason**. It is blind,
   hunts by sound, knocks from inside the walls because every body in it is still knocking to be named, and comes for the
   lantern-bearers because every piece of it walks toward the light. A Mason kill leaves no stone body: it wears you.
+  It is blind to the dark but not to the light: it **sees the lantern-bearer's light** and, once it has, it walks straight at it
+  (whole or hurt: health does not hide you from it; an empty lantern, a wall between you or a Masons' rest does; see MASON_SIGHT.md).
 - **The menders.** The Keepers sent nine Masons (the guild of menders) down to mend the deep course. The wall mended
   itself, with them. The Keepers' boards say only *THEY WERE NOT RETURNED*. The nine wrote the rest on the walls in their
   own blood on the way down: those are the blood writings.
