@@ -116,7 +116,15 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
   const r3 = read('render/renderer3d.js');
   ok(/filmTerms\(lk, this\.lighting\.tier, !!this\.renderer\.xr\.isPresenting/.test(r3), 'the renderer feeds the XR state to the film terms every frame (entering VR drops grain and vignette at once)');
   ok(/r\.toneMapping = this\.look\.toneMapping === 'agx' \? THREE\.AgXToneMapping : THREE\.ACESFilmicToneMapping/.test(r3) && /r\.toneMappingExposure = this\.look\.exposure/.test(r3), 'the tone mapper and the exposure come from the preset');
-  ok(/this\.lanternBase = LANTERN_CANDELA \* this\.look\.lantern/.test(r3) && /this\.lantern\.decay = this\.look\.lanternDecay/.test(r3), 'the lantern candela and falloff come from the preset');
+  ok(/this\.lanternBase = LANTERN_CANDELA \* this\.look\.lantern/.test(r3) && /this\.lantern\.decay = lanternDecayOf\(this\.look\.lanternDecay\)/.test(r3), 'the lantern candela and falloff come from the preset');
+  // the shaders tell the lights apart by decay: the lantern must never fall into the pooled lamps' band (2: skipped on lightmapped stone) or the glow's (1.9)
+  for (const nm of Object.keys(P.LOOK_PRESETS)) {
+    const d = M.lanternDecayOf(P.LOOK_PRESETS[nm].lanternDecay);
+    const inLamp = d > M.LAMP_DECAY_BAND[0] && d <= M.LAMP_DECAY_BAND[1];
+    const inGlow = d > M.CREATURE_DECAY_BAND[0] && d <= M.CREATURE_DECAY_BAND[1];
+    ok(!inLamp && !inGlow && Math.abs(d - P.LOOK_PRESETS[nm].lanternDecay) <= 0.011, `${nm}: the lantern's decay ${d} is outside the lamp (2) / glow (1.9) bands and within 0.01 of the preset's`);
+  }
+  ok(M.lanternDecayOf(2) !== 2 && M.lanternDecayOf(1.9) !== 1.9 && M.lanternDecayOf(1.6) === 1.6 && M.lanternDecayOf(2.2) === 2.2, 'lanternDecayOf moves only decays inside the reserved bands');
   ok(/setLightmapTune\(\{ exposure: lk\.lmExposure, floor: lk\.lmFloor/.test(r3), 'the baked light is tuned by the preset');
 }
 

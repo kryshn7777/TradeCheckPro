@@ -956,8 +956,25 @@ float atSpecOcc( const in float nv, const in float ao, const in float rough ) {
 // -----------------------------------------------------------------------------
 
 /**
+ * The lit shaders tell the point lights apart by their decay (a per-light uniform three already uploads): the pooled lamps are 2
+ * (baked on lightmapped stone: their BRDF call is skipped there), the creature's glow is 1.9 (never baked), and the carried lantern is
+ * ANY OTHER value (its shadow, its extra falloff on lightmapped stone). The bands, not the old "lantern < 1.8": the dark look's
+ * inverse-square lantern (decay 2) fell into the lamps' band, so the lantern was skipped on every lightmapped surface and its shadow
+ * never applied (DARK_REALISM_LOOK.md, retune). lanternDecayOf() moves a lantern decay that lands inside the reserved bands just out of them.
+ */
+export const LAMP_DECAY_BAND = Object.freeze([1.95, 2.005]);
+export const CREATURE_DECAY_BAND = Object.freeze([1.85, 1.95]);
+const GLSL_IS_LAMP = `( pointLight.decay > ${LAMP_DECAY_BAND[0].toFixed(3)} && pointLight.decay <= ${LAMP_DECAY_BAND[1].toFixed(3)} )`;
+const GLSL_IS_LANTERN = `( pointLight.decay <= ${CREATURE_DECAY_BAND[0].toFixed(3)} || pointLight.decay > ${LAMP_DECAY_BAND[1].toFixed(3)} )`;
+/** The decay the carried lantern is given for a wanted falloff `d`: unchanged outside the reserved bands (1.85..2.005), else 2.01. */
+export function lanternDecayOf(d) {
+  const v = Number.isFinite(d) ? d : 1.6;
+  return v > CREATURE_DECAY_BAND[0] && v <= LAMP_DECAY_BAND[1] ? 2.01 : v;
+}
+
+/**
  * Declared in lights_pars_begin under AT_LSHADOW (defined per program by patchLanternShadow(), so every other program compiles to
- * exactly the stock code). The lantern is the point light with decay < 1.8 (the pooled lamps have 2): atLanternShadow() returns its
+ * exactly the stock code). The lantern is the point light outside the lamp / creature decay bands (GLSL_IS_LANTERN): atLanternShadow() returns its
  * visibility 0..1 for the fragment, from the view-space position / normal / light position:
  *  - the point is moved off the surface along the geometric normal (normal-offset bias, scaled by the texel size at this distance and
  *    by the grazing angle) and a little toward the light (slope-scaled depth bias), then projected into the cached static map and the
@@ -1070,7 +1087,7 @@ function installLanternShadowChunks() {
     SC.lights_fragment_begin.replace(
       mPoint,
       mPoint +
-        '\n#ifdef AT_LSHADOW\n\t\tif ( pointLight.decay < 1.8 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }' +
+        '\n#ifdef AT_LSHADOW\n\t\tif ( ' + GLSL_IS_LANTERN + ' && dot( directLight.color, vec3( 1.0 ) ) > 0.002 ) { atLsVis = atLanternShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); directLight.color *= atLsVis; }' +
         '\n\t\telse if ( uLPK.x > 0.002 && dot( directLight.color, vec3( 1.0 ) ) > 0.002 && distance( pointLight.position, atLpV ) < 0.06 ) { directLight.color *= atAuxShadow( geometryPosition, nonPerturbedNormal, pointLight.position ); }\n#endif',
     );
   // a body in the lantern's shadow is dark, not just unlit by the lantern: the fill (baked lightmap / GI / ambient) loses 40 % under a full shadow, so a shadow
@@ -1134,10 +1151,10 @@ function buildLightsBeginGI() {
   // the lantern's range was stretched (decay 1.6) to stand in for the missing ambient: on lightmapped surfaces, where the
   // baked light supplies the far field, it gets an extra distance falloff (d^-uLMLan.y) so it reads as a pool, not a wash
   if (c.includes(mPoint)) {
-    c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && pointLight.decay <= 1.8 ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
+    c = c.replace(mPoint, mPoint + '\n#ifdef AT_LM\n\t\tif ( atLmOn > 0.5 && ' + GLSL_IS_LANTERN + ' ) directLight.color *= clamp( uLMLan.x * pow( max( length( pointLight.position - geometryPosition ), 1.0 ), - uLMLan.y ), 0.0, 1.0 );\n#endif');
   }
   // (the creature's glow, decay 1.9, is the one pooled light that is NOT baked: it is evaluated on lightmapped fragments too)
-  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && pointLight.decay > 1.95 )');
+  c = skipNext(c, mPoint, '! ( atLmOn > 0.5 && ' + GLSL_IS_LAMP + ' )');
   c = skipNext(c, mDir, 'atLmOn < 0.5');
   c = c.replace(
     mTail,
