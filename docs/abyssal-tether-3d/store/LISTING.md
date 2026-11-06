@@ -45,7 +45,9 @@ Descend a buried cathedral-machine, then a town of lamps, on two grappling tethe
 ```
 Something is following you down.
 
-The Lantern is a physical VR descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
+The Lantern is a physical VR horror descent. You carry two tether launchers, one on each wrist, and a single lantern. Below you is a buried cathedral-machine of carved stone, rusted ironwork and broken galleries, more than half a kilometre deep. There is no floor you can trust and no way back up.
+
+It begins with an in-engine opening film at the Threshold, where the Lanternwrights carved one rule over the door. After that the dark is real: wet stone, deep shadow and haze, and your lantern is the one warm light you have.
 
 HOW YOU MOVE
 - Fire a tether with each trigger and swing across the dark. Hold the trigger to stay attached, release to let go.
@@ -56,16 +58,18 @@ HOW YOU MOVE
 THE DESCENT
 - Chapter I is a complete descent in eight sections, from the Threshold to the Last Throat. Each one teaches a new idea and then asks you to use it under pressure.
 - Chapter II is Lamphold: a town of three thousand lamps, each one a sleeper's, hung in a pit five hundred metres deep. Chandeliers and lifts swing and move around you. Something there answers bells, and the only way down is past it.
-- Checkpoints keep a bad fall from costing you everything. Your best times, deepest descent and fewest deaths are kept for each difficulty.
+- Bells to ring, counterweights to haul and seals to open. When you reach one, a voice on the line points it out (Puzzle focus can be turned down or off).
+- A watch on your wrist shows a hologram map of the whole descent, and a jetpack with very little fuel can break one bad fall.
+- Checkpoints keep a bad fall from costing you everything. Your best times, deepest descent and fewest deaths are kept for each difficulty, and a ghost lantern, a pale light, replays your best run down the shaft.
 - Four difficulties. Normal is the intended descent. Nightmare gives you a faster hunter, tighter aim and fewer recovery anchors. Abyss has no checkpoints and almost no help, for speedrunners. Sandbox removes the hunter and the lethal falls so you can practise the tethers at your own pace.
 
 THE THING ABOVE YOU
-Something vast lives in the walls of this place. It listens. It follows you down the shaft, and the way you move, the noise you make and the light you carry decide when it finds you. You never fight it. You only outpace it.
+Something vast lives in the walls of this place: the Mason. It listens, and when it sees your light it gives chase, and close to it nothing heals. You never fight it. You outpace it, or you throw a Knocker, a clockwork rattle that clacks its own knock, and cross while it goes to answer. Smaller things live down here too: red skitterlings that scatter from the lantern, and bigger ones that bite.
 
 BUILT FOR THE HEADSET
 - Your real height is used 1:1, with a calibration step and a seated option.
 - Spatial audio: you will hear it before you see it.
-- Plays offline once it has been downloaded. The first launch needs an internet connection to fetch the game (about 65 MB).
+- Plays offline once it has been downloaded. The first launch needs an internet connection to download the game.
 
 COMFORT
 Comfort rating: Intense. The Lantern uses smooth artificial movement, swinging, long falls and thumbstick turning, and it contains sudden scares. If you are new to VR, start in Sandbox, take breaks, and stop if you feel unwell. Touch controllers are required; hand tracking is not supported.
@@ -113,7 +117,9 @@ Expected outcome: roughly Mature 17+ / PEGI 16-18 territory because of blood, re
 
 Meta judges key art and covers most strictly: no blood, no gore, no soft-tissue or organ close-ups, no "graphic
 depictions of internal organs" in MARKETING material even for a mature game. The covers, hero and screenshots in `art/` and `screenshots/` come from the real game
-(stone, light, ropes, the shaft) and show none of that; keep it so (no blood-lens or skeleton frames in key art). If the creature's final design is organic and graphic, keep it
+(stone, light, ropes, the shaft) and show none of that; keep it so (no blood-lens or skeleton frames in key art). `capture-screens.mjs`
+loads the page with `&remains=off`, so the bloodstains and skeletons of the mature update are not in any store render, and no death
+scene is captured. If the creature's final design is organic and graphic, keep it
 out of key art and show it at distance, in silhouette.
 
 ## Data Use Checkup (for the Dashboard)
@@ -134,7 +140,11 @@ First release. Chapters I and II: two complete descents (eight sections, then se
 checkpoints, best-time records. Plays offline after the first launch.
 ```
 
-## Art and screenshot manifest (all generated from the real game; `keyart/` holds the raw renders the covers are built from)
+## Art and screenshot manifest (all generated from the real game in the dark realism look)
+
+The covers are cut from raw renders of the Threshold (`capture-screens.mjs --only keyart` writes `keyart/vista-a-{16x9,hero,square,portrait}.png`;
+they are not committed (ignored, several MB each); re-render them before re-running `make-art.py`). The title lettering is drawn by
+`make-art.py` (no font); the icon by `make-icons.py` (a lit lantern on a chain).
 
 | File | Size | Dashboard slot |
 |---|---|---|
