@@ -232,6 +232,7 @@ export function blankIntent() {
     mapPressed: false,
     ui: { ray: null, click: false },
     bag: { slot: -1, use: false, cycle: 0, cancel: false, vr: null },
+    knocker: { pressed: false, held: false, released: false }, // THE KNOCKER's key (desktop G / touch KNOCK)
     climb: blankClimb(),
   };
 }
@@ -3704,6 +3705,10 @@ export class Game3D {
         }
       }
       if (o.ui) o.ui.click = false;
+      if (o.knocker) {
+        o.knocker.pressed = false;
+        o.knocker.released = false;
+      }
     }
     this._endState = this.state;
     this._endUi = this._uiScreen();
@@ -5457,6 +5462,11 @@ export class Game3D {
     ic.rz = 0;
     ic.fx = 0;
     ic.fz = -1;
+    // THE KNOCKER's key: { pressed, held, released } (tests, QA, captures)
+    const ok = o.knocker || null;
+    it.knocker.pressed = !!(ok && ok.pressed);
+    it.knocker.held = !!(ok && ok.held);
+    it.knocker.released = !!(ok && ok.released);
     const ui = o.ui || {};
     it.ui.ray = ui.ray || null;
     it.ui.click = !!ui.click;
@@ -5520,6 +5530,7 @@ export class Game3D {
     const o = Object.assign({}, partial);
     if (partial.move) o.move = Object.assign({}, partial.move);
     if (partial.ui) o.ui = Object.assign({}, partial.ui);
+    if (partial.knocker) o.knocker = Object.assign({}, partial.knocker); // (a copy: the frame end clears its edges)
     o.hands = {};
     for (let k = 0; k < 2; k++) {
       const h = HANDS[k];
