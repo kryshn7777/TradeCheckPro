@@ -27,3 +27,5 @@ dist-ssr
 dist-at3d/
 public/abyssal-tether-3d/sw.js
 tools/abyssal-tether-3d/release/out/
+# raw key-art renders (3-7 MB each, input of make-art.py; re-render with capture-screens.mjs --only keyart)
+docs/abyssal-tether-3d/store/keyart/

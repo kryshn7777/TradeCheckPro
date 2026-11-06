@@ -31,6 +31,7 @@ const arg = (n, d) => {
 const OUT = path.resolve(REPO, arg('--out', 'docs/abyssal-tether-3d/store'));
 const ONLY = arg('--only', 'all');
 const RECIPE = arg('--recipe', null); // capture a single desktop shot (a fresh process per shot keeps memory bounded)
+const RECIPE_LIST = arg('--recipes', null); // a comma list of shots in one page (2-4 per process: the software renderer's memory grows)
 const ROOT = path.resolve(arg('--root', path.join(REPO, 'public', 'abyssal-tether-3d')));
 const SHOTS = path.join(OUT, 'screenshots');
 const KEYART = path.join(OUT, 'keyart');
@@ -65,15 +66,17 @@ fs.mkdirSync(KEYART, { recursive: true });
  *            shot of it closed round the real gauntlet (vr-holdfast-closed)
  */
 const RECIPES = [
-  { id: 'shot-01', section: 0, yaw: 0.0, pitch: -0.05, run: 0.6, note: 'the threshold: the first view' },
-  { id: 'shot-02', section: 0, at: [0, -3, -2], yaw: 0.25, pitch: -0.42, run: 0.5, note: 'looking down the shaft' },
-  { id: 'shot-03', section: 1, yaw: -0.5, pitch: -0.12, ropes: 28, run: 1.6, note: 'a long swing, two tethers taut' },
-  { id: 'shot-04', section: 2, yaw: 0.3, pitch: -0.1, run: 0.6, note: 'the broken gallery' },
-  { id: 'shot-05', section: 3, yaw: 0.9, pitch: -0.05, run: 6, creature: [10, 120], note: 'the listening vault: something answered' },
-  { id: 'shot-06', section: 4, yaw: 0.0, pitch: -0.1, ropes: 24, run: 2, creature: [8, 70], note: 'the gullet stair' },
-  { id: 'shot-07', section: 5, yaw: -0.4, pitch: -0.2, run: 0.6, note: 'two descents' },
-  { id: 'shot-08', section: 6, yaw: 0.2, pitch: -0.15, ropes: 30, run: 1.5, note: 'the hollow nave: nothing to stand on' },
-  { id: 'shot-09', section: 7, yaw: 0.4, pitch: -0.1, run: 0.6, note: 'the last throat' },
+  // THE LANTERN store set (dark realism look; '&remains=off' on the page keeps the bloodstains and skeletons out of every store shot)
+  { id: 'shot-01', opening: 68.2, note: 'the title card of the opening film: THE LANTERN over the well' },
+  { id: 'shot-02', section: 0, eye: [-4, 1.25, 1.2], target: [-4, 4.4, 10.5], fov: 66, run: 0.6, note: 'S1 the Threshold: the arch, the two Lanternwrights with their lanterns, the carved rule' },
+  { id: 'shot-03', section: 1, yaw: -0.5, pitch: -0.12, ropes: 28, run: 1.6, note: 'S2 a long swing, two tethers taut' },
+  { id: 'shot-04', section: 3, eye: [-16, -103.6, -7], yaw: 0, pitch: -0.12, run: 0.6, note: 'S4 the catwalk over the Listening Vault and its three cold lamps' },
+  { id: 'shot-05', section: 3, yaw: 0.9, pitch: -0.05, run: 6, creature: [14, 120], note: 'S4 the Mason in view, far off across the Vault' },
+  { id: 'shot-06', section: 2, yaw: 0.3, pitch: -0.38, run: 0.6, note: 'the gauntlets and the lantern, the broken gallery below' },
+  { id: 'shot-07', section: 7, yaw: 0.4, pitch: -0.1, run: 0.6, note: 'S8 the Last Throat: the lantern alone in the deep' },
+  { id: 'shot-08', section: 4, yaw: 0.0, pitch: -0.1, run: 0.6, wristMap: true, note: 'the wrist hologram map of the whole descent (M)' },
+  { id: 'shot-09', section: 0, yaw: -0.26, pitch: -0.4, run: 23, note: 'the S1 bell, the first puzzle, glowing after 20 s (the hint)' },
+  { id: 'shot-10', section: 6, yaw: 0.2, pitch: -0.15, ropes: 30, run: 1.5, note: 'S7 the hollow nave: nothing to stand on' },
   { id: 'shot-low', section: 3, yaw: 0.2, pitch: -0.1, run: 3.4, hp: 0.2, note: 'low health: the scary line (not a store shot; --recipe shot-low only)', only: true },
   { id: 'shot-hint', section: 0, yaw: -0.26, pitch: -0.4, run: 23, note: 'the 20 s trigger hint: the S1 bell glows (not a store shot; --recipe shot-hint only)', only: true },
   { id: 'shot-10', section: 2, at: [0, -6, 3], yaw: -0.8, pitch: 0.1, run: 0.6, note: 'looking back up the shaft' },
@@ -107,7 +110,24 @@ const RECIPES = [
   { id: 'shot-comms-deep', section: 7, url: '&comms=on', yaw: 0.4, pitch: -0.1, run: 0.6, comms: { say: 's8-enter', glitch: 'static', at: 1.4, dur: 0.6, t: 1.6 }, note: 'a glitched line deep down (one bar)', only: true },
   { id: 'shot-restore', section: 4, url: '&comms=on', yaw: 0.0, pitch: -0.1, run: 0.6, comms: { die: 'creature', count: 3, t: 4.9 }, fade: 0.9, note: 'the CONTINUITY restore overlay', only: true },
 ];
-const KEYART_RECIPES = [{ id: 'vista-a', section: 6, yaw: 0.2, pitch: -0.18, ropes: 30, run: 1.5 }];
+// KEY ART (THE LANTERN): the Threshold from the chimney, the arch and the two Lanternwrights holding their lanterns, the cold light
+// pouring down the shaft; framed per cover format (eye / target / vertical fov) so the title sits between the statues' lanterns. No
+// hands, no reticle, no watch, no remains (make-art.py adds the title). Rendered at the final cover sizes in ONE page (the viewport is
+// resized between them: the software renderer compiles the shaders once).
+const KEYART_RECIPES = [
+  {
+    id: 'vista-a',
+    section: 0,
+    run: 0.6,
+    hideHands: true,
+    sizes: {
+      '16x9': { eye: [-4, 1.2, 0.5], target: [-4, 4.6, 10.5], fov: 64 },
+      hero: { eye: [-4, 1.6, 0.5], target: [-4, 4.6, 10.5], fov: 36 },
+      square: { eye: [-4, 1.0, -1.5], target: [-4, 5.2, 10.5], fov: 70 },
+      portrait: { eye: [-4, 0.8, -3], target: [-4, 6, 10.5], fov: 74 },
+    },
+  },
+];
 // rendered at the final cover sizes (make-art.py crops / resizes from these)
 const KEYART_SIZES = [
   ['16x9', 2560, 1440],
@@ -136,7 +156,10 @@ async function newGamePage(w, h, { xr = false, extra = '' } = {}) {
     document.addEventListener('DOMContentLoaded', () => document.head.appendChild(css));
   });
   const comms = /[?&]comms=/.test(extra) ? '' : '&comms=off'; // the Expedition radio stays out of the store shots
-  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&hunt=always' + comms + extra, { waitUntil: 'domcontentloaded' });
+  // the opening film stays out (intro=off: a recipe with `opening` plays it through the debug API); the remains (bloodstains, skeletons)
+  // stay out of the store shots and the key art (store/LISTING.md, content-guideline notes): a recipe with '&remains=on' keeps them
+  const remains = /[?&]remains=/.test(extra) ? '' : '&remains=off';
+  await page.goto(srv.base + '?sw=0&gov=off&perfdiag=off&watchdog=off&intro=off&hunt=always' + comms + remains + extra, { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !!(window.AT3D && window.AT3D.game && window.AT3D.game.booted)), { timeout: 240000, label: 'boot' });
   await sleep(2500); // textures, env kit, creature kit, gear GLB finish loading
   return { ctx, page };
@@ -180,6 +203,17 @@ async function setScene(page, r) {
   return page.evaluate(async (rec) => {
     const G = window.AT3D.game;
     const D = window.AT3D.debug;
+    if (rec.opening != null) {
+      // a still of the opening film (src/sim/openingCinematic.js) held at t, as render-opening.mjs does
+      if (G.state !== 'intro') D.opening.play('normal');
+      D.freeze(true);
+      G._openingHold = rec.opening;
+      for (let i = 0; i < 30; i++) G._frame(1 / 60, false);
+      return { state: 'playing', opening: rec.opening };
+    }
+    if (G.state === 'intro' && D.opening) D.opening.skip();
+    if (rec.yaw == null) rec.yaw = 0; // an eye + target recipe computes its look below
+    if (rec.pitch == null) rec.pitch = 0;
     D.freeze(false);
     G.start('normal');
     D.godMode(true);
@@ -195,6 +229,12 @@ async function setScene(page, r) {
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
     D.step(0.4, { render: false, state: false });
+    const r3 = G.renderer;
+    if (rec.fov && r3) {
+      r3.baseFov = rec.fov;
+      r3.camera.fov = rec.fov;
+      r3.camera.updateProjectionMatrix();
+    }
     if (rec.hang) {
       const a = G.level.anchors.find((x) => x.id === rec.hang);
       if (a) {
@@ -266,6 +306,38 @@ async function setScene(page, r) {
     G.fade = 0;
     G.flash = 0;
     G._setLook(rec.yaw, rec.pitch);
+    if (rec.eye) {
+      // an absolute eye position (the body is put 1.24 m under it) and a look at `target` (or yaw / pitch); held there for the capture
+      D.teleport(rec.eye[0], rec.eye[1] - 1.24, rec.eye[2]);
+      D.step(0.02, { render: true, state: false });
+      D.teleport(rec.eye[0], rec.eye[1] - 1.24, rec.eye[2]);
+    }
+    if (rec.target) {
+      D.step(0.02, { render: true, state: false });
+      if (rec.eye) D.teleport(rec.eye[0], rec.eye[1] - 1.24, rec.eye[2]);
+      const cam = G.renderer.camera;
+      const e = cam.getWorldPosition(cam.position.clone());
+      const [tx, ty, tz] = rec.target;
+      rec.yaw = Math.atan2(-(tx - e.x), -(tz - e.z));
+      rec.pitch = Math.atan2(ty - e.y, Math.hypot(tx - e.x, tz - e.z));
+      G._setLook(rec.yaw, rec.pitch);
+    }
+    if (rec.wristMap && G.wristMap) {
+      // the watch's hologram map latched open (M) and fully bloomed
+      G.wristMap.pinned = true;
+      G.wristMap.on = true;
+      D.step(1.2, { render: false, state: false }); // the bloom (the view follows wristMap.k in the frame update)
+      G._setLook(rec.yaw, rec.pitch);
+    }
+    if (rec.hideHands) {
+      // key art: no gauntlets, no reticle, no watch (layer 31 is never rendered; the views reset `visible` every frame, not layers)
+      if (G.handsView) G.handsView.visible = false;
+      if (G.handsView && G.handsView.batch) G.handsView.batch.mesh.layers.set(31);
+      if (G.wristComputer) {
+        if (G.wristComputer.face) G.wristComputer.face.layers.set(31);
+        G.wristComputer.root.traverse((o) => o.layers.set(31));
+      }
+    }
     if (rec.comms && D.comms) {
       const c = rec.comms;
       if (c.die) D.comms.die(c.die, c.count || 1);
@@ -348,8 +420,13 @@ async function setScene(page, r) {
       }
     }
     D.step(0.05, { render: true, state: false });
+    if (rec.eye) {
+      D.teleport(rec.eye[0], rec.eye[1] - 1.24, rec.eye[2]);
+      G._setLook(rec.yaw, rec.pitch);
+    }
     G.fade = rec.fade || 0;
     D.freeze(true);
+    for (let i = 0; i < (rec.eye || rec.wristMap ? 6 : 0); i++) G._render(1 / 60); // the pack LODs re-pick every 3rd frame after a teleport
     return { creature: rec.creature ? { seen, distance: G.creature && G.creature.distance } : null, state: G.state, y: Math.round(p.y) };
   }, r);
 }
@@ -384,7 +461,8 @@ async function snap(page, file, w, h, { grab = false, fade = 0 } = {}) {
 try {
   if (ONLY === 'all' || ONLY === 'shots') {
     console.log('desktop screenshots 1920x1080');
-    const list = RECIPES.filter((x) => (RECIPE ? x.id === RECIPE : !x.only));
+    const want = RECIPE_LIST ? RECIPE_LIST.split(',') : RECIPE ? [RECIPE] : null;
+    const list = RECIPES.filter((x) => (want ? want.includes(x.id) : !x.only));
     const { ctx, page } = await newGamePage(1920, 1080, { extra: RECIPE && list[0] && list[0].url ? list[0].url : '' });
     for (const r of list) {
       const info = await setScene(page, r);
@@ -503,15 +581,20 @@ try {
     await ctx.close();
   }
   if (ONLY === 'keyart') {
-    for (const [name, w, h] of KEYART_SIZES) {
+    // one page for every size (the shaders compile once); `--sizes 16x9,hero` renders a subset (a fresh process per pair keeps memory bounded)
+    const sizes = arg('--sizes', null);
+    const todo = KEYART_SIZES.filter(([name]) => !sizes || sizes.split(',').includes(name));
+    const { ctx, page } = await newGamePage(todo[0][1], todo[0][2]);
+    for (const [name, w, h] of todo) {
       console.log(`key art renders ${name} ${w}x${h}`);
-      const { ctx, page } = await newGamePage(w, h);
+      await page.setViewportSize({ width: w, height: h });
+      await sleep(500);
       for (const r of KEYART_RECIPES) {
-        await setScene(page, r);
-        await snap(page, path.join(KEYART, `${r.id}-${name}.png`), w, h);
+        await setScene(page, Object.assign({}, r, r.sizes[name] || {}));
+        await snap(page, path.join(KEYART, `${r.id}-${name}.png`), w, h, { grab: true });
       }
-      await ctx.close();
     }
+    await ctx.close();
   }
 } finally {
   await browser.close().catch(() => {});
