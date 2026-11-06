@@ -10,13 +10,16 @@
  *      pulsing halo, tinted per kind, and the collect puff (the halo swells and fades over 0.55 s). It fades out
  *      before the fog does.
  *
- * Silhouettes (readable without colour, the same shapes as the icons in bagFx.js):
- *   FIRST_AID   a wide case with a handle on top and a cross standing proud of its face
- *   BANDAGE     a roll seen from the side (a squat drum, a dark core, a band) with a flat loose tail
+ * Silhouettes (readable without colour, the same shapes as the icons in bagFx.js; FIRST_AID / BANDAGE are ~1 k vertices each, every
+ * kind stays under itemModels ITEM_MODEL_CAPS so MAX_ITEMS of the largest still fit the Uint16 index):
+ *   FIRST_AID   the old field medical case (render/itemModels.js): chipped cream enamel, a faded red cross, a dark rim, riveted
+ *               corners, a strap handle, the lid sprung ajar with gauze showing
+ *   BANDAGE     a field dressing (render/itemModels.js): a folded linen pad half in torn kraft paper, bound with twine, a dried
+ *               blood stain, two long frayed tails trailing out of one end (flat and long: never a roll)
  *   ADRENALINE  a syringe on the diagonal: barrel, needle, plunger rod, finger flange and thumb plate
  *   BATTERY     an upright cell: tall drum, a terminal nub, a wide band
  *   KNOCKER     the brass clockwork rattle (render/knockerView.js knockerTemplate), shown 1.7x so it reads on a ledge
- *   GRENADE     the dead soldier's iron grenade / SIDEARM his service revolver (render/weaponView.js weaponTemplate), 2.0x / 1.6x,
+ *   GRENADE     the dead soldier's iron grenade / SIDEARM his service revolver (render/itemModels.js buildGrenade / buildSidearm, the models the thrown grenade uses),
  *               a pale iron halo
  *
  *   PickupsView(game)         game: { renderer.scene, pickups }
@@ -30,7 +33,7 @@
 import * as THREE from 'three';
 import { ITEM } from '../sim/inventory3d.js';
 import { knockerTemplate } from './knockerView.js';
-import { weaponTemplate } from './weaponView.js';
+import { buildFirstAid, buildBandage, buildGrenade, buildSidearm } from './itemModels.js';
 
 const MAX_ITEMS = 48;
 const PUFF_S = 0.55;
@@ -81,36 +84,13 @@ function mergeAll(parts, size = 1, tiltAngle = TILT) {
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r0, r1, h, seg = 10) => new THREE.CylinderGeometry(r0, r1, h, seg, 1);
 
-/** The four item silhouettes (templates[kind] = {pos, nor, col, idx, verts}); tilt = rad about X (the world props lean toward the viewer; dropped props use 0). */
+/** The item silhouettes (templates[kind] = {pos, nor, col, idx, verts}); tilt = rad about X (the world props lean toward the viewer; dropped props use 0). */
 export function buildTemplates(tilt = TILT) {
   const t = [];
   const mergeParts = (parts, size) => mergeAll(parts, size, tilt);
-  // FIRST_AID: case + handle + proud cross (front and back) + latch
-  const caseC = col(0xd9d4c4);
-  const red = col(0xb8281f);
-  const dark = col(0x3a3733);
-  t[ITEM.FIRST_AID] = mergeParts([
-    { geo: box(0.3, 0.2, 0.11), pos: [0, 0, 0], color: caseC },
-    { geo: box(0.13, 0.03, 0.03), pos: [0, 0.135, 0], color: dark },
-    { geo: box(0.03, 0.05, 0.03), pos: [-0.05, 0.11, 0], color: dark },
-    { geo: box(0.03, 0.05, 0.03), pos: [0.05, 0.11, 0], color: dark },
-    { geo: box(0.05, 0.15, 0.025), pos: [0, 0, 0.0675], color: red },
-    { geo: box(0.15, 0.05, 0.025), pos: [0, 0, 0.0675], color: red },
-    { geo: box(0.05, 0.15, 0.025), pos: [0, 0, -0.0675], color: red },
-    { geo: box(0.15, 0.05, 0.025), pos: [0, 0, -0.0675], color: red },
-    { geo: box(0.035, 0.03, 0.02), pos: [0.12, 0.09, 0.06], color: dark },
-  ]);
-  // BANDAGE: a roll (axis along Z), a dark core, a tape band, a flat loose tail
-  const gauze = col(0xe0d6b8);
-  const tape = col(0xb89a62);
-  const core = col(0x2c2a26);
-  t[ITEM.BANDAGE] = mergeParts([
-    { geo: cyl(0.085, 0.085, 0.11, 14), pos: [-0.03, 0, 0], rot: [Math.PI / 2, 0, 0], color: gauze },
-    { geo: cyl(0.04, 0.04, 0.118, 10), pos: [-0.03, 0, 0], rot: [Math.PI / 2, 0, 0], color: core },
-    { geo: cyl(0.0875, 0.0875, 0.036, 14), pos: [-0.03, 0, 0], rot: [Math.PI / 2, 0, 0], color: tape },
-    { geo: box(0.17, 0.008, 0.1), pos: [0.115, -0.081, 0], rot: [0, 0, -0.1], color: gauze },
-    { geo: box(0.014, 0.012, 0.1), pos: [0.19, -0.092, 0], rot: [0, 0, -0.1], color: tape },
-  ]);
+  // FIRST_AID and BANDAGE: the detailed props (render/itemModels.js), the same models the dropped props use
+  t[ITEM.FIRST_AID] = buildFirstAid(tilt);
+  t[ITEM.BANDAGE] = buildBandage(tilt);
   // ADRENALINE: a syringe along X, tipped 35 degrees about Z
   const glass = col(0xa9d8d2);
   const fluid = col(0xe8a23c);
@@ -158,30 +138,9 @@ export function buildTemplates(tilt = TILT) {
     }
     t[ITEM.KNOCKER] = { pos, nor, col: k.col, idx: k.idx, verts: k.verts };
   }
-  // SOLDIER_WEAPONS.md: the grenade and the service revolver (render/weaponView.js weaponTemplate: the same models as in the hand), enlarged
-  for (const [kind, size] of [
-    [ITEM.GRENADE, 2.0],
-    [ITEM.SIDEARM, 1.6],
-  ]) {
-    const k = weaponTemplate(kind);
-    const c = Math.cos(tilt);
-    const sn = Math.sin(tilt);
-    const pos = new Float32Array(k.verts * 3);
-    const nor = new Float32Array(k.verts * 3);
-    for (let i = 0; i < k.verts; i++) {
-      const y = k.pos[i * 3 + 1];
-      const z = k.pos[i * 3 + 2];
-      pos[i * 3] = k.pos[i * 3] * size;
-      pos[i * 3 + 1] = (c * y - sn * z) * size;
-      pos[i * 3 + 2] = (sn * y + c * z) * size;
-      const ny = k.nor[i * 3 + 1];
-      const nz = k.nor[i * 3 + 2];
-      nor[i * 3] = k.nor[i * 3];
-      nor[i * 3 + 1] = c * ny - sn * nz;
-      nor[i * 3 + 2] = sn * ny + c * nz;
-    }
-    t[kind] = { pos, nor, col: k.col, idx: k.idx, verts: k.verts };
-  }
+  // SOLDIER_WEAPONS.md: the dead soldiers' iron grenade and service revolver (render/itemModels.js, the same models the thrown grenade uses)
+  t[ITEM.GRENADE] = buildGrenade(tilt);
+  t[ITEM.SIDEARM] = buildSidearm(tilt);
   return t;
 }
 

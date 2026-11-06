@@ -270,7 +270,7 @@ const count = (pk, kind) => pk.items.filter((i) => i.kind === kind).length;
   const bg = read('input/bagGesture.js');
   ok(im.includes('S.gadget = wp && wp.gadget >= 4') && bg.includes('S.counts[gk] > 0'), 'VR: the pull-up draws the selected gadget');
   const view = read('render/weaponView.js');
-  ok(/SEAM/.test(view) && view.includes('export function weaponTemplate(kind)') && (view.match(/new THREE\.InstancedMesh/g) || []).length === 1 && !/new THREE\.\w*Light\b/.test(view) && !/Texture\(/.test(view), 'the view: one InstancedMesh, no light, no texture, the itemModels seam');
+  ok(view.includes('buildGrenade(0, 1)') && view.includes('buildSidearm(0, 1)') && view.includes('export function weaponTemplate(kind)') && (view.match(/new THREE\.InstancedMesh/g) || []).length === 1 && !/new THREE\.\w*Light\b/.test(view) && !/Texture\(/.test(view), 'the view: one InstancedMesh, no light, no texture, the itemModels builders');
   const bfx = read('render/bagFx.js');
   ok(bfx.includes('ITEM.GRENADE') && bfx.includes('X: SWITCH') && bfx.includes("'REVOLVER'"), 'the bag strip / VR ring show the gadget and the switch');
 }

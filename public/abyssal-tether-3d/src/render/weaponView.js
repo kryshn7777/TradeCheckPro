@@ -11,8 +11,8 @@
  *   game.js _updateLantern: x1.5 at most, decaying in ~0.4 s): +0 draw calls, +0 lights. The Mason's flinch is its own RECOVERING recoil.
  *   The grenade AIM ARC reuses the knocker view's line (KnockerView.setArc): +0.
  *
- *   SEAM: the models come from weaponTemplate(kind) below (placeholder geometry). When render/itemModels.js provides buildGrenade() /
- *   buildSidearm(), return their geometry from weaponTemplate and nothing else changes (the pickups view reads the same function).
+ *   The models come from weaponTemplate(kind) below: render/itemModels.js buildGrenade() / buildSidearm() (the placeholder geometry is only
+ *   the fallback for any other kind). The pickups view builds its own copy with its tilt.
  *
  *   new WeaponView(game)      game: { renderer.scene, renderer.fx, weapons (WeaponGlue: .sim Weapons3D), hidePlayer }
  *   .update(dt, game)         once per frame (WeaponGlue.update)
@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { GSTATE, WEAPONS } from '../sim/weapons3d.js';
 import { ITEM } from '../sim/inventory3d.js';
 import { patchMaterial } from './materials.js';
+import { buildGrenade, buildSidearm } from './itemModels.js';
 
 export const WEAPON_VIEW = Object.freeze({ maxInstances: WEAPONS.grenade.maxProps + 1, scale: 1.5 }); // drawn 1.5x so a 9 cm grenade reads in the dark
 
@@ -59,9 +60,12 @@ function placeholderParts(kind) {
 
 /**
  * A weapon model as flat arrays: { pos, nor, col, glow, idx, verts, tris } (metres, origin at its centre). Built once.
- * SEAM: swap placeholderParts(kind) for render/itemModels.js buildGrenade() / buildSidearm() when that module exists.
+ * Grenade and revolver: the itemModels builders (the seam is closed).
  */
 export function weaponTemplate(kind) {
+  // the real models (render/itemModels.js): the iron grenade and the service revolver, one merged model each
+  const m = kind === ITEM.GRENADE ? buildGrenade(0, 1) : kind === ITEM.SIDEARM ? buildSidearm(0, 1) : null;
+  if (m) return { pos: m.pos, nor: m.nor, col: m.col, glow: new Float32Array(m.verts), idx: m.idx, verts: m.verts, tris: m.idx.length / 3 };
   const parts = placeholderParts(kind);
   let verts = 0;
   let nIdx = 0;

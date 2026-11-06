@@ -1,6 +1,6 @@
 /* ABYSSAL TETHER 3D — droppedProps.js
  * Weight and inertia for the bag's consumables (WP-GFX-PARITY). When an item leaves the hand it is a small rigid prop with mass:
- *   - bag:done    the spent item (syringe, bandage roll, empty cell, first aid case) is tossed away: it inherits the hand's velocity
+ *   - bag:done    the spent item (syringe, field dressing, empty cell, first aid case) is tossed away: it inherits the hand's velocity
  *                 plus a flick outward and falls
  *   - bag:cancel  the application was interrupted (a hit, the grip let go, the channel cancelled): the item slips out of the hand and
  *                 drops from it. The bag keeps the item (gameplay is unchanged, this is dressing: the prop is a fumbled spare and
@@ -11,7 +11,7 @@
  * friction per kind (the cell bounces, the bandage thuds), tumble that decays on every impact, a settle that rights the prop into its lying
  * pose, and a fade (shrink) 5 s after it lies still. At most MAX items; the oldest is recycled.
  *
- * Rendering: ONE dynamic mesh (<= MAX items x <= ~320 vertices, rewritten in JS only while something is active; hidden = 0 draw calls),
+ * Rendering: ONE dynamic mesh (<= MAX items x <= ~1.2 k vertices (itemModels ITEM_MODEL_CAPS), rewritten in JS only while something is active; hidden = 0 draw calls),
  * a lit MeshStandardMaterial with vertex colours (the shared probe / lantern / baked GI apply like for any lit prop).
  *
  * Impact sound hook: bus 'prop:impact' { kind, x, y, z, speed (m/s along the normal), surface: 'stone' } on every bounce harder than
@@ -22,6 +22,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../sim/config3d.js';
 import { ITEM } from '../sim/inventory3d.js';
 import { buildTemplates } from './pickupsView.js';
+import { MODEL_REST } from './itemModels.js';
 import { boxFaceNormal } from './contactShadows.js';
 
 export const DROP_MAX = 6;
@@ -32,23 +33,35 @@ const FADE_S = 0.5;
 const MAX_LIFE = 12; // s: a prop still moving (rolling off a ledge) never lives longer than this
 const KILL_BELOW = 60; // m: an item that has fallen this far below where it spawned is gone
 
-// per kind: restitution, tangential friction kept per impact, spin decay per impact
+// per kind: restitution, tangential friction kept per impact, spin decay per impact; the lying pose (rotation of the untilted template)
+// and the height of the prop's centre above the surface in it. FIRST_AID / BANDAGE (and any itemModels kind) come from MODEL_REST:
+// the case on its back (lid face up), the dressing flat with its tails out; the syringe on its side, the cell on its side.
+// A new itemModels kind is one line: [ITEM.X, MODEL_REST.X].
+const FROM_MODELS = [
+  [ITEM.FIRST_AID, MODEL_REST.FIRST_AID],
+  [ITEM.BANDAGE, MODEL_REST.BANDAGE],
+  [ITEM.GRENADE, MODEL_REST.GRENADE],
+  [ITEM.SIDEARM, MODEL_REST.SIDEARM],
+];
 const BODY = {
-  [ITEM.FIRST_AID]: { e: 0.28, mu: 0.72, spin: 0.55 },
-  [ITEM.BANDAGE]: { e: 0.1, mu: 0.55, spin: 0.4 },
   [ITEM.ADRENALINE]: { e: 0.34, mu: 0.7, spin: 0.6 },
   [ITEM.BATTERY]: { e: 0.46, mu: 0.8, spin: 0.7 },
 };
-// lying pose per kind (rotation of the untilted template): the first aid case on its back, the bandage on its tail, the syringe on its
-// side, the cell on its side
 const REST = {
-  [ITEM.FIRST_AID]: new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)),
-  [ITEM.BANDAGE]: new THREE.Quaternion(),
   [ITEM.ADRENALINE]: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, -0.61)),
   [ITEM.BATTERY]: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)),
 };
-// half-height of the lying prop above the surface (its centre rests this high)
-const REST_H = { [ITEM.FIRST_AID]: 0.056, [ITEM.BANDAGE]: 0.082, [ITEM.ADRENALINE]: 0.035, [ITEM.BATTERY]: 0.062 };
+const REST_H = { [ITEM.ADRENALINE]: 0.035, [ITEM.BATTERY]: 0.062 };
+for (const [kind, r] of FROM_MODELS) {
+  if (kind == null || !r) continue;
+  BODY[kind] = r.body;
+  REST[kind] = new THREE.Quaternion().setFromEuler(new THREE.Euler(r.euler[0], r.euler[1], r.euler[2]));
+  REST_H[kind] = r.h;
+}
+/** The lying pose tables (tests): { body, rest (quaternion), h } per kind. */
+export function dropRest(kind) {
+  return { body: BODY[kind], rest: REST[kind], h: REST_H[kind] };
+}
 
 function makeItem() {
   return {

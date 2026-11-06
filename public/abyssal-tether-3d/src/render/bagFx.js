@@ -14,7 +14,7 @@
  *                            the scene: four icons around the hand, the one under the hand lit
  *   .dispose()
  *
- * The icons are drawn as SILHOUETTES (a cross-box kit, a roll with a tail, a syringe, a cell) in one phosphor colour:
+ * The icons are drawn as SILHOUETTES (a cross-box kit, a bound dressing with two tails, a syringe, a cell) in one phosphor colour:
  * readable without colour, the same shapes as the world props (pickupsView.js).
  */
 
@@ -62,22 +62,23 @@ export function drawItemIcon(ctx, kind, cx, cy, s, col, lw = 3) {
     ctx.fillRect(-3.5, -6, 7, 22);
     ctx.fillRect(-11, 1.5, 22, 7);
   } else if (kind === ITEM.BANDAGE) {
-    // a roll seen end-on with a loose tail
+    // the field dressing (itemModels.js): a folded pad bound with twine, two long tails trailing out of one end
     ctx.beginPath();
-    ctx.arc(-8, -2, 15, 0, Math.PI * 2);
+    ctx.roundRect(-26, -16, 32, 22, 4);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(-8, -2, 6, 0, Math.PI * 2);
+    ctx.moveTo(-23, -8);
+    ctx.lineTo(3, -8); // the fold
+    ctx.moveTo(-12, -16);
+    ctx.lineTo(-12, 6); // the twine
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-8, 13);
-    ctx.lineTo(22, 13);
-    ctx.lineTo(22, 21);
-    ctx.lineTo(-8, 21);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(14, 13);
-    ctx.lineTo(14, 21);
+    ctx.moveTo(6, -6);
+    ctx.bezierCurveTo(16, -6, 12, 10, 22, 12);
+    ctx.lineTo(28, 14);
+    ctx.moveTo(6, 2);
+    ctx.bezierCurveTo(12, 4, 4, 18, 14, 22);
+    ctx.lineTo(20, 22);
     ctx.stroke();
   } else if (kind === ITEM.ADRENALINE) {
     // a syringe on the diagonal: needle down-left, plunger up-right
