@@ -203,6 +203,23 @@ export const CONFIG = {
   },
 };
 
+/**
+ * FALL TOUGHNESS (owner, 2026-11-06: "make him 2 times stronger", falls killed too easily). The same fall now costs 1/FALL_TOUGHNESS of the
+ * hp it did (and so does a wall hit), with the free-drop threshold SPEED unchanged: the damage curve ((v/L - t)/(1 - t))^fallExp keeps its
+ * shape but is divided by FALL_TOUGHNESS, so it reaches 1 (dead) at a higher speed L' = L * k, k = t + (1 - t) * FALL_TOUGHNESS^(1/fallExp),
+ * and the threshold fraction becomes t' = t / k (t' * L' == t * L). Every consumer reads lethalImpact / health.fallThreshold from the
+ * difficulty (health, release guide, fall cue, audio, bots), so they all move together. Normal: lethal 17 -> 20.17 m/s (a free fall of
+ * 14.7 m -> 20.8 m kills), the 8 m drop that cost 80 hp costs 40. `fallK` / `fallToughness` ride along for the wall rule (sim/health3d.js).
+ */
+export const FALL_TOUGHNESS = 2;
+export function toughFall(lethal, threshold, T = FALL_TOUGHNESS, exp = 2) {
+  const k = threshold + (1 - threshold) * Math.pow(T, 1 / exp);
+  return { lethal: +(lethal * k).toFixed(4), threshold: +(threshold / k).toFixed(5), k: +k.toFixed(5), T };
+}
+const FALL_NORMAL = toughFall(17, 0.55);
+const FALL_NIGHTMARE = toughFall(15.5, 0.5);
+const FALL_ABYSS = toughFall(14.5, 0.45);
+
 export const DIFFICULTY = {
   normal: {
     key: 'normal',
@@ -214,14 +231,14 @@ export const DIFFICULTY = {
     aimConeDeg: 12,
     rayAssist: 2.4, // metres from the aim ray that still count as "aimed at"
     moverAssist: 0.6, // + metres of ray assist on a moving ring (LEVEL_FUN_PLAN item 7, sim/movers3d.js)
-    lethalImpact: 17,
+    lethalImpact: FALL_NORMAL.lethal, // 17 x FALL_TOUGHNESS (see toughFall)
     impactsLethal: true,
     fragileTime: 1.5,
     crumbleTime: 0.9,
     checkpoints: 'all',
     recordTimes: true,
     creature: { enabled: true, speed: 1.0, aggression: 1.0, staminaDrain: 1.0, staminaRegen: 1.0, killRadius: 2.6 },
-    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55: a drop under ~3.3 m costs nothing (it was 0.35: ~1.3 m already hurt)
+    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 0.6, wallScale: 1 }, // fallThreshold 0.55 of the OLD lethal speed (a drop under ~4.5 m costs nothing): see toughFall
     climb: { drainMul: 1, reelDrain: 0 },
   },
   nightmare: {
@@ -234,14 +251,14 @@ export const DIFFICULTY = {
     aimConeDeg: 8,
     rayAssist: 1.8,
     moverAssist: 0.4,
-    lethalImpact: 15.5,
+    lethalImpact: FALL_NIGHTMARE.lethal, // 15.5 x FALL_TOUGHNESS
     impactsLethal: true,
     fragileTime: 1.05,
     crumbleTime: 0.65,
     checkpoints: 'alternate',
     recordTimes: true,
     creature: { enabled: true, speed: 1.18, aggression: 1.3, staminaDrain: 0.9, staminaRegen: 1.25, killRadius: 2.9 },
-    health: { fallThreshold: 0.5, regenDelay: 8, regenRate: 0.035, hazardDamage: 0.75, wallScale: 1.1 },
+    health: { fallThreshold: FALL_NIGHTMARE.threshold, fallK: FALL_NIGHTMARE.k, fallToughness: FALL_NIGHTMARE.T, regenDelay: 8, regenRate: 0.035, hazardDamage: 0.75, wallScale: 1.1 },
     climb: { drainMul: 1.1, reelDrain: 0.03 },
   },
   abyss: {
@@ -254,14 +271,14 @@ export const DIFFICULTY = {
     aimConeDeg: 6,
     rayAssist: 1.3,
     moverAssist: 0.2,
-    lethalImpact: 14.5,
+    lethalImpact: FALL_ABYSS.lethal, // 14.5 x FALL_TOUGHNESS
     impactsLethal: true,
     fragileTime: 0.8,
     crumbleTime: 0.5,
     checkpoints: 'none',
     recordTimes: true,
     creature: { enabled: true, speed: 1.34, aggression: 1.6, staminaDrain: 0.8, staminaRegen: 1.5, killRadius: 3.1 },
-    health: { fallThreshold: 0.45, regenDelay: 11, regenRate: 0.022, hazardDamage: 1, wallScale: 1.25 },
+    health: { fallThreshold: FALL_ABYSS.threshold, fallK: FALL_ABYSS.k, fallToughness: FALL_ABYSS.T, regenDelay: 11, regenRate: 0.022, hazardDamage: 1, wallScale: 1.25 },
     climb: { drainMul: 1.25, reelDrain: 0.05 },
   },
   sandbox: {
@@ -274,14 +291,14 @@ export const DIFFICULTY = {
     aimConeDeg: 12,
     rayAssist: 2.4,
     moverAssist: 0.6,
-    lethalImpact: 17,
+    lethalImpact: FALL_NORMAL.lethal,
     impactsLethal: false,
     fragileTime: 1.5,
     crumbleTime: 0.9,
     checkpoints: 'all',
     recordTimes: false,
     creature: { enabled: false, speed: 0, aggression: 0, staminaDrain: 1, staminaRegen: 1, killRadius: 0 },
-    health: { fallThreshold: 0.55, regenDelay: 5, regenRate: 0.06, hazardDamage: 1, wallScale: 1 },
+    health: { fallThreshold: FALL_NORMAL.threshold, fallK: FALL_NORMAL.k, fallToughness: FALL_NORMAL.T, regenDelay: 5, regenRate: 0.06, hazardDamage: 1, wallScale: 1 },
     climb: { drainMul: 0.5 },
   },
 };

@@ -98,8 +98,11 @@ export class Health3D {
     this.regenDelay = typeof d.regenDelay === 'number' ? d.regenDelay : 6;
     this.regenRate = typeof d.regenRate === 'number' ? d.regenRate : 0.05;
     this.hazardDamage = typeof d.hazardDamage === 'number' ? d.hazardDamage : 0.6;
-    this.wallScale = typeof d.wallScale === 'number' ? d.wallScale : 1;
+    // FALL TOUGHNESS (config3d.js toughFall): a wall hit is read against the OLD lethal speed and costs 1/fallToughness of what it did.
+    const tough = typeof d.fallToughness === 'number' && d.fallToughness > 0 ? d.fallToughness : 1;
+    this.wallScale = (typeof d.wallScale === 'number' ? d.wallScale : 1) / tough;
     this.lethal = diff && diff.lethalImpact > 0 ? diff.lethalImpact : 17;
+    this.wallRef = this.lethal / (typeof d.fallK === 'number' && d.fallK > 0 ? d.fallK : 1);
     /** Falls and wall hits hurt (Sandbox: impactsLethal false -> they do not). */
     this.fallsEnabled = !diff || diff.impactsLethal !== false;
     /** Debug / victory: no damage at all. */
@@ -174,7 +177,7 @@ export class Health3D {
   /** A side impact with normal-component speed `speed`. Returns true when it killed. */
   wallHit(speed) {
     if (!this.fallsEnabled || this.god || this.dead) return false;
-    return this._impact(wallDamage(speed, this.lethal, this.wallScale), 'wall', speed);
+    return this._impact(wallDamage(speed, this.wallRef, this.wallScale), 'wall', speed);
   }
 
   /** Spikes / blades / rebar contact. Returns true when it killed. */

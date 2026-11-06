@@ -49,7 +49,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   ok(good, 'fall damage: 0 up to the threshold, convex + monotonic, 1 at the lethal speed (' + rows.join(' | ') + ')');
   const t = DIFFICULTY.normal.health.fallThreshold;
   const L = DIFFICULTY.normal.lethalImpact;
-  ok(t > 0.5 && t < 0.6 && near(fallDamage(0.775 * L, L, t), 0.25, 1e-9), 'normal curve: threshold ~55 % of lethal (a drop under ~3.3 m is free), a 77.5 % landing costs 25 hp');
+  ok(near(t * L, 0.55 * 17, 1e-3) && near(fallDamage(0.775 * 17, L, t), 0.125, 1e-3), 'normal curve (FALL TOUGHNESS x2): the free-drop SPEED is still 55 % of the old 17 m/s (a drop under ~4.5 m is free), the old 77.5 % landing now costs 12.5 hp instead of 25, and the curve reaches 100 at ' + L.toFixed(1) + ' m/s');
   ok(dropSpeed(0) === 0 && near(dropHeight(dropSpeed(7)), 7, 1e-9), 'drop height <-> speed helpers agree');
 }
 // 2. Wall impacts: gentler than floor impacts, capped, zero below half the lethal speed.
@@ -64,18 +64,19 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const { h, ev } = mk();
   h.landing(dropSpeed(6.5));
   const d = ev.find((e) => e[0] === 'health:damage');
-  ok(d && d[1].cause === 'fall' && d[1].amount > 0.2 && d[1].amount < 0.3 && near(d[1].hp, 1 - d[1].amount) && !d[1].lethal && d[1].speed > 10, 'landing emits health:damage {amount, hp, cause fall, speed}');
-  ok(!h.low && !ev.some((e) => e[0] === 'health:low'), 'no low state at ~74 hp');
+  ok(d && d[1].cause === 'fall' && d[1].amount > 0.1 && d[1].amount < 0.2 && near(d[1].hp, 1 - d[1].amount) && !d[1].lethal && d[1].speed > 10, 'landing emits health:damage {amount, hp, cause fall, speed}');
+  ok(!h.low && !ev.some((e) => e[0] === 'health:low'), 'no low state at ~87 hp');
   ticks(h, 0.5);
-  h.landing(dropSpeed(7)); // -> ~41 hp
-  const dead = h.landing(dropSpeed(7)); // within cooldown: same landing, no extra
+  h.landing(dropSpeed(10)); // -> ~44 hp
+  const dead = h.landing(dropSpeed(10)); // within cooldown: same landing, no extra
   ok(!dead && !h.low, 'second landing inside the cooldown adds nothing');
   ticks(h, 1);
   const before = h.hp;
-  h.landing(dropSpeed(5.5));
+  h.landing(dropSpeed(8));
   ok(h.hp < before && h.hp <= H.lowEnter && h.low && ev.filter((e) => e[0] === 'health:low').length === 1, 'crossing 35 hp emits health:low once (hp ' + (h.hp * 100).toFixed(0) + ')');
+  const after = h.hp;
   ticks(h, 6.2 + 0.05); // regen starts after the delay
-  ok(h.hp > before - 0.1 && h.low === (h.hp < H.lowExit), 'hysteresis: still low below 50 hp');
+  ok(h.hp > after && h.low === (h.hp < H.lowExit), 'hysteresis: still low below 50 hp');
   ticks(h, 20);
   ok(!h.low && h.hp === 1 && ev.filter((e) => e[0] === 'health:recover').length === 2 && ev[ev.length - 1][1].full === true, 'regen to full: health:recover at 50 hp and at full');
 }
@@ -87,7 +88,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   h.landing(dropSpeed(6.5)); // same again inside the window
   ok(near(1 - h.hp, a), 'same landing twice in 0.35 s: damage once');
   h.landing(dropSpeed(7)); // bigger: pays the difference
-  const b = fallDamage(dropSpeed(7), 17, DIFFICULTY.normal.health.fallThreshold);
+  const b = fallDamage(dropSpeed(7), DIFFICULTY.normal.lethalImpact, DIFFICULTY.normal.health.fallThreshold);
   ok(near(1 - h.hp, b, 1e-9), 'a bigger hit in the window pays the excess only (total = the larger hit)');
   ticks(h, H.hitCooldown + 0.01);
   const hp0 = h.hp;
@@ -147,9 +148,9 @@ const ticks = (h, secs, dt = 1 / 240) => {
 // 8. Death flag, reset, lethal speed, determinism, snapshot.
 {
   const { h } = mk();
-  ok(h.landing(17) === true && h.hp === 0 && h.lastDamage.cause === 'fall', 'the lethal speed kills from full health');
+  ok(h.landing(DIFFICULTY.normal.lethalImpact) === true && h.hp === 0 && h.lastDamage.cause === 'fall', 'the lethal speed kills from full health');
   const m2 = mk('nightmare').h;
-  ok(m2.landing(15.5) === true, 'nightmare lethal speed kills');
+  ok(m2.landing(DIFFICULTY.nightmare.lethalImpact) === true, 'nightmare lethal speed kills');
   h.die();
   ok(h.dead && h.heartbeatRate === 0, 'dead: heartbeat 0 (flatline)');
   ticks(h, 30);
@@ -235,12 +236,12 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const small = drop('normal', 0.5);
   const mid = drop('normal', 5);
   const big = drop('normal', 8);
-  ok(small.physics.health.hp === 1 && mid.physics.health.hp < 1 && mid.physics.health.hp > 0.85 && big.physics.health.hp < 0.6 && big.physics.health.hp > 0.4 && big.p.alive, 'a hop is free, 5 m costs ~9 hp, 8 m costs ~50 hp');
-  const dead = drop('normal', 14);
+  ok(small.physics.health.hp === 1 && mid.physics.health.hp < 1 && mid.physics.health.hp > 0.9 && big.physics.health.hp < 0.8 && big.physics.health.hp > 0.7 && big.p.alive, 'a hop is free, 5 m costs ~4 hp, 8 m costs ~24 hp (half of before)');
+  const dead = drop('normal', 17);
   const deathEv = dead.events.find((e) => e[0] === 'player:death');
-  ok(!dead.p.alive && deathEv && deathEv[1].cause === 'impact' && dead.physics.health.dead && dead.physics.health.hp === 0, 'a 14 m fall still kills (cause impact)');
-  const nmDead = drop('nightmare', 11);
-  ok(!nmDead.p.alive, 'nightmare: an 11 m fall (lethal at 15.5 m/s) kills');
+  ok(!dead.p.alive && deathEv && deathEv[1].cause === 'impact' && dead.physics.health.dead && dead.physics.health.hp === 0, 'a 17 m fall still kills (cause impact; it was 14 m before the x2 toughness)');
+  const nmDead = drop('nightmare', 14);
+  ok(!nmDead.p.alive, 'nightmare: a 14 m fall (lethal at 18.7 m/s) kills');
   const sand = drop('sandbox', 20);
   ok(sand.p.alive && sand.physics.health.hp === 1, 'sandbox: a 20 m fall is survivable');
   // Cumulative: three 6 m drops with no calm period between them kill.
@@ -255,7 +256,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
   const restY = p.y;
   let drops = 0;
   while (p.alive && drops < 10) {
-    p.y = restY + 6;
+    p.y = restY + 10;
     p.prevY = p.y;
     p.grounded = false;
     for (let i = 0; i < 960 && p.alive; i++) {
@@ -265,7 +266,7 @@ const ticks = (h, secs, dt = 1 / 240) => {
     for (let i = 0; i < 120 && p.alive; i++) physics.step(p, tethers, {}, CONFIG.PHYSICS_DT);
     drops++;
   }
-  ok(!p.alive && drops >= 4 && drops <= 7 && p.deathCause === 'impact', `damage accumulates: dead after ${drops} drops of 6 m`);
+  ok(!p.alive && drops >= 2 && drops <= 4 && p.deathCause === 'impact', `damage accumulates: dead after ${drops} drops of 10 m`);
 }
 // 11. Hazards through Physics3D: heavy damage, then death on the repeat; creature kill flags the death.
 {
